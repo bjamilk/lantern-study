@@ -109,6 +109,12 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
             userTime: 0,
             opponentTime: 0,
             isComplete: false,
+            userStreak: 0,
+            opponentStreak: 0,
+            userStreakMax: 0,
+            opponentStreakMax: 0,
+            userCorrectAnswers: 0,
+            opponentCorrectAnswers: 0,
         };
 
         setActiveGameSession(gameSession);
@@ -122,6 +128,21 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
         const question = activeGameSession.questions.find(q => q.id === questionId);
         const isCorrect = question ? checkAnswerIsCorrect(question, { ...answerData, questionId }) : false;
         
+        let questionPoints = 0;
+        let newStreak = activeGameSession.userStreak || 0;
+        if (isCorrect) {
+            newStreak += 1;
+            const basePoints = 500;
+            const speedBonus = Math.max(0, Math.round(500 * (1 - Math.min(timeTaken, 20) / 20)));
+            const multiplier = newStreak >= 5 ? 1.5 : newStreak >= 3 ? 1.2 : 1.0;
+            questionPoints = Math.round((basePoints + speedBonus) * multiplier);
+        } else {
+            newStreak = 0;
+        }
+
+        const newStreakMax = Math.max(activeGameSession.userStreakMax || 0, newStreak);
+        const newCorrectAnswers = (activeGameSession.userCorrectAnswers || 0) + (isCorrect ? 1 : 0);
+
         const updatedUserAnswers = {
             ...activeGameSession.userAnswers,
             [questionId]: { questionId, ...answerData, isCorrect, timeSpentSeconds: timeTaken }
@@ -130,32 +151,53 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
         const updatedSession: GameSession = {
             ...activeGameSession,
             userAnswers: updatedUserAnswers,
-            userScore: activeGameSession.userScore + (isCorrect ? 1 : 0),
-            userTime: activeGameSession.userTime + timeTaken
+            userScore: activeGameSession.userScore + questionPoints,
+            userTime: activeGameSession.userTime + timeTaken,
+            userStreak: newStreak,
+            userStreakMax: newStreakMax,
+            userCorrectAnswers: newCorrectAnswers,
         };
         
         setActiveGameSession(updatedSession);
 
         const opponentAnswerDelay = Math.random() * 2000 + 1000;
         setTimeout(() => {
+            const currentSession = useUIStore.getState().activeGameSession;
+            if (!currentSession || currentSession.id !== updatedSession.id) return;
+
             const opponentIsCorrect = Math.random() < 0.8;
-            const opponentTime = timeTaken + (Math.random() * 2 - 1);
+            const opponentTime = Math.max(0.5, timeTaken + (Math.random() * 4 - 2));
             
+            let opponentPoints = 0;
+            let oppStreak = currentSession.opponentStreak || 0;
+            if (opponentIsCorrect) {
+                oppStreak += 1;
+                const basePoints = 500;
+                const speedBonus = Math.max(0, Math.round(500 * (1 - Math.min(opponentTime, 20) / 20)));
+                const multiplier = oppStreak >= 5 ? 1.5 : oppStreak >= 3 ? 1.2 : 1.0;
+                opponentPoints = Math.round((basePoints + speedBonus) * multiplier);
+            } else {
+                oppStreak = 0;
+            }
+
+            const oppStreakMax = Math.max(currentSession.opponentStreakMax || 0, oppStreak);
+            const oppCorrectAnswers = (currentSession.opponentCorrectAnswers || 0) + (opponentIsCorrect ? 1 : 0);
+
             const opponentAnswer: UserAnswerRecord = {
                 questionId,
                 isCorrect: opponentIsCorrect,
-                timeSpentSeconds: Math.max(0.5, opponentTime)
+                timeSpentSeconds: opponentTime
             };
 
-            const currentSession = useUIStore.getState().activeGameSession;
-            if (!currentSession || currentSession.id !== updatedSession.id) return;
-            
             const updatedOpponentAnswers = { ...currentSession.opponentAnswers, [questionId]: opponentAnswer };
             setActiveGameSession({
                 ...currentSession,
                 opponentAnswers: updatedOpponentAnswers,
-                opponentScore: currentSession.opponentScore + (opponentIsCorrect ? 1 : 0),
-                opponentTime: currentSession.opponentTime + opponentAnswer.timeSpentSeconds!
+                opponentScore: currentSession.opponentScore + opponentPoints,
+                opponentTime: currentSession.opponentTime + opponentTime,
+                opponentStreak: oppStreak,
+                opponentStreakMax: oppStreakMax,
+                opponentCorrectAnswers: oppCorrectAnswers,
             });
         }, opponentAnswerDelay);
     }, [activeGameSession, setActiveGameSession]);

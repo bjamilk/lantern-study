@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Group, Message, User, DMThread, ChatItem } from '../types';
+import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer } from '../types';
 import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
 import GroupListItem from './GroupListItem';
@@ -19,7 +19,18 @@ import {
   ChatBubbleOvalLeftEllipsisIcon,
   TrashIcon,
   UserCircleIcon,
+  ShoppingBagIcon,
+  CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
+import {
+  getInquiryByThread,
+  fetchOffers,
+  respondToOffer,
+  updateInquiryStatus,
+  updateMarketplaceListing
+} from '../services/supabase';
+import MakeOfferModal from './MakeOfferModal';
+
 
 interface ChatWindowProps {
   chat: ChatItem | null;
@@ -73,6 +84,124 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // tree state used for mobile grouping
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
+
+  // Marketplace Inquiry & Offers states
+  const [inquiry, setInquiry] = useState<MarketplaceInquiry | null>(null);
+  const [activeOffer, setActiveOffer] = useState<MarketplaceOffer | null>(null);
+  const [offerHistory, setOfferHistory] = useState<MarketplaceOffer[]>([]);
+  const [activeTab, setActiveTab] = useState<'chat' | 'offers'>('chat');
+  const [showMakeOfferModal, setShowMakeOfferModal] = useState(false);
+  const [showCounterInput, setShowCounterInput] = useState(false);
+  const [counterValue, setCounterValue] = useState('');
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerError, setOfferError] = useState('');
+
+  const loadOfferHistory = async (inquiryData: MarketplaceInquiry) => {
+    try {
+      const role = currentUser.id === inquiryData.buyer_id ? 'buyer' : 'seller';
+      const offers = await fetchOffers(role);
+      const filtered = offers.filter(
+        (o: MarketplaceOffer) =>
+          o.listing_id === inquiryData.listing_id &&
+          (o.buyer_id === inquiryData.buyer_id || o.seller_id === inquiryData.seller_id)
+      );
+      // Sort by date created_at ascending
+      filtered.sort(
+        (a: MarketplaceOffer, b: MarketplaceOffer) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setOfferHistory(filtered);
+
+      // Set active offer (the latest pending or countered offer)
+      const active = filtered.find(
+        (o: MarketplaceOffer) => o.status === 'pending' || o.status === 'countered'
+      );
+      setActiveOffer(active || null);
+    } catch (err) {
+      console.error('Error loading offer history:', err);
+    }
+  };
+
+  const handleRespond = async (action: 'accept' | 'decline' | 'counter' | 'withdraw', counterAmount?: number) => {
+    if (!activeOffer || !inquiry) return;
+    setOfferLoading(true);
+    setOfferError('');
+    try {
+      await respondToOffer(activeOffer.id, action, counterAmount);
+      
+      // Send DM notification for visual history
+      let dmContent = '';
+      if (action === 'accept') {
+        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! The item is now marked as sold.`;
+      } else if (action === 'decline') {
+        dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;
+      } else if (action === 'withdraw') {
+        dmContent = `[Offer] I withdrew my offer of ₦${activeOffer.amount.toLocaleString()}.`;
+      } else if (action === 'counter' && counterAmount) {
+        dmContent = `[Offer] I countered your offer with a counter-offer of ₦${counterAmount.toLocaleString()}.`;
+      }
+
+      if (dmContent) {
+        try {
+          onSendMessage(dmContent);
+        } catch (msgErr) {
+          console.error('Failed to send status update message to chat:', msgErr);
+        }
+      }
+
+      if (action === 'accept') {
+        try {
+          await updateInquiryStatus(inquiry.id, 'purchased');
+          await updateMarketplaceListing(inquiry.listing_id, { status: 'sold' });
+          const updated = await getInquiryByThread(chat.id);
+          if (updated) setInquiry(updated);
+        } catch (err) {
+          console.error('Failed to update statuses on offer acceptance:', err);
+        }
+      } else if (action === 'counter') {
+        try {
+          await updateInquiryStatus(inquiry.id, 'negotiating');
+          const updated = await getInquiryByThread(chat.id);
+          if (updated) setInquiry(updated);
+        } catch (err) {
+          console.error('Failed to update inquiry status to negotiating:', err);
+        }
+      }
+
+      await loadOfferHistory(inquiry);
+      setShowCounterInput(false);
+    } catch (err: any) {
+      setOfferError(err.message || `Failed to ${action} offer`);
+    } finally {
+      setOfferLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setActiveTab('chat');
+    setInquiry(null);
+    setActiveOffer(null);
+    setOfferHistory([]);
+    setShowCounterInput(false);
+    setCounterValue('');
+    setOfferError('');
+
+    if (chat && chat.chatType === 'dm') {
+      const loadInquiryContext = async () => {
+        try {
+          const inquiryData = await getInquiryByThread(chat.id);
+          if (inquiryData) {
+            setInquiry(inquiryData);
+            await loadOfferHistory(inquiryData);
+          }
+        } catch (err) {
+          console.error('Error loading inquiry context:', err);
+        }
+      };
+      loadInquiryContext();
+    }
+  }, [chat?.id]);
+
 
   // build top‑level vs subgroup map once
   const { activeTopLevelGroups, archivedTopLevelGroups, subGroupsMap } = React.useMemo(() => {
@@ -509,94 +638,437 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             )}
           </div>
         )}
-      </div>
-
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-        {visibleMessages.map((msg, idx) => {
-          // Date separator logic
-          const msgDate = new Date(msg.timestamp);
-          const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
-          const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
-          const showDateSeparator = !prevDate
-            || msgDate.toDateString() !== prevDate.toDateString();
-
-          const formatDateLabel = (d: Date) => {
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-            if (diffDays === 0) return 'Today';
-            if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
-            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-          };
-
-          return (
-            <React.Fragment key={msg.id}>
-              {showDateSeparator && (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500 whitespace-nowrap px-2">
-                    {formatDateLabel(msgDate)}
-                  </span>
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+        
+        {/* Marketplace Sticky Banner */}
+        {chat.chatType === 'dm' && inquiry && (
+          <div className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
+                <img
+                  src={inquiry.listing.images[0]}
+                  alt={inquiry.listing.title}
+                  className="w-12 h-12 rounded-lg object-cover bg-slate-100 dark:bg-slate-700 flex-shrink-0 border border-slate-200 dark:border-slate-600"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 border border-slate-200 dark:border-slate-600">
+                  <ShoppingBagIcon className="w-6 h-6 text-slate-400" />
                 </div>
               )}
-              <MessageItem
-                message={msg}
-                isCurrentUserMessage={msg.sender.id === currentUser.id}
-                currentUserVote={userVotes[msg.id]}
-                onVoteQuestion={onVoteQuestion}
-                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
-                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                group={group}
-                currentUser={currentUser}
-              />
-            </React.Fragment>
-          );
-        })}
-        <div ref={messagesEndRef} />
-        {visibleMessages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
-              <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+              <div className="min-w-0">
+                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate leading-snug">
+                  {inquiry.listing?.title}
+                </h4>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                    {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
+                  </span>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                    inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                    inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
+                    inquiry.status === 'closed' ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400' :
+                    'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                  }`}>
+                    {inquiry.status}
+                  </span>
+                </div>
+              </div>
             </div>
-            <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              {isArchived ? 'This group is archived' : 'No messages yet'}
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
-              {isArchived
-                ? 'Unarchive the group to resume the conversation.'
-                : `Be the first to send a message in ${name}!`}
-            </p>
+            
+            <div className="flex items-center gap-2">
+              <div className="flex bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    activeTab === 'chat'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('offers')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${
+                    activeTab === 'offers'
+                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Offers
+                  {activeOffer && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      {isArchived ? (
-        <div className="flex items-center justify-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
-          <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-          <p className="text-sm text-amber-800 dark:text-amber-300">
-            This group is archived.
-          </p>
-          <button
-            onClick={() => onToggleArchiveGroup(group!.id)}
-            className="text-sm font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline underline-offset-2 transition-colors duration-150"
-          >
-            Unarchive
-          </button>
-        </div>
+      {activeTab === 'chat' ? (
+        <>
+          {/* Messages area */}
+          <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+            {visibleMessages.map((msg, idx) => {
+              // Date separator logic
+              const msgDate = new Date(msg.timestamp);
+              const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
+              const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
+              const showDateSeparator = !prevDate
+                || msgDate.toDateString() !== prevDate.toDateString();
+
+              const formatDateLabel = (d: Date) => {
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+                if (diffDays === 0) return 'Today';
+                if (diffDays === 1) return 'Yesterday';
+                if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+                return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+              };
+
+              return (
+                <React.Fragment key={msg.id}>
+                  {showDateSeparator && (
+                    <div className="flex items-center gap-3 py-2">
+                      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                      <span className="text-xs font-medium text-slate-400 dark:text-slate-500 whitespace-nowrap px-2">
+                        {formatDateLabel(msgDate)}
+                      </span>
+                      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                    </div>
+                  )}
+                  <MessageItem
+                    message={msg}
+                    isCurrentUserMessage={msg.sender.id === currentUser.id}
+                    currentUserVote={userVotes[msg.id]}
+                    onVoteQuestion={onVoteQuestion}
+                    onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                    currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                    group={group}
+                    currentUser={currentUser}
+                  />
+                </React.Fragment>
+              );
+            })}
+            <div ref={messagesEndRef} />
+            {visibleMessages.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
+                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {isArchived ? 'This group is archived' : 'No messages yet'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+                  {isArchived
+                    ? 'Unarchive the group to resume the conversation.'
+                    : `Be the first to send a message in ${name}!`}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          {isArchived ? (
+            <div className="flex items-center justify-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
+              <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                This group is archived.
+              </p>
+              <button
+                onClick={() => onToggleArchiveGroup(group!.id)}
+                className="text-sm font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline underline-offset-2 transition-colors duration-150"
+              >
+                Unarchive
+              </button>
+            </div>
+          ) : (
+            <div className="flex-shrink-0">
+              <MessageInputBar
+                onSendMessage={onSendMessage}
+                onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
+                onAIQuery={isGroup ? onAIQuery : undefined}
+              />
+            </div>
+          )}
+        </>
       ) : (
-        <div className="flex-shrink-0">
-          <MessageInputBar
-            onSendMessage={onSendMessage}
-            onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
-            onAIQuery={isGroup ? onAIQuery : undefined}
-          />
-        </div>
+        /* Offers Tab panel */
+        inquiry && (
+          <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-y-auto p-4 md:p-6">
+            {/* Listing Card */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
+              {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
+                <img
+                  src={inquiry.listing.images[0]}
+                  alt={inquiry.listing.title}
+                  className="w-full sm:w-32 h-32 rounded-xl object-cover bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex-shrink-0"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-full sm:w-32 h-32 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center border border-slate-200 dark:border-slate-600 flex-shrink-0">
+                  <ShoppingBagIcon className="w-10 h-10 text-slate-400" />
+                </div>
+              )}
+              <div className="flex-1 flex flex-col justify-between min-w-0">
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 line-clamp-2">
+                      {inquiry.listing?.title}
+                    </h3>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase flex-shrink-0 ${
+                      inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                      inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
+                      inquiry.status === 'closed' ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400' :
+                      'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    }`}>
+                      {inquiry.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 capitalize font-medium">
+                    Category: {inquiry.listing?.category || 'academic'}
+                  </p>
+                </div>
+                
+                <div className="flex items-baseline gap-2 mt-4">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Asking Price:</span>
+                  <span className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">
+                    {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Offer Section */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200/60 dark:border-slate-700/60 shadow-sm mb-6">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-1.5">
+                <CurrencyDollarIcon className="w-5 h-5 text-emerald-500" />
+                Active Offer
+              </h3>
+              
+              {activeOffer ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-slate-50 dark:bg-slate-700/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Offered Amount:</span>
+                        <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                          ₦{activeOffer.amount.toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">
+                        Submitted on {new Date(activeOffer.created_at).toLocaleDateString()}
+                      </p>
+                      {activeOffer.message && (
+                        <p className="text-xs italic text-slate-500 dark:text-slate-400 mt-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                          "{activeOffer.message}"
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="flex-shrink-0">
+                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${
+                        activeOffer.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
+                        activeOffer.status === 'countered' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300' :
+                        activeOffer.status === 'accepted' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                        activeOffer.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' :
+                        'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400'
+                      }`}>
+                        Offer {activeOffer.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Controls */}
+                  <div className="pt-2">
+                    {offerError && <p className="text-xs text-red-500 mb-3 font-semibold">{offerError}</p>}
+                    
+                    {currentUser.id === activeOffer.buyer_id ? (
+                      // Buyer controls
+                      <div className="flex flex-wrap gap-2">
+                        {activeOffer.status === 'pending' && (
+                          <button
+                            disabled={offerLoading}
+                            onClick={() => handleRespond('withdraw')}
+                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                          >
+                            {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
+                          </button>
+                        )}
+                        {activeOffer.status === 'countered' && (
+                          <>
+                            <button
+                              disabled={offerLoading}
+                              onClick={() => handleRespond('accept')}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            >
+                              Accept Counter
+                            </button>
+                            <button
+                              disabled={offerLoading}
+                              onClick={() => handleRespond('decline')}
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            >
+                              Decline Counter
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      // Seller controls
+                      <div className="flex flex-col gap-3">
+                        {activeOffer.status === 'pending' && !showCounterInput && (
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              disabled={offerLoading}
+                              onClick={() => handleRespond('accept')}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            >
+                              Accept Offer
+                            </button>
+                            <button
+                              disabled={offerLoading}
+                              onClick={() => handleRespond('decline')}
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            >
+                              Decline Offer
+                            </button>
+                            <button
+                              disabled={offerLoading}
+                              onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            >
+                              Counter Offer
+                            </button>
+                          </div>
+                        )}
+                        
+                        {showCounterInput && (
+                          <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Counter Offer Amount (₦)
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                value={counterValue}
+                                onChange={(e) => setCounterValue(e.target.value)}
+                                placeholder="Enter counter amount"
+                                className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-semibold"
+                              />
+                              <button
+                                disabled={offerLoading || !counterValue || parseFloat(counterValue) <= 0}
+                                onClick={() => handleRespond('counter', parseFloat(counterValue))}
+                                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-lg transition-colors"
+                              >
+                                Send Counter
+                              </button>
+                              <button
+                                disabled={offerLoading}
+                                onClick={() => setShowCounterInput(false)}
+                                className="px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 text-xs font-bold rounded-lg transition-colors hover:bg-slate-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center py-6 text-center">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 font-medium">
+                    There are no active offers in negotiation.
+                  </p>
+                  {currentUser.id === inquiry.buyer_id && (
+                    <button
+                      onClick={() => setShowMakeOfferModal(true)}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
+                    >
+                      <CurrencyDollarIcon className="w-4 h-4" />
+                      Make an Offer
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Negotiation History Timeline */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex-1">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4">
+                Negotiation History
+              </h3>
+              
+              {offerHistory.length === 0 ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-8">
+                  No previous offers or counter-offers recorded.
+                </p>
+              ) : (
+                <div className="relative border-l border-slate-200 dark:border-slate-700 ml-3 pl-5 space-y-6">
+                  {offerHistory.map((offer) => {
+                    return (
+                      <div key={offer.id} className="relative">
+                        {/* Dot indicator */}
+                        <span className={`absolute -left-[26px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-800 ${
+                          offer.status === 'accepted' ? 'bg-emerald-500' :
+                          offer.status === 'declined' ? 'bg-red-500' :
+                          offer.status === 'withdrawn' ? 'bg-slate-400' :
+                          offer.status === 'countered' ? 'bg-amber-500' :
+                          'bg-indigo-500'
+                        }`} />
+                        
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                              ₦{offer.amount.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                              {new Date(offer.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            {offer.buyer_id === currentUser.id ? 'You' : 'Buyer'} offered ₦{offer.amount.toLocaleString()} ({offer.status})
+                          </p>
+                          {offer.message && (
+                            <p className="text-xs italic text-slate-400 dark:text-slate-500 mt-1">
+                              "{offer.message}"
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )
       )}
+
+      {/* Offer Modal */}
+      {showMakeOfferModal && inquiry && inquiry.listing && (
+        <MakeOfferModal
+          isOpen={showMakeOfferModal}
+          onClose={() => setShowMakeOfferModal(false)}
+          listing={inquiry.listing}
+          onSuccess={(amount) => {
+            if (amount) {
+              try {
+                onSendMessage(`[Offer] I submitted a new offer of ₦${amount.toLocaleString()}!`);
+              } catch (msgErr) {
+                console.error('Failed to send status update message to chat:', msgErr);
+              }
+            }
+            loadOfferHistory(inquiry);
+          }}
+        />
+      )}
+
     </div>
   );
 };

@@ -12,7 +12,7 @@ interface MakeOfferModalProps {
   isOpen: boolean;
   onClose: () => void;
   listing: MarketplaceListing;
-  onSuccess: () => void;
+  onSuccess: (amount?: number) => void;
 }
 
 const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listing, onSuccess }) => {
@@ -40,7 +40,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
 
     try {
       await createOffer(listing.id, offerAmount, message || undefined);
-      onSuccess();
+      onSuccess(offerAmount);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to submit offer');

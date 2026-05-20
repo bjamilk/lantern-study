@@ -835,6 +835,28 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
               <div>
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Quick Inquiries
+                </label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {[
+                    "Is this still available?",
+                    "Can I inspect the item today?",
+                    "Is the price negotiable?"
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setContactMessage(preset)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-700 dark:hover:bg-indigo-900/30 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 rounded-full text-xs font-medium border border-slate-200 dark:border-slate-600 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   Your Message
                 </label>
                 <textarea

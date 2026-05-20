@@ -256,6 +256,12 @@ export interface GameSession {
     opponentTime: number;
     isComplete: boolean;
     winnerId?: string;
+    userStreak?: number;
+    opponentStreak?: number;
+    userStreakMax?: number;
+    opponentStreakMax?: number;
+    userCorrectAnswers?: number;
+    opponentCorrectAnswers?: number;
 }
 
 export interface StudySessionData extends TestSessionData {}
