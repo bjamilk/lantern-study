@@ -1,0 +1,533 @@
+// ===========================================
+// Lantern Study Mobile - AI Generate Questions Modal
+// Lets users paste notes/topic and have AI generate questions
+// ===========================================
+
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme';
+import { useAIHandlers } from '../hooks/useAIHandlers';
+import AIUsageBadge from './AIUsageBadge';
+import type { AIGeneratedQuestion } from '../services/ai';
+
+interface AIGenerateQuestionsModalProps {
+  visible: boolean;
+  onClose: () => void;
+  /** Called with generated questions for the parent to handle (e.g. post to group) */
+  onQuestionsGenerated?: (questions: AIGeneratedQuestion[]) => void;
+  /** Pre-fill subject context */
+  subject?: string;
+}
+
+const DIFFICULTY_OPTIONS = ['easy', 'medium', 'hard'] as const;
+const COUNT_OPTIONS = [3, 5, 8, 10] as const;
+
+export default function AIGenerateQuestionsModal({
+  visible,
+  onClose,
+  onQuestionsGenerated,
+  subject,
+}: AIGenerateQuestionsModalProps) {
+  const { colors } = useTheme();
+  const { handleAIGenerateQuestions, isAILoading, aiError, setAiError } = useAIHandlers();
+
+  const [notes, setNotes] = useState('');
+  const [count, setCount] = useState<number>(5);
+  const [difficulty, setDifficulty] = useState<string>('medium');
+  const [generatedQuestions, setGeneratedQuestions] = useState<AIGeneratedQuestion[]>([]);
+
+  const handleGenerate = async () => {
+    if (!notes.trim()) {
+      Alert.alert('Missing Notes', 'Please paste some notes or enter a topic to generate questions from.');
+      return;
+    }
+
+    setAiError(null);
+    const questions = await handleAIGenerateQuestions(notes, {
+      count,
+      difficulty,
+      subject,
+    });
+
+    if (questions.length > 0) {
+      setGeneratedQuestions(questions);
+    }
+  };
+
+  const handleUseQuestions = () => {
+    if (onQuestionsGenerated) {
+      onQuestionsGenerated(generatedQuestions);
+    }
+    handleReset();
+    onClose();
+  };
+
+  const handleReset = () => {
+    setNotes('');
+    setGeneratedQuestions([]);
+    setAiError(null);
+  };
+
+  const handleClose = () => {
+    handleReset();
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.overlay}
+      >
+        <View style={[styles.container, { backgroundColor: colors.modalBackground }]}>
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Ionicons name="sparkles" size={20} color={colors.primary} />
+              <Text style={[styles.headerTitle, { color: colors.text }]}>AI Generate Questions</Text>
+            </View>
+            <AIUsageBadge variant="badge" />
+          </View>
+
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {generatedQuestions.length === 0 ? (
+              <>
+                {/* Notes Input */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                  Paste your notes or describe a topic
+                </Text>
+                <TextInput
+                  style={[
+                    styles.notesInput,
+                    {
+                      backgroundColor: colors.inputBackground,
+                      borderColor: colors.inputBorder,
+                      color: colors.inputText,
+                    },
+                  ]}
+                  placeholder="e.g. Cell biology: mitosis and meiosis..."
+                  placeholderTextColor={colors.inputPlaceholder}
+                  multiline
+                  numberOfLines={6}
+                  textAlignVertical="top"
+                  value={notes}
+                  onChangeText={setNotes}
+                  maxLength={3000}
+                />
+                <Text style={[styles.charCount, { color: colors.textTertiary }]}>
+                  {notes.length}/3000
+                </Text>
+
+                {/* Count Selection */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Number of questions</Text>
+                <View style={styles.optionRow}>
+                  {COUNT_OPTIONS.map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: count === c ? colors.primary : colors.inputBackground,
+                          borderColor: count === c ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setCount(c)}
+                    >
+                      <Text
+                        style={[
+                          styles.optionChipText,
+                          { color: count === c ? '#fff' : colors.text },
+                        ]}
+                      >
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Difficulty Selection */}
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Difficulty</Text>
+                <View style={styles.optionRow}>
+                  {DIFFICULTY_OPTIONS.map((d) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: difficulty === d ? colors.primary : colors.inputBackground,
+                          borderColor: difficulty === d ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setDifficulty(d)}
+                    >
+                      <Text
+                        style={[
+                          styles.optionChipText,
+                          { color: difficulty === d ? '#fff' : colors.text },
+                        ]}
+                      >
+                        {d.charAt(0).toUpperCase() + d.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Error */}
+                {aiError && (
+                  <View style={[styles.errorBox, { backgroundColor: colors.errorBackground }]}>
+                    <Ionicons name="alert-circle" size={16} color={colors.error} />
+                    <Text style={[styles.errorText, { color: colors.error }]}>{aiError}</Text>
+                  </View>
+                )}
+
+                {/* Generate Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.generateBtn,
+                    { backgroundColor: colors.primary },
+                    isAILoading && styles.generateBtnDisabled,
+                  ]}
+                  onPress={handleGenerate}
+                  disabled={isAILoading}
+                >
+                  {isAILoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Ionicons name="sparkles" size={20} color="#fff" />
+                  )}
+                  <Text style={styles.generateBtnText}>
+                    {isAILoading ? 'Generating...' : 'Generate Questions'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* Preview Generated Questions */}
+                <Text style={[styles.previewTitle, { color: colors.text }]}>
+                  {generatedQuestions.length} Questions Generated
+                </Text>
+
+                {generatedQuestions.map((q, idx) => (
+                  <View
+                    key={idx}
+                    style={[styles.questionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  >
+                    <View style={styles.questionHeader}>
+                      <View style={[styles.qBadge, { backgroundColor: colors.primaryBackground }]}>
+                        <Text style={[styles.qBadgeText, { color: colors.primary }]}>Q{idx + 1}</Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.difficultyBadge,
+                          {
+                            backgroundColor:
+                              q.difficulty === 'hard'
+                                ? colors.errorBackground
+                                : q.difficulty === 'medium'
+                                ? colors.warningBackground
+                                : colors.successBackground,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.difficultyText,
+                            {
+                              color:
+                                q.difficulty === 'hard'
+                                  ? colors.error
+                                  : q.difficulty === 'medium'
+                                  ? colors.warning
+                                  : colors.success,
+                            },
+                          ]}
+                        >
+                          {q.difficulty}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.questionStem, { color: colors.text }]}>{q.text}</Text>
+
+                    {q.options && q.options.length > 0 && (
+                      <View style={styles.optionsList}>
+                        {q.options.map((opt, optIdx) => {
+                          const letter = String.fromCharCode(65 + optIdx);
+                          const isCorrect =
+                            opt === q.correctAnswer ||
+                            letter === q.correctAnswer ||
+                            letter.toLowerCase() === q.correctAnswer?.toLowerCase();
+                          return (
+                            <View
+                              key={optIdx}
+                              style={[
+                                styles.questionOption,
+                                {
+                                  backgroundColor: isCorrect
+                                    ? colors.successBackground
+                                    : colors.inputBackground,
+                                  borderColor: isCorrect ? colors.success : colors.border,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.questionOptionText,
+                                  { color: isCorrect ? colors.success : colors.text },
+                                ]}
+                              >
+                                {letter}. {opt}
+                              </Text>
+                              {isCorrect && (
+                                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {q.explanation && (
+                      <Text style={[styles.explanation, { color: colors.textSecondary }]}>
+                        💡 {q.explanation}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+
+                {/* Action Buttons */}
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}
+                    onPress={() => setGeneratedQuestions([])}
+                  >
+                    <Ionicons name="refresh" size={18} color={colors.text} />
+                    <Text style={[styles.actionBtnText, { color: colors.text }]}>Regenerate</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnPrimary, { backgroundColor: colors.primary }]}
+                    onPress={handleUseQuestions}
+                  >
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>Use Questions</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    maxHeight: '92%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  headerCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 8,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 120,
+    lineHeight: 22,
+  },
+  charCount: {
+    fontSize: 11,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  optionChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  optionChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 16,
+  },
+  errorText: {
+    fontSize: 13,
+    flex: 1,
+  },
+  generateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  generateBtnDisabled: {
+    opacity: 0.7,
+  },
+  generateBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Preview
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  questionCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  questionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  qBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  qBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  difficultyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  difficultyText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  questionStem: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  optionsList: {
+    gap: 6,
+  },
+  questionOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  questionOptionText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  explanation: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  actionBtnPrimary: {
+    borderWidth: 0,
+  },
+  actionBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});

@@ -1,0 +1,4006 @@
+
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, TestConfig, TestQuestion, UserAnswerRecord, TestSessionData, StudySessionData, TestResult, MatchingItem, OfflineSessionBundle, OfflineQuestion, UserQuestionStats, DiagramLabel, Badge, UserStats, TestPreset, GameSession, Deck, Flashcard, FlashcardType, SrsData, NotificationSettings, DMThread, DirectMessage, AppNotification, GroupPermissions, BadgeId, Transaction, Budget, TransactionType, QuestionStatus } from './types';
+// Import Zustand stores for gradual migration
+import { useUIStore } from './stores/uiStore';
+import { useAuthStore } from './stores/authStore';
+import { useGroupStore } from './stores/groupStore';
+import { useFlashcardStore } from './stores/flashcardStore';
+import { useTestStore } from './stores/testStore';
+import { useBudgetStore } from './stores/budgetStore';
+import Sidebar from './components/Sidebar';
+import ChatWindow from './components/ChatWindow';
+import QuestionModal from './components/QuestionModal';
+import CreateGroupModal from './components/CreateGroupModal';
+import GroupInfoModal from './components/GroupInfoModal';
+import { TestConfigModal } from './components/TestConfigModal';
+import { TestTakingScreen } from './components/TestTakingScreen';
+import TestReviewScreen from './components/TestReviewScreen';
+import DashboardScreen from './components/DashboardScreen'; 
+import OfflineModeScreen from './components/OfflineModeScreen';
+import AuthScreen from './components/AuthScreen';
+import SettingsModal from './components/SettingsModal';
+import { GameScreen } from './components/GameScreen';
+import GameResultScreen from './components/GameResultScreen';
+import DuplicateQuestionModal from './components/DuplicateQuestionModal';
+import FlashcardsScreen from './components/FlashcardsScreen';
+import FlashcardReviewScreen from './components/FlashcardReviewScreen';
+import CramSessionScreen from './components/CramSessionScreen';
+import CreateDeckModal from './components/CreateDeckModal';
+import CreateFlashcardModal from './components/CreateFlashcardModal';
+import NewDirectMessageModal from './components/NewDirectMessageModal';
+import DeckDetailScreen from './components/DeckDetailScreen';
+import AddMembersModal from './components/AddMembersModal';
+import UsernameRequiredModal from './components/UsernameRequiredModal';
+import NotificationModal from './components/NotificationModal';
+import CreateGroupScreen from './components/CreateGroupScreen';
+import BudgetTrackerScreen from './components/BudgetTrackerScreen';
+import AddExpenseModal from './components/AddExpenseModal';
+import AddIncomeModal from './components/AddIncomeModal';
+import SetBudgetModal from './components/SetBudgetModal';
+import { calculateSrsData } from './srs';
+import { v4 as uuidv4 } from 'uuid';
+import { AcademicCapIcon, ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { BADGE_DEFINITIONS } from './gamification';
+import TestAnalysisModal from './components/TestAnalysisModal';
+import MarketplaceScreen from './components/MarketplaceScreen';
+import CreateMarketplaceListingModal from './components/CreateMarketplaceListingModal';
+import MarketplaceListingDetailScreen from './components/MarketplaceListingDetailScreen';
+import MyListingsScreen from './components/MyListingsScreen';
+import EditMarketplaceListingModal from './components/EditMarketplaceListingModal';
+import MarketplaceInquiriesScreen from './components/MarketplaceInquiriesScreen';
+import { createGroup, fetchGroups, fetchGroupMembers, addGroupMember, sendMessage, fetchMessages, fetchUserVotesForGroup, voteQuestion, removeVote, updateMessage, updateQuestionStatus, createDeck, fetchDecks, updateDeck, deleteDeck, createFlashcard, fetchFlashcards, updateFlashcard, deleteFlashcard, createTestSession, updateTestSession, createTestResult, fetchTestResults, upsertUserQuestionStat, fetchUserQuestionStats, resetDeckStatistics, exportDeck, importDeck, supabase, createNotification, fetchNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, deleteAllNotifications, fetchUserProfile, updateUserProfile, createUserProfile, deleteGroup, updateGroup, fetchDirectMessages, sendDirectMessage, fetchGroupUnreadCounts, markGroupAsRead, fetchDMUnreadCounts, markDMAsRead, fetchOfflineBundles, saveOfflineBundle, deleteOfflineBundle, fetchUserPreferences, saveUserPreferences, fetchUserBudget, saveUserBudget, fetchBudgetTransactions, saveBudgetTransaction, deleteBudgetTransaction, syncBudgetTransactionsToCloud, fetchPendingSyncResults, savePendingSyncResult, markPendingSyncResultAsSynced, syncPendingResultsToCloud, deleteUserAccount } from './services/supabase';
+
+// --- MOCK DATA ---
+const initialUserStats: UserStats = {
+    testsCompleted: 0,
+    questionsCreated: 0,
+    groupsCreated: 0,
+    highScoreTests: 0,
+    perfectScoreTests: 0,
+    gamesWon: 0,
+};
+
+const MOCK_USERS: User[] = [
+  {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    name: 'Alice Johnson',
+    avatarUrl: `https://ui-avatars.com/api/?name=Alice+Johnson&background=random&color=fff&size=100`,
+    email: 'alice@example.com',
+    password: 'password123',
+    phoneNumber: '123-456-7890',
+    points: 1250,
+    badges: [],
+    stats: { testsCompleted: 5, questionsCreated: 10, groupsCreated: 2, highScoreTests: 3, perfectScoreTests: 1, gamesWon: 2 },
+  },
+  {
+    id: '550e8400-e29b-41d4-a716-446655440001',
+    name: 'Bob Williams',
+    avatarUrl: `https://ui-avatars.com/api/?name=Bob+Williams&background=random&color=fff&size=100`,
+    email: 'bob@example.com',
+    password: 'password123',
+    phoneNumber: '234-567-8901',
+    points: 800,
+    badges: [],
+    stats: { testsCompleted: 3, questionsCreated: 5, groupsCreated: 1, highScoreTests: 1, perfectScoreTests: 0, gamesWon: 1 },
+  },
+  {
+    id: '550e8400-e29b-41d4-a716-446655440002',
+    name: 'Charlie Brown',
+    avatarUrl: `https://ui-avatars.com/api/?name=Charlie+Brown&background=random&color=fff&size=100`,
+    email: 'charlie@example.com',
+    password: 'password123',
+    phoneNumber: '345-678-9012',
+    points: 200,
+    badges: [],
+    stats: { testsCompleted: 1, questionsCreated: 2, groupsCreated: 0, highScoreTests: 0, perfectScoreTests: 0, gamesWon: 0 },
+  },
+   {
+    id: '550e8400-e29b-41d4-a716-446655440003',
+    name: 'Diana Prince',
+    avatarUrl: `https://ui-avatars.com/api/?name=Diana+Prince&background=random&color=fff&size=100`,
+    email: 'diana@example.com',
+    password: 'password123',
+    phoneNumber: '456-789-0123',
+    points: 2500,
+    badges: [],
+    stats: { testsCompleted: 10, questionsCreated: 15, groupsCreated: 3, highScoreTests: 8, perfectScoreTests: 2, gamesWon: 5 },
+  }
+];
+
+// FIX: Added a trailing comma to the generic type parameter to avoid being parsed as a JSX tag.
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+// --- Gamification Helper ---
+const ROMAN_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+const checkAndAwardBadges = (user: User): { updatedUser: User, awardedBadges: Badge[] } => {
+    const awardedBadges: Badge[] = [];
+    const userBadges = user.badges ? JSON.parse(JSON.stringify(user.badges)) : [];
+    let updatedUser = { ...user, badges: userBadges, points: user.points };
+
+    for (const def of Object.values(BADGE_DEFINITIONS)) {
+        if (def.metric === 'question_upvotes') continue;
+
+        const currentStatValue = updatedUser.stats[def.metric as keyof UserStats] || 0;
+        const currentBadge = updatedUser.badges.find(b => b.id === def.id);
+        const currentLevel = currentBadge?.level || 0;
+
+        const nextLevel = def.levels.find(l => l.level === currentLevel + 1);
+
+        if (nextLevel && currentStatValue >= nextLevel.threshold) {
+            const newBadge: Badge = {
+                id: def.id,
+                level: nextLevel.level,
+                name: `${def.baseName} ${ROMAN_NUMERALS[nextLevel.level - 1] || nextLevel.level}`,
+                description: def.baseDescription(nextLevel.threshold),
+                icon: def.icon,
+                dateAwarded: new Date().toISOString(),
+            };
+            
+            const badgeIndex = updatedUser.badges.findIndex(b => b.id === def.id);
+            if (badgeIndex > -1) {
+                updatedUser.badges[badgeIndex] = newBadge;
+            } else {
+                updatedUser.badges.push(newBadge);
+            }
+
+            updatedUser.points += nextLevel.points;
+            awardedBadges.push(newBadge);
+        }
+    }
+
+    return { updatedUser, awardedBadges };
+};
+
+
+export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });
+
+
+export const App: React.FC = () => {
+    // Auth state from Zustand store
+    const { currentUser, setCurrentUser, isAuthLoading, setAuthLoading } = useAuthStore();
+    
+    const [users, setUsers] = useState<User[]>(MOCK_USERS);
+    // Note: appMode now from useUIStore
+    const [dataLoaded, setDataLoaded] = useState(false);
+    
+    // Data states from Zustand stores (useGroupStore, useTestStore)
+    const { 
+        groups, setGroups, updateGroups,
+        messages, updateMessages, setAllMessages,
+        dmThreads, setDmThreads, updateDmThreads,
+        directMessages, updateDirectMessages, setAllDirectMessages,
+        userVotes, setUserVotes, updateUserVotes,
+        notifications, setNotifications, updateNotifications
+    } = useGroupStore();
+    
+    const { 
+        userQuestionStats, setUserQuestionStats,
+        testResults, setTestResults, updateTestResults,
+        offlineBundles, setOfflineBundles, updateOfflineBundles, addOfflineBundle, removeOfflineBundle,
+        pendingSyncResults, setPendingSyncResults, updatePendingSyncResults
+    } = useTestStore();
+    
+    // selectedChat kept as local state due to different ChatItem type
+    const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
+    
+    // UI State from Zustand store
+    const { 
+        // App mode
+        appMode,
+        setAppMode,
+        isSidebarExpanded, 
+        setSidebarExpanded,
+        toggleSidebar,
+        theme, 
+        setTheme,
+        modals,
+        openModal,
+        closeModal,
+        activeTestConfigMode,
+        setActiveTestConfigMode,
+        subgroupParentId,
+        setSubgroupParentId,
+        duplicateInfo,
+        setDuplicateInfo,
+        // Flashcard UI state from store
+        selectedDeck,
+        setSelectedDeck,
+        editingDeck,
+        setEditingDeck,
+        editingFlashcard,
+        setEditingFlashcard,
+        flashcardInitialDeckId,
+        setFlashcardInitialDeckId,
+        activeReviewSession,
+        setActiveReviewSession,
+        activeCramSession,
+        setActiveCramSession,
+        // Test result UI state from store
+        activeTestResult,
+        setActiveTestResult,
+        analyzingResult,
+        setAnalyzingResult,
+        // Challenge state from store
+        challengeOpponent,
+        setChallengeOpponent,
+        // Test/Study/Game Sessions from store
+        activeTestSession,
+        setActiveTestSession,
+        activeStudySession,
+        setActiveStudySession,
+        activeGameSession,
+        setActiveGameSession,
+        // Marketplace UI state from store
+        marketplaceListingCategory,
+        setMarketplaceListingCategory,
+        selectedMarketplaceListingId,
+        setSelectedMarketplaceListingId,
+        editingMarketplaceListing,
+        setEditingMarketplaceListing
+    } = useUIStore();
+    
+    // Derived modal states for compatibility
+    const isCreateGroupModalOpen = modals.createGroup;
+    const setCreateGroupModalOpen = (open: boolean) => open ? openModal('createGroup') : closeModal('createGroup');
+    const isCreateDeckModalOpen = modals.createDeck;
+    const setCreateDeckModalOpen = (open: boolean) => open ? openModal('createDeck') : closeModal('createDeck');
+    const isCreateFlashcardModalOpen = modals.createFlashcard;
+    const setCreateFlashcardModalOpen = (open: boolean) => open ? openModal('createFlashcard') : closeModal('createFlashcard');
+    const isNewDmModalOpen = modals.newDm;
+    const setIsNewDmModalOpen = (open: boolean) => open ? openModal('newDm') : closeModal('newDm');
+    const isSettingsModalOpen = modals.settings;
+    const setIsSettingsModalOpen = (open: boolean) => open ? openModal('settings') : closeModal('settings');
+    const isQuestionModalOpen = modals.question;
+    const setQuestionModalOpen = (open: boolean) => open ? openModal('question') : closeModal('question');
+    const isGroupInfoModalOpen = modals.groupInfo;
+    const setGroupInfoModalOpen = (open: boolean) => open ? openModal('groupInfo') : closeModal('groupInfo');
+    const isTestConfigModalOpen = modals.testConfig;
+    const setTestConfigModalOpen = (open: boolean) => open ? openModal('testConfig') : closeModal('testConfig');
+    const isAddMembersModalOpen = modals.addMembers;
+    const setAddMembersModalOpen = (open: boolean) => open ? openModal('addMembers') : closeModal('addMembers');
+    const isNotificationModalOpen = modals.notification;
+    const setIsNotificationModalOpen = (open: boolean) => open ? openModal('notification') : closeModal('notification');
+    const isDuplicateQuestionModalOpen = modals.duplicateQuestion;
+    const setDuplicateQuestionModalOpen = (open: boolean) => open ? openModal('duplicateQuestion') : closeModal('duplicateQuestion');
+    // Budget modals
+    const isAddExpenseModalOpen = modals.addExpense;
+    const setAddExpenseModalOpen = (open: boolean) => open ? openModal('addExpense') : closeModal('addExpense');
+    const isAddIncomeModalOpen = modals.addIncome;
+    const setAddIncomeModalOpen = (open: boolean) => open ? openModal('addIncome') : closeModal('addIncome');
+    const isSetBudgetModalOpen = modals.setBudget;
+    const setSetBudgetModalOpen = (open: boolean) => open ? openModal('setBudget') : closeModal('setBudget');
+    // Marketplace modals
+    const isCreateMarketplaceListingModalOpen = modals.createMarketplaceListing;
+    const setIsCreateMarketplaceListingModalOpen = (open: boolean) => open ? openModal('createMarketplaceListing') : closeModal('createMarketplaceListing');
+    const isEditMarketplaceListingModalOpen = modals.editMarketplaceListing;
+    const setIsEditMarketplaceListingModalOpen = (open: boolean) => open ? openModal('editMarketplaceListing') : closeModal('editMarketplaceListing');
+    // Test analysis modal
+    const isTestAnalysisModalOpen = modals.testAnalysis;
+    const setTestAnalysisModalOpen = (open: boolean) => open ? openModal('testAnalysis') : closeModal('testAnalysis');
+    // Username required modal (for existing users without username)
+    const isUsernameRequiredModalOpen = modals.usernameRequired;
+    const setUsernameRequiredModalOpen = (open: boolean) => open ? openModal('usernameRequired') : closeModal('usernameRequired');
+
+    // Note: Flashcard UI state (selectedDeck, editingDeck, etc.) now from useUIStore
+    // Note: Modal states now managed by useUIStore (see derived values above)
+
+    // Flashcard Data State from useFlashcardStore
+    const { 
+        decks, setDecks, updateDecks,
+        flashcards, setFlashcards, updateFlashcards,
+        dueCardsCount, setDueCardsCount
+    } = useFlashcardStore();
+
+    const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
+
+    // Note: activeTestSession, activeStudySession, activeGameSession now from useUIStore
+    // Note: challengeOpponent now from useUIStore
+    // Note: testResults, offlineBundles, pendingSyncResults now from useTestStore
+    // Note: activeTestResult, analyzingResult now from useUIStore
+    
+    // Online status from Zustand store (listeners managed in uiStore)
+    const isOnline = useUIStore((state) => state.isOnline);
+    
+    // Budgeting State from useBudgetStore (auto-persisted to localStorage)
+    const { transactions, setTransactions, budget, setBudget } = useBudgetStore();
+    
+    // Note: Budget modals now managed by useUIStore
+    // Note: Marketplace UI state (category, selectedId, editing) now from useUIStore
+    // Note: isAuthLoading now from useAuthStore
+    
+    // Clear any stale session on first load (one-time cleanup)
+    useEffect(() => {
+        const lastCleanup = localStorage.getItem('session-cleanup-v2');
+        if (!lastCleanup) {
+            console.log('Performing one-time session cleanup...');
+            Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('sb-') || key.includes('supabase')) {
+                    console.log('Clearing:', key);
+                    localStorage.removeItem(key);
+                }
+            });
+            localStorage.setItem('session-cleanup-v2', Date.now().toString());
+        }
+    }, []);
+    
+    // Restore session on app load
+    useEffect(() => {
+        let isMounted = true;
+        
+        const restoreSession = async () => {
+            // Check for stored session tokens
+            const storedSessionKeys = Object.keys(localStorage).filter(key => 
+                key.startsWith('sb-') && key.includes('auth-token')
+            );
+            
+            if (storedSessionKeys.length === 0) {
+                // No stored session, show login immediately
+                console.log('No stored session found, showing login');
+                if (isMounted) setAuthLoading(false);
+                return;
+            }
+            
+            // There's a stored session - validate it with a timeout
+            let sessionValid = false;
+            
+            try {
+                // Create a promise that rejects after 3 seconds
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('timeout')), 3000);
+                });
+                
+                // Race between getSession and timeout
+                const result = await Promise.race([
+                    supabase.auth.getSession(),
+                    timeoutPromise
+                ]);
+                
+                if (!isMounted) return;
+                
+                const { data: { session }, error: sessionError } = result as any;
+                
+                if (sessionError || !session?.user) {
+                    console.log('Stored session is invalid, clearing...');
+                    throw new Error('Invalid session');
+                }
+                
+                // Store the access token for API calls
+                if (session?.access_token) {
+                    localStorage.setItem('lantern_access_token', session.access_token);
+                    if (session.refresh_token) {
+                        localStorage.setItem('lantern_refresh_token', session.refresh_token);
+                    }
+                    console.log('[App] Restored and stored access token');
+                }
+                
+                // Session is valid - try to get/create profile
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single();
+                
+                if (!isMounted) return;
+                
+                if (profileError || !profile) {
+                    // Create profile
+                    console.log('Creating profile for session user...');
+                    const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+                    
+                    const { data: newProfile, error: createError } = await supabase
+                        .from('profiles')
+                        .insert({
+                            id: session.user.id,
+                            name: userName,
+                            phone: null,
+                            points: 0,
+                            stats: {},
+                            settings: {},
+                            badges: []
+                        })
+                        .select()
+                        .single();
+                    
+                    if (createError || !newProfile) {
+                        console.error('Failed to create profile:', createError);
+                        throw new Error('Profile creation failed');
+                    }
+                    
+                    setCurrentUser({
+                        id: newProfile.id,
+                        name: newProfile.name,
+                        avatarUrl: newProfile.avatar_url || '',
+                        email: session.user.email!,
+                        password: '',
+                        phoneNumber: newProfile.phone || '',
+                        points: newProfile.points || 0,
+                        badges: (newProfile.badges as any[]) || [],
+                        stats: newProfile.stats || {},
+                        settings: newProfile.settings,
+                        username: newProfile.username || undefined,
+                        firstName: newProfile.first_name || undefined,
+                        lastName: newProfile.last_name || undefined,
+                    });
+                } else {
+                    setCurrentUser({
+                        id: profile.id,
+                        name: profile.name,
+                        avatarUrl: profile.avatar_url || '',
+                        email: session.user.email!,
+                        password: '',
+                        phoneNumber: profile.phone || '',
+                        points: profile.points || 0,
+                        badges: (profile.badges as any[]) || [],
+                        stats: profile.stats || {},
+                        settings: profile.settings,
+                        username: profile.username || undefined,
+                        firstName: profile.first_name || undefined,
+                        lastName: profile.last_name || undefined,
+                    });
+                }
+                
+                sessionValid = true;
+                setAuthLoading(false);
+                
+            } catch (error: any) {
+                console.log('Session validation failed:', error.message);
+                
+                // Clear ALL Supabase-related localStorage items
+                console.log('Clearing stale session data from localStorage...');
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith('sb-') || key.includes('supabase')) {
+                        console.log('Removing:', key);
+                        localStorage.removeItem(key);
+                    }
+                });
+                
+                // Also try to sign out (ignore errors)
+                try {
+                    await supabase.auth.signOut();
+                } catch (e) {
+                    // Ignore
+                }
+                
+                if (isMounted) setAuthLoading(false);
+            }
+        };
+        
+        restoreSession();
+        
+        // Listen for auth state changes (login/logout)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_OUT') {
+                setCurrentUser(null);
+                setDataLoaded(false);
+            } else if (event === 'SIGNED_IN' && session?.user) {
+                // User just signed in, fetch their profile
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', session.user.id)
+                    .single();
+                
+                if (profile) {
+                    setCurrentUser({
+                        id: profile.id,
+                        name: profile.name,
+                        avatarUrl: profile.avatar_url || '',
+                        email: session.user.email!,
+                        password: '',
+                        phoneNumber: profile.phone || '',
+                        points: profile.points || 0,
+                        badges: (profile.badges as any[]) || [],
+                        stats: profile.stats || {},
+                        settings: profile.settings,
+                        username: profile.username || undefined,
+                        firstName: profile.first_name || undefined,
+                        lastName: profile.last_name || undefined,
+                    });
+                }
+            }
+        });
+        
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
+    }, []);
+    
+    useEffect(() => {
+        const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
+        if (storedTheme) {
+            setTheme(storedTheme);
+            // Apply theme class to document immediately on load
+            if (storedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            setTheme('dark');
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+        }
+        // Note: Online/Offline status is now managed by useUIStore
+    }, []);
+
+    // Check if logged-in user needs to set a username
+    useEffect(() => {
+        if (currentUser && !currentUser.username) {
+            // Open the username required modal for existing users without username
+            setUsernameRequiredModalOpen(true);
+        }
+    }, [currentUser?.id, currentUser?.username]);
+
+    useEffect(() => {
+        if (currentUser && !dataLoaded) {
+            console.log('[Data Loading] Starting data fetch for user:', currentUser.id);
+            // Fetch groups from Supabase
+            fetchGroups(currentUser.id).then(async (fetchedGroups) => {
+                console.log('[Data Loading] Groups fetched:', fetchedGroups?.length || 0);
+                // Also fetch unread counts
+                const unreadCounts = await fetchGroupUnreadCounts(currentUser.id);
+                
+                setGroups(fetchedGroups.map((g: any) => ({
+                    id: g.id,
+                    name: g.name,
+                    avatarUrl: g.avatar_url || g.avatarUrl,
+                    description: g.description,
+                    lastMessage: g.last_message || g.lastMessage,
+                    lastMessageTime: g.last_message_time || g.lastMessageTime,
+                    adminIds: g.admin_ids || g.adminIds || [],
+                    permissions: g.permissions || {},
+                    parentId: g.parent_id || g.parentId,
+                    isArchived: g.is_archived ?? g.isArchived ?? false,
+                    inviteId: g.invite_id || g.inviteId,
+                    unreadCount: unreadCounts[g.id] || 0,
+                    pendingMembers: [],
+                    invitedPhoneNumbers: [],
+                    members: [] // Will be populated separately if needed
+                })));
+                
+                // Also fetch DM unread counts and update DM threads
+                const dmUnreadCounts = await fetchDMUnreadCounts(currentUser.id);
+                updateDmThreads(prev => prev.map(t => ({
+                    ...t,
+                    unreadCount: dmUnreadCounts[t.id] || 0
+                })));
+                
+                setDataLoaded(true);
+            }).catch(error => {
+                console.error('[Data Loading] Error fetching groups:', error);
+                setDataLoaded(true); // Still set to true to avoid infinite loop
+            });
+
+            // Fetch decks and flashcards from Supabase
+            Promise.all([
+                fetchDecks(currentUser.id),
+                fetchFlashcards(undefined, currentUser.id)
+            ]).then(([fetchedDecks, fetchedFlashcards]) => {
+                console.log('Raw fetchedDecks from database:', fetchedDecks);
+                const mappedDecks = fetchedDecks.map((d: any) => ({
+                    id: d.id,
+                    name: d.name,
+                    description: d.description,
+                    createdAt: d.created_at
+                }));
+                console.log('Mapped decks:', mappedDecks);
+                setDecks(mappedDecks);
+                setFlashcards(fetchedFlashcards.map((fc: any) => ({
+                    id: fc.id,
+                    deckId: fc.deck_id,
+                    type: fc.type,
+                    front: fc.front,
+                    back: fc.back,
+                    clozeText: fc.cloze_text,
+                    srsData: fc.srs_data,
+                    tags: fc.tags,
+                    createdAt: fc.created_at
+                })));
+            }).catch(error => {
+                console.error('Error fetching flashcards data:', error);
+            });
+
+            // Fetch test results from Supabase
+            fetchTestResults(currentUser.id).then(fetchedResults => {
+                setTestResults(fetchedResults);
+            }).catch(error => {
+                console.error('Error fetching test results:', error);
+            });
+
+            // Fetch user question stats from Supabase
+            fetchUserQuestionStats(currentUser.id).then(fetchedStats => {
+                setUserQuestionStats(fetchedStats);
+            }).catch(error => {
+                console.error('Error fetching user question stats:', error);
+            });
+
+            // Fetch notifications from Supabase
+            fetchNotifications(currentUser.id).then(fetchedNotifications => {
+                setNotifications(fetchedNotifications);
+            }).catch(error => {
+                console.error('Error fetching notifications:', error);
+            });
+
+            // Sync offline bundles from cloud - merge with local storage
+            fetchOfflineBundles(currentUser.id).then(cloudBundles => {
+                console.log('[Offline Sync] Cloud bundles fetched:', cloudBundles.length);
+                updateOfflineBundles(prev => {
+                    // Get existing bundle IDs from local storage
+                    const localBundleIds = new Set(prev.map(b => b.bundleId));
+                    // Get existing bundle IDs from cloud
+                    const cloudBundleIds = new Set(cloudBundles.map((b: OfflineSessionBundle) => b.bundleId));
+                    
+                    // Find local-only bundles to sync to cloud
+                    const localOnlyBundles = prev.filter(b => !cloudBundleIds.has(b.bundleId));
+                    
+                    // Sync local-only bundles to cloud
+                    if (currentUser) {
+                        localOnlyBundles.forEach(bundle => {
+                            console.log('[Offline Sync] Syncing local bundle to cloud:', bundle.bundleId);
+                            saveOfflineBundle(currentUser.id, bundle).catch(err => 
+                                console.error('[Offline Sync] Failed to sync bundle to cloud:', err)
+                            );
+                        });
+                    }
+                    
+                    // Merge: keep all local bundles + add cloud-only bundles
+                    const cloudOnlyBundles = cloudBundles.filter((b: OfflineSessionBundle) => !localBundleIds.has(b.bundleId));
+                    console.log('[Offline Sync] Adding cloud-only bundles:', cloudOnlyBundles.length);
+                    
+                    return [...prev, ...cloudOnlyBundles];
+                });
+            }).catch(error => {
+                console.error('[Offline Sync] Error fetching cloud bundles:', error);
+            });
+
+            // Sync user preferences (theme) from cloud
+            fetchUserPreferences(currentUser.id).then(cloudPrefs => {
+                if (cloudPrefs) {
+                    console.log('[Preferences Sync] Cloud preferences fetched:', cloudPrefs.theme);
+                    setTheme(cloudPrefs.theme);
+                    localStorage.setItem('theme', cloudPrefs.theme);
+                } else {
+                    // No cloud preferences, sync local to cloud
+                    const localTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'light';
+                    saveUserPreferences(currentUser.id, { theme: localTheme }).then(() => {
+                        console.log('[Preferences Sync] Local theme synced to cloud:', localTheme);
+                    });
+                }
+            }).catch(error => {
+                console.error('[Preferences Sync] Error:', error);
+            });
+
+            // Sync budget from cloud
+            const currentMonthYear = new Date().toISOString().slice(0, 7);
+            fetchUserBudget(currentUser.id, currentMonthYear).then(cloudBudget => {
+                if (cloudBudget) {
+                    console.log('[Budget Sync] Cloud budget fetched:', cloudBudget.monthlyLimit);
+                    const updatedBudget = budget ? {
+                        ...budget,
+                        monthlyLimit: cloudBudget.monthlyLimit
+                    } : {
+                        monthlyLimit: cloudBudget.monthlyLimit,
+                        monthYear: currentMonthYear
+                    };
+                    setBudget(updatedBudget);
+                    // Note: useBudgetStore with persist handles localStorage automatically
+                } else {
+                    // No cloud budget, sync local to cloud
+                    const localBudgetStr = localStorage.getItem('monthlyBudget');
+                    if (localBudgetStr) {
+                        const localBudget = JSON.parse(localBudgetStr);
+                        saveUserBudget(currentUser.id, {
+                            monthlyLimit: localBudget.monthlyLimit || 0,
+                            monthYear: currentMonthYear
+                        }).then(() => {
+                            console.log('[Budget Sync] Local budget synced to cloud');
+                        });
+                    }
+                }
+            }).catch(error => {
+                console.error('[Budget Sync] Error:', error);
+            });
+
+            // Sync budget transactions from cloud
+            syncBudgetTransactionsToCloud(currentUser.id, transactions).then(mergedTransactions => {
+                console.log('[Transactions Sync] Merged transactions:', mergedTransactions.length);
+                // Map TransactionData to Transaction with userId
+                const transactionsWithUserId: Transaction[] = mergedTransactions.map(t => ({
+                    ...t,
+                    userId: currentUser.id,
+                    type: t.type as TransactionType,
+                    category: t.category || '',
+                    description: t.description || ''
+                }));
+                setTransactions(transactionsWithUserId);
+                // Note: useBudgetStore with persist handles localStorage automatically
+            }).catch(error => {
+                console.error('[Transactions Sync] Error:', error);
+            });
+
+            // Sync pending offline test results to cloud
+            if (pendingSyncResults.length > 0) {
+                const pendingSyncData = pendingSyncResults.map(result => ({
+                    id: result.id,
+                    resultData: result,
+                    createdAt: new Date().toISOString(),
+                    synced: false,
+                }));
+                syncPendingResultsToCloud(currentUser.id, pendingSyncData).then(mergedResults => {
+                    console.log('[Pending Results Sync] Merged results:', mergedResults.length);
+                    // Keep local TestResult[] intact - only clear synced ones 
+                }).catch(error => {
+                    console.error('[Pending Results Sync] Error:', error);
+                });
+            }
+        }
+    }, [currentUser, dataLoaded]);
+
+    // Real-time notifications subscription
+    useEffect(() => {
+        if (!currentUser) return;
+
+        console.log('Setting up real-time notifications subscription for user:', currentUser.id);
+
+        const notificationsSubscription = supabase
+            .channel('notifications')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${currentUser.id}`
+                },
+                (payload) => {
+                    console.log('Real-time notification received:', payload);
+                    const newNotification = {
+                        id: payload.new.id,
+                        message: payload.new.message,
+                        date: payload.new.date,
+                        read: payload.new.read,
+                        link: payload.new.link
+                    };
+                    updateNotifications(prev => [newNotification, ...prev]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            console.log('Cleaning up notifications subscription');
+            notificationsSubscription.unsubscribe();
+        };
+    }, [currentUser]);
+
+    // Real-time profile updates subscription
+    useEffect(() => {
+        if (!currentUser) return;
+
+        console.log('Setting up real-time profile subscription for user:', currentUser.id);
+
+        const profileSubscription = supabase
+            .channel('profile')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'profiles',
+                    filter: `id=eq.${currentUser.id}`
+                },
+                (payload) => {
+                    console.log('Real-time profile update received:', payload);
+                    const updatedProfile = payload.new;
+                    if (currentUser) {
+                        setCurrentUser({
+                            ...currentUser,
+                            name: updatedProfile.name,
+                            avatarUrl: updatedProfile.avatar_url,
+                            phoneNumber: updatedProfile.phone,
+                            points: updatedProfile.points || 0,
+                            badges: updatedProfile.badges || [],
+                            stats: updatedProfile.stats || initialUserStats,
+                            settings: updatedProfile.settings || {}
+                        });
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            console.log('Cleaning up profile subscription');
+            profileSubscription.unsubscribe();
+        };
+    }, [currentUser]);
+
+    // Save offline data to localStorage whenever it changes
+    useEffect(() => {
+        localStorage.setItem('offlineBundles', JSON.stringify(offlineBundles));
+    }, [offlineBundles]);
+
+    useEffect(() => {
+        localStorage.setItem('pendingSyncResults', JSON.stringify(pendingSyncResults));
+        // Also sync to cloud for cross-device access
+        if (currentUser && pendingSyncResults.length > 0) {
+            pendingSyncResults.forEach(result => {
+                savePendingSyncResult(currentUser.id, {
+                    id: result.id,
+                    resultData: result,
+                    createdAt: new Date().toISOString(),
+                    synced: false
+                }).catch(error => {
+                    console.error('[Pending Results Sync] Failed to save to cloud:', error);
+                });
+            });
+        }
+    }, [pendingSyncResults, currentUser]);
+
+
+    useEffect(() => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+        }
+    }, [theme]);
+
+    // SRS Notifications
+    const checkForDueCardsAndNotify = useCallback(() => {
+        if (!currentUser || !flashcards.length || !currentUser.settings?.srsReminders) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const dueCards = flashcards.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today);
+        const newCards = flashcards.filter(fc => !fc.srsData?.repetitions);
+
+        const totalDue = dueCards.length + newCards.length;
+        setDueCardsCount(totalDue);
+
+        if (totalDue > 0 && Notification.permission === 'granted') {
+            const notification = new Notification('Flashcard Review Due', {
+                body: `You have ${totalDue} flashcards ready for review.`,
+                icon: '/favicon.ico',
+                tag: 'srs-reminder'
+            });
+
+            notification.onclick = () => {
+                window.focus();
+                setAppMode(AppMode.FLASHCARDS);
+                notification.close();
+            };
+        }
+    }, [currentUser, flashcards]);
+
+    useEffect(() => {
+        if (currentUser && flashcards.length > 0) {
+            // Request notification permission
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+
+            // Check for due cards immediately
+            checkForDueCardsAndNotify();
+
+            // Set up periodic check every hour
+            const interval = setInterval(checkForDueCardsAndNotify, 60 * 60 * 1000);
+            return () => clearInterval(interval);
+        }
+    }, [currentUser, flashcards, checkForDueCardsAndNotify]);
+
+    const toggleTheme = async () => {
+        const newTheme = theme === 'light' ? 'dark' : 'light';
+        setTheme(newTheme);
+        
+        // Always persist to localStorage immediately for quick access on next load
+        localStorage.setItem('theme', newTheme);
+        
+        // Apply theme class to document immediately
+        if (newTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        
+        // Persist to user settings in database for cross-device sync
+        if (currentUser) {
+            const updatedSettings = { ...currentUser.settings, theme: newTheme as 'light' | 'dark' };
+            setCurrentUser({ ...currentUser, settings: updatedSettings });
+            try {
+                await updateUserProfile(currentUser.id, { settings: updatedSettings });
+                // Also save to user_preferences table for cross-device sync
+                await saveUserPreferences(currentUser.id, { theme: newTheme });
+                console.log('Theme saved to database:', newTheme);
+            } catch (error) {
+                console.error('Failed to save theme preference to database:', error);
+            }
+        }
+    };
+    
+    const handleLogin = async (user: User) => {
+        try {
+            // Try to fetch existing profile from database
+            const profile = await fetchUserProfile(user.id);
+            const dbUser: User = {
+                id: profile.id,
+                name: profile.name,
+                avatarUrl: profile.avatar_url,
+                email: user.email,
+                phoneNumber: profile.phone,
+                points: profile.points || 0,
+                badges: profile.badges || [],
+                stats: profile.stats || initialUserStats,
+                settings: profile.settings || {}
+            };
+            setCurrentUser(dbUser);
+            
+            // Apply theme from user settings if it exists (database is source of truth)
+            if (dbUser.settings?.theme) {
+                const userTheme = dbUser.settings.theme;
+                setTheme(userTheme);
+                // Sync localStorage with database value
+                localStorage.setItem('theme', userTheme);
+                // Apply theme class to document
+                if (userTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+                console.log('Theme loaded from database:', userTheme);
+            }
+        } catch (error) {
+            // Profile doesn't exist, create it
+            console.log('Creating new user profile for:', user.id);
+            try {
+                await createUserProfile({
+                    id: user.id,
+                    name: user.name,
+                    avatar_url: user.avatarUrl,
+                    phone: user.phoneNumber,
+                    points: user.points,
+                    stats: user.stats,
+                    badges: user.badges,
+                    settings: user.settings
+                });
+                setCurrentUser(user);
+            } catch (createError) {
+                console.error('Error creating user profile:', createError);
+                // Fallback to local user data
+                setCurrentUser(user);
+            }
+        }
+    };
+
+    const handleLogout = async () => {
+      // Clear tokens from localStorage
+      localStorage.removeItem('lantern_access_token');
+      localStorage.removeItem('lantern_refresh_token');
+      
+      // Sign out from Supabase
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.log('Error signing out:', e);
+      }
+      
+      // Clear all Supabase session data
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      setCurrentUser(null);
+      setGroups([]);
+      setAllMessages({});
+      setSelectedChat(null);
+      setDmThreads([]);
+      setAllDirectMessages({});
+      setDataLoaded(false);
+    };
+
+    const handleRegister = async (name: string, email: string, password: string, phoneNumber: string) => {
+        if (users.some(u => u.email === email)) {
+            alert("An account with this email already exists.");
+            return;
+        }
+        const newUser: User = {
+            id: uuidv4(),
+            name,
+            email,
+            password,
+            phoneNumber,
+            avatarUrl: `https://ui-avatars.com/api/?name=${name.replace(/\s/g, '+')}&background=random&color=fff&size=100`,
+            points: 0,
+            badges: [],
+            stats: initialUserStats
+        };
+
+        try {
+            // Create profile in database
+            await createUserProfile({
+                id: newUser.id,
+                name: newUser.name,
+                avatar_url: newUser.avatarUrl,
+                phone: newUser.phoneNumber,
+                points: newUser.points,
+                stats: newUser.stats,
+                badges: newUser.badges
+            });
+        } catch (error) {
+            console.error('Error creating user profile in database:', error);
+            // Continue with local user creation
+        }
+
+        setUsers(prev => [...prev, newUser]);
+        setCurrentUser(newUser);
+    };
+
+    const handleSelectChat = (chat: ChatItem) => {
+        console.log('[handleSelectChat] Called with chat:', chat.id, chat.chatType);
+        setSelectedChat(chat);
+        setAppMode(AppMode.CHAT);
+        if (chat.chatType === 'group') {
+            // Fetch messages
+            console.log('[handleSelectChat] Fetching messages for group:', chat.id);
+            fetchMessages(chat.id).then(fetchedMessages => {
+                console.log('[handleSelectChat] Got messages:', fetchedMessages?.length, fetchedMessages);
+                updateMessages(prev => {
+                    const newMessages = { ...prev, [chat.id]: fetchedMessages };
+                    console.log('[handleSelectChat] Updated messages store for group:', chat.id, 'count:', fetchedMessages?.length);
+                    return newMessages;
+                });
+            }).catch(error => {
+                console.error('[handleSelectChat] Error fetching messages:', error);
+            });
+            
+            // Fetch user votes for this group
+            fetchUserVotesForGroup(chat.id, currentUser.id).then(fetchedVotes => {
+                updateUserVotes(prev => ({ ...prev, ...fetchedVotes }));
+            }).catch(error => {
+                console.error('Error fetching user votes:', error);
+            });
+            
+            // Mark group as read and reset unread count
+            if (currentUser) {
+                markGroupAsRead(chat.id, currentUser.id).then(() => {
+                    updateGroups(prevGroups => prevGroups.map(g => 
+                        g.id === chat.id ? { ...g, unreadCount: 0 } : g
+                    ));
+                }).catch(error => {
+                    console.error('Error marking group as read:', error);
+                });
+            }
+            
+            // Fetch and update members for the group
+            fetchGroupMembers(chat.id).then(fetchedMembers => {
+                const mappedMembers = fetchedMembers.map((m: any) => ({
+                    id: m.id,
+                    name: m.name,
+                    email: m.email,
+                    avatarUrl: m.avatar_url || m.avatarUrl,
+                    points: m.points || 0,
+                    badges: m.badges || [],
+                    stats: m.stats || {},
+                }));
+                
+                // Update the selected chat with members
+                setSelectedChat(prev => prev && prev.id === chat.id ? { ...prev, members: mappedMembers } : prev);
+                
+                // Also update in groups list
+                updateGroups(prevGroups => prevGroups.map(g => 
+                    g.id === chat.id ? { ...g, members: mappedMembers } : g
+                ));
+            }).catch(error => {
+                console.error('Error fetching group members:', error);
+            });
+        } else if (chat.chatType === 'dm' && currentUser) {
+            // Mark DM as read
+            markDMAsRead(chat.id, currentUser.id).then(() => {
+                updateDmThreads(prevThreads => prevThreads.map(t => 
+                    t.id === chat.id ? { ...t, unreadCount: 0 } : t
+                ));
+            }).catch(error => {
+                console.error('Error marking DM as read:', error);
+            });
+            
+            // Fetch DM messages from API
+            const otherUserId = (chat as DMThread).participantIds.find(id => id !== currentUser.id);
+            if (otherUserId) {
+                fetchDirectMessages(currentUser.id, otherUserId).then(fetchedMessages => {
+                    const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) => ({
+                        id: m.id,
+                        threadId: m.threadId || chat.id,
+                        senderId: m.senderId || m.sender_id,
+                        text: m.text,
+                        timestamp: new Date(m.timestamp),
+                    }));
+                    updateDirectMessages(prev => ({ ...prev, [chat.id]: mappedMessages }));
+                }).catch(error => {
+                    console.error('Error fetching DM messages:', error);
+                });
+            }
+        }
+    };
+
+    const handleInitiateDm = (otherUserId: string) => {
+        if (!currentUser || otherUserId === currentUser.id) return;
+
+        const sortedIds: [string, string] = [currentUser.id, otherUserId].sort() as [string, string];
+        const threadId = sortedIds.join('-');
+
+        let thread = dmThreads.find(t => t.id === threadId);
+
+        if (!thread) {
+            const otherUser = users.find(u => u.id === otherUserId);
+            if (!otherUser) {
+                console.error("DM opponent not found");
+                return;
+            }
+            const newThread: DMThread = {
+                id: threadId,
+                participantIds: sortedIds,
+                participants: {
+                    [currentUser.id]: { name: currentUser.name, avatarUrl: currentUser.avatarUrl },
+                    [otherUserId]: { name: otherUser.name, avatarUrl: otherUser.avatarUrl },
+                }
+            };
+            updateDmThreads(prev => [...prev, newThread]);
+            handleSelectChat({ ...newThread, chatType: 'dm' });
+        } else {
+            handleSelectChat({ ...thread, chatType: 'dm' });
+        }
+    };
+
+    const handleSendDm = async (threadId: string, text: string) => {
+        if (!currentUser) return;
+        
+        // Find the other participant from the thread
+        const thread = dmThreads.find(t => t.id === threadId);
+        if (!thread) return;
+        
+        const otherUserId = thread.participantIds.find(id => id !== currentUser.id);
+        if (!otherUserId) return;
+        
+        // Create optimistic message for immediate UI update
+        const optimisticMessage: DirectMessage = {
+            id: uuidv4(),
+            threadId,
+            senderId: currentUser.id,
+            text,
+            timestamp: new Date(),
+        };
+        
+        // Update local state optimistically
+        updateDirectMessages(prev => ({
+            ...prev,
+            [threadId]: [...(prev[threadId] || []), optimisticMessage],
+        }));
+        updateDmThreads(prevThreads => prevThreads.map(t => 
+            t.id === threadId ? { ...t, lastMessage: text, lastMessageTimestamp: new Date() } : t
+        ));
+        
+        // Send to API
+        try {
+            await sendDirectMessage(currentUser.id, otherUserId, text);
+        } catch (error) {
+            console.error('Failed to send DM:', error);
+            // Remove optimistic message on failure
+            updateDirectMessages(prev => ({
+                ...prev,
+                [threadId]: (prev[threadId] || []).filter(m => m.id !== optimisticMessage.id),
+            }));
+        }
+    };
+    
+    // Settings Handlers
+    const handleUpdateSettings = (newSettings: NotificationSettings) => {
+      if (!currentUser) return;
+      setCurrentUser({ ...currentUser, settings: newSettings });
+
+      // Update profile in database
+      updateUserProfile(currentUser.id, { settings: newSettings }).catch(error => console.error('Failed to update user settings:', error));
+    };
+
+    const handleUpdateProfile = (name: string, phone: string) => {
+      if (!currentUser) return;
+      setCurrentUser({ ...currentUser, name, phoneNumber: phone });
+      setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? { ...u, name, phoneNumber: phone } : u));
+
+      // Update profile in database
+      updateUserProfile(currentUser.id, {
+        name,
+        phone
+      }).catch(error => console.error('Failed to update user profile:', error));
+
+      alert("Profile updated successfully!");
+    };
+    
+    const handleUpdateCurrentUserAvatar = (avatarUrl: string) => {
+        if (!currentUser) return;
+        setCurrentUser({ ...currentUser, avatarUrl });
+
+        // Update profile in database
+        updateUserProfile(currentUser.id, {
+          avatar_url: avatarUrl
+        }).catch(error => console.error('Failed to update user avatar:', error));
+    };
+
+    const handleUpdateGroupAvatar = (groupId: string, avatarUrl: string) => {
+        updateGroups(prevGroups => 
+            prevGroups.map(group => 
+                group.id === groupId ? { ...group, avatarUrl } : group
+            )
+        );
+        if (selectedChat?.id === groupId) {
+            setSelectedChat(prev => {
+                if (prev?.chatType === 'group') {
+                    return { ...prev, avatarUrl };
+                }
+                return prev;
+            });
+        }
+    };
+
+    const handleUpdatePassword = (current: string, newPass: string): boolean => {
+      if (!currentUser) return false;
+      if (currentUser.password !== current) {
+        alert("Current password does not match.");
+        return false;
+      }
+      const updatedUser = { ...currentUser, password: newPass };
+      setCurrentUser(updatedUser);
+      setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
+      alert("Password updated successfully!");
+      return true;
+    };
+    
+    const handleDeleteAccount = async () => {
+        if (window.confirm("Are you absolutely sure you want to delete your account? This action is permanent and cannot be undone.")) {
+            if(currentUser) {
+                try {
+                    const deleted = await deleteUserAccount(currentUser.id);
+                    if (deleted) {
+                        setUsers(prev => prev.filter(u => u.id !== currentUser.id));
+                        handleLogout();
+                    } else {
+                        alert('Failed to delete account. Please try again.');
+                    }
+                } catch (error) {
+                    console.error('Error deleting account:', error);
+                    alert('Failed to delete account. Please try again.');
+                }
+            }
+        }
+    };
+
+
+    const handleCloseCreateGroupModal = () => {
+        setCreateGroupModalOpen(false);
+        setSubgroupParentId(undefined); // Reset parentId on close
+    };
+
+    // For sub-groups
+    const handleCreateSubGroup = async (name: string, description: string, memberEmailsStr: string, parentId?: string) => {
+      console.log('handleCreateSubGroup called:', { name, description, memberEmailsStr, parentId, currentUser: !!currentUser });
+      if (!currentUser) {
+        console.error('No current user - cannot create subgroup');
+        return;
+      }
+      
+      try {
+        const groupData = {
+          name,
+          description,
+          avatar_url: undefined,
+          permissions: {},
+          invite_id: uuidv4().substring(0, 8),
+          parent_id: parentId
+        };
+        
+        // Call API to create the group in the database
+        const newGroup = await createGroup(groupData, currentUser.id, []);
+        
+        // Map the API response to proper format
+        const mappedGroup: Group = {
+          id: newGroup.id,
+          name: newGroup.name,
+          description: newGroup.description,
+          avatarUrl: newGroup.avatarUrl,
+          members: [currentUser],
+          adminIds: newGroup.adminIds || [currentUser.id],
+          parentId: newGroup.parentId,
+          memberEmails: [currentUser.email!, ...memberEmailsStr.split(',').map(e => e.trim()).filter(Boolean)],
+          inviteId: newGroup.inviteId,
+          unreadCount: 0,
+          pendingMembers: [],
+          isArchived: newGroup.isArchived,
+        };
+        
+        updateGroups(prev => [...prev, mappedGroup]);
+        handleSelectChat({ ...mappedGroup, chatType: 'group' });
+        updateMessages(prev => ({...prev, [mappedGroup.id]: []}));
+        handleCloseCreateGroupModal();
+      } catch (error) {
+        console.error('Failed to create subgroup:', error);
+        alert('Failed to create subgroup. Please try again.');
+      }
+    };
+
+    const addNotification = useCallback(async (message: string) => {
+        if (!currentUser) return;
+        try {
+            const newNotification = await createNotification({
+                user_id: currentUser.id,
+                message
+            });
+            updateNotifications(prev => [...prev, newNotification]);
+        } catch (error) {
+            console.error('Failed to create notification:', error);
+            // Fallback to local state if database fails
+            const localNotification = {
+                id: uuidv4(),
+                message,
+                date: new Date().toISOString(),
+                read: false
+            };
+            updateNotifications(prev => [...prev, localNotification]);
+        }
+    }, [currentUser]);
+
+    // For the new CreateGroupScreen
+    const handleCreateGroup = async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; }) => {
+        if (!currentUser) return;
+
+        let avatarUrl: string | undefined = undefined;
+        if (details.avatarFile) {
+            avatarUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(details.avatarFile);
+            });
+        }
+
+        try {
+            const groupData = {
+                name: details.name,
+                description: details.description,
+                avatar_url: avatarUrl,
+                permissions: details.permissions,
+                invite_id: uuidv4().substring(0, 8),
+                parent_id: undefined
+            };
+            const newGroup = await createGroup(groupData, currentUser.id, details.memberIds);
+            
+            // Fetch updated groups
+            const fetchedGroups = await fetchGroups(currentUser.id);
+            setGroups(fetchedGroups.map((g: any) => ({
+                id: g.id,
+                name: g.name,
+                avatarUrl: g.avatar_url || g.avatarUrl,
+                description: g.description,
+                lastMessage: g.last_message || g.lastMessage,
+                lastMessageTime: g.last_message_time || g.lastMessageTime,
+                adminIds: g.admin_ids || g.adminIds || [],
+                permissions: g.permissions || {},
+                parentId: g.parent_id || g.parentId,
+                isArchived: g.is_archived ?? g.isArchived ?? false,
+                inviteId: g.invite_id || g.inviteId,
+                unreadCount: 0,
+                pendingMembers: [],
+                invitedPhoneNumbers: [],
+                members: [] // Will be populated separately if needed
+            })));
+            
+            // Map the API response to proper camelCase format before selecting
+            const mappedNewGroup = {
+                id: newGroup.id,
+                name: newGroup.name,
+                avatarUrl: newGroup.avatar_url || newGroup.avatarUrl,
+                description: newGroup.description,
+                lastMessage: newGroup.last_message || newGroup.lastMessage,
+                lastMessageTime: newGroup.last_message_time || newGroup.lastMessageTime,
+                adminIds: newGroup.admin_ids || newGroup.adminIds || [currentUser.id],
+                permissions: newGroup.permissions,
+                parentId: newGroup.parent_id || newGroup.parentId,
+                isArchived: newGroup.is_archived || newGroup.isArchived || false,
+                inviteId: newGroup.invite_id || newGroup.inviteId,
+                unreadCount: 0,
+                pendingMembers: [],
+                invitedPhoneNumbers: [],
+                members: [currentUser], // Creator is always a member
+                chatType: 'group' as const
+            };
+            
+            handleSelectChat(mappedNewGroup);
+            updateMessages(prev => ({ ...prev, [newGroup.id]: [] }));
+            
+            // Update user stats for group creation
+            if (currentUser) {
+                const updatedStats = {
+                    ...currentUser.stats,
+                    groupsCreated: (currentUser.stats.groupsCreated || 0) + 1,
+                };
+
+                const userWithStats = { ...currentUser, stats: updatedStats };
+                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
+
+                // Update profile in database
+                updateUserProfile(currentUser.id, {
+                    points: updatedUser.points,
+                    stats: updatedUser.stats,
+                    badges: updatedUser.badges
+                }).catch(error => console.error('Failed to update user profile:', error));
+
+                awardedBadges.forEach(badge => {
+                    const badgeDef = BADGE_DEFINITIONS[badge.id];
+                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
+                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                });
+                
+                setCurrentUser(updatedUser);
+            }
+            
+            setAppMode(AppMode.CHAT);
+            setAddMembersModalOpen(true);
+        } catch (error) {
+            console.error('Error creating group:', error);
+            alert('Failed to create group. Please try again.');
+        }
+    };
+    
+    const handleQuestionSubmit = async (
+        stem: string, 
+        explanation: string, 
+        questionType: QuestionType, 
+        options?: QuestionOption[], 
+        correctAnswerIds?: string[], 
+        imageUrl?: string,
+        tags?: string[],
+        acceptableAnswers?: string[], 
+        matchingPromptItems?: MatchingItem[],
+        matchingAnswerItems?: MatchingItem[],
+        correctMatches?: { promptItemId: string; answerItemId: string }[],
+        diagramLabels?: DiagramLabel[]
+    ) => {
+        console.log('handleQuestionSubmit called:', { stem, questionType, currentUser: !!currentUser, selectedChat });
+        if (!currentUser || !selectedChat || selectedChat.chatType !== 'group') {
+            console.error('handleQuestionSubmit early return:', { currentUser: !!currentUser, selectedChat, chatType: selectedChat?.chatType });
+            return;
+        }
+
+        const existingMessages = messages[selectedChat.id] || [];
+        const trimmedStem = stem.trim().toLowerCase();
+        const existingQuestion = existingMessages.find(
+            msg => msg.type === MessageType.QUESTION && msg.questionStem?.trim().toLowerCase() === trimmedStem
+        );
+
+        const newQuestionData = {
+            groupId: selectedChat.id,
+            type: MessageType.QUESTION,
+            questionStem: stem,
+            explanation,
+            questionType,
+            options,
+            correctAnswerIds,
+            imageUrl,
+            tags,
+            questionStatus: QuestionStatus.PENDING,
+            acceptableAnswers,
+            matchingPromptItems,
+            matchingAnswerItems,
+            correctMatches,
+            diagramLabels,
+        };
+
+        if (existingQuestion) {
+            setDuplicateInfo({ newQuestionData, existingQuestion });
+            setDuplicateQuestionModalOpen(true);
+            setQuestionModalOpen(false); // Close the creation modal
+            return;
+        }
+
+        try {
+            const content = JSON.stringify({
+                type: MessageType.QUESTION,
+                ...newQuestionData
+            });
+            const sent = await sendMessage(selectedChat.id, currentUser.id, content);
+            if (!sent) {
+                throw new Error('Failed to send message');
+            }
+            const savedQuestion: Message = {
+                id: sent.id,
+                sender: currentUser,
+                timestamp: new Date(sent.timestamp || new Date()),
+                upvotes: 0,
+                downvotes: 0,
+                ...newQuestionData,
+            };
+            updateMessages(prev => ({
+                ...prev,
+                [selectedChat.id]: [...(prev[selectedChat.id] || []), savedQuestion]
+            }));
+            
+            // Update user stats for question creation
+            if (currentUser) {
+                const updatedStats = {
+                    ...currentUser.stats,
+                    questionsCreated: (currentUser.stats.questionsCreated || 0) + 1,
+                };
+
+                const userWithStats = { ...currentUser, stats: updatedStats };
+                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
+
+                // Update profile in database
+                updateUserProfile(currentUser.id, {
+                    points: updatedUser.points,
+                    stats: updatedUser.stats,
+                    badges: updatedUser.badges
+                }).catch(error => console.error('Failed to update user profile:', error));
+
+                awardedBadges.forEach(badge => {
+                    const badgeDef = BADGE_DEFINITIONS[badge.id];
+                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
+                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                });
+                
+                setCurrentUser(updatedUser);
+            }
+            
+            setQuestionModalOpen(false);
+        } catch (error) {
+            console.error('Error submitting question:', error);
+            alert('Failed to submit question. Please try again.');
+        }
+    };
+
+    const isQuestionTestable = (msg: Message): boolean => {
+        if (msg.type !== MessageType.QUESTION || !msg.questionType) return false;
+        
+        if (msg.questionStatus === QuestionStatus.PENDING || msg.isArchived) return false; 
+
+        switch (msg.questionType) {
+            case QuestionType.MULTIPLE_CHOICE_SINGLE:
+            case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
+            case QuestionType.TRUE_FALSE:
+                return !!(msg.questionStem && msg.options && msg.options.length > 0 && msg.correctAnswerIds && msg.correctAnswerIds.length > 0);
+            case QuestionType.FILL_IN_THE_BLANK:
+                return !!(msg.questionStem?.includes('___') && msg.acceptableAnswers && msg.acceptableAnswers.length > 0);
+            case QuestionType.MATCHING:
+                return !!(msg.matchingPromptItems && msg.matchingPromptItems.length > 0 &&
+                    msg.matchingAnswerItems && msg.matchingAnswerItems.length > 0 &&
+                    msg.correctMatches && msg.correctMatches.length > 0 &&
+                    msg.correctMatches.length === msg.matchingPromptItems.length);
+            case QuestionType.DIAGRAM_LABELING:
+                return !!(msg.imageUrl && msg.diagramLabels && msg.diagramLabels.length > 0);
+            default:
+                return false;
+        }
+    };
+    
+    const checkAnswerIsCorrect = (question: TestQuestion, answer: UserAnswerRecord): boolean => {
+        switch (question.questionType) {
+            case QuestionType.MULTIPLE_CHOICE_SINGLE:
+            case QuestionType.TRUE_FALSE:
+                return !!(answer.selectedOptionIds && answer.selectedOptionIds.length === 1 && question.correctAnswerIds?.includes(answer.selectedOptionIds[0]));
+            case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
+                const correctIds = new Set(question.correctAnswerIds);
+                const selectedIds = new Set(answer.selectedOptionIds);
+                return correctIds.size === selectedIds.size && [...correctIds].every(id => selectedIds.has(id));
+            case QuestionType.FILL_IN_THE_BLANK:
+                return !!(answer.fillText && question.acceptableAnswers?.some(ans => ans.toLowerCase() === answer.fillText!.toLowerCase().trim()));
+            case QuestionType.MATCHING:
+                if (!question.correctMatches || !answer.matchingAnswers) return false;
+                const correctMatches = new Set(question.correctMatches.map(m => `${m.promptItemId}-${m.answerItemId}`));
+                const userMatches = new Set(answer.matchingAnswers.map(m => `${m.promptItemId}-${m.answerItemId}`));
+                return correctMatches.size > 0 && correctMatches.size === userMatches.size && [...correctMatches].every(match => userMatches.has(match));
+            case QuestionType.DIAGRAM_LABELING:
+                const correctDiagramAnswers = question.diagramLabels?.length || 0;
+                if (correctDiagramAnswers === 0) return false;
+                const userCorrectCount = answer.diagramAnswers?.filter(a => a.labelId === a.selectedLabelId).length || 0;
+                return userCorrectCount === correctDiagramAnswers;
+            default:
+                return false;
+        }
+    };
+    
+    const createShuffledQuestionSet = (questions: Message[]): TestQuestion[] => {
+        return shuffleArray(questions).map((q, i) => {
+            let questionWithOptions = { ...q };
+    
+            // Shuffle options for applicable question types
+            if (
+                (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
+                 q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
+                 q.questionType === QuestionType.TRUE_FALSE) &&
+                q.options
+            ) {
+                questionWithOptions.options = shuffleArray(q.options);
+            }
+    
+            return {
+                ...questionWithOptions,
+                questionNumber: i + 1,
+            };
+        });
+    };
+
+    const handleTestSubmit = (config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
+        if (activeTestSession || activeStudySession) {
+            if (window.confirm("You have a paused session. Would you like to resume it instead of starting a new one?")) {
+                const pausedMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
+                handleResumeSession(pausedMode);
+            }
+            return;
+        }
+
+        if (!selectedChat || selectedChat.chatType !== 'group') return;
+
+        if (mode === 'game') {
+            handleStartGame(config, useSpacedRepetition);
+            return;
+        }
+    
+        const sourceGroupIds = [selectedChat.id, ...selectedSubgroupIDs];
+        let candidateQuestions: Message[] = [];
+        let finalSelectedQuestions: Message[] = [];
+        const allSourceMessages = [...new Set(sourceGroupIds)].flatMap(id => messages[id] || []);
+        const allTestableQuestions = allSourceMessages.filter(isQuestionTestable);
+    
+        if (useSpacedRepetition) {
+            // Filter spaced repetition questions from the current group and subgroups only
+            const questionsWithStats = allTestableQuestions.filter(q => userQuestionStats[q.id]);
+            candidateQuestions = questionsWithStats.filter((q: Message) => {
+                const stats = userQuestionStats[q.id];
+                // Include questions where user got more wrong than right
+                return stats && (stats.incorrectAttempts > stats.correctAttempts);
+            });
+            
+            // If no failed questions in this group, show a helpful message
+            if (candidateQuestions.length === 0) {
+                console.log('[Spaced Repetition] No failed questions found in selected group(s). Attempted questions:', questionsWithStats.length);
+            }
+        } else if (config.focusOnNew) {
+            const addedIds = new Set<string>();
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+            const baseFilteredQuestions = allTestableQuestions.filter(q =>
+                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(q.questionType!)) &&
+                (!config.selectedTags || config.selectedTags.length === 0 || q.tags?.some(tag => config.selectedTags!.includes(tag)))
+            );
+            const shuffledBase = shuffleArray(baseFilteredQuestions);
+    
+            // Priority 1: Recent questions
+            const recent = shuffledBase.filter(q => new Date(q.timestamp) >= sevenDaysAgo);
+            recent.forEach(q => {
+                if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                    finalSelectedQuestions.push(q);
+                    addedIds.add(q.id);
+                }
+            });
+    
+            // Priority 2: Unattempted questions
+            if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                const unattempted = shuffledBase.filter(q => !userQuestionStats[q.id] && !addedIds.has(q.id));
+                unattempted.forEach(q => {
+                    if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                        finalSelectedQuestions.push(q);
+                        addedIds.add(q.id);
+                    }
+                });
+            }
+    
+            // Priority 3: Fill with any other available questions
+            if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                const others = shuffledBase.filter(q => !addedIds.has(q.id));
+                others.forEach(q => {
+                    if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                        finalSelectedQuestions.push(q);
+                        addedIds.add(q.id);
+                    }
+                });
+            }
+        } else {
+             candidateQuestions = allTestableQuestions.filter(msg =>
+                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(msg.questionType!)) &&
+                (!config.selectedTags || config.selectedTags.length === 0 || msg.tags?.some(tag => config.selectedTags!.includes(tag)))
+            );
+        }
+
+        let selectedQuestions: Message[];
+
+        if (config.focusOnNew) {
+            selectedQuestions = finalSelectedQuestions;
+            if (selectedQuestions.length < config.numberOfQuestions && selectedQuestions.length > 0) {
+                 alert(`Only found ${selectedQuestions.length} questions matching your criteria. A session will be created with these questions.`);
+            }
+        } else {
+             if (candidateQuestions.length < config.numberOfQuestions) {
+                alert(`Not enough questions matching your criteria. Found ${candidateQuestions.length}, but you requested ${config.numberOfQuestions}. Please broaden your filters or wait for more questions to be verified.`);
+                return;
+            }
+            const shuffled = shuffleArray(candidateQuestions);
+            selectedQuestions = shuffled.slice(0, config.numberOfQuestions);
+        }
+        
+        if (selectedQuestions.length === 0) {
+            alert(`No questions found matching your criteria. Please broaden your filters.`);
+            return;
+        }
+
+        const testQuestions: TestQuestion[] = createShuffledQuestionSet(selectedQuestions);
+    
+        const sessionConfig: TestConfig = {
+            ...config,
+            groupId: selectedChat.id,
+            questionIds: selectedQuestions.map(q => q.id),
+        };
+    
+        const startTime = new Date();
+        let endTime: Date | undefined = undefined;
+        if (mode === 'test' && config.timerDuration) {
+            endTime = new Date(startTime.getTime() + config.timerDuration * 1000);
+        }
+    
+        const sessionData: TestSessionData = {
+            config: sessionConfig,
+            questions: testQuestions,
+            userAnswers: {},
+            currentQuestionIndex: 0,
+            startTime,
+            endTime,
+        };
+    
+        if (mode === 'test') {
+            setActiveTestSession(sessionData);
+            setAppMode(AppMode.TEST_ACTIVE);
+        } else { // mode === 'study'
+            setActiveStudySession(sessionData);
+            setAppMode(AppMode.STUDY_ACTIVE);
+        }
+    
+        setTestConfigModalOpen(false);
+    };
+    
+    const handleUpdateAnswer = (questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>) => {
+        const updateSession = (session: TestSessionData | null): TestSessionData | null => {
+            if (!session) return null;
+            const existingAnswer = session.userAnswers[questionId] || { questionId };
+            const updatedAnswer = { ...existingAnswer, ...answerData };
+            
+            if (appMode === AppMode.STUDY_ACTIVE) {
+                const question = session.questions.find(q => q.id === questionId);
+                if(question) {
+                    updatedAnswer.isCorrect = checkAnswerIsCorrect(question, updatedAnswer);
+                    
+                    // Save stats immediately for study mode (for spaced repetition tracking)
+                    // Only save if this is a new answer submission (has selectedOptionIds or other answer data)
+                    const hasAnswerData = answerData.selectedOptionIds || answerData.typedAnswer || 
+                                          answerData.userMatches || answerData.userLabelPlacements;
+                    const alreadyAnswered = existingAnswer.isCorrect !== undefined;
+                    
+                    if (hasAnswerData && !alreadyAnswered && currentUser) {
+                        const currentStats = userQuestionStats[questionId] || { 
+                            correctAttempts: 0, 
+                            incorrectAttempts: 0, 
+                            lastAttempted: '' 
+                        };
+                        const newStats = {
+                            correctAttempts: updatedAnswer.isCorrect ? currentStats.correctAttempts + 1 : currentStats.correctAttempts,
+                            incorrectAttempts: !updatedAnswer.isCorrect ? currentStats.incorrectAttempts + 1 : currentStats.incorrectAttempts,
+                            lastAttempted: new Date().toISOString()
+                        };
+                        
+                        // Update local state
+                        setUserQuestionStats(prev => ({
+                            ...prev,
+                            [questionId]: newStats
+                        }));
+                        
+                        // Persist to database
+                        upsertUserQuestionStat(currentUser.id, questionId, newStats).catch(error => {
+                            console.error('Error saving study mode question stat:', error);
+                        });
+                    }
+                }
+            }
+
+            return {
+                ...session,
+                userAnswers: {
+                    ...session.userAnswers,
+                    [questionId]: updatedAnswer,
+                },
+            };
+        };
+    
+        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
+            const updated = updateSession(activeTestSession);
+            if (updated) setActiveTestSession(updated);
+        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
+            const updated = updateSession(activeStudySession);
+            if (updated) setActiveStudySession(updated as StudySessionData);
+        }
+    };
+    
+    const handleChangeQuestion = (newIndex: number) => {
+        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
+            if (newIndex >= 0 && newIndex < activeTestSession.questions.length) {
+                setActiveTestSession({ ...activeTestSession, currentQuestionIndex: newIndex });
+            }
+        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
+            if (newIndex >= 0 && newIndex < activeStudySession.questions.length) {
+                setActiveStudySession({ ...activeStudySession, currentQuestionIndex: newIndex });
+            }
+        }
+    };
+    
+    const handleToggleBookmark = (questionId: string) => {
+        const toggleBookmark = (session: TestSessionData | null): TestSessionData | null => {
+            if (!session) return null;
+            const existingAnswer = session.userAnswers[questionId] || { questionId };
+            return {
+                ...session,
+                userAnswers: {
+                    ...session.userAnswers,
+                    [questionId]: { ...existingAnswer, isBookmarked: !existingAnswer.isBookmarked },
+                },
+            };
+        };
+
+        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
+            const updated = toggleBookmark(activeTestSession);
+            if (updated) setActiveTestSession(updated);
+        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
+            const updated = toggleBookmark(activeStudySession);
+            if (updated) setActiveStudySession(updated as StudySessionData);
+        }
+    };
+
+    const handleSubmitTest = async () => {
+        if (!activeTestSession || !currentUser) return;
+    
+        const finalUserAnswers: Record<string, UserAnswerRecord> = {};
+        let correctAnswersCount = 0;
+        
+        activeTestSession.questions.forEach(q => {
+            const userAnswer = activeTestSession.userAnswers[q.id] || { questionId: q.id };
+            const isCorrect = checkAnswerIsCorrect(q, userAnswer);
+            if (isCorrect) correctAnswersCount++;
+            finalUserAnswers[q.id] = { ...userAnswer, isCorrect };
+        });
+        
+        const finalSessionData: TestSessionData = {
+            ...activeTestSession,
+            userAnswers: finalUserAnswers,
+            endTime: new Date(),
+        };
+    
+        const score = (correctAnswersCount / finalSessionData.questions.length) * 100;
+        
+        const result: TestResult = {
+            id: uuidv4(),
+            session: finalSessionData,
+            score,
+            totalQuestions: finalSessionData.questions.length,
+            correctAnswersCount,
+        };
+    
+        try {
+            // Save session to DB
+            const sessionData = {
+                config: finalSessionData.config,
+                questions: finalSessionData.questions,
+                user_answers: finalUserAnswers,
+                start_time: finalSessionData.startTime.toISOString(),
+                end_time: finalSessionData.endTime?.toISOString(),
+                is_offline: finalSessionData.isOffline || false
+            };
+            const savedSession = await createTestSession(sessionData, currentUser.id);
+            
+            // Save result to DB
+            const resultData = {
+                session_id: savedSession.id,
+                score,
+                correct_answers_count: correctAnswersCount,
+                total_questions: finalSessionData.questions.length
+            };
+            await createTestResult(resultData);
+            
+            // Update local state
+            updateTestResults(prev => [result, ...prev]);
+            
+            // Update user stats
+            const updatedStats: UserStats = { ...currentUser.stats };
+            updatedStats.testsCompleted = (updatedStats.testsCompleted || 0) + 1;
+            if (score >= 80) {
+                updatedStats.highScoreTests = (updatedStats.highScoreTests || 0) + 1;
+            }
+            if (score === 100) {
+                updatedStats.perfectScoreTests = (updatedStats.perfectScoreTests || 0) + 1;
+            }
+
+            const userWithStats = { ...currentUser, stats: updatedStats };
+            const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
+
+            // Update profile in database
+            updateUserProfile(currentUser.id, {
+                points: updatedUser.points,
+                stats: updatedUser.stats,
+                badges: updatedUser.badges
+            }).catch(error => console.error('Failed to update user profile:', error));
+
+            awardedBadges.forEach(badge => {
+                const badgeDef = BADGE_DEFINITIONS[badge.id];
+                const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
+                addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+            });
+            
+            setCurrentUser(updatedUser);
+        
+            // Update question stats
+            const newUserQuestionStats: UserQuestionStats = { ...userQuestionStats };
+            Object.values(finalUserAnswers).forEach((answer: UserAnswerRecord) => {
+                const questionId = answer.questionId;
+                const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                if (answer.isCorrect) {
+                    stats.correctAttempts++;
+                } else {
+                    stats.incorrectAttempts++;
+                }
+                stats.lastAttempted = new Date().toISOString();
+                newUserQuestionStats[questionId] = stats;
+
+                // Save to DB
+                upsertUserQuestionStat(currentUser.id, questionId, stats).catch(error => {
+                    console.error('Error saving user question stat:', error);
+                });
+            });
+            setUserQuestionStats(newUserQuestionStats);
+            
+            setActiveTestResult(result);
+            setActiveTestSession(null);
+            setAppMode(AppMode.TEST_REVIEW);
+
+            // Notify user about test completion
+            try {
+                await createNotification({
+                    user_id: currentUser.id,
+                    message: `Test completed! You scored ${score}% (${correctAnswersCount}/${finalSessionData.questions.length} correct)`,
+                    link: `/dashboard`
+                });
+            } catch (error) {
+                console.error('Failed to create test completion notification:', error);
+            }
+        } catch (error) {
+            console.error('Error saving test result:', error);
+            alert('Failed to save test result. Please try again.');
+        }
+    };
+    
+    const handleEndStudySession = () => {
+        setActiveStudySession(null);
+        setAppMode(AppMode.CHAT);
+    };
+
+    const handleCancelActiveSession = () => {
+      if (window.confirm("Are you sure you want to cancel this session? Your progress will be lost and this session will not be recorded.")) {
+        setActiveTestSession(null);
+        setActiveStudySession(null);
+        setAppMode(AppMode.CHAT);
+      }
+    };
+
+    const handlePauseSession = () => {
+        if (appMode === AppMode.TEST_ACTIVE && activeTestSession?.endTime) {
+            const now = new Date().getTime();
+            const endTimeMs = new Date(activeTestSession.endTime).getTime();
+            const remaining = Math.round((endTimeMs - now) / 1000);
+            setActiveTestSession({ ...activeTestSession, remainingTime: remaining > 0 ? remaining : 0 });
+        }
+        setAppMode(AppMode.CHAT);
+    };
+
+    const handleResumeSession = (mode: AppMode) => {
+        if (mode === AppMode.TEST_ACTIVE && activeTestSession?.remainingTime) {
+            const newEndTime = new Date(Date.now() + activeTestSession.remainingTime * 1000);
+            setActiveTestSession({ ...activeTestSession, endTime: newEndTime, remainingTime: undefined });
+        }
+        setAppMode(mode);
+    };
+
+    const handleRetakeTest = (sessionData: TestSessionData) => {
+        const shuffledQuestions = createShuffledQuestionSet(sessionData.questions);
+        
+        const newSession: TestSessionData = {
+            config: sessionData.config,
+            questions: shuffledQuestions,
+            isOffline: sessionData.isOffline,
+            userAnswers: {},
+            currentQuestionIndex: 0,
+            startTime: new Date(),
+            endTime: sessionData.config.timerDuration 
+                ? new Date(Date.now() + sessionData.config.timerDuration * 1000) 
+                : undefined,
+        };
+        setActiveTestSession(newSession);
+        setActiveTestResult(null);
+        setAppMode(AppMode.TEST_ACTIVE);
+    };
+    
+    const handlePracticeFailedQuestions = (failedQuestions: TestQuestion[]) => {
+        if (!selectedChat || selectedChat.chatType !== 'group' || failedQuestions.length === 0) return;
+    
+        const sessionConfig: TestConfig = {
+            groupId: selectedChat.id,
+            numberOfQuestions: failedQuestions.length,
+            questionIds: failedQuestions.map(q => q.id),
+            allowedQuestionTypes: [], // Not relevant as we provide the questions
+        };
+    
+        const shuffledFailedQuestions = createShuffledQuestionSet(failedQuestions);
+
+        const sessionData: StudySessionData = {
+            config: sessionConfig,
+            questions: shuffledFailedQuestions,
+            userAnswers: {},
+            currentQuestionIndex: 0,
+            startTime: new Date(),
+        };
+    
+        setActiveStudySession(sessionData);
+        setActiveTestResult(null);
+        setAppMode(AppMode.STUDY_ACTIVE);
+    };
+
+    // --- Offline Mode Handlers ---
+    const handleDownloadForOffline = (config: Omit<TestConfig, 'questionIds' | 'groupId'>, useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
+        if (!selectedChat || selectedChat.chatType !== 'group') return;
+        
+        const sourceGroupIds = [selectedChat.id, ...selectedSubgroupIDs];
+        let candidateQuestions: Message[] = [];
+        let finalSelectedQuestions: Message[] = [];
+        const allSourceMessages = [...new Set(sourceGroupIds)].flatMap(id => messages[id] || []);
+        const allTestableQuestions = allSourceMessages.filter(isQuestionTestable);
+
+        if (useSpacedRepetition) {
+            const allUserQuestionsWithStats = (Object.values(messages) as Message[][]).flat().filter(q => userQuestionStats[q.id]);
+            candidateQuestions = allUserQuestionsWithStats.filter((q: Message) => {
+                const stats = userQuestionStats[q.id];
+                return isQuestionTestable(q) && stats && (stats.incorrectAttempts > stats.correctAttempts);
+            });
+        } else if (config.focusOnNew) {
+            const addedIds = new Set<string>();
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+            const baseFilteredQuestions = allTestableQuestions.filter(q =>
+                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(q.questionType!)) &&
+                (!config.selectedTags || config.selectedTags.length === 0 || q.tags?.some(tag => config.selectedTags!.includes(tag)))
+            );
+            const shuffledBase = shuffleArray(baseFilteredQuestions);
+    
+            // Priority 1: Recent questions
+            const recent = shuffledBase.filter(q => new Date(q.timestamp) >= sevenDaysAgo);
+            recent.forEach(q => {
+                if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                    finalSelectedQuestions.push(q);
+                    addedIds.add(q.id);
+                }
+            });
+    
+            // Priority 2: Unattempted questions
+            if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                const unattempted = shuffledBase.filter(q => !userQuestionStats[q.id] && !addedIds.has(q.id));
+                unattempted.forEach(q => {
+                    if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                        finalSelectedQuestions.push(q);
+                        addedIds.add(q.id);
+                    }
+                });
+            }
+    
+            // Priority 3: Fill with any other available questions
+            if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                const others = shuffledBase.filter(q => !addedIds.has(q.id));
+                others.forEach(q => {
+                    if (finalSelectedQuestions.length < config.numberOfQuestions) {
+                        finalSelectedQuestions.push(q);
+                        addedIds.add(q.id);
+                    }
+                });
+            }
+        } else {
+             candidateQuestions = allTestableQuestions.filter(msg =>
+                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(msg.questionType!)) &&
+                (!config.selectedTags || config.selectedTags.length === 0 || msg.tags?.some(tag => config.selectedTags!.includes(tag)))
+            );
+        }
+
+        let selectedQuestions: Message[];
+
+        if (config.focusOnNew) {
+            selectedQuestions = finalSelectedQuestions;
+            if (selectedQuestions.length < config.numberOfQuestions && selectedQuestions.length > 0) {
+                 alert(`Only found ${selectedQuestions.length} questions matching your criteria. A bundle will be created with these questions.`);
+            }
+        } else {
+             if (candidateQuestions.length < config.numberOfQuestions) {
+                alert(`Not enough questions matching your criteria. Found ${candidateQuestions.length}, but you requested ${config.numberOfQuestions}.`);
+                return;
+            }
+            const shuffled = shuffleArray(candidateQuestions);
+            selectedQuestions = shuffled.slice(0, config.numberOfQuestions);
+        }
+        
+        if (selectedQuestions.length === 0) {
+            alert(`No questions found to download.`);
+            return;
+        }
+        
+        const sessionConfig: TestConfig = {
+            ...config,
+            groupId: selectedChat.id,
+            questionIds: selectedQuestions.map(q => q.id),
+        };
+
+        const questionsForBundle: OfflineQuestion[] = shuffleArray(selectedQuestions).map(q => {
+            const questionWithOptions: Message = { ...q };
+            if (
+                (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
+                 q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
+                 q.questionType === QuestionType.TRUE_FALSE) &&
+                q.options
+            ) {
+                questionWithOptions.options = shuffleArray(q.options);
+            }
+            // FIX: The result of the map is `Message[]` which cannot be assigned to `OfflineQuestion[]`. Cast the returned object.
+            return questionWithOptions as OfflineQuestion;
+        });
+
+        const newBundle: OfflineSessionBundle = {
+            bundleId: uuidv4(),
+            config: sessionConfig,
+            questions: questionsForBundle,
+            downloadedAt: new Date(),
+            groupName: selectedChat.name,
+        };
+
+        updateOfflineBundles(prev => [...prev, newBundle]);
+        
+        // Also save to cloud for cross-device sync
+        if (currentUser) {
+            saveOfflineBundle(currentUser.id, newBundle).then(() => {
+                console.log('[Offline Sync] Bundle saved to cloud:', newBundle.bundleId);
+            }).catch(error => {
+                console.error('[Offline Sync] Failed to save bundle to cloud:', error);
+            });
+        }
+        
+        alert(`Test bundle "${selectedChat.name}" with ${selectedQuestions.length} questions has been downloaded!`);
+        setTestConfigModalOpen(false);
+    };
+    
+    const handleStartOfflineSession = (bundleId: string, mode: 'test' | 'study') => {
+        const bundle = offlineBundles.find(b => b.bundleId === bundleId);
+        if (!bundle) {
+            alert("Error: Could not find the offline test bundle.");
+            return;
+        }
+
+        const testQuestions: TestQuestion[] = createShuffledQuestionSet(bundle.questions);
+
+        const startTime = new Date();
+        const endTime = bundle.config.timerDuration ? new Date(startTime.getTime() + bundle.config.timerDuration * 1000) : undefined;
+        
+        const sessionData: TestSessionData = {
+            config: bundle.config,
+            questions: testQuestions,
+            userAnswers: {},
+            currentQuestionIndex: 0,
+            startTime,
+            endTime,
+            isOffline: true,
+        };
+
+        if (mode === 'test') {
+            setActiveTestSession(sessionData);
+            setAppMode(AppMode.TEST_ACTIVE);
+        } else {
+            // Study mode - no timer, review at your own pace
+            const studySessionData: StudySessionData = {
+                config: bundle.config,
+                questions: testQuestions,
+                userAnswers: {},
+                currentQuestionIndex: 0,
+                startTime,
+                isOffline: true,
+            };
+            setActiveStudySession(studySessionData);
+            setAppMode(AppMode.STUDY_ACTIVE);
+        }
+    };
+
+    const handleDeleteBundle = (bundleId: string) => {
+        if (window.confirm("Are you sure you want to delete this downloaded test bundle?")) {
+            updateOfflineBundles(prev => prev.filter(b => b.bundleId !== bundleId));
+            
+            // Also delete from cloud
+            if (currentUser) {
+                deleteOfflineBundle(currentUser.id, bundleId).then(() => {
+                    console.log('[Offline Sync] Bundle deleted from cloud:', bundleId);
+                }).catch(error => {
+                    console.error('[Offline Sync] Failed to delete bundle from cloud:', error);
+                });
+            }
+        }
+    };
+
+    const handleSyncResults = async () => {
+        if (!isOnline) {
+            alert("You must be online to sync results.");
+            return;
+        }
+        if (pendingSyncResults.length === 0 || !currentUser) return;
+        
+        try {
+            // Save pending results to DB
+            for (const result of pendingSyncResults) {
+                const sessionData = {
+                    config: result.session.config,
+                    questions: result.session.questions,
+                    user_answers: result.session.userAnswers,
+                    start_time: result.session.startTime.toISOString(),
+                    end_time: result.session.endTime?.toISOString(),
+                    is_offline: result.session.isOffline || false
+                };
+                const savedSession = await createTestSession(sessionData, currentUser.id);
+                
+                const resultData = {
+                    session_id: savedSession.id,
+                    score: result.score,
+                    correct_answers_count: result.correctAnswersCount,
+                    total_questions: result.totalQuestions
+                };
+                await createTestResult(resultData);
+            }
+            
+            updateTestResults(prev => [...prev, ...pendingSyncResults]);
+            
+            const newUserQuestionStats = { ...userQuestionStats };
+            
+            // Update user stats for synced results
+            if (currentUser) {
+                const updatedStats = { ...currentUser.stats };
+                pendingSyncResults.forEach(result => {
+                    updatedStats.testsCompleted = (updatedStats.testsCompleted || 0) + 1;
+                    if (result.score >= 80) updatedStats.highScoreTests = (updatedStats.highScoreTests || 0) + 1;
+                    if (result.score === 100) updatedStats.perfectScoreTests = (updatedStats.perfectScoreTests || 0) + 1;
+                    
+                    Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
+                        const questionId = answer.questionId;
+                        const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                        if (answer.isCorrect) stats.correctAttempts++;
+                        else stats.incorrectAttempts++;
+                        stats.lastAttempted = result.session.endTime?.toISOString() || new Date().toISOString();
+                        newUserQuestionStats[questionId] = stats;
+
+                        // Save to DB
+                        upsertUserQuestionStat(currentUser.id, questionId, stats).catch(error => {
+                            console.error('Error saving user question stat during sync:', error);
+                        });
+                    });
+                });
+
+                const userWithStats = { ...currentUser, stats: updatedStats };
+                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
+
+                // Update profile in database
+                updateUserProfile(currentUser.id, {
+                    points: updatedUser.points,
+                    stats: updatedUser.stats,
+                    badges: updatedUser.badges
+                }).catch(error => console.error('Failed to update user profile during sync:', error));
+
+                awardedBadges.forEach(badge => {
+                    const badgeDef = BADGE_DEFINITIONS[badge.id];
+                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
+                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                });
+                
+                setCurrentUser(updatedUser);
+            }
+            
+            setUserQuestionStats(newUserQuestionStats);
+
+            addNotification(`${pendingSyncResults.length} offline result(s) synced successfully!`);
+            setPendingSyncResults([]);
+        } catch (error) {
+            console.error('Error syncing results:', error);
+            alert('Failed to sync results. Please try again.');
+        }
+    };
+    // --- End Offline Mode Handlers ---
+
+    // --- Game/Duel Handlers ---
+    const handleChallengeUser = (opponent: User) => {
+        setChallengeOpponent(opponent);
+        setActiveTestConfigMode('game');
+        setTestConfigModalOpen(true);
+    };
+
+    const handleEndGame = useCallback((finalSession: GameSession) => {
+        if (!currentUser) return;
+        let winnerId: string | undefined = undefined;
+        if (finalSession.userScore > finalSession.opponentScore) {
+            winnerId = finalSession.user.id;
+        } else if (finalSession.opponentScore > finalSession.userScore) {
+            winnerId = finalSession.opponent.id;
+        } else {
+            if (finalSession.userTime < finalSession.opponentTime) {
+                winnerId = finalSession.user.id;
+            } else if (finalSession.opponentTime < finalSession.userTime) {
+                winnerId = finalSession.opponent.id;
+            }
+        }
+    
+        const completedSession = { ...finalSession, isComplete: true, winnerId };
+        setActiveGameSession(completedSession);
+    
+        if (winnerId === currentUser.id) {
+            // Update user stats for game win
+            const updatedStats = { ...currentUser.stats, gamesWon: (currentUser.stats.gamesWon || 0) + 1 };
+            const userWithStats = { ...currentUser, stats: updatedStats };
+            const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
+
+            // Update profile in database
+            updateUserProfile(currentUser.id, {
+                points: updatedUser.points,
+                stats: updatedUser.stats,
+                badges: updatedUser.badges
+            }).catch(error => console.error('Failed to update user profile after game:', error));
+
+            awardedBadges.forEach(badge => {
+                if(badge.id === 'DUELIST') {
+                    addNotification(`Badge Unlocked: ${badge.name}! You've shown your mettle.`);
+                }
+            });
+
+            setCurrentUser(updatedUser);
+        }
+        
+        setAppMode(AppMode.GAME_RESULTS);
+    }, [currentUser, addNotification]);
+
+    useEffect(() => {
+        if (activeGameSession && !activeGameSession.isComplete) {
+            const totalQuestions = activeGameSession.questions.length;
+            if (totalQuestions === 0) return;
+
+            const userAnswersCount = Object.keys(activeGameSession.userAnswers).length;
+            const opponentAnswersCount = Object.keys(activeGameSession.opponentAnswers).length;
+
+            if (userAnswersCount === totalQuestions && opponentAnswersCount === totalQuestions) {
+                // Short delay for UX, so the user sees the opponent's progress bar fill up
+                setTimeout(() => {
+                    handleEndGame(activeGameSession);
+                }, 1000); // 1 second delay
+            }
+        }
+    }, [activeGameSession, handleEndGame]);
+
+    const handleStartGame = (config: Omit<TestConfig, 'questionIds' | 'groupId'>, useSpacedRepetition: boolean) => {
+        if (!currentUser || !challengeOpponent || !selectedChat || selectedChat.chatType !== 'group') return;
+        
+        const candidateQuestions = (messages[selectedChat.id] || []).filter(msg =>
+            isQuestionTestable(msg) &&
+            (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(msg.questionType!)) &&
+            (!config.selectedTags || config.selectedTags.length === 0 || msg.tags?.some(tag => config.selectedTags!.includes(tag)))
+        );
+
+        if (candidateQuestions.length < config.numberOfQuestions) {
+            alert(`Not enough questions for a duel. Found ${candidateQuestions.length}, requested ${config.numberOfQuestions}.`);
+            return;
+        }
+
+        const selectedQuestions = shuffleArray(candidateQuestions).slice(0, config.numberOfQuestions);
+        const gameQuestions: TestQuestion[] = createShuffledQuestionSet(selectedQuestions);
+
+        const gameSession: GameSession = {
+            id: uuidv4(),
+            user: currentUser,
+            opponent: challengeOpponent,
+            questions: gameQuestions,
+            userAnswers: {},
+            opponentAnswers: {},
+            userScore: 0,
+            opponentScore: 0,
+            userTime: 0,
+            opponentTime: 0,
+            isComplete: false,
+        };
+
+        setActiveGameSession(gameSession);
+        setAppMode(AppMode.GAME_ACTIVE);
+        setTestConfigModalOpen(false);
+    };
+
+    const handleGameAnswer = (questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>, timeTaken: number) => {
+        if (!activeGameSession) return;
+    
+        const question = activeGameSession.questions.find(q => q.id === questionId);
+        const isCorrect = question ? checkAnswerIsCorrect(question, { ...answerData, questionId }) : false;
+        
+        const updatedUserAnswers = {
+            ...activeGameSession.userAnswers,
+            [questionId]: { questionId, ...answerData, isCorrect, timeSpentSeconds: timeTaken }
+        };
+
+        const updatedSession: GameSession = {
+            ...activeGameSession,
+            userAnswers: updatedUserAnswers,
+            userScore: activeGameSession.userScore + (isCorrect ? 1 : 0),
+            userTime: activeGameSession.userTime + timeTaken
+        };
+        
+        setActiveGameSession(updatedSession);
+
+        const opponentAnswerDelay = Math.random() * 2000 + 1000;
+        setTimeout(() => {
+            const opponentIsCorrect = Math.random() < 0.8;
+            const opponentTime = timeTaken + (Math.random() * 2 - 1);
+            
+            const opponentAnswer: UserAnswerRecord = {
+                questionId,
+                isCorrect: opponentIsCorrect,
+                timeSpentSeconds: Math.max(0.5, opponentTime)
+            };
+
+            // Get fresh state from store for the async update
+            const currentSession = useUIStore.getState().activeGameSession;
+            if (!currentSession || currentSession.id !== updatedSession.id) return;
+            
+            const updatedOpponentAnswers = { ...currentSession.opponentAnswers, [questionId]: opponentAnswer };
+            setActiveGameSession({
+                ...currentSession,
+                opponentAnswers: updatedOpponentAnswers,
+                opponentScore: currentSession.opponentScore + (opponentIsCorrect ? 1 : 0),
+                opponentTime: currentSession.opponentTime + opponentAnswer.timeSpentSeconds!
+            });
+        }, opponentAnswerDelay);
+    };
+    
+    const handleRematch = (opponent: User) => {
+        setActiveGameSession(null);
+        handleChallengeUser(opponent);
+    };
+    // --- End Game/Duel Handlers ---
+
+    // --- Flashcard Handlers ---
+    const handleSelectDeck = (deck: Deck) => {
+        setSelectedDeck(deck);
+        setAppMode(AppMode.DECK_DETAIL);
+    };
+
+    const handleOpenCreateDeckModal = () => {
+        setEditingDeck(null);
+        setCreateDeckModalOpen(true);
+    };
+    
+    const handleOpenEditDeckModal = (deck: Deck) => {
+        setEditingDeck(deck);
+        setCreateDeckModalOpen(true);
+    };
+
+    const handleCreateOrUpdateDeck = async (data: { id?: string; name: string; description?: string }) => {
+        if (!currentUser) return;
+        try {
+            if (data.id) { // Update
+                await updateDeck(data.id, { name: data.name, description: data.description });
+                updateDecks(prev => prev.map(d => d.id === data.id ? { ...d, ...data } : d));
+                if (selectedDeck?.id === data.id) {
+                    setSelectedDeck({ ...selectedDeck, ...data } as Deck);
+                }
+            } else { // Create
+                const newDeck = await createDeck({ name: data.name, description: data.description }, currentUser.id);
+                updateDecks(prev => [...prev, newDeck]);
+            }
+            setCreateDeckModalOpen(false);
+        } catch (error) {
+            console.error('Error creating/updating deck:', error);
+            alert('Failed to create/update deck. Please try again.');
+        }
+    };
+
+    const handleDeleteDeck = async (deckId: string) => {
+        if (!currentUser) return;
+        try {
+            await deleteDeck(deckId);
+            updateDecks(prev => prev.filter(d => d.id !== deckId));
+            updateFlashcards(prev => prev.filter(fc => fc.deckId !== deckId));
+            setAppMode(AppMode.FLASHCARDS);
+            setSelectedDeck(null);
+        } catch (error) {
+            console.error('Error deleting deck:', error);
+            alert('Failed to delete deck. Please try again.');
+        }
+    };
+
+    const handleOpenCreateFlashcardModal = (deckId?: string) => {
+        setEditingFlashcard(null);
+        setFlashcardInitialDeckId(deckId || selectedDeck?.id);
+        setCreateFlashcardModalOpen(true);
+    };
+    
+    const handleOpenEditFlashcardModal = (flashcard: Flashcard) => {
+        setEditingFlashcard(flashcard);
+        setCreateFlashcardModalOpen(true);
+    };
+
+    const handleCreateOrUpdateFlashcard = async (data: Partial<Omit<Flashcard, 'createdAt'>> & { id?: string }) => {
+        if (!currentUser) return;
+        try {
+            if (data.id) { // Update
+                await updateFlashcard(data.id, {
+                    deckId: data.deckId,
+                    type: data.type,
+                    front: data.front,
+                    back: data.back,
+                    clozeText: data.clozeText,
+                    srsData: data.srsData,
+                    tags: data.tags
+                });
+                // Refetch flashcards to ensure state is up to date
+                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+                setFlashcards(fetchedFlashcards.map((fc: any) => ({
+                    id: fc.id,
+                    deckId: fc.deck_id,
+                    type: fc.type,
+                    front: fc.front,
+                    back: fc.back,
+                    clozeText: fc.cloze_text,
+                    srsData: fc.srs_data,
+                    tags: fc.tags,
+                    createdAt: fc.created_at
+                })));
+            } else { // Create
+                await createFlashcard({
+                    deckId: data.deckId!,
+                    type: data.type!,
+                    front: data.front,
+                    back: data.back,
+                    clozeText: data.clozeText,
+                    srsData: data.srsData,
+                    tags: data.tags
+                });
+                // Refetch flashcards to ensure state is up to date
+                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+                setFlashcards(fetchedFlashcards.map((fc: any) => ({
+                    id: fc.id,
+                    deckId: fc.deck_id,
+                    type: fc.type,
+                    front: fc.front,
+                    back: fc.back,
+                    clozeText: fc.cloze_text,
+                    srsData: fc.srs_data,
+                    tags: fc.tags,
+                    createdAt: fc.created_at
+                })));
+            }
+            setCreateFlashcardModalOpen(false);
+        } catch (error) {
+            console.error('Error creating/updating flashcard:', error instanceof Error ? error.message : JSON.stringify(error));
+            alert('Failed to create/update flashcard. Please try again.');
+        }
+    };
+    
+    const handleDeleteFlashcard = async (flashcardId: string) => {
+        if (!currentUser) return;
+        try {
+            await deleteFlashcard(flashcardId);
+            updateFlashcards(prev => prev.filter(fc => fc.id !== flashcardId));
+        } catch (error) {
+            console.error('Error deleting flashcard:', error);
+            alert('Failed to delete flashcard. Please try again.');
+        }
+    };
+
+    const handleGenerateFlashcards = async (deckId: string, notes: string, count: number) => {
+        if (!currentUser) return;
+        setIsGeneratingFlashcards(true);
+        try {
+            // Parse notes into flashcards by splitting on newlines/sentences
+            const lines = notes
+                .split(/\n+/)
+                .map(l => l.trim())
+                .filter(l => l.length > 5);
+
+            const generatedCards: { front: string; back: string }[] = [];
+
+            for (const line of lines) {
+                if (generatedCards.length >= count) break;
+
+                // Detect Q&A patterns: "Q: ... A: ...", "Question - Answer", "Term: Definition", "Term = Definition"
+                const qaMatch = line.match(/^(?:Q:\s*|Question:\s*)(.+?)\s*(?:A:\s*|Answer:\s*)(.+)$/i);
+                const colonMatch = !qaMatch && line.match(/^([^:]+):\s+(.+)$/);
+                const dashMatch = !qaMatch && !colonMatch && line.match(/^([^-–—]+)\s*[-–—]\s+(.+)$/);
+                const equalsMatch = !qaMatch && !colonMatch && !dashMatch && line.match(/^([^=]+)=\s*(.+)$/);
+
+                if (qaMatch) {
+                    generatedCards.push({ front: qaMatch[1].trim(), back: qaMatch[2].trim() });
+                } else if (colonMatch && colonMatch[1].split(/\s+/).length <= 6) {
+                    generatedCards.push({ front: colonMatch[1].trim(), back: colonMatch[2].trim() });
+                } else if (dashMatch && dashMatch[1].split(/\s+/).length <= 6) {
+                    generatedCards.push({ front: dashMatch[1].trim(), back: dashMatch[2].trim() });
+                } else if (equalsMatch) {
+                    generatedCards.push({ front: equalsMatch[1].trim(), back: equalsMatch[2].trim() });
+                } else if (line.length > 10) {
+                    // For plain sentences, create a cloze-style card
+                    const words = line.split(/\s+/);
+                    if (words.length >= 4) {
+                        // Pick a key word (not common words) to blank out
+                        const commonWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'of', 'in', 'to', 'and', 'or', 'for', 'with', 'on', 'at', 'by', 'it', 'its', 'this', 'that', 'from', 'as', 'be', 'has', 'have', 'had', 'not', 'but', 'they', 'we', 'he', 'she', 'you', 'can', 'will', 'do', 'does', 'did']);
+                        const keyWords = words.filter(w => w.length > 3 && !commonWords.has(w.toLowerCase()));
+                        if (keyWords.length > 0) {
+                            const targetWord = keyWords[Math.floor(Math.random() * keyWords.length)];
+                            const front = line.replace(targetWord, '______');
+                            generatedCards.push({ front, back: targetWord });
+                        } else {
+                            generatedCards.push({ front: `What does this describe: "${line.substring(0, 50)}..."?`, back: line });
+                        }
+                    }
+                }
+            }
+
+            // If we didn't get enough cards from parsing, generate simple cards from remaining lines
+            if (generatedCards.length === 0) {
+                // Fallback: split the entire text into chunks
+                const sentences = notes.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+                for (const sentence of sentences) {
+                    if (generatedCards.length >= count) break;
+                    generatedCards.push({ front: `Define/explain: ${sentence.substring(0, 60)}`, back: sentence });
+                }
+            }
+
+            const cardsToCreate = generatedCards.slice(0, count);
+            
+            if (cardsToCreate.length === 0) {
+                alert('Could not parse any flashcards from the provided notes. Try using "Term: Definition" or "Q: Question A: Answer" format.');
+                return;
+            }
+
+            // Create all flashcards in the database
+            for (const card of cardsToCreate) {
+                await createFlashcard({
+                    deckId,
+                    type: FlashcardType.BASIC,
+                    front: card.front,
+                    back: card.back,
+                });
+            }
+
+            // Refetch all flashcards
+            const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+            setFlashcards(fetchedFlashcards.map((fc: any) => ({
+                id: fc.id,
+                deckId: fc.deck_id,
+                type: fc.type,
+                front: fc.front,
+                back: fc.back,
+                clozeText: fc.cloze_text,
+                srsData: fc.srs_data,
+                tags: fc.tags,
+                createdAt: fc.created_at
+            })));
+
+            alert(`Successfully generated ${cardsToCreate.length} flashcard(s)!`);
+        } catch (error) {
+            console.error('Error generating flashcards:', error);
+            alert('Failed to generate flashcards. Please try again.');
+        } finally {
+            setIsGeneratingFlashcards(false);
+        }
+    };
+
+    const handleStartReview = (deck: Deck) => {
+        if (!currentUser) return;
+        const today = new Date().toISOString().split('T')[0];
+        const cardsInDeck = flashcards.filter(fc => fc.deckId === deck.id);
+        
+        const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions);
+        const dueCards = cardsInDeck.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today);
+        
+        const cardQueue = [...dueCards, ...newCards];
+        if (cardQueue.length === 0) {
+            alert("No new or due cards in this deck to review right now.");
+            return;
+        }
+        setActiveReviewSession({ deck, cardQueue });
+        setAppMode(AppMode.FLASHCARD_REVIEW);
+    };
+
+    const handleStartCram = (deck: Deck) => {
+        if (!currentUser) return;
+        const cardsInDeck = flashcards.filter(fc => fc.deckId === deck.id);
+        
+        if (cardsInDeck.length === 0) {
+            alert("This deck is empty. Add some cards to cram!");
+            return;
+        }
+
+        const shuffledCards = shuffleArray(cardsInDeck);
+        setActiveCramSession({ deck, cardQueue: shuffledCards });
+        setAppMode(AppMode.FLASHCARD_CRAM);
+    };
+    
+    const handleCramAnswer = (cardId: string, isCorrect: boolean) => {
+        console.log(`Crammed card ${cardId}, Correct: ${isCorrect}`);
+    };
+
+    const handleCramIncorrect = (incorrectCards: Flashcard[]) => {
+        if (!activeCramSession) return;
+        const shuffledIncorrect = shuffleArray(incorrectCards);
+        setActiveCramSession({...activeCramSession, cardQueue: shuffledIncorrect});
+    };
+
+    const handleEndCramSession = (stats: { correct: number, incorrect: number }) => {
+        alert(`Cram session finished! You got ${stats.correct} correct and ${stats.incorrect} incorrect.`);
+        setActiveCramSession(null);
+        setAppMode(AppMode.DECK_DETAIL);
+    };
+
+
+    const handleUpdateSrsData = async (cardId: string, performanceRating: 'again' | 'hard' | 'good' | 'easy') => {
+        if (!currentUser) return;
+        const cardIndex = flashcards.findIndex(fc => fc.id === cardId);
+        if (cardIndex === -1) return;
+        
+        const card = flashcards[cardIndex];
+        const newSrsData = calculateSrsData(card.srsData, performanceRating);
+        
+        try {
+            await updateFlashcard(cardId, { srsData: newSrsData });
+            updateFlashcards(prev => prev.map(fc => fc.id === cardId ? { ...fc, srsData: newSrsData } : fc));
+        } catch (error) {
+            console.error('Error updating SRS data:', error);
+            alert('Failed to update SRS data. Please try again.');
+        }
+    };
+
+    const handleResetDeckStatistics = async (deckId: string) => {
+        if (!currentUser) return;
+        try {
+            await resetDeckStatistics(deckId);
+            // Update local state by resetting SRS data for all cards in this deck
+            updateFlashcards(prev => prev.map(fc => 
+                fc.deckId === deckId ? { ...fc, srsData: undefined } : fc
+            ));
+            alert('Deck statistics have been reset. All cards are now marked as new.');
+        } catch (error) {
+            console.error('Error resetting deck statistics:', error);
+            alert('Failed to reset deck statistics. Please try again.');
+        }
+    };
+
+    const handleExportDeck = async (deckId: string) => {
+        if (!currentUser) return;
+        try {
+            const exportData = await exportDeck(deckId);
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${exportData.deck.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            
+            alert('Deck exported successfully!');
+        } catch (error) {
+            console.error('Error exporting deck:', error);
+            alert('Failed to export deck. Please try again.');
+        }
+    };
+
+    const handleImportDeck = async (file: File) => {
+        if (!currentUser) return;
+        try {
+            const fileContent = await file.text();
+            const importData = JSON.parse(fileContent);
+            
+            const newDeck = await importDeck(importData, currentUser.id);
+            
+            // Refresh decks and flashcards
+            const fetchedDecks = await fetchDecks(currentUser.id);
+            setDecks(fetchedDecks);
+            const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+            setFlashcards(fetchedFlashcards.map((fc: any) => ({
+                id: fc.id,
+                deckId: fc.deck_id,
+                type: fc.type,
+                front: fc.front,
+                back: fc.back,
+                clozeText: fc.cloze_text,
+                srsData: fc.srs_data,
+                tags: fc.tags,
+                createdAt: fc.created_at
+            })));
+            
+            alert(`Deck "${newDeck?.name || 'Unknown'}" imported successfully with ${importData.flashcards.length} cards!`);
+        } catch (error) {
+            console.error('Error importing deck:', error);
+            alert('Failed to import deck. Please check the file format and try again.');
+        }
+    };
+
+    // --- End Flashcard Handlers ---
+    
+    // --- Budgeting Handlers ---
+    const handleNavigateToBudgetTracker = () => {
+        setAppMode(AppMode.BUDGET_TRACKER);
+        setSidebarExpanded(false);
+    };
+
+    const handleSetBudget = (amount: number) => {
+        if (!currentUser) return;
+        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+        const newBudget: Budget = {
+            monthlyLimit: amount,
+            monthYear: currentMonth,
+            userId: currentUser.id,
+        };
+        setBudget(newBudget);
+        // Note: useBudgetStore with persist handles localStorage automatically
+        // Also sync to cloud for cross-device sync
+        saveUserBudget(currentUser.id, {
+            monthlyLimit: amount,
+            monthYear: currentMonth
+        }).then(() => {
+            console.log('[Budget Sync] Budget saved to cloud');
+        }).catch(error => {
+            console.error('[Budget Sync] Failed to save budget to cloud:', error);
+        });
+        setSetBudgetModalOpen(false);
+    };
+    
+    const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'userId'>) => {
+        if (!currentUser) return;
+        const newTransaction: Transaction = {
+        ...transaction,
+        id: uuidv4(),
+        userId: currentUser.id,
+        };
+        const updatedTransactions = [...transactions, newTransaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setTransactions(updatedTransactions);
+        // Persist transactions to localStorage
+        localStorage.setItem('budgetTransactions', JSON.stringify(updatedTransactions));
+        // Also sync to cloud for cross-device sync
+        const typeMap: Record<string, 'income' | 'expense' | 'investment'> = {
+            'INCOME': 'income',
+            'EXPENSE': 'expense',
+            'INVESTMENT': 'investment'
+        };
+        saveBudgetTransaction(currentUser.id, {
+            id: newTransaction.id,
+            type: typeMap[newTransaction.type] || 'expense',
+            amount: newTransaction.amount,
+            category: newTransaction.category,
+            description: newTransaction.description,
+            date: newTransaction.date
+        }).then(() => {
+            console.log('[Transactions Sync] Transaction saved to cloud');
+        }).catch(error => {
+            console.error('[Transactions Sync] Failed to save transaction to cloud:', error);
+        });
+        setAddExpenseModalOpen(false);
+        setAddIncomeModalOpen(false);
+    };
+
+    const handleDeleteTransaction = (transactionId: string) => {
+        const updatedTransactions = transactions.filter(t => t.id !== transactionId);
+        setTransactions(updatedTransactions);
+        // Persist transactions to localStorage
+        localStorage.setItem('budgetTransactions', JSON.stringify(updatedTransactions));
+        // Also delete from cloud
+        deleteBudgetTransaction(transactionId).then(() => {
+            console.log('[Transactions Sync] Transaction deleted from cloud');
+        }).catch(error => {
+            console.error('[Transactions Sync] Failed to delete transaction from cloud:', error);
+        });
+    };
+    // --- End Budgeting Handlers ---
+
+    const onSendMessage = async (text: string) => {
+        if (!currentUser || !selectedChat) return;
+
+        if (selectedChat.chatType === 'group') {
+            try {
+                const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text);
+                if (!sentMessage) {
+                    throw new Error('Failed to send message');
+                }
+                const newMessage: Message = {
+                    id: sentMessage.id,
+                    groupId: selectedChat.id,
+                    sender: currentUser,
+                    timestamp: new Date(sentMessage.timestamp || new Date()),
+                    type: MessageType.TEXT,
+                    text,
+                    upvotes: 0,
+                    downvotes: 0,
+                };
+                updateMessages(prev => ({
+                    ...prev,
+                    [selectedChat.id]: [...(prev[selectedChat.id] || []), newMessage]
+                }));
+                // Update last message in groups
+                updateGroups(prev => prev.map(g => g.id === selectedChat.id ? { ...g, lastMessage: text, lastMessageTime: sentMessage.timestamp } : g));
+
+                // Notify other group members about the new message
+                const group = groups.find(g => g.id === selectedChat.id);
+                if (group) {
+                    const otherMembers = group.members.filter(m => m.id !== currentUser.id);
+                    otherMembers.forEach(async (member) => {
+                        try {
+                            await createNotification({
+                                user_id: member.id,
+                                message: `New message in ${group.name} from ${currentUser.name}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+                                link: `/chat/${selectedChat.id}`
+                            });
+                        } catch (error) {
+                            console.error('Failed to create message notification:', error);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        } else if (selectedChat.chatType === 'dm') {
+            handleSendDm(selectedChat.id, text);
+        }
+    };
+    const onOpenQuestionModal = () => setQuestionModalOpen(true);
+    const onOpenGroupInfoModal = () => setGroupInfoModalOpen(true);
+    
+    const onOpenTestConfigModal = () => {
+        setActiveTestConfigMode('test');
+        setTestConfigModalOpen(true);
+    };
+
+    const onOpenStudyConfigModal = () => {
+        setActiveTestConfigMode('study');
+        setTestConfigModalOpen(true);
+    };
+
+    const onVoteQuestion = async (messageId: string, voteType: 'up' | 'down') => {
+        if (!selectedChat || selectedChat.chatType !== 'group' || !currentUser) return;
+
+        const groupMessages = messages[selectedChat.id] || [];
+        const messageIndex = groupMessages.findIndex(m => m.id === messageId);
+        if (messageIndex === -1) return;
+
+        const message = groupMessages[messageIndex];
+        const currentUserVote = userVotes[messageId];
+        
+        let newUpvotes = message.upvotes;
+        let newDownvotes = message.downvotes;
+        let newUserVote: 'up' | 'down' | undefined = undefined;
+
+        try {
+            if (currentUserVote === voteType) { // Retracting vote
+                await removeVote(messageId, currentUser.id);
+                if (voteType === 'up') newUpvotes--;
+                else newDownvotes--;
+                newUserVote = undefined;
+            } else { // New vote or changing vote
+                await voteQuestion(messageId, currentUser.id, voteType);
+                if (currentUserVote === 'up') newUpvotes--;
+                if (currentUserVote === 'down') newDownvotes--;
+                
+                if (voteType === 'up') newUpvotes++;
+                else newDownvotes++;
+                newUserVote = voteType;
+            }
+        } catch (error) {
+            console.error('Error voting:', error);
+            alert('Failed to vote. Please try again.');
+            return;
+        }
+
+        const updatedMessage = { ...message, upvotes: newUpvotes, downvotes: newDownvotes };
+        
+        if (
+            updatedMessage.type === MessageType.QUESTION &&
+            updatedMessage.questionStatus === QuestionStatus.PENDING
+        ) {
+            const group = groups.find(g => g.id === selectedChat.id);
+            if (group) {
+                const memberCount = group.members.length;
+                const threshold = Math.ceil(memberCount * 0.2);
+                if (newUpvotes >= threshold) {
+                    updatedMessage.questionStatus = QuestionStatus.VERIFIED;
+                    
+                    // Persist the verified status to the database
+                    try {
+                        await updateQuestionStatus(messageId, QuestionStatus.VERIFIED);
+                    } catch (error) {
+                        console.error('Failed to update question status:', error);
+                    }
+                    
+                    if(updatedMessage.sender.id === currentUser.id){
+                         addNotification(`Your question "${updatedMessage.questionStem?.substring(0, 20)}..." has been verified and is now available in tests!`);
+                    } else {
+                        // Notify the question author that their question was verified
+                        try {
+                            await createNotification({
+                                user_id: updatedMessage.sender.id,
+                                message: `Your question "${updatedMessage.questionStem?.substring(0, 20)}..." has been verified and is now available in tests!`,
+                                link: `/chat/${selectedChat.id}`
+                            });
+                        } catch (error) {
+                            console.error('Failed to create question verification notification:', error);
+                        }
+                    }
+                }
+            }
+        }
+        
+        const updatedMessages = [...groupMessages];
+        updatedMessages[messageIndex] = updatedMessage;
+
+        updateMessages(prev => ({ ...prev, [selectedChat.id]: updatedMessages }));
+        updateUserVotes(prev => ({ ...prev, [messageId]: newUserVote }));
+    };
+
+    const handleUpvoteDuplicateAndClose = (existingQuestionId: string) => {
+        if (!selectedChat || selectedChat.chatType !== 'group') return;
+        
+        // 1. Upvote if not already upvoted
+        if (userVotes[existingQuestionId] !== 'up') {
+            onVoteQuestion(existingQuestionId, 'up');
+        }
+        
+        // 2. Give points
+        if (currentUser) {
+            const updatedUser: User = { ...currentUser, points: currentUser.points + 5 };
+            // Update profile in database
+            updateUserProfile(currentUser.id, { points: updatedUser.points }).catch(error => console.error('Failed to update user points:', error));
+            setCurrentUser(updatedUser);
+        }
+        
+        // 3. Add notification
+        addNotification("Thanks for helping keep things tidy! You've earned 5 points.");
+    
+        // 4. Close modal
+        setDuplicateQuestionModalOpen(false);
+        setDuplicateInfo(null);
+    };
+
+    const onFlagAsSimilar = async (messageId: string, groupId: string) => {
+        if (!currentUser) return;
+
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+        
+        const groupMessages = messages[groupId] || [];
+        const messageIndex = groupMessages.findIndex(m => m.id === messageId);
+        if (messageIndex === -1) return;
+
+        const message = groupMessages[messageIndex];
+        const currentFlags = message.flaggedAsSimilarUserIds || [];
+        const userHasFlagged = currentFlags.includes(currentUser.id);
+
+        const newFlags = userHasFlagged
+            ? currentFlags.filter(id => id !== currentUser.id)
+            : [...currentFlags, currentUser.id];
+            
+        try {
+            await updateMessage(messageId, { flagged_as_similar_user_ids: newFlags });
+        } catch (error) {
+            console.error('Error flagging message:', error);
+            alert('Failed to flag message. Please try again.');
+            return;
+        }
+
+        const updatedMessage = { ...message, flaggedAsSimilarUserIds: newFlags };
+        
+        const archiveThreshold = Math.ceil(group.members.length * 0.05);
+        if (newFlags.length >= archiveThreshold && !updatedMessage.isArchived) {
+            updatedMessage.isArchived = true;
+        }
+
+        const updatedMessages = [...groupMessages];
+        updatedMessages[messageIndex] = updatedMessage;
+        
+        updateMessages(prev => ({ ...prev, [groupId]: updatedMessages }));
+    };
+    const onOpenCreateSubGroupModal = (parentId: string) => {
+        console.log('onOpenCreateSubGroupModal called with parentId:', parentId);
+        setSubgroupParentId(parentId);
+        setCreateGroupModalOpen(true);
+    };
+    
+    // --- Group Management Handlers (New Implementation) ---
+    
+    const handleUpdateGroupDetails = (groupId: string, name: string, description: string) => {
+        updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, name, description } : g));
+        if (selectedChat?.id === groupId) {
+            setSelectedChat(prev => {
+                if (prev?.chatType === 'group') {
+                    return { ...prev, name, description };
+                }
+                return prev;
+            });
+        }
+        alert("Group details updated successfully.");
+    };
+
+    const handleInviteMembers = async (groupId: string, userIdsToAdd: string[]) => {
+      if (userIdsToAdd.length === 0) {
+        setAddMembersModalOpen(false);
+        return;
+      }
+      
+      const usersToAdd = users.filter(u => userIdsToAdd.includes(u.id));
+      const group = groups.find(g => g.id === groupId);
+
+      try {
+        // Add members to the backend
+        for (const userId of userIdsToAdd) {
+          await addGroupMember(groupId, userId);
+        }
+
+        // Update local state after successful API calls
+        updateGroups(prevGroups => {
+          return prevGroups.map(g => {
+              if (g.id === groupId) {
+                  const existingMemberIds = new Set(g.members.map(m => m.id));
+                  const newMembers = usersToAdd.filter(u => !existingMemberIds.has(u.id));
+                  
+                  if (newMembers.length > 0) {
+                      return { ...g, members: [...g.members, ...newMembers] };
+                  }
+              }
+              return g;
+          });
+        });
+        
+        setSelectedChat(prevSelected => {
+            if (prevSelected && prevSelected.id === groupId && prevSelected.chatType === 'group') {
+                const existingMemberIds = new Set(prevSelected.members.map(m => m.id));
+                const newMembers = usersToAdd.filter(u => !existingMemberIds.has(u.id));
+                if (newMembers.length > 0) {
+                    return { ...prevSelected, members: [...prevSelected.members, ...newMembers] };
+                }
+            }
+            return prevSelected;
+        });
+
+        alert(`${usersToAdd.length} member(s) added successfully!`);
+
+        // Notify invited users
+        if (group && currentUser) {
+          for (const user of usersToAdd) {
+            try {
+              await createNotification({
+                user_id: user.id,
+                message: `You've been added to the group "${group.name}" by ${currentUser.name}`,
+                link: `/chat/${groupId}`
+              });
+            } catch (error) {
+              console.error('Failed to create group invitation notification:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error adding members to group:', error);
+        alert('Failed to add some members. Please try again.');
+      }
+
+      setAddMembersModalOpen(false);
+    };
+    
+    const handleRevokeInvitation = (groupId: string, email: string) => {
+        if (window.confirm(`Are you sure you want to revoke the invitation for ${email}?`)) {
+            updateGroups(prev => prev.map(g => {
+                if (g.id === groupId) {
+                    return { ...g, memberEmails: (g.memberEmails || []).filter(e => e !== email) };
+                }
+                return g;
+            }));
+        }
+    };
+
+    const handleRevokePhoneInvitation = (groupId: string, phoneNumber: string) => {
+        if (window.confirm(`Are you sure you want to revoke the invitation for ${phoneNumber}?`)) {
+            updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, invitedPhoneNumbers: (g.invitedPhoneNumbers || []).filter(p => p !== phoneNumber) } : g));
+        }
+    };
+
+    const handlePromoteToAdmin = (groupId: string, userId: string) => {
+        let newAdminIds: string[] | undefined;
+        const group = groups.find(g => g.id === groupId);
+        const user = users.find(u => u.id === userId);
+
+        updateGroups(prev => prev.map(g => {
+            if (g.id === groupId && !g.adminIds.includes(userId)) {
+                newAdminIds = [...g.adminIds, userId];
+                return { ...g, adminIds: newAdminIds };
+            }
+            return g;
+        }));
+        
+        if (newAdminIds && selectedChat?.id === groupId) {
+            setSelectedChat(prev => {
+                if (prev?.chatType === 'group') {
+                    return { ...prev, adminIds: newAdminIds! };
+                }
+                return prev;
+            });
+        }
+
+        // Notify the promoted user
+        if (group && user && currentUser && userId !== currentUser.id) {
+            try {
+                createNotification({
+                    user_id: userId,
+                    message: `You've been promoted to admin in "${group.name}" by ${currentUser.name}`,
+                    link: `/chat/${groupId}`
+                }).catch(error => console.error('Failed to create promotion notification:', error));
+            } catch (error) {
+                console.error('Failed to create promotion notification:', error);
+            }
+        }
+    };
+
+    const handleDemoteAdmin = (groupId: string, userId: string) => {
+        const groupToUpdate = groups.find(g => g.id === groupId);
+        if (!groupToUpdate) return;
+    
+        if (groupToUpdate.adminIds.length <= 1 && groupToUpdate.adminIds.includes(userId)) {
+            alert("Cannot demote the only admin of the group.");
+            return;
+        }
+        
+        const newAdminIds = groupToUpdate.adminIds.filter(id => id !== userId);
+    
+        if (newAdminIds.length < groupToUpdate.adminIds.length) { // Check if a demotion actually happened
+            updateGroups(prev => prev.map(g => 
+                g.id === groupId ? { ...g, adminIds: newAdminIds } : g
+            ));
+            
+            if (selectedChat?.id === groupId) {
+                setSelectedChat(prev => {
+                    if (prev?.chatType === 'group') {
+                        return { ...prev, adminIds: newAdminIds };
+                    }
+                    return prev;
+                });
+            }
+
+            // Notify the demoted user
+            const user = users.find(u => u.id === userId);
+            if (groupToUpdate && user && currentUser && userId !== currentUser.id) {
+                try {
+                    createNotification({
+                        user_id: userId,
+                        message: `You've been demoted from admin in "${groupToUpdate.name}" by ${currentUser.name}`,
+                        link: `/chat/${groupId}`
+                    }).catch(error => console.error('Failed to create demotion notification:', error));
+                } catch (error) {
+                    console.error('Failed to create demotion notification:', error);
+                }
+            }
+        }
+    };
+
+    const getAllSubgroupIDs = useCallback((parentId: string, allGroups: Group[]): string[] => {
+        const subgroupIDs: string[] = [];
+        const directSubgroups = allGroups.filter(g => g.parentId === parentId);
+        for (const subgroup of directSubgroups) {
+            subgroupIDs.push(subgroup.id);
+            subgroupIDs.push(...getAllSubgroupIDs(subgroup.id, allGroups));
+        }
+        return subgroupIDs;
+    }, []);
+
+    const handleDeleteGroup = async (groupId: string) => {
+        if (window.confirm("Are you sure you want to permanently delete this group and all its sub-groups? This action cannot be undone.")) {
+            const group = groups.find(g => g.id === groupId);
+            const idsToDelete = [groupId, ...getAllSubgroupIDs(groupId, groups)];
+            
+            try {
+                // Delete from database first
+                for (const id of idsToDelete) {
+                    await deleteGroup(id);
+                }
+                
+                // Notify all group members about the deletion before updating local state
+                if (group && currentUser) {
+                    group.members.forEach(async (member) => {
+                        if (member.id !== currentUser.id) {
+                            try {
+                                await createNotification({
+                                    user_id: member.id,
+                                    message: `The group "${group.name}" has been permanently deleted by ${currentUser.name}`,
+                                    link: `/dashboard` // Link to dashboard since group is gone
+                                });
+                            } catch (error) {
+                                console.error('Failed to create deletion notification:', error);
+                            }
+                        }
+                    });
+                }
+                
+                // Update local state
+                updateGroups(prevGroups => prevGroups.filter(g => !idsToDelete.includes(g.id)));
+                
+                updateMessages(prevMessages => {
+                    const newMessages = { ...prevMessages };
+                    idsToDelete.forEach(id => {
+                        delete newMessages[id];
+                    });
+                    return newMessages;
+                });
+                
+                if (selectedChat && idsToDelete.includes(selectedChat.id)) {
+                    setSelectedChat(null);
+                }
+                setGroupInfoModalOpen(false);
+            } catch (error) {
+                console.error('Error deleting group:', error);
+                alert('Failed to delete group. Please try again.');
+            }
+        }
+    };
+
+    const handleToggleArchiveGroup = async (groupId: string) => {
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+
+        const isArchiving = !group.isArchived;
+        
+        try {
+            // Update the group in the database first
+            await updateGroup(groupId, { isArchived: isArchiving });
+            
+            // Update local state
+            updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, isArchived: isArchiving } : g));
+            if (selectedChat?.id === groupId) {
+                setSelectedChat(prev => {
+                    if (prev?.chatType === 'group') {
+                        return { ...prev, isArchived: isArchiving };
+                    }
+                    return prev;
+                });
+            }
+
+            // Notify all group members about the archiving/unarchiving
+            if (currentUser) {
+                group.members.forEach(async (member) => {
+                    if (member.id !== currentUser.id) {
+                        try {
+                            await createNotification({
+                                user_id: member.id,
+                                message: `The group "${group.name}" has been ${isArchiving ? 'archived' : 'unarchived'} by ${currentUser.name}`,
+                                link: `/chat/${groupId}`
+                            });
+                        } catch (error) {
+                            console.error('Failed to create archive notification:', error);
+                        }
+                    }
+                });
+            }
+        } catch (error) {
+            console.error('Error toggling archive status:', error);
+            alert('Failed to update group archive status. Please try again.');
+        }
+    };
+    
+    const handleApproveMember = (groupId: string, userId: string) => {
+        updateGroups(prev => prev.map(g => {
+            if (g.id === groupId) {
+                const memberToApprove = g.pendingMembers?.find(m => m.id === userId);
+                if (!memberToApprove) return g;
+                return {
+                    ...g,
+                    pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId),
+                    members: [...g.members, memberToApprove]
+                };
+            }
+            return g;
+        }));
+
+        // Notify the approved user
+        const group = groups.find(g => g.id === groupId);
+        const user = users.find(u => u.id === userId);
+        if (group && user && currentUser && userId !== currentUser.id) {
+            try {
+                createNotification({
+                    user_id: userId,
+                    message: `Your request to join "${group.name}" has been approved by ${currentUser.name}`,
+                    link: `/chat/${groupId}`
+                }).catch(error => console.error('Failed to create approval notification:', error));
+            } catch (error) {
+                console.error('Failed to create approval notification:', error);
+            }
+        }
+    };
+
+    const handleRejectMember = (groupId: string, userId: string) => {
+         updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId) } : g));
+
+         // Notify the rejected user
+         const group = groups.find(g => g.id === groupId);
+         const user = users.find(u => u.id === userId);
+         if (group && user && currentUser && userId !== currentUser.id) {
+             try {
+                 createNotification({
+                     user_id: userId,
+                     message: `Your request to join "${group.name}" has been declined by ${currentUser.name}`,
+                     link: `/chat/${groupId}`
+                 }).catch(error => console.error('Failed to create rejection notification:', error));
+             } catch (error) {
+                 console.error('Failed to create rejection notification:', error);
+             }
+         }
+    };
+    // --- End Group Management Handlers ---
+
+    // Show loading screen while checking auth session
+    if (isAuthLoading) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                    <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!currentUser) {
+        return <AuthScreen onAuthSuccess={setCurrentUser} />;
+    }
+    
+    console.log('[App] Rendering main app for user:', currentUser.id, 'AppMode:', appMode);
+    console.log('[App] messages store:', messages);
+    console.log('[App] selectedChat:', selectedChat?.id, selectedChat?.chatType);
+    
+    const messagesForChat = selectedChat
+        ? (selectedChat.chatType === 'group'
+            ? messages[selectedChat.id] || []
+            : (directMessages[selectedChat.id] || []).map((dm: DirectMessage): Message => {
+                const sender = users.find(u => u.id === dm.senderId) || { id: 'unknown', name: 'Unknown User', points: 0, badges: [], stats: initialUserStats };
+                return {
+                    id: dm.id,
+                    groupId: dm.threadId,
+                    sender: sender,
+                    timestamp: dm.timestamp,
+                    type: MessageType.TEXT,
+                    text: dm.text,
+                    upvotes: 0,
+                    downvotes: 0,
+                };
+            }))
+        : [];
+    
+    console.log('[App] messagesForChat computed:', messagesForChat.length, messagesForChat);
+    
+    const mainContent = () => {
+        switch (appMode) {
+            case AppMode.CREATE_GROUP:
+                return <CreateGroupScreen
+                    currentUser={currentUser}
+                    allUsers={users}
+                    onCreateGroup={handleCreateGroup}
+                    onBack={() => setAppMode(AppMode.CHAT)}
+                />;
+            case AppMode.CHAT:
+                return <ChatWindow 
+                    chat={selectedChat}
+                    messages={messagesForChat}
+                    currentUser={currentUser}
+                    userVotes={userVotes}
+                    onSendMessage={onSendMessage}
+                    onOpenQuestionModal={onOpenQuestionModal}
+                    onOpenGroupInfoModal={() => selectedChat && selectedChat.chatType === 'group' && onOpenGroupInfoModal()}
+                    onOpenTestConfigModal={onOpenTestConfigModal}
+                    onOpenStudyConfigModal={onOpenStudyConfigModal}
+                    onVoteQuestion={onVoteQuestion}
+                    onFlagAsSimilar={onFlagAsSimilar}
+                    onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
+                    groups={groups}
+                    onToggleArchiveGroup={handleToggleArchiveGroup}
+                />;
+            case AppMode.TEST_ACTIVE:
+                if (!activeTestSession) {
+                    setAppMode(AppMode.CHAT);
+                    return null;
+                }
+                return <TestTakingScreen
+                    mode="test"
+                    session={activeTestSession}
+                    onUpdateAnswer={handleUpdateAnswer}
+                    onChangeQuestion={handleChangeQuestion}
+                    onToggleBookmark={handleToggleBookmark}
+                    onSubmitTest={handleSubmitTest}
+                    onSubmitOfflineTest={handleSubmitTest}
+                    onPauseSession={handlePauseSession}
+                    onCancelSession={handleCancelActiveSession}
+                />;
+            case AppMode.STUDY_ACTIVE:
+                if (!activeStudySession) {
+                    setAppMode(AppMode.CHAT);
+                    return null;
+                }
+                return <TestTakingScreen
+                    mode="study"
+                    session={activeStudySession}
+                    onUpdateAnswer={handleUpdateAnswer}
+                    onChangeQuestion={handleChangeQuestion}
+                    onToggleBookmark={handleToggleBookmark}
+                    onEndSession={handleEndStudySession}
+                    onPauseSession={handlePauseSession}
+                    onCancelSession={handleCancelActiveSession}
+                />;
+             case AppMode.GAME_ACTIVE:
+                if (!activeGameSession) {
+                    setAppMode(AppMode.CHAT);
+                    return null;
+                }
+                return <GameScreen session={activeGameSession} onUpdateAnswer={handleGameAnswer} />;
+            case AppMode.GAME_RESULTS:
+                if (!activeGameSession || !activeGameSession.isComplete) {
+                    setAppMode(AppMode.CHAT);
+                    return null;
+                }
+                return <GameResultScreen session={activeGameSession} currentUser={currentUser} onRematch={handleRematch} onExit={() => { setActiveGameSession(null); setAppMode(AppMode.CHAT); }} />;
+            case AppMode.TEST_REVIEW:
+                if (!activeTestResult) {
+                    setAppMode(AppMode.CHAT);
+                    return null;
+                }
+                return <TestReviewScreen
+                    results={activeTestResult}
+                    allTestResults={testResults}
+                    groups={groups}
+                    onExit={() => { setActiveTestResult(null); setAppMode(AppMode.CHAT); }}
+                    onNavigateToDashboard={() => { setActiveTestResult(null); setAppMode(AppMode.DASHBOARD); }}
+                    onRetakeTest={handleRetakeTest}
+                    onPracticeFailedQuestions={handlePracticeFailedQuestions}
+                />;
+            case AppMode.DASHBOARD:
+                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} onNavigateToChat={() => setAppMode(AppMode.CHAT)} allMessages={messages} userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult} />;
+            case AppMode.FLASHCARDS:
+                return <FlashcardsScreen 
+                    decks={decks} 
+                    flashcards={flashcards} 
+                    onOpenCreateDeck={handleOpenCreateDeckModal} 
+                    onOpenCreateFlashcard={() => handleOpenCreateFlashcardModal()} 
+                    onSelectDeck={handleSelectDeck}
+                    onExportDeck={handleExportDeck}
+                    onImportDeck={handleImportDeck}
+                />;
+            case AppMode.DECK_DETAIL:
+                if (!selectedDeck) {
+                    setAppMode(AppMode.FLASHCARDS);
+                    return null;
+                }
+                return <DeckDetailScreen 
+                    deck={selectedDeck}
+                    flashcards={flashcards}
+                    onBack={() => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); }}
+                    onStartReview={handleStartReview}
+                    onStartCram={handleStartCram}
+                    onOpenCreateFlashcard={handleOpenCreateFlashcardModal}
+                    onOpenEditFlashcard={handleOpenEditFlashcardModal}
+                    onDeleteFlashcard={handleDeleteFlashcard}
+                    onOpenEditDeck={handleOpenEditDeckModal}
+                    onDeleteDeck={handleDeleteDeck}
+                    onGenerateFlashcards={handleGenerateFlashcards}
+                    isGenerating={isGeneratingFlashcards}
+                    onResetStatistics={handleResetDeckStatistics}
+                />;
+            case AppMode.FLASHCARD_REVIEW:
+                if (!activeReviewSession) {
+                    setAppMode(AppMode.FLASHCARDS);
+                    return null;
+                }
+                return <FlashcardReviewScreen 
+                    session={activeReviewSession}
+                    onUpdateSrs={handleUpdateSrsData}
+                    onEndSession={() => { setAppMode(AppMode.DECK_DETAIL); setActiveReviewSession(null); }}
+                />;
+            case AppMode.FLASHCARD_CRAM:
+                if (!activeCramSession) {
+                    setAppMode(AppMode.FLASHCARDS);
+                    return null;
+                }
+                return <CramSessionScreen
+                    session={activeCramSession}
+                    onAnswer={handleCramAnswer}
+                    onEndSession={handleEndCramSession}
+                    onCramIncorrect={handleCramIncorrect}
+                />;
+            case AppMode.OFFLINE_MODE:
+                return <OfflineModeScreen 
+                    offlineBundles={offlineBundles} 
+                    pendingSyncResultsCount={pendingSyncResults.length} 
+                    onStartOfflineSession={handleStartOfflineSession}
+                    onDeleteBundle={handleDeleteBundle}
+                    onSyncPendingResults={handleSyncResults}
+                    isOnline={isOnline} />;
+            case AppMode.BUDGET_TRACKER:
+                return <BudgetTrackerScreen
+                    currentUser={currentUser}
+                    transactions={transactions.filter(t => t.userId === currentUser.id)}
+                    budget={budget?.userId === currentUser.id ? budget : null}
+                    onOpenAddExpense={() => setAddExpenseModalOpen(true)}
+                    onOpenAddIncome={() => setAddIncomeModalOpen(true)}
+                    onOpenSetBudget={() => setSetBudgetModalOpen(true)}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    onToggleSidebar={toggleSidebar}
+                />;
+            case AppMode.MARKETPLACE:
+                return <MarketplaceScreen
+                    onNavigate={(screen, params) => {
+                        console.log('[Marketplace] onNavigate:', screen, params);
+                        if (screen === 'CreateMarketplaceListing') {
+                            console.log('[Marketplace] Opening create listing modal with category:', params?.category);
+                            setMarketplaceListingCategory(params?.category || 'academic');
+                            setIsCreateMarketplaceListingModalOpen(true);
+                        } else if (screen === 'MarketplaceListingDetail') {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'MyListings') {
+                            console.log('[Marketplace] Navigating to My Listings');
+                            setAppMode(AppMode.MY_LISTINGS);
+                        } else if (screen === 'MarketplaceInquiries') {
+                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        }
+                    }}
+                />;
+            case AppMode.MARKETPLACE_LISTING_DETAIL:
+                if (!selectedMarketplaceListingId) {
+                    setAppMode(AppMode.MARKETPLACE);
+                    return null;
+                }
+                return <MarketplaceListingDetailScreen
+                    listingId={selectedMarketplaceListingId}
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'DirectMessages') {
+                            // Handle DM navigation for contacting seller
+                            if (params?.userId) {
+                                handleInitiateDm(params.userId);
+                            }
+                        } else if (screen === 'MarketplaceTransaction') {
+                            // Transaction initiated - notify user and open DM with seller
+                            alert('Purchase initiated! You can coordinate with the seller via direct message.');
+                            setAppMode(AppMode.MARKETPLACE);
+                        }
+                    }}
+                />;
+            case AppMode.MY_LISTINGS:
+                return <MyListingsScreen
+                    onNavigate={(screen, params) => {
+                        if (screen === 'CreateMarketplaceListing') {
+                            setMarketplaceListingCategory(params?.category || 'academic');
+                            setIsCreateMarketplaceListingModalOpen(true);
+                        } else if (screen === 'EditMarketplaceListing') {
+                            setEditingMarketplaceListing(params.listing);
+                            setIsEditMarketplaceListingModalOpen(true);
+                        } else if (screen === 'MarketplaceListingDetail') {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'MarketplaceInquiries') {
+                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        }
+                    }}
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                />;
+            case AppMode.MARKETPLACE_INQUIRIES:
+                return <MarketplaceInquiriesScreen
+                    onNavigate={(screen, params) => {
+                        if (screen === 'DirectMessages') {
+                            if (params?.userId) {
+                                handleInitiateDm(params.userId);
+                            }
+                        } else if (screen === 'MarketplaceListingDetail') {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        }
+                    }}
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    userId={currentUser.id}
+                />;
+            case AppMode.CREATE_MARKETPLACE_LISTING:
+                // Open the create listing modal and show marketplace underneath
+                if (!isCreateMarketplaceListingModalOpen) {
+                    setIsCreateMarketplaceListingModalOpen(true);
+                }
+                return <MarketplaceScreen
+                    onNavigate={(screen, params) => {
+                        if (screen === 'CreateMarketplaceListing') {
+                            setMarketplaceListingCategory(params?.category || 'academic');
+                            setIsCreateMarketplaceListingModalOpen(true);
+                        } else if (screen === 'MarketplaceListingDetail') {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'MyListings') {
+                            setAppMode(AppMode.MY_LISTINGS);
+                        } else if (screen === 'MarketplaceInquiries') {
+                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        }
+                    }}
+                    userId={currentUser.id}
+                />;
+            default:
+                return <div className="p-4">Mode not implemented yet.</div>;
+        }
+    };
+    
+    return (
+        <div className="flex h-screen bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors">
+          <Sidebar
+            currentUser={currentUser}
+            groups={groups}
+            dmThreads={dmThreads}
+            selectedChatId={selectedChat?.id}
+            onSelectChat={handleSelectChat}
+            onNavigateToCreateGroup={() => setAppMode(AppMode.CREATE_GROUP)}
+            onNavigateToDashboard={() => setAppMode(AppMode.DASHBOARD)}
+            onNavigateToOfflineMode={() => setAppMode(AppMode.OFFLINE_MODE)}
+            onNavigateToFlashcards={() => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); }}
+            onNavigateToBudgetTracker={handleNavigateToBudgetTracker}
+            onNavigateToMarketplace={() => setAppMode(AppMode.MARKETPLACE)}
+            pendingSyncCount={pendingSyncResults.length}
+            isOnline={isOnline}
+            onSyncPendingResults={handleSyncResults}
+            onUpdateCurrentUserAvatar={handleUpdateCurrentUserAvatar}
+            onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+            currentAppMode={appMode}
+            onLogout={handleLogout}
+            isExpanded={isSidebarExpanded}
+            onToggleExpand={toggleSidebar}
+            onOpenNewDmModal={() => setIsNewDmModalOpen(true)}
+            unreadNotificationCount={notifications.filter(n => !n.read).length}
+            onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
+            activeTestSession={activeTestSession}
+            activeStudySession={activeStudySession}
+            onResumeSession={handleResumeSession}
+            onCancelSession={handleCancelActiveSession}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            dueCardsCount={dueCardsCount}
+          />
+          <main className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
+            {mainContent()}
+          </main>
+          
+          <CreateGroupModal 
+            isOpen={isCreateGroupModalOpen} 
+            onClose={handleCloseCreateGroupModal} 
+            onSubmit={handleCreateSubGroup}
+            parentId={subgroupParentId}
+            allGroups={groups}
+          />
+
+          <QuestionModal 
+            isOpen={isQuestionModalOpen}
+            onClose={() => setQuestionModalOpen(false)}
+            onSubmit={handleQuestionSubmit}
+            groupName={selectedChat?.chatType === 'group' ? selectedChat.name : ''}
+          />
+          
+          {selectedChat?.chatType === 'group' && <GroupInfoModal
+            isOpen={isGroupInfoModalOpen}
+            onClose={() => setGroupInfoModalOpen(false)}
+            group={selectedChat}
+            currentUser={currentUser}
+            onUpdateDetails={handleUpdateGroupDetails}
+            onUpdateGroupAvatar={handleUpdateGroupAvatar}
+            onPromoteToAdmin={handlePromoteToAdmin}
+            onDemoteAdmin={handleDemoteAdmin}
+            onDeleteGroup={handleDeleteGroup}
+            onToggleArchiveGroup={handleToggleArchiveGroup}
+            onChallengeUser={handleChallengeUser}
+            onApproveMember={handleApproveMember}
+            onRejectMember={handleRejectMember}
+            onOpenAddMembersModal={() => setAddMembersModalOpen(true)}
+            onRevokeInvitation={handleRevokeInvitation}
+            onRevokePhoneInvitation={handleRevokePhoneInvitation}
+            onInitiateDm={handleInitiateDm}
+          />}
+
+          {selectedChat?.chatType === 'group' && <TestConfigModal
+            isOpen={isTestConfigModalOpen}
+            onClose={() => setTestConfigModalOpen(false)}
+            group={selectedChat}
+            allGroups={groups}
+            mode={activeTestConfigMode}
+            allMessages={messages}
+            userQuestionStats={userQuestionStats} 
+            testPresets={currentUser.testPresets || []}
+            challengeOpponent={challengeOpponent}
+            onSavePreset={(name, config) => {
+                if (!currentUser) return;
+                const newPreset: TestPreset = { id: uuidv4(), name, config };
+                const updatedPresets = [...(currentUser.testPresets || []), newPreset];
+                setCurrentUser({ ...currentUser, testPresets: updatedPresets });
+                
+                // Update profile in database
+                updateUserProfile(currentUser.id, { test_presets: updatedPresets }).catch(error => console.error('Failed to save test preset:', error));
+                
+                alert(`Preset "${name}" saved!`);
+            }}
+            onDeletePreset={(id) => {
+                if (!currentUser) return;
+                const updatedPresets = (currentUser.testPresets || []).filter(p => p.id !== id);
+                setCurrentUser({ ...currentUser, testPresets: updatedPresets });
+                
+                // Update profile in database
+                updateUserProfile(currentUser.id, { test_presets: updatedPresets }).catch(error => console.error('Failed to delete test preset:', error));
+            }}
+            onSubmit={handleTestSubmit}
+            onDownloadForOffline={handleDownloadForOffline}
+          />}
+
+          <NewDirectMessageModal
+            isOpen={isNewDmModalOpen}
+            onClose={() => setIsNewDmModalOpen(false)}
+            currentUser={currentUser}
+            allUsers={users}
+            onStartDm={(userId) => {
+              handleInitiateDm(userId);
+              setIsNewDmModalOpen(false);
+            }}
+          />
+          
+          <SettingsModal
+              isOpen={isSettingsModalOpen}
+              onClose={() => setIsSettingsModalOpen(false)}
+              currentUser={currentUser}
+              settings={currentUser.settings}
+              onUpdateSettings={handleUpdateSettings}
+              onUpdateProfile={handleUpdateProfile}
+              onUpdatePassword={handleUpdatePassword}
+              onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
+          />
+          <CreateDeckModal 
+            isOpen={isCreateDeckModalOpen}
+            onClose={() => setCreateDeckModalOpen(false)}
+            onSubmit={handleCreateOrUpdateDeck}
+            editingDeck={editingDeck}
+          />
+          <CreateFlashcardModal 
+            isOpen={isCreateFlashcardModalOpen}
+            onClose={() => setCreateFlashcardModalOpen(false)}
+            onSubmit={handleCreateOrUpdateFlashcard}
+            decks={decks}
+            initialDeckId={flashcardInitialDeckId}
+            editingFlashcard={editingFlashcard}
+          />
+          {selectedChat?.chatType === 'group' && <AddMembersModal 
+              isOpen={isAddMembersModalOpen}
+              onClose={() => setAddMembersModalOpen(false)}
+              onSubmit={(userIds) => handleInviteMembers(selectedChat.id, userIds)}
+              group={selectedChat}
+              allUsers={users}
+              currentUser={currentUser}
+          />}
+          <NotificationModal
+            isOpen={isNotificationModalOpen}
+            onClose={() => setIsNotificationModalOpen(false)}
+            notifications={notifications}
+            onMarkAllAsRead={async () => {
+              if (!currentUser) return;
+              try {
+                await markAllNotificationsAsRead(currentUser.id);
+                updateNotifications(prev => prev.map(n => ({ ...n, read: true })));
+              } catch (error) {
+                console.error('Failed to mark all notifications as read:', error);
+              }
+            }}
+            onClearAll={async () => {
+              if (!currentUser) return;
+              try {
+                await deleteAllNotifications(currentUser.id);
+                setNotifications([]);
+              } catch (error) {
+                console.error('Failed to clear all notifications:', error);
+              }
+            }}
+          />
+           <AddExpenseModal
+            isOpen={isAddExpenseModalOpen}
+            onClose={() => setAddExpenseModalOpen(false)}
+            onSubmit={handleAddTransaction}
+          />
+          <AddIncomeModal
+            isOpen={isAddIncomeModalOpen}
+            onClose={() => setAddIncomeModalOpen(false)}
+            onSubmit={handleAddTransaction}
+          />
+          <SetBudgetModal
+            isOpen={isSetBudgetModalOpen}
+            onClose={() => setSetBudgetModalOpen(false)}
+            onSubmit={handleSetBudget}
+            currentBudget={budget}
+          />
+          {analyzingResult && (
+              <TestAnalysisModal
+                  isOpen={!!analyzingResult}
+                  onClose={() => setAnalyzingResult(null)}
+                  results={analyzingResult}
+              />
+          )}
+          {duplicateInfo && <DuplicateQuestionModal 
+            isOpen={isDuplicateQuestionModalOpen}
+            onClose={() => { setDuplicateQuestionModalOpen(false); setDuplicateInfo(null); }}
+            duplicateInfo={duplicateInfo}
+            onUpvoteAndClose={handleUpvoteDuplicateAndClose}
+          />}
+          <CreateMarketplaceListingModal
+            isOpen={isCreateMarketplaceListingModalOpen}
+            onClose={() => setIsCreateMarketplaceListingModalOpen(false)}
+            category={marketplaceListingCategory}
+            onSuccess={() => {
+              setIsCreateMarketplaceListingModalOpen(false);
+              // Could refresh marketplace listings here
+            }}
+          />
+          {editingMarketplaceListing && (
+            <EditMarketplaceListingModal
+              isOpen={isEditMarketplaceListingModalOpen}
+              onClose={() => {
+                setIsEditMarketplaceListingModalOpen(false);
+                setEditingMarketplaceListing(null);
+              }}
+              listing={editingMarketplaceListing}
+              onSuccess={() => {
+                setIsEditMarketplaceListingModalOpen(false);
+                setEditingMarketplaceListing(null);
+              }}
+            />
+          )}
+          {currentUser && (
+            <UsernameRequiredModal
+              isOpen={isUsernameRequiredModalOpen}
+              onClose={() => setUsernameRequiredModalOpen(false)}
+              currentUser={currentUser}
+              onSuccess={(username, firstName, lastName) => {
+                // Update the current user with the new username
+                setCurrentUser({
+                  ...currentUser,
+                  username,
+                  firstName,
+                  lastName,
+                  name: firstName && lastName ? `${firstName} ${lastName}` : currentUser.name,
+                });
+                setUsernameRequiredModalOpen(false);
+              }}
+            />
+          )}
+        </div>
+    );
+};

@@ -1,0 +1,8 @@
+{
+  "name": "Lantern Study__",
+  "description": "A WhatsApp-like application for students to create study groups, share questions, and prepare for tests collaboratively.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}

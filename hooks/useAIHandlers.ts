@@ -1,0 +1,250 @@
+import { useState, useCallback } from 'react';
+import { useUIStore } from '../stores/uiStore';
+import { useAuthStore } from '../stores/authStore';
+import { useGroupStore } from '../stores/groupStore';
+import {
+  aiGenerateQuestions,
+  aiGenerateFlashcards,
+  aiExplainAnswer,
+  aiGetStudyRecommendations,
+  aiAskTutor,
+  aiEnhanceFlashcard,
+  AIGeneratedQuestion,
+  AIGeneratedFlashcard,
+  AIStudyRecommendation,
+} from '../services/ai';
+import { MessageType, QuestionType, QuestionStatus } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+import { sendMessage } from '../services/supabase';
+
+export function useAIHandlers() {
+  const { currentUser } = useAuthStore();
+  const { selectedChat, closeModal } = useUIStore();
+  const { updateMessages } = useGroupStore();
+
+  const [isAILoading, setIsAILoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // ─── 1. Generate Questions from notes ───────────────────────
+
+  const handleAIGenerateQuestions = useCallback(
+    async (
+      notes: string,
+      options?: { count?: number; difficulty?: string; questionTypes?: string[]; subject?: string }
+    ): Promise<AIGeneratedQuestion[]> => {
+      if (!currentUser || !selectedChat || selectedChat.chatType !== 'group') return [];
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { questions } = await aiGenerateQuestions(notes, options);
+        const groupId = selectedChat.id;
+
+        for (const q of questions) {
+          const qOptions = q.options?.map((text) => ({ id: uuidv4(), text }));
+          // Robust matching: exact match, or strip letter prefixes (e.g. "A) ..." → "..."),
+          // or check if option text contains/starts with the correct answer, or vice-versa
+          const normalise = (s: string) => s.replace(/^[A-Da-d][).\s]+\s*/, '').trim().toLowerCase();
+          const correctNorm = q.correctAnswer ? normalise(q.correctAnswer) : '';
+          const correctIds = qOptions
+            ?.filter((o) => {
+              if (!q.correctAnswer) return false;
+              // Exact match
+              if (o.text === q.correctAnswer) return true;
+              // Normalised match (strip "A) " prefix)
+              const optNorm = normalise(o.text);
+              if (optNorm === correctNorm) return true;
+              // Letter-only answer like "A" matching first option, "B" second, etc.
+              const letterMatch = q.correctAnswer.trim().match(/^([A-Da-d])$/);
+              if (letterMatch) {
+                const idx = letterMatch[1].toUpperCase().charCodeAt(0) - 65; // A=0, B=1...
+                return qOptions!.indexOf(o) === idx;
+              }
+              // Substring containment (answer in option or option in answer)
+              if (optNorm.includes(correctNorm) || correctNorm.includes(optNorm)) return true;
+              return false;
+            })
+            .map((o) => o.id);
+
+          const questionType =
+            q.type === 'multiple_choice'
+              ? QuestionType.MULTIPLE_CHOICE_SINGLE
+              : q.type === 'true_false'
+              ? QuestionType.TRUE_FALSE
+              : q.type === 'fill_in_blank'
+              ? QuestionType.FILL_IN_THE_BLANK
+              : QuestionType.OPEN_ENDED;
+
+          const questionData = {
+            type: MessageType.QUESTION,
+            groupId,
+            questionStem: q.text,
+            explanation: q.explanation,
+            questionType,
+            options: qOptions,
+            correctAnswerIds: correctIds,
+            tags: q.topic ? [q.topic] : undefined,
+            questionStatus: QuestionStatus.PENDING,
+            acceptableAnswers:
+              questionType === QuestionType.FILL_IN_THE_BLANK
+                ? [q.correctAnswer]
+                : undefined,
+          };
+
+          try {
+            const content = JSON.stringify({ type: MessageType.QUESTION, ...questionData });
+            const saved = await sendMessage(groupId, currentUser.id, content);
+            if (saved) {
+              updateMessages((prev) => ({
+                ...prev,
+                [groupId]: [
+                  ...(prev[groupId] || []),
+                  {
+                    id: saved.id,
+                    sender: currentUser,
+                    timestamp: new Date(saved.timestamp || new Date()),
+                    upvotes: 0,
+                    downvotes: 0,
+                    ...questionData,
+                  },
+                ],
+              }));
+            }
+          } catch {
+            // silently continue to next question
+          }
+        }
+
+        closeModal('aiGenerateQuestions');
+        return questions;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to generate questions');
+        return [];
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    [currentUser, selectedChat, updateMessages, closeModal]
+  );
+
+  // ─── 2. Generate Flashcards from notes ──────────────────────
+
+  const handleAIGenerateFlashcards = useCallback(
+    async (
+      notes: string,
+      options?: { count?: number; style?: 'concise' | 'detailed' }
+    ): Promise<AIGeneratedFlashcard[]> => {
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { flashcards } = await aiGenerateFlashcards(notes, options);
+        return flashcards;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to generate flashcards');
+        return [];
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    []
+  );
+
+  // ─── 3. Explain Answer ──────────────────────────────────────
+
+  const handleAIExplainAnswer = useCallback(
+    async (
+      question: string,
+      userAnswer: string,
+      correctAnswer: string,
+      options?: string[]
+    ): Promise<string | null> => {
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { explanation } = await aiExplainAnswer(question, userAnswer, correctAnswer, options);
+        return explanation;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to explain answer');
+        return null;
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    []
+  );
+
+  // ─── 4. Study Recommendations (Coach) ──────────────────────
+
+  const handleAIStudyRecommendations = useCallback(
+    async (performanceData: {
+      recentScores: { topic: string; score: number; date: string }[];
+      flashcardAccuracy: { topic: string; correctRate: number }[];
+      studyHoursThisWeek: number;
+    }): Promise<AIStudyRecommendation | null> => {
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { recommendations } = await aiGetStudyRecommendations(performanceData);
+        return recommendations;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to get recommendations');
+        return null;
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    []
+  );
+
+  // ─── 5. AI Tutor (ask anything) ─────────────────────────────
+
+  const handleAIAskTutor = useCallback(
+    async (
+      question: string,
+      context?: { subject?: string; recentTopics?: string[] }
+    ): Promise<string | null> => {
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { answer } = await aiAskTutor(question, context);
+        return answer;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to ask tutor');
+        return null;
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    []
+  );
+
+  // ─── 6. Enhance Flashcard ───────────────────────────────────
+
+  const handleAIEnhanceFlashcard = useCallback(
+    async (front: string, back: string): Promise<AIGeneratedFlashcard | null> => {
+      setIsAILoading(true);
+      setAiError(null);
+      try {
+        const { enhanced } = await aiEnhanceFlashcard(front, back);
+        return enhanced;
+      } catch (err: any) {
+        setAiError(err.message || 'Failed to enhance flashcard');
+        return null;
+      } finally {
+        setIsAILoading(false);
+      }
+    },
+    []
+  );
+
+  return {
+    isAILoading,
+    aiError,
+    setAiError,
+    handleAIGenerateQuestions,
+    handleAIGenerateFlashcards,
+    handleAIExplainAnswer,
+    handleAIStudyRecommendations,
+    handleAIAskTutor,
+    handleAIEnhanceFlashcard,
+  };
+}

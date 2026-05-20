@@ -1,0 +1,113 @@
+/* Lantern Study Styles */
+
+/* ===== Global Focus & Accessibility ===== */
+
+/* Focus-visible ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip link for screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ===== Smooth Transitions ===== */
+* {
+  scroll-behavior: smooth;
+}
+
+/* ===== Custom Scrollbar ===== */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin styled scrollbar for chat & content areas */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .scrollbar-thin {
+    scrollbar-color: #475569 transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #475569;
+  }
+}
+
+/* ===== Animation Utilities ===== */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-from-top {
+  from { transform: translateY(-4px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes slide-in-from-bottom {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-in {
+  animation-fill-mode: both;
+}
+.fade-in {
+  animation-name: fade-in;
+}
+.slide-in-from-top-2 {
+  animation-name: slide-in-from-top;
+}
+.slide-in-from-bottom-2 {
+  animation-name: slide-in-from-bottom;
+}
+.duration-150 {
+  animation-duration: 150ms;
+}
+.duration-200 {
+  animation-duration: 200ms;
+}
+
+/* ===== Line Clamp ===== */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ===== Reduced Motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

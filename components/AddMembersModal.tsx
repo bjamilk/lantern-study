@@ -1,0 +1,288 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Group } from '../types';
+import { XCircleIcon, UserPlusIcon, LinkIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { supabase } from '../services/supabase';
+
+interface SearchResult {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  name: string;
+  avatar_url: string | null;
+}
+
+interface AddMembersModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (userIds: string[]) => Promise<void> | void;
+  group: Group;
+  currentUser: { id: string };
+}
+
+const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSubmit, group, currentUser }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSearchTerm('');
+      setSearchResults([]);
+      setSelectedUserIds([]);
+      setCopied(false);
+      setSearchError('');
+      setSuccessMessage('');
+      // Auto-focus the search input after a short delay for animation
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  // Debounced search for users by username or name using Supabase RPC
+  useEffect(() => {
+    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase.rpc('search_users', {
+          search_query: searchTerm.trim(),
+          exclude_user_id: currentUser.id,
+          result_limit: 20,
+        });
+
+        if (error) {
+          console.error('Search error:', error);
+          setSearchError('Failed to search users');
+          setSearchResults([]);
+        } else {
+          const groupMemberIds = new Set(group.members?.map(m => m.id) || []);
+          const filtered = (data || []).filter((user: SearchResult) => 
+            !groupMemberIds.has(user.id)
+          );
+          setSearchResults(filtered);
+        }
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchError('Failed to search. Please try again.');
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, group.members, currentUser.id]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
+    if (selectedUserIds.length > 0 && !isSubmitting) {
+      const count = selectedUserIds.length;
+      setIsSubmitting(true);
+      try {
+        await onSubmit(selectedUserIds);
+        setSelectedUserIds([]);
+        setSearchTerm('');
+        setSearchResults([]);
+        setSuccessMessage(`${count} member${count !== 1 ? 's' : ''} added successfully!`);
+        setTimeout(() => {
+          setSuccessMessage('');
+          onClose();
+        }, 1800);
+      } catch (error) {
+        console.error('Failed to add members:', error);
+        setSearchError('Failed to add members. Please try again.');
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+  };
+
+  const handleUserToggle = (userId: string) => {
+    setSelectedUserIds(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const inviteLink = `${window.location.origin}${window.location.pathname}?inviteId=${group.inviteId}`;
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(inviteLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const getAvatarUrl = (user: SearchResult) => {
+    if (user.avatar_url) return user.avatar_url;
+    const name = user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User';
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=40`;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[90]" role="dialog" aria-modal="true" aria-labelledby="add-members-modal-title">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform flex flex-col h-[80vh] max-h-[40rem]">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4 flex-shrink-0">
+          <h2 id="add-members-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
+            <UserPlusIcon className="w-6 h-6 mr-2 text-blue-500" />
+            Add Members to "{group.name}"
+          </h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">
+            <XCircleIcon className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Success banner */}
+        {successMessage && (
+          <div className="mb-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg flex items-center text-green-700 dark:text-green-300 animate-pulse">
+            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" />
+            <span className="text-sm font-medium">{successMessage}</span>
+          </div>
+        )}
+
+        {/* Search input — always visible at top */}
+        <div className="relative mb-3 flex-shrink-0">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+          </div>
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 p-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Search by @username or name..."
+          />
+        </div>
+
+        {/* Search results area — scrollable middle */}
+        <div className="flex-1 overflow-y-auto border dark:border-gray-700 rounded-lg min-h-0">
+          {isSearching && (
+            <div className="p-8 flex justify-center">
+              <svg className="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+          )}
+
+          {searchError && (
+            <div className="p-4 text-center text-sm text-red-500">{searchError}</div>
+          )}
+
+          {!isSearching && !searchError && searchTerm.length < 2 && (
+            <div className="p-8 text-center">
+              <AtSymbolIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Type at least 2 characters to search for users
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Search by @username, first name, or last name
+              </p>
+            </div>
+          )}
+
+          {!isSearching && !searchError && searchTerm.length >= 2 && searchResults.length === 0 && (
+            <div className="p-8 text-center">
+              <UsersIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                No users found matching "{searchTerm}"
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Try a different search term or share the invite link below
+              </p>
+            </div>
+          )}
+
+          {!isSearching && searchResults.length > 0 && (
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              {searchResults.map(user => {
+                const isSelected = selectedUserIds.includes(user.id);
+                return (
+                  <li 
+                    key={user.id} 
+                    onClick={() => handleUserToggle(user.id)} 
+                    className={`p-3 flex items-center cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/50' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                  >
+                    <div className="relative">
+                      <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
+                      {isSelected && (
+                        <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                          <CheckIcon className="w-3 h-3 text-white"/>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
+                      {user.username && (
+                        <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Invite link section — always visible at bottom */}
+        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
+            <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+            <span className="px-3 uppercase tracking-wider font-medium">or share invite link</span>
+            <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="flex-1 flex items-center px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+              <LinkIcon className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
+              <span className="text-sm text-gray-500 dark:text-gray-400 truncate">{inviteLink}</span>
+            </div>
+            <button 
+              type="button"
+              onClick={handleCopyLink} 
+              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors whitespace-nowrap ${copied ? 'bg-green-600' : 'bg-gray-600 hover:bg-gray-700 dark:bg-gray-500 dark:hover:bg-gray-400'}`}
+            >
+              {copied ? <span className="flex items-center"><CheckIcon className="w-4 h-4 mr-1"/> Copied!</span> : 'Copy'}
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end space-x-3 pt-4 mt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded-lg"
+          >
+            {selectedUserIds.length > 0 ? 'Cancel' : 'Done'}
+          </button>
+          {selectedUserIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-lg shadow-sm ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+            >
+              {isSubmitting ? 'Adding...' : `Add ${selectedUserIds.length} Member${selectedUserIds.length !== 1 ? 's' : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AddMembersModal;
