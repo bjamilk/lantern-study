@@ -93,13 +93,6 @@ interface UIState {
   challengeOpponent: User | null;
   setChallengeOpponent: (user: User | null) => void;
   
-  // Test/Study/Game Sessions
-  activeTestSession: TestSessionData | null;
-  setActiveTestSession: (session: TestSessionData | null) => void;
-  activeStudySession: StudySessionData | null;
-  setActiveStudySession: (session: StudySessionData | null) => void;
-  activeGameSession: GameSession | null;
-  setActiveGameSession: (session: GameSession | null) => void;
   
   // Subgroup
   subgroupParentId: string | undefined;
@@ -225,13 +218,6 @@ export const useUIStore = create<UIState>()(
       challengeOpponent: null,
       setChallengeOpponent: (user) => set({ challengeOpponent: user }),
       
-      // Test/Study/Game Sessions
-      activeTestSession: null,
-      setActiveTestSession: (session) => set({ activeTestSession: session }),
-      activeStudySession: null,
-      setActiveStudySession: (session) => set({ activeStudySession: session }),
-      activeGameSession: null,
-      setActiveGameSession: (session) => set({ activeGameSession: session }),
       
       // Subgroup
       subgroupParentId: undefined,

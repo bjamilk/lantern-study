@@ -4,6 +4,7 @@ import { AppMode, TestConfig, TestQuestion, UserAnswerRecord, GameSession, User 
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
+import { useTestStore } from '../stores/testStore';
 import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleArray } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import { updateUserProfile } from '../services/supabase';
@@ -18,9 +19,11 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     const { messages } = useGroupStore();
     const {
         setAppMode, selectedChat,
-        activeGameSession, setActiveGameSession,
         challengeOpponent, closeModal
     } = useUIStore();
+    const {
+        activeGameSession, setActiveGameSession
+    } = useTestStore();
 
     const handleEndGame = useCallback((finalSession: GameSession) => {
         if (!currentUser) return;
@@ -162,7 +165,7 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
 
         const opponentAnswerDelay = Math.random() * 2000 + 1000;
         setTimeout(() => {
-            const currentSession = useUIStore.getState().activeGameSession;
+            const currentSession = useTestStore.getState().activeGameSession;
             if (!currentSession || currentSession.id !== updatedSession.id) return;
 
             const opponentIsCorrect = Math.random() < 0.8;

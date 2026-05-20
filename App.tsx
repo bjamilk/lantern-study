@@ -68,8 +68,8 @@ import AIGenerateQuestionsModal from './components/AIGenerateQuestionsModal';
 export const App: React.FC = () => {
     const { currentUser, setCurrentUser, isAuthLoading } = useAuthStore();
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
-    const { testResults, offlineBundles, pendingSyncResults, userQuestionStats,
-            activeTestSession, activeStudySession, activeGameSession } = useTestStore();
+        const { testResults, offlineBundles, pendingSyncResults, userQuestionStats,
+            activeTestSession, activeStudySession, activeGameSession, setActiveGameSession } = useTestStore();
     const { decks, flashcards, dueCardsCount } = useFlashcardStore();
     const { transactions, budget } = useBudgetStore();
 
@@ -94,7 +94,6 @@ export const App: React.FC = () => {
         activeTestResult, setActiveTestResult,
         analyzingResult, setAnalyzingResult,
         challengeOpponent,
-        setActiveGameSession,
         selectedChat, setSelectedChat,
         marketplaceListingCategory, setMarketplaceListingCategory,
         selectedMarketplaceListingId, setSelectedMarketplaceListingId,
