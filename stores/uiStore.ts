@@ -242,6 +242,7 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
+        appMode: state.appMode,
       }),
     }
   )

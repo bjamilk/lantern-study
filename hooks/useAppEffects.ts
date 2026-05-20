@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState } from 'react';
-import { AppMode, OfflineBundle, TransactionType, Transaction } from '../types';
+import { AppMode, OfflineSessionBundle, TransactionType, Transaction } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
@@ -71,38 +71,40 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         let isMounted = true;
         
         const restoreSession = async () => {
-            const storedSessionKeys = Object.keys(localStorage).filter(key => 
-                key.startsWith('sb-') && key.includes('auth-token')
-            );
-            
-            if (storedSessionKeys.length === 0) {
-                console.log('No stored session found, showing login');
-                if (isMounted) {
-                    setCurrentUser(null);
-                    setAuthLoading(false);
-                }
-                return;
-            }
-            
-            let sessionValid = false;
-            
             try {
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(() => reject(new Error('timeout')), 3000);
+                // Wrap getSession with a timeout, but do NOT wipe the session if it times out
+                // or fails due to a transient connection error.
+                const getSessionPromise = supabase.auth.getSession();
+                const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
+                    setTimeout(() => resolve({ timeout: true }), 5000);
                 });
                 
                 const result = await Promise.race([
-                    supabase.auth.getSession(),
+                    getSessionPromise.then(res => ({ ...res, timeout: false })),
                     timeoutPromise
                 ]);
                 
                 if (!isMounted) return;
                 
+                if ('timeout' in result && result.timeout) {
+                    console.warn('[Auth] Session retrieval timed out. Retaining cached session.');
+                    setAuthLoading(false);
+                    return;
+                }
+                
                 const { data: { session }, error: sessionError } = result as any;
                 
-                if (sessionError || !session?.user) {
-                    console.log('Stored session is invalid, clearing...');
-                    throw new Error('Invalid session');
+                if (sessionError) {
+                    console.error('[Auth] getSession error:', sessionError);
+                }
+                
+                if (!session?.user) {
+                    console.log('[Auth] No active session found.');
+                    if (isMounted) {
+                        setCurrentUser(null);
+                        setAuthLoading(false);
+                    }
+                    return;
                 }
                 
                 if (session?.access_token) {
@@ -113,92 +115,121 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                     console.log('[App] Restored and stored access token');
                 }
                 
-                const { data: profile, error: profileError } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                
-                if (!isMounted) return;
-                
-                if (profileError || !profile) {
-                    console.log('Creating profile for session user...');
-                    const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-                    
-                    const { data: newProfile, error: createError } = await supabase
+                // Fetch profile with fallback to local cached user state if offline
+                try {
+                    const { data: profile, error: profileError } = await supabase
                         .from('profiles')
-                        .insert({
-                            id: session.user.id,
-                            name: userName,
-                            phone: null,
-                            points: 0,
-                            stats: {},
-                            settings: {},
-                            badges: []
-                        })
-                        .select()
+                        .select('*')
+                        .eq('id', session.user.id)
                         .single();
                     
-                    if (createError || !newProfile) {
-                        console.error('Failed to create profile:', createError);
-                        throw new Error('Profile creation failed');
-                    }
+                    if (!isMounted) return;
                     
-                    setCurrentUser({
-                        id: newProfile.id,
-                        name: newProfile.name,
-                        avatarUrl: newProfile.avatar_url || '',
-                        email: session.user.email!,
-                        password: '',
-                        phoneNumber: newProfile.phone || '',
-                        points: newProfile.points || 0,
-                        badges: (newProfile.badges as any[]) || [],
-                        stats: newProfile.stats || {},
-                        settings: newProfile.settings,
-                        username: newProfile.username || undefined,
-                        firstName: newProfile.first_name || undefined,
-                        lastName: newProfile.last_name || undefined,
-                    });
-                } else {
-                    setCurrentUser({
-                        id: profile.id,
-                        name: profile.name,
-                        avatarUrl: profile.avatar_url || '',
-                        email: session.user.email!,
-                        password: '',
-                        phoneNumber: profile.phone || '',
-                        points: profile.points || 0,
-                        badges: (profile.badges as any[]) || [],
-                        stats: profile.stats || {},
-                        settings: profile.settings,
-                        username: profile.username || undefined,
-                        firstName: profile.first_name || undefined,
-                        lastName: profile.last_name || undefined,
-                    });
+                    if (profileError || !profile) {
+                        if (profileError?.code === 'PGRST116') { // PGRST116 is single() not found
+                            console.log('Creating profile for session user...');
+                            const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+                            
+                            const { data: newProfile, error: createError } = await supabase
+                                .from('profiles')
+                                .insert({
+                                    id: session.user.id,
+                                    name: userName,
+                                    phone: null,
+                                    points: 0,
+                                    stats: {},
+                                    settings: {},
+                                    badges: []
+                                })
+                                .select()
+                                .single();
+                            
+                            if (createError || !newProfile) {
+                                console.error('Failed to create profile:', createError);
+                                throw new Error('Profile creation failed');
+                            }
+                            
+                            setCurrentUser({
+                                id: newProfile.id,
+                                name: newProfile.name,
+                                avatarUrl: newProfile.avatar_url || '',
+                                email: session.user.email!,
+                                password: '',
+                                phoneNumber: newProfile.phone || '',
+                                points: newProfile.points || 0,
+                                badges: (newProfile.badges as any[]) || [],
+                                stats: newProfile.stats || {},
+                                settings: newProfile.settings,
+                                username: newProfile.username || undefined,
+                                firstName: newProfile.first_name || undefined,
+                                lastName: newProfile.last_name || undefined,
+                            });
+                        } else {
+                            console.warn('[Auth] Profile fetch failed, retaining cached profile:', profileError);
+                            const existingUser = useAuthStore.getState().currentUser;
+                            if (existingUser && existingUser.id === session.user.id) {
+                                setAuthLoading(false);
+                                return;
+                            } else {
+                                throw new Error('Profile not found and no cache');
+                            }
+                        }
+                    } else {
+                        setCurrentUser({
+                            id: profile.id,
+                            name: profile.name,
+                            avatarUrl: profile.avatar_url || '',
+                            email: session.user.email!,
+                            password: '',
+                            phoneNumber: profile.phone || '',
+                            points: profile.points || 0,
+                            badges: (profile.badges as any[]) || [],
+                            stats: profile.stats || {},
+                            settings: profile.settings,
+                            username: profile.username || undefined,
+                            firstName: profile.first_name || undefined,
+                            lastName: profile.last_name || undefined,
+                        });
+                    }
+                } catch (profileErr: any) {
+                    console.error('[Auth] Profile validation failed:', profileErr.message);
+                    const existingUser = useAuthStore.getState().currentUser;
+                    if (existingUser && existingUser.id === session.user.id) {
+                        console.log('[Auth] Retaining cached user session due to profile fetch failure');
+                        setAuthLoading(false);
+                        return;
+                    }
+                    throw profileErr;
                 }
                 
-                sessionValid = true;
                 setAuthLoading(false);
                 
             } catch (error: any) {
-                console.log('Session validation failed:', error.message);
+                console.log('Session validation failed completely:', error.message);
                 
-                console.log('Clearing stale session data from localStorage...');
-                Object.keys(localStorage).forEach(key => {
-                    if (key.startsWith('sb-') || key.includes('supabase') || key === 'auth-storage') {
-                        console.log('Removing:', key);
-                        localStorage.removeItem(key);
+                // Only wipe if it is an explicit auth failure (not connection/timeout issues)
+                const isConnectionError = error.message.includes('timeout') || error.message.includes('Fetch') || error.message.includes('Network');
+                if (!isConnectionError) {
+                    console.log('Clearing stale session data from localStorage...');
+                    Object.keys(localStorage).forEach(key => {
+                        if (key.startsWith('sb-') || key.includes('supabase') || key === 'auth-storage') {
+                            console.log('Removing:', key);
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    
+                    try {
+                        await supabase.auth.signOut();
+                    } catch (e) {
+                        // Ignore
                     }
-                });
-                
-                try {
-                    await supabase.auth.signOut();
-                } catch (e) {
-                    // Ignore
-                }
-                
-                if (isMounted) {
-                    setCurrentUser(null);
+                    
+                    if (isMounted) {
+                        setCurrentUser(null);
+                        setAuthLoading(false);
+                    }
+                } else {
+                    console.warn('[Auth] Connection error during restore. Retaining cached session.');
                     setAuthLoading(false);
                 }
             }
@@ -367,7 +398,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 console.log('[Offline Sync] Cloud bundles fetched:', cloudBundles.length);
                 updateOfflineBundles(prev => {
                     const localBundleIds = new Set(prev.map(b => b.bundleId));
-                    const cloudBundleIds = new Set(cloudBundles.map((b: OfflineBundle) => b.bundleId));
+                    const cloudBundleIds = new Set(cloudBundles.map((b: OfflineSessionBundle) => b.bundleId));
                     
                     const localOnlyBundles = prev.filter(b => !cloudBundleIds.has(b.bundleId));
                     
@@ -380,7 +411,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                         });
                     }
                     
-                    const cloudOnlyBundles = cloudBundles.filter((b: OfflineBundle) => !localBundleIds.has(b.bundleId));
+                    const cloudOnlyBundles = cloudBundles.filter((b: OfflineSessionBundle) => !localBundleIds.has(b.bundleId));
                     console.log('[Offline Sync] Adding cloud-only bundles:', cloudOnlyBundles.length);
                     
                     return [...prev, ...cloudOnlyBundles];
