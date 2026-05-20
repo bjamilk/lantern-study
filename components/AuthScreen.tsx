@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Matter from 'matter-js';
-import { supabase } from '../services/supabase';
+import { supabase, fetchUserProfile, createUserProfile } from '../services/supabase';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -452,26 +452,31 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         }
         
         // Fetch profile
-        let { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', data.user!.id).single();
-        
-        // If profile doesn't exist, create one (handles database reset scenarios)
-        if (profileError || !profile) {
-          const userName = data.user!.user_metadata?.name || data.user!.email?.split('@')[0] || 'User';
-          const { data: newProfile, error: insertError } = await supabase.from('profiles').insert({
-            id: data.user!.id,
-            name: userName,
-            phone: null,
-            points: 0,
-            stats: {},
-            settings: {},
-            badges: []
-          }).select().single();
-          
-          if (insertError || !newProfile) {
-            setError('Failed to create profile. Please try again.');
+        let profile: any = null;
+        try {
+          profile = await fetchUserProfile(data.user!.id);
+        } catch (profileError: any) {
+          // If profile doesn't exist, create one (handles database reset scenarios)
+          if (profileError.message?.includes('404') || profileError.message?.includes('status: 404')) {
+            const userName = data.user!.user_metadata?.name || data.user!.email?.split('@')[0] || 'User';
+            try {
+              profile = await createUserProfile({
+                id: data.user!.id,
+                name: userName,
+                phone: undefined,
+                points: 0,
+                stats: {},
+                settings: {},
+                badges: []
+              });
+            } catch (insertError) {
+              setError('Failed to create profile. Please try again.');
+              return;
+            }
+          } else {
+            setError('Failed to retrieve user profile. Please try again.');
             return;
           }
-          profile = newProfile;
         }
         
         const user: User = {
@@ -511,22 +516,22 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           return;
         }
         if (data.user) {
-          // Insert profile with username
-          const { error: insertError } = await supabase.from('profiles').insert({
-            id: data.user.id,
-            name: `${firstName.trim()} ${lastName.trim()}`,
-            username: username.toLowerCase().trim(),
-            first_name: firstName.trim(),
-            last_name: lastName.trim(),
-            phone: phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : null,
-            points: 0,
-            stats: {},
-            settings: {},
-            badges: []
-          });
-          if (insertError) {
+          try {
+            await createUserProfile({
+              id: data.user.id,
+              name: `${firstName.trim()} ${lastName.trim()}`,
+              username: username.toLowerCase().trim(),
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              phone: phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : undefined,
+              points: 0,
+              stats: {},
+              settings: {},
+              badges: []
+            });
+          } catch (insertError) {
             // Profile might already exist if user previously signed up
-            console.log('Profile insert error (may already exist):', insertError);
+            console.log('Profile create error via API (may already exist):', insertError);
           }
           // Sign in
           const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });

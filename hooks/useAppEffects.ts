@@ -20,6 +20,7 @@ import {
     syncBudgetTransactionsToCloud,
     fetchPendingSyncResults, savePendingSyncResult,
     markAllNotificationsAsRead, deleteAllNotifications,
+    fetchUserProfile, createUserProfile,
 } from '../services/supabase';
 
 interface UseAppEffectsParams {
@@ -117,37 +118,47 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 
                 // Fetch profile with fallback to local cached user state if offline
                 try {
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', session.user.id)
-                        .single();
+                    const profile = await fetchUserProfile(session.user.id);
                     
                     if (!isMounted) return;
                     
-                    if (profileError || !profile) {
-                        if (profileError?.code === 'PGRST116') { // PGRST116 is single() not found
-                            console.log('Creating profile for session user...');
-                            const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-                            
-                            const { data: newProfile, error: createError } = await supabase
-                                .from('profiles')
-                                .insert({
-                                    id: session.user.id,
-                                    name: userName,
-                                    phone: null,
-                                    points: 0,
-                                    stats: {},
-                                    settings: {},
-                                    badges: []
-                                })
-                                .select()
-                                .single();
-                            
-                            if (createError || !newProfile) {
-                                console.error('Failed to create profile:', createError);
-                                throw new Error('Profile creation failed');
-                            }
+                    if (!profile) {
+                        throw new Error('Profile not found');
+                    }
+                    
+                    setCurrentUser({
+                        id: profile.id,
+                        name: profile.name,
+                        avatarUrl: profile.avatar_url || '',
+                        email: session.user.email!,
+                        password: '',
+                        phoneNumber: profile.phone || '',
+                        points: profile.points || 0,
+                        badges: (profile.badges as any[]) || [],
+                        stats: profile.stats || {},
+                        settings: profile.settings,
+                        username: profile.username || undefined,
+                        firstName: profile.first_name || undefined,
+                        lastName: profile.last_name || undefined,
+                    });
+                } catch (profileErr: any) {
+                    if (!isMounted) return;
+                    
+                    // If 404 (not found), try to create it via the API
+                    if (profileErr.message?.includes('404') || profileErr.message?.includes('status: 404')) {
+                        console.log('Creating profile for session user...');
+                        const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
+                        
+                        try {
+                            const newProfile = await createUserProfile({
+                                id: session.user.id,
+                                name: userName,
+                                phone: undefined,
+                                points: 0,
+                                stats: {},
+                                settings: {},
+                                badges: []
+                            });
                             
                             setCurrentUser({
                                 id: newProfile.id,
@@ -164,42 +175,20 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                                 firstName: newProfile.first_name || undefined,
                                 lastName: newProfile.last_name || undefined,
                             });
-                        } else {
-                            console.warn('[Auth] Profile fetch failed, retaining cached profile:', profileError);
-                            const existingUser = useAuthStore.getState().currentUser;
-                            if (existingUser && existingUser.id === session.user.id) {
-                                setAuthLoading(false);
-                                return;
-                            } else {
-                                throw new Error('Profile not found and no cache');
-                            }
+                        } catch (createError) {
+                            console.error('Failed to create profile via API:', createError);
+                            throw new Error('Profile creation failed');
                         }
                     } else {
-                        setCurrentUser({
-                            id: profile.id,
-                            name: profile.name,
-                            avatarUrl: profile.avatar_url || '',
-                            email: session.user.email!,
-                            password: '',
-                            phoneNumber: profile.phone || '',
-                            points: profile.points || 0,
-                            badges: (profile.badges as any[]) || [],
-                            stats: profile.stats || {},
-                            settings: profile.settings,
-                            username: profile.username || undefined,
-                            firstName: profile.first_name || undefined,
-                            lastName: profile.last_name || undefined,
-                        });
+                        console.warn('[Auth] Profile fetch failed, retaining cached profile:', profileErr.message);
+                        const existingUser = useAuthStore.getState().currentUser;
+                        if (existingUser && existingUser.id === session.user.id) {
+                            setAuthLoading(false);
+                            return;
+                        } else {
+                            throw profileErr;
+                        }
                     }
-                } catch (profileErr: any) {
-                    console.error('[Auth] Profile validation failed:', profileErr.message);
-                    const existingUser = useAuthStore.getState().currentUser;
-                    if (existingUser && existingUser.id === session.user.id) {
-                        console.log('[Auth] Retaining cached user session due to profile fetch failure');
-                        setAuthLoading(false);
-                        return;
-                    }
-                    throw profileErr;
                 }
                 
                 setAuthLoading(false);
@@ -248,28 +237,27 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                         localStorage.setItem('lantern_refresh_token', session.refresh_token);
                     }
                 }
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                
-                if (profile) {
-                    setCurrentUser({
-                        id: profile.id,
-                        name: profile.name,
-                        avatarUrl: profile.avatar_url || '',
-                        email: session.user.email!,
-                        password: '',
-                        phoneNumber: profile.phone || '',
-                        points: profile.points || 0,
-                        badges: (profile.badges as any[]) || [],
-                        stats: profile.stats || {},
-                        settings: profile.settings,
-                        username: profile.username || undefined,
-                        firstName: profile.first_name || undefined,
-                        lastName: profile.last_name || undefined,
-                    });
+                try {
+                    const profile = await fetchUserProfile(session.user.id);
+                    if (profile) {
+                        setCurrentUser({
+                            id: profile.id,
+                            name: profile.name,
+                            avatarUrl: profile.avatar_url || '',
+                            email: session.user.email!,
+                            password: '',
+                            phoneNumber: profile.phone || '',
+                            points: profile.points || 0,
+                            badges: (profile.badges as any[]) || [],
+                            stats: profile.stats || {},
+                            settings: profile.settings,
+                            username: profile.username || undefined,
+                            firstName: profile.first_name || undefined,
+                            lastName: profile.last_name || undefined,
+                        });
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch profile on SIGNED_IN event:', err);
                 }
             }
         });

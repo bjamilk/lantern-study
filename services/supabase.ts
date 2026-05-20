@@ -1339,6 +1339,9 @@ export const createUserProfile = async (profileData: {
   badges?: any[];
   settings?: any;
   test_presets?: any[];
+  username?: string;
+  first_name?: string;
+  last_name?: string;
 }) => {
   console.log('Creating user profile:', profileData);
   try {
