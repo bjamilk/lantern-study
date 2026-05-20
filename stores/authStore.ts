@@ -357,6 +357,10 @@ supabase.auth.onAuthStateChange(async (event, session) => {
       store.setCurrentUser(profile);
     }
   } else if (event === 'SIGNED_OUT') {
-    store.setCurrentUser(null);
+    // Only set currentUser to null if we are not in the initial loading phase.
+    // This prevents a page refresh from prematurely wiping the cached state before token refresh finishes.
+    if (!store.isAuthLoading) {
+      store.setCurrentUser(null);
+    }
   }
 });

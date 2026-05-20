@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Deck, Flashcard, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { escapeHtml } from '../utils/helpers';
 
 interface CramSessionScreenProps {
   session: FlashcardSession;
@@ -95,7 +96,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
 
     if (card.type === FlashcardType.CLOZE) {
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
-      const content = card.clozeText || '';
+      const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
         const revealedText = content.replace(clozeRegex, '<strong class="text-blue-600 dark:text-blue-400">$1</strong>');
         return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: revealedText }} />;

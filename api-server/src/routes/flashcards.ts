@@ -18,35 +18,57 @@ export const initializeFlashcardRoutes = (supabase: SupabaseService, cache: Cach
   cacheService = cache;
 };
 
+// Helper function to check if the authenticated user has access to a flashcard
+const checkFlashcardAccess = async (flashcard: any, authUserId: string): Promise<boolean> => {
+  if (flashcard.user_id === authUserId) return true;
+  
+  // If not the owner, check if the deck it belongs to is public
+  if (flashcard.deck_id) {
+    const deck = await supabaseService.getDeck(flashcard.deck_id);
+    if (deck && (deck.is_public || deck.user_id === authUserId)) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // GET /api/v1/flashcards - Get flashcards (optionally filtered by deck)
 router.get(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { page = 1, limit, deckId, userId } = req.query;
-    const authUserId = req.user?.id;
+    const { page = 1, limit, deckId } = req.query;
+    const authUserId = req.user.id;
 
-    logger.debug('Fetching flashcards', { page, limit, deckId, userId: userId || authUserId });
+    logger.debug('Fetching flashcards', { page, limit, deckId, userId: authUserId });
 
-    const finalUserId = userId as string || authUserId;
-
-    if (!finalUserId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required to fetch flashcards',
-      });
+    // If deckId is provided, check access to that deck first
+    if (deckId) {
+      const deck = await supabaseService.getDeck(deckId as string);
+      if (!deck) {
+        return res.status(404).json({
+          success: false,
+          error: 'Deck not found',
+        });
+      }
+      if (deck.user_id !== authUserId && !deck.is_public) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied to this deck',
+        });
+      }
     }
 
-    // default to a generous cap when no explicit limit provided (deck detail UI isn't paginated)
+    // Default to a generous cap when no explicit limit provided (deck detail UI isn't paginated)
     const parsedLimit = limit ? parseInt(limit as string) : 500;
     const parsedPage = parseInt(page as string) || 1;
-    const cacheKey = `flashcards:${deckId || 'all'}:${finalUserId}:${parsedPage}:${parsedLimit}`;
+    const cacheKey = `flashcards:${deckId || 'all'}:${authUserId}:${parsedPage}:${parsedLimit}`;
     let flashcards = await cacheService.get(cacheKey) as any[];
 
     if (!flashcards) {
-      flashcards = await supabaseService.getFlashcards(finalUserId, deckId as string, { page: parsedPage, limit: parsedLimit });
+      flashcards = await supabaseService.getFlashcards(authUserId, deckId as string, { page: parsedPage, limit: parsedLimit });
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, flashcards, 300);
@@ -67,19 +89,16 @@ router.get(
 // GET /api/v1/flashcards/:flashcardId - Get flashcard by ID
 router.get(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { flashcardId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
+    const authUserId = req.user.id;
 
-    logger.debug('Fetching flashcard', { flashcardId, userId: userId || authUserId });
-
-    const finalUserId = userId as string || authUserId;
+    logger.debug('Fetching flashcard', { flashcardId, userId: authUserId });
 
     const cacheKey = `flashcard:${flashcardId}`;
-    let flashcard = await cacheService.get(cacheKey);
+    let flashcard = await cacheService.get(cacheKey) as any;
 
     if (!flashcard) {
       flashcard = await supabaseService.getFlashcard(flashcardId);
@@ -87,12 +106,21 @@ router.get(
       if (!flashcard) {
         return res.status(404).json({
           success: false,
-          error: 'Flashcard not found or access denied',
+          error: 'Flashcard not found',
         });
       }
 
       // Cache for 10 minutes
       await cacheService.set(cacheKey, flashcard, 600);
+    }
+
+    // Access check
+    const hasAccess = await checkFlashcardAccess(flashcard, authUserId);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied to this flashcard',
+      });
     }
 
     res.json({
@@ -105,12 +133,30 @@ router.get(
 // GET /api/v1/flashcards/:flashcardId/comments - Get comments for a flashcard
 router.get(
   '/:flashcardId/comments',
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { flashcardId } = req.params;
-    const authUserId = req.user?.id;
+    const authUserId = req.user.id;
 
     logger.debug('Fetching flashcard comments', { flashcardId, userId: authUserId });
+
+    const flashcard = await supabaseService.getFlashcard(flashcardId);
+    if (!flashcard) {
+      return res.status(404).json({
+        success: false,
+        error: 'Flashcard not found',
+      });
+    }
+
+    // Access check
+    const hasAccess = await checkFlashcardAccess(flashcard, authUserId);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+      });
+    }
 
     const comments = await supabaseService.getFlashcardComments(flashcardId);
 
@@ -124,25 +170,37 @@ router.get(
 // POST /api/v1/flashcards/:flashcardId/comments - Add comment to flashcard
 router.post(
   '/:flashcardId/comments',
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { flashcardId } = req.params;
-    const { comment, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { comment } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Adding flashcard comment', { flashcardId, userId: userId || authUserId, comment: comment?.substring(0, 100) });
+    logger.debug('Adding flashcard comment', { flashcardId, userId: authUserId, comment: comment?.substring(0, 100) });
 
-    const finalUserId = userId || authUserId;
+    const flashcard = await supabaseService.getFlashcard(flashcardId);
+    if (!flashcard) {
+      return res.status(404).json({
+        success: false,
+        error: 'Flashcard not found',
+      });
+    }
 
-    if (!finalUserId) {
-      return res.status(400).json({ success: false, error: 'User ID is required' });
+    // Access check
+    const hasAccess = await checkFlashcardAccess(flashcard, authUserId);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+      });
     }
 
     if (!comment || !comment.trim()) {
       return res.status(400).json({ success: false, error: 'Comment text is required' });
     }
 
-    const newComment = await supabaseService.addFlashcardComment(flashcardId, finalUserId, comment.trim());
+    const newComment = await supabaseService.addFlashcardComment(flashcardId, authUserId, comment.trim());
 
     res.status(201).json({
       success: true,
@@ -154,15 +212,28 @@ router.post(
 // POST /api/v1/flashcards - Create new flashcard
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { deckId, type, front, back, clozeText, imageUrl, occlusionData, tags, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { deckId, type, front, back, clozeText, imageUrl, occlusionData, tags } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Creating flashcard', { deckId, type, front: front?.substring(0, 50), imageUrl, userId: userId || authUserId });
+    logger.debug('Creating flashcard', { deckId, type, front: front?.substring(0, 50), imageUrl, userId: authUserId });
 
-    const finalUserId = userId || authUserId;
+    // Validate that the user owns the deck they are adding a card to
+    const deck = await supabaseService.getDeck(deckId);
+    if (!deck) {
+      return res.status(404).json({
+        success: false,
+        error: 'Deck not found',
+      });
+    }
+    if (deck.user_id !== authUserId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You do not own this deck',
+      });
+    }
 
     const flashcard = await supabaseService.createFlashcard({
       deckId,
@@ -173,7 +244,7 @@ router.post(
       imageUrl,
       occlusionData,
       tags,
-      userId: finalUserId,
+      userId: authUserId,
     });
 
     // Invalidate deck's flashcards cache
@@ -189,7 +260,7 @@ router.post(
 // POST /api/v1/flashcards/upload-image - Upload an image for a flashcard
 router.post(
   '/upload-image',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { fileName, base64Data, contentType, folder } = req.body;
@@ -211,16 +282,29 @@ router.post(
 // PUT /api/v1/flashcards/:flashcardId - Update flashcard
 router.put(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { flashcardId } = req.params;
-    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), srsData: !!srsData, userId: userId || authUserId });
+    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), srsData: !!srsData, userId: authUserId });
 
-    const finalUserId = userId || authUserId;
+    // Validate ownership
+    const flashcard = await supabaseService.getFlashcard(flashcardId);
+    if (!flashcard) {
+      return res.status(404).json({
+        success: false,
+        error: 'Flashcard not found',
+      });
+    }
+    if (flashcard.user_id !== authUserId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You do not own this flashcard',
+      });
+    }
 
     const updatedFlashcard = await supabaseService.updateFlashcard(flashcardId, {
       front,
@@ -253,16 +337,28 @@ router.put(
 // DELETE /api/v1/flashcards/:flashcardId - Delete flashcard
 router.delete(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { flashcardId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
+    const authUserId = req.user.id;
 
-    logger.debug('Deleting flashcard', { flashcardId, userId: userId || authUserId });
+    logger.debug('Deleting flashcard', { flashcardId, userId: authUserId });
 
-    const finalUserId = userId as string || authUserId;
+    // Validate ownership
+    const flashcard = await supabaseService.getFlashcard(flashcardId);
+    if (!flashcard) {
+      return res.status(404).json({
+        success: false,
+        error: 'Flashcard not found',
+      });
+    }
+    if (flashcard.user_id !== authUserId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden: You do not own this flashcard',
+      });
+    }
 
     const deleted = await supabaseService.deleteFlashcard(flashcardId);
 

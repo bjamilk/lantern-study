@@ -22,10 +22,10 @@ export const initializeUserRoutes = (supabase: SupabaseService, cache: CacheServ
 // GET /api/v1/users - Get all users with pagination
 router.get(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { page = 1, limit = 20 } = req.query;
     const userId = req.user?.id;
 
@@ -59,12 +59,12 @@ router.get(
 // GET /api/v1/users/:userId - Get user by ID
 router.get(
   '/:userId',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
+    const requestingUserId = req.user.id;
 
     logger.debug('Fetching user', { userId, requestingUserId });
 
@@ -95,14 +95,22 @@ router.get(
 // POST /api/v1/users - Create new user
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validateCreateUser,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const userData = req.body;
-    const requestingUserId = req.user?.id;
+    const requestingUserId = req.user.id;
 
     logger.debug('Creating user', { userData, requestingUserId });
+
+    // Check permissions (users can only create their own user profile, or admins can create any)
+    if (requestingUserId !== userData.id && !req.user.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: cannot create profile for another user',
+      });
+    }
 
     // Check if user already exists
     const existingUser = await supabaseService.getUserByEmail(userData.email);
@@ -128,14 +136,14 @@ router.post(
 // PUT /api/v1/users/:userId - Update user
 router.put(
   '/:userId',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   validateUpdateUser,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const updateData = req.body;
-    const requestingUserId = req.user?.id;
+    const requestingUserId = req.user.id;
 
     logger.debug('Updating user', { userId, updateData, requestingUserId });
 
@@ -165,7 +173,7 @@ router.delete(
   authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const requestingUserId = req.user?.id;
 
@@ -207,7 +215,7 @@ router.get(
   authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const requestingUserId = req.user?.id;
 
@@ -245,7 +253,7 @@ router.get(
   validateUserId,
   validatePagination,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const { page = 1, limit = 20 } = req.query;
     const requestingUserId = req.user?.id;
@@ -291,7 +299,7 @@ router.get(
   authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const requestingUserId = req.user?.id;
 
@@ -339,7 +347,7 @@ router.put(
   authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const { settings } = req.body;
     const requestingUserId = req.user?.id;
@@ -387,7 +395,7 @@ router.put(
   '/settings',
   authMiddleware,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { settings } = req.body;
     const userId = req.user?.id;
 
@@ -431,9 +439,10 @@ router.put(
 // GET /api/v1/users/search - Search users by username or name
 router.get(
   '/search',
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
     const { q, limit = 20 } = req.query;
-    const currentUserId = req.user?.id;
+    const currentUserId = req.user.id;
 
     if (!q || typeof q !== 'string' || q.trim().length < 2) {
       return res.status(400).json({
@@ -494,7 +503,8 @@ router.get(
 // GET /api/v1/users/check-username/:username - Check if username is available
 router.get(
   '/check-username/:username',
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
     const { username } = req.params;
 
     if (!username || typeof username !== 'string') {
@@ -552,15 +562,15 @@ router.get(
 // PUT /api/v1/users/:userId/username - Set or update username
 router.put(
   '/:userId/username',
+  authMiddleware,
   validateUserId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const { username, firstName, lastName } = req.body;
 
     // Basic auth check - user can only update their own username
-    // In production, use proper auth middleware
-    const requestingUserId = req.user?.id;
+    const requestingUserId = req.user.id;
     if (requestingUserId && requestingUserId !== userId) {
       return res.status(403).json({
         success: false,

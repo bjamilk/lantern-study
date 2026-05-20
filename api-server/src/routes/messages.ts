@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePagination } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -23,25 +23,15 @@ export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheS
 // This route MUST be defined before /group/:groupId to avoid being caught by that route
 router.get(
   '/group/:groupId/user-votes',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { groupId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
+    const authUserId = req.user.id;
 
-    const finalUserId = userId as string || authUserId;
+    logger.debug('Fetching user votes for group', { groupId, userId: authUserId });
 
-    logger.debug('Fetching user votes for group', { groupId, userId: finalUserId });
-
-    if (!finalUserId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required',
-      });
-    }
-
-    const votes = await supabaseService.getUserVotesForGroup(groupId, finalUserId);
+    const votes = await supabaseService.getUserVotesForGroup(groupId, authUserId);
 
     res.json({
       success: true,
@@ -53,14 +43,14 @@ router.get(
 // GET /api/v1/messages/group/:groupId - Get messages for a group
 router.get(
   '/group/:groupId',
-  optionalAuthMiddleware,
+  authMiddleware,
   validateGroupId,
   validatePagination,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { groupId } = req.params;
     const { page = 1, limit = 500, before, after } = req.query;
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     logger.debug('Fetching group messages', { groupId, page, limit, before, after, userId });
 
@@ -106,16 +96,9 @@ router.get(
   authMiddleware,
   validateGroupId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { groupId } = req.params;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
-    }
+    const userId = req.user.id;
 
     logger.debug('Fetching user votes for group', { groupId, userId });
 
@@ -131,27 +114,18 @@ router.get(
 // POST /api/v1/messages/group/:groupId - Send message to group
 router.post(
   '/group/:groupId',
-  // authMiddleware,
+  authMiddleware,
   validateSendMessage,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { groupId } = req.params;
-    const { content, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { content } = req.body;
+    const authUserId = req.user.id;
 
-    if (!userId && !authUserId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
-    }
-
-    const finalUserId = userId || authUserId;
-
-    logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId: finalUserId });
+    logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId: authUserId });
 
     // Check if user has access to this group
-    const group = await supabaseService.getGroupById(groupId, finalUserId);
+    const group = await supabaseService.getGroupById(groupId, authUserId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -159,7 +133,7 @@ router.post(
       });
     }
 
-    const message = await supabaseService.sendMessage(groupId, finalUserId, content);
+    const message = await supabaseService.sendMessage(groupId, authUserId, content);
 
     // Invalidate message caches for this group
     await cacheService.deletePattern(`messages:group:${groupId}:*`);
@@ -177,11 +151,9 @@ router.post(
 // GET /api/v1/messages/dm/threads - List DM threads for current user
 router.get(
   '/dm/threads',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const userId = req.query.userId as string;
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId query parameter is required' });
-    }
+    const userId = req.user.id;
 
     try {
       // Get all threads where user is a participant
@@ -263,18 +235,11 @@ router.get(
 // IMPORTANT: This must be defined BEFORE /:messageId to avoid being caught by that route
 router.get(
   '/dm/unread/all',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const { userId } = req.query;
-      
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId query parameter is required',
-        });
-      }
-
-      const unreadCounts = await supabaseService.getAllDMUnreadCounts(userId as string);
+      const userId = req.user.id;
+      const unreadCounts = await supabaseService.getAllDMUnreadCounts(userId);
 
       res.json({
         success: true,
@@ -295,17 +260,11 @@ router.get(
 // IMPORTANT: This must be defined BEFORE /:messageId to avoid being caught by that route
 router.post(
   '/dm/:threadId/read',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
       const { threadId } = req.params;
-      const { userId } = req.body;
-
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId is required in request body',
-        });
-      }
+      const userId = req.user.id;
 
       const success = await supabaseService.markDMAsRead(threadId, userId);
 
@@ -327,14 +286,11 @@ router.post(
 // PUT /api/v1/messages/dm/:threadId/archive - Archive a DM thread for a user
 router.put(
   '/dm/:threadId/archive',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
       const { threadId } = req.params;
-      const userId = req.query.userId as string;
-
-      if (!userId) {
-        return res.status(400).json({ success: false, error: 'userId query parameter is required' });
-      }
+      const userId = req.user.id;
 
       const success = await supabaseService.archiveDmThread(threadId, userId);
       if (!success) {
@@ -352,14 +308,11 @@ router.put(
 // PUT /api/v1/messages/dm/:threadId/unarchive - Unarchive a DM thread for a user
 router.put(
   '/dm/:threadId/unarchive',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
       const { threadId } = req.params;
-      const userId = req.query.userId as string;
-
-      if (!userId) {
-        return res.status(400).json({ success: false, error: 'userId query parameter is required' });
-      }
+      const userId = req.user.id;
 
       const success = await supabaseService.unarchiveDmThread(threadId, userId);
       if (!success) {
@@ -377,17 +330,11 @@ router.put(
 // DELETE /api/v1/messages/dm/:threadId - Delete a DM thread and all its messages
 router.delete(
   '/dm/:threadId',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
       const { threadId } = req.params;
-      const userId = req.query.userId as string;
-
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId query parameter is required',
-        });
-      }
+      const userId = req.user.id;
 
       const success = await supabaseService.deleteDmThread(threadId, userId);
 
@@ -419,9 +366,9 @@ router.get(
   authMiddleware,
   validateMessageId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     logger.debug('Fetching message', { messageId, userId });
 
@@ -455,10 +402,10 @@ router.put(
   authMiddleware,
   validateMessageId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
     const { content } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     logger.debug('Updating message', { messageId, content: content?.substring(0, 100), userId });
 
@@ -505,16 +452,9 @@ router.delete(
   authMiddleware,
   validateMessageId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
-    }
+    const userId = req.user.id;
 
     logger.debug('Deleting message', { messageId, userId });
 
@@ -568,13 +508,23 @@ router.delete(
 // GET /api/v1/messages/user/:userId - Get direct messages for user
 router.get(
   '/user/:userId',
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const { page = 1, limit = 50, otherUserId } = req.query;
+    const authUserId = req.user.id;
 
-    logger.debug('Fetching direct messages', { userId, otherUserId, page, limit });
+    logger.debug('Fetching direct messages', { userId, otherUserId, page, limit, authUserId });
+
+    // Enforce that the user can only fetch their own messages
+    if (authUserId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: cannot fetch messages for another user',
+      });
+    }
 
     if (!otherUserId) {
       return res.status(400).json({
@@ -620,14 +570,23 @@ router.get(
 // POST /api/v1/messages/user/:userId - Send direct message
 router.post(
   '/user/:userId',
+  authMiddleware,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+  asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
     const { content, recipientId } = req.body;
-    const senderId = userId;
+    const authUserId = req.user.id;
+
+    // Enforce that the user can only send messages as themselves
+    if (authUserId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: cannot send message as another user',
+      });
+    }
 
     logger.debug('Sending direct message', {
-      senderId,
+      senderId: authUserId,
       recipientId,
       content: content?.substring(0, 100)
     });
@@ -646,27 +605,19 @@ router.post(
       });
     }
 
-    // Users can only send messages as themselves (userId in URL is the sender)
-    if (!senderId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Sender user ID is required',
-      });
-    }
-
     try {
-      const message = await supabaseService.sendDirectMessage(senderId, recipientId, content);
+      const message = await supabaseService.sendDirectMessage(authUserId, recipientId, content);
 
       // Invalidate direct message caches
-      await cacheService.deletePattern(`messages:direct:${senderId}:${recipientId}:*`);
-      await cacheService.deletePattern(`messages:direct:${recipientId}:${senderId}:*`);
+      await cacheService.deletePattern(`messages:direct:${authUserId}:${recipientId}:*`);
+      await cacheService.deletePattern(`messages:direct:${recipientId}:${authUserId}:*`);
 
       res.status(201).json({
         success: true,
         data: message,
       });
     } catch (error: any) {
-      logger.error('Error sending direct message:', { error: error.message, senderId, recipientId });
+      logger.error('Error sending direct message:', { error: error.message, senderId: authUserId, recipientId });
       res.status(500).json({
         success: false,
         error: 'Failed to send direct message',
@@ -679,16 +630,14 @@ router.post(
 // POST /api/v1/messages/:messageId/vote - Vote on message
 router.post(
   '/:messageId/vote',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const { voteType, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { voteType } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Voting on message', { messageId, voteType, userId: userId || authUserId });
-
-    const finalUserId = userId || authUserId;
+    logger.debug('Voting on message', { messageId, voteType, userId: authUserId });
 
     if (!voteType || !['up', 'down'].includes(voteType)) {
       return res.status(400).json({
@@ -697,7 +646,7 @@ router.post(
       });
     }
 
-    const result = await supabaseService.voteQuestion(messageId, finalUserId, voteType);
+    const result = await supabaseService.voteQuestion(messageId, authUserId, voteType);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
@@ -712,18 +661,15 @@ router.post(
 // DELETE /api/v1/messages/:messageId/vote - Remove vote from message
 router.delete(
   '/:messageId/vote',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
+    const authUserId = req.user.id;
 
-    logger.debug('Removing vote from message', { messageId, userId: userId || authUserId });
+    logger.debug('Removing vote from message', { messageId, userId: authUserId });
 
-    const finalUserId = userId as string || authUserId;
-
-    const result = await supabaseService.removeVote(messageId, finalUserId);
+    const result = await supabaseService.removeVote(messageId, authUserId);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
@@ -738,14 +684,14 @@ router.delete(
 // PUT /api/v1/messages/:messageId/status - Update question status
 router.put(
   '/:messageId/status',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const { questionStatus, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { questionStatus } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Updating question status', { messageId, questionStatus, userId: userId || authUserId });
+    logger.debug('Updating question status', { messageId, questionStatus, userId: authUserId });
 
     if (!questionStatus || !['PENDING', 'VERIFIED', 'REJECTED'].includes(questionStatus)) {
       return res.status(400).json({
@@ -769,16 +715,14 @@ router.put(
 // PUT /api/v1/messages/:messageId/update - Update message (flagged status)
 router.put(
   '/:messageId/update',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { messageId } = req.params;
-    const { flagged_as_similar_user_ids, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { flagged_as_similar_user_ids } = req.body;
+    const authUserId = req.user.id;
 
-    logger.debug('Updating message', { messageId, userId: userId || authUserId });
-
-    const finalUserId = userId || authUserId;
+    logger.debug('Updating message similar flags', { messageId, userId: authUserId });
 
     const result = await supabaseService.updateMessageFlagged(messageId, flagged_as_similar_user_ids);
 
@@ -793,3 +737,4 @@ router.put(
 );
 
 export default router;
+export { router };

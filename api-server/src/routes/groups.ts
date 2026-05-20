@@ -22,21 +22,23 @@ export const initializeGroupRoutes = (supabase: SupabaseService, cache: CacheSer
 // GET /api/v1/groups - Get all groups with pagination and search
 router.get(
   '/',
-  // authMiddleware,
-  // validatePagination,
-  // validateSearch,
-  // handleValidationErrors,
+  authMiddleware,
+  validatePagination,
+  validateSearch,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    console.log('Groups route hit at top');
     try {
-      console.log('Groups route hit:', req.method, req.url, req.query);
       const { page = 1, limit = 20, search, userId } = req.query;
+      const authUserId = req.user.id;
+
+      // Filter by the requested userId, defaulting to authUserId if none specified
+      const finalUserId = userId as string || authUserId;
 
       const groups = await supabaseService.getGroups({
         page: parseInt(page as string) || 1,
         limit: parseInt(limit as string) || 20,
         search: search as string,
-        userId: userId as string,
+        userId: finalUserId,
       });
 
       res.json({
@@ -59,18 +61,11 @@ router.get(
 // NOTE: This MUST be before /:groupId to avoid route matching issues
 router.get(
   '/unread/all',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const { userId } = req.query;
-      
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId query parameter is required',
-        });
-      }
-
-      const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId as string);
+      const userId = req.user.id;
+      const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId);
 
       res.json({
         success: true,
@@ -90,12 +85,12 @@ router.get(
 // GET /api/v1/groups/:groupId - Get group by ID
 router.get(
   '/:groupId',
-  // authMiddleware,
+  authMiddleware,
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { groupId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     logger.debug('Fetching group', { groupId, userId });
 
@@ -126,12 +121,13 @@ router.get(
 // POST /api/v1/groups - Create new group
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validateCreateGroup,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { name, description, avatar_url, permissions, invite_id, parent_id, userId, memberIds } = req.body;
+    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds } = req.body;
     const groupData = { name, description, avatarUrl: avatar_url, permissions, inviteId: invite_id, parentId: parent_id };
+    const userId = req.user.id;
 
     logger.debug('Creating group', { groupData, userId, memberIds });
 
@@ -536,19 +532,13 @@ router.get(
 // POST /api/v1/groups/:groupId/read - Mark group as read
 router.post(
   '/:groupId/read',
+  authMiddleware,
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     try {
       const { groupId } = req.params;
-      const { userId } = req.body;
-
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId is required in request body',
-        });
-      }
+      const userId = req.user.id;
 
       const success = await supabaseService.markGroupAsRead(groupId, userId);
 

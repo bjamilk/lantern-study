@@ -43,7 +43,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   }
 };
 
-const getSessionWithTimeout = async (timeoutMs: number = 1500) => {
+const getSessionWithTimeout = async (timeoutMs: number = 10000) => {
   try {
     const getSessionPromise = supabase.auth.getSession();
     const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
@@ -72,7 +72,7 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
   let token: string | null = null;
   
   // 1. Try to get token from current session with timeout
-  const session = await getSessionWithTimeout(1500);
+  const session = await getSessionWithTimeout(10000);
   if (session?.access_token) {
     token = session.access_token;
     localStorage.setItem('lantern_access_token', token);
@@ -149,7 +149,7 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
 // Helper to check if user has a valid session before making auth-required calls
 const hasValidSession = async (): Promise<boolean> => {
-  const session = await getSessionWithTimeout(1500);
+  const session = await getSessionWithTimeout(10000);
   if (session?.access_token) return true;
   
   // Fallback to local storage
@@ -173,7 +173,7 @@ const hasValidSession = async (): Promise<boolean> => {
 
 // Helper to get the current authenticated user id (or null if not authenticated)
 const getAuthenticatedUserId = async (): Promise<string | null> => {
-  const session = await getSessionWithTimeout(1500);
+  const session = await getSessionWithTimeout(10000);
   if (session?.user?.id) return session.user.id;
   
   // Fallback to local storage

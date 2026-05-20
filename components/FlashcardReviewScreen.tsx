@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Deck, Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
 
@@ -76,7 +77,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     if (card.type === FlashcardType.CLOZE) {
       // Simple regex to handle {{c1::cloze text}}
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
-      const content = card.clozeText || '';
+      const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
         const revealedText = content.replace(clozeRegex, '<strong class="text-blue-600 dark:text-blue-400">$1</strong>');
         return <div className="text-lg md:text-xl text-slate-800 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: revealedText }} />;

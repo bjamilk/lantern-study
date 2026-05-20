@@ -22,24 +22,23 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // GET /api/v1/tests - Get user's tests
   router.get(
     '/',
-    // authMiddleware,
+    authMiddleware,
     validatePagination,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
-      const { page = 1, limit = 20, status, subject, userId } = req.query;
-      const authUserId = req.user?.id;
-      const finalUserId = userId as string || authUserId;
+      const { page = 1, limit = 20, status, subject } = req.query;
+      const authUserId = req.user.id;
 
-      logger.debug('Fetching tests', { page, limit, status, subject, userId: finalUserId });
+      logger.debug('Fetching tests', { page, limit, status, subject, userId: authUserId });
 
       try {
-        const cacheKey = `tests:${finalUserId || 'anonymous'}:${page}:${limit}:${status || ''}:${subject || ''}`;
+        const cacheKey = `tests:${authUserId}:${page}:${limit}:${status || ''}:${subject || ''}`;
         let tests = await cacheService.get(cacheKey) as any[];
 
         if (!tests) {
-          if (supabaseService && finalUserId) {
-            logger.debug('Calling supabaseService.getUserTests', { finalUserId, page, limit, status, subject });
-            tests = await supabaseService.getUserTests(finalUserId, {
+          if (supabaseService) {
+            logger.debug('Calling supabaseService.getUserTests', { authUserId, page, limit, status, subject });
+            tests = await supabaseService.getUserTests(authUserId, {
               page: parseInt(page as string),
               limit: parseInt(limit as string),
               status: status as string,
@@ -47,7 +46,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
             });
             logger.debug('getUserTests returned', { testsCount: tests?.length });
           } else {
-            logger.debug('No supabaseService or userId', { supabaseService: !!supabaseService, finalUserId });
+            logger.debug('No supabaseService', { supabaseService: !!supabaseService });
             tests = [];
           }
 
@@ -78,12 +77,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Fetching test', { testId, userId });
 
       const cacheKey = `test:${testId}`;
-      let test = await cacheService.get(cacheKey);
+      let test = await cacheService.get(cacheKey) as any;
 
       if (!test) {
         test = await supabaseService.getTestById(testId, userId);
@@ -99,6 +98,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         await cacheService.set(cacheKey, test, 600);
       }
 
+      // Ownership check: ensure the test belongs to the authenticated user
+      if (test.user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
+        });
+      }
+
       res.json({
         success: true,
         data: test,
@@ -109,12 +116,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // POST /api/v1/tests - Create new test
   router.post(
     '/',
-    // authMiddleware,
+    authMiddleware,
     validateTestConfig,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const testConfig = req.body;
-      const userId = req.body.userId || req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Creating test', { testConfig, userId });
 
@@ -137,7 +144,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Starting test', { testId, userId });
 
@@ -146,6 +153,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         return res.status(404).json({
           success: false,
           error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
         });
       }
 
@@ -173,16 +188,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // PUT /api/v1/tests/:testId/submit - Submit test answers
   router.put(
     '/:testId/submit',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const { answers, userId } = req.body;
-      const authUserId = req.user?.id;
+      const { answers } = req.body;
+      const authUserId = req.user.id;
 
-      logger.debug('Submitting test', { testId, answersCount: answers?.length, userId: userId || authUserId });
-
-      const finalUserId = userId || authUserId;
+      logger.debug('Submitting test', { testId, answersCount: answers?.length, userId: authUserId });
 
       if (!answers || !Array.isArray(answers)) {
         return res.status(400).json({
@@ -191,11 +204,19 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const test = await supabaseService.getTestById(testId, finalUserId);
+      const test = await supabaseService.getTestById(testId, authUserId);
       if (!test) {
         return res.status(404).json({
           success: false,
           error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== authUserId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
         });
       }
 
@@ -207,12 +228,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const result = await supabaseService.submitTest(testId, finalUserId, answers);
+      const result = await supabaseService.submitTest(testId, authUserId, answers);
 
       // Invalidate caches
       await cacheService.delete(`test:${testId}`);
-      await cacheService.deletePattern(`tests:${finalUserId}:*`);
-      await cacheService.delete(`user:stats:${finalUserId}`);
+      await cacheService.deletePattern(`tests:${authUserId}:*`);
+      await cacheService.delete(`user:stats:${authUserId}`);
 
       res.json({
         success: true,
@@ -224,22 +245,27 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // GET /api/v1/tests/:testId/results - Get test results
   router.get(
     '/:testId/results',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const { userId } = req.query;
-      const authUserId = req.user?.id;
+      const authUserId = req.user.id;
 
-      logger.debug('Fetching test results', { testId, userId: userId || authUserId });
+      logger.debug('Fetching test results', { testId, userId: authUserId });
 
-      const finalUserId = userId as string || authUserId;
-
-      const test = await supabaseService.getTestById(testId, finalUserId);
+      const test = await supabaseService.getTestById(testId, authUserId);
       if (!test) {
         return res.status(404).json({
           success: false,
           error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== authUserId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
         });
       }
 
@@ -255,7 +281,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let results = await cacheService.get(cacheKey);
 
       if (!results) {
-        results = await supabaseService.getTestResults(testId, finalUserId);
+        results = await supabaseService.getTestResults(testId, authUserId);
 
         // Cache for 30 minutes (results don't change)
         await cacheService.set(cacheKey, results, 1800);
@@ -271,16 +297,30 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // POST /api/v1/tests/:testId/results - Create test result
   router.post(
     '/:testId/results',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const { score, correctAnswersCount, totalQuestions, userId } = req.body;
-      const authUserId = req.user?.id;
+      const { score, correctAnswersCount, totalQuestions } = req.body;
+      const authUserId = req.user.id;
 
-      logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId: userId || authUserId });
+      logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId: authUserId });
 
-      const finalUserId = userId || authUserId;
+      const test = await supabaseService.getTestById(testId, authUserId);
+      if (!test) {
+        return res.status(404).json({
+          success: false,
+          error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== authUserId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
+        });
+      }
 
       const result = await supabaseService.createTestResult(testId, {
         score,
@@ -290,7 +330,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       // Invalidate caches
       await cacheService.delete(`test:results:${testId}`);
-      await cacheService.deletePattern(`tests:${finalUserId}:*`);
+      await cacheService.deletePattern(`tests:${authUserId}:*`);
 
       res.status(201).json({
         success: true,
@@ -306,7 +346,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Fetching test questions', { testId, userId });
 
@@ -315,6 +355,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         return res.status(404).json({
           success: false,
           error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
         });
       }
 
@@ -350,7 +398,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { testId } = req.params;
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Deleting test', { testId, userId });
 
@@ -359,6 +407,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         return res.status(404).json({
           success: false,
           error: 'Test not found or access denied',
+        });
+      }
+
+      // Check ownership
+      if (test.user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied: you do not own this test',
         });
       }
 
@@ -398,7 +454,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Fetching subject stats', { userId });
 
@@ -426,7 +482,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const { period = 'month' } = req.query;
-      const userId = req.user?.id;
+      const userId = req.user.id;
 
       logger.debug('Fetching performance stats', { period, userId });
 
@@ -487,3 +543,4 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 };
 
 export default router;
+export { router };

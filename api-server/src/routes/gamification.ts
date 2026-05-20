@@ -21,7 +21,7 @@ export const initializeGamificationRoutes = (supabase: SupabaseService, cache: C
 // GET /api/v1/gamification/leaderboard - Get leaderboard
 router.get(
   '/leaderboard',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
@@ -59,7 +59,7 @@ router.get(
 // GET /api/v1/gamification/achievements - Get available achievements
 router.get(
   '/achievements',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
@@ -96,7 +96,7 @@ router.get(
 // GET /api/v1/gamification/user/:userId/achievements - Get user's achievements
 router.get(
   '/user/:userId/achievements',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   validatePagination,
   handleValidationErrors,

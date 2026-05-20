@@ -228,8 +228,11 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
-                setCurrentUser(null);
-                setDataLoaded(false);
+                const store = useAuthStore.getState();
+                if (!store.isAuthLoading) {
+                    setCurrentUser(null);
+                    setDataLoaded(false);
+                }
             } else if (event === 'SIGNED_IN' && session?.user) {
                 if (session?.access_token) {
                     localStorage.setItem('lantern_access_token', session.access_token);
