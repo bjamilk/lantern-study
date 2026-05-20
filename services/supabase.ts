@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 import { UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
 
@@ -43,38 +43,46 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   }
 };
 
+const getSessionWithTimeout = async (timeoutMs: number = 1500) => {
+  try {
+    const getSessionPromise = supabase.auth.getSession();
+    const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
+      setTimeout(() => resolve({ timeout: true }), timeoutMs);
+    });
+    
+    const result = await Promise.race([
+      getSessionPromise.then(res => ({ ...res, timeout: false })),
+      timeoutPromise
+    ]);
+    
+    if ('timeout' in result && result.timeout) {
+      console.warn('[Supabase API] getSession timed out');
+      return null;
+    }
+    
+    return (result as any).data?.session ?? null;
+  } catch (err) {
+    console.warn('[Supabase API] getSession error:', err);
+    return null;
+  }
+};
+
 // Helper function to get authenticated headers
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  // Get the current session
-  const { data: { session }, error } = await supabase.auth.getSession();
+  let token: string | null = null;
   
-  if (error) {
-    console.warn('Error getting session:', error.message);
-  }
-  
+  // 1. Try to get token from current session with timeout
+  const session = await getSessionWithTimeout(1500);
   if (session?.access_token) {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-    };
-  }
-  
-  // Try to refresh the session before falling back to localStorage
-  try {
-    const { data: refreshData } = await supabase.auth.refreshSession();
-    if (refreshData?.session?.access_token) {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${refreshData.session.access_token}`,
-      };
+    token = session.access_token;
+    localStorage.setItem('lantern_access_token', token);
+    if (session.refresh_token) {
+      localStorage.setItem('lantern_refresh_token', session.refresh_token);
     }
-  } catch (e) {
-    // refresh failed, continue to fallback
   }
   
-  // Fallback: Try to get token from localStorage directly
-  // Supabase stores session with key like 'sb-<project-ref>-auth-token'
-  if (typeof window !== 'undefined') {
+  // 2. Fallback to localStorage if getSession timed out or returned null
+  if (!token && typeof window !== 'undefined') {
     const keys = Object.keys(localStorage);
     for (const key of keys) {
       if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
@@ -83,10 +91,8 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
           if (stored) {
             const parsed = JSON.parse(stored);
             if (parsed?.access_token) {
-              return {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${parsed.access_token}`,
-              };
+              token = parsed.access_token;
+              break;
             }
           }
         } catch (e) {
@@ -95,17 +101,47 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
       }
     }
     
-    // Also check for our custom stored tokens
-    const storedAccessToken = localStorage.getItem('lantern_access_token');
-    if (storedAccessToken) {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${storedAccessToken}`,
-      };
+    if (!token) {
+      token = localStorage.getItem('lantern_access_token');
     }
   }
   
-  console.warn('No session found, proceeding without auth token');
+  // 3. Only if no token at all, try to refresh the session with a short timeout
+  if (!token) {
+    try {
+      const refreshPromise = supabase.auth.refreshSession();
+      const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
+        setTimeout(() => resolve({ timeout: true }), 2000);
+      });
+      
+      const refreshResult = await Promise.race([
+        refreshPromise.then(res => ({ ...res, timeout: false })),
+        timeoutPromise
+      ]);
+      
+      if (!('timeout' in refreshResult && refreshResult.timeout)) {
+        const { data: refreshData } = refreshResult as any;
+        if (refreshData?.session?.access_token) {
+          token = refreshData.session.access_token;
+          localStorage.setItem('lantern_access_token', token);
+          if (refreshData.session.refresh_token) {
+            localStorage.setItem('lantern_refresh_token', refreshData.session.refresh_token);
+          }
+        }
+      }
+    } catch (e) {
+      // refresh failed
+    }
+  }
+  
+  if (token) {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+  }
+  
+  console.warn('No session token found, proceeding without auth header');
   return {
     'Content-Type': 'application/json',
   };
@@ -113,14 +149,49 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
 // Helper to check if user has a valid session before making auth-required calls
 const hasValidSession = async (): Promise<boolean> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  return !!session?.access_token;
+  const session = await getSessionWithTimeout(1500);
+  if (session?.access_token) return true;
+  
+  // Fallback to local storage
+  if (typeof window !== 'undefined') {
+    const keys = Object.keys(localStorage);
+    for (const key of keys) {
+      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed?.access_token) return true;
+          } catch (e) {}
+        }
+      }
+    }
+    if (localStorage.getItem('lantern_access_token')) return true;
+  }
+  return false;
 };
 
 // Helper to get the current authenticated user id (or null if not authenticated)
 const getAuthenticatedUserId = async (): Promise<string | null> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.user?.id ?? null;
+  const session = await getSessionWithTimeout(1500);
+  if (session?.user?.id) return session.user.id;
+  
+  // Fallback to local storage
+  if (typeof window !== 'undefined') {
+    const keys = Object.keys(localStorage);
+    for (const key of keys) {
+      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed?.user?.id) return parsed.user.id;
+          } catch (e) {}
+        }
+      }
+    }
+  }
+  return null;
 };
 
 // For local development, the keys are default, but in production, set env vars.

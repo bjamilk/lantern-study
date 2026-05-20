@@ -76,7 +76,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 // or fails due to a transient connection error.
                 const getSessionPromise = supabase.auth.getSession();
                 const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
-                    setTimeout(() => resolve({ timeout: true }), 5000);
+                    setTimeout(() => resolve({ timeout: true }), 15000);
                 });
                 
                 const result = await Promise.race([
@@ -242,6 +242,12 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 setCurrentUser(null);
                 setDataLoaded(false);
             } else if (event === 'SIGNED_IN' && session?.user) {
+                if (session?.access_token) {
+                    localStorage.setItem('lantern_access_token', session.access_token);
+                    if (session.refresh_token) {
+                        localStorage.setItem('lantern_refresh_token', session.refresh_token);
+                    }
+                }
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('*')
