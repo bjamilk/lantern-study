@@ -596,6 +596,24 @@ export const fetchUsers = async (search?: string, options?: { page?: number; lim
   }
 };
 
+export const searchUsers = async (query: string, limit: number = 20) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to search users');
+    }
+    const result = await response.json();
+    return result.data;
+  } catch (error) {
+    console.error('Error searching users:', error);
+    throw error;
+  }
+};
+
 export const fetchDeckCollaborators = async (deckId: string) => {
   console.log('Fetching collaborators for deck:', deckId);
   try {
@@ -1378,6 +1396,41 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   } catch (error) {
     console.error('Error deleting user account:', error);
     return false;
+  }
+};
+
+export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/check-username/${encodeURIComponent(username)}`, {
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to check username availability: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.available === true;
+  } catch (error) {
+    console.error('Error checking username availability:', error);
+    throw error;
+  }
+};
+
+export const updateUsername = async (userId: string, username: string, firstName: string, lastName: string): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/username`, {
+      method: 'PUT',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ username, firstName, lastName }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to update username: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error updating username:', error);
+    throw error;
   }
 };
 

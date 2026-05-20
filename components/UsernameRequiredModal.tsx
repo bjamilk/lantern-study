@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { XMarkIcon, CheckCircleIcon, ExclamationCircleIcon, UserIcon } from '@heroicons/react/24/outline';
-import { supabase } from '../services/supabase';
+import { checkUsernameAvailability, updateUsername } from '../services/supabase';
 import type { User } from '../types';
 
 interface UsernameRequiredModalProps {
@@ -60,18 +60,10 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
     
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('is_username_available', {
-          check_username: normalizedUsername,
-        });
+        const available = await checkUsernameAvailability(normalizedUsername);
 
-        if (error) {
-          console.error('Username check error:', error);
-          setCheckingUsername(false);
-          return;
-        }
-
-        setUsernameAvailable(data === true);
-        if (data === false) {
+        setUsernameAvailable(available);
+        if (!available) {
           setUsernameError('Username is already taken');
         }
       } catch (err) {
@@ -112,31 +104,16 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Update username and profile info directly via Supabase
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          username: normalizedUsername,
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          name: `${firstName.trim()} ${lastName.trim()}`,
-        })
-        .eq('id', currentUser.id);
-
-      if (updateError) {
-        if (updateError.code === '23505') {
-          // Unique constraint violation
-          setError('This username is already taken. Please choose another.');
-        } else {
-          setError(updateError.message || 'Failed to save username. Please try again.');
-        }
-        return;
-      }
+      await updateUsername(currentUser.id, normalizedUsername, firstName.trim(), lastName.trim());
 
       onSuccess(normalizedUsername, firstName.trim(), lastName.trim());
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save username:', err);
-      setError('Failed to save username. Please try again.');
+      if (err.message?.includes('already taken') || err.message?.includes('23505')) {
+        setError('This username is already taken. Please choose another.');
+      } else {
+        setError(err.message || 'Failed to save username. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }

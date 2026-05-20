@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Matter from 'matter-js';
-import { supabase, fetchUserProfile, createUserProfile } from '../services/supabase';
+import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability } from '../services/supabase';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -154,18 +154,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('is_username_available', {
-          check_username: normalizedUsername,
-        });
+        const isAvailable = await checkUsernameAvailability(normalizedUsername);
 
-        if (error) {
-          console.error('Username check error:', error);
-          setCheckingUsername(false);
-          return;
-        }
-
-        setUsernameAvailable(data === true);
-        if (data === false) {
+        setUsernameAvailable(isAvailable);
+        if (!isAvailable) {
           setUsernameError('Username is already taken');
         }
       } catch (err) {

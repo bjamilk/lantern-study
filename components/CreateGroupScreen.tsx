@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, GroupPermissions } from '../types';
 import { ArrowLeftIcon, ArrowRightIcon, UsersIcon, CheckIcon, CameraIcon, LockClosedIcon, MagnifyingGlassIcon, AtSymbolIcon, LinkIcon } from '@heroicons/react/24/outline';
-import { supabase } from '../services/supabase';
+import { searchUsers } from '../services/supabase';
 
 interface SearchResult {
   id: string;
@@ -74,22 +74,12 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
 
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('search_users', {
-          search_query: searchTerm.trim(),
-          exclude_user_id: currentUser.id,
-          result_limit: 20,
-        });
-
-        if (error) {
-          console.error('Search error:', error);
-          setSearchResults([]);
-        } else {
-          // Filter out already selected users
-          const filtered = (data || []).filter((user: SearchResult) => 
-            !selectedUserIds.includes(user.id)
-          );
-          setSearchResults(filtered);
-        }
+        const data = await searchUsers(searchTerm.trim(), 20);
+        // Filter out already selected users
+        const filtered = (data || []).filter((user: SearchResult) => 
+          !selectedUserIds.includes(user.id)
+        );
+        setSearchResults(filtered);
       } catch (err) {
         console.error('Search failed:', err);
         setSearchResults([]);

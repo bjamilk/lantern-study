@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Group } from '../types';
 import { XCircleIcon, UserPlusIcon, LinkIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import { supabase } from '../services/supabase';
+import { searchUsers } from '../services/supabase';
 
 interface SearchResult {
   id: string;
@@ -56,23 +56,12 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('search_users', {
-          search_query: searchTerm.trim(),
-          exclude_user_id: currentUser.id,
-          result_limit: 20,
-        });
-
-        if (error) {
-          console.error('Search error:', error);
-          setSearchError('Failed to search users');
-          setSearchResults([]);
-        } else {
-          const groupMemberIds = new Set(group.members?.map(m => m.id) || []);
-          const filtered = (data || []).filter((user: SearchResult) => 
-            !groupMemberIds.has(user.id)
-          );
-          setSearchResults(filtered);
-        }
+        const data = await searchUsers(searchTerm.trim(), 20);
+        const groupMemberIds = new Set(group.members?.map(m => m.id) || []);
+        const filtered = (data || []).filter((user: SearchResult) => 
+          !groupMemberIds.has(user.id)
+        );
+        setSearchResults(filtered);
       } catch (err) {
         console.error('Search failed:', err);
         setSearchError('Failed to search. Please try again.');
