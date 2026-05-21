@@ -43,7 +43,69 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   }
 };
 
-const getSessionWithTimeout = async (timeoutMs: number = 10000) => {
+// ─── Cached Auth Token Layer ───────────────────────────────────────────────────
+// Instead of calling supabase.auth.getSession() on every API request (which can
+// take seconds on cold start), we cache the token in memory. The auth flow in
+// useAppEffects.ts updates this cache whenever the session changes.
+let _cachedAccessToken: string | null = null;
+let _cachedUserId: string | null = null;
+
+/** Call this from the auth initialization flow to populate the in-memory cache. */
+export const setCachedAuthToken = (token: string | null, userId?: string | null) => {
+  _cachedAccessToken = token;
+  if (userId !== undefined) {
+    _cachedUserId = userId;
+  }
+  if (token) {
+    localStorage.setItem('lantern_access_token', token);
+  }
+};
+
+/** Read the token from localStorage (Supabase SDK keys or our custom key). */
+const getTokenFromLocalStorage = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  
+  // Check our custom key first (fastest)
+  const lanternToken = localStorage.getItem('lantern_access_token');
+  if (lanternToken) return lanternToken;
+  
+  // Fall back to Supabase SDK storage keys
+  const keys = Object.keys(localStorage);
+  for (const key of keys) {
+    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.access_token) return parsed.access_token;
+        }
+      } catch (e) {
+        // skip invalid entries
+      }
+    }
+  }
+  return null;
+};
+
+/** Read the user ID from localStorage (Supabase SDK storage). */
+const getUserIdFromLocalStorage = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const keys = Object.keys(localStorage);
+  for (const key of keys) {
+    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.user?.id) return parsed.user.id;
+        }
+      } catch (e) {}
+    }
+  }
+  return null;
+};
+
+const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
   try {
     const getSessionPromise = supabase.auth.getSession();
     const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
@@ -60,7 +122,19 @@ const getSessionWithTimeout = async (timeoutMs: number = 10000) => {
       return null;
     }
     
-    return (result as any).data?.session ?? null;
+    const session = (result as any).data?.session ?? null;
+    // Update the cache when we successfully get a session
+    if (session?.access_token) {
+      _cachedAccessToken = session.access_token;
+      localStorage.setItem('lantern_access_token', session.access_token);
+      if (session.user?.id) {
+        _cachedUserId = session.user.id;
+      }
+      if (session.refresh_token) {
+        localStorage.setItem('lantern_refresh_token', session.refresh_token);
+      }
+    }
+    return session;
   } catch (err) {
     console.warn('[Supabase API] getSession error:', err);
     return null;
@@ -68,45 +142,29 @@ const getSessionWithTimeout = async (timeoutMs: number = 10000) => {
 };
 
 // Helper function to get authenticated headers
+// Uses cached token for instant resolution (~0ms) on the hot path.
+// Only calls getSession() on the very first cold call when no cache/localStorage token exists.
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  let token: string | null = null;
+  // 1. FAST PATH: Check in-memory cache (instant, no async)
+  let token: string | null = _cachedAccessToken;
   
-  // 1. Try to get token from current session with timeout
-  const session = await getSessionWithTimeout(10000);
-  if (session?.access_token) {
-    token = session.access_token;
-    localStorage.setItem('lantern_access_token', token);
-    if (session.refresh_token) {
-      localStorage.setItem('lantern_refresh_token', session.refresh_token);
+  // 2. Check localStorage (still fast, synchronous)
+  if (!token) {
+    token = getTokenFromLocalStorage();
+    if (token) {
+      _cachedAccessToken = token; // warm the cache for next call
     }
   }
   
-  // 2. Fallback to localStorage if getSession timed out or returned null
-  if (!token && typeof window !== 'undefined') {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        try {
-          const stored = localStorage.getItem(key);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed?.access_token) {
-              token = parsed.access_token;
-              break;
-            }
-          }
-        } catch (e) {
-          // skip invalid entries
-        }
-      }
-    }
-    
-    if (!token) {
-      token = localStorage.getItem('lantern_access_token');
+  // 3. SLOW PATH (cold start only): Fall back to getSession with short timeout
+  if (!token) {
+    const session = await getSessionWithTimeout(2000);
+    if (session?.access_token) {
+      token = session.access_token;
     }
   }
   
-  // 3. Only if no token at all, try to refresh the session with a short timeout
+  // 4. Last resort: try refreshing the session
   if (!token) {
     try {
       const refreshPromise = supabase.auth.refreshSession();
@@ -123,7 +181,7 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
         const { data: refreshData } = refreshResult as any;
         if (refreshData?.session?.access_token) {
           token = refreshData.session.access_token;
-          localStorage.setItem('lantern_access_token', token);
+          setCachedAuthToken(token, refreshData.session.user?.id);
           if (refreshData.session.refresh_token) {
             localStorage.setItem('lantern_refresh_token', refreshData.session.refresh_token);
           }
@@ -149,48 +207,31 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
 
 // Helper to check if user has a valid session before making auth-required calls
 const hasValidSession = async (): Promise<boolean> => {
-  const session = await getSessionWithTimeout(10000);
-  if (session?.access_token) return true;
+  // Fast path: check cache and localStorage first
+  if (_cachedAccessToken) return true;
+  if (getTokenFromLocalStorage()) return true;
   
-  // Fallback to local storage
-  if (typeof window !== 'undefined') {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (parsed?.access_token) return true;
-          } catch (e) {}
-        }
-      }
-    }
-    if (localStorage.getItem('lantern_access_token')) return true;
-  }
+  // Slow path: try getSession (only on cold start)
+  const session = await getSessionWithTimeout(2000);
+  if (session?.access_token) return true;
   return false;
 };
 
 // Helper to get the current authenticated user id (or null if not authenticated)
 const getAuthenticatedUserId = async (): Promise<string | null> => {
-  const session = await getSessionWithTimeout(10000);
-  if (session?.user?.id) return session.user.id;
+  // Fast path: check cache
+  if (_cachedUserId) return _cachedUserId;
   
-  // Fallback to local storage
-  if (typeof window !== 'undefined') {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (parsed?.user?.id) return parsed.user.id;
-          } catch (e) {}
-        }
-      }
-    }
+  // Check localStorage
+  const lsUserId = getUserIdFromLocalStorage();
+  if (lsUserId) {
+    _cachedUserId = lsUserId;
+    return lsUserId;
   }
+  
+  // Slow path: try getSession
+  const session = await getSessionWithTimeout(2000);
+  if (session?.user?.id) return session.user.id;
   return null;
 };
 

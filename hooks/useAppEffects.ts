@@ -8,7 +8,7 @@ import { useBudgetStore } from '../stores/budgetStore';
 import { useUIStore } from '../stores/uiStore';
 import { initialUserStats } from '../utils/helpers';
 import {
-    supabase,
+    supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
     fetchDecks, fetchFlashcards,
     fetchTestResults, fetchUserQuestionStats,
@@ -109,11 +109,12 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 }
                 
                 if (session?.access_token) {
-                    localStorage.setItem('lantern_access_token', session.access_token);
+                    // Populate the in-memory token cache so all subsequent API calls are instant
+                    setCachedAuthToken(session.access_token, session.user?.id);
                     if (session.refresh_token) {
                         localStorage.setItem('lantern_refresh_token', session.refresh_token);
                     }
-                    console.log('[App] Restored and stored access token');
+                    console.log('[App] Restored and cached access token');
                 }
                 
                 // Fetch profile with fallback to local cached user state if offline
@@ -235,7 +236,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 }
             } else if (event === 'SIGNED_IN' && session?.user) {
                 if (session?.access_token) {
-                    localStorage.setItem('lantern_access_token', session.access_token);
+                    setCachedAuthToken(session.access_token, session.user?.id);
                     if (session.refresh_token) {
                         localStorage.setItem('lantern_refresh_token', session.refresh_token);
                     }
@@ -298,189 +299,208 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
     // --- Data loading ---
     useEffect(() => {
         if (currentUser && !dataLoaded) {
-            console.log('[Data Loading] Starting data fetch for user:', currentUser.id);
-            fetchGroups(currentUser.id).then(async (fetchedGroups) => {
-                console.log('[Data Loading] Groups fetched:', fetchedGroups?.length || 0);
-                const unreadCounts = await fetchGroupUnreadCounts(currentUser.id);
-                
-                setGroups(fetchedGroups.map((g: any) => ({
-                    id: g.id,
-                    name: g.name,
-                    avatarUrl: g.avatar_url || g.avatarUrl,
-                    description: g.description,
-                    lastMessage: g.last_message || g.lastMessage,
-                    lastMessageTime: g.last_message_time || g.lastMessageTime,
-                    adminIds: g.admin_ids || g.adminIds || [],
-                    permissions: g.permissions || {},
-                    parentId: g.parent_id || g.parentId,
-                    isArchived: g.is_archived ?? g.isArchived ?? false,
-                    inviteId: g.invite_id || g.inviteId,
-                    unreadCount: unreadCounts[g.id] || 0,
-                    pendingMembers: [],
-                    invitedPhoneNumbers: [],
-                    members: []
-                })));
-                
-                // Fetch DM threads from server
-                const fetchedDmThreads = await fetchDmThreads(currentUser.id);
-                const dmUnreadCounts = await fetchDMUnreadCounts(currentUser.id);
-                const mappedDmThreads = fetchedDmThreads.map((t: any) => ({
-                    id: t.id,
-                    participantIds: t.participantIds || t.participant_ids || [],
-                    participants: t.participants || {},
-                    lastMessage: t.lastMessage || t.last_message,
-                    lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-                    unreadCount: dmUnreadCounts[t.id] || 0,
-                    isArchived: t.isArchived || false,
-                }));
-                setDmThreads(mappedDmThreads);
-                
-                setDataLoaded(true);
-            }).catch(error => {
-                console.error('[Data Loading] Error fetching groups:', error);
-                setDataLoaded(true);
-            });
+            console.log('[Data Loading] Starting PARALLEL data fetch for user:', currentUser.id);
+            const userId = currentUser.id;
+            const currentMonthYear = new Date().toISOString().slice(0, 7);
 
-            Promise.all([
-                fetchDecks(currentUser.id),
-                fetchFlashcards(undefined, currentUser.id)
-            ]).then(([fetchedDecks, fetchedFlashcards]) => {
-                const mappedDecks = fetchedDecks.map((d: any) => ({
-                    id: d.id,
-                    name: d.name,
-                    description: d.description,
-                    createdAt: d.created_at
-                }));
-                setDecks(mappedDecks);
-                setFlashcards(fetchedFlashcards.map((fc: any) => ({
-                    id: fc.id,
-                    deckId: fc.deck_id,
-                    type: fc.type,
-                    front: fc.front,
-                    back: fc.back,
-                    clozeText: fc.cloze_text,
-                    srsData: fc.srs_data,
-                    tags: fc.tags,
-                    createdAt: fc.created_at
-                })));
-            }).catch(error => {
-                console.error('Error fetching flashcards data:', error);
-            });
+            // Fire ALL data-loading calls in parallel using Promise.allSettled.
+            // Previously these were sequential (waterfall), each independently calling
+            // getSession() with a 10s timeout. Now they all fire at once.
+            Promise.allSettled([
+                // [0] Groups
+                fetchGroups(userId),
+                // [1] Group unread counts
+                fetchGroupUnreadCounts(userId),
+                // [2] DM threads
+                fetchDmThreads(userId),
+                // [3] DM unread counts
+                fetchDMUnreadCounts(userId),
+                // [4] Decks
+                fetchDecks(userId),
+                // [5] Flashcards
+                fetchFlashcards(undefined, userId),
+                // [6] Test results
+                fetchTestResults(userId),
+                // [7] User question stats
+                fetchUserQuestionStats(userId),
+                // [8] Notifications
+                fetchNotifications(userId),
+                // [9] Offline bundles
+                fetchOfflineBundles(userId),
+                // [10] User preferences
+                fetchUserPreferences(userId),
+                // [11] User budget
+                fetchUserBudget(userId, currentMonthYear),
+                // [12] Transactions sync
+                syncBudgetTransactionsToCloud(userId, transactions),
+            ]).then((results) => {
+                console.log('[Data Loading] All parallel fetches settled');
 
-            fetchTestResults(currentUser.id).then(fetchedResults => {
-                setTestResults(fetchedResults);
-            }).catch(error => {
-                console.error('Error fetching test results:', error);
-            });
-
-            fetchUserQuestionStats(currentUser.id).then(fetchedStats => {
-                if (fetchedStats && Object.keys(fetchedStats).length > 0) {
-                    setUserQuestionStats(fetchedStats);
-                }
-            }).catch((error) => {
-                console.debug('Failed to fetch user question stats:', error);
-            });
-
-            fetchNotifications(currentUser.id).then(fetchedNotifications => {
-                // Only overwrite if we actually got notifications back;
-                // don't wipe local state on empty/failed fetches
-                if (fetchedNotifications && fetchedNotifications.length > 0) {
-                    setNotifications(fetchedNotifications);
-                }
-            }).catch(() => {
-                // Handled gracefully in the service layer
-            });
-
-            fetchOfflineBundles(currentUser.id).then(cloudBundles => {
-                console.log('[Offline Sync] Cloud bundles fetched:', cloudBundles.length);
-                updateOfflineBundles(prev => {
-                    const localBundleIds = new Set(prev.map(b => b.bundleId));
-                    const cloudBundleIds = new Set(cloudBundles.map((b: OfflineSessionBundle) => b.bundleId));
-                    
-                    const localOnlyBundles = prev.filter(b => !cloudBundleIds.has(b.bundleId));
-                    
-                    if (currentUser) {
-                        localOnlyBundles.forEach(bundle => {
-                            console.log('[Offline Sync] Syncing local bundle to cloud:', bundle.bundleId);
-                            saveOfflineBundle(currentUser.id, bundle).catch(err => 
-                                console.error('[Offline Sync] Failed to sync bundle to cloud:', err)
-                            );
-                        });
-                    }
-                    
-                    const cloudOnlyBundles = cloudBundles.filter((b: OfflineSessionBundle) => !localBundleIds.has(b.bundleId));
-                    console.log('[Offline Sync] Adding cloud-only bundles:', cloudOnlyBundles.length);
-                    
-                    return [...prev, ...cloudOnlyBundles];
-                });
-            }).catch(error => {
-                console.error('[Offline Sync] Error fetching cloud bundles:', error);
-            });
-
-            fetchUserPreferences(currentUser.id).then(cloudPrefs => {
-                if (cloudPrefs) {
-                    console.log('[Preferences Sync] Cloud preferences fetched:', cloudPrefs.theme);
-                    setTheme(cloudPrefs.theme);
-                    localStorage.setItem('theme', cloudPrefs.theme);
+                // --- [0] Groups + [1] Unread counts ---
+                const groupsResult = results[0];
+                const unreadResult = results[1];
+                if (groupsResult.status === 'fulfilled') {
+                    const fetchedGroups = groupsResult.value;
+                    const unreadCounts = unreadResult.status === 'fulfilled' ? unreadResult.value : {};
+                    setGroups(fetchedGroups.map((g: any) => ({
+                        id: g.id,
+                        name: g.name,
+                        avatarUrl: g.avatar_url || g.avatarUrl,
+                        description: g.description,
+                        lastMessage: g.last_message || g.lastMessage,
+                        lastMessageTime: g.last_message_time || g.lastMessageTime,
+                        adminIds: g.admin_ids || g.adminIds || [],
+                        permissions: g.permissions || {},
+                        parentId: g.parent_id || g.parentId,
+                        isArchived: g.is_archived ?? g.isArchived ?? false,
+                        inviteId: g.invite_id || g.inviteId,
+                        unreadCount: unreadCounts[g.id] || 0,
+                        pendingMembers: [],
+                        invitedPhoneNumbers: [],
+                        members: []
+                    })));
                 } else {
-                    const localTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'light';
-                    saveUserPreferences(currentUser.id, { theme: localTheme }).then(() => {
-                        console.log('[Preferences Sync] Local theme synced to cloud:', localTheme);
+                    console.error('[Data Loading] Groups fetch failed:', groupsResult.reason);
+                }
+
+                // --- [2] DM threads + [3] DM unread counts ---
+                const dmResult = results[2];
+                const dmUnreadResult = results[3];
+                if (dmResult.status === 'fulfilled') {
+                    const fetchedDmThreads = dmResult.value;
+                    const dmUnreadCounts = dmUnreadResult.status === 'fulfilled' ? dmUnreadResult.value : {};
+                    const mappedDmThreads = fetchedDmThreads.map((t: any) => ({
+                        id: t.id,
+                        participantIds: t.participantIds || t.participant_ids || [],
+                        participants: t.participants || {},
+                        lastMessage: t.lastMessage || t.last_message,
+                        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+                        unreadCount: dmUnreadCounts[t.id] || 0,
+                        isArchived: t.isArchived || false,
+                    }));
+                    setDmThreads(mappedDmThreads);
+                }
+
+                // --- [4] Decks + [5] Flashcards ---
+                const decksResult = results[4];
+                const flashcardsResult = results[5];
+                if (decksResult.status === 'fulfilled') {
+                    setDecks(decksResult.value.map((d: any) => ({
+                        id: d.id,
+                        name: d.name,
+                        description: d.description,
+                        createdAt: d.created_at
+                    })));
+                }
+                if (flashcardsResult.status === 'fulfilled') {
+                    setFlashcards(flashcardsResult.value.map((fc: any) => ({
+                        id: fc.id,
+                        deckId: fc.deck_id,
+                        type: fc.type,
+                        front: fc.front,
+                        back: fc.back,
+                        clozeText: fc.cloze_text,
+                        srsData: fc.srs_data,
+                        tags: fc.tags,
+                        createdAt: fc.created_at
+                    })));
+                }
+
+                // --- [6] Test results ---
+                if (results[6].status === 'fulfilled') {
+                    setTestResults(results[6].value);
+                }
+
+                // --- [7] User question stats ---
+                if (results[7].status === 'fulfilled') {
+                    const fetchedStats = results[7].value;
+                    if (fetchedStats && Object.keys(fetchedStats).length > 0) {
+                        setUserQuestionStats(fetchedStats);
+                    }
+                }
+
+                // --- [8] Notifications ---
+                if (results[8].status === 'fulfilled') {
+                    const fetchedNotifications = results[8].value;
+                    if (fetchedNotifications && fetchedNotifications.length > 0) {
+                        setNotifications(fetchedNotifications);
+                    }
+                }
+
+                // --- [9] Offline bundles ---
+                if (results[9].status === 'fulfilled') {
+                    const cloudBundles = results[9].value;
+                    updateOfflineBundles(prev => {
+                        const localBundleIds = new Set(prev.map(b => b.bundleId));
+                        const cloudBundleIds = new Set(cloudBundles.map((b: OfflineSessionBundle) => b.bundleId));
+                        const localOnlyBundles = prev.filter(b => !cloudBundleIds.has(b.bundleId));
+                        if (currentUser) {
+                            localOnlyBundles.forEach(bundle => {
+                                saveOfflineBundle(currentUser.id, bundle).catch(err =>
+                                    console.error('[Offline Sync] Failed to sync bundle to cloud:', err)
+                                );
+                            });
+                        }
+                        const cloudOnlyBundles = cloudBundles.filter((b: OfflineSessionBundle) => !localBundleIds.has(b.bundleId));
+                        return [...prev, ...cloudOnlyBundles];
                     });
                 }
-            }).catch(error => {
-                console.error('[Preferences Sync] Error:', error);
-            });
 
-            const currentMonthYear = new Date().toISOString().slice(0, 7);
-            fetchUserBudget(currentUser.id, currentMonthYear).then(cloudBudget => {
-                if (cloudBudget) {
-                    console.log('[Budget Sync] Cloud budget fetched:', cloudBudget.monthlyLimit);
-                    const updatedBudget = budget ? {
-                        ...budget,
-                        monthlyLimit: cloudBudget.monthlyLimit
-                    } : {
-                        monthlyLimit: cloudBudget.monthlyLimit,
-                        monthYear: currentMonthYear
-                    };
-                    setBudget(updatedBudget);
-                } else {
-                    const localBudgetStr = localStorage.getItem('monthlyBudget');
-                    if (localBudgetStr) {
-                        const localBudget = JSON.parse(localBudgetStr);
-                        saveUserBudget(currentUser.id, {
-                            monthlyLimit: localBudget.monthlyLimit || 0,
-                            monthYear: currentMonthYear
-                        }).then(() => {
-                            console.log('[Budget Sync] Local budget synced to cloud');
-                        });
+                // --- [10] User preferences ---
+                if (results[10].status === 'fulfilled') {
+                    const cloudPrefs = results[10].value;
+                    if (cloudPrefs) {
+                        setTheme(cloudPrefs.theme);
+                        localStorage.setItem('theme', cloudPrefs.theme);
+                    } else {
+                        const localTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'light';
+                        saveUserPreferences(userId, { theme: localTheme }).catch(console.error);
                     }
                 }
-            }).catch(error => {
-                console.error('[Budget Sync] Error:', error);
+
+                // --- [11] User budget ---
+                if (results[11].status === 'fulfilled') {
+                    const cloudBudget = results[11].value;
+                    if (cloudBudget) {
+                        const updatedBudget = budget ? {
+                            ...budget,
+                            monthlyLimit: cloudBudget.monthlyLimit
+                        } : {
+                            monthlyLimit: cloudBudget.monthlyLimit,
+                            monthYear: currentMonthYear
+                        };
+                        setBudget(updatedBudget);
+                    } else {
+                        const localBudgetStr = localStorage.getItem('monthlyBudget');
+                        if (localBudgetStr) {
+                            const localBudget = JSON.parse(localBudgetStr);
+                            saveUserBudget(userId, {
+                                monthlyLimit: localBudget.monthlyLimit || 0,
+                                monthYear: currentMonthYear
+                            }).catch(console.error);
+                        }
+                    }
+                }
+
+                // --- [12] Transactions sync ---
+                if (results[12].status === 'fulfilled') {
+                    const mergedTransactions = results[12].value;
+                    const transactionsWithUserId: Transaction[] = mergedTransactions.map((t: any) => ({
+                        ...t,
+                        userId: userId,
+                        type: t.type as TransactionType,
+                        category: t.category || '',
+                        description: t.description || ''
+                    }));
+                    setTransactions(transactionsWithUserId);
+                }
+
+                // Mark data as loaded regardless of individual failures
+                setDataLoaded(true);
             });
 
-            syncBudgetTransactionsToCloud(currentUser.id, transactions).then(mergedTransactions => {
-                console.log('[Transactions Sync] Merged transactions:', mergedTransactions.length);
-                const transactionsWithUserId: Transaction[] = mergedTransactions.map(t => ({
-                    ...t,
-                    userId: currentUser.id,
-                    type: t.type as TransactionType,
-                    category: t.category || '',
-                    description: t.description || ''
-                }));
-                setTransactions(transactionsWithUserId);
-            }).catch(error => {
-                console.error('[Transactions Sync] Error:', error);
-            });
-
+            // Sync pending results (non-critical, fire-and-forget)
             if (pendingSyncResults.length > 0) {
-                const pendingSyncData = pendingSyncResults.map(result => ({
-                    id: result.id,
-                    resultData: result,
-                    createdAt: new Date().toISOString(),
-                    synced: false,
-                }));
                 fetchPendingSyncResults(currentUser.id).then(() => {
                     console.log('[Pending Results Sync] Synced');
                 }).catch(error => {

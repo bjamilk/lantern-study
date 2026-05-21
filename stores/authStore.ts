@@ -6,77 +6,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { User, UserStats } from '../types';
-import { supabase } from '../services/supabase';
-
-// Helper functions for user profile management
-const fetchUserProfile = async (userId: string): Promise<User | null> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .single();
-  
-  if (error || !data) return null;
-  
-  return {
-    id: data.id,
-    name: data.name || 'User',
-    username: data.username || undefined,
-    firstName: data.first_name || undefined,
-    lastName: data.last_name || undefined,
-    email: data.email,
-    avatarUrl: data.avatar_url,
-    points: data.points || 0,
-    badges: data.badges || [],
-    stats: data.stats || initialUserStats,
-  };
-};
-
-const createUserProfile = async (profile: User): Promise<User | null> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .upsert({
-      id: profile.id,
-      name: profile.name,
-      email: profile.email,
-      avatar_url: profile.avatarUrl,
-      points: profile.points,
-      badges: profile.badges,
-      stats: profile.stats,
-    })
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error creating profile:', error);
-    return null;
-  }
-  
-  return profile;
-};
-
-const updateUserProfile = async (userId: string, updates: Partial<User>): Promise<void> => {
-  const updateData: any = {};
-  if (updates.name) updateData.name = updates.name;
-  if (updates.email) updateData.email = updates.email;
-  if (updates.avatarUrl) updateData.avatar_url = updates.avatarUrl;
-  if (updates.points !== undefined) updateData.points = updates.points;
-  if (updates.badges) updateData.badges = updates.badges;
-  if (updates.stats) updateData.stats = updates.stats;
-  if (updates.username) updateData.username = updates.username;
-  if (updates.firstName) updateData.first_name = updates.firstName;
-  if (updates.lastName) updateData.last_name = updates.lastName;
-  
-  const { error } = await supabase
-    .from('profiles')
-    .update(updateData)
-    .eq('id', userId);
-  
-  if (error) {
-    console.error('Error updating profile:', error);
-    throw error;
-  }
-};
+import {
+  supabase,
+  setCachedAuthToken,
+  fetchUserProfile as apiFetchUserProfile,
+  createUserProfile as apiCreateUserProfile,
+  updateUserProfile as apiUpdateUserProfile,
+} from '../services/supabase';
 
 // Initial user stats
 const initialUserStats: UserStats = {
@@ -150,25 +86,57 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (data.user) {
-            // Fetch or create user profile
-            let profile = await fetchUserProfile(data.user.id);
+            // Fetch or create user profile via API server
+            let profile: any = null;
+            try {
+              profile = await apiFetchUserProfile(data.user.id);
+            } catch (e) {
+              // Profile may not exist yet
+            }
             
             if (!profile) {
               // Create profile if it doesn't exist
-              const newProfile: User = {
-                id: data.user.id,
-                name: data.user.user_metadata?.name || email.split('@')[0],
-                email: email,
-                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.user_metadata?.name || email)}&background=random&color=fff`,
-                points: 0,
-                badges: [],
-                stats: initialUserStats,
-              };
-              profile = await createUserProfile(newProfile);
+              try {
+                profile = await apiCreateUserProfile({
+                  id: data.user.id,
+                  name: data.user.user_metadata?.name || email.split('@')[0],
+                  points: 0,
+                  badges: [],
+                  stats: initialUserStats,
+                });
+              } catch (createErr) {
+                console.error('Failed to create profile:', createErr);
+              }
+            }
+
+            const userObj: User = profile ? {
+              id: profile.id,
+              name: profile.name || 'User',
+              email: email,
+              avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || email)}&background=random&color=fff`,
+              points: profile.points || 0,
+              badges: profile.badges || [],
+              stats: profile.stats || initialUserStats,
+              username: profile.username || undefined,
+              firstName: profile.first_name || undefined,
+              lastName: profile.last_name || undefined,
+            } : {
+              id: data.user.id,
+              name: data.user.user_metadata?.name || email.split('@')[0],
+              email: email,
+              avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.user_metadata?.name || email)}&background=random&color=fff`,
+              points: 0,
+              badges: [],
+              stats: initialUserStats,
+            };
+
+            // Cache the access token so subsequent API calls are instant
+            if (data.session?.access_token) {
+              setCachedAuthToken(data.session.access_token, data.user.id);
             }
 
             set({
-              currentUser: profile,
+              currentUser: userObj,
               isAuthenticated: true,
               isAuthLoading: false,
             });
@@ -201,8 +169,21 @@ export const useAuthStore = create<AuthState>()(
           }
 
           if (data.user) {
-            // Create user profile
-            const newProfile: User = {
+            // Create user profile via API server
+            let profile: any = null;
+            try {
+              profile = await apiCreateUserProfile({
+                id: data.user.id,
+                name: name,
+                points: 0,
+                badges: [],
+                stats: initialUserStats,
+              });
+            } catch (createErr) {
+              console.error('Failed to create profile:', createErr);
+            }
+
+            const userObj: User = {
               id: data.user.id,
               name: name,
               email: email,
@@ -211,11 +192,14 @@ export const useAuthStore = create<AuthState>()(
               badges: [],
               stats: initialUserStats,
             };
-            
-            const profile = await createUserProfile(newProfile);
+
+            // Cache the access token so subsequent API calls are instant
+            if (data.session?.access_token) {
+              setCachedAuthToken(data.session.access_token, data.user.id);
+            }
 
             set({
-              currentUser: profile,
+              currentUser: userObj,
               isAuthenticated: true,
               isAuthLoading: false,
             });
@@ -243,33 +227,56 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // Refresh user from database
+      // Refresh user from database via API server
       refreshUser: async () => {
         const { currentUser } = get();
         if (!currentUser) return;
 
         try {
-          const profile = await fetchUserProfile(currentUser.id);
+          const profile = await apiFetchUserProfile(currentUser.id);
           if (profile) {
-            set({ currentUser: profile });
+            set({
+              currentUser: {
+                ...currentUser,
+                name: profile.name || currentUser.name,
+                avatarUrl: profile.avatar_url || currentUser.avatarUrl,
+                points: profile.points ?? currentUser.points,
+                badges: profile.badges || currentUser.badges,
+                stats: profile.stats || currentUser.stats,
+                username: profile.username || currentUser.username,
+                firstName: profile.first_name || currentUser.firstName,
+                lastName: profile.last_name || currentUser.lastName,
+              }
+            });
           }
         } catch (error) {
           console.error('Failed to refresh user:', error);
         }
       },
 
-      // Update user profile
+      // Update user profile via API server
       updateUser: async (updates) => {
         const { currentUser } = get();
         if (!currentUser) return;
 
         try {
-          // Update local state immediately
+          // Update local state immediately (optimistic)
           const updatedUser = { ...currentUser, ...updates };
           set({ currentUser: updatedUser });
 
-          // Sync with database
-          await updateUserProfile(currentUser.id, updates);
+          // Build API-compatible update payload
+          const apiUpdates: any = {};
+          if (updates.name) apiUpdates.name = updates.name;
+          if (updates.avatarUrl) apiUpdates.avatar_url = updates.avatarUrl;
+          if (updates.points !== undefined) apiUpdates.points = updates.points;
+          if (updates.badges) apiUpdates.badges = updates.badges;
+          if (updates.stats) apiUpdates.stats = updates.stats;
+          if (updates.username) apiUpdates.username = updates.username;
+          if (updates.firstName) apiUpdates.first_name = updates.firstName;
+          if (updates.lastName) apiUpdates.last_name = updates.lastName;
+
+          // Sync with API server
+          await apiUpdateUserProfile(currentUser.id, apiUpdates);
         } catch (error) {
           console.error('Failed to update user:', error);
           // Revert on error
@@ -290,35 +297,80 @@ export const useAuthStore = create<AuthState>()(
         const updatedUser = { ...currentUser, stats: updatedStats };
         set({ currentUser: updatedUser });
 
-        // Sync with database
-        updateUserProfile(currentUser.id, { stats: updatedStats }).catch(console.error);
+        // Sync with API server
+        apiUpdateUserProfile(currentUser.id, { stats: updatedStats }).catch(console.error);
       },
 
-      // Check auth state on app load
+      // Check auth state on app load (with timeout)
       checkAuthState: async () => {
         set({ isAuthLoading: true });
         try {
-          const { data: { session } } = await supabase.auth.getSession();
+          // Add timeout to prevent indefinite hangs
+          const getSessionPromise = supabase.auth.getSession();
+          const timeoutPromise = new Promise<null>((resolve) => {
+            setTimeout(() => resolve(null), 5000);
+          });
+          
+          const sessionResult = await Promise.race([getSessionPromise, timeoutPromise]);
+          
+          if (!sessionResult) {
+            console.warn('[Auth] checkAuthState timed out');
+            set({ isAuthLoading: false });
+            return;
+          }
+          
+          const { data: { session } } = sessionResult as any;
           
           if (session?.user) {
-            let profile = await fetchUserProfile(session.user.id);
+            // Cache the token
+            if (session.access_token) {
+              setCachedAuthToken(session.access_token, session.user.id);
+            }
+            
+            let profile: any = null;
+            try {
+              profile = await apiFetchUserProfile(session.user.id);
+            } catch (e) {
+              // Profile fetch failed
+            }
             
             if (!profile) {
-              // Create profile if it doesn't exist
-              const newProfile: User = {
-                id: session.user.id,
-                name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-                email: session.user.email || '',
-                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(session.user.user_metadata?.name || 'User')}&background=random&color=fff`,
-                points: 0,
-                badges: [],
-                stats: initialUserStats,
-              };
-              profile = await createUserProfile(newProfile);
+              try {
+                profile = await apiCreateUserProfile({
+                  id: session.user.id,
+                  name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+                  points: 0,
+                  badges: [],
+                  stats: initialUserStats,
+                });
+              } catch (createErr) {
+                console.error('Failed to create profile:', createErr);
+              }
             }
 
+            const userObj: User = profile ? {
+              id: profile.id,
+              name: profile.name || 'User',
+              email: session.user.email || '',
+              avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'User')}&background=random&color=fff`,
+              points: profile.points || 0,
+              badges: profile.badges || [],
+              stats: profile.stats || initialUserStats,
+              username: profile.username || undefined,
+              firstName: profile.first_name || undefined,
+              lastName: profile.last_name || undefined,
+            } : {
+              id: session.user.id,
+              name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+              email: session.user.email || '',
+              avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(session.user.user_metadata?.name || 'User')}&background=random&color=fff`,
+              points: 0,
+              badges: [],
+              stats: initialUserStats,
+            };
+
             set({
-              currentUser: profile,
+              currentUser: userObj,
               isAuthenticated: true,
               isAuthLoading: false,
             });
@@ -346,21 +398,6 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
-
-// Listen for auth state changes
-supabase.auth.onAuthStateChange(async (event, session) => {
-  const store = useAuthStore.getState();
-  
-  if (event === 'SIGNED_IN' && session?.user) {
-    const profile = await fetchUserProfile(session.user.id);
-    if (profile) {
-      store.setCurrentUser(profile);
-    }
-  } else if (event === 'SIGNED_OUT') {
-    // Only set currentUser to null if we are not in the initial loading phase.
-    // This prevents a page refresh from prematurely wiping the cached state before token refresh finishes.
-    if (!store.isAuthLoading) {
-      store.setCurrentUser(null);
-    }
-  }
-});
+// NOTE: The onAuthStateChange listener has been removed from this file.
+// It is handled exclusively in useAppEffects.ts to avoid duplicate profile
+// fetches and double-setting of user state on SIGNED_IN/SIGNED_OUT events.
