@@ -16,7 +16,8 @@ let MathView: any;
 
 // react-native-math-view is only available in React Native / Expo environment
 if (!isWeb && typeof require !== 'undefined') {
-  MathView = require('react-native-math-view').MathView;
+  const requireFunc = require;
+  MathView = requireFunc('react-native-math-view').MathView;
 }
 
 const useWebMarkdownDeps = () => {

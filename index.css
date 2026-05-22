@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Lantern Study Styles */
 
 /* ===== Global Focus & Accessibility ===== */
@@ -61,10 +65,38 @@
   }
 }
 
+/* Global scrollbar styling moved from index.html */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8; /* slate-400 */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* slate-500 */
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569; /* slate-600 */
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #334155; /* slate-700 */
+}
+
 /* ===== Animation Utilities ===== */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+@keyframes fade-in-out {
+  0% { opacity: 0; transform: translateY(-20px); }
+  15% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(20px); }
 }
 @keyframes slide-in-from-top {
   from { transform: translateY(-4px); opacity: 0; }
@@ -80,6 +112,9 @@
 }
 .fade-in {
   animation-name: fade-in;
+}
+.animate-fade-in-out {
+  animation: fade-in-out 4s ease-in-out forwards;
 }
 .slide-in-from-top-2 {
   animation-name: slide-in-from-top;

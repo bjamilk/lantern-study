@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Group, User } from '../types';
 import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, LinkIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
+import { compressImage } from '../utils/imageCompression';
 
 
 interface GroupInfoModalProps {
@@ -124,7 +125,12 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const handleSaveAvatar = async () => {
     if (selectedAvatarFile) {
       try {
-        const base64Avatar = await convertFileToBase64(selectedAvatarFile);
+        const base64Avatar = await compressImage(selectedAvatarFile, {
+          maxWidth: 150,
+          maxHeight: 150,
+          quality: 0.7,
+          outputType: 'base64'
+        }) as string;
         onUpdateGroupAvatar(group.id, base64Avatar);
         setSelectedAvatarFile(null); 
         if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);

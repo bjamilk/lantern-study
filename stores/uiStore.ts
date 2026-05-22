@@ -111,6 +111,10 @@ interface UIState {
   // Online Status
   isOnline: boolean;
   setIsOnline: (online: boolean) => void;
+
+  // Low-Data Mode
+  lowDataMode: boolean;
+  setLowDataMode: (enabled: boolean) => void;
 }
 
 const initialModals = {
@@ -236,6 +240,10 @@ export const useUIStore = create<UIState>()(
       // Online Status
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
       setIsOnline: (online) => set({ isOnline: online }),
+
+      // Low-Data Mode
+      lowDataMode: false,
+      setLowDataMode: (enabled) => set({ lowDataMode: enabled }),
     }),
     {
       name: 'ui-storage',
@@ -243,6 +251,7 @@ export const useUIStore = create<UIState>()(
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
         appMode: state.appMode,
+        lowDataMode: state.lowDataMode,
       }),
     }
   )

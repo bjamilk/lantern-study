@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { AppMode, DirectMessage, MessageType } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -14,27 +14,18 @@ import QuestionModal from './components/QuestionModal';
 import CreateGroupModal from './components/CreateGroupModal';
 import GroupInfoModal from './components/GroupInfoModal';
 import { TestConfigModal } from './components/TestConfigModal';
-import { TestTakingScreen } from './components/TestTakingScreen';
-import TestReviewScreen from './components/TestReviewScreen';
 import DashboardScreen from './components/DashboardScreen';
 import OfflineModeScreen from './components/OfflineModeScreen';
 import AuthScreen from './components/AuthScreen';
 import SettingsModal from './components/SettingsModal';
-import { GameScreen } from './components/GameScreen';
-import GameResultScreen from './components/GameResultScreen';
 import DuplicateQuestionModal from './components/DuplicateQuestionModal';
-import FlashcardsScreen from './components/FlashcardsScreen';
-import FlashcardReviewScreen from './components/FlashcardReviewScreen';
-import CramSessionScreen from './components/CramSessionScreen';
 import CreateDeckModal from './components/CreateDeckModal';
 import CreateFlashcardModal from './components/CreateFlashcardModal';
 import NewDirectMessageModal from './components/NewDirectMessageModal';
-import DeckDetailScreen from './components/DeckDetailScreen';
 import AddMembersModal from './components/AddMembersModal';
 import UsernameRequiredModal from './components/UsernameRequiredModal';
 import NotificationModal from './components/NotificationModal';
 import CreateGroupScreen from './components/CreateGroupScreen';
-import BudgetTrackerScreen from './components/BudgetTrackerScreen';
 import AddExpenseModal from './components/AddExpenseModal';
 import AddIncomeModal from './components/AddIncomeModal';
 import SetBudgetModal from './components/SetBudgetModal';
@@ -44,13 +35,23 @@ import WalletModal from './components/WalletModal';
 import ExpenseSplitModal from './components/ExpenseSplitModal';
 import SimulationControls from './components/SimulationControls';
 import TestAnalysisModal from './components/TestAnalysisModal';
-import MarketplaceScreen from './components/MarketplaceScreen';
 import CreateMarketplaceListingModal from './components/CreateMarketplaceListingModal';
-import MarketplaceListingDetailScreen from './components/MarketplaceListingDetailScreen';
-import MyListingsScreen from './components/MyListingsScreen';
 import EditMarketplaceListingModal from './components/EditMarketplaceListingModal';
-import MarketplaceInquiriesScreen from './components/MarketplaceInquiriesScreen';
-import SellerProfileScreen from './components/SellerProfileScreen';
+// Heavy screens — loaded on demand to reduce initial bundle size
+const FlashcardsScreen = lazy(() => import('./components/FlashcardsScreen'));
+const FlashcardReviewScreen = lazy(() => import('./components/FlashcardReviewScreen'));
+const CramSessionScreen = lazy(() => import('./components/CramSessionScreen'));
+const DeckDetailScreen = lazy(() => import('./components/DeckDetailScreen'));
+const GameScreen = lazy(() => import('./components/GameScreen').then(m => ({ default: m.GameScreen })));
+const GameResultScreen = lazy(() => import('./components/GameResultScreen'));
+const TestTakingScreen = lazy(() => import('./components/TestTakingScreen').then(m => ({ default: m.TestTakingScreen })));
+const TestReviewScreen = lazy(() => import('./components/TestReviewScreen'));
+const BudgetTrackerScreen = lazy(() => import('./components/BudgetTrackerScreen'));
+const MarketplaceScreen = lazy(() => import('./components/MarketplaceScreen'));
+const MarketplaceListingDetailScreen = lazy(() => import('./components/MarketplaceListingDetailScreen'));
+const MyListingsScreen = lazy(() => import('./components/MyListingsScreen'));
+const MarketplaceInquiriesScreen = lazy(() => import('./components/MarketplaceInquiriesScreen'));
+const SellerProfileScreen = lazy(() => import('./components/SellerProfileScreen'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers } from './hooks/useAuthHandlers';
@@ -121,7 +122,8 @@ export const App: React.FC = () => {
         onOpenQuestionModal, onOpenGroupInfoModal,
         onOpenTestConfigModal, onOpenStudyConfigModal,
         handleChallengeUser, addNotification,
-        handleMarkNotificationAsRead, handleMarkAllNotificationsAsRead
+        handleMarkNotificationAsRead, handleMarkAllNotificationsAsRead,
+        handleLoadMoreMessages
     } = useGroupHandlers({ users });
     const {
         handleTestSubmit, handleUpdateAnswer, handleChangeQuestion,
@@ -288,7 +290,8 @@ export const App: React.FC = () => {
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
-                    onUnarchiveDmThread={handleUnarchiveDmThread} />;
+                    onUnarchiveDmThread={handleUnarchiveDmThread}
+                    onLoadMoreMessages={handleLoadMoreMessages} />;
             case AppMode.TEST_ACTIVE:
                 if (!activeTestSession) return null;
                 return <TestTakingScreen mode="test" session={activeTestSession}
@@ -476,6 +479,11 @@ export const App: React.FC = () => {
         theme, onToggleTheme: toggleTheme, dueCardsCount,
     };
     return (
+        <Suspense fallback={
+            <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-200 border-t-indigo-600" />
+            </div>
+        }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}>
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, setAppMode, setSelectedDeck, setActiveTestResult })} />
@@ -570,5 +578,6 @@ export const App: React.FC = () => {
                     closeModal('usernameRequired');
                 }} />}
         </AppShell>
+        </Suspense>
     );
 };

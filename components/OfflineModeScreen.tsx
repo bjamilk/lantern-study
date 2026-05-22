@@ -2,6 +2,7 @@
 import React from 'react';
 import { OfflineSessionBundle } from '../types';
 import { CloudArrowDownIcon, ArrowPathIcon, TrashIcon, PlayIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { useUIStore } from '../stores/uiStore';
 
 interface OfflineModeScreenProps {
   offlineBundles: OfflineSessionBundle[];
@@ -20,8 +21,15 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   onSyncPendingResults,
   isOnline,
 }) => {
+  const { lowDataMode } = useUIStore();
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-gray-200 overflow-y-auto">
+      {lowDataMode && (
+        <div className="mb-4 flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-300">
+          <span className="font-semibold whitespace-nowrap">Low-Data Mode On</span>
+          <span>Real-time updates and performance charts are disabled to minimize data use. Download bundles below to study offline.</span>
+        </div>
+      )}
       <div className="mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
         <div className="flex items-center text-2xl md:text-3xl font-semibold text-purple-600 dark:text-purple-400">
           <CloudArrowDownIcon className="w-8 h-8 mr-3" />

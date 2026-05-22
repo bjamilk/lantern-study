@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
+import { compressImage } from '../utils/imageCompression';
 import {
   XMarkIcon,
   PhotoIcon,
@@ -108,7 +109,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
   const MAX_IMAGES = 5;
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     const remainingSlots = MAX_IMAGES - formData.images.length;
     
@@ -137,15 +138,41 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       return true;
     });
 
-    const newImages: ImageFile[] = validFiles.map((file: File) => ({
-      file,
-      preview: URL.createObjectURL(file)
-    }));
+    try {
+      const compressedFiles = await Promise.all(
+        validFiles.map(async (file) => {
+          const compressed = await compressImage(file, {
+            maxWidth: 800,
+            maxHeight: 800,
+            quality: 0.75,
+            outputType: 'file'
+          });
+          return compressed as File;
+        })
+      );
 
-    setFormData(prev => ({
-      ...prev,
-      images: [...prev.images, ...newImages]
-    }));
+      const newImages: ImageFile[] = compressedFiles.map((file: File) => ({
+        file,
+        preview: URL.createObjectURL(file)
+      }));
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newImages]
+      }));
+    } catch (err) {
+      console.error('Error compressing files:', err);
+      // Fallback
+      const newImages: ImageFile[] = validFiles.map((file: File) => ({
+        file,
+        preview: URL.createObjectURL(file)
+      }));
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newImages]
+      }));
+    }
 
     // Reset input
     e.target.value = '';

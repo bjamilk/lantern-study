@@ -27,26 +27,44 @@ router.get(
   // validateSearch,
   // handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    console.log('Groups route hit at top');
     try {
-      console.log('Groups route hit:', req.method, req.url, req.query);
       const { page = 1, limit = 20, search, userId } = req.query;
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = parseInt(limit as string) || 20;
+
+      // Cache key is per-user so each user gets their own groups list
+      const cacheKey = userId
+        ? `groups:user:${userId}:p${pageNum}:l${limitNum}${search ? `:s${search}` : ''}`
+        : null;
+
+      if (cacheKey) {
+        const cached = await cacheService.get<any[]>(cacheKey);
+        if (cached) {
+          return res.json({
+            success: true,
+            data: cached,
+            pagination: { page: pageNum, limit: limitNum, total: cached.length },
+          });
+        }
+      }
 
       const groups = await supabaseService.getGroups({
-        page: parseInt(page as string) || 1,
-        limit: parseInt(limit as string) || 20,
+        page: pageNum,
+        limit: limitNum,
         search: search as string,
         userId: userId as string,
       });
 
+      // Cache for 30 seconds — short enough for near-real-time feel, long enough to
+      // absorb duplicate/StrictMode requests that fire within milliseconds of each other
+      if (cacheKey) {
+        await cacheService.set(cacheKey, groups, 30);
+      }
+
       res.json({
         success: true,
         data: groups,
-        pagination: {
-          page: parseInt(page as string) || 1,
-          limit: parseInt(limit as string) || 20,
-          total: groups.length,
-        },
+        pagination: { page: pageNum, limit: limitNum, total: groups.length },
       });
     } catch (error) {
       console.error('Error in groups route:', error);

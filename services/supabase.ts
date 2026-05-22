@@ -56,20 +56,13 @@ export const setCachedAuthToken = (token: string | null, userId?: string | null)
   if (userId !== undefined) {
     _cachedUserId = userId;
   }
-  if (token) {
-    localStorage.setItem('lantern_access_token', token);
-  }
 };
 
-/** Read the token from localStorage (Supabase SDK keys or our custom key). */
+/** Read the token from localStorage (Supabase SDK keys). */
 const getTokenFromLocalStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
   
-  // Check our custom key first (fastest)
-  const lanternToken = localStorage.getItem('lantern_access_token');
-  if (lanternToken) return lanternToken;
-  
-  // Fall back to Supabase SDK storage keys
+  // Read from Supabase SDK storage keys
   const keys = Object.keys(localStorage);
   for (const key of keys) {
     if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
@@ -126,12 +119,8 @@ const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
     // Update the cache when we successfully get a session
     if (session?.access_token) {
       _cachedAccessToken = session.access_token;
-      localStorage.setItem('lantern_access_token', session.access_token);
       if (session.user?.id) {
         _cachedUserId = session.user.id;
-      }
-      if (session.refresh_token) {
-        localStorage.setItem('lantern_refresh_token', session.refresh_token);
       }
     }
     return session;
@@ -182,9 +171,6 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
         if (refreshData?.session?.access_token) {
           token = refreshData.session.access_token;
           setCachedAuthToken(token, refreshData.session.user?.id);
-          if (refreshData.session.refresh_token) {
-            localStorage.setItem('lantern_refresh_token', refreshData.session.refresh_token);
-          }
         }
       }
     } catch (e) {
@@ -443,10 +429,17 @@ export const removeVote = async (messageId: string, userId: string) => {
   }
 };
 
-export const fetchMessages = async (groupId: string) => {
-  console.log('Fetching messages for group:', groupId);
+export const fetchMessages = async (groupId: string, page?: number, limit?: number, before?: string) => {
+  console.log('Fetching messages for group:', groupId, { page, limit, before });
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}`, {
+  let url = `${API_BASE_URL}/api/v1/messages/group/${groupId}?`;
+  const params: string[] = [];
+  if (page !== undefined) params.push(`page=${page}`);
+  if (limit !== undefined) params.push(`limit=${limit}`);
+  if (before !== undefined) params.push(`before=${encodeURIComponent(before)}`);
+  url += params.join('&');
+
+  const response = await fetch(url, {
     method: 'GET',
     headers: await getAuthHeaders(),
   });
@@ -2330,6 +2323,26 @@ export const fetchSimilarListings = async (listingId: string) => {
   }
 };
 
+// --- Batched listing detail (listing + isFavorited + similar in one request) ---
+
+export const fetchMarketplaceListingFull = async (
+  listingId: string,
+  userId?: string
+): Promise<{ listing: any; isFavorited: boolean; similarListings: any[] }> => {
+  const params = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/full${params}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    8000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to load listing');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
 // --- Seller Profile ---
 
 export const fetchSellerProfile = async (userId: string) => {
@@ -2395,62 +2408,26 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
 
 // --- File Upload Functions ---
 
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const commaIndex = result.indexOf(',');
-      resolve(commaIndex >= 0 ? result.substring(commaIndex + 1) : result);
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
-};
-
 export const uploadFlashcardImage = async (file: File) => {
-  console.log('Uploading flashcard image:', file.name);
-  try {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+  // Upload directly to Supabase Storage — no base64 roundtrip through Node.
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+  const filePath = `cards/${fileName}`;
 
-    const base64Data = await fileToBase64(file);
+  const { error } = await supabase.storage
+    .from('flashcard-images')
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/upload-image`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({
-        fileName,
-        base64Data,
-        contentType: file.type,
-      }),
-    });
-
-    if (!response.ok) {
-      const contentType = response.headers.get('content-type') || '';
-      const bodyText = await response.text();
-      let message = `Upload failed (${response.status})`;
-
-      if (contentType.includes('application/json')) {
-        try {
-          const errorJson = JSON.parse(bodyText);
-          message = errorJson.message || errorJson.error || message;
-        } catch {
-          // ignore parse errors
-        }
-      } else {
-        message = bodyText || message;
-      }
-
-      throw new Error(message);
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error uploading flashcard image (API_BASE_URL=' + API_BASE_URL + '):', error);
-    throw error;
+  if (error) {
+    console.error('Error uploading flashcard image:', error);
+    throw new Error(error.message);
   }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('flashcard-images')
+    .getPublicUrl(filePath);
+
+  return { url: publicUrl, path: filePath };
 };
 
 export const uploadMarketplaceImage = async (file: File, listingId?: string) => {

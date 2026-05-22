@@ -160,18 +160,22 @@ app.use(cors({
 app.use(compression());
 
 // Body parsing middleware
-// Increase limits to support large base64 image uploads (e.g., flashcard images)
-// Capture raw body for better debugging of JSON parse failures.
-app.use(express.json({
-  limit: '50mb',
-  verify: (req: any, _res, buf) => {
-    req.rawBody = buf.toString();
-  },
-}));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Use a small default limit for all routes; uploads get their own 50 MB limit
+// applied at the route level (see /flashcards and /marketplace routes).
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Large-body override for upload routes only
+app.use(
+  /^\/api\/v1\/(flashcards|marketplace)\/.*upload/,
+  express.json({
+    limit: '50mb',
+    verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },
+  })
+);
 
 // Request logging
-app.use(morgan('combined', { stream }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'combined', { stream }));
 app.use(logRequest);
 
 // Rate limiting (skip in development to avoid issues with React Strict Mode double-firing)
@@ -189,38 +193,25 @@ app.use((req: any, res: any, next: any) => {
   next();
 });
 
-// Health check endpoint (temporarily enabled)
-// app.get('/health', async (req, res) => {
-//   try {
-//     // Check database connection
-//     await supabaseService.healthCheck();
 
-//     // Check cache connection
-//     await cacheService.healthCheck();
-
-//     res.status(200).json({
-//       status: 'healthy',
-//       timestamp: new Date().toISOString(),
-//       services: {
-//         database: 'connected',
-//         cache: 'connected',
-//       },
-//     });
-//   } catch (error) {
-//     logger.error('Health check failed:', error);
-//     res.status(503).json({
-//       status: 'unhealthy',
-//       timestamp: new Date().toISOString(),
-//       error: error instanceof Error ? error.message : 'Unknown error',
-//     });
-//   }
-// });
 
 app.get('/health', async (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-  });
+  try {
+    // Verify database is reachable (cheap query)
+    await supabaseService.healthCheck();
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    logger.error('Health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 });
 
 // API routes
@@ -238,18 +229,13 @@ app.get('/health', async (req, res) => {
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully');
+  logger.info('SIGTERM received, shutting down gracefully');
   process.exit(0);
 });
 
-// process.on('SIGINT', async () => {
-//   console.log('SIGINT received, shutting down gracefully');
-//   process.exit(0);
-// });
-
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, but ignoring in development mode');
-  // Don't exit in development
+  logger.info('SIGINT received, shutting down gracefully');
+  process.exit(0);
 });
 
 // Start server
@@ -286,6 +272,8 @@ async function startServer() {
       logger.info(`🔑 API Key Auth: ${process.env.ENABLE_API_KEY_AUTH === 'true' ? 'enabled' : 'disabled'}`);
       logger.info(`📈 Rate Limiting: enabled`);
       logger.info(`💾 Caching: enabled`);
+      // Signal PM2 that the process is ready for zero-downtime reloads
+      if (typeof process.send === 'function') process.send('ready');
     });
   } catch (error) {
     console.error('Failed to start server:', error);

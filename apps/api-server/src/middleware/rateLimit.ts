@@ -1,17 +1,45 @@
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator, Store, Options } from 'express-rate-limit';
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../types';
 
-// For now, use memory store instead of Redis store to avoid dependency issues
-// TODO: Implement Redis store when rate-limit-redis is properly configured
+// ---------------------------------------------------------------------------
+// Rate limiting store selection
+// When Redis is enabled (production) we use a shared Redis store so that all
+// PM2 cluster workers share the same counters. Without it each worker has its
+// own counter, making the effective limit = configured_max × num_workers.
+// ---------------------------------------------------------------------------
+function buildStore(): Partial<Options> {
+  if (process.env.REDIS_ENABLED === 'true' && process.env.REDIS_URL) {
+    try {
+      // rate-limit-redis is a peer dep — only required when Redis is enabled.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { RedisStore } = require('rate-limit-redis');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { createClient } = require('redis');
+      const redisClient = createClient({ url: process.env.REDIS_URL });
+      redisClient.connect().catch((e: Error) =>
+        console.warn('Rate-limit Redis connect failed, falling back to memory:', e.message)
+      );
+      return { store: new RedisStore({ sendCommand: (...args: string[]) => redisClient.sendCommand(args) }) };
+    } catch {
+      console.warn('rate-limit-redis not available, using in-memory store');
+    }
+  }
+  // In-memory store: fine for single-process and development.
+  // WARNING: in cluster mode each worker tracks its own counter.
+  return {};
+}
+
+const sharedStoreOptions = buildStore();
 
 // Rate limiting configurations
 export const createRateLimit = (
-  windowMs: number = 15 * 60 * 1000, // 15 minutes
+  windowMs: number = 15 * 60 * 1000,
   maxRequests: number = 100,
   message: string = 'Too many requests from this IP, please try again later.'
 ) => {
   return rateLimit({
+    ...sharedStoreOptions,
     windowMs,
     max: maxRequests,
     message: {

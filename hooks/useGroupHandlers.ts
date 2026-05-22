@@ -35,7 +35,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         modals, openModal, closeModal,
         setSubgroupParentId, setDuplicateInfo,
         setActiveTestConfigMode,
-        setChallengeOpponent
+        setChallengeOpponent,
+        lowDataMode
     } = useUIStore();
 
     const addNotification = useCallback(async (message: string) => {
@@ -62,7 +63,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         setSelectedChat(chat);
         setAppMode(AppMode.CHAT);
         if (chat.chatType === 'group') {
-            fetchMessages(chat.id).then(fetchedMessages => {
+            const limit = lowDataMode ? 20 : 50;
+            fetchMessages(chat.id, undefined, limit).then(fetchedMessages => {
                 updateMessages(prev => ({ ...prev, [chat.id]: fetchedMessages }));
             }).catch(error => {
                 console.error('[handleSelectChat] Error fetching messages:', error);
@@ -127,7 +129,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 });
             }
         }
-    }, [currentUser, setSelectedChat, setAppMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
+    }, [currentUser, setSelectedChat, setAppMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages, lowDataMode]);
 
     const handleInitiateDm = useCallback((otherUserId: string) => {
         if (!currentUser || otherUserId === currentUser.id) return;
@@ -1063,8 +1065,45 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         } catch (error) { console.error('Failed to clear all notifications:', error); }
     }, [currentUser, setNotifications]);
 
+    const handleLoadMoreMessages = useCallback(async (groupId: string) => {
+        const currentMsgs = messages[groupId] || [];
+        if (currentMsgs.length === 0) return 0;
+        
+        const oldestRealMessage = currentMsgs.find(m => !m.id.startsWith('optimistic-'));
+        if (!oldestRealMessage) return 0;
+
+        const beforeCursor = oldestRealMessage.timestamp instanceof Date 
+            ? oldestRealMessage.timestamp.toISOString() 
+            : new Date(oldestRealMessage.timestamp).toISOString();
+
+        const limit = lowDataMode ? 20 : 50;
+
+        try {
+            console.log('Loading more messages before:', beforeCursor);
+            const olderMessages = await fetchMessages(groupId, undefined, limit, beforeCursor);
+            if (olderMessages && olderMessages.length > 0) {
+                updateMessages(prev => {
+                    const prevGroupMsgs = prev[groupId] || [];
+                    const existingIds = new Set(prevGroupMsgs.map(m => m.id));
+                    const filteredOlder = olderMessages.filter((m: Message) => !existingIds.has(m.id));
+                    
+                    return {
+                        ...prev,
+                        [groupId]: [...filteredOlder, ...prevGroupMsgs]
+                    };
+                });
+                return olderMessages.length;
+            }
+            return 0;
+        } catch (error) {
+            console.error('Error fetching older messages:', error);
+            return 0;
+        }
+    }, [messages, lowDataMode, updateMessages]);
+
     return {
         addNotification,
+        handleLoadMoreMessages,
         handleSelectChat,
         handleInitiateDm,
         handleSendDm,

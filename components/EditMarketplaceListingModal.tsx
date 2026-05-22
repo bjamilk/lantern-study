@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
+import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
 import {
   XMarkIcon,
@@ -90,7 +91,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
 
   const MAX_IMAGES = 5;
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     const remainingSlots = MAX_IMAGES - formData.images.length;
     
@@ -117,16 +118,43 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       return true;
     });
 
-    const newImages = validFiles.map((file: File) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      uploaded: false
-    }));
+    try {
+      const compressedFiles = await Promise.all(
+        validFiles.map(async (file) => {
+          const compressed = await compressImage(file, {
+            maxWidth: 800,
+            maxHeight: 800,
+            quality: 0.75,
+            outputType: 'file'
+          });
+          return compressed as File;
+        })
+      );
 
-    setFormData(prev => ({
-      ...prev,
-      images: [...prev.images, ...newImages]
-    }));
+      const newImages = compressedFiles.map((file: File) => ({
+        file,
+        preview: URL.createObjectURL(file),
+        uploaded: false
+      }));
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newImages]
+      }));
+    } catch (err) {
+      console.error('Error compressing files:', err);
+      // Fallback
+      const newImages = validFiles.map((file: File) => ({
+        file,
+        preview: URL.createObjectURL(file),
+        uploaded: false
+      }));
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...newImages]
+      }));
+    }
   };
 
   const removeImage = async (index: number) => {

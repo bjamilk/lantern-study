@@ -49,7 +49,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
     const { transactions, setTransactions, budget, setBudget } = useBudgetStore();
     const {
         theme, setTheme, setAppMode,
-        openModal
+        openModal, lowDataMode
     } = useUIStore();
 
     // --- One-time session cleanup ---
@@ -111,9 +111,6 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 if (session?.access_token) {
                     // Populate the in-memory token cache so all subsequent API calls are instant
                     setCachedAuthToken(session.access_token, session.user?.id);
-                    if (session.refresh_token) {
-                        localStorage.setItem('lantern_refresh_token', session.refresh_token);
-                    }
                     console.log('[App] Restored and cached access token');
                 }
                 
@@ -237,9 +234,6 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
             } else if (event === 'SIGNED_IN' && session?.user) {
                 if (session?.access_token) {
                     setCachedAuthToken(session.access_token, session.user?.id);
-                    if (session.refresh_token) {
-                        localStorage.setItem('lantern_refresh_token', session.refresh_token);
-                    }
                 }
                 try {
                     const profile = await fetchUserProfile(session.user.id);
@@ -508,11 +502,11 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 });
             }
         }
-    }, [currentUser, dataLoaded]);
+    }, [currentUser?.id, dataLoaded]);
 
     // --- Real-time notifications subscription ---
     useEffect(() => {
-        if (!currentUser) return;
+        if (!currentUser || lowDataMode) return;
 
         const notificationsSubscription = supabase
             .channel('notifications')
@@ -541,11 +535,11 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         return () => {
             notificationsSubscription.unsubscribe();
         };
-    }, [currentUser]);
+    }, [currentUser?.id, lowDataMode]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {
-        if (!currentUser) return;
+        if (!currentUser || lowDataMode) return;
 
         const profileSubscription = supabase
             .channel('profile')
@@ -579,7 +573,57 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         return () => {
             profileSubscription.unsubscribe();
         };
-    }, [currentUser]);
+    }, [currentUser?.id, lowDataMode]);
+
+    // --- Real-time group membership subscription ---
+    // Keeps the groups list in sync when the user is added to / removed from groups
+    // without requiring a full page refresh or manual re-fetch.
+    useEffect(() => {
+        if (!currentUser || lowDataMode) return;
+
+        const groupMembershipSubscription = supabase
+            .channel(`group_members:${currentUser.id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'group_members',
+                    filter: `user_id=eq.${currentUser.id}`,
+                },
+                async () => {
+                    // Membership changed — re-fetch the full groups list so the sidebar
+                    // reflects the join / leave immediately.
+                    try {
+                        const freshGroups = await fetchGroups(currentUser.id);
+                        setGroups(freshGroups.map((g: any) => ({
+                            id: g.id,
+                            name: g.name,
+                            avatarUrl: g.avatar_url || g.avatarUrl,
+                            description: g.description,
+                            lastMessage: g.last_message || g.lastMessage,
+                            lastMessageTime: g.last_message_time || g.lastMessageTime,
+                            adminIds: g.admin_ids || g.adminIds || [],
+                            permissions: g.permissions || {},
+                            parentId: g.parent_id || g.parentId,
+                            isArchived: g.is_archived ?? g.isArchived ?? false,
+                            inviteId: g.invite_id || g.inviteId,
+                            unreadCount: 0,
+                            pendingMembers: [],
+                            invitedPhoneNumbers: [],
+                            members: [],
+                        })));
+                    } catch (err) {
+                        console.error('[Group membership] Real-time refresh failed:', err);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            groupMembershipSubscription.unsubscribe();
+        };
+    }, [currentUser?.id, lowDataMode]);
 
     // --- Persist offline data ---
     useEffect(() => {
@@ -647,8 +691,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
 
             checkForDueCardsAndNotify();
 
+            if (lowDataMode) return; // Skip hourly polling in low-data mode
             const interval = setInterval(checkForDueCardsAndNotify, 60 * 60 * 1000);
             return () => clearInterval(interval);
         }
-    }, [currentUser, flashcards, checkForDueCardsAndNotify]);
+    }, [currentUser, flashcards, checkForDueCardsAndNotify, lowDataMode]);
 }

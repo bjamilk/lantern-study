@@ -1,10 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
+import { createHash } from 'crypto';
+import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
 import { AuthenticatedRequest } from '../types';
 
 // Will be set by initializeAuthMiddleware
 let supabaseService: SupabaseService | null = null;
+
+// ---------------------------------------------------------------------------
+// Token verification cache
+// Avoids a round-trip to Supabase Auth on every authenticated request.
+// Keyed by SHA-256(token) so the raw JWT is never stored in memory.
+// TTL: 60 s — tokens are short-lived (1 h) so a 60 s window is safe.
+// ---------------------------------------------------------------------------
+interface CachedUser { id: string; [key: string]: any }
+const tokenCache = new LRUCache<string, CachedUser>({
+  max: 20_000,          // ~20k simultaneous active users
+  ttl: 60_000,          // 60 second TTL
+  updateAgeOnGet: true,
+});
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 export const initializeAuthMiddleware = (supabase: SupabaseService) => {
   supabaseService = supabase;
@@ -74,15 +93,25 @@ export const authMiddleware = async (
     }
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    const tokenKey = hashToken(token);
 
-    // First, try to verify as Supabase token (if supabaseService is initialized)
+    // Fast path: return cached user (avoids Supabase Auth DB call)
+    const cached = tokenCache.get(tokenKey);
+    if (cached) {
+      req.user = { id: cached.id, apiKey: token, permissions: ['read', 'write'] };
+      next();
+      return;
+    }
+
+    // Slow path: verify with Supabase Auth (once per minute per token)
     if (supabaseService) {
       const supabaseResult = await supabaseService.verifySupabaseToken(token);
       if (supabaseResult.isValid && supabaseResult.user) {
+        tokenCache.set(tokenKey, supabaseResult.user);
         req.user = {
           id: supabaseResult.user.id,
           apiKey: token,
-          permissions: ['read', 'write'], // Supabase authenticated users get full permissions
+          permissions: ['read', 'write'],
         };
         next();
         return;
@@ -100,7 +129,6 @@ export const authMiddleware = async (
       return;
     }
 
-    // Attach user info to request
     req.user = {
       id: validation.userId,
       apiKey: token,

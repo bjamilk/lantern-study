@@ -1,13 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  fetchMarketplaceListing,
+  fetchMarketplaceListingFull,
   addMarketplaceReview,
   reportMarketplaceListing,
   createInquiry,
   addToFavorites,
   removeFromFavorites,
-  checkIfFavorited,
-  fetchSimilarListings,
   addRecentlyViewed,
   fetchSellerStats
 } from '../services/supabase';
@@ -59,16 +57,22 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [contactLoading, setContactLoading] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [similarListings, setSimilarListings] = useState<MarketplaceListing[]>([]);
-  const [similarLoading, setSimilarLoading] = useState(false);
   const [sellerStats, setSellerStats] = useState<{ totalListings: number; soldCount: number } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { currentUser } = useAuthStore();
   const isOwner = listing?.user_id === currentUser?.id || listing?.seller_id === currentUser?.id;
 
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, type });
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  };
+
   useEffect(() => {
-    loadListing();
-    loadFavoriteStatus();
-    loadSimilarListings();
+    loadListingFull();
     addRecentlyViewed(listingId);
+    return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, [listingId]);
 
   useEffect(() => {
@@ -91,33 +95,15 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
-  const loadSimilarListings = async () => {
-    setSimilarLoading(true);
-    try {
-      const data = await fetchSimilarListings(listingId);
-      setSimilarListings(data);
-    } catch (error) {
-      console.error('Error loading similar listings:', error);
-    } finally {
-      setSimilarLoading(false);
-    }
-  };
-
-  const loadFavoriteStatus = async () => {
-    try {
-      const favorited = await checkIfFavorited(listingId);
-      setIsFavorited(favorited);
-    } catch (error) {
-      console.error('Error checking favorite status:', error);
-    }
-  };
-
-  const loadListing = async () => {
+  // Batched load: listing + isFavorited + similarListings in one request
+  const loadListingFull = async () => {
     setLoading(true);
     try {
-      const data = await fetchMarketplaceListing(listingId);
-      setListing(data);
-      setReviews(data.reviews || []);
+      const data = await fetchMarketplaceListingFull(listingId, currentUser?.id);
+      setListing(data.listing);
+      setReviews(data.listing.reviews || []);
+      setIsFavorited(data.isFavorited);
+      setSimilarListings(data.similarListings);
     } catch (error) {
       console.error('Error loading listing:', error);
     } finally {
@@ -135,7 +121,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setShowReviewForm(false);
     } catch (error) {
       console.error('Error adding review:', error);
-      alert('Failed to add review. Please try again.');
+      showToast('Failed to add review. Please try again.', 'error');
     }
   };
 
@@ -146,10 +132,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       await reportMarketplaceListing(listing.id, reportForm);
       setReportForm({ reason: '', details: '' });
       setShowReportForm(false);
-      alert('Report submitted successfully.');
+      showToast('Report submitted successfully.');
     } catch (error) {
       console.error('Error reporting listing:', error);
-      alert('Failed to submit report. Please try again.');
+      showToast('Failed to submit report. Please try again.', 'error');
     }
   };
 
@@ -173,33 +159,35 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setContactMessage('');
     } catch (error) {
       console.error('Error sending inquiry:', error);
-      alert('Failed to send inquiry. Please try again.');
+      showToast('Failed to send inquiry. Please try again.', 'error');
     } finally {
       setContactLoading(false);
     }
   };
 
   const toggleFavorite = async () => {
+    const next = !isFavorited;
+    setIsFavorited(next); // optimistic update
     try {
-      if (isFavorited) {
+      if (!next) {
         await removeFromFavorites(listingId);
       } else {
         await addToFavorites(listingId);
       }
-      setIsFavorited(!isFavorited);
     } catch (error) {
-      console.error('Error toggling favorite:', error);
+      setIsFavorited(!next); // rollback on failure
+      showToast('Could not update favorites. Please try again.', 'error');
     }
   };
 
   const nextImage = () => {
-    if (!listing?.images) return;
-    setCurrentImageIndex((prev) => (prev + 1) % listing.images.length);
+    if (!listing?.images?.length) return;
+    setCurrentImageIndex((prev) => (prev + 1) % listing.images!.length);
   };
 
   const prevImage = () => {
-    if (!listing?.images) return;
-    setCurrentImageIndex((prev) => (prev - 1 + listing.images.length) % listing.images.length);
+    if (!listing?.images?.length) return;
+    setCurrentImageIndex((prev) => (prev - 1 + listing.images!.length) % listing.images!.length);
   };
 
   if (loading) {
@@ -272,9 +260,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   navigator.share({ title: listing.title, text, url }).catch(() => {});
                 } else {
                   navigator.clipboard.writeText(`${text}: ${url}`).then(() => {
-                    alert('Link copied to clipboard!');
+                    showToast('Link copied to clipboard!');
                   }).catch(() => {
-                    alert('Could not copy link.');
+                    showToast('Could not copy link.', 'error');
                   });
                 }
               }}
@@ -362,7 +350,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     }`}
                     aria-label={`Select image ${index + 1}`}
                   >
-                    <img src={image} alt={`Thumbnail ${index + 1}`} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    <img src={image} alt={`Thumbnail ${index + 1}`} loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                   </button>
                 ))}
               </div>
@@ -903,8 +891,21 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           isOpen={showOfferModal}
           onClose={() => setShowOfferModal(false)}
           listing={listing}
-          onSuccess={() => alert('Offer submitted! The seller will be notified.')}
+          onSuccess={() => showToast('Offer submitted! The seller will be notified.')}
         />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium text-white pointer-events-none transition-all duration-200 ${
+            toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
+          }`}
+        >
+          {toast.message}
+        </div>
       )}
     </div>
   );

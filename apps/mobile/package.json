@@ -8,7 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "dev": "expo start --dev-client",
+    "dev": "node ./scripts/dev-client.js",
     "build:dev": "eas build --profile development --platform android",
     "build:preview": "eas build --profile preview --platform android",
     "build:prod": "eas build --profile production --platform android",

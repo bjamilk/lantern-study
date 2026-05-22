@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-import Matter from 'matter-js';
+import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability } from '../services/supabase';
+import { useUIStore } from '../stores/uiStore';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -31,84 +32,115 @@ const TwitterIcon = () => (
 
 const AnimatedBackground = () => {
   const sceneRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<Matter.Engine | null>(null);
-  const runnerRef = useRef<Matter.Runner | null>(null);
+  const engineRef = useRef<MatterType.Engine | null>(null);
+  const runnerRef = useRef<MatterType.Runner | null>(null);
+  const { lowDataMode } = useUIStore();
 
   useEffect(() => {
+    if (lowDataMode) return;
+
     const scene = sceneRef.current;
     if (!scene) return;
 
-    const engine = Matter.Engine.create({ gravity: { y: 0 } });
-    engineRef.current = engine;
-    const render = Matter.Render.create({
-      element: scene,
-      engine: engine,
-      options: {
-        width: scene.clientWidth,
-        height: scene.clientHeight,
-        wireframes: false,
-        background: 'transparent',
-      },
-    });
+    let active = true;
+    let MatterModule: typeof MatterType | null = null;
+    let localEngine: MatterType.Engine | null = null;
+    let localRunner: MatterType.Runner | null = null;
+    let localRender: MatterType.Render | null = null;
+    let resizeHandler: (() => void) | null = null;
 
-    const createShape = () => {
-      const x = Math.random() * scene.clientWidth;
-      const y = Math.random() * scene.clientHeight;
-      const radius = Math.random() * 20 + 10;
-      const sides = Math.floor(Math.random() * 3) + 3; // Triangle to pentagon
-      const colors = ['#a5b4fc', '#818cf8', '#6366f1']; // Indigo palette
-      const body = Matter.Bodies.polygon(x, y, sides, radius, {
-        restitution: 0.9,
-        friction: 0.01,
-        render: {
-          fillStyle: colors[Math.floor(Math.random() * colors.length)],
+    import('matter-js').then((Matter) => {
+      if (!active) return;
+      MatterModule = Matter;
+
+      const engine = Matter.Engine.create({ gravity: { y: 0 } });
+      engineRef.current = engine;
+      localEngine = engine;
+
+      const render = Matter.Render.create({
+        element: scene,
+        engine: engine,
+        options: {
+          width: scene.clientWidth,
+          height: scene.clientHeight,
+          wireframes: false,
+          background: 'transparent',
         },
       });
-      Matter.Body.setVelocity(body, {
-          x: (Math.random() - 0.5) * 2,
-          y: (Math.random() - 0.5) * 2
-      });
-      return body;
-    };
-    
-    const world = engine.world;
-    const bodies = Array.from({ length: 15 }, createShape);
-    Matter.World.add(world, bodies);
-    
-    // Walls to keep shapes contained
-    const walls = [
-      Matter.Bodies.rectangle(scene.clientWidth / 2, -10, scene.clientWidth, 20, { isStatic: true, render: { visible: false } }),
-      Matter.Bodies.rectangle(scene.clientWidth / 2, scene.clientHeight + 10, scene.clientWidth, 20, { isStatic: true, render: { visible: false } }),
-      Matter.Bodies.rectangle(-10, scene.clientHeight / 2, 20, scene.clientHeight, { isStatic: true, render: { visible: false } }),
-      Matter.Bodies.rectangle(scene.clientWidth + 10, scene.clientHeight / 2, 20, scene.clientHeight, { isStatic: true, render: { visible: false } }),
-    ];
-    Matter.World.add(world, walls);
+      localRender = render;
 
-    Matter.Render.run(render);
-    const runner = Matter.Runner.create();
-    runnerRef.current = runner;
-    Matter.Runner.run(runner, engine);
+      const createShape = () => {
+        const x = Math.random() * scene.clientWidth;
+        const y = Math.random() * scene.clientHeight;
+        const radius = Math.random() * 20 + 10;
+        const sides = Math.floor(Math.random() * 3) + 3; // Triangle to pentagon
+        const colors = ['#a5b4fc', '#818cf8', '#6366f1']; // Indigo palette
+        const body = Matter.Bodies.polygon(x, y, sides, radius, {
+          restitution: 0.9,
+          friction: 0.01,
+          render: {
+            fillStyle: colors[Math.floor(Math.random() * colors.length)],
+          },
+        });
+        Matter.Body.setVelocity(body, {
+            x: (Math.random() - 0.5) * 2,
+            y: (Math.random() - 0.5) * 2
+        });
+        return body;
+      };
+      
+      const world = engine.world;
+      const bodies = Array.from({ length: 15 }, createShape);
+      Matter.World.add(world, bodies);
+      
+      // Walls to keep shapes contained
+      const walls = [
+        Matter.Bodies.rectangle(scene.clientWidth / 2, -10, scene.clientWidth, 20, { isStatic: true, render: { visible: false } }),
+        Matter.Bodies.rectangle(scene.clientWidth / 2, scene.clientHeight + 10, scene.clientWidth, 20, { isStatic: true, render: { visible: false } }),
+        Matter.Bodies.rectangle(-10, scene.clientHeight / 2, 20, scene.clientHeight, { isStatic: true, render: { visible: false } }),
+        Matter.Bodies.rectangle(scene.clientWidth + 10, scene.clientHeight / 2, 20, scene.clientHeight, { isStatic: true, render: { visible: false } }),
+      ];
+      Matter.World.add(world, walls);
 
-    const handleResize = () => {
-      render.canvas.width = scene.clientWidth;
-      render.canvas.height = scene.clientHeight;
-      Matter.Body.setPosition(walls[0], { x: scene.clientWidth / 2, y: -10 });
-      Matter.Body.setPosition(walls[1], { x: scene.clientWidth / 2, y: scene.clientHeight + 10 });
-      Matter.Body.setPosition(walls[2], { x: -10, y: scene.clientHeight / 2 });
-      Matter.Body.setPosition(walls[3], { x: scene.clientWidth + 10, y: scene.clientHeight / 2 });
-    };
+      Matter.Render.run(render);
+      const runner = Matter.Runner.create();
+      runnerRef.current = runner;
+      localRunner = runner;
+      Matter.Runner.run(runner, engine);
 
-    window.addEventListener('resize', handleResize);
+      resizeHandler = () => {
+        if (!render.canvas) return;
+        render.canvas.width = scene.clientWidth;
+        render.canvas.height = scene.clientHeight;
+        Matter.Body.setPosition(walls[0], { x: scene.clientWidth / 2, y: -10 });
+        Matter.Body.setPosition(walls[1], { x: scene.clientWidth / 2, y: scene.clientHeight + 10 });
+        Matter.Body.setPosition(walls[2], { x: -10, y: scene.clientHeight / 2 });
+        Matter.Body.setPosition(walls[3], { x: scene.clientWidth + 10, y: scene.clientHeight / 2 });
+      };
+
+      window.addEventListener('resize', resizeHandler);
+    }).catch(err => {
+      console.error('Failed to load matter-js dynamically:', err);
+    });
 
     return () => {
-      if (runnerRef.current) Matter.Runner.stop(runnerRef.current);
-      Matter.Render.stop(render);
-      Matter.Engine.clear(engine);
-      render.canvas.remove();
-      render.textures = {};
-      window.removeEventListener('resize', handleResize);
+      active = false;
+      if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+      }
+      if (MatterModule) {
+        if (localRunner) MatterModule.Runner.stop(localRunner);
+        if (localRender) {
+          MatterModule.Render.stop(localRender);
+          if (localRender.canvas) {
+            localRender.canvas.remove();
+          }
+          localRender.textures = {};
+        }
+        if (localEngine) MatterModule.Engine.clear(localEngine);
+      }
     };
-  }, []);
+  }, [lowDataMode]);
 
   return <div ref={sceneRef} className="absolute inset-0 w-full h-full" />;
 };
@@ -436,13 +468,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           return;
         }
         
-        // Store the access token for API calls
-        if (data.session?.access_token) {
-          localStorage.setItem('lantern_access_token', data.session.access_token);
-          localStorage.setItem('lantern_refresh_token', data.session.refresh_token);
-          console.log('[Auth] Stored access token to localStorage');
-        }
-        
         // Fetch profile
         let profile: any = null;
         try {
@@ -530,13 +555,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           if (signInError) {
             setError(signInError.message);
             return;
-          }
-          
-          // Store the access token for API calls
-          if (signInData.session?.access_token) {
-            localStorage.setItem('lantern_access_token', signInData.session.access_token);
-            localStorage.setItem('lantern_refresh_token', signInData.session.refresh_token);
-            console.log('[Auth] Stored access token to localStorage after signup');
           }
           
           const user: User = {

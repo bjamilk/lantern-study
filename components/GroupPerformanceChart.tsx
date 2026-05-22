@@ -1,8 +1,7 @@
 
 
 import React, { useEffect, useRef } from 'react';
-import { Chart, registerables, ChartConfiguration, TooltipItem } from 'chart.js';
-Chart.register(...registerables); // Register all controllers, elements, scales, and plugins
+import type { Chart as ChartType, ChartConfiguration, TooltipItem } from 'chart.js';
 
 export interface ChartDataPoint {
   x: string; // Label for x-axis (e.g., "Test 1", "2023-10-26")
@@ -41,12 +40,16 @@ const COLORS = {
 
 const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets, theme, type }) => {
   const chartRef = useRef<HTMLCanvasElement>(null);
-  const chartInstanceRef = useRef<Chart | null>(null);
+  const chartInstanceRef = useRef<ChartType | null>(null);
 
   useEffect(() => {
+    let active = true;
+    let localChartInstance: ChartType | null = null;
+
     if (chartRef.current && datasets.length > 0 && datasets.some(d => d.data.length > 0)) {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy(); // Destroy previous instance
+        chartInstanceRef.current = null;
       }
 
       const ctx = chartRef.current.getContext('2d');
@@ -57,113 +60,126 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
         const tooltipTitleColor = theme === 'dark' ? '#f1f5f9' : '#1e293b';
         const tooltipBodyColor = theme === 'dark' ? '#e2e8f0' : '#334155';
         const uniqueLabels = [...new Set(datasets.flatMap(d => d.data.map(p => p.x)))].sort();
-
-
         const chartColors = COLORS[theme];
 
-        const chartConfig: ChartConfiguration = {
-          type: type,
-          data: {
-            labels: uniqueLabels,
-            datasets: datasets.map((dataset, index) => {
-                const color = chartColors[index % chartColors.length];
-                let datasetOptions: any;
+        // Dynamic import
+        import('chart.js').then(({ Chart, registerables }) => {
+          if (!active) return;
+          Chart.register(...registerables);
 
-                // Align data with unique labels, inserting null for missing points
-                const dataMap = new Map(dataset.data.map(p => [p.x, p.y]));
-                const alignedData = uniqueLabels.map(label => dataMap.get(label) ?? null);
+          const chartConfig: ChartConfiguration = {
+            type: type,
+            data: {
+              labels: uniqueLabels,
+              datasets: datasets.map((dataset, index) => {
+                  const color = chartColors[index % chartColors.length];
+                  let datasetOptions: any;
 
-                if (type === 'line') {
-                    datasetOptions = {
-                        borderColor: color,
-                        backgroundColor: color.replace('0.8', '0.2'),
-                        fill: true,
-                        tension: 0.3,
-                        pointBackgroundColor: color,
-                        pointRadius: 3,
-                        pointHoverRadius: 5,
-                        spanGaps: true, // Connect lines over null data points
-                    };
-                } else { // bar
-                    datasetOptions = {
-                        backgroundColor: color.replace('0.8', '0.65'),
-                        borderColor: color,
-                        borderWidth: 1,
-                        borderRadius: 4,
-                        hoverBackgroundColor: color,
-                    };
-                }
+                  // Align data with unique labels, inserting null for missing points
+                  const dataMap = new Map(dataset.data.map(p => [p.x, p.y]));
+                  const alignedData = uniqueLabels.map(label => dataMap.get(label) ?? null);
 
-                return {
-                    label: dataset.label,
-                    data: alignedData,
-                    ...datasetOptions
-                };
-            })
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              y: {
-                beginAtZero: true,
-                max: 100,
-                title: { display: false },
-                grid: { color: gridColor },
-                ticks: { color: ticksColor, padding: 8, callback: (value) => `${value}%` }
-              },
-              x: {
-                title: { display: false },
-                grid: { display: false },
-                ticks: { color: ticksColor, padding: 8 }
-              }
+                  if (type === 'line') {
+                      datasetOptions = {
+                          borderColor: color,
+                          backgroundColor: color.replace('0.8', '0.2'),
+                          fill: true,
+                          tension: 0.3,
+                          pointBackgroundColor: color,
+                          pointRadius: 3,
+                          pointHoverRadius: 5,
+                          spanGaps: true, // Connect lines over null data points
+                      };
+                  } else { // bar
+                      datasetOptions = {
+                          backgroundColor: color.replace('0.8', '0.65'),
+                          borderColor: color,
+                          borderWidth: 1,
+                          borderRadius: 4,
+                          hoverBackgroundColor: color,
+                      };
+                  }
+
+                  return {
+                      label: dataset.label,
+                      data: alignedData,
+                      ...datasetOptions
+                  };
+              })
             },
-            plugins: {
-              legend: {
-                display: datasets.length > 1,
-                position: 'bottom',
-                labels: {
-                  color: ticksColor,
-                  padding: 15,
-                  usePointStyle: true,
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  max: 100,
+                  title: { display: false },
+                  grid: { color: gridColor },
+                  ticks: { color: ticksColor, padding: 8, callback: (value) => `${value}%` }
+                },
+                x: {
+                  title: { display: false },
+                  grid: { display: false },
+                  ticks: { color: ticksColor, padding: 8 }
                 }
               },
-              tooltip: {
-                enabled: true,
-                backgroundColor: tooltipBackgroundColor,
-                titleColor: tooltipTitleColor,
-                bodyColor: tooltipBodyColor,
-                borderColor: gridColor,
-                borderWidth: 1,
-                padding: 10,
-                cornerRadius: 4,
-                displayColors: datasets.length > 1, 
-                callbacks: {
-                  label: function(context: TooltipItem<any>) {
-                    let label = context.dataset.label || '';
-                    if (label) {
-                      label += ': ';
+              plugins: {
+                legend: {
+                  display: datasets.length > 1,
+                  position: 'bottom',
+                  labels: {
+                    color: ticksColor,
+                    padding: 15,
+                    usePointStyle: true,
+                  }
+                },
+                tooltip: {
+                  enabled: true,
+                  backgroundColor: tooltipBackgroundColor,
+                  titleColor: tooltipTitleColor,
+                  bodyColor: tooltipBodyColor,
+                  borderColor: gridColor,
+                  borderWidth: 1,
+                  padding: 10,
+                  cornerRadius: 4,
+                  displayColors: datasets.length > 1, 
+                  callbacks: {
+                    label: function(context: TooltipItem<any>) {
+                      let label = context.dataset.label || '';
+                      if (label) {
+                        label += ': ';
+                      }
+                      if (typeof context.parsed.y === 'number') {
+                         label += `${context.parsed.y.toFixed(1)}%`;
+                      }
+                      return label;
                     }
-                    // FIX: Added a type check for context.parsed.y before calling toFixed.
-                    if (typeof context.parsed.y === 'number') {
-                       label += `${context.parsed.y.toFixed(1)}%`;
-                    }
-                    return label;
                   }
                 }
-              }
-            },
-            interaction: {
-              intersect: false,
-              mode: 'index',
-            },
-          }
-        };
+              },
+              interaction: {
+                intersect: false,
+                mode: 'index',
+              },
+            }
+          };
 
-        chartInstanceRef.current = new Chart(ctx, chartConfig);
+          if (chartRef.current) {
+            localChartInstance = new Chart(ctx, chartConfig);
+            chartInstanceRef.current = localChartInstance;
+          }
+        }).catch(err => {
+          console.error('Failed to load chart.js dynamically:', err);
+        });
       }
     }
+
     return () => {
+      active = false;
+      if (localChartInstance) {
+        localChartInstance.destroy();
+      }
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
         chartInstanceRef.current = null;

@@ -7,6 +7,8 @@ import {
     EyeIcon, EyeSlashIcon, ArrowRightOnRectangleIcon, TrashIcon,
     CameraIcon 
 } from '@heroicons/react/24/outline';
+import { compressImage } from '../utils/imageCompression';
+import { useUIStore } from '../stores/uiStore';
 
 
 interface SettingsModalProps {
@@ -45,6 +47,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     isOpen, onClose, currentUser, settings, onUpdateSettings, 
     onUpdateProfile, onUpdateAvatar, onUpdatePassword, onLogout, onDeleteAccount
 }) => {
+    const { lowDataMode, setLowDataMode } = useUIStore();
     const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'account'>('profile');
     
     // Profile State
@@ -80,26 +83,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setProfileData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 2 * 1024 * 1024) {
-            alert('Image must be smaller than 2 MB.');
-            return;
-        }
         if (!file.type.startsWith('image/')) {
             alert('Please select an image file.');
             return;
         }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64 = reader.result as string;
+        try {
+            const base64 = await compressImage(file, {
+                maxWidth: 150,
+                maxHeight: 150,
+                quality: 0.7,
+                outputType: 'base64'
+            }) as string;
             setAvatarPreview(base64);
             onUpdateAvatar(base64);
-        };
-        reader.readAsDataURL(file);
-        // Reset so the same file can be re-selected
-        e.target.value = '';
+        } catch (error) {
+            console.error('Error compressing avatar:', error);
+            alert('Failed to process image.');
+        } finally {
+            // Reset so the same file can be re-selected
+            e.target.value = '';
+        }
     };
 
     const handleRemoveAvatar = () => {
@@ -260,6 +266,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={settings?.marketplaceUpdates ?? true} onChange={(val) => handleSettingToggle('marketplaceUpdates', val)} label="Marketplace Updates" description="Receive alerts about your listings and messages." />
                         <ToggleSwitch enabled={settings?.badgeUnlocks ?? true} onChange={(val) => handleSettingToggle('badgeUnlocks', val)} label="Gamification Alerts" description="Notify me when I unlock a new badge or achievement." />
                         <ToggleSwitch enabled={settings?.srsReminders ?? true} onChange={(val) => handleSettingToggle('srsReminders', val)} label="SRS Due Card Reminders" description="Get notifications when you have flashcards due for review." />
+                    </div>
+
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mt-6 mb-1">Preferences</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Customize your app performance and data usage.</p>
+                    <div className="space-y-2">
+                        <ToggleSwitch enabled={lowDataMode} onChange={setLowDataMode} label="Low-Data Mode" description="Disable real-time updates and lazy load charts/physics to minimize internet data consumption." />
                     </div>
                  </div>
             );

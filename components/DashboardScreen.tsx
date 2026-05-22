@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, UserQuestionStat, AppMode } from '../types';
 import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
+import { useUIStore } from '../stores/uiStore';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 
@@ -166,6 +167,7 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
   // ── Gamification ──────────────────────────────────────────────────────────
   const { streakData, showDailyBonus, bonusXP, dismissBonus } = useLoginStreak();
   const xpInfo = useMemo(() => getXPLevel(currentUser.points), [currentUser.points]);
+  const { lowDataMode } = useUIStore();
 
 
   const filteredTestResults = useMemo(() => {
@@ -1173,7 +1175,14 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
                       </div>
                     </div>
                     <div className="p-4">
-                      <GroupPerformanceChart datasets={[{ label: 'Score', data: chartDisplayMode === 'bar' ? groupData.weeklyChartData : groupData.chartData }]} theme={theme} type={chartDisplayMode} />
+                      {lowDataMode ? (
+                        <div className="py-4 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                          <p className="font-medium">Chart hidden in Low-Data Mode</p>
+                          <p className="text-xs mt-1">Avg Score: {groupData.averageScore.toFixed(1)}% across {groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</p>
+                        </div>
+                      ) : (
+                        <GroupPerformanceChart datasets={[{ label: 'Score', data: chartDisplayMode === 'bar' ? groupData.weeklyChartData : groupData.chartData }]} theme={theme} type={chartDisplayMode} />
+                      )}
                       <div className="flex justify-end gap-1 mt-3">
                         <button onClick={() => setChartDisplayMode('line')} className={`px-3 py-1 text-xs rounded-l-lg border transition-colors ${chartDisplayMode === 'line' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}>Timeline</button>
                         <button onClick={() => setChartDisplayMode('bar')} className={`px-3 py-1 text-xs rounded-r-lg border transition-colors ${chartDisplayMode === 'bar' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}>Weekly</button>
@@ -1269,7 +1278,14 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
                 ))}
               </div>
               {comparisonChartDatasets ? (
-                <GroupPerformanceChart datasets={comparisonChartDatasets} theme={theme} type="line" />
+                lowDataMode ? (
+                  <div className="py-4 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                    <p className="font-medium">Chart hidden in Low-Data Mode</p>
+                    <p className="text-xs mt-1">{comparisonChartDatasets.length} group{comparisonChartDatasets.length !== 1 ? 's' : ''} selected for comparison</p>
+                  </div>
+                ) : (
+                  <GroupPerformanceChart datasets={comparisonChartDatasets} theme={theme} type="line" />
+                )
               ) : (
                 <p className="text-center text-sm text-slate-400 py-6">Select at least two groups to compare.</p>
               )}

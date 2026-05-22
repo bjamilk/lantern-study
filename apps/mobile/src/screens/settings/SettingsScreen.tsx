@@ -105,7 +105,6 @@ export default function SettingsScreen() {
   const [showSRSSettingsModal, setShowSRSSettingsModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
-  const [showThemeModal, setShowThemeModal] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   
   // Temp values for modals
@@ -433,7 +432,19 @@ export default function SettingsScreen() {
               iconColor="#f59e0b"
               title="Theme"
               subtitle={themeMode === 'system' ? 'System default' : themeMode === 'dark' ? 'Dark mode' : 'Light mode'}
-              onPress={() => setShowThemeModal(true)}
+              rightElement={
+                <Switch
+                  value={isDark}
+                  onValueChange={(value) => {
+                    const newTheme = value ? 'dark' : 'light';
+                    setThemeMode(newTheme);
+                    updateSingleSetting('appearance', 'theme', newTheme);
+                  }}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={isDark ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
             />
           </View>
         </View>
@@ -743,62 +754,6 @@ export default function SettingsScreen() {
             <TouchableOpacity style={styles.saveButton} onPress={() => setShowSRSSettingsModal(false)}>
               <Text style={styles.saveButtonText}>Done</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Theme Modal */}
-      <Modal
-        visible={showThemeModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowThemeModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Theme</Text>
-              <TouchableOpacity onPress={() => setShowThemeModal(false)}>
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            
-            {([
-              { value: 'light', label: 'Light', icon: 'sunny', description: 'Always use light theme' },
-              { value: 'dark', label: 'Dark', icon: 'moon', description: 'Always use dark theme' },
-              { value: 'system', label: 'System', icon: 'phone-portrait', description: 'Follow system settings' },
-            ] as const).map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.optionItem,
-                  { backgroundColor: colors.background },
-                  themeMode === option.value && styles.optionItemActive
-                ]}
-                onPress={() => {
-                  setThemeMode(option.value);
-                  updateSingleSetting('appearance', 'theme', option.value);
-                  setShowThemeModal(false);
-                }}
-              >
-                <View style={styles.themeOptionContent}>
-                  <View style={[styles.themeIconContainer, { backgroundColor: colors.primary + '20' }]}>
-                    <Ionicons name={option.icon as any} size={24} color={colors.primary} />
-                  </View>
-                  <View style={styles.themeOptionText}>
-                    <Text style={[styles.optionTitle, { color: colors.text }]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
-                      {option.description}
-                    </Text>
-                  </View>
-                </View>
-                {themeMode === option.value && (
-                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
           </View>
         </View>
       </Modal>
@@ -1116,3 +1071,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+

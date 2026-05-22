@@ -58,6 +58,7 @@ interface ChatWindowProps {
   onDeleteDmThread?: (threadId: string) => void;
   onArchiveDmThread?: (threadId: string) => void;
   onUnarchiveDmThread?: (threadId: string) => void;
+  onLoadMoreMessages?: (groupId: string) => Promise<number>;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -76,11 +77,51 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onDeleteDmThread,
   onArchiveDmThread,
   onUnarchiveDmThread,
+  onLoadMoreMessages,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(messages.length);
+
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Reset loading/hasMore states when the chat changes
+  useEffect(() => {
+    setHasMore(true);
+    setIsLoadingMore(false);
+  }, [chat?.id]);
+
+  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    // Load more when scrolled to the top
+    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat && chat.chatType === 'group') {
+      setIsLoadingMore(true);
+      const prevScrollHeight = container.scrollHeight;
+      
+      try {
+        if (onLoadMoreMessages) {
+          const count = await onLoadMoreMessages(chat.id);
+          if (count === 0) {
+            setHasMore(false);
+          } else {
+            // Restore scroll position to prevent jumping
+            requestAnimationFrame(() => {
+              if (container) {
+                container.scrollTop = container.scrollHeight - prevScrollHeight;
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error loading older messages:', err);
+      } finally {
+        setIsLoadingMore(false);
+      }
+    }
+  };
 
   // tree state used for mobile grouping
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
@@ -709,7 +750,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       {activeTab === 'chat' ? (
         <>
           {/* Messages area */}
-          <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+          <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
             {visibleMessages.map((msg, idx) => {
               // Date separator logic
               const msgDate = new Date(msg.timestamp);

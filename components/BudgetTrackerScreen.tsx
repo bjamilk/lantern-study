@@ -6,9 +6,8 @@ import {
   ChartBarIcon, LightBulbIcon, FunnelIcon, ArrowTrendingUpIcon,
   SparklesIcon, TrophyIcon, UserGroupIcon, ArrowPathIcon,
 } from '@heroicons/react/24/outline';
-import { Chart, registerables } from 'chart.js';
+import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
-Chart.register(...registerables);
 
 type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
 
@@ -53,7 +52,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
   const [txFilter, setTxFilter] = useState<'all' | 'income' | 'expense'>('all');
   const chartRef = useRef<HTMLCanvasElement>(null);
-  const chartInstanceRef = useRef<Chart | null>(null);
+  const chartInstanceRef = useRef<ChartType | null>(null);
   const { savingsGoals, walletBalance, expenseSplits } = useBudgetStore();
 
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -97,22 +96,49 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   useEffect(() => {
     if (activeTab !== 'overview' && activeTab !== 'insights') return;
     if (!chartRef.current) return;
-    if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.destroy();
+      chartInstanceRef.current = null;
+    }
     const ctx = chartRef.current.getContext('2d');
     if (!ctx || expenseByCategory.length === 0) return;
     const colors = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#06b6d4', '#f97316', '#ef4444', '#14b8a6', '#a855f7', '#64748b', '#e11d48', '#22c55e'];
-    chartInstanceRef.current = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: expenseByCategory.map(c => `${c.icon} ${c.label}`),
-        datasets: [{ data: expenseByCategory.map(c => c.amount), backgroundColor: colors.slice(0, expenseByCategory.length), borderWidth: 0, hoverOffset: 8 }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '65%',
-        plugins: { legend: { display: false } },
-      },
+
+    let active = true;
+    let localChartInstance: ChartType | null = null;
+
+    import('chart.js').then(({ Chart, registerables }) => {
+      if (!active) return;
+      Chart.register(...registerables);
+
+      if (chartRef.current) {
+        localChartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: expenseByCategory.map(c => `${c.icon} ${c.label}`),
+            datasets: [{ data: expenseByCategory.map(c => c.amount), backgroundColor: colors.slice(0, expenseByCategory.length), borderWidth: 0, hoverOffset: 8 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '65%',
+            plugins: { legend: { display: false } },
+          },
+        });
+        chartInstanceRef.current = localChartInstance;
+      }
+    }).catch(err => {
+      console.error('Failed to load chart.js dynamically:', err);
     });
-    return () => { chartInstanceRef.current?.destroy(); chartInstanceRef.current = null; };
+
+    return () => {
+      active = false;
+      if (localChartInstance) {
+        localChartInstance.destroy();
+      }
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
+      }
+    };
   }, [expenseByCategory, activeTab]);
 
   // ─── TAB CONTENT ───

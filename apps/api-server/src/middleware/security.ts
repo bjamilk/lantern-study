@@ -33,8 +33,8 @@ export const strictAuthMiddleware = async (
 
     const token = authHeader.split(' ')[1];
     
-    // Development bypass for testing
-    if (process.env.NODE_ENV !== 'production' && !token) {
+    // Development bypass for testing — requires explicit opt-in via ALLOW_DEV_AUTH_BYPASS=true
+    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true' && !token) {
       const userId = req.query.userId as string || req.body?.userId;
       if (userId) {
         req.user = { userId };
@@ -121,7 +121,7 @@ export const securityHeaders = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:', 'http://localhost:54321'],
       connectSrc: ["'self'", process.env.SUPABASE_URL || 'http://127.0.0.1:54321', 'http://localhost:3001'],

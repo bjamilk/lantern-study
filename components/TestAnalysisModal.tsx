@@ -5,8 +5,7 @@
 import React, { useEffect, useRef } from 'react';
 import { TestResult } from '../types';
 import { XCircleIcon, ChartPieIcon, ClockIcon, TagIcon } from '@heroicons/react/24/outline';
-import { Chart, registerables } from 'chart.js';
-Chart.register(...registerables);
+import type { Chart as ChartType } from 'chart.js';
 
 interface TestAnalysisModalProps {
   isOpen: boolean;
@@ -19,7 +18,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
     const timePerQuestionChartRef = useRef<HTMLCanvasElement>(null);
     const timePerTagChartRef = useRef<HTMLCanvasElement>(null);
 
-    const chartInstances = useRef<{ pie?: Chart, timePerQ?: Chart, timePerTag?: Chart }>({});
+    const chartInstances = useRef<{ pie?: ChartType, timePerQ?: ChartType, timePerTag?: ChartType }>({});
 
     useEffect(() => {
         if (!isOpen) return;
@@ -63,79 +62,98 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
             avgTime: count > 0 ? totalTime / count : 0,
         }));
         
+        let active = true;
+        let localPieChart: ChartType | undefined;
+        let localTimePerQChart: ChartType | undefined;
+        let localTimePerTagChart: ChartType | undefined;
+
         // Destroy existing charts before creating new ones
-        // FIX: Added explicit type annotation to the 'chart' parameter to resolve the 'unknown' type error.
-        Object.values(chartInstances.current).forEach((chart: Chart | undefined) => chart?.destroy());
+        Object.values(chartInstances.current).forEach((chart: ChartType | undefined) => chart?.destroy());
+        chartInstances.current = {};
 
-        // Create Pie Chart
-        if (pieChartRef.current) {
-            const pieCtx = pieChartRef.current.getContext('2d');
-            if (pieCtx) {
-                chartInstances.current.pie = new Chart(pieCtx, {
-                    type: 'pie',
-                    data: {
-                        labels: ['Correct', 'Incorrect', 'Unattempted'],
-                        datasets: [{
-                            data: [correctAnswersCount, incorrectCount, unattemptedCount],
-                            backgroundColor: ['#22c55e', '#ef4444', '#f59e0b'],
-                            hoverOffset: 4,
-                        }]
-                    },
-                    options: { responsive: true, plugins: { legend: { position: 'top' } } }
-                });
-            }
-        }
+        import('chart.js').then(({ Chart, registerables }) => {
+            if (!active) return;
+            Chart.register(...registerables);
 
-        // Create Time per Question Chart
-        if (timePerQuestionChartRef.current) {
-            const timePerQCtx = timePerQuestionChartRef.current.getContext('2d');
-            if (timePerQCtx) {
-                chartInstances.current.timePerQ = new Chart(timePerQCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: timePerQuestionData.map(d => d.label),
-                        datasets: [{
-                            label: 'Time Spent (s)',
-                            data: timePerQuestionData.map(d => d.time),
-                            backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
+            // Create Pie Chart
+            if (pieChartRef.current) {
+                const pieCtx = pieChartRef.current.getContext('2d');
+                if (pieCtx) {
+                    localPieChart = new Chart(pieCtx, {
+                        type: 'pie',
+                        data: {
+                            labels: ['Correct', 'Incorrect', 'Unattempted'],
+                            datasets: [{
+                                data: [correctAnswersCount, incorrectCount, unattemptedCount],
+                                backgroundColor: ['#22c55e', '#ef4444', '#f59e0b'],
+                                hoverOffset: 4,
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { position: 'top' } } }
+                    });
+                    chartInstances.current.pie = localPieChart;
+                }
             }
-        }
 
-        // Create Time per Tag Chart
-        if (timePerTagChartRef.current && timePerTagData.length > 0) {
-            const timePerTagCtx = timePerTagChartRef.current.getContext('2d');
-            if (timePerTagCtx) {
-                chartInstances.current.timePerTag = new Chart(timePerTagCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: timePerTagData.map(d => d.label),
-                        datasets: [{
-                            label: 'Avg. Time Spent (s)',
-                            data: timePerTagData.map(d => d.avgTime),
-                            backgroundColor: 'rgba(168, 85, 247, 0.7)',
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
+            // Create Time per Question Chart
+            if (timePerQuestionChartRef.current) {
+                const timePerQCtx = timePerQuestionChartRef.current.getContext('2d');
+                if (timePerQCtx) {
+                    localTimePerQChart = new Chart(timePerQCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: timePerQuestionData.map(d => d.label),
+                            datasets: [{
+                                label: 'Time Spent (s)',
+                                data: timePerQuestionData.map(d => d.time),
+                                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                    chartInstances.current.timePerQ = localTimePerQChart;
+                }
             }
-        }
+
+            // Create Time per Tag Chart
+            if (timePerTagChartRef.current && timePerTagData.length > 0) {
+                const timePerTagCtx = timePerTagChartRef.current.getContext('2d');
+                if (timePerTagCtx) {
+                    localTimePerTagChart = new Chart(timePerTagCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: timePerTagData.map(d => d.label),
+                            datasets: [{
+                                label: 'Avg. Time Spent (s)',
+                                data: timePerTagData.map(d => d.avgTime),
+                                backgroundColor: 'rgba(168, 85, 247, 0.7)',
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                    chartInstances.current.timePerTag = localTimePerTagChart;
+                }
+            }
+        }).catch(err => {
+            console.error('Failed to load chart.js dynamically:', err);
+        });
 
         // Cleanup function
         return () => {
-            // FIX: Added explicit type annotation to the 'chart' parameter to resolve the 'unknown' type error.
-            Object.values(chartInstances.current).forEach((chart: Chart | undefined) => chart?.destroy());
+            active = false;
+            if (localPieChart) localPieChart.destroy();
+            if (localTimePerQChart) localTimePerQChart.destroy();
+            if (localTimePerTagChart) localTimePerTagChart.destroy();
+            Object.values(chartInstances.current).forEach((chart: ChartType | undefined) => chart?.destroy());
+            chartInstances.current = {};
         };
 
     }, [isOpen, results]);

@@ -1042,6 +1042,12 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
 
+    const similarCacheKey = `marketplace:similar:${id}`;
+    const cached = await cacheService.get<any[]>(similarCacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
     // Get the source listing
     const listing = await supabaseService.getMarketplaceListingById(id);
     if (!listing) {
@@ -1067,7 +1073,64 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
 
-    res.json({ success: true, data: data || [] });
+    const result = data || [];
+    await cacheService.set(similarCacheKey, result, 300); // 5 min cache
+    res.json({ success: true, data: result });
+  })
+);
+
+// GET /api/v1/marketplace/listings/:id/full - Batched detail page load
+// Returns listing + isFavorited + similarListings in a single round trip.
+router.get(
+  '/listings/:id/full',
+  asyncHandler(async (req: any, res: any) => {
+    const { id } = req.params;
+    const { userId } = req.query;
+
+    // --- 1. Listing (cached 10 min) ---
+    const listingCacheKey = `marketplace:listing:${id}`;
+    let listing = await cacheService.get<any>(listingCacheKey);
+    if (!listing) {
+      listing = await supabaseService.getMarketplaceListingById(id);
+      if (!listing) {
+        return res.status(404).json({ success: false, error: 'Listing not found' });
+      }
+      supabaseService.incrementListingViews(id);
+      await cacheService.set(listingCacheKey, listing, 600);
+    }
+
+    // --- 2. Similar listings (cached 5 min, shared across all users) ---
+    const similarCacheKey = `marketplace:similar:${id}`;
+    let similarListings = await cacheService.get<any[]>(similarCacheKey);
+    if (!similarListings) {
+      let query = supabaseService.getClient()
+        .from('marketplace_listings')
+        .select('id, title, price, images, category, location, created_at, status')
+        .eq('category', listing.category)
+        .eq('status', 'active')
+        .neq('id', id);
+
+      if (listing.price) {
+        query = query
+          .gte('price', listing.price * 0.7)
+          .lte('price', listing.price * 1.3);
+      }
+      query = query.order('created_at', { ascending: false }).limit(6);
+      const { data } = await query;
+      similarListings = data || [];
+      await cacheService.set(similarCacheKey, similarListings, 300);
+    }
+
+    // --- 3. isFavorited (user-specific, not cached) ---
+    let isFavorited = false;
+    if (userId) {
+      isFavorited = await supabaseService.isListingFavorited(userId as string, id);
+    }
+
+    res.json({
+      success: true,
+      data: { listing, isFavorited, similarListings },
+    });
   })
 );
 
