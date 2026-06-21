@@ -1,2 +1,0 @@
--- Apply via Supabase migration: 20260613120000_study_activity.sql
--- Creates study_activity table, record_study_activity RPC, and backfills test sessions.

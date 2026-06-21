@@ -1,1 +1,0 @@
-{"project_id":"tiizkjhbrnaibaagmurl","name":"add_display_name_to_offline_bundles","query":"-- Add display_name column to offline_bundles for user-assigned bundle names\r\nALTER TABLE offline_bundles\r\n  ADD COLUMN IF NOT EXISTS display_name TEXT;\r\n"}

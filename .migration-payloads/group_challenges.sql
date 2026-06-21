@@ -1,1 +1,0 @@
--- Apply via Supabase SQL editor or CLI: supabase db push / migration 20260612120000_group_challenges.sql

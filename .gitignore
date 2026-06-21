@@ -17,6 +17,21 @@ dist-ssr
 
 # Environment variables
 .env
+.env.local
+.env.*.local
+**/.env
+!.env.example
+!**/.env.example
+
+# Local Supabase / migration tooling artifacts
+.migration-payloads/
+supabase/.temp/
+supabase/.branches/
+
+# Expo / mobile build output
+apps/mobile/.expo/
+apps/mobile/.expo-export*/
+apps/mobile/dist/
 
 # Editor directories and files
 .vscode/*
