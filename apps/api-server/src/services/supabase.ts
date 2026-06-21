@@ -9,7 +9,7 @@ import {
   buildMarketplaceSaleDescription,
   MARKETPLACE_BUDGET_CATEGORIES,
   MARKETPLACE_BUDGET_TYPES,
-} from '@lantern/shared/utils';
+} from '@lantern/shared/utils/server';
 
 export class SupabaseService {
   private supabase;

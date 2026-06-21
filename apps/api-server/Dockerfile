@@ -2,6 +2,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
 COPY apps/api-server/package.json ./apps/api-server/
 COPY packages/shared/package.json ./packages/shared/
 COPY turbo.json ./
@@ -21,6 +22,7 @@ ENV NODE_ENV=production
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
 COPY apps/api-server/package.json ./apps/api-server/
 COPY packages/shared/package.json ./packages/shared/
 

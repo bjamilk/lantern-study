@@ -1,0 +1,34 @@
+# Lantern Study API — Render.com blueprint
+# Connect repo: https://dashboard.render.com/blueprints
+# Repo: bjamilk/lantern-study (branch: main)
+
+services:
+  - type: web
+    name: lantern-study-api
+    runtime: docker
+    dockerfilePath: ./apps/api-server/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: FRONTEND_URL
+        value: http://localhost:5173
+      - key: REDIS_ENABLED
+        value: "false"
+      - key: ALLOW_DEV_AUTH_BYPASS
+        value: "false"
+      - key: ENABLE_MARKETPLACE_JOBS
+        value: "true"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false

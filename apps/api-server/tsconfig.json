@@ -2,13 +2,17 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
+    "moduleResolution": "node",
     "lib": ["ES2020"],
+    "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@lantern/shared/utils": ["../../packages/shared/src/utils/index.ts"],
-      "@lantern/shared/utils/*": ["../../packages/shared/src/utils/*"],
-      "@lantern/shared/settings": ["../../packages/shared/src/settings/index.ts"],
+      "@lantern/shared/utils/server": ["../../packages/shared/dist/utils/server"],
+      "@lantern/shared/utils": ["../../packages/shared/dist/utils/index"],
+      "@lantern/shared/utils/*": ["../../packages/shared/dist/utils/*"],
+      "@lantern/shared/settings": ["../../packages/shared/dist/settings/index"],
+      "@lantern/shared/settings/*": ["../../packages/shared/dist/settings/*"]
     },
     "strict": true,
     "esModuleInterop": true,

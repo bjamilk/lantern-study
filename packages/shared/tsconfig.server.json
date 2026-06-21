@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "downlevelIteration": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "src/types/**/*.ts",
+    "src/utils/marketplaceBudget.ts",
+    "src/utils/marketplacePromo.ts",
+    "src/utils/activity.ts",
+    "src/utils/srs.ts",
+    "src/utils/fsrs.ts",
+    "src/utils/server.ts",
+    "src/settings/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "__tests__"]
+}

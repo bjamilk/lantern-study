@@ -83,7 +83,7 @@ const groqProvider: AIProvider = {
       throw new Error(`Groq error ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, any>;
     const text = data.choices?.[0]?.message?.content;
     if (!text) throw new Error('Empty Groq response');
 
@@ -131,7 +131,7 @@ const geminiProvider: AIProvider = {
       throw new Error(`Gemini error ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, any>;
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Empty Gemini response');
 
@@ -180,7 +180,7 @@ const cloudflareProvider: AIProvider = {
       throw new Error(`Cloudflare error ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, any>;
     const text = data.result?.response;
     if (!text) throw new Error('Empty Cloudflare response');
 
@@ -230,7 +230,7 @@ const huggingfaceProvider: AIProvider = {
       throw new Error(`HuggingFace error ${response.status}: ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as Record<string, any>;
     const text = data.choices?.[0]?.message?.content;
     if (!text) throw new Error('Empty HuggingFace response');
 

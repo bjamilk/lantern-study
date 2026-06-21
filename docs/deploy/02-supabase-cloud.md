@@ -160,4 +160,4 @@ EXPO_PUBLIC_API_URL=https://YOUR-API-DOMAIN
 
 ## Next step
 
-→ [03-api-hosting.md](./03-api-hosting.md) (deploy API to Railway/Render) — to be added.
+→ [03-api-hosting.md](./03-api-hosting.md) (deploy API to Render)

@@ -2,24 +2,97 @@
   "name": "@lantern/shared",
   "version": "1.0.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./types": "./src/types/index.ts",
-    "./utils": "./src/utils/index.ts",
-    "./stores": "./src/stores/index.ts",
-    "./storage": "./src/storage/index.ts",
-    "./linking": "./src/linking/index.ts",
-    "./api": "./src/api/index.ts",
-    "./sync": "./src/sync/index.ts",
-    "./design": "./src/design/index.ts",
-    "./legal": "./src/legal.ts",
-    "./settings": "./src/settings/index.ts",
-    "./settings/*": "./src/settings/*.ts",
-    "./utils/*": "./src/utils/*.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "require": "./dist/index.js",
+      "default": "./src/index.ts"
+    },
+    "./types": {
+      "types": "./src/types/index.ts",
+      "import": "./src/types/index.ts",
+      "require": "./dist/types/index.js",
+      "default": "./src/types/index.ts"
+    },
+    "./utils": {
+      "types": "./src/utils/index.ts",
+      "import": "./src/utils/index.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./src/utils/index.ts"
+    },
+    "./stores": {
+      "types": "./src/stores/index.ts",
+      "import": "./src/stores/index.ts",
+      "require": "./dist/stores/index.js",
+      "default": "./src/stores/index.ts"
+    },
+    "./storage": {
+      "types": "./src/storage/index.ts",
+      "import": "./src/storage/index.ts",
+      "require": "./dist/storage/index.js",
+      "default": "./src/storage/index.ts"
+    },
+    "./linking": {
+      "types": "./src/linking/index.ts",
+      "import": "./src/linking/index.ts",
+      "require": "./dist/linking/index.js",
+      "default": "./src/linking/index.ts"
+    },
+    "./api": {
+      "types": "./src/api/index.ts",
+      "import": "./src/api/index.ts",
+      "require": "./dist/api/index.js",
+      "default": "./src/api/index.ts"
+    },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "import": "./src/sync/index.ts",
+      "require": "./dist/sync/index.js",
+      "default": "./src/sync/index.ts"
+    },
+    "./design": {
+      "types": "./src/design/index.ts",
+      "import": "./src/design/index.ts",
+      "require": "./dist/design/index.js",
+      "default": "./src/design/index.ts"
+    },
+    "./legal": {
+      "types": "./src/legal.ts",
+      "import": "./src/legal.ts",
+      "require": "./dist/legal.js",
+      "default": "./src/legal.ts"
+    },
+    "./settings": {
+      "types": "./src/settings/index.ts",
+      "import": "./src/settings/index.ts",
+      "require": "./dist/settings/index.js",
+      "default": "./src/settings/index.ts"
+    },
+    "./settings/*": {
+      "types": "./src/settings/*.ts",
+      "import": "./src/settings/*.ts",
+      "require": "./dist/settings/*.js",
+      "default": "./src/settings/*.ts"
+    },
+    "./utils/server": {
+      "types": "./src/utils/server.ts",
+      "import": "./src/utils/server.ts",
+      "require": "./dist/utils/server.js",
+      "default": "./src/utils/server.ts"
+    },
+    "./utils/*": {
+      "types": "./src/utils/*.ts",
+      "import": "./src/utils/*.ts",
+      "require": "./dist/utils/*.js",
+      "default": "./src/utils/*.ts"
+    }
   },
   "scripts": {
+    "build": "tsc -p tsconfig.server.json",
+    "build:all": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "clean": "rm -rf dist"
@@ -30,6 +103,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
+    "@types/react": "^19.1.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "typescript": "~5.8.2"

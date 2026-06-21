@@ -47,20 +47,25 @@ const fileFormat = winston.format.combine(
   winston.format.json()
 );
 
-const transports = [
+const transports: winston.transport[] = [
   new winston.transports.Console({
     format: consoleFormat,
   }),
-  new winston.transports.File({
-    filename: path.join(process.cwd(), 'logs', 'error.log'),
-    level: 'error',
-    format: fileFormat,
-  }),
-  new winston.transports.File({
-    filename: path.join(process.cwd(), 'logs', 'all.log'),
-    format: fileFormat,
-  }),
 ];
+
+if (process.env.NODE_ENV !== 'production') {
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(process.cwd(), 'logs', 'error.log'),
+      level: 'error',
+      format: fileFormat,
+    }),
+    new winston.transports.File({
+      filename: path.join(process.cwd(), 'logs', 'all.log'),
+      format: fileFormat,
+    })
+  );
+}
 
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -69,9 +74,11 @@ export const logger = winston.createLogger({
 });
 
 import fs from 'fs';
-const logsDir = path.join(process.cwd(), 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+if (process.env.NODE_ENV !== 'production') {
+  const logsDir = path.join(process.cwd(), 'logs');
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
 }
 
 export const stream = {
