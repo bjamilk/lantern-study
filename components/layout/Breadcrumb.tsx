@@ -19,7 +19,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
     if (items.length <= 1) return null;
 
     return (
-        <nav className="flex items-center gap-1 text-sm px-4 md:px-6 py-2.5 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700/50" aria-label="Breadcrumb">
+        <nav className="flex items-center gap-1 min-w-0 max-w-full overflow-x-hidden text-sm px-4 md:px-6 py-2.5 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700/50" aria-label="Breadcrumb">
             {items.map((item, index) => {
                 const isLast = index === items.length - 1;
                 const isFirst = index === 0;

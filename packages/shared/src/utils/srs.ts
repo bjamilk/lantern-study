@@ -9,10 +9,16 @@ const INITIAL_EASE_FACTOR = 2.5;
 
 export type PerformanceRating = 'again' | 'hard' | 'good' | 'easy';
 
+export interface SrsCalculationOptions {
+    maxInterval?: number;
+}
+
 export const calculateSrsData = (
     currentSrsData: SrsData | undefined,
-    performanceRating: PerformanceRating
+    performanceRating: PerformanceRating,
+    options?: SrsCalculationOptions
 ): SrsData => {
+    const maxInterval = Math.max(1, options?.maxInterval ?? 365);
     const today = new Date();
     
     // If it's a new card or srsData is empty/incomplete, treat as new
@@ -79,8 +85,8 @@ export const calculateSrsData = (
     // Cap ease factor
     easeFactor = Math.min(easeFactor, 2.5);
     
-    // Prevent interval from becoming too large too quickly
-    newInterval = Math.min(newInterval, 365);
+    // Prevent interval from exceeding user-configured max
+    newInterval = Math.min(newInterval, maxInterval);
     // Ensure interval is at least 1 day
     newInterval = Math.max(1, newInterval);
 

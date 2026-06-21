@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
+import { isProductionEnv, redactForLog } from '../utils/safeError';
 
 // Custom error class for API errors
 export class ApiError extends Error {
@@ -34,19 +35,24 @@ export const errorHandler = (
 ): void => {
   let error = err;
 
-  // Log the error
-  logger.error('Error occurred:', {
+  // Log the error (redact sensitive body fields in production)
+  const logMeta: Record<string, unknown> = {
     message: err.message,
     stack: err.stack,
     url: req.url,
     method: req.method,
     ip: req.ip,
     userAgent: req.get('User-Agent'),
-    body: req.body,
-    rawBody: (req as any).rawBody,
     params: req.params,
     query: req.query,
-  });
+  };
+  if (isProductionEnv()) {
+    logMeta.body = redactForLog(req.body);
+  } else {
+    logMeta.body = req.body;
+    logMeta.rawBody = (req as any).rawBody;
+  }
+  logger.error('Error occurred:', logMeta);
 
   // Handle specific error types
   if (err.name === 'ValidationError') {
@@ -76,15 +82,21 @@ export const errorHandler = (
 
   // Default to ApiError if not already one
   if (!(error instanceof ApiError)) {
-    error = new ApiError(error.message || 'Something went wrong', 500, false);
+    const publicMessage = isProductionEnv()
+      ? 'Something went wrong'
+      : (err.message || 'Something went wrong');
+    error = new ApiError(publicMessage, 500, false);
   }
 
   const apiError = error as ApiError;
+  const clientMessage = isProductionEnv() && apiError.statusCode >= 500 && !apiError.isOperational
+    ? 'Something went wrong'
+    : apiError.message;
 
   // Send error response
   const errorResponse: ErrorResponse = {
     error: apiError.name || 'Error',
-    message: apiError.message,
+    message: clientMessage,
     timestamp: new Date().toISOString(),
     path: req.originalUrl,
     requestId: (req as any).requestId,

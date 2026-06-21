@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --workspace=@lantern/api-server --if-present
+      - run: npm run build --workspace=@lantern/shared
+      - run: npm run build --workspace=@lantern/api-server
+      - run: npm run build:web
+      - run: npm run typecheck --workspace=@lantern/api-server --if-present
+      - run: npm run typecheck --workspace=@lantern/web --if-present
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: npm audit (high severity)
+        run: npm audit --audit-level=high
+
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=@lantern/shared
+      - run: npm test --workspace=@lantern/api-server --if-present

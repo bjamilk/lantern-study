@@ -20,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, EXPENSE_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
 
 // Simple date picker component
 const SimpleDatePicker: React.FC<{
@@ -113,10 +114,11 @@ const SimpleDatePicker: React.FC<{
 
 export default function AddExpenseScreen() {
   const navigation = useNavigation<any>();
+  const userId = useAuthStore(s => s.user?.id) || '';
   const { addTransaction, isLoading } = useBudgetStore();
 
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0].id);
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -144,7 +146,7 @@ export default function AddExpenseScreen() {
 
     try {
       await addTransaction({
-        userId: 'demo-user',
+        userId,
         type: 'EXPENSE',
         amount: amountNum,
         category,
@@ -158,26 +160,7 @@ export default function AddExpenseScreen() {
     } catch (error) {
       Alert.alert('Error', 'Failed to add expense. Please try again.');
     }
-  }, [amount, category, description, date, addTransaction, navigation]);
-
-  const getCategoryIcon = (cat: string): keyof typeof Ionicons.glyphMap => {
-    const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-      'Food & Drink': 'fast-food',
-      'Shopping': 'bag',
-      'Transport': 'car',
-      'Home': 'home',
-      'Bills & Fees': 'document-text',
-      'Entertainment': 'game-controller',
-      'Car': 'car-sport',
-      'Travel': 'airplane',
-      'Health': 'medical',
-      'Education': 'school',
-      'Groceries': 'cart',
-      'Gifts': 'gift',
-      'Other': 'ellipsis-horizontal',
-    };
-    return iconMap[cat] || 'help-circle';
-  };
+  }, [amount, category, description, date, addTransaction, navigation, userId]);
 
   const { colors } = useTheme();
 
@@ -226,35 +209,31 @@ export default function AddExpenseScreen() {
             <View style={styles.categoryGrid}>
               {EXPENSE_CATEGORIES.map(cat => (
                 <TouchableOpacity
-                  key={cat}
+                  key={cat.id}
                   style={[
                     styles.categoryItem,
                     { backgroundColor: colors.card },
-                    category === cat && styles.categoryItemActive,
+                    category === cat.id && styles.categoryItemActive,
                   ]}
-                  onPress={() => setCategory(cat)}
+                  onPress={() => setCategory(cat.id)}
                 >
                   <View
                     style={[
                       styles.categoryIcon,
-                      category === cat && styles.categoryIconActive,
+                      category === cat.id && styles.categoryIconActive,
                     ]}
                   >
-                    <Ionicons
-                      name={getCategoryIcon(cat)}
-                      size={20}
-                      color={category === cat ? '#ffffff' : '#ef4444'}
-                    />
+                    <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
                   </View>
                   <Text
                     style={[
                       styles.categoryName,
                       { color: colors.textSecondary },
-                      category === cat && styles.categoryNameActive,
+                      category === cat.id && styles.categoryNameActive,
                     ]}
-                    numberOfLines={1}
+                    numberOfLines={2}
                   >
-                    {cat}
+                    {cat.label}
                   </Text>
                 </TouchableOpacity>
               ))}

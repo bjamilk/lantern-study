@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
 
@@ -28,12 +29,18 @@ export default function TestScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('tests');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
+  const [configTest, setConfigTest] = useState<Test | null>(null);
   const [selectedMode, setSelectedMode] = useState<TestMode>('test');
   const [showConfigModal, setShowConfigModal] = useState(false);
   
   const { user } = useAuthStore();
+  const defaultTestMode = useSettingsStore(s => s.settings.study.defaultTestMode);
   const { colors } = useTheme();
-  const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest } = useTestStore();
+  const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
+
+  useEffect(() => {
+    setSelectedMode(defaultTestMode === 'exam' ? 'test' : 'study');
+  }, [defaultTestMode]);
 
   useEffect(() => {
     if (user?.id) {
@@ -65,16 +72,116 @@ export default function TestScreen() {
 
   // Handle advanced configuration submission
   const handleConfigSubmit = useCallback((config: TestConfigOptions, mode: TestMode) => {
-    if (!selectedTest) return;
+    if (!configTest || !user?.id) return;
+    const test = configTest;
     setShowConfigModal(false);
-    // TODO: Apply config to test start (question count, timer, types filter)
-    // For now, just start with the mode
-    handleStartTest(selectedTest, mode);
-  }, [selectedTest, handleStartTest]);
+    setConfigTest(null);
+    void startTest(test.id, mode, {
+      timeLimit: config.timerDuration > 0 ? Math.ceil(config.timerDuration / 60) : test.timeLimit,
+      questionCount: config.numberOfQuestions,
+      userId: user.id,
+      questionTypes: config.selectedQuestionTypes.length ? config.selectedQuestionTypes : undefined,
+      tags: config.selectedTags.length ? config.selectedTags : undefined,
+      spacedRepetition: config.useSpacedRepetition,
+      focusOnNew: config.focusOnNew,
+    }).then(() => {
+      navigation.navigate('TestTaking', {
+        testId: test.id,
+        testName: test.name,
+        mode,
+      });
+    }).catch(() => {
+      Alert.alert('Error', 'Failed to start test');
+    });
+  }, [configTest, user?.id, startTest, navigation]);
+
+  const configTags = useMemo(() => {
+    if (!configTest) return [] as string[];
+    const tags = new Set<string>();
+    (testQuestionsById[configTest.id] || []).forEach(q => q.tags?.forEach(t => tags.add(t)));
+    return Array.from(tags);
+  }, [configTest, testQuestionsById]);
+
+  const handleRetake = useCallback(async (attempt: TestAttempt) => {
+    const questions = attempt.answers
+      .map(a => a.questionSnapshot)
+      .filter((q): q is NonNullable<typeof q> => !!q);
+
+    if (questions.length > 0) {
+      await startQuestionSet(attempt.testName, questions, 'test');
+      navigation.navigate('TestTaking', {
+        testId: 'custom',
+        testName: attempt.testName,
+        mode: 'test',
+        groupName: attempt.groupName,
+        groupId: attempt.groupId,
+      });
+      return;
+    }
+
+    const existingTest = tests.find(t => t.id === attempt.testId);
+    if (existingTest) {
+      try {
+        await startTest(existingTest.id, 'test');
+        navigation.navigate('TestTaking', {
+          testId: existingTest.id,
+          testName: existingTest.name,
+          mode: 'test',
+          groupName: attempt.groupName,
+          groupId: attempt.groupId,
+        });
+      } catch {
+        Alert.alert('Error', 'Failed to start test');
+      }
+      return;
+    }
+
+    Alert.alert('Cannot retake', 'Question data is no longer available for this test.');
+  }, [tests, startQuestionSet, startTest, navigation]);
 
   const handleViewAttempt = useCallback((attempt: TestAttempt) => {
     navigation.navigate('TestResults', { attemptId: attempt.id });
   }, [navigation]);
+
+  const handleDeleteAttempt = useCallback((attempt: TestAttempt) => {
+    if (!user?.id) return;
+    Alert.alert(
+      'Delete test result?',
+      `Remove "${attempt.testName}" from your history? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void deleteAttempt(user.id, attempt.id).catch(() => {
+              Alert.alert('Error', 'Failed to delete test result.');
+            });
+          },
+        },
+      ]
+    );
+  }, [user?.id, deleteAttempt]);
+
+  const handleClearHistory = useCallback(() => {
+    if (!user?.id || attempts.length === 0) return;
+    Alert.alert(
+      'Clear test history?',
+      'Delete all test history? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: () => {
+            void clearTestHistory(user.id).catch(() => {
+              Alert.alert('Error', 'Failed to clear test history.');
+            });
+          },
+        },
+      ]
+    );
+  }, [user?.id, attempts.length, clearTestHistory]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -126,47 +233,73 @@ export default function TestScreen() {
   ), [colors]);
 
   const renderAttemptItem = useCallback(({ item }: { item: TestAttempt }) => (
-    <TouchableOpacity
-      style={[styles.attemptCard, { backgroundColor: colors.card }]}
-      onPress={() => handleViewAttempt(item)}
-      activeOpacity={0.7}
-    >
-      <View style={[
-        styles.attemptIcon,
-        { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
-      ]}>
-        <Ionicons 
-          name={item.passed ? 'checkmark-circle' : 'close-circle'} 
-          size={24} 
-          color={item.passed ? '#10b981' : '#ef4444'} 
-        />
-      </View>
-      
-      <View style={styles.attemptInfo}>
-        <Text style={[styles.attemptName, { color: colors.text }]} numberOfLines={1}>{item.testName}</Text>
-        <Text style={[styles.attemptDate, { color: colors.textSecondary }]}>{formatDate(item.completedAt || item.startedAt)}</Text>
+    <View style={[styles.attemptCard, { backgroundColor: colors.card }]}>
+      <TouchableOpacity
+        style={styles.attemptMain}
+        onPress={() => handleViewAttempt(item)}
+        activeOpacity={0.7}
+      >
+        <View style={[
+          styles.attemptIcon,
+          { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
+        ]}>
+          <Ionicons 
+            name={item.passed ? 'checkmark-circle' : 'close-circle'} 
+            size={24} 
+            color={item.passed ? '#10b981' : '#ef4444'} 
+          />
+        </View>
         
-        <View style={styles.attemptStats}>
-          <View style={[
-            styles.scoreBadge,
-            { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
-          ]}>
-            <Text style={[
-              styles.scoreText,
-              { color: item.passed ? '#10b981' : '#ef4444' }
+        <View style={styles.attemptInfo}>
+          <Text style={[styles.attemptName, { color: colors.text }]} numberOfLines={1}>{item.testName}</Text>
+          {item.groupName ? (
+            <Text style={[styles.attemptSource, { color: colors.textSecondary }]} numberOfLines={1}>
+              From {item.groupName}
+            </Text>
+          ) : null}
+          <Text style={[styles.attemptDate, { color: colors.textSecondary }]}>{formatDate(item.completedAt || item.startedAt)}</Text>
+          
+          <View style={styles.attemptStats}>
+            <View style={[
+              styles.scoreBadge,
+              { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
             ]}>
-              {item.percentage}%
+              <Text style={[
+                styles.scoreText,
+                { color: item.passed ? '#10b981' : '#ef4444' }
+              ]}>
+                {item.percentage}%
+              </Text>
+            </View>
+            <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>
+              {item.score}/{item.totalPoints} pts • {formatTime(item.timeSpent)}
             </Text>
           </View>
-          <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>
-            {item.score}/{item.totalPoints} pts • {formatTime(item.timeSpent)}
-          </Text>
         </View>
+        
+        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+      </TouchableOpacity>
+
+      <View style={styles.attemptActions}>
+        <TouchableOpacity
+          style={[styles.retakeButton, { borderColor: colors.border, flex: 1 }]}
+          onPress={() => void handleRetake(item)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="refresh" size={16} color={colors.primary} />
+          <Text style={[styles.retakeButtonText, { color: colors.primary }]}>Retake</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.deleteHistoryButton, { borderColor: colors.border }]}
+          onPress={() => handleDeleteAttempt(item)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={16} color="#ef4444" />
+          <Text style={styles.deleteHistoryButtonText}>Delete</Text>
+        </TouchableOpacity>
       </View>
-      
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-    </TouchableOpacity>
-  ), [handleViewAttempt, colors]);
+    </View>
+  ), [handleViewAttempt, handleRetake, handleDeleteAttempt, colors]);
 
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
@@ -182,8 +315,8 @@ export default function TestScreen() {
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
         {activeTab === 'tests' 
-          ? 'Create a test from your flashcard decks to get started'
-          : 'Complete a test to see your results here'
+          ? 'Saved deck quizzes you can launch appear here. Group chat tests show up in History after you finish them.'
+          : 'Your completed tests and scores appear here. Tap a result to review answers or retake.'
         }
       </Text>
     </View>
@@ -193,7 +326,17 @@ export default function TestScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Tests</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Tests</Text>
+          {activeTab === 'history' && attempts.length > 0 ? (
+            <TouchableOpacity onPress={handleClearHistory} style={styles.clearHistoryButton}>
+              <Text style={[styles.clearHistoryText, { color: '#ef4444' }]}>Clear History</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+          Review scores in History · Launch saved quizzes under Available Tests
+        </Text>
       </View>
 
       {/* Tabs */}
@@ -219,6 +362,7 @@ export default function TestScreen() {
       {/* List */}
       {activeTab === 'tests' ? (
         <FlatList
+          key="tests-list"
           data={tests}
           keyExtractor={(item) => item.id}
           renderItem={renderTestItem}
@@ -236,6 +380,7 @@ export default function TestScreen() {
         />
       ) : (
         <FlatList
+          key="history-list"
           data={attempts}
           keyExtractor={(item) => item.id}
           renderItem={renderAttemptItem}
@@ -425,8 +570,10 @@ export default function TestScreen() {
                 <TouchableOpacity 
                   style={styles.advancedLink}
                   onPress={() => {
-                    setSelectedTest(null);
+                    if (!selectedTest) return;
+                    setConfigTest(selectedTest);
                     setShowConfigModal(true);
+                    setSelectedTest(null);
                   }}
                 >
                   <Ionicons name="settings-outline" size={16} color="#6366f1" />
@@ -439,18 +586,18 @@ export default function TestScreen() {
       </Modal>
 
       {/* Advanced Test Configuration Modal */}
-      {selectedTest && (
+      {configTest && (
         <TestConfigModal
           visible={showConfigModal}
           onClose={() => {
             setShowConfigModal(false);
-            setSelectedTest(null);
+            setConfigTest(null);
           }}
           onSubmit={handleConfigSubmit}
           mode={selectedMode}
-          maxQuestions={selectedTest?.questionCount || 10}
-          availableTags={['Biology', 'Chemistry', 'Physics']} // TODO: Get from actual test/deck
-          testName={selectedTest?.name || ''}
+          maxQuestions={configTest.questionCount || 10}
+          availableTags={configTags}
+          testName={configTest.name || ''}
         />
       )}
     </SafeAreaView>
@@ -466,10 +613,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  clearHistoryButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  clearHistoryText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#ffffff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+    lineHeight: 20,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -546,12 +712,14 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   attemptCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+  },
+  attemptMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   attemptIcon: {
     width: 48,
@@ -568,6 +736,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#ffffff',
+    marginBottom: 2,
+  },
+  attemptSource: {
+    fontSize: 13,
     marginBottom: 2,
   },
   attemptDate: {
@@ -592,6 +764,39 @@ const styles = StyleSheet.create({
   attemptMeta: {
     fontSize: 13,
     color: '#9ca3af',
+  },
+  attemptActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  retakeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  retakeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  deleteHistoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  deleteHistoryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ef4444',
   },
   emptyContainer: {
     alignItems: 'center',

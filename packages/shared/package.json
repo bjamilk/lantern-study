@@ -12,7 +12,12 @@
     "./storage": "./src/storage/index.ts",
     "./linking": "./src/linking/index.ts",
     "./api": "./src/api/index.ts",
-    "./sync": "./src/sync/index.ts"
+    "./sync": "./src/sync/index.ts",
+    "./design": "./src/design/index.ts",
+    "./legal": "./src/legal.ts",
+    "./settings": "./src/settings/index.ts",
+    "./settings/*": "./src/settings/*.ts",
+    "./utils/*": "./src/utils/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,7 +26,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",
-    "zustand": "^4.5.2"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

@@ -15,6 +15,7 @@ import {
   type AIGeneratedFlashcard,
   type AIStudyRecommendation,
 } from '../services/ai';
+import { normalizeFlashcardCount } from '@lantern/shared/utils';
 
 export function useAIHandlers() {
   const [isAILoading, setIsAILoading] = useState(false);
@@ -52,7 +53,10 @@ export function useAIHandlers() {
       setIsAILoading(true);
       setAiError(null);
       try {
-        const { flashcards } = await aiGenerateFlashcards(notes, options);
+        const { flashcards } = await aiGenerateFlashcards(notes, {
+          ...options,
+          count: normalizeFlashcardCount(options?.count),
+        });
         return flashcards;
       } catch (err: any) {
         setAiError(err.message || 'Failed to generate flashcards');

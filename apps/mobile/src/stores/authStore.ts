@@ -3,6 +3,7 @@
  * Manages user authentication state with Supabase
  */
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   supabase, 
   signInWithEmail, 
@@ -11,7 +12,11 @@ import {
   onAuthStateChange,
   getSession 
 } from '../services/supabase';
+import { ensureUserProfile } from '../services/ensureUserProfile';
+import { fetchUserProfile } from '../services/api';
+import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/socialAuth';
 import type { User, Session } from '@supabase/supabase-js';
+import { isEmailNotConfirmedError } from '@lantern/shared';
 
 // Demo mode flag - set to true for offline testing without backend
 const DEMO_MODE = false;
@@ -37,8 +42,10 @@ const DEMO_SESSION: Session = {
 interface AuthState {
   user: User | null;
   session: Session | null;
+  profileName: string | null;
   isLoading: boolean;
   isInitialized: boolean;
+  isPasswordRecovery: boolean;
   error: string | null;
   isDemoMode: boolean;
   
@@ -46,18 +53,36 @@ interface AuthState {
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name?: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   signInAsDemo: () => void;
   clearError: () => void;
+  setPasswordRecovery: (active: boolean) => void;
+  refreshProfileName: (userId: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
+  profileName: null,
   isLoading: false,
   isInitialized: false,
+  isPasswordRecovery: false,
   error: null,
   isDemoMode: DEMO_MODE,
+
+  refreshProfileName: async (userId: string) => {
+    try {
+      const profile = await fetchUserProfile(userId);
+      const name = profile.name?.trim();
+      if (name) {
+        set({ profileName: name });
+      }
+    } catch (error) {
+      console.warn('[Auth] Failed to refresh profile name:', error);
+    }
+  },
   
   initialize: async () => {
     try {
@@ -68,19 +93,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ 
           user: DEMO_USER,
           session: DEMO_SESSION,
+          profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
           isInitialized: true,
           isLoading: false,
         });
         return;
       }
       
-      // Get current session
-      const session = await getSession();
+      // Refresh session if present, otherwise load current session
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      const session = refreshData.session ?? (await getSession());
       
       if (session) {
+        let profileName: string | null = null;
+        try {
+          profileName = await ensureUserProfile(session.user);
+        } catch (profileError) {
+          console.warn('[Auth] Failed to ensure user profile:', profileError);
+        }
+
         set({ 
           user: session.user,
           session,
+          profileName,
           isInitialized: true,
           isLoading: false,
         });
@@ -88,6 +123,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ 
           user: null,
           session: null,
+          profileName: null,
           isInitialized: true,
           isLoading: false,
         });
@@ -96,11 +132,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Set up auth state listener
       onAuthStateChange((event, session) => {
         console.log('Auth state changed:', event);
+
+        if (event === 'PASSWORD_RECOVERY' && session) {
+          set({ user: session.user, session, isPasswordRecovery: true });
+          return;
+        }
+
+        if (event === 'SIGNED_OUT') {
+          set({ user: null, session: null, profileName: null, isPasswordRecovery: false });
+          return;
+        }
         
         if (session) {
+          if (get().isPasswordRecovery) {
+            set({ user: session.user, session });
+            return;
+          }
           set({ user: session.user, session });
+          void get().refreshProfileName(session.user.id);
         } else {
-          set({ user: null, session: null });
+          set({ user: null, session: null, profileName: null, isPasswordRecovery: false });
         }
       });
     } catch (error: any) {
@@ -111,6 +162,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ 
           user: DEMO_USER,
           session: DEMO_SESSION,
+          profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
           isInitialized: true,
           isLoading: false,
         });
@@ -139,28 +191,78 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ 
           user: demoUser,
           session: { ...DEMO_SESSION, user: demoUser },
+          profileName: demoUser.user_metadata?.name ?? null,
           isLoading: false,
         });
         return;
       }
       
       const { user, session } = await signInWithEmail(email, password);
+
+      let profileName: string | null = null;
+      if (user) {
+        profileName = await ensureUserProfile(user);
+      }
       
       set({ 
         user,
         session,
+        profileName,
         isLoading: false,
       });
     } catch (error: any) {
       console.error('Sign in failed:', error);
+      const message = error.message || 'Failed to sign in';
       set({ 
-        error: error.message || 'Failed to sign in',
+        error: message,
         isLoading: false,
       });
-      throw error;
+      if (isEmailNotConfirmedError(error)) {
+        throw error;
+      }
     }
   },
   
+  setPasswordRecovery: (active) => set({ isPasswordRecovery: active }),
+  
+  signInWithGoogle: async () => {
+    try {
+      set({ isLoading: true, error: null });
+      const { user, session } = await signInWithGoogleOAuth();
+      const profileName = await ensureUserProfile(user);
+      set({ user, session, profileName, isLoading: false });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to sign in with Google';
+      if (!message.includes('cancelled')) {
+        console.error('Google sign in failed:', error);
+      }
+      set({ error: message.includes('cancelled') ? null : message, isLoading: false });
+      if (!message.includes('cancelled')) throw error;
+    }
+  },
+
+  signInWithApple: async () => {
+    try {
+      set({ isLoading: true, error: null });
+      const { user, session } = await signInWithAppleNative();
+      const profileName = await ensureUserProfile(user);
+      set({ user, session, profileName, isLoading: false });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to sign in with Apple';
+      if (!message.includes('cancelled') && !message.includes('ERR_REQUEST_CANCELED')) {
+        console.error('Apple sign in failed:', error);
+      }
+      const cancelled =
+        message.includes('cancelled') ||
+        message.includes('ERR_REQUEST_CANCELED') ||
+        (error as { code?: string })?.code === 'ERR_REQUEST_CANCELED';
+      set({ error: cancelled ? null : message, isLoading: false });
+      if (!cancelled) throw error;
+    }
+  },
+
   signUp: async (email: string, password: string, name?: string) => {
     try {
       set({ isLoading: true, error: null });
@@ -175,17 +277,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ 
           user: demoUser,
           session: { ...DEMO_SESSION, user: demoUser },
+          profileName: demoUser.user_metadata?.name ?? null,
           isLoading: false,
         });
         return;
       }
       
       const { user, session } = await signUpWithEmail(email, password, name);
+
+      let profileName: string | null = null;
+      if (user) {
+        profileName = await ensureUserProfile(user);
+      }
       
       // Note: Depending on Supabase settings, user might need to verify email
       set({ 
         user,
         session,
+        profileName,
         isLoading: false,
       });
     } catch (error: any) {
@@ -199,33 +308,45 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   
   signOut: async () => {
+    set({ isLoading: true, error: null });
+
     try {
-      set({ isLoading: true, error: null });
-      
-      // Demo mode - just clear state
-      if (DEMO_MODE) {
-        set({ 
-          user: null,
-          session: null,
+      const { useMarketplaceStore, LEGACY_MARKETPLACE_STORAGE_KEYS } = await import('./marketplaceStore');
+      await useMarketplaceStore.getState().reset();
+
+      if (!DEMO_MODE) {
+        await supabaseSignOut();
+      }
+
+      await AsyncStorage.multiRemove([
+        '@lantern_offline_data',
+        '@lantern_pending_results',
+        'lantern_groups',
+        'lantern_decks',
+        'lantern_flashcards',
+        'lantern_stats',
+        ...LEGACY_MARKETPLACE_STORAGE_KEYS,
+      ]).catch(() => {});
+    } catch (error: any) {
+      const sessionAlreadyGone =
+        error?.name === 'AuthSessionMissingError' ||
+        String(error?.message ?? '').includes('Auth session missing');
+
+      if (!sessionAlreadyGone) {
+        console.error('Sign out failed:', error);
+        set({
+          error: error.message || 'Failed to sign out',
           isLoading: false,
         });
-        return;
+        throw error;
       }
-      
-      await supabaseSignOut();
-      
-      set({ 
+    } finally {
+      set({
         user: null,
         session: null,
+        profileName: null,
         isLoading: false,
       });
-    } catch (error: any) {
-      console.error('Sign out failed:', error);
-      set({ 
-        error: error.message || 'Failed to sign out',
-        isLoading: false,
-      });
-      throw error;
     }
   },
   
@@ -233,6 +354,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ 
       user: DEMO_USER,
       session: DEMO_SESSION,
+      profileName: DEMO_USER.user_metadata?.name ?? 'Demo User',
       isLoading: false,
       isInitialized: true,
     });

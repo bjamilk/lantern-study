@@ -15,6 +15,7 @@ interface TestConfigModalProps {
   onSavePreset: (name: string, config: Omit<TestConfig, 'questionIds' | 'groupId'>) => void;
   onDeletePreset: (presetId: string) => void;
   onSubmit: (config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => void;
+  onSoloPractice?: (config: Omit<TestConfig, 'questionIds' | 'groupId'>) => void;
   onDownloadForOffline: (config: Omit<TestConfig, 'questionIds' | 'groupId'>, useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => void;
   isDownloading?: boolean;
 }
@@ -41,6 +42,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     onSavePreset,
     onDeletePreset,
     onSubmit,
+    onSoloPractice,
     onDownloadForOffline,
     isDownloading 
 }) => {
@@ -247,20 +249,21 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     return false;
   };
 
+  const getCurrentConfig = (): Omit<TestConfig, 'questionIds' | 'groupId'> => ({
+    numberOfQuestions,
+    allowedQuestionTypes: useSpacedRepetition || focusOnNew ? [] : selectedQuestionTypes,
+    selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTagsInModal,
+    focusOnNew: focusOnNew,
+    timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitDisabled()) {
         alert(`Please ensure you have selected question types, set a timer (for tests), there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`);
         return;
     }
-    const config: Omit<TestConfig, 'questionIds' | 'groupId'> = {
-      numberOfQuestions,
-      allowedQuestionTypes: useSpacedRepetition || focusOnNew ? [] : selectedQuestionTypes,
-      selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTagsInModal,
-      focusOnNew: focusOnNew,
-      timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
-    };
-    onSubmit(config, mode, useSpacedRepetition, selectedSubgroupIDs);
+    onSubmit(getCurrentConfig(), mode, useSpacedRepetition, selectedSubgroupIDs);
   };
 
   const handleDownload = () => {
@@ -724,15 +727,25 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 Download for Offline
               </button>
           )}
-          <div className="flex-grow flex justify-end">
+          <div className="flex-grow flex justify-end gap-2">
+            {mode === 'game' && onSoloPractice && (
+              <button
+                type="button"
+                onClick={() => onSoloPractice(getCurrentConfig())}
+                className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-md disabled:opacity-50"
+                disabled={isSubmitDisabled()}
+              >
+                Solo Practice
+              </button>
+            )}
             <button
                 type="submit"
                 onClick={handleSubmit}
-                className={`px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center shadow-lg ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'}`}
+                className={`px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center shadow-lg ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                 disabled={isSubmitDisabled()}
             >
                 {mode === 'test' && <span className="text-lg mr-2">📝</span>}
-                {mode === 'test' ? 'Start Test' : (mode === 'study' ? 'Start Study Session' : 'Start Duel')}
+                {mode === 'test' ? 'Start Test' : (mode === 'study' ? 'Start Study Session' : (challengeOpponent ? 'Send Challenge' : 'Send Challenge'))}
             </button>
           </div>
         </div>

@@ -7,7 +7,11 @@ export class ApiKeyService {
   private saltRounds: number;
 
   constructor() {
-    this.jwtSecret = process.env.JWT_SECRET || 'default-secret-change-in-production';
+    const secret = process.env.JWT_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET must be set in production');
+    }
+    this.jwtSecret = secret || 'dev-only-secret-not-for-production';
     this.saltRounds = parseInt(process.env.API_KEY_SALT_ROUNDS || '12');
   }
 

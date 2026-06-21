@@ -28,17 +28,25 @@ const formatRelativeTime = (date: Date): string => {
     return "Just now";
 };
 
-const parseNotificationLink = (link?: string) => {
+const parseNotificationLink = (link?: string, n?: AppNotification) => {
+  if (link?.startsWith('challenge:')) {
+    return { type: 'challenge', id: link.replace('challenge:', '') };
+  }
+  if (n?.type?.startsWith('challenge')) {
+    const challengeId = (n.data?.challengeId as string) || link?.replace('challenge:', '');
+    if (challengeId) return { type: 'challenge', id: challengeId };
+  }
   if (!link) return null;
   const parts = link.split(':');
   if (parts[0] !== 'marketplace' || parts.length < 3) return null;
-  return { type: parts[1], id: parts[2] }; // e.g. { type: 'offer', id: '...' }
+  return { type: parts[1], id: parts[2] };
 };
 
-const getNotificationMeta = (link?: string) => {
-  const parsed = parseNotificationLink(link);
+const getNotificationMeta = (link?: string, n?: AppNotification) => {
+  const parsed = parseNotificationLink(link, n);
   if (!parsed) return { icon: BellIcon, color: 'text-blue-500 bg-blue-50 dark:bg-blue-900/30', label: null };
   switch (parsed.type) {
+    case 'challenge': return { icon: BellIcon, color: 'text-red-600 bg-red-50 dark:bg-red-900/30', label: 'Duel' };
     case 'offer': return { icon: CurrencyDollarIcon, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30', label: 'Offer' };
     case 'inquiry': return { icon: ChatBubbleLeftEllipsisIcon, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30', label: 'Inquiry' };
     case 'listing': return { icon: ShoppingBagIcon, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30', label: 'Listing' };
@@ -59,8 +67,8 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ isOpen, onClose, 
       onMarkAsRead(n.id);
     }
     // Navigate if there's a link
-    if (onNavigate && n.link) {
-      const parsed = parseNotificationLink(n.link);
+    if (onNavigate && (n.link || n.type?.startsWith('challenge'))) {
+      const parsed = parseNotificationLink(n.link, n);
       if (parsed) {
         if (parsed.type === 'offer') {
           onNavigate('MarketplaceInquiries');
@@ -68,6 +76,9 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ isOpen, onClose, 
           onNavigate('MarketplaceInquiries');
         } else if (parsed.type === 'listing') {
           onNavigate('MarketplaceListingDetail', { listingId: parsed.id });
+        } else if (parsed.type === 'challenge') {
+          onNavigate('Challenges');
+          onNavigate('PlayChallenge', { challengeId: parsed.id });
         }
         onClose();
       }
@@ -101,7 +112,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ isOpen, onClose, 
           {sortedNotifications.length > 0 ? (
             <ul className="divide-y divide-gray-100 dark:divide-gray-700">
                 {sortedNotifications.map(n => {
-                    const meta = getNotificationMeta(n.link);
+                    const meta = getNotificationMeta(n.link, n);
                     return (
                     <li key={n.id}
                         className={`p-4 transition-colors ${n.read ? 'bg-white dark:bg-gray-800' : 'bg-blue-50 dark:bg-blue-900/30'} cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50`}

@@ -2,7 +2,12 @@ import React, { useRef, useState, useMemo } from 'react';
 import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem } from '../types';
 import GroupListItem from './GroupListItem';
 import AIUsageBadge from './AIUsageBadge';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon } from '@heroicons/react/24/outline';
+import { Avatar, ConnectionBadge, LanternIcon } from './ui';
+import { compressImage } from '../utils/imageCompression';
+import { resolveAvatarSrc } from '../utils/avatar';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
+import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 
 interface SidebarProps {
   currentUser: User;
@@ -14,8 +19,10 @@ interface SidebarProps {
   onNavigateToDashboard: () => void;
   onNavigateToOfflineMode: () => void;
   onNavigateToFlashcards: () => void;
+  onNavigateToNotes?: () => void;
   onNavigateToBudgetTracker: () => void;
   onNavigateToMarketplace: () => void;
+  onNavigateToAdmin?: () => void;
   pendingSyncCount: number;
   isOnline: boolean;
   onSyncPendingResults: () => void;
@@ -35,6 +42,8 @@ interface SidebarProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   dueCardsCount: number;
+  onToggleCompanion: () => void;
+  isCompanionOpen?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -47,8 +56,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNavigateToDashboard,
   onNavigateToOfflineMode,
   onNavigateToFlashcards,
+  onNavigateToNotes,
   onNavigateToBudgetTracker,
   onNavigateToMarketplace,
+  onNavigateToAdmin,
   pendingSyncCount,
   isOnline,
   onSyncPendingResults,
@@ -68,10 +79,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   theme,
   onToggleTheme,
   dueCardsCount,
+  onToggleCompanion,
+  isCompanionOpen,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
+  const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
+  const isPlatformAdmin = usePlatformAdmin();
   
   const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE].includes(currentAppMode);
   
@@ -177,7 +192,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           alert("Image is too large. Please select an image under 2MB.");
           return;
         }
-        const base64 = await convertFileToBase64(file);
+        const base64 = await compressImage(file, {
+          maxWidth: 150,
+          maxHeight: 150,
+          quality: 0.7,
+          outputType: 'base64',
+        }) as string;
         onUpdateCurrentUserAvatar(base64);
       } catch (error) {
         console.error("Error converting file to base64:", error);
@@ -219,12 +239,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
 
   return (
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-700 transition-all duration-300 ease-in-out ${isExpanded ? 'w-64' : 'w-20'}`} data-expanded={isExpanded}>
-      <div className="flex items-center justify-between h-16 p-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${isExpanded ? 'w-72' : 'w-20'}`} data-expanded={isExpanded}>
+      <div className="flex items-center justify-between h-16 p-4 border-b border-lantern-border flex-shrink-0">
         {showText && (
-          <div className="flex items-center">
-              <LightBulbIcon className="w-7 h-7 mr-2 text-yellow-300"/>
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Lantern Study</h1>
+          <div className="flex items-center gap-2">
+              <LanternIcon size={28} />
+              <h1 className="text-xl font-semibold text-lantern-text">Lantern Study</h1>
           </div>
         )}
         <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
@@ -259,6 +279,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="px-2 space-y-1">
           <NavButton navFunc={onNavigateToDashboard} icon={Squares2X2Icon} label="Dashboard" appMode={AppMode.DASHBOARD} />
           <NavButton navFunc={onNavigateToFlashcards} icon={BookOpenIcon} label="Flashcards" appMode={AppMode.FLASHCARDS} badgeCount={dueCardsCount} />
+          {onNavigateToNotes && (
+            <NavButton navFunc={onNavigateToNotes} icon={DocumentTextIcon} label="Notes" appMode={AppMode.NOTES} />
+          )}
         </div>
 
         <SectionHeader title="Social" />
@@ -271,6 +294,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="px-2 space-y-1">
           <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget Tracker" appMode={AppMode.BUDGET_TRACKER} />
           <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} />
+          {isPlatformAdmin && onNavigateToAdmin && (
+            <NavButton navFunc={onNavigateToAdmin} icon={UsersIcon} label="Admin" appMode={AppMode.ADMIN} />
+          )}
         </div>
 
         {isExpanded ? (
@@ -367,11 +393,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                         className="relative group w-14 h-14 flex items-center justify-center"
                         title={group.name}
                         >
-                        <img
-                            src={group.avatarUrl || `https://ui-avatars.com/api/?name=${group.name.replace(/\s/g, '+')}&background=random&color=fff&size=50`}
-                            alt={group.name}
-                            className={`w-12 h-12 rounded-full object-cover transition-all duration-200 group-hover:rounded-2xl ${selectedChatId === group.id ? 'ring-4 ring-indigo-500 rounded-2xl' : ''}`}
-                            onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
+                        <Avatar
+                          name={group.name}
+                          src={resolveAvatarSrc(group.avatarUrl, lowDataMode)}
+                          size="lg"
+                          localOnly={lowDataMode}
+                          className={selectedChatId === group.id ? 'ring-4 ring-lantern-primary rounded-2xl' : ''}
                         />
                         {(group.unreadCount ?? 0) > 0 && (
                             <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-100 dark:border-slate-900">
@@ -388,20 +415,32 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      <div className="mt-auto p-2 border-t border-slate-200 dark:border-slate-700">
+      <div className="mt-auto p-2 border-t border-lantern-border">
+        {showText && (
+          <div className="px-2 pb-2">
+            <ConnectionBadge
+              isOnline={isOnline}
+              lowDataMode={lowDataMode}
+              pendingSyncCount={pendingSyncCount}
+              compact
+              className="w-full justify-center"
+            />
+          </div>
+        )}
         {/* AI Usage Badge */}
         {showText ? (
           <AIUsageBadge className="mb-2 mx-1" />
         ) : (
           <AIUsageBadge compact className="mb-2 mx-1 px-1" />
         )}
-        <div className={`flex items-center ${showText ? 'p-2' : 'p-0 flex-col'}`}>
-            <div className={`relative group ${showText ? 'mr-3' : 'mb-2'}`} title={showText ? "Change profile picture" : currentUser.name}>
-                <img 
-                src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${currentUser.name.replace(/\s/g, '+')}&background=random&color=fff&size=40`}
-                alt={currentUser.name} 
-                className="w-10 h-10 rounded-full object-cover border-2 border-transparent group-hover:border-indigo-400 transition-colors"
-                onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
+        {/* Profile row */}
+        <div className={`flex items-center ${showText ? 'p-2 pb-1' : 'p-0 flex-col'}`}>
+            <div className={`relative group ${showText ? 'mr-3 flex-shrink-0' : 'mb-2'}`} title={showText ? "Change profile picture" : currentUser.name}>
+                <Avatar
+                  name={currentUser.name}
+                  src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
+                  size="md"
+                  localOnly={lowDataMode}
                 />
                 <div 
                   className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity rounded-full cursor-pointer"
@@ -420,13 +459,37 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
               </div>
             )}
-            <div className={`flex ${showText ? 'space-x-1' : 'flex-col space-y-1 mt-1'}`}>
+        </div>
+        {/* Action buttons row */}
+        <div className={`${showText ? 'flex flex-wrap gap-0.5 px-2 pb-1' : 'grid grid-cols-2 gap-0.5 mt-1'}`}>
               <button
                   onClick={onToggleTheme}
                   className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   title="Toggle Theme"
               >
                   {theme === 'light' ? <MoonIcon className="w-6 h-6" /> : <SunIcon className="w-6 h-6" />}
+              </button>
+              <button
+                  onClick={toggleLowDataMode}
+                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                    lowDataMode
+                      ? 'text-amber-500 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-300'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title={lowDataMode ? 'Low-Data Mode: ON — click to disable' : 'Low-Data Mode: OFF — click to enable'}
+              >
+                  {lowDataMode ? <SignalSlashIcon className="w-6 h-6" /> : <SignalIcon className="w-6 h-6" />}
+              </button>
+              <button
+                  onClick={onToggleCompanion}
+                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                    isCompanionOpen
+                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                  }`}
+                  title="Lantern AI Companion"
+              >
+                  <SparklesIcon className="w-6 h-6" />
               </button>
               <button
                   onClick={onOpenSettingsModal}
@@ -443,7 +506,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <ArrowLeftOnRectangleIcon className="w-6 h-6" />
               </button>
             </div>
-        </div>
       </div>
     </div>
   );

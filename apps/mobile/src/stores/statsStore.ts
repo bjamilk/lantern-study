@@ -3,165 +3,230 @@
 // ===========================================
 
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
+import {
+  checkAndAwardBadges,
+  initialUserStats,
+  getBadgeProgress,
+  BADGE_DEFINITIONS,
+} from '@lantern/shared/utils';
+import type { User, UserStats as SharedUserStats, Badge as SharedBadge, BadgeId } from '@lantern/shared';
+import {
+  fetchTestResultsCached,
+  loadCachedDashboardStats,
+  saveCachedDashboardStats,
+} from '../services/dashboardCache';
+import { normalizeDashboardStats } from '../utils/testAnalysisHelpers';
+import { useGroupStore } from './groupStore';
+import { useFlashcardStore } from './flashcardStore';
+
+import { recordLoginStreak as recordServerLoginStreak } from '../services/gamification';
+import { fetchStudyActivity } from '../services/gamification';
+import {
+  calculateUserLevel,
+  type Badge,
+  type DashboardStats,
+  type RecentTest,
+  type TestAnalysisQuestionTime,
+  type TimePeriod,
+  type UserLevel,
+} from '../types/dashboardStats';
+
+export type {
+  Badge,
+  DashboardStats,
+  GroupPerformance,
+  RecentTest,
+  TestAnalysis,
+  TestAnalysisQuestionTime,
+  TimePeriod,
+  TopicPerformance,
+  TroublesomeQuestion,
+  UserLevel,
+} from '../types/dashboardStats';
+export { calculateUserLevel, LEVEL_THRESHOLDS } from '../types/dashboardStats';
+
+type BuildDashboardStatsModule = typeof import('../utils/buildDashboardStats');
+let buildDashboardStatsModule: BuildDashboardStatsModule | null = null;
+
+async function getBuildDashboardStatsModule(): Promise<BuildDashboardStatsModule> {
+  if (!buildDashboardStatsModule) {
+    buildDashboardStatsModule = await import('../utils/buildDashboardStats');
+  }
+  return buildDashboardStatsModule;
+}
 
 const DEMO_MODE = false;
 
-export type TimePeriod = '7days' | '30days' | '90days' | 'all';
-
-// User Level System - based on total XP points
-export interface UserLevel {
-  level: number;
-  name: string;
-  currentXP: number;
-  xpForCurrentLevel: number;
-  xpForNextLevel: number;
-  progressToNextLevel: number; // 0-100
-}
-
-// Level thresholds
-export const LEVEL_THRESHOLDS = [
-  { level: 1, name: 'Novice', xpRequired: 0 },
-  { level: 2, name: 'Apprentice', xpRequired: 100 },
-  { level: 3, name: 'Student', xpRequired: 300 },
-  { level: 4, name: 'Scholar', xpRequired: 600 },
-  { level: 5, name: 'Adept', xpRequired: 1000 },
-  { level: 6, name: 'Expert', xpRequired: 1500 },
-  { level: 7, name: 'Master', xpRequired: 2200 },
-  { level: 8, name: 'Grandmaster', xpRequired: 3000 },
-  { level: 9, name: 'Legend', xpRequired: 4000 },
-  { level: 10, name: 'Champion', xpRequired: 5500 },
-  { level: 11, name: 'Elite', xpRequired: 7500 },
-  { level: 12, name: 'Sage', xpRequired: 10000 },
-];
-
-export const calculateUserLevel = (totalXP: number): UserLevel => {
-  let currentLevel = LEVEL_THRESHOLDS[0];
-  let nextLevel = LEVEL_THRESHOLDS[1];
-
-  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
-    if (totalXP >= LEVEL_THRESHOLDS[i].xpRequired) {
-      currentLevel = LEVEL_THRESHOLDS[i];
-      nextLevel = LEVEL_THRESHOLDS[i + 1] || currentLevel;
-    } else {
-      break;
-    }
+async function recordLoginStreak(_userId: string): Promise<{ current: number; longest: number }> {
+  try {
+    const result = await recordServerLoginStreak();
+    return {
+      current: result?.currentStreak ?? result?.current_streak ?? 0,
+      longest: result?.longestStreak ?? result?.longest_streak ?? 0,
+    };
+  } catch {
+    return { current: 0, longest: 0 };
   }
+}
 
-  const xpInCurrentLevel = totalXP - currentLevel.xpRequired;
-  const xpNeededForNextLevel = nextLevel.xpRequired - currentLevel.xpRequired;
-  const progressToNextLevel = xpNeededForNextLevel > 0 
-    ? Math.min(100, (xpInCurrentLevel / xpNeededForNextLevel) * 100)
-    : 100;
+function mapSharedBadgesToDashboard(
+  userBadges: SharedBadge[],
+  stats: SharedUserStats
+): Badge[] {
+  return (Object.keys(BADGE_DEFINITIONS) as BadgeId[]).map((badgeId) => {
+    const def = BADGE_DEFINITIONS[badgeId];
+    const metric = def.metric === 'question_upvotes' ? 0 : stats[def.metric as keyof SharedUserStats] || 0;
+    const earned = userBadges.find((b) => b.id === badgeId);
+    const progressInfo = getBadgeProgress(badgeId, metric);
 
-  return {
-    level: currentLevel.level,
-    name: currentLevel.name,
-    currentXP: totalXP,
-    xpForCurrentLevel: currentLevel.xpRequired,
-    xpForNextLevel: nextLevel.xpRequired,
-    progressToNextLevel,
+    return {
+      id: badgeId,
+      name: earned?.name || def.baseName,
+      description: earned?.description || def.baseDescription(def.levels[0]?.threshold ?? 0),
+      icon: mapBadgeIcon(def.icon),
+      level: earned?.level || 0,
+      maxLevel: def.levels.length,
+      progress: progressInfo?.progress ?? 0,
+      currentValue: progressInfo?.current ?? metric,
+      targetValue: progressInfo?.target ?? def.levels[0]?.threshold ?? 0,
+      unlockedAt: earned?.dateAwarded,
+    };
+  });
+}
+
+function mapBadgeIcon(emoji: string): string {
+  const iconMap: Record<string, string> = {
+    '🚀': 'rocket',
+    '❓': 'help-circle',
+    '🌟': 'star',
+    '📝': 'document-text',
+    '🎯': 'trophy',
+    '🏆': 'medal',
+    '⚔️': 'game-controller',
+    '💰': 'cash',
+    '⭐': 'star-half',
+    '🤝': 'hand-left',
   };
-};
-
-export interface Badge {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  level: number;
-  maxLevel: number;
-  progress: number; // 0-100
-  currentValue: number; // Current stat value
-  targetValue: number; // Target for next level
-  unlockedAt?: string;
+  return iconMap[emoji] || 'ribbon';
 }
 
-export interface TopicPerformance {
-  tag: string;
-  totalQuestions: number;
-  correctAnswers: number;
-  accuracy: number;
-  averageTime: number; // seconds
-}
-
-export interface GroupPerformance {
-  groupId: string;
-  groupName: string;
-  testsCount: number;
-  averageScore: number;
-  accuracy: number;
-  averageTimePerQuestion: number;
-  chartData: { date: string; score: number }[];
-}
-
-export interface RecentTest {
-  id: string;
-  groupName: string;
-  score: number;
-  totalQuestions: number;
-  percentage: number;
-  completedAt: string;
-  timeSpent: number;
-  // Analysis data
-  analysis: TestAnalysis;
-}
-
-export interface TestAnalysis {
-  correctCount: number;
-  incorrectCount: number;
-  unattemptedCount: number;
-  timePerQuestion: { questionNumber: number; time: number }[];
-  timePerTag: { tag: string; avgTime: number; count: number }[];
-  tagPerformance: { tag: string; correct: number; total: number; accuracy: number }[];
-}
-
-export interface TroublesomeQuestion {
-  id: string;
-  stem: string;
-  incorrectAttempts: number;
-  totalAttempts: number;
-  groupName: string;
-}
-
-export interface DashboardStats {
-  // Overview
-  totalPoints: number;
-  userLevel: UserLevel;
-  currentStreak: number;
-  longestStreak: number;
-  
-  // Activity
-  totalTestsTaken: number;
-  averageTimePerQuestion: number;
-  totalStudyTime: number; // minutes
-  cardsReviewed: number;
-  
-  // Performance
-  overallAccuracy: number;
-  topicPerformance: TopicPerformance[];
-  groupPerformance: GroupPerformance[];
-  
-  // Badges
+async function loadUserGamificationSnapshot(userId: string): Promise<{
   badges: Badge[];
-  
-  // Recent Activity
-  recentTests: RecentTest[];
-  troublesomeQuestions: TroublesomeQuestion[];
-  
-  // Weekly Activity Heatmap
-  weeklyActivity: { day: string; count: number }[];
+  totalPoints: number;
+}> {
+  const profile = await api.fetchUserProfile(userId);
+  const stats = { ...initialUserStats, ...(profile.stats as Partial<SharedUserStats>) };
+  return {
+    badges: mapSharedBadgesToDashboard((profile.badges as SharedBadge[]) || [], stats),
+    totalPoints: profile.points ?? 0,
+  };
+}
+
+function syncBadgesInBackground(userId: string): void {
+  void (async () => {
+    try {
+      const profile = await api.fetchUserProfile(userId);
+      const user: User = {
+        id: profile.id,
+        name: profile.name,
+        points: profile.points ?? 0,
+        badges: (profile.badges as SharedBadge[]) || [],
+        stats: { ...initialUserStats, ...(profile.stats as Partial<SharedUserStats>) },
+      };
+
+      const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
+      if (awardedBadges.length === 0) return;
+
+      await api.updateUserProfile(userId, {
+        badges: updatedUser.badges,
+        points: updatedUser.points,
+        stats: updatedUser.stats,
+      });
+
+      const current = useStatsStore.getState().stats;
+      if (!current) return;
+
+      useStatsStore.setState({
+        stats: {
+          ...current,
+          badges: mapSharedBadgesToDashboard(updatedUser.badges, updatedUser.stats),
+          totalPoints: updatedUser.points,
+          userLevel: calculateUserLevel(updatedUser.points),
+        },
+      });
+    } catch (error) {
+      console.warn('[StatsStore] Background badge sync failed:', error);
+    }
+  })();
+}
+
+interface StatsFetchContext {
+  groups?: Array<{ id: string; name: string }>;
+  flashcards?: Record<string, any[]>;
+  force?: boolean;
 }
 
 interface StatsState {
   stats: DashboardStats | null;
   selectedPeriod: TimePeriod;
   isLoading: boolean;
+  isRefreshing: boolean;
   error: string | null;
   
   // Actions
-  fetchStats: (userId: string, period: TimePeriod) => Promise<void>;
+  hydrateFromCache: (userId: string) => Promise<boolean>;
+  fetchStats: (userId: string, period: TimePeriod, context?: StatsFetchContext) => Promise<void>;
   setSelectedPeriod: (period: TimePeriod) => void;
+}
+
+let inflightStatsKey: string | null = null;
+let inflightStatsPromise: Promise<void> | null = null;
+
+function resolveStatsContext(context?: StatsFetchContext) {
+  const groups =
+    context?.groups ??
+    useGroupStore
+      .getState()
+      .groups.filter(group => !group.isArchived)
+      .map(group => ({ id: group.id, name: group.name }));
+
+  const flashcards = context?.flashcards ?? useFlashcardStore.getState().flashcards;
+  return { groups, flashcards };
+}
+
+function mockQuestionTimes(
+  entries: Array<{ time: number; status?: TestAnalysisQuestionTime['status']; stem?: string }>
+): TestAnalysisQuestionTime[] {
+  return entries.map((entry, index) => ({
+    questionNumber: index + 1,
+    time: entry.time,
+    status: entry.status ?? 'correct',
+    stem: entry.stem ?? `Sample question ${index + 1}`,
+  }));
+}
+
+function mockRandomQuestionTimes(
+  count: number,
+  correct: number,
+  incorrect: number,
+  unattempted: number
+): TestAnalysisQuestionTime[] {
+  const statuses: TestAnalysisQuestionTime['status'][] = [
+    ...Array(correct).fill('correct'),
+    ...Array(incorrect).fill('incorrect'),
+    ...Array(unattempted).fill('unattempted'),
+  ];
+  return Array.from({ length: count }, (_, i) => {
+    const status = statuses[i] ?? 'correct';
+    return {
+      questionNumber: i + 1,
+      time: status === 'unattempted' ? 0 : 20 + ((i * 7) % 25),
+      status,
+      stem: `Sample question ${i + 1}`,
+    };
+  });
 }
 
 // Mock data generator based on period
@@ -268,15 +333,12 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
           correctCount: 18,
           incorrectCount: 2,
           unattemptedCount: 0,
-          timePerQuestion: [
-            { questionNumber: 1, time: 25 }, { questionNumber: 2, time: 30 }, { questionNumber: 3, time: 28 },
-            { questionNumber: 4, time: 22 }, { questionNumber: 5, time: 35 }, { questionNumber: 6, time: 18 },
-            { questionNumber: 7, time: 42 }, { questionNumber: 8, time: 20 }, { questionNumber: 9, time: 33 },
-            { questionNumber: 10, time: 27 }, { questionNumber: 11, time: 31 }, { questionNumber: 12, time: 24 },
-            { questionNumber: 13, time: 29 }, { questionNumber: 14, time: 26 }, { questionNumber: 15, time: 38 },
-            { questionNumber: 16, time: 21 }, { questionNumber: 17, time: 34 }, { questionNumber: 18, time: 23 },
-            { questionNumber: 19, time: 28 }, { questionNumber: 20, time: 26 },
-          ],
+          timePerQuestion: mockQuestionTimes([
+            { time: 25 }, { time: 30 }, { time: 28 }, { time: 22 }, { time: 35 }, { time: 18 },
+            { time: 42 }, { time: 20 }, { time: 33 }, { time: 27 }, { time: 31 }, { time: 24 },
+            { time: 29 }, { time: 26 }, { time: 38 }, { time: 21 }, { time: 34 }, { time: 23 },
+            { time: 28, status: 'incorrect' }, { time: 26, status: 'incorrect' },
+          ]),
           timePerTag: [
             { tag: 'Cell Biology', avgTime: 28, count: 6 },
             { tag: 'Genetics', avgTime: 32, count: 5 },
@@ -303,14 +365,12 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
           correctCount: 14,
           incorrectCount: 3,
           unattemptedCount: 1,
-          timePerQuestion: [
-            { questionNumber: 1, time: 32 }, { questionNumber: 2, time: 28 }, { questionNumber: 3, time: 45 },
-            { questionNumber: 4, time: 25 }, { questionNumber: 5, time: 38 }, { questionNumber: 6, time: 22 },
-            { questionNumber: 7, time: 35 }, { questionNumber: 8, time: 30 }, { questionNumber: 9, time: 27 },
-            { questionNumber: 10, time: 42 }, { questionNumber: 11, time: 20 }, { questionNumber: 12, time: 33 },
-            { questionNumber: 13, time: 28 }, { questionNumber: 14, time: 0 }, { questionNumber: 15, time: 31 },
-            { questionNumber: 16, time: 24 }, { questionNumber: 17, time: 36 }, { questionNumber: 18, time: 29 },
-          ],
+          timePerQuestion: mockQuestionTimes([
+            { time: 32 }, { time: 28 }, { time: 45 }, { time: 25 }, { time: 38 }, { time: 22 },
+            { time: 35 }, { time: 30 }, { time: 27 }, { time: 42 }, { time: 20 }, { time: 33 },
+            { time: 28 }, { time: 0, status: 'unattempted' }, { time: 31 },
+            { time: 24, status: 'incorrect' }, { time: 36, status: 'incorrect' }, { time: 29, status: 'incorrect' },
+          ]),
           timePerTag: [
             { tag: 'Organic Chemistry', avgTime: 35, count: 6 },
             { tag: 'Inorganic Chemistry', avgTime: 28, count: 5 },
@@ -337,13 +397,7 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
           correctCount: 12,
           incorrectCount: 3,
           unattemptedCount: 0,
-          timePerQuestion: [
-            { questionNumber: 1, time: 30 }, { questionNumber: 2, time: 35 }, { questionNumber: 3, time: 28 },
-            { questionNumber: 4, time: 42 }, { questionNumber: 5, time: 25 }, { questionNumber: 6, time: 38 },
-            { questionNumber: 7, time: 22 }, { questionNumber: 8, time: 33 }, { questionNumber: 9, time: 28 },
-            { questionNumber: 10, time: 45 }, { questionNumber: 11, time: 20 }, { questionNumber: 12, time: 31 },
-            { questionNumber: 13, time: 26 }, { questionNumber: 14, time: 29 }, { questionNumber: 15, time: 27 },
-          ],
+          timePerQuestion: mockRandomQuestionTimes(15, 12, 3, 0),
           timePerTag: [
             { tag: 'Mechanics', avgTime: 32, count: 5 },
             { tag: 'Thermodynamics', avgTime: 35, count: 4 },
@@ -370,7 +424,7 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
           correctCount: 16,
           incorrectCount: 4,
           unattemptedCount: 0,
-          timePerQuestion: Array.from({ length: 20 }, (_, i) => ({ questionNumber: i + 1, time: 25 + Math.floor(Math.random() * 20) })),
+          timePerQuestion: mockRandomQuestionTimes(20, 16, 4, 0),
           timePerTag: [
             { tag: 'Cell Biology', avgTime: 30, count: 5 },
             { tag: 'Genetics', avgTime: 28, count: 5 },
@@ -397,7 +451,7 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
           correctCount: 15,
           incorrectCount: 3,
           unattemptedCount: 0,
-          timePerQuestion: Array.from({ length: 18 }, (_, i) => ({ questionNumber: i + 1, time: 22 + Math.floor(Math.random() * 25) })),
+          timePerQuestion: mockRandomQuestionTimes(18, 15, 3, 0),
           timePerTag: [
             { tag: 'Organic Chemistry', avgTime: 30, count: 6 },
             { tag: 'Inorganic Chemistry', avgTime: 28, count: 6 },
@@ -427,6 +481,7 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
       { day: 'Sat', count: 22 },
       { day: 'Sun', count: 14 },
     ],
+    activityDays: [],
   };
 };
 
@@ -434,43 +489,116 @@ export const useStatsStore = create<StatsState>((set, get) => ({
   stats: null,
   selectedPeriod: '30days',
   isLoading: false,
+  isRefreshing: false,
   error: null,
 
-  fetchStats: async (userId: string, period: TimePeriod) => {
-    set({ isLoading: true, error: null });
-    
-    if (DEMO_MODE) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const stats = generateMockStats(period);
-      set({ stats, selectedPeriod: period, isLoading: false });
-      return;
+  hydrateFromCache: async (userId: string) => {
+    const cached = await loadCachedDashboardStats(userId);
+    if (!cached?.stats) return false;
+
+    set({
+      stats: normalizeDashboardStats(cached.stats),
+      selectedPeriod: cached.period,
+      isLoading: false,
+      isRefreshing: false,
+    });
+    return true;
+  },
+
+  fetchStats: async (userId: string, period: TimePeriod, context?: StatsFetchContext) => {
+    const requestKey = `${userId}:${period}`;
+    if (inflightStatsPromise && inflightStatsKey === requestKey) {
+      return inflightStatsPromise;
     }
-    
-    try {
-      // Fetch gamification stats from API
-      const apiStats = await api.fetchGamificationStats(userId);
-      
-      // Use API stats where available, generate mock for the rest
-      const baseStats = generateMockStats(period);
-      
-      // Override with real API data
-      const totalPoints = apiStats?.total_points || apiStats?.xp || baseStats.totalPoints;
-      const stats: DashboardStats = {
-        ...baseStats,
-        totalPoints,
-        userLevel: calculateUserLevel(totalPoints),
-        currentStreak: apiStats?.streak_days || baseStats.currentStreak,
-        cardsReviewed: apiStats?.cards_reviewed || baseStats.cardsReviewed,
-        // The rest uses generated mock data since the API doesn't provide it yet
-      };
-      
-      set({ stats, selectedPeriod: period, isLoading: false });
-    } catch (error: any) {
-      console.error('Failed to fetch stats from API:', error);
-      // Fall back to mock stats on error
-      const stats = generateMockStats(period);
-      set({ stats, selectedPeriod: period, isLoading: false, error: error.message });
-    }
+
+    const hasExistingStats = !!get().stats;
+    set({
+      isLoading: !hasExistingStats,
+      isRefreshing: hasExistingStats,
+      error: null,
+    });
+
+    const run = async () => {
+      if (DEMO_MODE) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const stats = generateMockStats(period);
+        set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false });
+        return;
+      }
+
+      const { groups, flashcards } = resolveStatsContext(context);
+      const forceRefresh = context?.force === true;
+
+      try {
+        const [testResultsRaw, questionStatsRaw, loginStreak, gamification, activityDaysRaw] = await Promise.all([
+          fetchTestResultsCached(userId, api.fetchTestResults, {
+            limit: 50,
+            force: forceRefresh,
+          }).catch(() => []),
+          api.fetchUserQuestionStats(userId).catch(() => []),
+          recordLoginStreak(userId),
+          loadUserGamificationSnapshot(userId).catch(() => ({ badges: [], totalPoints: 0 })),
+          fetchStudyActivity().catch(() => []),
+        ]);
+
+        syncBadgesInBackground(userId);
+
+        const {
+          buildDashboardStats,
+          normalizeTestResults,
+          normalizeUserQuestionStats,
+        } = await getBuildDashboardStatsModule();
+
+        const testResults = normalizeTestResults(testResultsRaw);
+        const userQuestionStats = normalizeUserQuestionStats(questionStatsRaw);
+        const currentStreak = loginStreak.current;
+        const longestStreak = Math.max(loginStreak.longest, currentStreak);
+
+        const stats = normalizeDashboardStats({
+          ...buildDashboardStats({
+            testResults,
+            period,
+            groups,
+            userQuestionStats,
+            flashcards,
+            totalPoints: gamification.totalPoints,
+            badges: gamification.badges,
+            currentStreak,
+            longestStreak,
+          }),
+          activityDays: Array.isArray(activityDaysRaw) ? activityDaysRaw : [],
+        });
+
+        set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false, error: null });
+        void saveCachedDashboardStats(userId, period, stats);
+      } catch (error: any) {
+        console.error('Failed to fetch stats from API:', error);
+        if (!get().stats) {
+          const { buildDashboardStats } = await getBuildDashboardStatsModule();
+          const stats = buildDashboardStats({
+            testResults: [],
+            period,
+            groups,
+            userQuestionStats: {},
+            flashcards,
+            totalPoints: 0,
+            badges: [],
+            currentStreak: 0,
+            longestStreak: 0,
+          });
+          set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false, error: error.message });
+        } else {
+          set({ isLoading: false, isRefreshing: false, error: error.message });
+        }
+      }
+    };
+
+    inflightStatsKey = requestKey;
+    inflightStatsPromise = run().finally(() => {
+      inflightStatsPromise = null;
+      inflightStatsKey = null;
+    });
+    return inflightStatsPromise;
   },
 
   setSelectedPeriod: (period: TimePeriod) => {

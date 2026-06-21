@@ -1,0 +1,600 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import {
+
+  ActivityIndicator,
+
+  Alert,
+
+  KeyboardAvoidingView,
+
+  Platform,
+
+  Pressable,
+
+  ScrollView,
+
+  Text,
+
+  TextInput,
+
+  View,
+
+} from 'react-native';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Ionicons } from '@expo/vector-icons';
+
+import * as FileSystem from 'expo-file-system/legacy';
+
+import { useNotesStore } from '../../stores/notesStore';
+
+import { transcribeAudioForNote, summarizeNote, generateNoteQuiz } from '../../services/notes';
+import type { NoteAttachment } from '../../services/notes';
+
+import { useAIHandlers } from '../../hooks/useAIHandlers';
+
+import { Button, Card } from '../../components/ui';
+import { NotePdfViewer } from '../../components/NotePdfViewer';
+
+function getNoteStudyContent(
+  note: { body?: string; summary?: string; attachments?: NoteAttachment[] }
+): string {
+  const bodyText = note.body?.trim();
+  if (bodyText) return bodyText;
+  const extracted = (note.attachments || [])
+    .map((a) => a.extractedText?.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  if (extracted) return extracted;
+  return note.summary?.trim() || '';
+}
+
+
+
+
+type NavigationProp = {
+
+  goBack: () => void;
+
+};
+
+
+
+interface Props {
+
+  navigation: NavigationProp;
+
+  route: { params: { noteId: string } };
+
+}
+
+
+
+export function NoteEditorScreen({ navigation, route }: Props) {
+
+  const noteId = route.params.noteId;
+
+  const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote } = useNotesStore();
+
+  const { handleAIGenerateFlashcards, isAILoading } = useAIHandlers();
+
+
+
+  const [title, setTitle] = useState('');
+
+  const [body, setBody] = useState('');
+
+  const [summary, setSummary] = useState('');
+
+  const [recording, setRecording] = useState<{
+    stopAndUnloadAsync: () => Promise<void>;
+    getURI: () => string | null;
+  } | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const [transcribing, setTranscribing] = useState(false);
+
+  const [summarizing, setSummarizing] = useState(false);
+
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+
+  const [generatingCards, setGeneratingCards] = useState(false);
+
+  const [contentView, setContentView] = useState<'document' | 'text'>('document');
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pdfAttachment = useMemo(
+    () =>
+      selectedNote?.attachments?.find(
+        (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
+      ),
+    [selectedNote?.attachments]
+  );
+
+  const studyContent = useMemo(
+    () => (selectedNote ? getNoteStudyContent(selectedNote) : body),
+    [selectedNote, body]
+  );
+
+  useEffect(() => {
+    if (selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation') {
+      setContentView('document');
+    }
+  }, [selectedNote?.id, selectedNote?.sourceType]);
+
+
+
+  useEffect(() => {
+
+    loadNote(noteId);
+
+  }, [noteId, loadNote]);
+
+
+
+  useEffect(() => {
+
+    if (selectedNote?.id === noteId) {
+
+      setTitle(selectedNote.title);
+
+      setBody(selectedNote.body);
+
+      setSummary(selectedNote.summary || '');
+
+    }
+
+  }, [selectedNote, noteId]);
+
+
+
+  const scheduleSave = useCallback(
+
+    (updates: { title?: string; body?: string; summary?: string }) => {
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+      saveTimerRef.current = setTimeout(() => {
+
+        saveNote(noteId, updates).catch(() => {});
+
+      }, 800);
+
+    },
+
+    [noteId, saveNote]
+
+  );
+
+
+
+  useEffect(() => {
+
+    if (!selectedNote || selectedNote.id !== noteId) return;
+
+    if (title === selectedNote.title && body === selectedNote.body) return;
+
+    scheduleSave({ title, body });
+
+    return () => {
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    };
+
+  }, [title, body, noteId, selectedNote, scheduleSave]);
+
+
+
+  const startRecording = async () => {
+    try {
+      const { Audio } = await import('expo-av');
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Microphone access is required to record lectures.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(rec as { stopAndUnloadAsync: () => Promise<void>; getURI: () => string | null });
+      setIsRecording(true);
+    } catch {
+      Alert.alert('Error', 'Could not start recording.');
+    }
+  };
+
+
+
+  const stopRecording = async () => {
+    if (!recording) return;
+
+    setIsRecording(false);
+    setTranscribing(true);
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      if (!uri) throw new Error('No recording file');
+
+
+
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+
+
+
+      const { transcript } = await transcribeAudioForNote(base64, {
+
+        mimeType: 'audio/m4a',
+
+        noteId,
+
+        fileName: `lecture-${Date.now()}.m4a`,
+
+      });
+
+
+
+      const newBody = body ? `${body}\n\n${transcript}` : transcript;
+
+      setBody(newBody);
+
+      await saveNote(noteId, { body: newBody });
+
+    } catch (e: unknown) {
+
+      Alert.alert('Transcription failed', e instanceof Error ? e.message : 'Could not transcribe audio');
+
+    } finally {
+
+      setTranscribing(false);
+
+    }
+
+  };
+
+
+
+  const handleRecordPress = () => {
+    if (isRecording) void stopRecording();
+    else void startRecording();
+  };
+
+
+
+  const handleSummarize = async () => {
+
+    if (!studyContent.trim()) {
+
+      Alert.alert('Empty note', 'Add some content before summarizing.');
+
+      return;
+
+    }
+
+    setSummarizing(true);
+
+    try {
+
+      await saveNote(noteId, { title, body });
+
+      const result = await summarizeNote(noteId);
+
+      const newSummary = result.summary || '';
+
+      setSummary(newSummary);
+
+      if (result.note?.summary) setSummary(result.note.summary);
+
+      await saveNote(noteId, { summary: newSummary });
+
+    } catch (e: unknown) {
+
+      Alert.alert('Error', e instanceof Error ? e.message : 'Summarize failed');
+
+    } finally {
+
+      setSummarizing(false);
+
+    }
+
+  };
+
+
+
+  const handleGenerateFlashcards = async () => {
+    if (!studyContent.trim()) {
+      Alert.alert('Empty note', 'Add content before generating flashcards.');
+      return;
+    }
+    setGeneratingCards(true);
+    try {
+      const cards = await handleAIGenerateFlashcards(studyContent.slice(0, 8000), { count: 5, style: 'concise' });
+      Alert.alert('Generated', `${cards.length} flashcard ideas created. Add them to a deck from Flashcards.`);
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Flashcard generation failed');
+    } finally {
+      setGeneratingCards(false);
+    }
+  };
+
+  const handleGenerateQuiz = async () => {
+
+    if (!studyContent.trim()) return;
+
+    setGeneratingQuiz(true);
+
+    try {
+
+      await saveNote(noteId, { title, body });
+
+      await generateNoteQuiz(noteId, 'retention', 5);
+
+      Alert.alert('Quiz ready', 'A quiz was generated from this note.');
+
+    } catch (e: unknown) {
+
+      Alert.alert('Error', e instanceof Error ? e.message : 'Quiz generation failed');
+
+    } finally {
+
+      setGeneratingQuiz(false);
+
+    }
+
+  };
+
+
+
+  const handleDelete = async () => {
+
+    await removeNote(noteId);
+
+    navigation.goBack();
+
+  };
+
+
+
+  if (isLoading && !selectedNote) {
+
+    return (
+
+      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center">
+
+        <ActivityIndicator size="large" color="#6366f1" />
+
+      </SafeAreaView>
+
+    );
+
+  }
+
+
+
+  return (
+
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+
+      <View className="flex-row items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+
+        <Pressable
+
+          onPress={() => navigation.goBack()}
+
+          className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
+
+          accessibilityLabel="Back to notes"
+
+        >
+
+          <Ionicons name="arrow-back" size={22} color="#475569" />
+
+        </Pressable>
+
+        <TextInput
+
+          value={title}
+
+          onChangeText={setTitle}
+
+          placeholder="Note title"
+
+          placeholderTextColor="#94a3b8"
+
+          className="flex-1 text-base font-semibold text-slate-900 dark:text-slate-100"
+
+        />
+
+        {isSaving ? (
+
+          <Text className="text-xs text-slate-400 shrink-0">Saving...</Text>
+
+        ) : null}
+
+        <Pressable
+
+          onPress={handleDelete}
+
+          className="p-2 rounded-lg active:bg-red-50 dark:active:bg-red-900/20"
+
+          accessibilityLabel="Delete note"
+
+        >
+
+          <Ionicons name="trash-outline" size={20} color="#ef4444" />
+
+        </Pressable>
+
+      </View>
+
+
+
+      <KeyboardAvoidingView
+
+        className="flex-1"
+
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+
+      >
+
+        <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerClassName="p-4 pb-10">
+
+          <View className="flex-row flex-wrap gap-2 py-2 mb-2">
+
+            <Button
+
+              size="sm"
+
+              variant={isRecording ? 'danger' : 'secondary'}
+
+              onPress={handleRecordPress}
+
+              disabled={transcribing}
+
+            >
+
+              {transcribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Record lecture'}
+
+            </Button>
+
+            {isRecording ? (
+
+              <View className="flex-row items-center gap-1 self-center">
+
+                <View className="w-2 h-2 rounded-full bg-red-500" />
+
+                <Text className="text-xs text-red-500">Recording</Text>
+
+              </View>
+
+            ) : null}
+
+          </View>
+
+
+
+          {pdfAttachment ? (
+            <View className="flex-row gap-2 mb-3">
+              <Button
+                size="sm"
+                variant={contentView === 'document' ? 'primary' : 'secondary'}
+                onPress={() => setContentView('document')}
+              >
+                Document
+              </Button>
+              <Button
+                size="sm"
+                variant={contentView === 'text' ? 'primary' : 'secondary'}
+                onPress={() => setContentView('text')}
+              >
+                Extracted text
+              </Button>
+            </View>
+          ) : null}
+
+          {pdfAttachment && contentView === 'document' ? (
+            <View className="mb-4">
+              <NotePdfViewer noteId={noteId} attachment={pdfAttachment} />
+            </View>
+          ) : null}
+
+          {(!pdfAttachment || contentView === 'text') ? (
+          <TextInput
+
+            value={body}
+
+            onChangeText={setBody}
+
+            placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
+
+            placeholderTextColor="#94a3b8"
+
+            multiline
+
+            textAlignVertical="top"
+
+            className="w-full min-h-[280px] p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-4"
+
+          />
+          ) : null}
+
+
+
+          {summary ? (
+
+            <Card className="mb-4 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20">
+
+              <Text className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-2">Summary</Text>
+
+              <Text className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{summary}</Text>
+
+            </Card>
+
+          ) : null}
+
+
+
+          <Card className="border-slate-200 dark:border-slate-700">
+
+            <Text className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
+
+              Summary & quiz
+
+            </Text>
+
+            <Text className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+
+              AI tools to turn this note into study materials.
+
+            </Text>
+
+            <View className="flex-row flex-wrap gap-2">
+
+              <Button size="sm" variant="secondary" loading={summarizing} onPress={() => void handleSummarize()}>
+
+                Summarize
+
+              </Button>
+
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={generatingCards}
+                disabled={isAILoading}
+                onPress={() => void handleGenerateFlashcards()}
+              >
+                Flashcards
+              </Button>
+
+              <Button size="sm" variant="secondary" loading={generatingQuiz} onPress={() => void handleGenerateQuiz()}>
+
+                Quiz
+
+              </Button>
+
+            </View>
+
+          </Card>
+
+        </ScrollView>
+
+      </KeyboardAvoidingView>
+
+
+
+    </SafeAreaView>
+
+  );
+
+}
+
+
+
+export default NoteEditorScreen;
+

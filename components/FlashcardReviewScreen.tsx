@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Deck, Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
-import { ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
+import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
+import { useCompanionStore } from '../stores/companionStore';
 
 interface FlashcardReviewScreenProps {
   session: FlashcardSession;
@@ -24,11 +26,39 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
   const currentCard = session.cardQueue[currentIndex];
   const isSessionComplete = currentIndex >= session.cardQueue.length;
+  const canGoBack = currentIndex > 0;
+  const canGoForward = currentIndex < session.cardQueue.length - 1;
 
   useEffect(() => {
     // Reset answer visibility when card changes
     setIsAnswerShown(false);
   }, [currentIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isTypingTarget =
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        target?.isContentEditable;
+
+      if (isTypingTarget || isSessionComplete) return;
+
+      if (event.key === 'ArrowLeft' && canGoBack) {
+        event.preventDefault();
+        setCurrentIndex(prev => prev - 1);
+      }
+
+      if (event.key === 'ArrowRight' && canGoForward) {
+        event.preventDefault();
+        setCurrentIndex(prev => prev + 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canGoBack, canGoForward, isSessionComplete]);
 
   useEffect(() => {
     if (!currentCard?.id) return;
@@ -42,7 +72,18 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
   const handleShowAnswer = () => setIsAnswerShown(true);
 
+  const handlePreviousCard = () => {
+    if (!canGoBack) return;
+    setCurrentIndex(prev => prev - 1);
+  };
+
+  const handleNextCard = () => {
+    if (!canGoForward) return;
+    setCurrentIndex(prev => prev + 1);
+  };
+
   const handleRatePerformance = (rating: 'again' | 'hard' | 'good' | 'easy') => {
+    if (!currentCard) return;
     onUpdateSrs(currentCard.id, rating);
     setCurrentIndex(prev => prev + 1);
   };
@@ -129,16 +170,26 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                 />
               ))}
 
-              {card.occlusionData?.type === 'freeform' && card.occlusionData.freeform?.points && (
-                <svg className={`${overlayTransition} absolute inset-0 w-full h-full pointer-events-none`} style={{ opacity: overlayOpacity }}>
-                  <polyline
-                    points={card.occlusionData.freeform.points.map(p => `${p.x * 100},${p.y * 100}`).join(' ')}
-                    className="fill-black/50 stroke-white/70 stroke-2"
-                  />
+              {card.occlusionData?.type === 'freeform' && getFreeformPaths(card.occlusionData).length > 0 && (
+                <svg
+                  className={`${overlayTransition} absolute inset-0 w-full h-full pointer-events-none`}
+                  style={{ opacity: overlayOpacity }}
+                  viewBox="0 0 1 1"
+                  preserveAspectRatio="none"
+                >
+                  {getFreeformPaths(card.occlusionData).map((path, idx) => (
+                    <polygon
+                      key={idx}
+                      points={formatFreeformPointsForSvg(path.points)}
+                      fill="rgba(0,0,0,0.7)"
+                      stroke="rgba(255,255,255,0.7)"
+                      strokeWidth={0.004}
+                    />
+                  ))}
                 </svg>
               )}
 
-              {card.occlusionData?.type === 'blur' && (Array.isArray(card.occlusionData.blur) ? card.occlusionData.blur : [card.occlusionData.blur]).map((blur, idx) => (
+              {card.occlusionData?.type === 'blur' && getBlurRegions(card.occlusionData).map((blur, idx) => (
                 <div
                   key={idx}
                   className={`${overlayTransition} absolute border border-white/40`}
@@ -180,16 +231,30 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   }
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-slate-100 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold text-rose-600 dark:text-rose-400">{session.deck.name}</h1>
-        <span className="text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 px-3 py-1 rounded-full">
-          {currentIndex + 1} / {session.cardQueue.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-lantern-text-secondary mr-2">{currentIndex + 1} / {session.cardQueue.length}</span>
+          <button
+            onClick={handlePreviousCard}
+            disabled={!canGoBack}
+            className="px-3 py-1 text-sm font-medium rounded-full border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            Prev
+          </button>
+          <button
+            onClick={handleNextCard}
+            disabled={!canGoForward}
+            className="px-3 py-1 text-sm font-medium rounded-full border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col justify-center items-center">
-        <div className="w-full max-w-2xl min-h-[300px] bg-white dark:bg-slate-800 rounded-xl shadow-lg dark:shadow-slate-900/50 p-6 flex flex-col justify-between border border-transparent dark:border-slate-700">
+        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border">
           {/* Card Content */}
           <div className="text-center flex-grow flex flex-col justify-center items-center">
             {renderCardContent(currentCard, false)}
@@ -204,6 +269,23 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
           {/* Action Buttons */}
           <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+            {/* Leech card helper */}
+            {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
+              <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
+                <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
+                <button
+                  onClick={() => {
+                    const companion = useCompanionStore.getState();
+                    companion.open();
+                    companion.sendMessage(`I keep getting this flashcard wrong. Can you help me understand it and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
+                  }}
+                  className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
+                >
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  Ask Lantern
+                </button>
+              </div>
+            )}
             {!isAnswerShown ? (
               <button
                 onClick={handleShowAnswer}

@@ -1,16 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   fetchMarketplaceListingFull,
+  fetchNegotiationHistory,
   addMarketplaceReview,
   reportMarketplaceListing,
   createInquiry,
   addToFavorites,
   removeFromFavorites,
   addRecentlyViewed,
-  fetchSellerStats
+  fetchSellerStats,
+  boostMarketplaceListing,
+  buyMarketplaceListingNow,
+  validateMarketplaceCoupon,
+  fetchPickupNudge,
 } from '../services/supabase';
+import { resolveListingDisplayPrice } from '@lantern/shared/utils';
+import SaleCountdown from './marketplace/SaleCountdown';
 import { useAuthStore } from '../stores/authStore';
-import { MarketplaceListing, MarketplaceReview } from '../types';
+import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
+import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
 import MakeOfferModal from './MakeOfferModal';
 import {
   ArrowLeftIcon,
@@ -58,9 +66,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [similarListings, setSimilarListings] = useState<MarketplaceListing[]>([]);
   const [sellerStats, setSellerStats] = useState<{ totalListings: number; soldCount: number } | null>(null);
+  const [negotiationHistory, setNegotiationHistory] = useState<any[]>([]);
+  const [buyingNow, setBuyingNow] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponPreview, setCouponPreview] = useState<{
+    discountAmount: number;
+    finalAmount: number;
+  } | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [boostingListing, setBoostingListing] = useState(false);
+  const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { currentUser } = useAuthStore();
+  const { refreshBudgetTransactions } = useBudgetHandlers();
   const isOwner = listing?.user_id === currentUser?.id || listing?.seller_id === currentUser?.id;
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -78,12 +97,23 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   useEffect(() => {
     if (isOwner) {
       loadSellerStats();
+      loadNegotiationHistory();
     }
   }, [isOwner]);
 
+  const loadNegotiationHistory = async () => {
+    if (!listingId) return;
+    try {
+      const history = await fetchNegotiationHistory(listingId);
+      setNegotiationHistory(history);
+    } catch (error) {
+      console.error('Error loading negotiation history:', error);
+    }
+  };
+
   const loadSellerStats = async () => {
     try {
-      const stats = await fetchSellerStats(currentUser?.id);
+      const stats = await fetchSellerStats();
       if (stats) {
         setSellerStats({
           totalListings: stats.totalListings ?? stats.activeListings ?? 0,
@@ -104,6 +134,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       setReviews(data.listing.reviews || []);
       setIsFavorited(data.isFavorited);
       setSimilarListings(data.similarListings);
+      const sellerId = data.listing.user_id || data.listing.seller_id;
+      if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
+        setPickupNudge(await fetchPickupNudge(sellerId));
+      } else {
+        setPickupNudge(null);
+      }
     } catch (error) {
       console.error('Error loading listing:', error);
     } finally {
@@ -180,6 +216,66 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     }
   };
 
+  const handleBuyNow = async () => {
+    if (!listing || !listing.price || listing.price <= 0) return;
+    const pricing = resolveListingDisplayPrice(listing);
+    const payAmount = couponPreview?.finalAmount ?? pricing.effective;
+    const confirmed = window.confirm(
+      `Confirm purchase of ${listing.title} for ₦${payAmount.toLocaleString()}?`
+    );
+    if (!confirmed) return;
+
+    setBuyingNow(true);
+    try {
+      const result = await buyMarketplaceListingNow(
+        listing.id,
+        couponPreview ? couponCode.trim() : undefined
+      );
+      showToast('Order placed. Arrange campus pickup with the seller.');
+      if (result?.order?.id) {
+        onNavigate('MarketplaceOrderDetail', { orderId: result.order.id });
+      } else {
+        await loadListingFull();
+      }
+    } catch (error: any) {
+      showToast(error?.message || 'Could not complete purchase.', 'error');
+    } finally {
+      setBuyingNow(false);
+    }
+  };
+
+  const handleApplyCoupon = async () => {
+    if (!listing || !couponCode.trim()) return;
+    setValidatingCoupon(true);
+    try {
+      const result = await validateMarketplaceCoupon(couponCode.trim(), listing.id);
+      setCouponPreview({
+        discountAmount: result.discountAmount,
+        finalAmount: result.finalAmount,
+      });
+      showToast(`Coupon applied — ₦${result.discountAmount.toLocaleString()} off`);
+    } catch (error: any) {
+      setCouponPreview(null);
+      showToast(error?.message || 'Invalid coupon', 'error');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleBoostListing = async () => {
+    if (!listing) return;
+    setBoostingListing(true);
+    try {
+      await boostMarketplaceListing(listing.id, 72);
+      showToast('Listing boosted for 72 hours.');
+      await loadListingFull();
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to boost listing.', 'error');
+    } finally {
+      setBoostingListing(false);
+    }
+  };
+
   const nextImage = () => {
     if (!listing?.images?.length) return;
     setCurrentImageIndex((prev) => (prev + 1) % listing.images!.length);
@@ -225,6 +321,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
     : 0;
+
+  const pricing = listing ? resolveListingDisplayPrice(listing) : null;
 
   return (
     <div className="flex-1 bg-slate-50 dark:bg-slate-900 overflow-y-auto">
@@ -364,14 +462,44 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2 sm:mb-3">
                 {listing.title}
               </h1>
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                  {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
-                </span>
-                <div className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
-                  <StarIcon className="w-4 h-4 text-amber-400 fill-current" />
-                  <span className="font-semibold">{averageRating.toFixed(1)}</span>
-                  <span className="text-slate-400">({reviews.length})</span>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {pricing?.onSale ? (
+                    <>
+                      <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                        ₦{pricing.effective.toLocaleString()}
+                      </span>
+                      <span className="text-lg text-slate-400 line-through">
+                        ₦{pricing.base.toLocaleString()}
+                      </span>
+                      {listing.promo_label && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 font-semibold">
+                          {listing.promo_label}
+                        </span>
+                      )}
+                      <SaleCountdown saleEndsAt={listing.sale_ends_at} />
+                    </>
+                  ) : (
+                    <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                      {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {listing.quantity != null && (
+                    <span className={`text-xs px-2 py-1 rounded-lg font-medium ${
+                      listing.quantity > 0
+                        ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                    }`}>
+                      {listing.quantity > 0 ? `${listing.quantity} left` : 'Sold out'}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+                    <StarIcon className="w-4 h-4 text-amber-400 fill-current" />
+                    <span className="font-semibold">{averageRating.toFixed(1)}</span>
+                    <span className="text-slate-400">({reviews.length})</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -387,6 +515,26 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 {new Date(listing.created_at).toLocaleDateString()}
               </span>
             </div>
+
+            {pickupNudge?.message && !isOwner && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 text-sm text-emerald-800 dark:text-emerald-200">
+                {pickupNudge.message}
+              </div>
+            )}
+
+            {listing.listing_kind === 'bundle' && listing.bundle_items && listing.bundle_items.length > 0 && (
+              <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40">
+                <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-2">Bundle includes</h3>
+                <ul className="space-y-1 text-sm text-indigo-800 dark:text-indigo-300">
+                  {listing.bundle_items.map((item, idx) => (
+                    <li key={item.listing_id || idx}>
+                      • {item.title}
+                      {item.price != null ? ` (₦${Number(item.price).toLocaleString()})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Description */}
             <div>
@@ -519,6 +667,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       <CheckBadgeIcon className="w-3.5 h-3.5" />
                       {sellerStats.soldCount} sold
                     </span>
+                    {negotiationHistory.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <CurrencyDollarIcon className="w-3.5 h-3.5" />
+                        {negotiationHistory.length} offer events
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -532,12 +686,27 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     Edit Listing
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate('MyListings'); }}
+                    onClick={(e) => { e.stopPropagation(); handleBoostListing(); }}
+                    disabled={boostingListing}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 text-xs font-semibold rounded-lg ring-1 ring-indigo-200 dark:ring-indigo-700 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
                   >
-                    Manage All →
+                    {boostingListing ? 'Boosting...' : 'Boost Listing'}
                   </button>
                 </div>
+
+                {negotiationHistory.length > 0 && (
+                  <div className="px-3 pb-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300 mb-1.5">Negotiation Timeline</p>
+                    <div className="max-h-24 overflow-y-auto space-y-1.5">
+                      {negotiationHistory.slice(-5).map((offer: any) => (
+                        <div key={offer.id} className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-white/70 dark:bg-slate-800/70 rounded-md px-2 py-1">
+                          {new Date(offer.created_at).toLocaleDateString()} · ₦{Number(offer.amount || 0).toLocaleString()} · {offer.status}
+                          {offer.parent_offer_id ? ' · counter' : ' · initial'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -562,6 +731,49 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 >
                   <CurrencyDollarIcon className="w-4 h-4" />
                   Make an Offer
+                </button>
+              )}
+              {!isOwner && listing.price && listing.price > 0 && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Have a coupon?</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => {
+                        setCouponCode(e.target.value.toUpperCase());
+                        setCouponPreview(null);
+                      }}
+                      placeholder="Enter code"
+                      className="lantern-field flex-1 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleApplyCoupon()}
+                      disabled={validatingCoupon || !couponCode.trim()}
+                      className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-semibold"
+                    >
+                      {validatingCoupon ? 'Checking…' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponPreview && (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      Coupon applied — ₦{couponPreview.discountAmount.toLocaleString()} off.
+                      Pay ₦{couponPreview.finalAmount.toLocaleString()}.
+                    </p>
+                  )}
+                </div>
+              )}
+              {!isOwner && listing.price && listing.price > 0 && (
+                <button
+                  onClick={handleBuyNow}
+                  disabled={buyingNow}
+                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-indigo-700 hover:bg-indigo-800 disabled:bg-indigo-400 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                >
+                  <CheckBadgeIcon className="w-4 h-4" />
+                  {buyingNow
+                    ? 'Processing Purchase...'
+                    : `Buy Now${couponPreview ? ` · ₦${couponPreview.finalAmount.toLocaleString()}` : pricing?.onSale ? ` · ₦${pricing.effective.toLocaleString()}` : ''}`}
                 </button>
               )}
             </div>

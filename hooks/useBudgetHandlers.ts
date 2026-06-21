@@ -3,39 +3,62 @@ import { Budget, Transaction, TransactionType } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useUIStore } from '../stores/uiStore';
-import { saveUserBudget, saveBudgetTransaction, deleteBudgetTransaction } from '../services/supabase';
+import { saveUserBudget, saveBudgetTransaction, deleteBudgetTransaction, fetchBudgetTransactions } from '../services/supabase';
+import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode } from '../types';
 
 export function useBudgetHandlers() {
     const { currentUser } = useAuthStore();
-    const { budget, setBudget, transactions, setTransactions } = useBudgetStore();
-    const { setAppMode, setSidebarExpanded, openModal, closeModal } = useUIStore();
+    const { budget, setBudget, transactions, setTransactions, savingsGoals, expenseSplits, walletBalance } = useBudgetStore();
+    const { setAppMode, setSidebarExpanded, closeModal } = useUIStore();
 
     const handleNavigateToBudgetTracker = useCallback(() => {
         setAppMode(AppMode.BUDGET_TRACKER);
         setSidebarExpanded(false);
     }, [setAppMode, setSidebarExpanded]);
 
-    const handleSetBudget = useCallback((amount: number) => {
+    const handleSetBudget = useCallback((input: Budget | number) => {
         if (!currentUser) return;
         const currentMonth = new Date().toISOString().slice(0, 7);
-        const newBudget: Budget = {
-            monthlyLimit: amount,
-            monthYear: currentMonth,
-            userId: currentUser.id,
-        };
+        const newBudget: Budget =
+            typeof input === 'number'
+                ? {
+                    monthlyLimit: input,
+                    monthYear: currentMonth,
+                    userId: currentUser.id,
+                    categoryBudgets: budget?.categoryBudgets,
+                }
+                : {
+                    ...input,
+                    monthYear: input.monthYear || currentMonth,
+                    userId: currentUser.id,
+                };
+
         setBudget(newBudget);
+        localStorage.setItem('monthlyBudget', JSON.stringify(newBudget));
+
         saveUserBudget(currentUser.id, {
-            monthlyLimit: amount,
-            monthYear: currentMonth
+            monthlyLimit: newBudget.monthlyLimit,
+            monthYear: newBudget.monthYear,
         }).then(() => {
             console.log('[Budget Sync] Budget saved to cloud');
         }).catch(error => {
             console.error('[Budget Sync] Failed to save budget to cloud:', error);
         });
+
+        saveBudgetExtras(currentUser.id, {
+            savingsGoals,
+            expenseSplits,
+            walletBalance,
+            categoryBudgets: newBudget.categoryBudgets,
+        }).catch(error => {
+            console.error('[Budget Sync] Failed to save category budgets:', error);
+        });
+
         closeModal('setBudget');
-    }, [currentUser, setBudget, closeModal]);
+        closeModal('setMonthlyPlan');
+    }, [currentUser, budget?.categoryBudgets, setBudget, closeModal, savingsGoals, expenseSplits, walletBalance]);
 
     const handleAddTransaction = useCallback((transaction: Omit<Transaction, 'id' | 'userId'>) => {
         if (!currentUser) return;
@@ -66,6 +89,7 @@ export function useBudgetHandlers() {
         });
         closeModal('addExpense');
         closeModal('addIncome');
+        closeModal('addInvestment');
     }, [currentUser, transactions, setTransactions, closeModal]);
 
     const handleDeleteTransaction = useCallback((transactionId: string) => {
@@ -79,10 +103,31 @@ export function useBudgetHandlers() {
         });
     }, [transactions, setTransactions]);
 
+    const refreshBudgetTransactions = useCallback(async (userId?: string) => {
+        const uid = userId || currentUser?.id;
+        if (!uid) return;
+        try {
+            const rows = await fetchBudgetTransactions(uid);
+            const mapped: Transaction[] = rows.map((t) => ({
+                id: t.id,
+                userId: uid,
+                type: t.type.toUpperCase() as TransactionType,
+                amount: t.amount,
+                category: t.category || '',
+                description: t.description || '',
+                date: typeof t.date === 'string' ? t.date.split('T')[0] : t.date,
+            }));
+            setTransactions(mapped);
+        } catch (error) {
+            console.error('[Budget Sync] Failed to refresh transactions from cloud:', error);
+        }
+    }, [currentUser?.id, setTransactions]);
+
     return {
         handleNavigateToBudgetTracker,
         handleSetBudget,
         handleAddTransaction,
         handleDeleteTransaction,
+        refreshBudgetTransactions,
     };
 }

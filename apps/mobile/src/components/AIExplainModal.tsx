@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
+import { AIDisclaimer } from './AIDisclaimer';
 
 interface AIExplainModalProps {
   visible: boolean;
@@ -73,6 +74,10 @@ export default function AIExplainModal({
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
           </View>
 
           <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>

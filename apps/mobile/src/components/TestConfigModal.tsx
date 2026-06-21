@@ -12,10 +12,12 @@ import {
   ScrollView,
   Switch,
   TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { QuestionType, TestMode } from '../stores/testStore';
+import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
 import { useTheme } from '../theme';
+import { mobileQuestionTypesToWeb, webQuestionTypesToMobile } from '../utils/questionHelpers';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -45,6 +47,15 @@ export interface TestConfigOptions {
   selectedTags: string[];
   useSpacedRepetition: boolean;
   focusOnNew: boolean;
+  selectedSubgroupIds: string[];
+}
+
+export interface TestConfigAvailableFilter {
+  selectedQuestionTypes: QuestionType[];
+  selectedTags: string[];
+  useSpacedRepetition: boolean;
+  focusOnNew: boolean;
+  subgroupIds: string[];
 }
 
 interface TestConfigModalProps {
@@ -55,6 +66,11 @@ interface TestConfigModalProps {
   maxQuestions: number;
   availableTags: string[];
   testName: string;
+  getAvailableCount?: (filter: TestConfigAvailableFilter) => number;
+  presets?: TestPreset[];
+  onSavePreset?: (name: string, config: TestPresetConfig) => void;
+  onDeletePreset?: (presetId: string) => void;
+  subgroups?: { id: string; name: string; level: number }[];
 }
 
 export default function TestConfigModal({
@@ -65,6 +81,11 @@ export default function TestConfigModal({
   maxQuestions,
   availableTags,
   testName,
+  getAvailableCount,
+  presets = [],
+  onSavePreset,
+  onDeletePreset,
+  subgroups = [],
 }: TestConfigModalProps) {
   const [numberOfQuestions, setNumberOfQuestions] = useState(Math.min(10, maxQuestions));
   const [timerDuration, setTimerDuration] = useState(0);
@@ -72,23 +93,73 @@ export default function TestConfigModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [useSpacedRepetition, setUseSpacedRepetition] = useState(false);
   const [focusOnNew, setFocusOnNew] = useState(false);
+  const [selectedSubgroupIds, setSelectedSubgroupIds] = useState<string[]>([]);
+  const [presetName, setPresetName] = useState('');
+  const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { colors } = useTheme();
 
   const isStudyMode = mode === 'study';
 
+  const liveAvailableCount = useMemo(() => {
+    if (!getAvailableCount) return maxQuestions;
+    return getAvailableCount({
+      selectedQuestionTypes,
+      selectedTags,
+      useSpacedRepetition,
+      focusOnNew,
+      subgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
+    });
+  }, [
+    getAvailableCount,
+    maxQuestions,
+    selectedQuestionTypes,
+    selectedTags,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedSubgroupIds,
+  ]);
+
+  const effectiveMaxQuestions = getAvailableCount ? liveAvailableCount : maxQuestions;
+
   // Reset when modal opens
   useEffect(() => {
     if (visible) {
-      setNumberOfQuestions(Math.min(10, maxQuestions));
-      setTimerDuration(isStudyMode ? 0 : 600); // 10 min default for test mode
+      setNumberOfQuestions(Math.min(10, Math.max(1, maxQuestions)));
+      setTimerDuration(isStudyMode ? 0 : Math.min(600, Math.max(60, Math.min(10, maxQuestions) * 60)));
       setSelectedQuestionTypes([]);
       setSelectedTags([]);
       setUseSpacedRepetition(false);
       setFocusOnNew(false);
+      setSelectedSubgroupIds([]);
+      setPresetName('');
+      setSelectedPresetId('');
       setShowAdvanced(false);
     }
   }, [visible, maxQuestions, isStudyMode]);
+
+  // Clamp question count when available pool changes
+  useEffect(() => {
+    if (!visible) return;
+    if (effectiveMaxQuestions === 0) {
+      setNumberOfQuestions(0);
+      return;
+    }
+    setNumberOfQuestions(prev => {
+      if (prev <= 0) return Math.min(10, effectiveMaxQuestions);
+      if (prev > effectiveMaxQuestions) return effectiveMaxQuestions;
+      if (prev < 1) return 1;
+      return prev;
+    });
+  }, [effectiveMaxQuestions, visible]);
+
+  // Auto-set timer to 1 min per question in test mode
+  useEffect(() => {
+    if (!visible || isStudyMode) return;
+    if (numberOfQuestions > 0) {
+      setTimerDuration(numberOfQuestions * 60);
+    }
+  }, [numberOfQuestions, visible, isStudyMode]);
 
   // Mutual exclusion for SR and Focus on New
   useEffect(() => {
@@ -98,6 +169,62 @@ export default function TestConfigModal({
   useEffect(() => {
     if (useSpacedRepetition) setFocusOnNew(false);
   }, [useSpacedRepetition]);
+
+  useEffect(() => {
+    if (focusOnNew || useSpacedRepetition) {
+      setSelectedSubgroupIds([]);
+    }
+  }, [focusOnNew, useSpacedRepetition]);
+
+  const toggleSubgroup = useCallback((subgroupId: string) => {
+    setSelectedSubgroupIds(prev =>
+      prev.includes(subgroupId) ? prev.filter(id => id !== subgroupId) : [...prev, subgroupId]
+    );
+  }, []);
+
+  const applyPreset = useCallback((presetId: string) => {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    setNumberOfQuestions(preset.config.numberOfQuestions);
+    setTimerDuration(preset.config.timerDuration || 0);
+    setSelectedQuestionTypes(webQuestionTypesToMobile(preset.config.allowedQuestionTypes || []));
+    setSelectedTags(preset.config.selectedTags || []);
+    setFocusOnNew(preset.config.focusOnNew || false);
+    setUseSpacedRepetition(false);
+    setSelectedPresetId(presetId);
+  }, [presets]);
+
+  const handleSavePreset = useCallback(() => {
+    if (!onSavePreset || !presetName.trim()) {
+      Alert.alert('Preset name required', 'Please enter a name for the preset.');
+      return;
+    }
+    if (presets.length >= 5) {
+      Alert.alert('Limit reached', 'You can save up to 5 presets. Delete one to add another.');
+      return;
+    }
+    const config: TestPresetConfig = {
+      numberOfQuestions,
+      allowedQuestionTypes:
+        useSpacedRepetition || focusOnNew ? [] : mobileQuestionTypesToWeb(selectedQuestionTypes),
+      selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTags,
+      timerDuration: !isStudyMode && timerDuration > 0 ? timerDuration : undefined,
+      focusOnNew,
+    };
+    onSavePreset(presetName.trim(), config);
+    setPresetName('');
+  }, [
+    onSavePreset,
+    presetName,
+    presets.length,
+    numberOfQuestions,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedQuestionTypes,
+    selectedTags,
+    timerDuration,
+    isStudyMode,
+  ]);
 
   const toggleQuestionType = useCallback((type: QuestionType) => {
     setSelectedQuestionTypes(prev =>
@@ -112,15 +239,39 @@ export default function TestConfigModal({
   }, []);
 
   const isValid = useMemo(() => {
-    if (maxQuestions === 0) return false;
+    if (effectiveMaxQuestions === 0) return false;
     if (numberOfQuestions <= 0) return false;
-    if (numberOfQuestions > maxQuestions) return false;
-    // Study mode doesn't require question types
+    if (numberOfQuestions > effectiveMaxQuestions) return false;
+    if (!isStudyMode && timerDuration <= 0) return false;
     if (!isStudyMode && !useSpacedRepetition && !focusOnNew && selectedQuestionTypes.length === 0) {
       return false;
     }
     return true;
-  }, [maxQuestions, numberOfQuestions, isStudyMode, useSpacedRepetition, focusOnNew, selectedQuestionTypes]);
+  }, [
+    effectiveMaxQuestions,
+    numberOfQuestions,
+    isStudyMode,
+    timerDuration,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedQuestionTypes,
+  ]);
+
+  const validationHint = useMemo(() => {
+    if (effectiveMaxQuestions === 0) return 'No testable questions match your filters.';
+    if (!isStudyMode && !useSpacedRepetition && !focusOnNew && selectedQuestionTypes.length === 0) {
+      return 'Select at least one question type.';
+    }
+    if (!isStudyMode && timerDuration <= 0) return 'Set a timer for the test.';
+    return null;
+  }, [
+    effectiveMaxQuestions,
+    isStudyMode,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedQuestionTypes,
+    timerDuration,
+  ]);
 
   const handleSubmit = useCallback(() => {
     if (!isValid) return;
@@ -132,8 +283,21 @@ export default function TestConfigModal({
       selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTags,
       useSpacedRepetition,
       focusOnNew,
+      selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
     }, mode);
-  }, [isValid, numberOfQuestions, timerDuration, selectedQuestionTypes, selectedTags, useSpacedRepetition, focusOnNew, mode, isStudyMode, onSubmit]);
+  }, [
+    isValid,
+    numberOfQuestions,
+    timerDuration,
+    selectedQuestionTypes,
+    selectedTags,
+    useSpacedRepetition,
+    focusOnNew,
+    selectedSubgroupIds,
+    mode,
+    isStudyMode,
+    onSubmit,
+  ]);
 
   const formatTime = (seconds: number): string => {
     if (seconds === 0) return 'No limit';
@@ -199,8 +363,15 @@ export default function TestConfigModal({
               <View style={styles.sectionHeader}>
                 <Ionicons name="list" size={20} color={colors.primary} />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Number of Questions</Text>
-                <Text style={[styles.questionCount, { color: colors.primary }]}>{numberOfQuestions} / {maxQuestions}</Text>
+                <Text style={[styles.questionCount, { color: colors.primary }]}>
+                  {numberOfQuestions} / {effectiveMaxQuestions}
+                </Text>
               </View>
+              {getAvailableCount ? (
+                <Text style={[styles.availableHint, { color: colors.textSecondary }]}>
+                  {effectiveMaxQuestions} question{effectiveMaxQuestions === 1 ? '' : 's'} available with current filters
+                </Text>
+              ) : null}
               
               <View style={styles.sliderContainer}>
                 <View style={styles.numberInputRow}>
@@ -217,7 +388,8 @@ export default function TestConfigModal({
                     value={String(numberOfQuestions)}
                     onChangeText={(text) => {
                       const val = parseInt(text) || 1;
-                      setNumberOfQuestions(Math.min(Math.max(1, val), maxQuestions));
+                      const clamped = Math.min(Math.max(1, val), Math.max(1, effectiveMaxQuestions));
+                      setNumberOfQuestions(clamped);
                     }}
                     keyboardType="number-pad"
                     selectTextOnFocus
@@ -225,16 +397,16 @@ export default function TestConfigModal({
                   
                   <TouchableOpacity
                     style={[styles.numberButton, { backgroundColor: colors.primary }]}
-                    onPress={() => setNumberOfQuestions(Math.min(maxQuestions, numberOfQuestions + 1))}
-                    disabled={numberOfQuestions >= maxQuestions}
+                    onPress={() => setNumberOfQuestions(Math.min(effectiveMaxQuestions, numberOfQuestions + 1))}
+                    disabled={numberOfQuestions >= effectiveMaxQuestions}
                   >
-                    <Ionicons name="add" size={20} color={numberOfQuestions >= maxQuestions ? colors.textSecondary : '#ffffff'} />
+                    <Ionicons name="add" size={20} color={numberOfQuestions >= effectiveMaxQuestions ? colors.textSecondary : '#ffffff'} />
                   </TouchableOpacity>
                 </View>
                 
                 {/* Quick select buttons */}
                 <View style={styles.quickSelectRow}>
-                  {[5, 10, 15, 20].filter(n => n <= maxQuestions).map((num) => (
+                  {[5, 10, 15, 20].filter(n => n <= effectiveMaxQuestions).map((num) => (
                     <TouchableOpacity
                       key={num}
                       style={[
@@ -251,19 +423,19 @@ export default function TestConfigModal({
                       ]}>{num}</Text>
                     </TouchableOpacity>
                   ))}
-                  {maxQuestions > 20 && (
+                  {effectiveMaxQuestions > 20 && (
                     <TouchableOpacity
                       style={[
                         styles.quickSelectButton,
                         { backgroundColor: colors.inputBackground, borderColor: colors.border },
-                        numberOfQuestions === maxQuestions && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        numberOfQuestions === effectiveMaxQuestions && { backgroundColor: colors.primary, borderColor: colors.primary },
                       ]}
-                      onPress={() => setNumberOfQuestions(maxQuestions)}
+                      onPress={() => setNumberOfQuestions(effectiveMaxQuestions)}
                     >
                       <Text style={[
                         styles.quickSelectText,
                         { color: colors.textSecondary },
-                        numberOfQuestions === maxQuestions && { color: '#fff' },
+                        numberOfQuestions === effectiveMaxQuestions && { color: '#fff' },
                       ]}>All</Text>
                     </TouchableOpacity>
                   )}
@@ -352,6 +524,106 @@ export default function TestConfigModal({
                 </View>
               )}
             </View>
+
+            {/* Presets */}
+            {onSavePreset ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="bookmark" size={20} color="#6366f1" />
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Presets</Text>
+                </View>
+                {presets.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetRow}>
+                    {presets.map(preset => (
+                      <TouchableOpacity
+                        key={preset.id}
+                        style={[
+                          styles.presetChip,
+                          { borderColor: colors.border, backgroundColor: colors.inputBackground },
+                          selectedPresetId === preset.id && { borderColor: colors.primary, backgroundColor: `${colors.primary}20` },
+                        ]}
+                        onPress={() => applyPreset(preset.id)}
+                      >
+                        <Text style={[styles.presetChipText, { color: colors.text }]}>{preset.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : null}
+                <View style={styles.presetSaveRow}>
+                  <TextInput
+                    style={[styles.presetInput, { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }]}
+                    value={presetName}
+                    onChangeText={setPresetName}
+                    placeholder="Preset name"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <TouchableOpacity style={[styles.presetSaveButton, { backgroundColor: colors.primary }]} onPress={handleSavePreset}>
+                    <Text style={styles.presetSaveText}>Save</Text>
+                  </TouchableOpacity>
+                  {onDeletePreset && selectedPresetId ? (
+                    <TouchableOpacity
+                      style={styles.presetDeleteButton}
+                      onPress={() => {
+                        Alert.alert('Delete preset', 'Remove this preset?', [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => {
+                              onDeletePreset(selectedPresetId);
+                              setSelectedPresetId('');
+                            },
+                          },
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
+            {/* Sub-groups */}
+            {subgroups.length > 0 && !useSpacedRepetition && !focusOnNew ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="git-network" size={20} color="#0ea5e9" />
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Include Sub-groups</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.selectAllRow}
+                  onPress={() => {
+                    if (selectedSubgroupIds.length === subgroups.length) {
+                      setSelectedSubgroupIds([]);
+                    } else {
+                      setSelectedSubgroupIds(subgroups.map(s => s.id));
+                    }
+                  }}
+                >
+                  <Ionicons
+                    name={selectedSubgroupIds.length === subgroups.length ? 'checkbox' : 'square-outline'}
+                    size={18}
+                    color="#0ea5e9"
+                  />
+                  <Text style={[styles.selectAllText, { color: colors.text }]}>Select all sub-groups</Text>
+                </TouchableOpacity>
+                {subgroups.map(sub => (
+                  <TouchableOpacity
+                    key={sub.id}
+                    style={[styles.subgroupRow, { paddingLeft: 12 + sub.level * 16 }]}
+                    onPress={() => toggleSubgroup(sub.id)}
+                  >
+                    <Ionicons
+                      name={selectedSubgroupIds.includes(sub.id) ? 'checkbox' : 'square-outline'}
+                      size={18}
+                      color="#0ea5e9"
+                    />
+                    <Text style={[styles.subgroupText, { color: colors.text }]}>{sub.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
 
             {/* Advanced Options */}
             <TouchableOpacity 
@@ -446,28 +718,35 @@ export default function TestConfigModal({
 
           {/* Footer */}
           <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>
-            <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.inputBackground }]} onPress={onClose}>
-              <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[
-                styles.submitButton,
-                isStudyMode && styles.submitButtonStudy,
-                !isValid && styles.submitButtonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={!isValid}
-            >
-              <Ionicons 
-                name={isStudyMode ? 'book' : 'play'} 
-                size={20} 
-                color="#ffffff" 
-              />
-              <Text style={styles.submitButtonText}>
-                {isStudyMode ? 'Start Studying' : 'Start Test'}
+            {!isValid && validationHint ? (
+              <Text style={[styles.validationHint, { color: colors.textSecondary }]}>
+                {validationHint}
               </Text>
-            </TouchableOpacity>
+            ) : null}
+            <View style={styles.footerButtons}>
+              <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.inputBackground }]} onPress={onClose}>
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.submitButton,
+                  isStudyMode && styles.submitButtonStudy,
+                  !isValid && styles.submitButtonDisabled,
+                ]}
+                onPress={handleSubmit}
+                disabled={!isValid}
+              >
+                <Ionicons 
+                  name={isStudyMode ? 'book' : 'play'} 
+                  size={20} 
+                  color="#ffffff" 
+                />
+                <Text style={styles.submitButtonText}>
+                  {isStudyMode ? 'Start Studying' : 'Start Test'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -485,6 +764,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    height: '90%',
     maxHeight: '90%',
   },
   header: {
@@ -532,6 +812,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
     paddingBottom: 24,
+    flexGrow: 1,
   },
   infoBox: {
     flexDirection: 'row',
@@ -573,6 +854,70 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#6366f1',
+  },
+  availableHint: {
+    fontSize: 12,
+    marginBottom: 10,
+    marginTop: -6,
+  },
+  presetRow: {
+    marginBottom: 10,
+  },
+  presetChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  presetChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  presetSaveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  presetInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  presetSaveButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  presetSaveText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  presetDeleteButton: {
+    padding: 8,
+  },
+  selectAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  selectAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  subgroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  subgroupText: {
+    fontSize: 14,
   },
   sliderContainer: {
     paddingHorizontal: 4,
@@ -780,13 +1125,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   footer: {
-    flexDirection: 'row',
-    gap: 12,
     padding: 20,
     paddingBottom: 32,
     borderTopWidth: 1,
     borderTopColor: '#334155',
     backgroundColor: '#1e293b',
+  },
+  validationHint: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  footerButtons: {
+    flexDirection: 'row',
+    gap: 12,
   },
   cancelButton: {
     flex: 1,

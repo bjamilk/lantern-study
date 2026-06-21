@@ -8,6 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
+import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 
 type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
 
@@ -17,6 +18,7 @@ interface BudgetTrackerScreenProps {
   budget: Budget | null;
   onOpenAddExpense: () => void;
   onOpenAddIncome: () => void;
+  onOpenAddInvestment?: () => void;
   onOpenSetBudget: () => void;
   onDeleteTransaction: (transactionId: string) => void;
   onToggleSidebar: () => void;
@@ -46,7 +48,7 @@ const FINANCIAL_TIPS: FinancialTip[] = [
 
 const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   currentUser, transactions, budget,
-  onOpenAddExpense, onOpenAddIncome, onOpenSetBudget, onDeleteTransaction,
+  onOpenAddExpense, onOpenAddIncome, onOpenAddInvestment, onOpenSetBudget, onDeleteTransaction,
   onToggleSidebar, onOpenSetMonthlyPlan, onOpenSavingsGoal, onOpenWallet, onOpenExpenseSplit, onOpenFinancialToolkit,
 }) => {
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
@@ -54,6 +56,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<ChartType | null>(null);
   const { savingsGoals, walletBalance, expenseSplits } = useBudgetStore();
+  const { refreshBudgetTransactions } = useBudgetHandlers();
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      void refreshBudgetTransactions(currentUser.id);
+    }
+  }, [currentUser?.id, refreshBudgetTransactions]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -269,6 +278,12 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 <ArrowUpIcon className="w-6 h-6" />
                 <span className="text-xs font-semibold">Add Income</span>
               </button>
+              {onOpenAddInvestment && (
+                <button onClick={onOpenAddInvestment} className="bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
+                  <ArrowTrendingUpIcon className="w-6 h-6" />
+                  <span className="text-xs font-semibold">Investment</span>
+                </button>
+              )}
               <button onClick={onOpenSavingsGoal || (() => setActiveTab('goals'))} className="bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
                 <TrophyIcon className="w-6 h-6" />
                 <span className="text-xs font-semibold">Savings Goal</span>

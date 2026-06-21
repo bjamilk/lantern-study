@@ -20,6 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, INCOME_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
 
 // Simple date picker component
 const SimpleDatePicker: React.FC<{
@@ -113,10 +114,11 @@ const SimpleDatePicker: React.FC<{
 
 export default function AddIncomeScreen() {
   const navigation = useNavigation<any>();
+  const userId = useAuthStore(s => s.user?.id) || '';
   const { addTransaction, isLoading } = useBudgetStore();
 
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState(INCOME_CATEGORIES[0]);
+  const [category, setCategory] = useState<string>(INCOME_CATEGORIES[0].id);
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -144,7 +146,7 @@ export default function AddIncomeScreen() {
 
     try {
       await addTransaction({
-        userId: 'demo-user',
+        userId,
         type: 'INCOME',
         amount: amountNum,
         category,
@@ -158,19 +160,7 @@ export default function AddIncomeScreen() {
     } catch (error) {
       Alert.alert('Error', 'Failed to add income. Please try again.');
     }
-  }, [amount, category, description, date, addTransaction, navigation]);
-
-  const getCategoryIcon = (cat: string): keyof typeof Ionicons.glyphMap => {
-    const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-      'Salary': 'cash',
-      'Freelance': 'laptop',
-      'Investment': 'trending-up',
-      'Gift': 'gift',
-      'Allowance': 'wallet',
-      'Other': 'ellipsis-horizontal',
-    };
-    return iconMap[cat] || 'help-circle';
-  };
+  }, [amount, category, description, date, addTransaction, navigation, userId]);
 
   const { colors } = useTheme();
 
@@ -219,34 +209,31 @@ export default function AddIncomeScreen() {
             <View style={styles.categoryGrid}>
               {INCOME_CATEGORIES.map(cat => (
                 <TouchableOpacity
-                  key={cat}
+                  key={cat.id}
                   style={[
                     styles.categoryItem,
                     { backgroundColor: colors.card },
-                    category === cat && styles.categoryItemActive,
+                    category === cat.id && styles.categoryItemActive,
                   ]}
-                  onPress={() => setCategory(cat)}
+                  onPress={() => setCategory(cat.id)}
                 >
                   <View
                     style={[
                       styles.categoryIcon,
-                      category === cat && styles.categoryIconActive,
+                      category === cat.id && styles.categoryIconActive,
                     ]}
                   >
-                    <Ionicons
-                      name={getCategoryIcon(cat)}
-                      size={24}
-                      color={category === cat ? '#ffffff' : '#22c55e'}
-                    />
+                    <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
                   </View>
                   <Text
                     style={[
                       styles.categoryName,
                       { color: colors.textSecondary },
-                      category === cat && styles.categoryNameActive,
+                      category === cat.id && styles.categoryNameActive,
                     ]}
+                    numberOfLines={2}
                   >
-                    {cat}
+                    {cat.label}
                   </Text>
                 </TouchableOpacity>
               ))}

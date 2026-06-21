@@ -18,6 +18,7 @@ import {
   UserQuestionStats,
   OfflineSessionBundle
 } from '../types';
+import type { StudyActivityDay } from '@lantern/shared';
 
 interface TestState {
   // State
@@ -26,6 +27,7 @@ interface TestState {
   activeGameSession: GameSession | null;
   testResults: TestResult[];
   userQuestionStats: UserQuestionStats;
+  studyActivityDays: StudyActivityDay[];
   offlineBundles: OfflineSessionBundle[];
   pendingSyncResults: TestResult[];
   isLoading: boolean;
@@ -49,6 +51,7 @@ interface TestState {
   
   // Actions - Question Stats
   setUserQuestionStats: (stats: UserQuestionStats) => void;
+  setStudyActivityDays: (days: StudyActivityDay[]) => void;
   updateQuestionStat: (questionId: string, isCorrect: boolean) => void;
   
   // Actions - Offline Mode
@@ -89,6 +92,7 @@ export const useTestStore = create<TestState>()((set, get) => ({
   activeGameSession: null,
   testResults: [],
   userQuestionStats: {},
+  studyActivityDays: [],
   offlineBundles: getFromStorage<OfflineSessionBundle[]>('offlineBundles', []),
   pendingSyncResults: getFromStorage<TestResult[]>('pendingSyncResults', []),
   isLoading: false,
@@ -141,6 +145,8 @@ export const useTestStore = create<TestState>()((set, get) => ({
   
   // Question Stats
   setUserQuestionStats: (stats) => set({ userQuestionStats: stats }),
+
+  setStudyActivityDays: (days) => set({ studyActivityDays: days }),
   
   updateQuestionStat: (questionId, isCorrect) => {
     set((state) => {
@@ -241,6 +247,7 @@ export const useTestStore = create<TestState>()((set, get) => ({
     activeGameSession: null,
     testResults: [],
     userQuestionStats: {},
+    studyActivityDays: [],
     offlineBundles: [],
     pendingSyncResults: [],
     isLoading: false,

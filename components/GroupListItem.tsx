@@ -2,6 +2,9 @@ import React from 'react';
 import { Group, DMThread, User, ChatItem } from '../types';
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
 import { ArchiveBoxIcon, UserCircleIcon } from '@heroicons/react/24/outline';
+import { Avatar } from './ui';
+import { resolveAvatarSrc } from '../utils/avatar';
+import { useUIStore } from '../stores/uiStore';
 
 interface GroupListItemProps {
   chat: ChatItem;
@@ -30,6 +33,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   onToggleExpand,
   showText = true,
 }) => {
+  const { lowDataMode } = useUIStore();
   const isGroup = chat.chatType === 'group';
   const name = isGroup ? chat.name : (chat.participantIds.find(id => id !== currentUser.id) ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!].name : 'Unknown');
   const avatarUrl = isGroup ? chat.avatarUrl : (chat.participantIds.find(id => id !== currentUser.id) ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!].avatarUrl : undefined);
@@ -95,21 +99,21 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
       {!hasSubGroups && !isSubGroup && showText && <div className="w-[1.375rem] mr-1.5 flex-shrink-0"></div>}
       
       {isGroup ? (
-        <img
-          src={avatarUrl || `https://ui-avatars.com/api/?name=${name.replace(/\s/g, '+')}&background=random&color=fff&size=50`}
-          alt={name}
-          className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-          onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
-        />
-      ) : avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={name}
-          className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-          onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
+        <Avatar
+          name={name}
+          src={resolveAvatarSrc(avatarUrl, lowDataMode)}
+          size="md"
+          localOnly={lowDataMode}
+          className="flex-shrink-0"
         />
       ) : (
-        <UserCircleIcon className="w-8 h-8 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+        <Avatar
+          name={name}
+          src={resolveAvatarSrc(avatarUrl, lowDataMode)}
+          size="md"
+          localOnly={lowDataMode}
+          className="flex-shrink-0"
+        />
       )}
       {showText && (
         <>

@@ -18,9 +18,11 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, formatCurrency } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
 
 export default function SetBudgetScreen() {
   const navigation = useNavigation<any>();
+  const userId = useAuthStore(s => s.user?.id) || '';
   const { budget, setBudget, isLoading } = useBudgetStore();
   const { colors } = useTheme();
 
@@ -49,7 +51,7 @@ export default function SetBudgetScreen() {
     }
 
     try {
-      await setBudget('demo-user', amountNum);
+      await setBudget(userId, amountNum);
       Alert.alert('Success', 'Budget saved successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);

@@ -10,14 +10,14 @@ interface GenerateFlashcardsModalProps {
 
 const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpen, onClose, onSubmit, isGenerating }) => {
   const [notes, setNotes] = useState('');
-  const [count, setCount] = useState<number | ''>(5);
+  const [count, setCount] = useState<number | ''>(10);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!notes.trim() || count === '' || Number(count) <= 0 || Number(count) > 20) {
-      alert("Please provide notes and specify a number of cards between 1 and 20.");
+    if (!notes.trim() || count === '' || Number(count) < 10 || Number(count) > 20) {
+      alert("Please provide notes and specify a number of cards between 10 and 20.");
       return;
     }
     onSubmit(notes, Number(count));
@@ -58,7 +58,7 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
               id="cardCount"
               value={count}
               onChange={(e) => setCount(e.target.value === '' ? '' : parseInt(e.target.value))}
-              min="1"
+              min="10"
               max="20"
               required
               className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md"

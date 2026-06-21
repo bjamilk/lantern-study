@@ -5,8 +5,12 @@ import { handleValidationErrors, validatePagination } from '../middleware/valida
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { clientErrorMessage } from '../utils/safeError';
+import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 
 const router = Router();
+const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
+  profile === 'compact' ? 'compact' : 'full';
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -33,12 +37,14 @@ router.get(
       maxPrice,
       location,
       sortBy = 'created_at',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      responseProfile,
     } = req.query;
+    const profile = resolveResponseProfile(responseProfile);
 
-    logger.debug('Fetching marketplace listings', { page, limit, category, search });
+    logger.debug('Fetching marketplace listings', { page, limit, category, search, profile });
 
-    const cacheKey = `marketplace:listings:${page}:${limit}:${category || ''}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${sortBy}:${sortOrder}`;
+    const cacheKey = `marketplace:listings:${page}:${limit}:${category || ''}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
     let listings = await cacheService.get(cacheKey);
 
     if (!listings) {
@@ -51,7 +57,8 @@ router.get(
         maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         location,
         sortBy,
-        sortOrder: sortOrder === 'asc' ? 'asc' : 'desc'
+        sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
+        responseProfile: profile,
       });
 
       // Cache for 5 minutes
@@ -66,7 +73,24 @@ router.get(
         limit: parseInt(limit),
         total: (listings as any[]).length, // In production, get total count separately for efficiency
       },
+      responseProfile: profile,
     });
+  })
+);
+
+// GET /api/v1/marketplace/analytics/categories - Category listing counts
+router.get(
+  '/analytics/categories',
+  asyncHandler(async (_req: any, res: any) => {
+    const cacheKey = 'marketplace:analytics:categories';
+    const cached = await cacheService.get<Array<{ category: string; total: number; active: number; sold: number }>>(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
+    const analytics = await supabaseService.getMarketplaceCategoryAnalytics();
+    await cacheService.set(cacheKey, analytics, 120);
+    res.json({ success: true, data: analytics });
   })
 );
 
@@ -80,7 +104,7 @@ router.get(
     logger.debug('Fetching marketplace listing', { id });
 
     const cacheKey = `marketplace:listing:${id}`;
-    let listing = await cacheService.get(cacheKey);
+    let listing = await cacheService.get<any>(cacheKey);
 
     if (!listing) {
       listing = await supabaseService.getMarketplaceListingById(id);
@@ -91,13 +115,11 @@ router.get(
           error: 'Listing not found',
         });
       }
-
-      // Track view count (fire and forget)
-      supabaseService.incrementListingViews(id);
-
-      // Cache for 10 minutes
-      await cacheService.set(cacheKey, listing, 600);
     }
+
+    await supabaseService.incrementListingViews(id);
+    listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
+    await cacheService.set(cacheKey, listing, 600);
 
     res.json({
       success: true,
@@ -153,7 +175,7 @@ router.post(
       logger.error('Failed to create marketplace listing:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to create listing',
+        error: clientErrorMessage(error, 'Failed to create listing'),
       });
     }
   })
@@ -187,6 +209,26 @@ router.put(
     }
 
     const updatedListing = await supabaseService.updateMarketplaceListing(id, updates);
+
+    const priceFields = ['price', 'sale_price', 'sale_ends_at'] as const;
+    const priceChanged = priceFields.some((field) => field in updates);
+    if (priceChanged) {
+      const { notifyFavoritePriceDrop } = await import('../services/marketplaceFavoriteAlerts');
+      await notifyFavoritePriceDrop(
+        supabaseService,
+        { ...listing, ...updatedListing, id, user_id: listing.user_id, title: updatedListing?.title || listing.title },
+        listing
+      );
+    }
+
+    if (updates?.status === 'active' && listing.status !== 'active') {
+      const { notifyListingBackAvailable } = await import('../services/marketplaceFavoriteAlerts');
+      await notifyListingBackAvailable(
+        supabaseService,
+        { id, user_id: listing.user_id, title: updatedListing?.title || listing.title },
+        listing.status
+      );
+    }
 
     // Invalidate caches
     await cacheService.delete(`marketplace:listing:${id}`);
@@ -238,6 +280,16 @@ router.delete(
   })
 );
 
+// GET /api/v1/marketplace/listings/:id/reviews - List reviews for a listing
+router.get(
+  '/listings/:id/reviews',
+  asyncHandler(async (req: any, res: any) => {
+    const { id } = req.params;
+    const reviews = await supabaseService.getMarketplaceReviews(id);
+    res.json({ success: true, data: reviews });
+  })
+);
+
 // POST /api/v1/marketplace/listings/:id/reviews - Add review
 router.post(
   '/listings/:id/reviews',
@@ -263,6 +315,56 @@ router.post(
   })
 );
 
+// POST /api/v1/marketplace/listings/:id/buy-now - Instant purchase
+router.post(
+  '/listings/:id/buy-now',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const { id } = req.params;
+    const buyerId = req.user?.id;
+
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const result = await supabaseService.buyMarketplaceListingNow(
+      id,
+      buyerId,
+      req.body?.couponCode
+    );
+
+    await cacheService.delete(`marketplace:listing:${id}`);
+    await cacheService.deletePattern('marketplace:listings:*');
+    await invalidateSellerAnalyticsCache(String(result.order?.seller_id || ''));
+
+    res.json({ success: true, data: result });
+  })
+);
+
+// POST /api/v1/marketplace/listings/:id/boost - Boost listing visibility
+router.post(
+  '/listings/:id/boost',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    const durationHours = Math.min(168, Math.max(1, Number(req.body?.durationHours) || 72));
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const listing = await supabaseService.boostMarketplaceListing(id, userId, durationHours);
+
+    await cacheService.delete(`marketplace:listing:${id}`);
+    await cacheService.deletePattern('marketplace:listings:*');
+
+    res.json({ success: true, data: listing });
+  })
+);
+
 // POST /api/v1/marketplace/listings/:id/reports - Report listing
 router.post(
   '/listings/:id/reports',
@@ -284,22 +386,15 @@ router.post(
   })
 );
 
-// POST /api/v1/marketplace/transactions - Initiate transaction (escrow)
+// POST /api/v1/marketplace/transactions - Legacy; use orders flow instead
 router.post(
   '/transactions',
   authMiddleware,
   handleValidationErrors,
-  asyncHandler(async (req: any, res: any) => {
-    const { listingId, amount } = req.body;
-    const buyerId = req.user?.id;
-
-    logger.debug('Initiating marketplace transaction', { listingId, buyerId, amount });
-
-    const transaction = await supabaseService.initiateMarketplaceTransaction(listingId, buyerId, amount);
-
-    res.status(201).json({
-      success: true,
-      data: transaction,
+  asyncHandler(async (_req: any, res: any) => {
+    res.status(400).json({
+      success: false,
+      error: 'Use POST /listings/:id/buy-now or the orders API instead.',
     });
   })
 );
@@ -309,17 +404,18 @@ router.post(
 // GET /api/v1/marketplace/my-listings - Get seller's own listings
 router.get(
   '/my-listings',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const userId = req.query.userId || req.user?.id;
+    const userId = req.user?.id;
     const { status } = req.query;
 
     if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId is required' });
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
     logger.debug('Fetching seller listings', { userId, status });
 
-    const listings = await supabaseService.getListingsBySeller(userId, status);
+    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined);
 
     res.json({
       success: true,
@@ -331,11 +427,12 @@ router.get(
 // GET /api/v1/marketplace/stats - Get seller stats
 router.get(
   '/stats',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const userId = req.query.userId || req.user?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId is required' });
+      return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
     logger.debug('Fetching seller stats', { userId });
@@ -373,6 +470,7 @@ router.put(
       // Invalidate caches
       await cacheService.delete(`marketplace:listing:${id}`);
       await cacheService.deletePattern('marketplace:listings:*');
+      await invalidateSellerAnalyticsCache(userId);
 
       res.json({
         success: true,
@@ -381,7 +479,7 @@ router.put(
     } catch (error: any) {
       res.status(403).json({
         success: false,
-        error: error.message,
+        error: clientErrorMessage(error),
       });
     }
   })
@@ -425,6 +523,13 @@ router.post(
     logger.debug('Adding to favorites', { userId, listingId });
 
     const result = await supabaseService.addFavorite(userId, listingId);
+
+    try {
+      const { notifySellerFavoriteMilestone } = await import('../services/marketplaceFavoriteMilestones');
+      await notifySellerFavoriteMilestone(supabaseService, listingId);
+    } catch (e) {
+      logger.warn('Favorite milestone notification failed', e);
+    }
 
     res.status(201).json({
       success: true,
@@ -543,7 +648,9 @@ router.post(
 
     // Send DM to seller with listing context
     const dmMessage = `📦 Inquiry about: "${listing.title}"\n\n${message}`;
-    await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage);
+    await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
+      bypassPrivacy: true,
+    });
 
     // Generate thread ID (same logic as sendDirectMessage)
     const sortedIds = [buyerId, listing.user_id].sort();
@@ -607,7 +714,7 @@ router.put(
     } catch (error: any) {
       res.status(403).json({
         success: false,
-        error: error.message,
+        error: clientErrorMessage(error),
       });
     }
   })
@@ -678,13 +785,12 @@ router.post(
 
     // Create notification for seller
     try {
-      await supabaseService.getClient()
-        .from('notifications')
-        .insert({
-          user_id: listing.user_id,
-          message: `New offer of ₦${Number(amount).toLocaleString()} on "${listing.title}"`,
-          link: `marketplace:offer:${data.id}`,
-        });
+      await supabaseService.createNotification(listing.user_id, {
+        type: 'marketplace_order_update',
+        message: `New offer of ₦${Number(amount).toLocaleString()} on "${listing.title}"`,
+        link: `marketplace:offer:${data.id}`,
+        data: { offerId: data.id, listingId },
+      });
     } catch (e) {
       logger.warn('Failed to send offer notification', e);
     }
@@ -785,13 +891,12 @@ router.put(
 
       // Notify buyer of counter
       try {
-        await supabaseService.getClient()
-          .from('notifications')
-          .insert({
-            user_id: offer.buyer_id,
-            message: `Seller countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
-            link: `marketplace:offer:${counterOffer.id}`,
-          });
+        await supabaseService.createNotification(offer.buyer_id, {
+          type: 'marketplace_order_update',
+          message: `Seller countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
+          link: `marketplace:offer:${counterOffer.id}`,
+          data: { offerId: counterOffer.id },
+        });
       } catch (e) {
         logger.warn('Failed to send counter notification', e);
       }
@@ -807,17 +912,25 @@ router.put(
       if (updateErr) throw updateErr;
       updatedOffer = data;
 
+      if (action === 'accept') {
+        try {
+          await supabaseService.finalizeOfferAcceptSale(id);
+          await invalidateSellerAnalyticsCache(offer.seller_id);
+        } catch (finalizeErr) {
+          logger.warn('Failed to finalize offer accept sale / budget log', finalizeErr);
+        }
+      }
+
       // Notify the other party
       const notifyUserId = action === 'withdraw' ? offer.seller_id : offer.buyer_id;
       const actionText = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'withdrawn';
       try {
-        await supabaseService.getClient()
-          .from('notifications')
-          .insert({
-            user_id: notifyUserId,
-            message: `Offer of ₦${Number(offer.amount).toLocaleString()} on "${offer.listing?.title || 'listing'}" was ${actionText}`,
-            link: `marketplace:offer:${id}`,
-          });
+        await supabaseService.createNotification(notifyUserId, {
+          type: 'marketplace_order_update',
+          message: `Offer of ₦${Number(offer.amount).toLocaleString()} on "${offer.listing?.title || 'listing'}" was ${actionText}`,
+          link: `marketplace:offer:${id}`,
+          data: { offerId: id, action },
+        });
       } catch (e) {
         logger.warn('Failed to send offer response notification', e);
       }
@@ -934,6 +1047,33 @@ router.delete(
     if (error) throw error;
 
     res.json({ success: true });
+  })
+);
+
+router.patch(
+  '/saved-searches/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { notify, name } = req.body;
+    const patch: Record<string, unknown> = {};
+    if (typeof notify === 'boolean') patch.notify = notify;
+    if (typeof name === 'string' && name.trim()) patch.name = name.trim();
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ success: false, error: 'notify or name required' });
+    }
+
+    const { data, error } = await supabaseService.getClient()
+      .from('saved_searches')
+      .update(patch)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data });
   })
 );
 
@@ -1095,9 +1235,11 @@ router.get(
       if (!listing) {
         return res.status(404).json({ success: false, error: 'Listing not found' });
       }
-      supabaseService.incrementListingViews(id);
-      await cacheService.set(listingCacheKey, listing, 600);
     }
+
+    await supabaseService.incrementListingViews(id);
+    listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
+    await cacheService.set(listingCacheKey, listing, 600);
 
     // --- 2. Similar listings (cached 5 min, shared across all users) ---
     const similarCacheKey = `marketplace:similar:${id}`;
@@ -1222,11 +1364,358 @@ router.get(
           totalFavorites,
           avgRating: Math.round(avgRating * 10) / 10,
           totalReviews: allReviews.length,
+          isVerified:
+            soldListings.length >= 5 && avgRating >= 4.5 && allReviews.length >= 3,
         },
+        badges: [
+          ...(soldListings.length >= 5 && avgRating >= 4.5
+            ? [{ id: 'trusted_seller', label: 'Trusted seller', icon: 'shield' }]
+            : []),
+          ...(soldListings.length >= 10
+            ? [{ id: 'top_seller', label: 'Top seller', icon: 'star' }]
+            : []),
+        ],
         recentListings: activeListings.slice(0, 6),
         recentReviews: reviewsWithTitle,
       },
     });
+  })
+);
+
+// ============================================================
+// ORDERS ENDPOINTS
+// ============================================================
+
+router.get(
+  '/orders',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user.id;
+    const role = req.query.role === 'seller' ? 'seller' : 'buyer';
+    const orders = await getMarketplaceOrdersService(supabaseService).getOrdersForUser(
+      userId,
+      role
+    );
+    res.json({ success: true, data: orders });
+  })
+);
+
+router.get(
+  '/orders/inquiry/:inquiryId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const order = await getMarketplaceOrdersService(supabaseService).getOrderForInquiry(
+      req.params.inquiryId,
+      req.user.id
+    );
+    res.json({ success: true, data: order });
+  })
+);
+
+router.get(
+  '/orders/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    try {
+      const order = await getMarketplaceOrdersService(supabaseService).getOrderById(
+        req.params.id,
+        req.user.id
+      );
+      if (!order) {
+        return res.status(404).json({ success: false, error: 'Order not found' });
+      }
+      res.json({ success: true, data: order });
+    } catch (err: any) {
+      res.status(403).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.patch(
+  '/orders/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { action, meetingLocation, sellerNote, fulfillmentMode } = req.body;
+    if (!action) {
+      return res.status(400).json({ success: false, error: 'action is required' });
+    }
+
+    try {
+      const ordersService = getMarketplaceOrdersService(supabaseService);
+      if (meetingLocation || sellerNote || fulfillmentMode) {
+        await supabaseService.getClient()
+          .from('marketplace_orders')
+          .update({
+            ...(meetingLocation ? { meeting_location: meetingLocation } : {}),
+            ...(sellerNote ? { seller_note: sellerNote } : {}),
+            ...(fulfillmentMode ? { fulfillment_mode: fulfillmentMode } : {}),
+          })
+          .eq('id', req.params.id);
+      }
+      const order = await ordersService.updateOrderStatus(
+        req.params.id,
+        req.user.id,
+        action
+      );
+      await invalidateSellerAnalyticsCache(order.seller_id);
+      res.json({ success: true, data: order });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.post(
+  '/orders/:id/payment-link',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    try {
+      const result = await getMarketplaceOrdersService(supabaseService).createPaymentLinkOrder(
+        req.params.id,
+        req.user.id
+      );
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.get(
+  '/analytics/seller',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const cacheKey = `marketplace:analytics:seller:${req.user.id}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+    const analytics = await getMarketplaceOrdersService(supabaseService).getSellerAnalytics(
+      req.user.id
+    );
+    await cacheService.set(cacheKey, analytics, 120);
+    res.json({ success: true, data: analytics });
+  })
+);
+
+router.get(
+  '/seller/buyers',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const segment = typeof req.query.segment === 'string' ? req.query.segment : undefined;
+    const buyers = await getMarketplaceOrdersService(supabaseService).getSellerBuyersWithSegments(
+      req.user.id,
+      segment
+    );
+    res.json({ success: true, data: buyers });
+  })
+);
+
+// ============================================================
+// SELLER COUPONS
+// ============================================================
+
+router.get(
+  '/coupons',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
+    const coupons = await getMarketplaceCouponsService(supabaseService).listForSeller(req.user.id);
+    res.json({ success: true, data: coupons });
+  })
+);
+
+router.post(
+  '/coupons',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { code, discountType, discountValue, listingId, maxUses, startsAt, endsAt } = req.body;
+    if (!code || !discountType || discountValue == null) {
+      return res.status(400).json({ success: false, error: 'code, discountType, and discountValue are required' });
+    }
+    const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
+    const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user.id, {
+      code,
+      discountType,
+      discountValue: Number(discountValue),
+      listingId,
+      maxUses: maxUses != null ? Number(maxUses) : undefined,
+      startsAt,
+      endsAt,
+    });
+    res.status(201).json({ success: true, data: coupon });
+  })
+);
+
+router.post(
+  '/coupons/validate',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { code, listingId } = req.body;
+    if (!code || !listingId) {
+      return res.status(400).json({ success: false, error: 'code and listingId are required' });
+    }
+    const listing = await supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) {
+      return res.status(404).json({ success: false, error: 'Listing not found' });
+    }
+    const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
+    const result = await getMarketplaceCouponsService(supabaseService).validateForListing(
+      code,
+      listing,
+      req.user.id
+    );
+    res.json({
+      success: true,
+      data: {
+        code: result.coupon.code,
+        discountAmount: result.discountAmount,
+        finalAmount: result.finalAmount,
+        baseAmount: result.baseAmount,
+      },
+    });
+  })
+);
+
+// ============================================================
+// TIER 2: SELLER TOOLS (campaigns, bundles, preferences)
+// ============================================================
+
+router.get(
+  '/seller/preferences',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const prefs = await getMarketplaceSellerToolsService(supabaseService).getPreferences(req.user.id);
+    res.json({ success: true, data: prefs });
+  })
+);
+
+router.put(
+  '/seller/preferences',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const prefs = await getMarketplaceSellerToolsService(supabaseService).updatePreferences(
+      req.user.id,
+      {
+        hallDropoffEnabled: req.body?.hallDropoffEnabled,
+        hallDropoffMinAmount: req.body?.hallDropoffMinAmount,
+        requirePaymentConfirmation: req.body?.requirePaymentConfirmation,
+        favoriteAlertThreshold: req.body?.favoriteAlertThreshold,
+      }
+    );
+    res.json({ success: true, data: prefs });
+  })
+);
+
+router.get(
+  '/sellers/:userId/pickup-nudge',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const nudge = await getMarketplaceSellerToolsService(supabaseService).getPickupNudge(
+      req.params.userId,
+      req.user?.id
+    );
+    res.json({ success: true, data: nudge });
+  })
+);
+
+router.post(
+  '/seller/campaigns',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { message, segment, buyerIds } = req.body || {};
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const result = await getMarketplaceSellerToolsService(supabaseService).sendCampaign(
+      req.user.id,
+      { message, segment, buyerIds }
+    );
+    res.json({ success: true, data: result });
+  })
+);
+
+router.post(
+  '/bundles',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { title, description, price, listingIds, images, location, category } = req.body || {};
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const bundle = await getMarketplaceSellerToolsService(supabaseService).createBundle(
+      req.user.id,
+      {
+        title,
+        description,
+        price: Number(price),
+        listingIds,
+        images,
+        location,
+        category,
+      }
+    );
+    await cacheService.deletePattern('marketplace:listings:*');
+    res.status(201).json({ success: true, data: bundle });
+  })
+);
+
+router.get(
+  '/seller/onboarding',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const status = await getMarketplaceSellerToolsService(supabaseService).getOnboardingStatus(
+      req.user.id
+    );
+    res.json({ success: true, data: status });
+  })
+);
+
+router.post(
+  '/seller/onboarding/complete',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const prefs = await getMarketplaceSellerToolsService(supabaseService).completeOnboarding(
+      req.user.id
+    );
+    res.json({ success: true, data: prefs });
+  })
+);
+
+router.post(
+  '/orders/:id/payment-proof',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { proofUrl } = req.body || {};
+    try {
+      const order = await getMarketplaceOrdersService(supabaseService).submitPaymentProof(
+        req.params.id,
+        req.user.id,
+        proofUrl
+      );
+      res.json({ success: true, data: order });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+router.get(
+  '/listings/:id/offers-history',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const listing = await supabaseService.getMarketplaceListingById(req.params.id);
+    if (!listing || listing.user_id !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Only the listing owner can view offer history' });
+    }
+    const { data, error } = await supabaseService.getClient()
+      .from('marketplace_offers')
+      .select('*, buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url)')
+      .eq('listing_id', req.params.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json({ success: true, data: data || [] });
   })
 );
 

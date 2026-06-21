@@ -39,6 +39,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     title: '',
     description: '',
     price: '',
+    salePrice: '',
+    saleEndsAt: '',
+    promoLabel: '',
+    quantity: '',
     location: '',
     category: '',
     images: [] as ImageFile[]
@@ -76,6 +80,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         title: listing.title || '',
         description: listing.description || '',
         price: listing.price?.toString() || '',
+        salePrice: listing.sale_price?.toString() || '',
+        saleEndsAt: listing.sale_ends_at ? listing.sale_ends_at.slice(0, 16) : '',
+        promoLabel: listing.promo_label || '',
+        quantity: listing.quantity != null ? String(listing.quantity) : '',
         location: listing.location || '',
         category: isCustom ? 'other' : (listing.category || ''),
         images: (listing.images || []).map(url => ({
@@ -220,6 +228,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         title: formData.title,
         description: formData.description || undefined,
         price: formData.price ? parseFloat(formData.price) : undefined,
+        sale_price: formData.salePrice ? parseFloat(formData.salePrice) : null,
+        sale_ends_at: formData.saleEndsAt ? new Date(formData.saleEndsAt).toISOString() : null,
+        promo_label: formData.promoLabel || null,
+        quantity: formData.quantity ? parseInt(formData.quantity, 10) : null,
         location: formData.location || undefined,
         category: resolvedCategory,
         images: imageUrls
@@ -345,8 +357,8 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             />
           </div>
 
-          {/* Price and Location Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Price, quantity, and location */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-2" />
@@ -364,6 +376,19 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Quantity in stock
+              </label>
+              <input
+                type="number"
+                value={formData.quantity}
+                onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
+                placeholder="Unlimited"
+                min="0"
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-2" />
                 Location
               </label>
@@ -373,6 +398,45 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                 placeholder="e.g., University of Nigeria, Nsukka"
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Sale price (₦)
+              </label>
+              <input
+                type="number"
+                value={formData.salePrice}
+                onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
+                placeholder="Promo price"
+                min="0"
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Sale ends
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.saleEndsAt}
+                onChange={(e) => setFormData(prev => ({ ...prev, saleEndsAt: e.target.value }))}
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Promo label
+              </label>
+              <input
+                type="text"
+                value={formData.promoLabel}
+                onChange={(e) => setFormData(prev => ({ ...prev, promoLabel: e.target.value }))}
+                placeholder="Exam week deal"
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
               />
             </div>
           </div>

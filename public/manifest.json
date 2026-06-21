@@ -1,0 +1,16 @@
+{
+  "name": "Lantern Study",
+  "short_name": "Lantern",
+  "description": "Collaborative study platform with flashcards, groups, and AI tools",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "/lantern-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

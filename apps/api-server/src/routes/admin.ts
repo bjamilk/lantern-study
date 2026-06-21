@@ -1,0 +1,1182 @@
+/**
+ * Admin Routes — platform system-admin console endpoints.
+ * All routes are pre-protected by authMiddleware + requirePlatformAdmin
+ * applied at mount time in server.ts.
+ */
+import { Router } from 'express';
+import { SupabaseService } from '../services/supabase';
+import { CacheService } from '../services/cache';
+import { logAdminAction, countPlatformAdmins, invalidateBanCache } from '../services/adminAudit';
+import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
+import { clientErrorMessage } from '../utils/safeError';
+import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+
+const router = Router();
+let supabaseService: SupabaseService;
+let cacheService: CacheService;
+
+export function initializeAdminRoutes(svc: SupabaseService, cache: CacheService) {
+  supabaseService = svc;
+  cacheService = cache;
+}
+
+const AI_EVENT_ESTIMATED_COST_USD = parseFloat(process.env.ADMIN_AI_EVENT_COST_USD || '0.0025');
+const ENABLE_ADMIN_ROLE_MANAGEMENT = process.env.ENABLE_ADMIN_ROLE_MANAGEMENT === 'true';
+
+function startOfDayIso(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+function daysAgoIso(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** Escape user input for PostgREST .or() ilike filters (% _ , are special). */
+function escapePostgrestSearch(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_').replace(/,/g, '\\,');
+}
+
+function normalizeReportStatus(status: string): string {
+  return status === 'open' ? 'pending' : status;
+}
+
+async function getAuthUserInfoForUserIds(
+  userIds: string[]
+): Promise<Record<string, { email?: string; isPlatformAdmin?: boolean }>> {
+  if (!userIds.length) return {};
+
+  const client: any = supabaseService.getClient();
+  const entries = await Promise.all(
+    userIds.map(async (userId) => {
+      try {
+        const { data, error } = await client.auth.admin.getUserById(userId);
+        if (error) return [userId, {}] as const;
+        return [
+          userId,
+          {
+            email: data?.user?.email,
+            isPlatformAdmin: data?.user?.app_metadata?.is_platform_admin === true,
+          },
+        ] as const;
+      } catch {
+        return [userId, {}] as const;
+      }
+    })
+  );
+
+  return Object.fromEntries(entries);
+}
+
+// GET /api/v1/admin/stats
+router.get('/stats', async (req: any, res: any) => {
+  try {
+    const client = supabaseService.getClient();
+    const todayStart = startOfDayIso();
+    const last7d = daysAgoIso(7);
+    const last24h = daysAgoIso(1);
+
+    const [
+      { count: userCount },
+      { count: listingCount },
+      { count: activeListingCount },
+      { count: reportCount },
+      { count: aiEventCount },
+      { count: newUsersToday },
+      { count: reportsResolved7d },
+      { count: aiEventsLast7d },
+      { count: groupCount },
+      { count: messageCount24h },
+      { count: deckCount },
+      { count: offlineBundleCount },
+      { count: openDisputeCount },
+    ] = await Promise.all([
+      client.from('profiles').select('id', { count: 'exact', head: true }),
+      client.from('marketplace_listings').select('id', { count: 'exact', head: true }),
+      client.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      client.from('marketplace_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      client.from('ai_analytics').select('id', { count: 'exact', head: true }).gte('created_at', last24h),
+      client.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
+      client.from('marketplace_reports').select('id', { count: 'exact', head: true }).eq('status', 'resolved').gte('resolved_at', last7d),
+      client.from('ai_analytics').select('id', { count: 'exact', head: true }).gte('created_at', last7d),
+      client.from('groups').select('id', { count: 'exact', head: true }).eq('is_archived', false),
+      client.from('messages').select('id', { count: 'exact', head: true }).gte('timestamp', last24h),
+      client.from('decks').select('id', { count: 'exact', head: true }).is('removed_by_admin_at', null),
+      client.from('offline_bundles').select('id', { count: 'exact', head: true }),
+      client.from('marketplace_orders').select('id', { count: 'exact', head: true }).eq('status', 'disputed'),
+    ]);
+
+    const { data: recentAiUsers } = await client.from('ai_analytics').select('user_id').gte('created_at', last7d).limit(5000);
+    const activeUsers7d = new Set((recentAiUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
+
+    const estimatedAiCost7d = Number(((aiEventsLast7d ?? 0) * AI_EVENT_ESTIMATED_COST_USD).toFixed(4));
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers: userCount ?? 0,
+        totalListings: listingCount ?? 0,
+        activeListings: activeListingCount ?? 0,
+        openReports: reportCount ?? 0,
+        openDisputes: openDisputeCount ?? 0,
+        aiEventsLast24h: aiEventCount ?? 0,
+        newUsersToday: newUsersToday ?? 0,
+        aiEventsLast7d: aiEventsLast7d ?? 0,
+        reportsResolved7d: reportsResolved7d ?? 0,
+        estimatedAiCost7d,
+        aiEventEstimatedCostUsd: AI_EVENT_ESTIMATED_COST_USD,
+        activeGroups: groupCount ?? 0,
+        messagesLast24h: messageCount24h ?? 0,
+        totalDecks: deckCount ?? 0,
+        offlineBundles: offlineBundleCount ?? 0,
+        activeUsers7d,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/users
+router.get('/users', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const search = (req.query.search as string)?.trim() || '';
+    const offset = (page - 1) * limit;
+    const client = supabaseService.getClient();
+
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (search && uuidPattern.test(search)) {
+      const { data: profile, error } = await client
+        .from('profiles')
+        .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
+        .eq('id', search)
+        .maybeSingle();
+      if (error) throw error;
+      const authMap = profile ? await getAuthUserInfoForUserIds([profile.id]) : {};
+      const normalized = profile
+        ? [{
+            ...profile,
+            email: authMap[profile.id]?.email,
+            is_banned: profile?.settings?.is_banned === true || profile?.settings?.account_status === 'banned',
+            is_platform_admin: authMap[profile.id]?.isPlatformAdmin === true || profile?.settings?.is_platform_admin === true,
+          }]
+        : [];
+      return res.json({
+        success: true,
+        data: normalized,
+        pagination: { page: 1, limit, total: normalized.length, pages: 1 },
+      });
+    }
+
+    if (search && search.includes('@')) {
+      const authClient: any = client;
+      let matchedUser: any = null;
+      for (let authPage = 1; authPage <= 5 && !matchedUser; authPage++) {
+        const { data: authData } = await authClient.auth.admin.listUsers({ page: authPage, perPage: 200 });
+        matchedUser = (authData?.users || []).find((u: any) =>
+          u.email?.toLowerCase().includes(search.toLowerCase())
+        );
+        if ((authData?.users || []).length < 200) break;
+      }
+      if (matchedUser) {
+        const { data: profile } = await client
+          .from('profiles')
+          .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
+          .eq('id', matchedUser.id)
+          .maybeSingle();
+        const row = profile || {
+          id: matchedUser.id,
+          name: matchedUser.user_metadata?.name || matchedUser.email,
+          created_at: matchedUser.created_at,
+          settings: {},
+        };
+        const normalized = [{
+          ...row,
+          email: matchedUser.email,
+          is_banned: row?.settings?.is_banned === true || row?.settings?.account_status === 'banned',
+          is_platform_admin: matchedUser.app_metadata?.is_platform_admin === true,
+        }];
+        return res.json({
+          success: true,
+          data: normalized,
+          pagination: { page: 1, limit, total: normalized.length, pages: 1 },
+        });
+      }
+    }
+
+    let query = client
+      .from('profiles')
+      .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      const safeSearch = escapePostgrestSearch(search);
+      query = query.or(`name.ilike.%${safeSearch}%,username.ilike.%${safeSearch}%,first_name.ilike.%${safeSearch}%,last_name.ilike.%${safeSearch}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    const userIds = (data || []).map((u: any) => u.id);
+    const authMap = await getAuthUserInfoForUserIds(userIds);
+
+    const normalized = (data || []).map((u: any) => ({
+      ...u,
+      email: authMap[u.id]?.email,
+      is_banned: u?.settings?.is_banned === true || u?.settings?.account_status === 'banned',
+      is_platform_admin: authMap[u.id]?.isPlatformAdmin === true || u?.settings?.is_platform_admin === true,
+    }));
+
+    res.json({
+      success: true,
+      data: normalized,
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/users/:id/status', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { status, reason } = req.body as { status: 'active' | 'banned'; reason?: string };
+
+    if (!['active', 'banned'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'status must be "active" or "banned"' });
+    }
+
+    const client = supabaseService.getClient();
+    const { data: profile, error: fetchErr } = await client.from('profiles').select('settings').eq('id', id).single();
+
+    if (fetchErr || !profile) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const currentSettings = (profile.settings || {}) as Record<string, any>;
+    const nextSettings = {
+      ...currentSettings,
+      account_status: status,
+      is_banned: status === 'banned',
+      ...(status === 'banned' ? { banned_at: new Date().toISOString(), ban_reason: reason || null } : { banned_at: null, ban_reason: null }),
+    };
+
+    const { error } = await client.from('profiles').update({ settings: nextSettings }).eq('id', id);
+    if (error) throw error;
+
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: status === 'banned' ? 'user_ban' : 'user_unban',
+      targetType: 'user',
+      targetId: id,
+      reason,
+    });
+    await invalidateBanCache(id);
+
+    res.json({ success: true, data: { id, status } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/users/:id/role', async (req: any, res: any) => {
+  try {
+    if (!ENABLE_ADMIN_ROLE_MANAGEMENT) {
+      return res.status(403).json({
+        success: false,
+        error: 'Role management is disabled. Use Supabase dashboard or set ENABLE_ADMIN_ROLE_MANAGEMENT=true.',
+      });
+    }
+
+    const { id } = req.params;
+    const { isPlatformAdmin, confirmationPhrase } = req.body as {
+      isPlatformAdmin: boolean;
+      confirmationPhrase?: string;
+    };
+
+    if (confirmationPhrase !== 'CONFIRM_ADMIN_ROLE_CHANGE') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid confirmation phrase.' });
+    }
+
+    if (id === req.user.id && isPlatformAdmin !== true) {
+      return res.status(400).json({ success: false, error: 'You cannot revoke your own admin role.' });
+    }
+
+    const client: any = supabaseService.getClient();
+    const { data: userData, error: fetchErr } = await client.auth.admin.getUserById(id);
+    if (fetchErr || !userData?.user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const currentlyAdmin = userData.user.app_metadata?.is_platform_admin === true;
+    if (currentlyAdmin && isPlatformAdmin !== true) {
+      const adminCount = await countPlatformAdmins(supabaseService);
+      if (adminCount <= 1) {
+        return res.status(400).json({ success: false, error: 'Cannot remove the last platform admin.' });
+      }
+    }
+
+    const existingMetadata = userData.user.app_metadata || {};
+    const nextMetadata = {
+      ...existingMetadata,
+      is_platform_admin: isPlatformAdmin === true,
+    };
+
+    const { error: updateErr } = await client.auth.admin.updateUserById(id, {
+      app_metadata: nextMetadata,
+    });
+    if (updateErr) throw updateErr;
+
+    const { data: profile } = await client.from('profiles').select('settings').eq('id', id).single();
+    const nextSettings = {
+      ...(profile?.settings || {}),
+      is_platform_admin: isPlatformAdmin === true,
+    };
+    await client.from('profiles').update({ settings: nextSettings }).eq('id', id);
+
+    if (isPlatformAdmin === true) {
+      await client.from('platform_admins').upsert({ user_id: id, granted_by: req.user.id }, { onConflict: 'user_id' });
+    } else {
+      await client.from('platform_admins').delete().eq('user_id', id);
+    }
+
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: isPlatformAdmin ? 'user_role_grant' : 'user_role_revoke',
+      targetType: 'user',
+      targetId: id,
+    });
+
+    res.json({ success: true, data: { id, is_platform_admin: isPlatformAdmin === true } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/marketplace/listings', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || '';
+    const offset = (page - 1) * limit;
+
+    let query = supabaseService
+      .getClient()
+      .from('marketplace_listings')
+      .select('id, title, price, category, status, created_at, views_count, user_id, seller:profiles!marketplace_listings_user_id_fkey(id, name)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status) query = query.eq('status', status);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data || [],
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.delete('/marketplace/listings/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { error } = await supabaseService.getClient().from('marketplace_listings').update({ status: 'removed_by_admin' }).eq('id', id);
+    if (error) throw error;
+
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'listing_remove',
+      targetType: 'listing',
+      targetId: id,
+    });
+
+    await cacheService.delete(`marketplace:listing:${id}`);
+    await cacheService.deletePattern('marketplace:listings:*');
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/marketplace/listings/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body as { status: 'active' | 'suspended_by_admin' };
+
+    if (!['active', 'suspended_by_admin'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'status must be active or suspended_by_admin' });
+    }
+
+    const { error } = await supabaseService.getClient().from('marketplace_listings').update({ status }).eq('id', id);
+    if (error) throw error;
+
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: status === 'active' ? 'listing_activate' : 'listing_suspend',
+      targetType: 'listing',
+      targetId: id,
+    });
+
+    await cacheService.delete(`marketplace:listing:${id}`);
+    await cacheService.deletePattern('marketplace:listings:*');
+
+    res.json({ success: true, data: { id, status } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/marketplace/orders', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || 'disputed';
+
+    const { data, total } = await getMarketplaceOrdersService(supabaseService).getOrdersForAdmin({
+      status,
+      page,
+      limit,
+    });
+
+    res.json({
+      success: true,
+      data,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/marketplace/orders/:id/dispute', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { resolution, note } = req.body as {
+      resolution?: 'release_to_seller' | 'refund_buyer';
+      note?: string;
+    };
+
+    if (!resolution || !['release_to_seller', 'refund_buyer'].includes(resolution)) {
+      return res.status(400).json({
+        success: false,
+        error: 'resolution must be release_to_seller or refund_buyer',
+      });
+    }
+
+    const order = await getMarketplaceOrdersService(supabaseService).resolveDisputeAsAdmin(
+      id,
+      resolution,
+      note
+    );
+
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action:
+        resolution === 'release_to_seller'
+          ? 'order_dispute_release_seller'
+          : 'order_dispute_refund_buyer',
+      targetType: 'marketplace_order',
+      targetId: id,
+      reason: note?.trim() || undefined,
+      metadata: {
+        resolution,
+        listingId: order.listing_id,
+        buyerId: order.buyer_id,
+        sellerId: order.seller_id,
+        amount: order.amount,
+      },
+    });
+
+    await cacheService.delete(`marketplace:listing:${order.listing_id}`);
+    await cacheService.deletePattern('marketplace:listings:*');
+    await invalidateSellerAnalyticsCache(order.seller_id);
+
+    res.json({ success: true, data: order });
+  } catch (err: any) {
+    const message = clientErrorMessage(err);
+    const status = message.includes('not found') ? 404 : message.includes('Only disputed') ? 400 : 500;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+router.get('/reports', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = normalizeReportStatus((req.query.status as string) || 'open');
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await supabaseService
+      .getClient()
+      .from('marketplace_reports')
+      .select('id, listing_id, reporter_id, reason, details, status, created_at, listing:marketplace_listings(id, title, status), reporter:profiles!marketplace_reports_reporter_id_fkey(id, name)', { count: 'exact' })
+      .eq('status', status)
+      .order('created_at', { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data || [],
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.put('/reports/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { action, adminNote } = req.body as {
+      action: 'dismiss' | 'remove_listing' | 'warn_seller';
+      adminNote?: string;
+    };
+
+    if (!['dismiss', 'remove_listing', 'warn_seller'].includes(action)) {
+      return res.status(400).json({ success: false, error: 'Invalid action' });
+    }
+
+    const client = supabaseService.getClient();
+
+    const { data: report, error: fetchErr } = await client
+      .from('marketplace_reports')
+      .select('listing_id, listing:marketplace_listings(id, title, user_id)')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !report) {
+      return res.status(404).json({ success: false, error: 'Report not found' });
+    }
+
+    const nextReportStatus = action === 'dismiss' ? 'dismissed' : 'resolved';
+    const noteWithMeta = action === 'warn_seller'
+      ? `[warned ${new Date().toISOString()}] ${adminNote || ''}`.trim()
+      : adminNote || null;
+
+    const { error: updateErr } = await client
+      .from('marketplace_reports')
+      .update({
+        status: nextReportStatus,
+        admin_note: noteWithMeta,
+        resolved_by: req.user.id,
+        resolved_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    if (updateErr) throw updateErr;
+
+    const listing = (report as any).listing;
+    const sellerId = listing?.user_id;
+
+    if (action === 'remove_listing') {
+      await client.from('marketplace_listings').update({ status: 'removed_by_admin' }).eq('id', report.listing_id);
+      await cacheService.delete(`marketplace:listing:${report.listing_id}`);
+      await cacheService.deletePattern('marketplace:listings:*');
+      await logAdminAction(supabaseService, {
+        actorId: req.user.id,
+        action: 'report_remove_listing',
+        targetType: 'report',
+        targetId: id,
+        metadata: { listing_id: report.listing_id },
+        reason: adminNote,
+      });
+    } else if (action === 'warn_seller' && sellerId) {
+      const listingTitle = listing?.title || 'your listing';
+      await supabaseService.createNotification(sellerId, {
+        message: `Your marketplace listing "${listingTitle}" received a warning from platform moderation.${adminNote ? ` Note: ${adminNote}` : ''}`,
+        link: `/marketplace/listing/${report.listing_id}`,
+        type: 'warning',
+      });
+      await cacheService.deletePattern(`notifications:${sellerId}:*`);
+      await logAdminAction(supabaseService, {
+        actorId: req.user.id,
+        action: 'report_warn_seller',
+        targetType: 'report',
+        targetId: id,
+        metadata: { listing_id: report.listing_id, seller_id: sellerId },
+        reason: adminNote,
+      });
+    } else {
+      await logAdminAction(supabaseService, {
+        actorId: req.user.id,
+        action: 'report_dismiss',
+        targetType: 'report',
+        targetId: id,
+        reason: adminNote,
+      });
+    }
+
+    res.json({ success: true, data: { action, warned: action === 'warn_seller' } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/ai-analytics', async (req: any, res: any) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabaseService.getClient().from('ai_analytics').select('event, created_at, user_id').gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
+    if (error) throw error;
+
+    const byEvent: Record<string, number> = {};
+    const byDay: Record<string, number> = {};
+
+    for (const row of data || []) {
+      byEvent[row.event] = (byEvent[row.event] || 0) + 1;
+      const day = row.created_at.slice(0, 10);
+      byDay[day] = (byDay[day] || 0) + 1;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        totalEvents: (data || []).length,
+        byEvent,
+        byDay,
+        periodDays: days,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/ai-analytics/users', async (req: any, res: any) => {
+  try {
+    const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const since = daysAgoIso(days);
+
+    const { data, error } = await supabaseService.getClient().from('ai_analytics').select('user_id, event, created_at').gte('created_at', since).limit(20000);
+    if (error) throw error;
+
+    const usageMap: Record<string, number> = {};
+    for (const row of data || []) {
+      const userId = row.user_id || 'unknown';
+      usageMap[userId] = (usageMap[userId] || 0) + 1;
+    }
+
+    const top = Object.entries(usageMap)
+      .map(([userId, events]) => ({ userId, events }))
+      .sort((a, b) => b.events - a.events)
+      .slice(0, limit);
+
+    const userIds = top.map((u) => u.userId).filter((id) => id !== 'unknown');
+    const authMap = await getAuthUserInfoForUserIds(userIds);
+
+    const { data: profileRows } = await supabaseService.getClient().from('profiles').select('id, name, username').in('id', userIds);
+    const profileMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p]));
+
+    res.json({
+      success: true,
+      data: {
+        periodDays: days,
+        users: top.map((row) => ({
+          user_id: row.userId,
+          events: row.events,
+          name: profileMap[row.userId]?.name,
+          username: profileMap[row.userId]?.username,
+          email: authMap[row.userId]?.email,
+        })),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/activity', async (req: any, res: any) => {
+  try {
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const client = supabaseService.getClient();
+
+    const [usersRes, reportsRes, listingsRes, aiRes] = await Promise.all([
+      client.from('profiles').select('id, name, username, created_at').order('created_at', { ascending: false }).limit(limit),
+      client.from('marketplace_reports').select('id, reason, created_at, reporter_id').order('created_at', { ascending: false }).limit(limit),
+      client.from('marketplace_listings').select('id, title, created_at, user_id, status').order('created_at', { ascending: false }).limit(limit),
+      client.from('ai_analytics').select('id, event, created_at, user_id').order('created_at', { ascending: false }).limit(limit),
+    ]);
+
+    const activities: Array<{
+      id: string;
+      type: 'user_joined' | 'report_created' | 'listing_created' | 'ai_event';
+      title: string;
+      description: string;
+      created_at: string;
+      user_id?: string;
+    }> = [];
+
+    for (const row of usersRes.data || []) {
+      activities.push({
+        id: `user:${row.id}`,
+        type: 'user_joined',
+        title: 'New user joined',
+        description: row.name || row.username || row.id,
+        created_at: row.created_at,
+        user_id: row.id,
+      });
+    }
+
+    for (const row of reportsRes.data || []) {
+      activities.push({
+        id: `report:${row.id}`,
+        type: 'report_created',
+        title: 'New marketplace report',
+        description: row.reason || 'Report submitted',
+        created_at: row.created_at,
+        user_id: row.reporter_id,
+      });
+    }
+
+    for (const row of listingsRes.data || []) {
+      activities.push({
+        id: `listing:${row.id}`,
+        type: 'listing_created',
+        title: 'New marketplace listing',
+        description: row.title || row.id,
+        created_at: row.created_at,
+        user_id: row.user_id,
+      });
+    }
+
+    for (const row of aiRes.data || []) {
+      activities.push({
+        id: `ai:${row.id}`,
+        type: 'ai_event',
+        title: 'AI usage event',
+        description: row.event || 'AI event',
+        created_at: row.created_at,
+        user_id: row.user_id,
+      });
+    }
+
+    activities.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    res.json({ success: true, data: activities.slice(0, limit) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/audit
+router.get('/audit', async (req: any, res: any) => {
+  try {
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 30));
+    const client = supabaseService.getClient();
+    const { data, error } = await client
+      .from('admin_audit_log')
+      .select('id, actor_id, action, target_type, target_id, metadata, reason, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      const code = error.code || '';
+      const message = error.message || '';
+      // Table not migrated yet — return empty list instead of breaking the admin console.
+      if (code === '42P01' || message.includes('admin_audit_log') || message.includes('does not exist')) {
+        console.warn('admin_audit_log table missing; run supabase migration 20260608100000_admin_audit_log.sql');
+        return res.json({ success: true, data: [], tableReady: false });
+      }
+      throw error;
+    }
+
+    const actorIds = [...new Set((data || []).map((r: any) => r.actor_id).filter(Boolean))];
+    const { data: actors } = actorIds.length
+      ? await client.from('profiles').select('id, name, username').in('id', actorIds)
+      : { data: [] };
+    const actorMap = Object.fromEntries((actors || []).map((a: any) => [a.id, a]));
+
+    res.json({
+      success: true,
+      data: (data || []).map((row: any) => ({
+        ...row,
+        actor: actorMap[row.actor_id] || null,
+      })),
+      tableReady: true,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/users/:id
+router.get('/users/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const client = supabaseService.getClient();
+    const last7d = daysAgoIso(7);
+
+    const { data: profile, error } = await client
+      .from('profiles')
+      .select('id, name, username, first_name, last_name, avatar_url, points, badges, settings, stats, created_at')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!profile) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const authMap = await getAuthUserInfoForUserIds([id]);
+    const [
+      { count: groupCount },
+      { count: listingCount },
+      { count: deckCount },
+      { count: aiEvents7d },
+    ] = await Promise.all([
+      client.from('group_members').select('group_id', { count: 'exact', head: true }).eq('user_id', id),
+      client.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('user_id', id),
+      client.from('decks').select('id', { count: 'exact', head: true }).eq('user_id', id).is('removed_by_admin_at', null),
+      client.from('ai_analytics').select('id', { count: 'exact', head: true }).eq('user_id', id).gte('created_at', last7d),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        ...profile,
+        email: authMap[id]?.email,
+        is_banned: profile?.settings?.is_banned === true || profile?.settings?.account_status === 'banned',
+        is_platform_admin: authMap[id]?.isPlatformAdmin === true || profile?.settings?.is_platform_admin === true,
+        counts: {
+          groups: groupCount ?? 0,
+          listings: listingCount ?? 0,
+          decks: deckCount ?? 0,
+          aiEvents7d: aiEvents7d ?? 0,
+        },
+        aiQuota: await getAllAIUsageForUser(id),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/notifications
+router.post('/notifications', async (req: any, res: any) => {
+  try {
+    const { userId, message, link, type = 'info' } = req.body;
+    if (!userId || !message) {
+      return res.status(400).json({ success: false, error: 'userId and message are required' });
+    }
+    const notification = await supabaseService.createNotification(userId, { message, link, type, force: true });
+    await cacheService.deletePattern(`notifications:${userId}:*`);
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'notification_send',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { type },
+    });
+    res.status(201).json({ success: true, data: notification });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/notifications/bulk
+router.post('/notifications/bulk', async (req: any, res: any) => {
+  try {
+    const { userIds, message, link, type = 'info' } = req.body;
+    if (!Array.isArray(userIds) || !userIds.length || !message) {
+      return res.status(400).json({ success: false, error: 'userIds array and message are required' });
+    }
+    if (userIds.length > 100) {
+      return res.status(400).json({ success: false, error: 'Maximum 100 users per bulk send' });
+    }
+    const notifications = userIds.map((uid: string) => ({ userId: uid, message, link, type }));
+    const created = await supabaseService.createBulkNotifications(notifications);
+    for (const uid of userIds) {
+      await cacheService.deletePattern(`notifications:${uid}:*`);
+    }
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'notification_send',
+      targetType: 'bulk',
+      metadata: { count: userIds.length, type },
+    });
+    res.status(201).json({ success: true, data: created, count: created.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/users/:id/points
+router.post('/users/:id/points', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { points, reason, source = 'admin' } = req.body;
+    if (typeof points !== 'number' || !Number.isFinite(points)) {
+      return res.status(400).json({ success: false, error: 'points must be a number' });
+    }
+    const result = await supabaseService.awardPoints(id, points, reason || 'Admin adjustment', source);
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'points_award',
+      targetType: 'user',
+      targetId: id,
+      metadata: { points, reason },
+    });
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/users/:id/badge
+router.post('/users/:id/badge', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { badgeId } = req.body;
+    if (!badgeId) return res.status(400).json({ success: false, error: 'badgeId is required' });
+    const result = await supabaseService.awardBadge(id, badgeId);
+    await cacheService.deletePattern(`gamification:user:badges:${id}:*`);
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'badge_award',
+      targetType: 'user',
+      targetId: id,
+      metadata: { badgeId },
+    });
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/groups
+router.get('/groups', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const search = (req.query.search as string)?.trim() || '';
+    const offset = (page - 1) * limit;
+    let query = supabaseService.getClient()
+      .from('groups')
+      .select('id, name, description, is_archived, created_at, last_message_time', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (search) {
+      const safe = escapePostgrestSearch(search);
+      query = query.ilike('name', `%${safe}%`);
+    }
+    const { data, error, count } = await query;
+    if (error) throw error;
+    res.json({ success: true, data: data || [], pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// PATCH /api/v1/admin/groups/:id
+router.patch('/groups/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { isArchived, reason } = req.body as { isArchived: boolean; reason?: string };
+    const { error } = await supabaseService.getClient().from('groups').update({ is_archived: isArchived === true }).eq('id', id);
+    if (error) throw error;
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: isArchived ? 'group_archive' : 'group_suspend',
+      targetType: 'group',
+      targetId: id,
+      reason,
+    });
+    res.json({ success: true, data: { id, is_archived: isArchived === true } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/messages
+router.get('/messages', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const groupId = (req.query.groupId as string) || '';
+    const offset = (page - 1) * limit;
+    let query = supabaseService.getClient()
+      .from('messages')
+      .select('id, group_id, sender_id, text, timestamp, type, sender:profiles!messages_sender_id_fkey(id, name, username)', { count: 'exact' })
+      .order('timestamp', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (groupId) query = query.eq('group_id', groupId);
+    const { data, error, count } = await query;
+    if (error) throw error;
+    res.json({ success: true, data: data || [], pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// DELETE /api/v1/admin/messages/:id
+router.delete('/messages/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const { error } = await supabaseService.getClient().from('messages').delete().eq('id', id);
+    if (error) throw error;
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'message_delete',
+      targetType: 'message',
+      targetId: id,
+      reason,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/decks
+router.get('/decks', async (req: any, res: any) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const search = (req.query.search as string)?.trim() || '';
+    const offset = (page - 1) * limit;
+    let query = supabaseService.getClient()
+      .from('decks')
+      .select('id, name, description, user_id, created_at, removed_by_admin_at, owner:profiles!decks_user_id_fkey(id, name, username)', { count: 'exact' })
+      .is('removed_by_admin_at', null)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (search) {
+      const safe = escapePostgrestSearch(search);
+      query = query.ilike('name', `%${safe}%`);
+    }
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    const deckIds = (data || []).map((d: any) => d.id);
+    let cardCounts: Record<string, number> = {};
+    if (deckIds.length) {
+      const { data: cards } = await supabaseService.getClient().from('flashcards').select('deck_id').in('deck_id', deckIds);
+      for (const c of cards || []) {
+        cardCounts[c.deck_id] = (cardCounts[c.deck_id] || 0) + 1;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: (data || []).map((d: any) => ({ ...d, card_count: cardCounts[d.id] || 0 })),
+      pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// DELETE /api/v1/admin/decks/:id
+router.delete('/decks/:id', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const { error } = await supabaseService.getClient().from('decks').update({ removed_by_admin_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'deck_remove',
+      targetType: 'deck',
+      targetId: id,
+      reason,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/offline/summary
+router.get('/offline/summary', async (req: any, res: any) => {
+  try {
+    const { data: bundles, error } = await supabaseService.getClient()
+      .from('offline_bundles')
+      .select('id, user_id, display_name, group_name, updated_at, created_at')
+      .order('updated_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+
+    const rows = bundles || [];
+    const userIds = [...new Set(rows.map((b: { user_id: string }) => b.user_id).filter(Boolean))];
+    let profileById: Record<string, { id: string; name?: string; username?: string }> = {};
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profileError } = await supabaseService.getClient()
+        .from('profiles')
+        .select('id, name, username')
+        .in('id', userIds);
+      if (profileError) throw profileError;
+      profileById = Object.fromEntries((profiles || []).map((p: { id: string; name?: string; username?: string }) => [p.id, p]));
+    }
+
+    res.json({
+      success: true,
+      data: rows.map((b: { user_id: string }) => ({
+        ...b,
+        owner: profileById[b.user_id] || null,
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// POST /api/v1/admin/ai/quota/reset
+router.post('/ai/quota/reset', async (req: any, res: any) => {
+  try {
+    const { userId, feature } = req.body;
+    if (!userId) return res.status(400).json({ success: false, error: 'userId is required' });
+    await resetAIUsageForUser(userId, feature || undefined);
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'ai_quota_reset',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { feature: feature || 'all' },
+    });
+    res.json({ success: true, data: { userId, feature: feature || 'all', usage: await getAllAIUsageForUser(userId) } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/ai/companion/:userId
+router.get('/ai/companion/:userId', async (req: any, res: any) => {
+  try {
+    const { userId } = req.params;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const { data, error } = await supabaseService.getClient()
+      .from('ai_companion_messages')
+      .select('id, role, content, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    res.json({ success: true, data: (data || []).reverse() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+// GET /api/v1/admin/ai/quota/:userId
+router.get('/ai/quota/:userId', async (req: any, res: any) => {
+  try {
+    const { userId } = req.params;
+    res.json({ success: true, data: { userId, quotas: await getAllAIUsageForUser(userId), global: await getAIUsage(userId) } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+export default router;

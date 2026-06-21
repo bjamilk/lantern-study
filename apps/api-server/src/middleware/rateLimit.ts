@@ -59,17 +59,33 @@ export const createRateLimit = (
       // helper as accepting a string, but at runtime it accepts the request.
       return (ipKeyGenerator as any)(req);
     },
-    // Skip rate limiting for health checks
+    // Skip rate limiting for health checks and admin (admin has its own limiter after auth)
     skip: (req: Request) => {
-      return req.path === '/health' || req.path === '/api/health';
+      const path = req.path || '';
+      if (
+        path === '/health' ||
+        path === '/ready' ||
+        path === '/metrics' ||
+        path === '/api/health' ||
+        path.startsWith('/api/v1/admin')
+      ) {
+        return true;
+      }
+      return false;
     },
   });
 };
 
 // Main rate limit middleware
+const defaultWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10);
+const defaultMaxRequests =
+  process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10)
+    : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000', 10);
+
 export const rateLimitMiddleware = createRateLimit(
-  parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
-  parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // 100 requests default
+  defaultWindowMs,
+  defaultMaxRequests,
   'API rate limit exceeded. Please slow down your requests.'
 );
 
@@ -99,11 +115,29 @@ export const burstRateLimit = createRateLimit(
   'Too many expensive operations. Please wait before trying again.'
 );
 
+// Admin console reads many endpoints in parallel (overview, marketplace tabs).
+// In development, skip dedicated admin throttling — the global dev limit is already high.
+export const adminRateLimit =
+  process.env.NODE_ENV === 'production'
+    ? createRateLimit(
+        60 * 1000,
+        parseInt(process.env.ADMIN_RATE_LIMIT_MAX || '120', 10),
+        'Admin API rate limit exceeded. Please wait before trying again.'
+      )
+    : (_req: Request, _res: Response, next: () => void) => next();
+
 // Custom rate limit for specific user tiers (could be expanded)
 export const premiumRateLimit = createRateLimit(
   60 * 1000, // 1 minute
   1000, // 1000 requests for premium users
   'Premium rate limit exceeded.'
+);
+
+/** GDPR data export: 1 request per user per 24 hours */
+export const dataExportRateLimit = createRateLimit(
+  24 * 60 * 60 * 1000,
+  1,
+  'You can export your data once every 24 hours. Please try again later.'
 );
 
 // Middleware to check if user is premium (placeholder)

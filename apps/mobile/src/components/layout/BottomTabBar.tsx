@@ -1,0 +1,151 @@
+import React from 'react';
+import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Badge } from '../ui';
+
+export type TabKey =
+  | 'Home'
+  | 'Study'
+  | 'Chat'
+  | 'AI'
+  | 'Marketplace'
+  | 'Notes'
+  | 'Offline'
+  | 'Notifications'
+  | 'Budget'
+  | 'More';
+
+interface TabDef {
+  key: TabKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  activeIcon: keyof typeof Ionicons.glyphMap;
+  badge?: number;
+}
+
+interface Props {
+  activeTab: TabKey;
+  onTabPress: (tab: TabKey) => void;
+  dueCardsCount?: number;
+  unreadChatCount?: number;
+  unreadNotificationCount?: number;
+  isMoreActive?: boolean;
+}
+
+const TAB_WIDTH = 68;
+
+function TabButton({
+  tab,
+  active,
+  onPress,
+}: {
+  tab: TabDef;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{ width: TAB_WIDTH }}
+      className="items-center py-1"
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={tab.label}
+    >
+      <View className="relative">
+        <Ionicons
+          name={active ? tab.activeIcon : tab.icon}
+          size={22}
+          color={active ? '#6366f1' : '#94a3b8'}
+        />
+        {tab.badge ? <Badge count={tab.badge} /> : null}
+      </View>
+      <Text
+        numberOfLines={1}
+        className={`text-[10px] mt-1 font-medium text-center ${active ? 'text-indigo-500' : 'text-slate-400'}`}
+      >
+        {tab.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function BottomTabBar({
+  activeTab,
+  onTabPress,
+  dueCardsCount = 0,
+  unreadChatCount = 0,
+  unreadNotificationCount = 0,
+  isMoreActive,
+}: Props) {
+  const scrollTabs: TabDef[] = [
+    { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
+    {
+      key: 'Study',
+      label: 'Study',
+      icon: 'school-outline',
+      activeIcon: 'school',
+      badge: dueCardsCount,
+    },
+    {
+      key: 'Chat',
+      label: 'Chat',
+      icon: 'chatbubbles-outline',
+      activeIcon: 'chatbubbles',
+      badge: unreadChatCount,
+    },
+    {
+      key: 'Notifications',
+      label: 'Alerts',
+      icon: 'notifications-outline',
+      activeIcon: 'notifications',
+      badge: unreadNotificationCount,
+    },
+    { key: 'Marketplace', label: 'Market', icon: 'bag-outline', activeIcon: 'bag' },
+    { key: 'Notes', label: 'Notes', icon: 'document-text-outline', activeIcon: 'document-text' },
+    { key: 'AI', label: 'AI', icon: 'sparkles-outline', activeIcon: 'sparkles' },
+    { key: 'Offline', label: 'Offline', icon: 'cloud-download-outline', activeIcon: 'cloud-download' },
+    {
+      key: 'Budget',
+      label: 'Budget',
+      icon: 'card-outline',
+      activeIcon: 'card',
+    },
+  ];
+
+  const moreTab: TabDef = {
+    key: 'More',
+    label: 'More',
+    icon: 'ellipsis-horizontal-outline',
+    activeIcon: 'ellipsis-horizontal',
+  };
+
+  return (
+    <View className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 pb-6 pt-2 flex-row">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 4 }}
+        className="flex-1"
+        keyboardShouldPersistTaps="handled"
+      >
+        {scrollTabs.map(tab => (
+          <TabButton
+            key={tab.key}
+            tab={tab}
+            active={activeTab === tab.key}
+            onPress={() => onTabPress(tab.key)}
+          />
+        ))}
+      </ScrollView>
+
+      <View className="border-l border-slate-200 dark:border-slate-700 pl-1">
+        <TabButton
+          tab={moreTab}
+          active={isMoreActive === true}
+          onPress={() => onTabPress('More')}
+        />
+      </View>
+    </View>
+  );
+}

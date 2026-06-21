@@ -5,9 +5,15 @@ import { handleValidationErrors, validateGroupId, validateCreateGroup, validateU
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
-import { Group, User } from '../types/index';
+import { requireAuthUserId } from '../utils/requestAuth';
+import { clientErrorMessage } from '../utils/safeError';
+import { User } from '../types/index';
 
 const router = Router();
+const DEFAULT_GROUP_PAGE_SIZE = 20;
+const MAX_GROUP_PAGE_SIZE = 50;
+const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
+  profile === 'compact' ? 'compact' : 'full';
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -22,19 +28,24 @@ export const initializeGroupRoutes = (supabase: SupabaseService, cache: CacheSer
 // GET /api/v1/groups - Get all groups with pagination and search
 router.get(
   '/',
-  // authMiddleware,
+  authMiddleware,
   // validatePagination,
   // validateSearch,
   // handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const { page = 1, limit = 20, search, userId } = req.query;
-      const pageNum = parseInt(page as string) || 1;
-      const limitNum = parseInt(limit as string) || 20;
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      const { page = 1, limit, search, responseProfile } = req.query;
+      const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+      const requestedLimit = parseInt((limit as string) || `${DEFAULT_GROUP_PAGE_SIZE}`, 10);
+      const limitNum = Math.min(MAX_GROUP_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_GROUP_PAGE_SIZE));
+      const profile = resolveResponseProfile(responseProfile);
 
       // Cache key is per-user so each user gets their own groups list
       const cacheKey = userId
-        ? `groups:user:${userId}:p${pageNum}:l${limitNum}${search ? `:s${search}` : ''}`
+        ? `groups:user:${userId}:p${pageNum}:l${limitNum}${search ? `:s${search}` : ''}:profile:${profile}`
         : null;
 
       if (cacheKey) {
@@ -52,7 +63,8 @@ router.get(
         page: pageNum,
         limit: limitNum,
         search: search as string,
-        userId: userId as string,
+        userId,
+        responseProfile: profile,
       });
 
       // Cache for 30 seconds — short enough for near-real-time feel, long enough to
@@ -65,10 +77,11 @@ router.get(
         success: true,
         data: groups,
         pagination: { page: pageNum, limit: limitNum, total: groups.length },
+        responseProfile: profile,
       });
     } catch (error) {
       console.error('Error in groups route:', error);
-      res.status(500).json({ error: 'Internal server error', details: (error as Error).message });
+      res.status(500).json({ error: clientErrorMessage(error, 'Internal server error') });
     }
   })
 );
@@ -77,18 +90,13 @@ router.get(
 // NOTE: This MUST be before /:groupId to avoid route matching issues
 router.get(
   '/unread/all',
+  authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const { userId } = req.query;
-      
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId query parameter is required',
-        });
-      }
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
 
-      const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId as string);
+      const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId);
 
       res.json({
         success: true,
@@ -108,30 +116,24 @@ router.get(
 // GET /api/v1/groups/:groupId - Get group by ID
 router.get(
   '/:groupId',
-  // authMiddleware,
+  authMiddleware,
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
-    const userId = req.user?.id;
 
     logger.debug('Fetching group', { groupId, userId });
 
-    const cacheKey = `group:${groupId}`;
-    let group = await cacheService.get(cacheKey);
+    const group = await supabaseService.getGroupById(groupId, userId);
 
     if (!group) {
-      group = await supabaseService.getGroupById(groupId, userId);
-
-      if (!group) {
-        return res.status(404).json({
-          success: false,
-          error: 'Group not found or access denied',
-        });
-      }
-
-      // Cache for 10 minutes
-      await cacheService.set(cacheKey, group, 600);
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or access denied',
+      });
     }
 
     res.json({
@@ -144,11 +146,14 @@ router.get(
 // POST /api/v1/groups - Create new group
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validateCreateGroup,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { name, description, avatar_url, permissions, invite_id, parent_id, userId, memberIds } = req.body;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { name, description, avatar_url, permissions, invite_id, parent_id, memberIds } = req.body;
     const groupData = { name, description, avatarUrl: avatar_url, permissions, inviteId: invite_id, parentId: parent_id };
 
     logger.debug('Creating group', { groupData, userId, memberIds });
@@ -173,9 +178,11 @@ router.put(
   validateUpdateGroup,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
     const updateData = req.body;
-    const userId = req.user?.id;
 
     logger.debug('Updating group', { groupId, updateData, userId });
 
@@ -216,8 +223,10 @@ router.delete(
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
-    const userId = req.user?.id;
 
     logger.debug('Deleting group', { groupId, userId });
 
@@ -260,9 +269,11 @@ router.post(
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
     const { userId: memberId } = req.body;
-    const userId = req.user?.id;
 
     logger.debug('Adding member to group', { groupId, memberId, userId });
 
@@ -310,9 +321,11 @@ router.post(
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
     const { userIds } = req.body;
-    const userId = req.user?.id;
 
     logger.debug('Batch adding members to group', { groupId, count: userIds?.length, userId });
 
@@ -378,8 +391,10 @@ router.post(
   '/join',
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { inviteId } = req.body;
-    const userId = req.user?.id;
 
     logger.debug('Joining group via invite link', { inviteId, userId });
 
@@ -429,8 +444,10 @@ router.delete(
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId, memberId } = req.params;
-    const userId = req.user?.id;
 
     logger.debug('Removing member from group', { groupId, memberId, userId });
 
@@ -520,8 +537,10 @@ router.get(
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { groupId } = req.params;
-    const userId = req.user?.id;
 
     logger.debug('Fetching group stats', { groupId, userId });
 
@@ -554,19 +573,15 @@ router.get(
 // POST /api/v1/groups/:groupId/read - Mark group as read
 router.post(
   '/:groupId/read',
+  authMiddleware,
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const { groupId } = req.params;
-      const { userId } = req.body;
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
 
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'userId is required in request body',
-        });
-      }
+      const { groupId } = req.params;
 
       const success = await supabaseService.markGroupAsRead(groupId, userId);
 
@@ -582,6 +597,78 @@ router.post(
         message: (error as Error).message,
       });
     }
+  })
+);
+
+// POST /api/v1/groups/:groupId/admins/:memberId - Promote member to admin
+router.post(
+  '/:groupId/admins/:memberId',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId, memberId } = req.params;
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied' });
+    }
+
+    const isAdmin = (group.permissions && group.permissions[userId]?.admin) || group.adminIds?.includes(userId);
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: 'Only group admins can promote members' });
+    }
+
+    if (group.adminIds?.includes(memberId)) {
+      return res.json({ success: true, data: group });
+    }
+
+    const updatedGroup = await supabaseService.updateGroup(groupId, {
+      adminIds: [...(group.adminIds || []), memberId],
+    });
+
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern('groups:list:*');
+
+    res.json({ success: true, data: updatedGroup });
+  })
+);
+
+// DELETE /api/v1/groups/:groupId/admins/:memberId - Demote admin
+router.delete(
+  '/:groupId/admins/:memberId',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId, memberId } = req.params;
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied' });
+    }
+
+    const isAdmin = (group.permissions && group.permissions[userId]?.admin) || group.adminIds?.includes(userId);
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: 'Only group admins can demote members' });
+    }
+
+    if ((group.adminIds?.length || 0) <= 1 && group.adminIds?.includes(memberId)) {
+      return res.status(400).json({ success: false, error: 'Cannot demote the only admin' });
+    }
+
+    const updatedGroup = await supabaseService.updateGroup(groupId, {
+      adminIds: (group.adminIds || []).filter((id: string) => id !== memberId),
+    });
+
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern('groups:list:*');
+
+    res.json({ success: true, data: updatedGroup });
   })
 );
 

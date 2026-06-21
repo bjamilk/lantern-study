@@ -21,8 +21,18 @@ export * from './storage';
 // Deep linking
 export * from './linking';
 
+// API client
+export * from './api';
+
 // Components
 export * from './components/MarkdownRenderer';
 
 // Sync system
 export * from './sync';
+
+// Design tokens
+export * from './design';
+
+// Legal documents & URLs (single file — Metro-friendly)
+export * from './legal';
+export * from './auth';

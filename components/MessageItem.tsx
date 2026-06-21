@@ -1,5 +1,10 @@
 import React from 'react';
 import { Message, MessageType, QuestionType, MatchingItem, User, Group, QuestionStatus } from '../types';
+import { Avatar } from './ui';
+import { resolveAvatarSrc } from '../utils/avatar';
+import { useUIStore } from '../stores/uiStore';
+import { normalizeStorageUrl } from '../utils/storageUrl';
+import { getQuestionVerificationThreshold } from '@lantern/shared/utils';
 import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HandThumbUpSolidIcon, HandThumbDownIcon as HandThumbDownSolidIcon } from '@heroicons/react/24/solid';
 
@@ -15,6 +20,7 @@ interface MessageItemProps {
 }
 
 const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser }) => {
+  const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
 
   if (isOfferNotice) {
@@ -39,9 +45,24 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
 
   const isQuestion = message.type === MessageType.QUESTION;
 
-  const bubbleClasses = isCurrentUserMessage
-    ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md shadow-sm'
-    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-2xl rounded-bl-md shadow-sm ring-1 ring-slate-200/60 dark:ring-slate-700/60';
+  const isPending = isQuestion && message.questionStatus === QuestionStatus.PENDING;
+  const isRejected = isQuestion && message.questionStatus === QuestionStatus.REJECTED;
+  const isVerified = isQuestion && message.questionStatus === QuestionStatus.VERIFIED;
+  const memberCount = group?.members.length || 0;
+  const approvalThreshold = getQuestionVerificationThreshold(memberCount);
+  const approvalProgress = approvalThreshold > 0
+    ? Math.min(100, Math.round((message.upvotes / approvalThreshold) * 100))
+    : 0;
+
+  const questionBubbleClasses = isCurrentUserMessage
+    ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md shadow-sm ring-1 ring-indigo-500/40'
+    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-2xl rounded-bl-md shadow-sm ring-1 ring-amber-200/80 dark:ring-amber-700/50';
+
+  const bubbleClasses = isQuestion
+    ? questionBubbleClasses
+    : isCurrentUserMessage
+      ? 'bg-indigo-600 text-white rounded-2xl rounded-br-md shadow-sm'
+      : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-2xl rounded-bl-md shadow-sm ring-1 ring-slate-200/60 dark:ring-slate-700/60';
 
   const alignmentClass = isCurrentUserMessage ? 'justify-end' : 'justify-start';
 
@@ -79,19 +100,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
     );
   };
 
-  const isPending = isQuestion && message.questionStatus === QuestionStatus.PENDING;
-
   const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E";
 
   return (
     <div className={`flex ${alignmentClass} items-end gap-2 group`}>
       {/* Left avatar */}
       {!isCurrentUserMessage && (
-        <img
-          src={message.sender.avatarUrl || `https://ui-avatars.com/api/?name=${message.sender.name.replace(/\s/g, '+')}&background=6366f1&color=fff&size=32`}
-          alt={message.sender.name}
-          className="w-7 h-7 rounded-full self-end object-cover flex-shrink-0 ring-1 ring-white dark:ring-slate-800"
-          onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
+        <Avatar
+          name={message.sender.name}
+          src={resolveAvatarSrc(message.sender.avatarUrl, lowDataMode)}
+          size="sm"
+          localOnly={lowDataMode}
+          className="self-end ring-1 ring-white dark:ring-slate-800"
         />
       )}
 
@@ -124,6 +144,16 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
                   Pending
                 </span>
               )}
+              {isRejected && (
+                <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300" title="More downvotes than upvotes — not available in tests">
+                  Rejected
+                </span>
+              )}
+              {isVerified && (
+                <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                  Verified
+                </span>
+              )}
             </div>
 
             {/* Question stem */}
@@ -133,7 +163,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
             {message.imageUrl && (
               <div className="mt-1">
                 <img
-                  src={message.imageUrl}
+                  src={normalizeStorageUrl(message.imageUrl)}
                   alt="Question visual"
                   className="max-w-full h-auto rounded-lg border border-slate-200 dark:border-slate-600"
                   style={{ maxHeight: '200px' }}
@@ -195,15 +225,34 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
               </div>
             )}
 
+            {isPending && memberCount > 0 && (
+              <div className="space-y-1 pt-1">
+                <div className={`flex items-center justify-between text-[10px] ${isCurrentUserMessage ? 'text-indigo-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <span>{message.upvotes} / {approvalThreshold} approvals needed</span>
+                  <span>{approvalProgress}%</span>
+                </div>
+                <div className={`h-1 rounded-full overflow-hidden ${isCurrentUserMessage ? 'bg-white/20' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                  <div
+                    className={`h-full rounded-full ${isCurrentUserMessage ? 'bg-emerald-300' : 'bg-emerald-500'}`}
+                    style={{ width: `${approvalProgress}%`, minWidth: approvalProgress > 0 ? '4px' : undefined }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Vote / flag actions */}
             {group && (
-              <div className={`flex items-center gap-1 pt-2 mt-1 border-t ${isCurrentUserMessage ? 'border-white/15' : 'border-slate-100 dark:border-slate-700'}`}>
+              <div className={`flex items-center gap-1.5 pt-2 mt-1 border-t ${isCurrentUserMessage ? 'border-white/15' : 'border-slate-200 dark:border-slate-600'}`}>
                 <button
                   onClick={() => onVoteQuestion(message.id, 'up')}
-                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 ${
+                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'up'
-                      ? isCurrentUserMessage ? 'bg-emerald-500/30 text-emerald-200' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
-                      : isCurrentUserMessage ? 'text-indigo-200 hover:bg-white/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? isCurrentUserMessage
+                        ? 'bg-emerald-500/30 text-emerald-200 border-transparent'
+                        : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                      : isCurrentUserMessage
+                        ? 'text-indigo-200 border-transparent hover:bg-white/10'
+                        : 'bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                   }`}
                   aria-pressed={currentUserVote === 'up'}
                   aria-label={`Upvote question, current upvotes: ${message.upvotes}`}
@@ -213,10 +262,14 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
                 </button>
                 <button
                   onClick={() => onVoteQuestion(message.id, 'down')}
-                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 ${
+                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'down'
-                      ? isCurrentUserMessage ? 'bg-red-500/30 text-red-200' : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                      : isCurrentUserMessage ? 'text-indigo-200 hover:bg-white/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? isCurrentUserMessage
+                        ? 'bg-red-500/30 text-red-200 border-transparent'
+                        : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
+                      : isCurrentUserMessage
+                        ? 'text-indigo-200 border-transparent hover:bg-white/10'
+                        : 'bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                   }`}
                   aria-pressed={currentUserVote === 'down'}
                   aria-label={`Downvote question, current downvotes: ${message.downvotes}`}
@@ -224,14 +277,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
                   <DownvoteIcon className="w-3.5 h-3.5" />
                   <span className="font-medium">{message.downvotes}</span>
                 </button>
-                <div className={`w-px h-4 mx-1 ${isCurrentUserMessage ? 'bg-white/15' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                <div className={`w-px h-4 mx-0.5 ${isCurrentUserMessage ? 'bg-white/15' : 'bg-slate-200 dark:bg-slate-600'}`} />
                 <button
                   onClick={() => onFlagAsSimilar(message.id)}
                   disabled={isCurrentUserMessage}
-                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 ${
+                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserFlagged
-                      ? isCurrentUserMessage ? 'bg-amber-500/30 text-amber-200' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                      : isCurrentUserMessage ? 'text-indigo-200 hover:bg-white/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? isCurrentUserMessage
+                        ? 'bg-amber-500/30 text-amber-200 border-transparent'
+                        : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                      : isCurrentUserMessage
+                        ? 'text-indigo-200 border-transparent hover:bg-white/10'
+                        : 'bg-slate-100 dark:bg-slate-700/70 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-pressed={currentUserFlagged}
                   aria-label={`Flag as similar, current flags: ${message.flaggedAsSimilarUserIds?.length || 0}`}
@@ -254,7 +311,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
       {/* Right avatar */}
       {isCurrentUserMessage && (
         <img
-          src={message.sender.avatarUrl || `https://ui-avatars.com/api/?name=${message.sender.name.replace(/\s/g, '+')}&background=6366f1&color=fff&size=32`}
+          src={resolveAvatarSrc(message.sender.avatarUrl, lowDataMode)}
           alt={message.sender.name}
           className="w-7 h-7 rounded-full self-end object-cover flex-shrink-0 ring-1 ring-white dark:ring-slate-800"
           onError={(e) => { e.currentTarget.src = fallbackAvatar; }}

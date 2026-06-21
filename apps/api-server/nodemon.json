@@ -1,0 +1,5 @@
+{
+  "watch": ["src"],
+  "ignore": ["dist", "node_modules", "../../apps/mobile", "../../packages/shared/dist"],
+  "ext": "ts,json"
+}

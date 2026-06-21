@@ -195,10 +195,10 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
   onClearHighlights,
 }) => {
   return (
-    <div className="mb-4 space-y-2">
+    <div className="mb-2 sm:mb-4 space-y-2">
       {/* ── Tool Buttons ── */}
-      <div className="flex items-center gap-1.5 flex-wrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 shadow-sm">
-        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 select-none">
+      <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-3 sm:py-2 shadow-sm">
+        <span className="hidden sm:inline text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 select-none">
           Tools
         </span>
 
@@ -206,7 +206,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={() => onToolChange(activeTool === 'highlight' ? null : 'highlight')}
           title="Highlight key terms — select text in the question"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             activeTool === 'highlight'
               ? 'bg-yellow-100 dark:bg-yellow-900/40 border-yellow-400 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 shadow-sm'
               : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -218,9 +218,9 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             <line x1="3" y1="21" x2="21" y2="21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.4"/>
           </svg>
-          Highlight
+          <span className="hidden sm:inline">Highlight</span>
           {highlightCount > 0 && (
-            <span className="bg-yellow-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
+            <span className="bg-yellow-500 text-white text-[10px] rounded-full w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center font-bold leading-none">
               {highlightCount}
             </span>
           )}
@@ -230,7 +230,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={() => onToolChange(activeTool === 'strikeout' ? null : 'strikeout')}
           title="Strike out answer choices you've eliminated"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             activeTool === 'strikeout'
               ? 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 shadow-sm'
               : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -242,14 +242,14 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             <line x1="4" y1="12" x2="20" y2="12" strokeWidth="2.5" />
             <line x1="5" y1="18" x2="19" y2="18" strokeOpacity="0.5" />
           </svg>
-          Strikeout
+          <span className="hidden sm:inline">Strikeout</span>
         </button>
 
         {/* Calculator */}
         <button
           onClick={onToggleCalculator}
           title="Open calculator"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             showCalculator
               ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-400 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 shadow-sm'
               : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -265,14 +265,14 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             <line x1="12" y1="11" x2="12" y2="13" />
             <line x1="12" y1="15" x2="12" y2="17" />
           </svg>
-          Calc
+          <span className="hidden sm:inline">Calc</span>
         </button>
 
         {/* Note */}
         <button
           onClick={onToggleNote}
           title="Open scratch note for this question"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             showNote
               ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-700 dark:text-blue-300 shadow-sm'
               : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -284,7 +284,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             <line x1="9" y1="13" x2="15" y2="13" />
             <line x1="9" y1="17" x2="15" y2="17" />
           </svg>
-          Note
+          <span className="hidden sm:inline">Note</span>
           {note.trim() && (
             <span className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
           )}
@@ -294,7 +294,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={onToggleMark}
           title={isMarked ? 'Remove flag from this question' : 'Flag this question for review'}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             isMarked
               ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-400 dark:border-orange-600 text-orange-700 dark:text-orange-300 shadow-sm'
               : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
@@ -312,7 +312,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
             <line x1="4" y1="22" x2="4" y2="15" />
           </svg>
-          {isMarked ? 'Marked' : 'Mark'}
+          <span className="hidden sm:inline">{isMarked ? 'Marked' : 'Mark'}</span>
         </button>
 
         {/* Clear highlights shortcut */}

@@ -1,19 +1,17 @@
-// ===========================================
-// Lantern Study Mobile - Deep Linking Configuration
-// ===========================================
-
-import { LinkingOptions } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
-import { RootStackParamList } from './RootNavigator';
+import type { LinkingOptions } from '@react-navigation/native';
+import { parseDeepLink } from '@lantern/shared';
+import type { RootStackParamList } from './types';
 
-const prefix = Linking.createURL('/');
+const prefixes = [
+  Linking.createURL('/'),
+  'lanternstudy://',
+  'lanternstudy:/',
+  'https://lanternstudy.app',
+];
 
 export const linkingConfig: LinkingOptions<RootStackParamList> = {
-  prefixes: [
-    prefix,
-    'lanternstudy://',
-    'https://lanternstudy.app',
-  ],
+  prefixes,
   config: {
     screens: {
       Auth: {
@@ -21,41 +19,93 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
           Login: 'login',
           SignUp: 'signup',
           ForgotPassword: 'forgot-password',
+          VerifyEmail: 'verify-email',
+          ResetPassword: 'reset-password',
         },
       },
       Main: {
         screens: {
-          Dashboard: 'dashboard',
-          Flashcards: {
+          HomeTab: { screens: { Dashboard: 'dashboard' } },
+          StudyTab: {
             screens: {
               FlashcardsList: 'flashcards',
               DeckDetail: 'deck/:deckId',
-              FlashcardReview: 'flashcard/:flashcardId',
+              NotesList: 'notes',
+              NoteEditor: 'note/:noteId',
+              TestsList: 'tests',
             },
           },
-          Profile: 'profile',
+          ChatTab: {
+            screens: {
+              GroupsList: 'groups',
+              CreateGroup: 'groups/new',
+              GroupChat: 'group/:groupId',
+              ChallengesInbox: 'challenges',
+            },
+          },
+          MarketTab: {
+            screens: {
+              MarketplaceHome: 'marketplace',
+              ListingDetail: 'listing/:listingId',
+              Inquiries: 'marketplace/inquiries',
+              Offers: 'marketplace/offers',
+              Favorites: 'marketplace/favorites',
+              EditListing: 'marketplace/edit/:listingId',
+              MyListings: 'marketplace/my-listings',
+              CreateListing: 'marketplace/create',
+            },
+          },
+          NotificationsTab: 'notifications',
+          BudgetTab: {
+            screens: {
+              BudgetHome: 'budget',
+              SavingsGoals: 'budget/savings',
+              Wallet: 'budget/wallet',
+              AddExpense: 'budget/expense',
+              AddIncome: 'budget/income',
+              FinancialToolkit: 'budget/toolkit',
+            },
+          },
         },
       },
+      Settings: 'settings',
+      EditProfile: 'profile/edit',
+      Offline: 'offline',
     },
   },
-  // Handle deep links
   async getInitialURL() {
-    // Check if app was opened from a deep link
-    const url = await Linking.getInitialURL();
-    if (url != null) {
-      return url;
-    }
-    return null;
+    return Linking.getInitialURL();
   },
-  // Listen for incoming deep links
   subscribe(listener) {
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      listener(url);
-    });
-    return () => {
-      subscription.remove();
-    };
+    const sub = Linking.addEventListener('url', ({ url }) => listener(url));
+    return () => sub.remove();
   },
 };
 
-export default linkingConfig;
+/** Map legacy / notification links into navigation state. */
+export function resolveDeepLinkNavigation(url: string): { screen: string; params?: Record<string, string> } | null {
+  const parsed = parseDeepLink(url);
+  if (!parsed) return null;
+  switch (parsed.type) {
+    case 'deck':
+      return { screen: 'StudyTab', params: { screen: 'DeckDetail', params: { deckId: parsed.id } } as any };
+    case 'group':
+      return { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id } } as any };
+    case 'listing':
+      return { screen: 'MarketTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id } } as any };
+    case 'flashcard':
+      return parsed.extra?.deckId
+        ? { screen: 'StudyTab', params: { screen: 'DeckDetail', params: { deckId: parsed.extra.deckId } } as any }
+        : { screen: 'StudyTab', params: { screen: 'FlashcardsList' } as any };
+    case 'profile':
+      return { screen: 'EditProfile' } as any;
+    case 'marketplace':
+      return { screen: 'MarketTab', params: { screen: 'MarketplaceHome' } as any };
+    case 'budget':
+      return { screen: 'BudgetTab', params: { screen: 'BudgetHome' } as any };
+    case 'test':
+      return { screen: 'StudyTab', params: { screen: 'TestsList' } as any };
+    default:
+      return null;
+  }
+}

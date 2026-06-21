@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
 
@@ -33,19 +33,18 @@ export const strictAuthMiddleware = async (
 
     const token = authHeader.split(' ')[1];
     
-    // Development bypass for testing — requires explicit opt-in via ALLOW_DEV_AUTH_BYPASS=true
-    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true' && !token) {
-      const userId = req.query.userId as string || req.body?.userId;
-      if (userId) {
-        req.user = { userId };
-        return next();
-      }
+    if (!token) {
+      res.status(401).json({ 
+        error: 'Missing authorization token',
+        code: 'AUTH_MISSING'
+      });
+      return;
     }
 
     // Verify with Supabase
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(
-      process.env.SUPABASE_URL || 'http://127.0.0.1:54321',
+      process.env.SUPABASE_URL || 'http://127.0.0.1:55421',
       process.env.SUPABASE_ANON_KEY || ''
     );
     
@@ -88,7 +87,9 @@ export const createRateLimiter = (options?: {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req: AuthenticatedRequest) => {
-      return req.user?.userId || req.ip || 'anonymous';
+      if (req.user?.userId) return req.user.userId;
+      const ip = req.ip || 'anonymous';
+      return ipKeyGenerator(ip);
     },
     skip: (req) => {
       return req.path === '/health' || req.path === '/ready';
@@ -123,8 +124,8 @@ export const securityHeaders = helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'https:', 'http://localhost:54321'],
-      connectSrc: ["'self'", process.env.SUPABASE_URL || 'http://127.0.0.1:54321', 'http://localhost:3001'],
+      imgSrc: ["'self'", 'data:', 'https:', 'http://localhost:55421'],
+      connectSrc: ["'self'", process.env.SUPABASE_URL || 'http://127.0.0.1:55421', 'http://localhost:3001'],
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -143,6 +144,7 @@ export const securityHeaders = helmet({
 export const corsConfig = cors({
   origin: (origin, callback) => {
     const allowedOrigins = [
+      process.env.FRONTEND_URL,
       'http://localhost:5173',
       'http://localhost:5174',
       'http://localhost:5175',

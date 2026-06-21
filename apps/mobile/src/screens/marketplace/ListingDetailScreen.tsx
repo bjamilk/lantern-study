@@ -1,432 +1,726 @@
-// ===========================================
-// Lantern Study Mobile - Listing Detail Screen
-// ===========================================
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  Dimensions,
-  TextInput,
+  ActivityIndicator,
   Alert,
   Modal,
-  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Share,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useMarketplaceStore, getCategoryInfo } from '../../stores/marketplaceStore';
-import { useTheme } from '../../theme';
+import {
+  useMarketplaceStore,
+  useAuthStore,
+  getCategoryInfo,
+  type MarketplaceListing,
+} from '../../stores';
+import { Avatar, Button, Card } from '../../components/ui';
+import { formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
+import { addRecentlyViewedListing } from './marketplaceRecentlyViewed';
+import { SaleCountdown } from './SaleCountdown';
+import { resolveListingDisplayPrice } from '@lantern/shared/utils';
+import {
+  fetchPickupNudge,
+  validateMarketplaceCoupon,
+  fetchListingOffersHistory,
+} from '../../services/api';
+import type { MarketplacePickupNudge } from '@lantern/shared/types';
 
-const { width } = Dimensions.get('window');
+type NavigationProp = {
+  goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+  getParent?: () => { navigate: (name: string, params?: Record<string, unknown>) => void } | undefined;
+};
 
-export default function ListingDetailScreen() {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const { listingId } = route.params || {};
+interface Props {
+  navigation: NavigationProp;
+  route: { params?: { listingId?: string } };
+}
 
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [showContactModal, setShowContactModal] = useState(false);
-  const [showReviewModal, setShowReviewModal] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
+const REPORT_REASONS = [
+  'spam',
+  'inappropriate',
+  'scam',
+  'wrong_category',
+  'prohibited_item',
+  'other',
+] as const;
+
+function StarRow({ rating }: { rating: number }) {
+  return (
+    <View className="flex-row gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Ionicons
+          key={i}
+          name={i <= rating ? 'star' : 'star-outline'}
+          size={14}
+          color={i <= rating ? '#f59e0b' : '#94a3b8'}
+        />
+      ))}
+    </View>
+  );
+}
+
+export function ListingDetailScreen({ navigation, route }: Props) {
+  const listingId = route.params?.listingId ?? '';
+  const { user } = useAuthStore();
+  const {
+    currentListing,
+    reviews,
+    similarListings,
+    isLoading,
+    favorites,
+    fetchListing,
+    fetchListingReviews,
+    fetchSimilar,
+    sendInquiry,
+    toggleFavorite,
+    addReview,
+    reportListing,
+    buyNowListing,
+    boostListing,
+    updateListing,
+    deleteListing,
+  } = useMarketplaceStore();
+
+  const [imageIndex, setImageIndex] = useState(0);
+  const [showContact, setShowContact] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [contactMessage, setContactMessage] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
-  const [reportReason, setReportReason] = useState('');
+  const [reportReason, setReportReason] = useState<(typeof REPORT_REASONS)[number]>('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [sending, setSending] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponPreview, setCouponPreview] = useState<{ discountAmount: number; finalAmount: number } | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [negotiationHistory, setNegotiationHistory] = useState<Array<{ id: string; amount?: number; status?: string }>>([]);
 
-  const { currentListing, favorites, isLoading, fetchListing, toggleFavorite, sendInquiry } = useMarketplaceStore();
-  const isFavorite = currentListing ? favorites.has(currentListing.id) : false;
-  const { colors } = useTheme();
+  const load = useCallback(async () => {
+    if (!listingId) return;
+    await fetchListing(listingId);
+    await Promise.all([fetchListingReviews(listingId), fetchSimilar(listingId)]);
+    await addRecentlyViewedListing(listingId);
+    const listing = useMarketplaceStore.getState().currentListing;
+    if (listing) {
+      const sellerId = listing.seller_id || listing.user_id;
+      if (sellerId && sellerId !== user?.id) {
+        try {
+          setPickupNudge(await fetchPickupNudge(sellerId));
+        } catch {
+          setPickupNudge(null);
+        }
+      } else {
+        setPickupNudge(null);
+      }
+      if (sellerId === user?.id) {
+        try {
+          setNegotiationHistory(await fetchListingOffersHistory(listingId));
+        } catch {
+          setNegotiationHistory([]);
+        }
+      }
+    }
+  }, [listingId, fetchListing, fetchListingReviews, fetchSimilar, user?.id]);
 
   useEffect(() => {
-    if (listingId) {
-      fetchListing(listingId);
-    }
-  }, [listingId]);
+    void load();
+  }, [load]);
 
-  const formatPrice = (price?: number) => {
-    if (!price) return 'Free';
-    return `₦${price.toLocaleString()}`;
-  };
+  const listing = currentListing;
+  const category = listing ? getCategoryInfo(listing.category) : null;
+  const own = listing ? isOwnListing(listing, user?.id) : false;
+  const favorited = listing ? favorites.has(listing.id) : false;
+  const images = listing?.images?.length ? listing.images : [];
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-NG', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+  const openDm = (threadId: string, recipientId: string, recipientName?: string) => {
+    navigation.getParent?.()?.navigate('ChatTab', {
+      screen: 'DirectMessage',
+      params: { threadId, recipientId, recipientName },
     });
   };
 
-  const handleContactSeller = useCallback(async () => {
-    if (!contactMessage.trim()) return;
-    
+  const handleContact = async () => {
+    if (!listing || !contactMessage.trim() || !user?.id) return;
     setSending(true);
     try {
-      await sendInquiry(listingId, contactMessage.trim());
-      setShowContactModal(false);
+      const result = await sendInquiry(listing.id, contactMessage.trim());
+      setShowContact(false);
       setContactMessage('');
-      Alert.alert('Success', 'Your inquiry has been sent to the seller!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send inquiry. Please try again.');
+      Alert.alert('Message sent', 'Opening chat with the seller.');
+      if (result.threadId && result.sellerId) {
+        openDm(result.threadId, result.sellerId, listing.seller?.name);
+      }
+    } catch (e: unknown) {
+      Alert.alert(
+        'Error',
+        e instanceof Error ? e.message : 'Failed to send message. Please try again.'
+      );
     } finally {
       setSending(false);
     }
-  }, [contactMessage, listingId, sendInquiry]);
+  };
 
-  const handleSubmitReview = useCallback(() => {
-    // Would submit review in real app
-    setShowReviewModal(false);
-    setReviewRating(5);
-    setReviewComment('');
-    Alert.alert('Success', 'Your review has been submitted!');
-  }, []);
-
-  const handleSubmitReport = useCallback(() => {
-    if (!reportReason) {
-      Alert.alert('Error', 'Please select a reason for reporting');
-      return;
+  const handleShare = async () => {
+    if (!listing) return;
+    try {
+      await Share.share({
+        message: `${listing.title}${listing.price ? ` - ${formatPrice(listing.price)}` : ''}`,
+      });
+    } catch {
+      // user cancelled
     }
-    // Would submit report in real app
-    setShowReportModal(false);
-    setReportReason('');
-    setReportDetails('');
-    Alert.alert('Report Submitted', 'Thank you for your report. We will review it shortly.');
-  }, [reportReason]);
+  };
 
-  const handleShare = useCallback(() => {
-    // Would share listing in real app
-    Alert.alert('Share', 'Sharing functionality coming soon!');
-  }, []);
+  const handleBuyNow = () => {
+    if (!listing || !user?.id || !listing.price) return;
+    const pricing = resolveListingDisplayPrice(listing);
+    const payAmount = couponPreview?.finalAmount ?? pricing.effective;
+    Alert.alert(
+      'Buy Now',
+      `Purchase "${listing.title}" for ${formatPrice(payAmount)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              const result = await buyNowListing(
+                listing.id,
+                user.id,
+                couponPreview ? couponCode.trim() : undefined
+              );
+              const orderId = result?.order?.id;
+              if (orderId) {
+                navigation.navigate('OrderDetail', { orderId });
+              } else {
+                await load();
+              }
+              Alert.alert('Order placed', 'Arrange campus pickup with the seller.');
+            } catch (e: unknown) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Purchase failed');
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
-  if (isLoading) {
+  const handleApplyCoupon = async () => {
+    if (!listing || !couponCode.trim()) return;
+    setValidatingCoupon(true);
+    try {
+      const result = await validateMarketplaceCoupon(couponCode.trim(), listing.id);
+      setCouponPreview({ discountAmount: result.discountAmount, finalAmount: result.finalAmount });
+      Alert.alert('Coupon applied', `${formatPrice(result.discountAmount)} off`);
+    } catch (e: unknown) {
+      setCouponPreview(null);
+      Alert.alert('Invalid coupon', e instanceof Error ? e.message : 'Could not apply coupon');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleBoost = () => {
+    if (!listing || !user?.id) return;
+    Alert.alert('Boost listing', 'Boost this listing for 72 hours?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Boost',
+        onPress: async () => {
+          setActionLoading(true);
+          try {
+            await boostListing(listing.id, user.id);
+            await load();
+            Alert.alert('Boosted', 'Your listing is now boosted for 72 hours.');
+          } catch (e: unknown) {
+            Alert.alert('Error', e instanceof Error ? e.message : 'Boost failed');
+          } finally {
+            setActionLoading(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!listing || !user?.id) return;
+    setSending(true);
+    try {
+      await addReview(listing.id, reviewRating, reviewComment.trim() || undefined);
+      setShowReview(false);
+      setReviewComment('');
+      setReviewRating(5);
+      Alert.alert('Thanks', 'Your review was submitted.');
+    } catch {
+      Alert.alert('Error', 'Failed to submit review.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSubmitReport = async () => {
+    if (!listing) return;
+    setSending(true);
+    try {
+      await reportListing(listing.id, reportReason, reportDetails.trim() || undefined);
+      setShowReport(false);
+      setReportDetails('');
+      Alert.alert('Report submitted', 'Thank you for helping keep the marketplace safe.');
+    } catch {
+      Alert.alert('Error', 'Failed to submit report.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleMarkSold = () => {
+    if (!listing || !user?.id) return;
+    Alert.alert('Mark as sold', 'Mark this listing as sold?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Mark sold',
+        onPress: async () => {
+          await updateListing(listing.id, { status: 'sold' }, user.id);
+          await load();
+        },
+      },
+    ]);
+  };
+
+  const handleDelete = () => {
+    if (!listing || !user?.id) return;
+    Alert.alert('Delete listing', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteListing(listing.id, user.id);
+          navigation.goBack();
+        },
+      },
+    ]);
+  };
+
+  if (isLoading && !listing) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading listing...</Text>
-        </View>
+      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center" edges={['top']}>
+        <ActivityIndicator size="large" color="#6366f1" />
       </SafeAreaView>
     );
   }
 
-  if (!currentListing) {
+  if (!listing) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color={colors.textSecondary} />
-          <Text style={[styles.errorTitle, { color: colors.text }]}>Listing not found</Text>
-          <Text style={[styles.errorSubtitle, { color: colors.textSecondary }]}>This listing may have been removed.</Text>
-          <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.primary }]} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={20} color="#ffffff" />
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Listing not found</Text>
+        <Button onPress={() => navigation.goBack()}>Go Back</Button>
       </SafeAreaView>
     );
   }
 
-  const categoryInfo = getCategoryInfo(currentListing.category);
-  const images = currentListing.images || [];
+  const avgRating =
+    reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  const pricing = listing ? resolveListingDisplayPrice(listing) : null;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => toggleFavorite(currentListing.id)}>
-            <Ionicons name={isFavorite ? 'heart' : 'heart-outline'} size={24} color={isFavorite ? '#ef4444' : colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={handleShare}>
-            <Ionicons name="share-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={() => setShowReportModal(true)}>
-            <Ionicons name="flag-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
+        <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
+          <Ionicons name="arrow-back" size={22} color="#64748b" />
+        </Pressable>
+        <View className="flex-row items-center gap-1">
+          {!own && user?.id ? (
+            <Pressable onPress={() => void toggleFavorite(listing.id, user.id)} className="p-2">
+              <Ionicons
+                name={favorited ? 'heart' : 'heart-outline'}
+                size={22}
+                color={favorited ? '#ef4444' : '#64748b'}
+              />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={handleShare} className="p-2">
+            <Ionicons name="share-outline" size={22} color="#64748b" />
+          </Pressable>
+          {!own ? (
+            <Pressable onPress={() => setShowReport(true)} className="p-2">
+              <Ionicons name="flag-outline" size={22} color="#64748b" />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Image Carousel */}
-        <View style={styles.imageCarousel}>
-          {images.length > 0 ? (
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 140 }}>
+        <View className="aspect-[16/10] bg-slate-100 dark:bg-slate-800 mx-4 rounded-2xl overflow-hidden">
+          {images.length ? (
             <>
-              <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={(e) => {
-                  const index = Math.round(e.nativeEvent.contentOffset.x / width);
-                  setCurrentImageIndex(index);
-                }}
-              >
-                {images.map((uri, index) => (
-                  <Image key={index} source={{ uri }} style={styles.carouselImage} />
-                ))}
-              </ScrollView>
-              {images.length > 1 && (
-                <View style={styles.imageDots}>
-                  {images.map((_, index) => (
-                    <View
-                      key={index}
-                      style={[styles.imageDot, index === currentImageIndex && styles.imageDotActive]}
+              <ListingImage uri={images[imageIndex]} className="w-full h-full" />
+              {images.length > 1 ? (
+                <View className="absolute bottom-3 left-0 right-0 flex-row justify-center gap-1.5">
+                  {images.map((_, i) => (
+                    <Pressable
+                      key={i}
+                      onPress={() => setImageIndex(i)}
+                      className={`w-2 h-2 rounded-full ${i === imageIndex ? 'bg-white' : 'bg-white/50'}`}
                     />
                   ))}
                 </View>
-              )}
+              ) : null}
             </>
           ) : (
-            <View style={[styles.placeholderImage, { backgroundColor: colors.card }]}>
-              <Ionicons name="image-outline" size={64} color={colors.textSecondary} />
-              <Text style={[styles.placeholderText, { color: colors.textSecondary }]}>No images</Text>
-            </View>
+            <ListingImage className="w-full h-full" />
           )}
         </View>
 
-        {/* Listing Info */}
-        <View style={styles.infoContainer}>
-          {/* Category Badge */}
-          <View style={[styles.categoryBadge, { backgroundColor: colors.card }]}>
-            <Ionicons name="pricetag" size={14} color="#6366f1" />
-            <Text style={styles.categoryText}>{categoryInfo.name}</Text>
-          </View>
-
-          {/* Title and Price */}
-          <Text style={[styles.listingTitle, { color: colors.text }]}>{currentListing.title}</Text>
-          <Text style={styles.listingPrice}>{formatPrice(currentListing.price)}</Text>
-
-          {/* Meta Info */}
-          <View style={styles.metaContainer}>
-            <View style={styles.metaItem}>
-              <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{currentListing.location || 'Location not specified'}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>Posted {formatDate(currentListing.created_at)}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Ionicons name="eye-outline" size={16} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{currentListing.views_count || 0} views</Text>
-            </View>
-          </View>
-
-          {/* Description */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Description</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {currentListing.description || 'No description provided.'}
+        <View className="px-4 pt-4">
+          {category ? (
+            <Text className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">
+              {category.name}
             </Text>
-          </View>
-
-          {/* Seller Info */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Seller</Text>
-            <View style={[styles.sellerCard, { backgroundColor: colors.card }]}>
-              <View style={[styles.sellerAvatar, { backgroundColor: colors.border }]}>
-                <Ionicons name="person" size={24} color={colors.textSecondary} />
+          ) : null}
+          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">{listing.title}</Text>
+          {listing.promo_label ? (
+            <Text className="text-xs font-semibold text-amber-600 mt-1">{listing.promo_label}</Text>
+          ) : null}
+          <View className="flex-row items-center flex-wrap gap-2 mt-2">
+            {pricing?.onSale && listing.price ? (
+              <Text className="text-lg text-slate-400 line-through">{formatPrice(listing.price)}</Text>
+            ) : null}
+            <Text className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+              {formatPrice(pricing?.effective ?? listing.price)}
+            </Text>
+            {listing.quantity != null ? (
+              <View className={`px-2 py-0.5 rounded-lg ${listing.quantity > 0 ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                <Text className={`text-xs font-medium ${listing.quantity > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {listing.quantity > 0 ? `${listing.quantity} left` : 'Sold out'}
+                </Text>
               </View>
-              <View style={styles.sellerInfo}>
-                <Text style={[styles.sellerName, { color: colors.text }]}>{currentListing.seller?.name || 'Anonymous Seller'}</Text>
-                <View style={styles.sellerRating}>
-                  <Ionicons name="star" size={14} color="#fbbf24" />
-                  <Text style={[styles.ratingText, { color: colors.text }]}>4.5</Text>
-                  <Text style={[styles.ratingCount, { color: colors.textSecondary }]}>(12 reviews)</Text>
+            ) : null}
+          </View>
+          {listing.sale_ends_at && pricing?.onSale ? (
+            <View className="mt-2">
+              <SaleCountdown saleEndsAt={listing.sale_ends_at} />
+            </View>
+          ) : null}
+          {listing.status !== 'active' ? (
+            <Text className="text-sm font-semibold text-amber-600 mt-2 capitalize">{listing.status}</Text>
+          ) : null}
+
+          {listing.location ? (
+            <View className="flex-row items-center gap-1.5 mt-3">
+              <Ionicons name="location-outline" size={16} color="#64748b" />
+              <Text className="text-sm text-slate-600 dark:text-slate-400">{listing.location}</Text>
+            </View>
+          ) : null}
+
+          {pickupNudge?.message && !own ? (
+            <View className="mt-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40">
+              <Text className="text-sm text-emerald-800 dark:text-emerald-200">{pickupNudge.message}</Text>
+            </View>
+          ) : null}
+
+          {listing.listing_kind === 'bundle' && listing.bundle_items && listing.bundle_items.length > 0 ? (
+            <View className="mt-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40">
+              <Text className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-2">Bundle includes</Text>
+              {listing.bundle_items.map((item, idx) => (
+                <Text key={item.listing_id || idx} className="text-sm text-indigo-800 dark:text-indigo-300">
+                  • {item.title}
+                  {item.price != null ? ` (${formatPrice(Number(item.price))})` : ''}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          {own && negotiationHistory.length > 0 ? (
+            <Card className="mt-3">
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Offer activity</Text>
+              {negotiationHistory.slice(0, 5).map(event => (
+                <Text key={event.id} className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+                  {event.status || 'offer'}
+                  {event.amount != null ? ` · ${formatPrice(event.amount)}` : ''}
+                </Text>
+              ))}
+            </Card>
+          ) : null}
+
+          <Pressable
+            onPress={() =>
+              navigation.navigate('SellerProfile', {
+                sellerId: listing.seller_id || listing.user_id,
+              })
+            }
+            className="flex-row items-center gap-3 mt-4 p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          >
+            <Avatar name={listing.seller?.name || 'Anonymous Seller'} size={44} />
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {listing.seller?.name || 'Anonymous Seller'}
+              </Text>
+              <Text className="text-xs text-slate-500 dark:text-slate-400">
+                {reviews.length > 0
+                  ? `${avgRating.toFixed(1)} · ${reviews.length} review${reviews.length === 1 ? '' : 's'}`
+                  : 'View seller profile'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+          </Pressable>
+
+          <Card className="mt-4">
+            <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Description</Text>
+            <Text className="text-sm text-slate-600 dark:text-slate-300 leading-5">
+              {listing.description?.trim() || 'No description provided.'}
+            </Text>
+          </Card>
+
+          <Card className="mt-4">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">Reviews</Text>
+              {!own && user?.id && listing.status === 'active' ? (
+                <Pressable onPress={() => setShowReview(true)}>
+                  <Text className="text-sm font-semibold text-indigo-600">Write review</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {reviews.length === 0 ? (
+              <Text className="text-sm text-slate-500 dark:text-slate-400">No reviews yet.</Text>
+            ) : (
+              reviews.map(review => (
+                <View
+                  key={review.id}
+                  className="py-3 border-t border-slate-100 dark:border-slate-700 first:border-t-0 first:pt-0"
+                >
+                  <View className="flex-row items-center justify-between mb-1">
+                    <Text className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {review.reviewer?.name || 'User'}
+                    </Text>
+                    <StarRow rating={review.rating} />
+                  </View>
+                  {review.comment ? (
+                    <Text className="text-sm text-slate-600 dark:text-slate-300">{review.comment}</Text>
+                  ) : null}
                 </View>
-              </View>
-            </View>
-          </View>
+              ))
+            )}
+          </Card>
 
-          {/* Reviews Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Reviews</Text>
-              <TouchableOpacity onPress={() => setShowReviewModal(true)}>
-                <Text style={styles.sectionLink}>Write Review</Text>
-              </TouchableOpacity>
+          {similarListings.length > 0 ? (
+            <View className="mt-4">
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-3">
+                You might also like
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {similarListings.map(item => (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                    className="w-40 mr-3 rounded-xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                  >
+                    <ListingImage uri={item.images?.[0]} className="w-full h-24" />
+                    <View className="p-2">
+                      <Text numberOfLines={2} className="text-xs font-medium text-slate-800 dark:text-slate-100">
+                        {item.title}
+                      </Text>
+                      <Text className="text-xs font-semibold text-indigo-600 mt-1">
+                        {formatPrice(item.price)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
-            <View style={styles.noReviews}>
-              <Ionicons name="chatbubble-outline" size={32} color={colors.textSecondary} />
-              <Text style={[styles.noReviewsText, { color: colors.textSecondary }]}>No reviews yet</Text>
-            </View>
+          ) : null}
+
+          <View className="flex-row gap-4 mt-4">
+            {listing.views_count != null ? (
+              <Text className="text-xs text-slate-500 dark:text-slate-400">{listing.views_count} views</Text>
+            ) : null}
+            {listing.favorites_count != null ? (
+              <Text className="text-xs text-slate-500 dark:text-slate-400">
+                {listing.favorites_count} favorites
+              </Text>
+            ) : null}
           </View>
         </View>
       </ScrollView>
 
-      {/* Bottom Actions */}
-      <View style={[styles.bottomActions, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
-        <TouchableOpacity 
-          style={[styles.contactButton, { borderColor: colors.border }]} 
-          onPress={() => setShowContactModal(true)}
-        >
-          <Ionicons name="chatbubble-outline" size={20} color="#6366f1" />
-          <Text style={styles.contactButtonText}>Contact Seller</Text>
-        </TouchableOpacity>
-        
-        {currentListing.price && currentListing.price > 0 && (
-          <TouchableOpacity style={styles.buyButton}>
-            <Ionicons name="cart-outline" size={20} color="#ffffff" />
-            <Text style={styles.buyButtonText}>Buy Now</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Contact Modal */}
-      <Modal visible={showContactModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Contact Seller</Text>
-              <TouchableOpacity onPress={() => setShowContactModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
+      {!own && listing.status === 'active' ? (
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+          {listing.price && listing.price > 0 ? (
+            <View className="flex-row gap-2 mb-2">
+              <TextInput
+                value={couponCode}
+                onChangeText={setCouponCode}
+                placeholder="Coupon code"
+                autoCapitalize="characters"
+                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-sm"
+                placeholderTextColor="#94a3b8"
+              />
+              <Button
+                variant="secondary"
+                loading={validatingCoupon}
+                onPress={() => void handleApplyCoupon()}
+              >
+                Apply
+              </Button>
             </View>
-            
-            <View style={[styles.inquiryPreview, { backgroundColor: colors.background }]}>
-              <Text style={[styles.inquiryLabel, { color: colors.textSecondary }]}>Inquiring about:</Text>
-              <Text style={[styles.inquiryTitle, { color: colors.text }]}>{currentListing.title}</Text>
-              <Text style={styles.inquiryPrice}>{formatPrice(currentListing.price)}</Text>
-            </View>
+          ) : null}
+          {couponPreview ? (
+            <Text className="text-xs text-emerald-600 mb-2">
+              Coupon applied — {formatPrice(couponPreview.discountAmount)} off
+            </Text>
+          ) : null}
+          <View className="flex-row gap-2">
+            <Button variant="secondary" className="flex-1" onPress={() => setShowContact(true)}>
+              Contact
+            </Button>
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onPress={() => navigation.navigate('MakeOffer', { listingId: listing.id })}
+            >
+              Offer
+            </Button>
+            {listing.price ? (
+              <Button className="flex-1" loading={actionLoading} onPress={handleBuyNow}>
+                Buy Now
+              </Button>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
 
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Your Message</Text>
+      {own && listing.status === 'active' ? (
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+          <View className="flex-row gap-2 mb-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onPress={() => navigation.navigate('EditListing', { listingId: listing.id })}
+            >
+              Edit
+            </Button>
+            <Button variant="secondary" className="flex-1" loading={actionLoading} onPress={handleBoost}>
+              Boost
+            </Button>
+          </View>
+          <View className="flex-row gap-2">
+            <Button variant="secondary" className="flex-1" onPress={handleMarkSold}>
+              Mark sold
+            </Button>
+            <Button variant="secondary" className="flex-1" onPress={handleDelete}>
+              Delete
+            </Button>
+          </View>
+        </View>
+      ) : null}
+
+      <Modal visible={showContact} transparent animationType="slide" onRequestClose={() => setShowContact(false)}>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Contact Seller</Text>
             <TextInput
-              style={[styles.messageInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="Hi, I'm interested in this item..."
-              placeholderTextColor={colors.textSecondary}
               value={contactMessage}
               onChangeText={setContactMessage}
+              placeholder="Hi, is this still available?"
+              placeholderTextColor="#94a3b8"
               multiline
               numberOfLines={4}
+              className="min-h-[100px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
               textAlignVertical="top"
             />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.cancelButton, { borderColor: colors.border }]} 
-                onPress={() => setShowContactModal(false)}
-              >
-                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.sendButton, !contactMessage.trim() && styles.sendButtonDisabled]}
-                onPress={handleContactSeller}
-                disabled={!contactMessage.trim() || sending}
-              >
-                {sending ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <Ionicons name="send" size={18} color="#ffffff" />
-                    <Text style={styles.sendButtonText}>Send</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <Button variant="secondary" className="flex-1" onPress={() => setShowContact(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" loading={sending} onPress={handleContact}>
+                Send & Chat
+              </Button>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Review Modal */}
-      <Modal visible={showReviewModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Write a Review</Text>
-              <TouchableOpacity onPress={() => setShowReviewModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Rating</Text>
-            <View style={styles.ratingInput}>
-              {[1, 2, 3, 4, 5].map(num => (
-                <TouchableOpacity key={num} onPress={() => setReviewRating(num)}>
-                  <Ionicons
-                    name={num <= reviewRating ? 'star' : 'star-outline'}
-                    size={32}
-                    color={num <= reviewRating ? '#fbbf24' : colors.textSecondary}
-                  />
-                </TouchableOpacity>
+      <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Write a review</Text>
+            <View className="flex-row gap-2 mb-4">
+              {[1, 2, 3, 4, 5].map(i => (
+                <Pressable key={i} onPress={() => setReviewRating(i)}>
+                  <Ionicons name={i <= reviewRating ? 'star' : 'star-outline'} size={28} color="#f59e0b" />
+                </Pressable>
               ))}
             </View>
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Comment</Text>
             <TextInput
-              style={[styles.messageInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="Share your experience..."
-              placeholderTextColor={colors.textSecondary}
               value={reviewComment}
               onChangeText={setReviewComment}
+              placeholder="Share your experience (optional)"
+              placeholderTextColor="#94a3b8"
               multiline
-              numberOfLines={4}
+              className="min-h-[80px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
               textAlignVertical="top"
             />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.cancelButton, { borderColor: colors.border }]} onPress={() => setShowReviewModal(false)}>
-                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.sendButton} onPress={handleSubmitReview}>
-                <Text style={styles.sendButtonText}>Submit</Text>
-              </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <Button variant="secondary" className="flex-1" onPress={() => setShowReview(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" loading={sending} onPress={handleSubmitReview}>
+                Submit
+              </Button>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Report Modal */}
-      <Modal visible={showReportModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Report Listing</Text>
-              <TouchableOpacity onPress={() => setShowReportModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Reason</Text>
-            <View style={styles.reportOptions}>
-              {['Spam', 'Inappropriate', 'Scam', 'Wrong Category', 'Other'].map(reason => (
-                <TouchableOpacity
+      <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Report listing</Text>
+            <View className="flex-row flex-wrap gap-2 mb-4">
+              {REPORT_REASONS.map(reason => (
+                <Pressable
                   key={reason}
-                  style={[styles.reportOption, { backgroundColor: colors.background }, reportReason === reason && styles.reportOptionActive]}
                   onPress={() => setReportReason(reason)}
+                  className={`px-3 py-1.5 rounded-full border ${
+                    reportReason === reason
+                      ? 'bg-red-600 border-red-600'
+                      : 'border-slate-200 dark:border-slate-600'
+                  }`}
                 >
-                  <Text style={[styles.reportOptionText, { color: colors.textSecondary }, reportReason === reason && styles.reportOptionTextActive]}>
-                    {reason}
+                  <Text className={`text-xs capitalize ${reportReason === reason ? 'text-white' : 'text-slate-600'}`}>
+                    {reason.replace(/_/g, ' ')}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </View>
-
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Additional Details (optional)</Text>
             <TextInput
-              style={[styles.messageInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="Provide more context..."
-              placeholderTextColor={colors.textSecondary}
               value={reportDetails}
               onChangeText={setReportDetails}
+              placeholder="Additional details (optional)"
+              placeholderTextColor="#94a3b8"
               multiline
-              numberOfLines={3}
+              className="min-h-[80px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
               textAlignVertical="top"
             />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.cancelButton, { borderColor: colors.border }]} onPress={() => setShowReportModal(false)}>
-                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.sendButton, styles.reportButton]} onPress={handleSubmitReport}>
-                <Text style={styles.sendButtonText}>Report</Text>
-              </TouchableOpacity>
+            <View className="flex-row gap-3">
+              <Button variant="secondary" className="flex-1" onPress={() => setShowReport(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" loading={sending} onPress={handleSubmitReport}>
+                Submit report
+              </Button>
             </View>
           </View>
         </View>
@@ -434,408 +728,3 @@ export default function ListingDetailScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#9ca3af',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorSubtitle: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginBottom: 24,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  imageCarousel: {
-    height: 300,
-    backgroundColor: '#1e293b',
-  },
-  carouselImage: {
-    width,
-    height: 300,
-    resizeMode: 'cover',
-  },
-  placeholderImage: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  imageDots: {
-    position: 'absolute',
-    bottom: 16,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  imageDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  imageDotActive: {
-    backgroundColor: '#ffffff',
-  },
-  infoContainer: {
-    padding: 20,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#6366f120',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 12,
-    gap: 6,
-  },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
-  listingTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  listingPrice: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#6366f1',
-    marginBottom: 16,
-  },
-  metaContainer: {
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  metaText: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 12,
-  },
-  sectionLink: {
-    fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '600',
-  },
-  description: {
-    fontSize: 15,
-    color: '#d1d5db',
-    lineHeight: 24,
-  },
-  sellerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 16,
-  },
-  sellerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#334155',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  sellerInfo: {
-    flex: 1,
-  },
-  sellerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  sellerRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  ratingCount: {
-    fontSize: 12,
-    color: '#9ca3af',
-  },
-  noReviews: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-  },
-  noReviewsText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  bottomActions: {
-    flexDirection: 'row',
-    padding: 16,
-    paddingBottom: 32,
-    backgroundColor: '#1e293b',
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-    gap: 12,
-  },
-  contactButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#6366f1',
-    gap: 8,
-  },
-  contactButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
-  buyButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366f1',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  buyButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#1e293b',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  inquiryPreview: {
-    backgroundColor: '#334155',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  inquiryLabel: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginBottom: 4,
-  },
-  inquiryTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  inquiryPrice: {
-    fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  messageInput: {
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 15,
-    color: '#ffffff',
-    minHeight: 100,
-    marginBottom: 20,
-  },
-  ratingInput: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 20,
-  },
-  reportOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  reportOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  reportOptionActive: {
-    backgroundColor: '#6366f120',
-    borderColor: '#6366f1',
-  },
-  reportOptionText: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-  reportOptionTextActive: {
-    color: '#6366f1',
-    fontWeight: '600',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#9ca3af',
-  },
-  sendButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366f1',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#334155',
-  },
-  sendButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  reportButton: {
-    backgroundColor: '#ef4444',
-  },
-});

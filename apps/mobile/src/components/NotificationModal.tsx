@@ -72,6 +72,12 @@ const getNotificationIcon = (type?: string): { name: string; color: string } => 
       return { name: 'ribbon', color: '#f59e0b' };
     case 'message':
       return { name: 'chatbubble', color: '#3b82f6' };
+    case 'challenge_invite':
+    case 'challenge_accepted':
+    case 'challenge_declined':
+    case 'challenge_result':
+    case 'challenge_opponent_finished':
+      return { name: 'flash', color: '#ef4444' };
     default:
       return { name: 'notifications', color: '#6366f1' };
   }

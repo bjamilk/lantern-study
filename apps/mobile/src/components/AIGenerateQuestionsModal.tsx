@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
+import { AIDisclaimer } from './AIDisclaimer';
 import type { AIGeneratedQuestion } from '../services/ai';
 
 interface AIGenerateQuestionsModalProps {
@@ -116,6 +117,7 @@ export default function AIGenerateQuestionsModal({
                 <Text style={[styles.label, { color: colors.textSecondary }]}>
                   Paste your notes or describe a topic
                 </Text>
+                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
                 <TextInput
                   style={[
                     styles.notesInput,

@@ -1,631 +1,293 @@
-// ===========================================
-// Lantern Study Mobile - Flashcards List Screen
-// ===========================================
-
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  TextInput,
-  Dimensions,
-  Alert,
   ActivityIndicator,
+  Alert,
+  FlatList,
   Modal,
-  KeyboardAvoidingView,
-  Platform,
+  Pressable,
+  RefreshControl,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../stores/authStore';
-import { useFlashcardStore, type Deck } from '../../stores/flashcardStore';
-import { useTheme } from '../../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
+import { Button, Card, ScreenHeader } from '../../components/ui';
+import ImportAndStudyModal from '../../components/ImportAndStudyModal';
+import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
+import { FlashcardType } from '@lantern/shared';
+import type { AIGeneratedFlashcard } from '../../services/ai';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+type NavigationProp = {
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+};
 
-export default function FlashcardsScreen() {
-  const navigation = useNavigation<any>();
-  const { colors } = useTheme();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [sortBy, setSortBy] = useState<'name' | 'recent' | 'progress'>('recent');
-  
-  // Create deck modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newDeckName, setNewDeckName] = useState('');
-  const [newDeckDescription, setNewDeckDescription] = useState('');
-  
-  // Get user and decks from stores
-  const { user } = useAuthStore();
-  const { decks, isLoading, error, fetchDecks, createDeck,
-          offlineDeckIds, isDeckOffline, markDeckOffline, unmarkDeckOffline } = useFlashcardStore();
+interface Props {
+  navigation: NavigationProp;
+}
 
-  // Fetch decks on mount
-  useEffect(() => {
-    if (user?.id) {
-      fetchDecks(user.id);
-    }
-  }, [user?.id, fetchDecks]);
+const ACCENT_GRADIENTS: [string, string, ...string[]][] = [
+  ['#6366f1', '#8b5cf6', '#f43f5e'],
+  ['#f43f5e', '#fb923c', '#fbbf24'],
+  ['#10b981', '#14b8a6', '#06b6d4'],
+  ['#3b82f6', '#6366f1', '#a855f7'],
+  ['#d946ef', '#ec4899', '#f43f5e'],
+  ['#f59e0b', '#f97316', '#ef4444'],
+];
 
-  const filteredDecks = useMemo(() => {
-    let filtered = decks.filter(deck =>
-      deck.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deck.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    switch (sortBy) {
-      case 'name':
-        filtered.sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case 'progress':
-        filtered.sort((a, b) => {
-          const progressA = a.card_count ? ((a as any).mastered_count || 0) / a.card_count : 0;
-          const progressB = b.card_count ? ((b as any).mastered_count || 0) / b.card_count : 0;
-          return progressB - progressA;
-        });
-        break;
-      case 'recent':
-      default:
-        filtered.sort((a, b) => 
-          new Date(b.updated_at || b.created_at).getTime() - 
-          new Date(a.updated_at || a.created_at).getTime()
-        );
-    }
-
-    return filtered;
-  }, [decks, searchQuery, sortBy]);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    if (user?.id) {
-      await fetchDecks(user.id);
-    }
-    setRefreshing(false);
-  }, [user?.id, fetchDecks]);
-
-  const handleDeckPress = useCallback((deck: Deck) => {
-    navigation.navigate('Flashcards', {
-      screen: 'DeckDetail',
-      params: { deckId: deck.id, deckName: deck.name },
-    });
-  }, [navigation]);
-
-  const handleCreateDeck = useCallback(() => {
-    setShowCreateModal(true);
-  }, []);
-
-  const handleSaveDeck = useCallback(async () => {
-    if (!newDeckName.trim()) {
-      Alert.alert('Error', 'Please enter a deck name');
-      return;
-    }
-    
-    if (!user?.id) {
-      Alert.alert('Error', 'You must be logged in to create a deck');
-      return;
-    }
-    
-    try {
-      await createDeck(newDeckName.trim(), newDeckDescription.trim(), user.id);
-      setNewDeckName('');
-      setNewDeckDescription('');
-      setShowCreateModal(false);
-      Alert.alert('Success', 'Deck created successfully!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create deck');
-    }
-  }, [newDeckName, newDeckDescription, user?.id, createDeck]);
-
-  const getProgressColor = (progress: number) => {
-    if (progress >= 0.8) return '#10b981';
-    if (progress >= 0.5) return '#f97316';
-    return '#6366f1';
-  };
-
-  const renderDeckItem = useCallback(({ item }: { item: Deck }) => {
-    const cardCount = (item as any).card_count || 0;
-    const masteredCount = (item as any).mastered_count || 0;
-    const progress = cardCount ? masteredCount / cardCount : 0;
-    const progressColor = getProgressColor(progress);
-    const downloaded = isDeckOffline(item.id);
-
-    return (
-      <TouchableOpacity
-        style={[styles.deckCard, { backgroundColor: colors.card }]}
-        onPress={() => handleDeckPress(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.deckHeader}>
-          <View style={styles.deckTitleRow}>
-            <Text style={[styles.deckName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-            {/* offline toggle icon */}
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                if (downloaded) {
-                  unmarkDeckOffline(item.id);
-                  Alert.alert('Offline mode', 'Deck removed from offline storage');
-                } else if (user?.id) {
-                  markDeckOffline(item.id, user.id);
-                  Alert.alert('Offline mode', 'Deck downloaded for offline use');
-                }
-              }}
-              style={styles.offlineIconWrapper}
-            >
-              <Ionicons
-                name={downloaded ? 'cloud-checkmark' : 'cloud-download-outline'}
-                size={20}
-                color={downloaded ? colors.primary : colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.deckDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-            {item.description || 'No description'}
-          </Text>
-        </View>
-
-        <View style={styles.deckStats}>
-          <View style={styles.cardCount}>
-            <Ionicons name="layers-outline" size={16} color={colors.textSecondary} />
-            <Text style={[styles.cardCountText, { color: colors.textSecondary }]}>{cardCount} cards</Text>
-          </View>
-          
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressBar, { backgroundColor: colors.border }]}> 
-              <View 
-                style={[
-                  styles.progressFill, 
-                  { width: `${progress * 100}%`, backgroundColor: progressColor }
-                ]} 
-              />
-            </View>
-            <Text style={[styles.progressText, { color: progressColor }]}> 
-              {Math.round(progress * 100)}%
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }, [handleDeckPress, colors, isDeckOffline, markDeckOffline, unmarkDeckOffline, user?.id]);
-
-  const ListHeaderComponent = useMemo(() => (
-    <>
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search decks..."
-          placeholderTextColor={colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Sort Options */}
-      <View style={styles.sortContainer}>
-        <Text style={[styles.sortLabel, { color: colors.textSecondary }]}>Sort by:</Text>
-        <View style={styles.sortButtons}>
-          {(['recent', 'name', 'progress'] as const).map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={[styles.sortButton, { backgroundColor: colors.card }, sortBy === option && { backgroundColor: colors.primary }]}
-              onPress={() => setSortBy(option)}
-            >
-              <Text style={[styles.sortButtonText, { color: colors.textSecondary }, sortBy === option && { color: '#ffffff' }]}>
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Decks Count */}
-      <Text style={[styles.decksCount, { color: colors.textSecondary }]}>
-        {filteredDecks.length} {filteredDecks.length === 1 ? 'deck' : 'decks'}
-      </Text>
-    </>
-  ), [searchQuery, sortBy, filteredDecks.length, colors]);
-
-  const ListEmptyComponent = useMemo(() => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="albums-outline" size={64} color={colors.textSecondary} />
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        {searchQuery ? 'No decks found' : 'No decks yet'}
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-        {searchQuery
-          ? 'Try adjusting your search'
-          : 'Create your first deck to start studying'}
-      </Text>
-      {!searchQuery && (
-        <TouchableOpacity style={[styles.createButton, { backgroundColor: colors.primary }]} onPress={handleCreateDeck}>
-          <Ionicons name="add" size={20} color="#ffffff" />
-          <Text style={styles.createButtonText}>Create Deck</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  ), [searchQuery, handleCreateDeck, colors]);
+function DeckCard({
+  deck,
+  index,
+  onPress,
+  onAIGenerate,
+}: {
+  deck: Deck;
+  index: number;
+  onPress: () => void;
+  onAIGenerate: () => void;
+}) {
+  const cardCount = deck.card_count ?? 0;
+  const dueCount = deck.due_count ?? 0;
+  const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Flashcards</Text>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.primary }]} onPress={handleCreateDeck}>
-          <Ionicons name="add" size={24} color={colors.textInverse} />
-        </TouchableOpacity>
+    <Pressable onPress={onPress} className="mb-3 active:opacity-90">
+      <View className="rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm">
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={{ height: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <View className="flex-row items-center gap-2 flex-1 min-w-0">
+            <Ionicons name="layers-outline" size={18} color="rgba(255,255,255,0.9)" />
+            <Text className="text-sm font-bold text-white flex-1" numberOfLines={1}>
+              {deck.name}
+            </Text>
+            {deck.is_shared ? (
+              <View className="bg-white/20 px-2 py-0.5 rounded-full">
+                <Text className="text-[10px] font-bold text-white">Shared</Text>
+              </View>
+            ) : null}
+          </View>
+          {dueCount > 0 ? (
+            <View className="bg-white/25 px-2 py-0.5 rounded-full ml-2">
+              <Text className="text-[10px] font-bold text-white">{dueCount} due</Text>
+            </View>
+          ) : (
+            <Pressable
+              onPress={e => {
+                e.stopPropagation?.();
+                onAIGenerate();
+              }}
+              className="p-1.5 rounded-full bg-white/20 ml-2"
+              hitSlop={8}
+            >
+              <Ionicons name="sparkles-outline" size={16} color="#ffffff" />
+            </Pressable>
+          )}
+        </LinearGradient>
+        <View className="px-4 py-3">
+          {deck.description ? (
+            <Text className="text-xs text-slate-500 dark:text-slate-400 mb-2" numberOfLines={2}>
+              {deck.description}
+            </Text>
+          ) : null}
+          <View className="flex-row gap-4">
+            <View className="flex-row items-center gap-1.5">
+              <Text className="text-xs text-slate-500 dark:text-slate-400">Cards</Text>
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">{cardCount}</Text>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              <Text className="text-xs text-slate-500 dark:text-slate-400">Due</Text>
+              <Text
+                className={`text-sm font-semibold ${dueCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}
+              >
+                {dueCount}
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
+    </Pressable>
+  );
+}
 
-      {/* Decks List */}
-      <FlatList
-        data={filteredDecks}
-        keyExtractor={(item) => item.id}
-        renderItem={renderDeckItem}
-        ListHeaderComponent={ListHeaderComponent}
-        ListEmptyComponent={ListEmptyComponent}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+export function FlashcardsScreen({ navigation }: Props) {
+  const user = useAuthStore(s => s.user);
+  const { decks, isLoading, error, fetchDecks, createDeck, createFlashcard, clearError } = useFlashcardStore();
+  const [refreshing, setRefreshing] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [deckName, setDeckName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [aiDeckId, setAiDeckId] = useState<string | null>(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+
+  const loadDecks = useCallback(async () => {
+    if (!user?.id) return;
+    await fetchDecks(user.id);
+  }, [user?.id, fetchDecks]);
+
+  useEffect(() => {
+    loadDecks();
+  }, [loadDecks]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadDecks();
+    setRefreshing(false);
+  };
+
+  const handleCreateDeck = async () => {
+    const name = deckName.trim();
+    if (!name || !user?.id) return;
+    setCreating(true);
+    try {
+      const deck = await createDeck(name, undefined, user.id);
+      setCreateOpen(false);
+      setDeckName('');
+      navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const openAiForDeck = (deckId: string) => {
+    setAiDeckId(deckId);
+    setAiModalOpen(true);
+  };
+
+  const handleAIGenerated = async (generated: AIGeneratedFlashcard[]) => {
+    if (!user?.id || !aiDeckId || generated.length === 0) return;
+    for (const card of generated) {
+      await createFlashcard({
+        deckId: aiDeckId,
+        userId: user.id,
+        type: FlashcardType.BASIC,
+        front: card.front,
+        back: card.back,
+      });
+    }
+    Alert.alert('Success', `Added ${generated.length} flashcards to the deck.`);
+    setAiModalOpen(false);
+    setAiDeckId(null);
+  };
+
+  return (
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <ScreenHeader
+        title="Flashcards"
+        subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''}`}
+        right={
+          <View className="flex-row gap-1.5">
+            <Button size="sm" variant="secondary" onPress={() => setImportOpen(true)}>
+              Import
+            </Button>
+            <Button size="sm" onPress={() => setCreateOpen(true)}>
+              + Deck
+            </Button>
+          </View>
         }
       />
 
-      {/* Create Deck Modal */}
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCreateModal(false)}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}
+      <View className="flex-row gap-2 px-4 mb-3">
+        <Pressable
+          onPress={() => navigation.navigate('NotesList')}
+          className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
         >
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Create New Deck</Text>
-            
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Deck Name *</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.inputText }]}
-              placeholder="Enter deck name"
-              placeholderTextColor={colors.inputPlaceholder}
-              value={newDeckName}
-              onChangeText={setNewDeckName}
-              autoFocus
-            />
-            
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Description (optional)</Text>
-            <TextInput
-              style={[styles.modalInput, styles.textArea, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.inputText }]}
-              placeholder="Enter description"
-              placeholderTextColor={colors.inputPlaceholder}
-              value={newDeckDescription}
-              onChangeText={setNewDeckDescription}
-              multiline
-              numberOfLines={3}
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.cancelButton, { borderColor: colors.border }]}
-                onPress={() => {
-                  setShowCreateModal(false);
-                  setNewDeckName('');
-                  setNewDeckDescription('');
-                }}
-              >
-                <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.saveButton, 
-                  { backgroundColor: colors.primary },
-                  !newDeckName.trim() && styles.saveButtonDisabled
-                ]}
-                onPress={handleSaveDeck}
-                disabled={!newDeckName.trim()}
-              >
-                <Text style={[styles.saveButtonText, { color: colors.textInverse }]}>Create Deck</Text>
-              </TouchableOpacity>
+          <Text className="text-xs font-medium text-slate-600 dark:text-slate-300">Notes</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => navigation.navigate('TestsList')}
+          className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+        >
+          <Text className="text-xs font-medium text-slate-600 dark:text-slate-300">Tests</Text>
+        </Pressable>
+      </View>
+
+      {error ? (
+        <Pressable onPress={clearError} className="mx-4 mb-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
+          <Text className="text-xs text-amber-800 dark:text-amber-200">{error}</Text>
+        </Pressable>
+      ) : null}
+
+      {isLoading && decks.length === 0 ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      ) : (
+        <FlatList
+          data={decks}
+          keyExtractor={item => item.id}
+          contentContainerClassName="px-4 pb-8"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          ListEmptyComponent={
+            <View className="items-center py-16 px-6">
+              <Text className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-2">No decks yet</Text>
+              <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+                Create your first deck to start studying with spaced repetition.
+              </Text>
+              <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          }
+          renderItem={({ item, index }) => (
+            <DeckCard
+              deck={item}
+              index={index}
+              onPress={() => navigation.navigate('DeckDetail', { deckId: item.id, deckName: item.name })}
+              onAIGenerate={() => openAiForDeck(item.id)}
+            />
+          )}
+        />
+      )}
+
+      <ImportAndStudyModal
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        onOpenNote={noteId => navigation.navigate('NoteEditor', { noteId })}
+      />
+
+      <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
+        <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setCreateOpen(false)}>
+          <Pressable onPress={e => e.stopPropagation?.()}>
+            <Card className="border-0 shadow-lg">
+              <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">New Deck</Text>
+              <TextInput
+                value={deckName}
+                onChangeText={setDeckName}
+                placeholder="Deck name"
+                placeholderTextColor="#94a3b8"
+                autoFocus
+                className="border border-slate-200 dark:border-slate-600 rounded-2xl px-4 py-3 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-4"
+              />
+              <View className="flex-row gap-2">
+                <Button variant="secondary" className="flex-1" onPress={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button className="flex-1" loading={creating} disabled={!deckName.trim()} onPress={handleCreateDeck}>
+                  Create
+                </Button>
+              </View>
+            </Card>
+          </Pressable>
+        </Pressable>
       </Modal>
+
+      {aiDeckId ? (
+        <AIGenerateFlashcardsModal
+          visible={aiModalOpen}
+          onClose={() => {
+            setAiModalOpen(false);
+            setAiDeckId(null);
+          }}
+          onFlashcardsGenerated={handleAIGenerated}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-  listHeader: {
-    marginBottom: 16,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 48,
-    fontSize: 16,
-    color: '#ffffff',
-  },
-  sortContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sortLabel: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginRight: 12,
-  },
-  sortButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sortButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#1e293b',
-  },
-  sortButtonActive: {
-    backgroundColor: '#6366f1',
-  },
-  sortButtonText: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-  sortButtonTextActive: {
-    color: '#ffffff',
-    fontWeight: '500',
-  },
-  decksCount: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  deckCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-  },
-  deckHeader: {
-    marginBottom: 12,
-  },
-  deckTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  offlineIconWrapper: {
-    marginLeft: 4,
-  },
-  deckName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    flex: 1,
-  },
-  publicBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#6366f120',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deckDescription: {
-    fontSize: 14,
-    color: '#9ca3af',
-    lineHeight: 20,
-  },
-  deckStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  cardCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  cardCountText: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressBar: {
-    width: 80,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#334155',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 12,
-    fontWeight: '600',
-    width: 36,
-    textAlign: 'right',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    alignItems: 'center',
-  },
-  tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: '#334155',
-  },
-  tagText: {
-    fontSize: 12,
-    color: '#e2e8f0',
-  },
-  moreTagsText: {
-    fontSize: 12,
-    color: '#6366f1',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#1e293b',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9ca3af',
-    marginBottom: 8,
-  },
-  modalInput: {
-    backgroundColor: '#0f172a',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#ffffff',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  textArea: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  cancelButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#334155',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  saveButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#6366f1',
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#4b5563',
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-});
+export default FlashcardsScreen;

@@ -1,0 +1,1761 @@
+import type { ApiClient } from './client';
+
+export function createApiEndpoints(client: ApiClient) {
+  const apiRequest = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
+    client.request<T>(endpoint, options, timeoutMs);
+
+  const apiRequestRaw = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
+    client.requestRaw<T>(endpoint, options, timeoutMs);
+
+  return {
+    // ========== DECK API ==========
+
+    fetchDecks: (userId: string, options?: { includeShared?: boolean }) => {
+      const params = new URLSearchParams({ userId });
+      if (options?.includeShared) params.set('includeShared', 'true');
+      params.set('limit', '50');
+      return apiRequest<Array<{
+        id: string;
+        name: string;
+        description?: string;
+        user_id: string;
+        is_shared?: boolean;
+        created_at: string;
+        updated_at: string;
+        card_count?: number;
+      }>>(`/decks?${params.toString()}`);
+    },
+
+    createDeck: (userId: string, data: { name: string; description?: string }) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        description?: string;
+        user_id: string;
+        created_at: string;
+        updated_at: string;
+        card_count?: number;
+      }>('/decks', {
+        method: 'POST',
+        body: JSON.stringify({ ...data, userId }),
+      }),
+
+    updateDeck: (deckId: string, updates: { name?: string; description?: string }) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        description?: string;
+        user_id: string;
+        created_at: string;
+        updated_at: string;
+        card_count?: number;
+      }>(`/decks/${deckId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }),
+
+    deleteDeck: (deckId: string) => apiRequest<void>(`/decks/${deckId}`, { method: 'DELETE' }),
+
+    resetDeckStatistics: (deckId: string, userId: string) =>
+      apiRequest<void>(`/decks/${deckId}/reset`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+
+    exportDeck: (deckId: string) => apiRequest<unknown>(`/decks/${deckId}/export`),
+
+    exportDeckCsv: (deckId: string) => client.requestText(`/decks/${deckId}/export/csv`),
+
+    importDeckCsv: (csv: string, userId: string, deckName?: string) =>
+      apiRequest<{ deck: unknown; flashcards: unknown[] }>('/decks/import/csv', {
+        method: 'POST',
+        body: JSON.stringify({ csv, deckName, userId }),
+      }),
+
+    importDeckApkg: (apkgBase64: string, userId: string) =>
+      apiRequest<{ deck: unknown; flashcards: unknown[] }>('/decks/import/apkg', {
+        method: 'POST',
+        body: JSON.stringify({ apkgBase64, userId }),
+      }),
+
+    importDeck: (importData: unknown, userId: string) =>
+      apiRequest<{
+        deck: {
+          id: string;
+          name: string;
+          description?: string;
+          user_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        flashcards: Array<{
+          id: string;
+          deck_id: string;
+          type: 'BASIC' | 'CLOZE';
+          front?: string;
+          back?: string;
+          cloze_text?: string;
+          tags?: string[];
+          created_at: string;
+          updated_at: string;
+        }>;
+      }>('/decks/import', {
+        method: 'POST',
+        body: JSON.stringify({ importData, userId }),
+      }),
+
+    fetchDeckCollaborators: (deckId: string) =>
+      apiRequest<
+        Array<{
+          deck_id: string;
+          user_id: string;
+          role: string;
+          added_at: string;
+        }>
+      >(`/decks/${deckId}/collaborators`),
+
+    addDeckCollaborator: (deckId: string, userId: string, role: string) =>
+      apiRequest<{
+        deck_id: string;
+        user_id: string;
+        role: string;
+        added_at: string;
+      }>(`/decks/${deckId}/collaborators`, {
+        method: 'POST',
+        body: JSON.stringify({ userId, role }),
+      }),
+
+    removeDeckCollaborator: (deckId: string, userId: string) =>
+      apiRequest<void>(`/decks/${deckId}/collaborators/${userId}`, { method: 'DELETE' }),
+
+    // ========== FLASHCARD API ==========
+
+    fetchFlashcards: async (deckId?: string, options?: { page?: number; limit?: number }) => {
+      const params = new URLSearchParams();
+      if (deckId) params.append('deckId', deckId);
+      if (options?.page) params.append('page', options.page.toString());
+      if (options?.limit) {
+        params.append('limit', options.limit.toString());
+      } else if (deckId) {
+        params.append('limit', '500');
+      }
+      const query = params.toString();
+      const endpoint = query ? `/flashcards?${query}` : '/flashcards';
+
+      if (options?.page || options?.limit) {
+        return apiRequestRaw<{
+          success: boolean;
+          data: Array<{
+            id: string;
+            deck_id: string;
+            type: 'BASIC' | 'CLOZE';
+            front?: string;
+            back?: string;
+            cloze_text?: string;
+            tags?: string[];
+            srs_data?: {
+              interval: number;
+              ease_factor: number;
+              next_review: string;
+              repetitions: number;
+            };
+            created_at: string;
+            updated_at: string;
+          }>;
+          pagination?: { page: number; limit: number; total: number };
+        }>(endpoint);
+      }
+
+      return apiRequest<
+        Array<{
+          id: string;
+          deck_id: string;
+          type: 'BASIC' | 'CLOZE';
+          front?: string;
+          back?: string;
+          cloze_text?: string;
+          tags?: string[];
+          srs_data?: {
+            interval: number;
+            ease_factor: number;
+            next_review: string;
+            repetitions: number;
+          };
+          created_at: string;
+          updated_at: string;
+        }>
+      >(endpoint);
+    },
+
+    createFlashcard: (
+      userId: string,
+      deckId: string,
+      data: {
+        type: 'BASIC' | 'CLOZE';
+        front?: string;
+        back?: string;
+        clozeText?: string;
+        tags?: string[];
+      }
+    ) =>
+      apiRequest<{
+        id: string;
+        deck_id: string;
+        type: 'BASIC' | 'CLOZE';
+        front?: string;
+        back?: string;
+        cloze_text?: string;
+        tags?: string[];
+        created_at: string;
+        updated_at: string;
+      }>('/flashcards', {
+        method: 'POST',
+        body: JSON.stringify({ ...data, deckId, userId }),
+      }),
+
+    updateFlashcard: (
+      flashcardId: string,
+      updates: {
+        front?: string;
+        back?: string;
+        clozeText?: string;
+        srsData?: unknown;
+        tags?: string[];
+      }
+    ) =>
+      apiRequest<{
+        id: string;
+        deck_id: string;
+        type: 'BASIC' | 'CLOZE';
+        front?: string;
+        back?: string;
+        cloze_text?: string;
+        tags?: string[];
+        created_at: string;
+        updated_at: string;
+      }>(`/flashcards/${flashcardId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }),
+
+    deleteFlashcard: (flashcardId: string) =>
+      apiRequest<void>(`/flashcards/${flashcardId}`, { method: 'DELETE' }),
+
+    fetchFlashcardComments: (flashcardId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          flashcard_id: string;
+          user_id: string;
+          comment: string;
+          created_at: string;
+          resolved?: boolean;
+        }>
+      >(`/flashcards/${flashcardId}/comments`),
+
+    addFlashcardComment: (flashcardId: string, userId: string, comment: string) =>
+      apiRequest<{
+        id: string;
+        flashcard_id: string;
+        user_id: string;
+        comment: string;
+        created_at: string;
+        resolved?: boolean;
+      }>(`/flashcards/${flashcardId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ userId, comment }),
+      }),
+
+    resolveFlashcardComment: (commentId: string) =>
+      apiRequest<{
+        id: string;
+        flashcard_id: string;
+        user_id: string;
+        comment: string;
+        created_at: string;
+        resolved: boolean;
+      }>(`/flashcards/comments/${commentId}/resolve`, { method: 'PUT' }),
+
+    uploadFlashcardImage: async (
+      userId: string,
+      file: Blob | { uri: string; name: string; type: string },
+      deckId?: string
+    ) => {
+      const formData = new FormData();
+      if ('uri' in file) {
+        formData.append('file', file as unknown as Blob);
+      } else {
+        formData.append('file', file);
+      }
+      formData.append('userId', userId);
+      if (deckId) formData.append('deckId', deckId);
+
+      return apiRequest<{ url: string; path: string }>('/flashcards/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
+    },
+
+    // ========== USER PROFILE API ==========
+
+    fetchUserProfile: (userId: string) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        avatar_url?: string;
+        phone?: string;
+        points: number;
+        stats?: unknown;
+        badges?: unknown[];
+        settings?: unknown;
+        created_at: string;
+        updated_at: string;
+      }>(`/users/${userId}`),
+
+    createUserProfile: (data: { id: string; name: string; avatar_url?: string }) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        avatar_url?: string;
+        points: number;
+        created_at: string;
+        updated_at: string;
+      }>('/users', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    updateUserProfile: (
+      userId: string,
+      updates: Partial<{
+        name: string;
+        avatar_url?: string;
+        phone?: string;
+        points: number;
+        stats?: unknown;
+        badges?: unknown[];
+        settings?: unknown;
+      }>
+    ) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        avatar_url?: string;
+        phone?: string;
+        points: number;
+        created_at: string;
+        updated_at: string;
+      }>(`/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }),
+
+    deleteUserAccount: (userId: string) =>
+      apiRequest<{ success: boolean; message?: string }>(`/users/${userId}`, { method: 'DELETE' }),
+
+    exportUserData: (userId: string) =>
+      apiRequestRaw<{ success: boolean; data: Record<string, unknown> }>(`/users/${userId}/export`),
+
+    fetchUserSettings: (userId: string) => apiRequest<unknown>(`/users/${userId}/settings`),
+
+    updateUserSettings: (userId: string, settings: unknown) =>
+      apiRequest<unknown>(`/users/${userId}/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings }),
+      }),
+
+    searchUsers: (query: string, limit = 20) =>
+      apiRequest<
+        Array<{
+          id: string;
+          name: string;
+          username?: string;
+          avatar_url?: string;
+        }>
+      >(`/users/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+    checkUsername: (username: string) =>
+      apiRequestRaw<{
+        success: boolean;
+        available: boolean;
+        username?: string;
+        displayUsername?: string;
+        error?: string;
+      }>(`/users/check-username/${encodeURIComponent(username)}`),
+
+    updateUsername: (userId: string, username: string) =>
+      apiRequest<{
+        id: string;
+        username: string;
+        displayUsername: string;
+        firstName?: string;
+        lastName?: string;
+        name?: string;
+      }>(`/users/${userId}/username`, {
+        method: 'PUT',
+        body: JSON.stringify({ username }),
+      }),
+
+    // ========== GROUPS API ==========
+
+    fetchGroups: (userId: string, options?: { limit?: number; page?: number }) => {
+      const params = new URLSearchParams({ userId });
+      if (options?.limit) params.set('limit', String(options.limit));
+      if (options?.page) params.set('page', String(options.page));
+      return apiRequest<
+        Array<{
+          id: string;
+          name: string;
+          description?: string;
+          avatar_url?: string;
+          avatarUrl?: string;
+          parent_id?: string;
+          parentId?: string;
+          invite_id: string;
+          admin_ids?: string[];
+          adminIds?: string[];
+          permissions?: unknown;
+          is_archived?: boolean;
+          isArchived?: boolean;
+          created_at: string;
+          createdAt?: string;
+          updated_at: string;
+          updatedAt?: string;
+          member_count?: number;
+          memberCount?: number;
+          last_message?: string;
+          lastMessage?: string;
+          last_message_time?: string;
+          lastMessageTime?: string;
+          members?: unknown[];
+        }>
+      >(`/groups?${params.toString()}`);
+    },
+
+    fetchGroup: (groupId: string) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        description?: string;
+        avatar_url?: string;
+        invite_id: string;
+        admin_ids?: string[];
+        permissions?: unknown;
+        is_archived?: boolean;
+        created_at: string;
+        updated_at: string;
+        member_count?: number;
+        members?: unknown[];
+      }>(`/groups/${groupId}`),
+
+    createGroup: (data: {
+      name: string;
+      description?: string;
+      avatar_url?: string;
+      permissions?: unknown;
+      invite_id: string;
+      parent_id?: string;
+      userId: string;
+      memberIds: string[];
+    }) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        description?: string;
+        avatar_url?: string;
+        invite_id: string;
+        created_at: string;
+        updated_at: string;
+      }>('/groups', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    updateGroup: (
+      groupId: string,
+      updates: {
+        name?: string;
+        description?: string;
+        avatarUrl?: string;
+        isArchived?: boolean;
+      }
+    ) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        description?: string;
+        avatar_url?: string;
+        is_archived?: boolean;
+        created_at: string;
+        updated_at: string;
+      }>(`/groups/${groupId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }),
+
+    deleteGroup: (groupId: string) => apiRequest<void>(`/groups/${groupId}`, { method: 'DELETE' }),
+
+    fetchGroupMembers: (groupId: string) => apiRequest<unknown[]>(`/groups/${groupId}/members`),
+
+    addGroupMember: (groupId: string, userId: string) =>
+      apiRequest<void>(`/groups/${groupId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+
+    removeGroupMember: (groupId: string, userId: string) =>
+      apiRequest<void>(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+
+    joinGroupByInvite: (inviteId: string, userId: string) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        invite_id: string;
+        created_at: string;
+        updated_at: string;
+      }>('/groups/join', {
+        method: 'POST',
+        body: JSON.stringify({ inviteId, userId }),
+      }),
+
+    leaveGroup: (groupId: string, userId: string) =>
+      apiRequest<void>(`/groups/${groupId}/leave`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+
+    promoteGroupAdmin: (groupId: string, memberId: string) =>
+      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, { method: 'POST' }),
+
+    demoteGroupAdmin: (groupId: string, memberId: string) =>
+      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, { method: 'DELETE' }),
+
+    fetchGroupUnreadCounts: (_userId: string) =>
+      apiRequest<Record<string, number>>('/groups/unread/all'),
+
+    markGroupAsRead: (groupId: string, userId: string) =>
+      apiRequest<void>(`/groups/${groupId}/read`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+
+    // ========== MESSAGES API ==========
+
+    fetchMessages: async (groupId: string, options?: { page?: number; limit?: number }) => {
+      const params = new URLSearchParams();
+      if (options?.page) params.append('page', options.page.toString());
+      if (options?.limit) params.append('limit', options.limit.toString());
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const endpoint = `/messages/group/${groupId}${query}`;
+
+      if (options?.page || options?.limit) {
+        return apiRequestRaw<{
+          success: boolean;
+          data: Array<{
+            id: string;
+            group_id: string;
+            sender_id: string;
+            content?: string;
+            text?: string;
+            type: 'TEXT' | 'QUESTION';
+            upvotes: number;
+            downvotes: number;
+            created_at: string;
+            updated_at: string;
+          }>;
+          pagination?: { page: number; limit: number; total: number };
+        }>(endpoint);
+      }
+
+      return apiRequest<
+        Array<{
+          id: string;
+          group_id: string;
+          sender_id: string;
+          content?: string;
+          text?: string;
+          type: 'TEXT' | 'QUESTION';
+          upvotes: number;
+          downvotes: number;
+          created_at: string;
+          updated_at: string;
+        }>
+      >(endpoint);
+    },
+
+    sendMessage: (
+      groupId: string,
+      userId: string,
+      data: {
+        content: string;
+        type?: 'TEXT' | 'QUESTION';
+        questionType?: string;
+        questionStem?: string;
+        options?: unknown[];
+        correctAnswerIds?: string[];
+        explanation?: string;
+        tags?: string[];
+        imageUrl?: string;
+      }
+    ) =>
+      apiRequest<{
+        id: string;
+        group_id: string;
+        sender_id: string;
+        content?: string;
+        type: 'TEXT' | 'QUESTION';
+        created_at: string;
+        updated_at: string;
+      }>(`/messages/group/${groupId}`, {
+        method: 'POST',
+        body: JSON.stringify({ ...data, userId }),
+      }),
+
+    updateMessage: (
+      messageId: string,
+      updates: { flagged_as_similar_user_ids?: string[]; flaggedUserIds?: string[] }
+    ) =>
+      apiRequest<{
+        id: string;
+        group_id: string;
+        sender_id: string;
+        created_at: string;
+        updated_at: string;
+      }>(`/messages/${messageId}/update`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          flagged_as_similar_user_ids:
+            updates.flagged_as_similar_user_ids ?? updates.flaggedUserIds,
+        }),
+      }),
+
+    updateQuestionStatus: (messageId: string, questionStatus: string) =>
+      apiRequest<{
+        id: string;
+        group_id: string;
+        question_status?: string;
+        created_at: string;
+        updated_at: string;
+      }>(`/messages/${messageId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ questionStatus }),
+      }),
+
+    voteOnMessage: (messageId: string, userId: string, voteType: 'up' | 'down') =>
+      apiRequest<unknown>(`/messages/${messageId}/vote`, {
+        method: 'POST',
+        body: JSON.stringify({ userId, voteType }),
+      }),
+
+    removeVote: (messageId: string, userId: string) =>
+      apiRequest<void>(`/messages/${messageId}/vote?userId=${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      }),
+
+    fetchUserVotesForGroup: (groupId: string, userId: string) =>
+      apiRequest<Record<string, 'up' | 'down'>>(
+        `/messages/group/${groupId}/user-votes?userId=${encodeURIComponent(userId)}`
+      ),
+
+    // ========== DIRECT MESSAGES API ==========
+
+    fetchDMThreads: (userId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          participant_ids: string[];
+          participants: Record<string, { name: string; avatar_url?: string }>;
+          last_message?: string;
+          last_message_timestamp?: string;
+          unread_count?: number;
+        }>
+      >(`/messages/dm/threads?userId=${encodeURIComponent(userId)}`),
+
+    fetchDirectMessages: async (
+      userId: string,
+      otherUserId: string,
+      options?: { page?: number; limit?: number }
+    ) => {
+      const params = new URLSearchParams({ otherUserId });
+      if (options?.page) params.append('page', options.page.toString());
+      if (options?.limit) params.append('limit', options.limit.toString());
+      const endpoint = `/messages/user/${userId}?${params.toString()}`;
+
+      if (options?.page || options?.limit) {
+        return apiRequestRaw<{
+          success: boolean;
+          data: Array<{
+            id: string;
+            thread_id: string;
+            sender_id: string;
+            content: string;
+            created_at: string;
+          }>;
+          pagination?: { page: number; limit: number; total: number };
+        }>(endpoint);
+      }
+
+      return apiRequest<
+        Array<{
+          id: string;
+          thread_id: string;
+          sender_id: string;
+          content: string;
+          created_at: string;
+        }>
+      >(endpoint);
+    },
+
+    sendDirectMessage: (senderId: string, recipientId: string, content: string) =>
+      apiRequest<{
+        id: string;
+        thread_id: string;
+        sender_id: string;
+        content: string;
+        created_at: string;
+      }>(`/messages/user/${senderId}`, {
+        method: 'POST',
+        body: JSON.stringify({ content, recipientId }),
+      }),
+
+    markDMAsRead: (threadId: string, userId: string) =>
+      apiRequest<void>(`/messages/dm/${threadId}/read`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      }),
+
+    fetchDMUnreadCounts: (_userId: string) =>
+      apiRequest<Record<string, number>>('/messages/dm/unread/all'),
+
+    archiveDmThread: (threadId: string, _userId: string) =>
+      apiRequest<void>(`/messages/dm/${threadId}/archive`, { method: 'PUT' }),
+
+    unarchiveDmThread: (threadId: string, _userId: string) =>
+      apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: 'PUT' }),
+
+    deleteDmThread: (threadId: string, _userId: string) =>
+      apiRequest<void>(`/messages/dm/${threadId}`, { method: 'DELETE' }),
+
+    // ========== TESTS API ==========
+
+    fetchTests: (userId: string, options?: { status?: string; groupId?: string }) => {
+      const params = new URLSearchParams({ userId });
+      if (options?.status) params.append('status', options.status);
+      if (options?.groupId) params.append('groupId', options.groupId);
+      return apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          group_id: string;
+          config: unknown;
+          questions: unknown[];
+          user_answers: Record<string, unknown>;
+          status: 'in_progress' | 'completed' | 'abandoned';
+          start_time: string;
+          end_time?: string;
+          score?: number;
+          created_at: string;
+        }>
+      >(`/tests?${params.toString()}`);
+    },
+
+    createTestSession: (data: {
+      userId: string;
+      groupId: string;
+      config: unknown;
+      questions: unknown[];
+      isOffline?: boolean;
+    }) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        group_id: string;
+        config: unknown;
+        questions: unknown[];
+        status: string;
+        start_time: string;
+        created_at: string;
+      }>('/tests', {
+        method: 'POST',
+        body: JSON.stringify({
+          config: data.config,
+          questions: data.questions,
+          user_answers: {},
+          start_time: new Date().toISOString(),
+          is_offline: data.isOffline || false,
+          userId: data.userId,
+        }),
+      }),
+
+    updateTestSession: (
+      sessionId: string,
+      updates: {
+        userAnswers?: Record<string, unknown>;
+        endTime?: string;
+        status?: string;
+      },
+      userId: string
+    ) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        status: string;
+        user_answers: Record<string, unknown>;
+        end_time?: string;
+      }>(`/tests/${sessionId}/submit`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          answers: updates.userAnswers ? Object.values(updates.userAnswers) : [],
+          userId,
+        }),
+      }),
+
+    submitTestResult: (
+      sessionId: string,
+      result: {
+        score: number;
+        correctAnswersCount: number;
+        totalQuestions: number;
+      }
+    ) =>
+      apiRequest<{
+        session_id: string;
+        score: number;
+        correct_answers_count: number;
+        total_questions: number;
+      }>(`/tests/${sessionId}/results`, {
+        method: 'POST',
+        body: JSON.stringify(result),
+      }),
+
+    fetchTestResults: (userId: string, options?: { limit?: number }) => {
+      const params = new URLSearchParams({
+        userId,
+        status: 'completed',
+        limit: String(options?.limit ?? 100),
+      });
+      return apiRequest<
+        Array<{
+          id?: string;
+          session: {
+            id?: string;
+            config?: {
+              groupId?: string;
+              groupName?: string;
+              name?: string;
+              passingScore?: number;
+            };
+            questions?: unknown[];
+            userAnswers?: Record<string, unknown>;
+            startTime?: string;
+            endTime?: string;
+          };
+          score: number;
+          totalQuestions: number;
+          correctAnswersCount: number;
+        }>
+      >(`/tests?${params.toString()}`);
+    },
+
+    saveTestResult: (
+      userId: string,
+      data: {
+        sessionId?: string;
+        groupId?: string;
+        config?: unknown;
+        questions?: unknown[];
+        userAnswers?: Record<string, unknown>;
+        score: number;
+        correctAnswersCount: number;
+        totalQuestions: number;
+        startTime?: string;
+        endTime?: string;
+      }
+    ) => {
+      if (data.sessionId) {
+        return apiRequest<{
+          id: string;
+          user_id: string;
+          status: string;
+          score?: number;
+        }>(`/tests/${data.sessionId}/submit`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            answers: data.userAnswers ? Object.values(data.userAnswers) : [],
+            userId,
+            score: data.score,
+          }),
+        });
+      }
+
+      return apiRequest<{
+        id: string;
+        user_id: string;
+        status: string;
+        score?: number;
+      }>('/tests', {
+        method: 'POST',
+        body: JSON.stringify({
+          config: data.config || {},
+          questions: data.questions || [],
+          user_answers: data.userAnswers || {},
+          start_time: data.startTime || new Date().toISOString(),
+          end_time: data.endTime || new Date().toISOString(),
+          score: data.score,
+          userId,
+        }),
+      });
+    },
+
+    deleteTestSession: (sessionId: string) =>
+      apiRequest<{ deleted: boolean; message?: string }>(`/tests/sessions/${sessionId}`, {
+        method: 'DELETE',
+      }),
+
+    clearTestHistory: () =>
+      apiRequest<{ deletedCount: number; message?: string }>('/tests/history', {
+        method: 'DELETE',
+      }),
+
+    // ========== USER QUESTION STATS API ==========
+
+    fetchUserQuestionStats: (userId: string) =>
+      apiRequest<
+        Array<{
+          question_id: string;
+          correct_count: number;
+          incorrect_count: number;
+          last_reviewed_at: string;
+        }>
+      >(`/user-stats/${encodeURIComponent(userId)}`),
+
+    upsertUserQuestionStat: (
+      userId: string,
+      questionId: string,
+      stat: {
+        correctAttempts: number;
+        incorrectAttempts: number;
+        lastAttempted: string;
+      }
+    ) =>
+      apiRequest<void>('/user-stats', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          questionId,
+          correctAttempts: stat.correctAttempts,
+          incorrectAttempts: stat.incorrectAttempts,
+          lastAttempted: stat.lastAttempted,
+        }),
+      }),
+
+    // ========== NOTIFICATIONS API ==========
+
+    fetchNotifications: (userId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          message: string;
+          type: string;
+          link?: string;
+          read: boolean;
+          date: string;
+          created_at: string;
+        }>
+      >(`/notifications?userId=${encodeURIComponent(userId)}`),
+
+    createNotification: (data: {
+      userId: string;
+      message: string;
+      type?: string;
+      link?: string;
+    }) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        message: string;
+        type: string;
+        read: boolean;
+        created_at: string;
+      }>('/notifications', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    markNotificationAsRead: (notificationId: string) =>
+      apiRequest<void>(`/notifications/${notificationId}/read`, { method: 'PUT' }),
+
+    markAllNotificationsAsRead: async (userId: string) => {
+      const result = await apiRequest<{ updatedCount: number }>(
+        `/notifications/read-all?userId=${encodeURIComponent(userId)}`,
+        { method: 'PUT' }
+      );
+      return result.updatedCount;
+    },
+
+    deleteNotification: (notificationId: string, userId: string) =>
+      apiRequest<void>(`/notifications/${notificationId}?userId=${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      }),
+
+    deleteAllNotifications: async (userId: string) => {
+      const result = await apiRequest<{ deletedCount: number }>(
+        `/notifications?userId=${encodeURIComponent(userId)}`,
+        { method: 'DELETE' }
+      );
+      return result.deletedCount;
+    },
+
+    // ========== GAMIFICATION API ==========
+
+    fetchGamificationStats: (userId: string) =>
+      apiRequest<{
+        cards_reviewed: number;
+        streak_days: number;
+        total_points: number;
+        level: number;
+        xp: number;
+        xp_to_next_level: number;
+      }>(`/gamification/stats?userId=${encodeURIComponent(userId)}`),
+
+    awardPoints: (userId: string, points: number, reason: string) =>
+      apiRequest<void>(`/gamification/user/${userId}/points`, {
+        method: 'POST',
+        body: JSON.stringify({ points, reason }),
+      }),
+
+    checkBadges: (userId: string) => apiRequest<unknown[]>(`/gamification/user/${userId}/badges`),
+
+    // ========== MARKETPLACE API ==========
+
+    fetchMarketplaceListings: async (filters: {
+      page?: number;
+      limit?: number;
+      category?: string;
+      search?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      location?: string;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    } = {}) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          params.append(key, value.toString());
+        }
+      });
+      const endpoint = `/marketplace/listings?${params.toString()}`;
+
+      if (filters.page || filters.limit) {
+        return apiRequestRaw<{
+          success: boolean;
+          data: Array<{
+            id: string;
+            user_id: string;
+            category: string;
+            title: string;
+            description?: string;
+            price?: number;
+            location?: string;
+            images?: string[];
+            status: 'active' | 'sold' | 'inactive';
+            created_at: string;
+            updated_at: string;
+            seller?: { id: string; name: string; avatar_url?: string };
+            profiles?: { id: string; name: string; avatar_url?: string };
+          }>;
+          pagination?: { page: number; limit: number; total: number };
+        }>(endpoint, {}, 5000);
+      }
+
+      return apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          category: string;
+          title: string;
+          description?: string;
+          price?: number;
+          location?: string;
+          images?: string[];
+          status: 'active' | 'sold' | 'inactive';
+          created_at: string;
+          updated_at: string;
+          seller?: { id: string; name: string; avatar_url?: string };
+          profiles?: { id: string; name: string; avatar_url?: string };
+        }>
+      >(endpoint, {}, 5000);
+    },
+
+    fetchMarketplaceListing: (listingId: string) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        category: string;
+        title: string;
+        description?: string;
+        price?: number;
+        location?: string;
+        images?: string[];
+        status: 'active' | 'sold' | 'inactive';
+        category_specific_fields?: unknown;
+        views_count?: number;
+        favorites_count?: number;
+        inquiries_count?: number;
+        created_at: string;
+        updated_at: string;
+        seller?: { id: string; name: string; avatar_url?: string };
+        profiles?: { id: string; name: string; avatar_url?: string };
+      }>(`/marketplace/listings/${listingId}`),
+
+    createMarketplaceListing: (data: {
+      category: string;
+      title: string;
+      description?: string;
+      price?: number;
+      location?: string;
+      images?: string[];
+      categorySpecificFields?: unknown;
+    }) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        category: string;
+        title: string;
+        price?: number;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>('/marketplace/listings', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    updateMarketplaceListing: (
+      listingId: string,
+      updates: Partial<{
+        category: string;
+        title: string;
+        description?: string;
+        price?: number;
+        location?: string;
+        images?: string[];
+        status: 'active' | 'sold' | 'inactive';
+      }>
+    ) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        category: string;
+        title: string;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }>(`/marketplace/listings/${listingId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      }),
+
+    deleteMarketplaceListing: (listingId: string) =>
+      apiRequest<void>(`/marketplace/listings/${listingId}`, { method: 'DELETE' }),
+
+    updateListingStatus: (listingId: string, status: 'active' | 'inactive' | 'sold') =>
+      apiRequest<{
+        id: string;
+        status: string;
+        updated_at: string;
+      }>(`/marketplace/listings/${listingId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      }),
+
+    fetchMyListings: (status?: string) => {
+      const params = status ? `?status=${status}` : '';
+      return apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          category: string;
+          title: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        }>
+      >(`/marketplace/my-listings${params}`, {}, 5000);
+    },
+
+    fetchSellerStats: async () => {
+      try {
+        return await apiRequest<{
+          totalListings: number;
+          activeListings: number;
+          soldListings: number;
+          totalViews: number;
+          totalInquiries: number;
+          totalFavorites: number;
+        }>('/marketplace/stats', {}, 5000);
+      } catch {
+        return null;
+      }
+    },
+
+    fetchMyFavorites: () =>
+      apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          listing_id: string;
+          created_at: string;
+        }>
+      >('/marketplace/favorites', {}, 5000),
+
+    addToFavorites: (listingId: string) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        listing_id: string;
+        created_at: string;
+      }>('/marketplace/favorites', {
+        method: 'POST',
+        body: JSON.stringify({ listingId }),
+      }),
+
+    removeFromFavorites: (listingId: string) =>
+      apiRequest<void>(`/marketplace/favorites/${listingId}`, { method: 'DELETE' }),
+
+    checkIfFavorited: async (listingId: string) => {
+      try {
+        const result = await apiRequest<{ isFavorited: boolean }>(
+          `/marketplace/favorites/${listingId}/check`
+        );
+        return result.isFavorited;
+      } catch {
+        return false;
+      }
+    },
+
+    fetchMyInquiries: (role: 'seller' | 'buyer' = 'seller', status?: string) => {
+      const params = new URLSearchParams({ role });
+      if (status) params.append('status', status);
+      return apiRequest<
+        Array<{
+          id: string;
+          listing_id: string;
+          dm_thread_id: string;
+          buyer_id: string;
+          seller_id: string;
+          status: 'open' | 'negotiating' | 'closed' | 'purchased';
+          initial_message: string;
+          created_at: string;
+          updated_at: string;
+        }>
+      >(`/marketplace/inquiries?${params.toString()}`);
+    },
+
+    createInquiry: (listingId: string, message: string) =>
+      apiRequest<{
+        id: string;
+        listing_id: string;
+        dm_thread_id: string;
+        buyer_id: string;
+        seller_id: string;
+        status: string;
+        created_at: string;
+      }>('/marketplace/inquiries', {
+        method: 'POST',
+        body: JSON.stringify({ listingId, message }),
+      }),
+
+    updateInquiryStatus: (
+      inquiryId: string,
+      status: 'open' | 'negotiating' | 'closed' | 'purchased'
+    ) =>
+      apiRequest<{
+        id: string;
+        status: string;
+        updated_at: string;
+      }>(`/marketplace/inquiries/${inquiryId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      }),
+
+    addMarketplaceReview: (
+      listingId: string,
+      review: { rating: number; comment?: string }
+    ) =>
+      apiRequest<{
+        id: string;
+        listing_id: string;
+        reviewer_id: string;
+        rating: number;
+        comment?: string;
+        created_at: string;
+      }>(`/marketplace/listings/${listingId}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify(review),
+      }),
+
+    fetchListingReviews: (listingId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          listing_id: string;
+          reviewer_id: string;
+          rating: number;
+          comment?: string;
+          created_at: string;
+          reviewer?: { id: string; name: string; avatar_url?: string };
+        }>
+      >(`/marketplace/listings/${listingId}/reviews`, {}, 5000),
+
+    fetchSimilarListings: (listingId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          title: string;
+          price?: number;
+          images?: string[];
+          category: string;
+          location?: string;
+          created_at: string;
+          status: string;
+        }>
+      >(`/marketplace/listings/${listingId}/similar`, {}, 5000),
+
+    reportMarketplaceListing: (
+      listingId: string,
+      report: { reason: string; details?: string }
+    ) =>
+      apiRequest<void>(`/marketplace/listings/${listingId}/reports`, {
+        method: 'POST',
+        body: JSON.stringify(report),
+      }),
+
+    createMarketplaceOffer: (listingId: string, amount: number, message?: string) =>
+      apiRequest<{
+        id: string;
+        listing_id: string;
+        buyer_id: string;
+        seller_id: string;
+        amount: number;
+        message?: string;
+        status: string;
+        created_at: string;
+      }>('/marketplace/offers', {
+        method: 'POST',
+        body: JSON.stringify({ listingId, amount, message }),
+      }),
+
+    respondToOffer: (
+      offerId: string,
+      action: 'accept' | 'decline' | 'counter' | 'withdraw',
+      counterAmount?: number,
+      message?: string
+    ) =>
+      apiRequest<{
+        id: string;
+        listing_id: string;
+        status: string;
+        amount: number;
+        updated_at: string;
+      }>(`/marketplace/offers/${offerId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ action, counterAmount, message }),
+      }),
+
+    fetchListingOffers: (listingId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          listing_id: string;
+          buyer_id: string;
+          amount: number;
+          status: string;
+          created_at: string;
+        }>
+      >(`/marketplace/listings/${listingId}/offers`),
+
+    fetchMarketplaceOffers: (role: 'buyer' | 'seller' = 'buyer') =>
+      apiRequest<
+        Array<{
+          id: string;
+          listing_id: string;
+          buyer_id: string;
+          seller_id: string;
+          amount: number;
+          message?: string;
+          status: string;
+          created_at: string;
+          updated_at?: string;
+        }>
+      >(`/marketplace/offers?role=${role}`, {}, 5000),
+
+    buyNowListing: (listingId: string, couponCode?: string) =>
+      apiRequest<{ order: import('../types').MarketplaceOrder }>(
+        `/marketplace/listings/${listingId}/buy-now`,
+        {
+          method: 'POST',
+          body: JSON.stringify(couponCode ? { couponCode } : {}),
+        }
+      ),
+
+    fetchMarketplaceOrders: (role: 'buyer' | 'seller' = 'buyer') =>
+      apiRequest<import('../types').MarketplaceOrder[]>(
+        `/marketplace/orders?role=${role}`,
+        {},
+        5000
+      ),
+
+    fetchMarketplaceOrder: (orderId: string) =>
+      apiRequest<import('../types').MarketplaceOrder>(`/marketplace/orders/${orderId}`, {}, 5000),
+
+    fetchOrderForInquiry: (inquiryId: string) =>
+      apiRequest<import('../types').MarketplaceOrder | null>(
+        `/marketplace/orders/inquiry/${inquiryId}`,
+        {},
+        5000
+      ),
+
+    updateMarketplaceOrder: (
+      orderId: string,
+      payload: {
+        action: string;
+        meetingLocation?: string;
+        sellerNote?: string;
+        fulfillmentMode?: string;
+      }
+    ) =>
+      apiRequest<import('../types').MarketplaceOrder>(`/marketplace/orders/${orderId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+
+    requestOrderPayment: (orderId: string) =>
+      apiRequest<{ orderId: string; amount: number; deepLink: string }>(
+        `/marketplace/orders/${orderId}/payment-link`,
+        { method: 'POST' }
+      ),
+
+    fetchSellerAnalytics: () =>
+      apiRequest<import('../types').SellerAnalytics>('/marketplace/analytics/seller', {}, 5000),
+
+    fetchSellerBuyers: (segment?: string) =>
+      apiRequest<import('../types').SellerBuyerContact[]>(
+        `/marketplace/seller/buyers${segment ? `?segment=${encodeURIComponent(segment)}` : ''}`,
+        {},
+        5000
+      ),
+
+    fetchSellerCoupons: () =>
+      apiRequest<import('../types').MarketplaceCoupon[]>('/marketplace/coupons', {}, 5000),
+
+    createSellerCoupon: (data: {
+      code: string;
+      discountType: 'percent' | 'fixed';
+      discountValue: number;
+      listingId?: string;
+      maxUses?: number;
+      endsAt?: string;
+    }) =>
+      apiRequest<import('../types').MarketplaceCoupon>('/marketplace/coupons', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    validateMarketplaceCoupon: (code: string, listingId: string) =>
+      apiRequest<import('../types').CouponValidationResult>('/marketplace/coupons/validate', {
+        method: 'POST',
+        body: JSON.stringify({ code, listingId }),
+      }),
+
+    fetchSellerPreferences: () =>
+      apiRequest<import('../types').MarketplaceSellerPreferences>(
+        '/marketplace/seller/preferences',
+        {},
+        5000
+      ),
+
+    updateSellerPreferences: (data: {
+      hallDropoffEnabled?: boolean;
+      hallDropoffMinAmount?: number | null;
+      requirePaymentConfirmation?: boolean;
+      favoriteAlertThreshold?: number;
+    }) =>
+      apiRequest<import('../types').MarketplaceSellerPreferences>(
+        '/marketplace/seller/preferences',
+        { method: 'PUT', body: JSON.stringify(data) }
+      ),
+
+    fetchPickupNudge: (sellerId: string) =>
+      apiRequest<import('../types').MarketplacePickupNudge>(
+        `/marketplace/sellers/${sellerId}/pickup-nudge`,
+        {},
+        5000
+      ),
+
+    sendSellerCampaign: (data: {
+      message: string;
+      segment?: string;
+      buyerIds?: string[];
+    }) =>
+      apiRequest<{ sent: number; skipped: number }>('/marketplace/seller/campaigns', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    createMarketplaceBundle: (data: {
+      title: string;
+      description?: string;
+      price: number;
+      listingIds: string[];
+      location?: string;
+    }) =>
+      apiRequest<import('../types').MarketplaceListing>('/marketplace/bundles', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    fetchSellerOnboarding: () =>
+      apiRequest<import('../types').SellerOnboardingStatus>(
+        '/marketplace/seller/onboarding',
+        {},
+        5000
+      ),
+
+    completeSellerOnboarding: () =>
+      apiRequest<import('../types').MarketplaceSellerPreferences>(
+        '/marketplace/seller/onboarding/complete',
+        { method: 'POST' }
+      ),
+
+    submitOrderPaymentProof: (orderId: string, proofUrl: string) =>
+      apiRequest<import('../types').MarketplaceOrder>(
+        `/marketplace/orders/${orderId}/payment-proof`,
+        { method: 'POST', body: JSON.stringify({ proofUrl }) }
+      ),
+
+    fetchListingOffersHistory: (listingId: string) =>
+      apiRequest<import('../types').MarketplaceOffer[]>(
+        `/marketplace/listings/${listingId}/offers-history`
+      ),
+
+    checkSavedSearchMatches: (searchId: string) =>
+      apiRequest<{ count: number; listings: import('../types').MarketplaceListing[] }>(
+        `/marketplace/saved-searches/${searchId}/matches`,
+        {},
+        5000
+      ),
+
+    updateSavedSearch: (id: string, updates: { notify?: boolean; name?: string }) =>
+      apiRequest<{ id: string; notify: boolean; name: string }>(
+        `/marketplace/saved-searches/${id}`,
+        { method: 'PATCH', body: JSON.stringify(updates) }
+      ),
+
+    boostListing: (listingId: string) =>
+      apiRequest<{
+        id: string;
+        category_specific_fields?: { boosted_until?: string; boost_level?: string };
+        updated_at: string;
+      }>(`/marketplace/listings/${listingId}/boost`, {
+        method: 'POST',
+        body: JSON.stringify({ durationHours: 72 }),
+      }),
+
+    fetchSavedSearches: () =>
+      apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          name: string;
+          filters: Record<string, unknown>;
+          created_at: string;
+        }>
+      >('/marketplace/saved-searches', {}, 5000),
+
+    createSavedSearch: (data: { filters: Record<string, unknown>; name?: string }) =>
+      apiRequest<{
+        id: string;
+        user_id: string;
+        name: string;
+        filters: Record<string, unknown>;
+        created_at: string;
+      }>('/marketplace/saved-searches', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    deleteSavedSearch: (id: string) =>
+      apiRequest<void>(`/marketplace/saved-searches/${id}`, { method: 'DELETE' }),
+
+    fetchSellerProfile: (sellerId: string) =>
+      apiRequest<{
+        id: string;
+        name: string;
+        avatar_url?: string;
+        total_listings?: number;
+        active_listings?: number;
+        sold_listings?: number;
+        average_rating?: number;
+        review_count?: number;
+      }>(`/marketplace/sellers/${sellerId}/profile`, {}, 5000),
+
+    // ========== BUDGET API ==========
+
+    fetchUserBudget: async (userId: string, monthYear?: string) => {
+      const params = monthYear ? `?monthYear=${monthYear}` : '';
+      try {
+        return await apiRequest<{
+          monthly_limit: number;
+          month_year: string;
+        }>(`/users/${userId}/budget${params}`);
+      } catch {
+        return null;
+      }
+    },
+
+    saveUserBudget: (userId: string, budget: { monthlyLimit: number; monthYear: string }) =>
+      apiRequest<void>(`/users/${userId}/budget`, {
+        method: 'PUT',
+        body: JSON.stringify(budget),
+      }),
+
+    fetchBudgetTransactions: (userId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          type: 'income' | 'expense' | 'investment';
+          amount: number;
+          category?: string;
+          description?: string;
+          date: string;
+        }>
+      >(`/users/${userId}/transactions`),
+
+    saveBudgetTransaction: (
+      userId: string,
+      transaction: {
+        id: string;
+        type: string;
+        amount: number;
+        category?: string;
+        description?: string;
+        date: string;
+      }
+    ) =>
+      apiRequest<void>(`/users/${userId}/transactions`, {
+        method: 'POST',
+        body: JSON.stringify(transaction),
+      }),
+
+    deleteBudgetTransaction: (userId: string, transactionId: string) =>
+      apiRequest<void>(`/users/${userId}/transactions/${transactionId}`, { method: 'DELETE' }),
+
+    // ========== OFFLINE BUNDLES API ==========
+
+    fetchOfflineBundles: (userId: string) =>
+      apiRequest<
+        Array<{
+          bundle_id: string;
+          config: unknown;
+          questions: unknown[];
+          group_name: string;
+          display_name?: string;
+          downloaded_at: string;
+        }>
+      >('/offline-bundles'),
+
+    saveOfflineBundle: (
+      userId: string,
+      bundle: {
+        bundleId: string;
+        config: unknown;
+        questions: unknown[];
+        groupName: string;
+        displayName?: string;
+        downloadedAt: Date | string;
+      }
+    ) =>
+      apiRequest<void>('/offline-bundles', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          bundle: {
+            ...bundle,
+            downloadedAt:
+              bundle.downloadedAt instanceof Date
+                ? bundle.downloadedAt.toISOString()
+                : bundle.downloadedAt,
+          },
+        }),
+      }),
+
+    deleteOfflineBundle: (userId: string, bundleId: string) =>
+      apiRequest<void>(`/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`, {
+        method: 'DELETE',
+      }),
+
+    // ========== CHALLENGES API ==========
+
+    createChallenge: (payload: {
+      groupId: string;
+      opponentId: string;
+      config: { numberOfQuestions: number; allowedQuestionTypes?: string[]; selectedTags?: string[] };
+    }) =>
+      apiRequest<{ id: string } & Record<string, unknown>>('/challenges', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    fetchChallenges: (status?: string) => {
+      const q = status ? `?status=${encodeURIComponent(status)}` : '';
+      return apiRequest<Array<Record<string, unknown>>>(`/challenges${q}`);
+    },
+
+    fetchChallenge: (challengeId: string) =>
+      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}`),
+
+    acceptChallenge: (challengeId: string) =>
+      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/accept`, {
+        method: 'POST',
+      }),
+
+    declineChallenge: (challengeId: string) =>
+      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/decline`, {
+        method: 'POST',
+      }),
+
+    submitChallenge: (challengeId: string, answers: Record<string, unknown>) =>
+      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({ answers }),
+      }),
+
+    // ========== PREFERENCES API ==========
+
+    fetchUserPreferences: (userId: string) =>
+      apiRequest<{
+        theme: string;
+        lowDataMode: boolean;
+        preferences?: Record<string, unknown>;
+      } | null>(`/preferences/${encodeURIComponent(userId)}`),
+
+    saveUserPreferences: (
+      userId: string,
+      prefs: { theme: string; lowDataMode: boolean }
+    ) =>
+      apiRequest<void>('/preferences', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          theme: prefs.theme,
+          preferences: { lowDataMode: prefs.lowDataMode },
+        }),
+      }),
+  };
+}
+
+export type LanternApiEndpoints = ReturnType<typeof createApiEndpoints>;

@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTestStore } from '../../stores/testStore';
+import { useTestStore, type TestQuestion } from '../../stores/testStore';
+import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { useTheme } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
@@ -33,7 +34,7 @@ export default function TestResultsScreen() {
   const { attemptId } = route.params;
   const { colors } = useTheme();
 
-  const { attempts } = useTestStore();
+  const { attempts, startQuestionSet } = useTestStore();
 
   // AI Explain state
   const [showExplain, setShowExplain] = useState(false);
@@ -48,6 +49,13 @@ export default function TestResultsScreen() {
     return attempts.find(a => a.id === attemptId);
   }, [attempts, attemptId]);
 
+  const failedQuestions = useMemo((): TestQuestion[] => {
+    if (!attempt) return [];
+    return attempt.answers
+      .filter(a => !a.isCorrect && a.questionSnapshot)
+      .map(a => a.questionSnapshot!);
+  }, [attempt]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -55,11 +63,29 @@ export default function TestResultsScreen() {
     return `${mins}m ${secs}s`;
   };
 
-  const formatAnswer = (answer: string | string[] | Record<string, string> | undefined): string => {
+  const formatAnswer = (
+    answer: string | string[] | Record<string, string> | undefined,
+    snapshot?: TestQuestion
+  ): string => {
     if (!answer) return '(No answer)';
-    if (typeof answer === 'string') return answer;
+    if (typeof answer === 'string') {
+      if (snapshot?.diagramLabels) {
+        const label = snapshot.diagramLabels.find(l => l.id === answer);
+        if (label?.label) return label.label;
+      }
+      return answer;
+    }
     if (Array.isArray(answer)) return answer.join(', ');
-    // For Record<string, string> (matching/labeling questions)
+    if (snapshot?.diagramLabels) {
+      return Object.values(answer)
+        .map(value => snapshot.diagramLabels?.find(l => l.id === value)?.label || value)
+        .join(', ');
+    }
+    if (snapshot?.matchingPairs?.length) {
+      return Object.entries(answer)
+        .map(([left, right]) => `${left} → ${right}`)
+        .join('; ');
+    }
     return Object.entries(answer).map(([k, v]) => `${k}: ${v}`).join(', ');
   };
 
@@ -89,6 +115,17 @@ export default function TestResultsScreen() {
 
   const correctCount = attempt.answers.filter(a => a.isCorrect).length;
   const incorrectCount = attempt.answers.length - correctCount;
+
+  const handlePracticeFailed = async () => {
+    if (!failedQuestions.length) return;
+    const sessionName = `${attempt.testName} - Practice Failed`;
+    await startQuestionSet(sessionName, failedQuestions, 'study');
+    navigation.navigate('TestTaking', {
+      testId: 'custom',
+      testName: sessionName,
+      mode: 'study',
+    });
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -213,9 +250,26 @@ export default function TestResultsScreen() {
               </View>
               <View style={styles.questionInfo}>
                 <Text style={styles.questionNumber}>Question {index + 1}</Text>
-                <Text style={styles.questionAnswer}>
-                  Your answer: {formatAnswer(answer.userAnswer)}
+                {(answer as any).questionText ? (
+                  <Text style={styles.questionStem}>{(answer as any).questionText}</Text>
+                ) : null}
+                <Text style={[
+                  styles.questionAnswer,
+                  !answer.isCorrect && styles.questionAnswerWrong,
+                ]}>
+                  Your answer: {formatAnswer(answer.userAnswer, answer.questionSnapshot)}
                 </Text>
+                {!answer.isCorrect && answer.correctAnswer !== undefined && (
+                  <Text style={styles.questionCorrectAnswer}>
+                    Correct answer: {formatAnswer(
+                      answer.correctAnswer,
+                      answer.questionSnapshot
+                    ) || (answer.questionSnapshot ? formatCorrectAnswerDisplay(answer.questionSnapshot) : '')}
+                  </Text>
+                )}
+                {!answer.isCorrect && (answer as any).explanation ? (
+                  <Text style={styles.questionExplanation}>{(answer as any).explanation}</Text>
+                ) : null}
               </View>
               {!answer.isCorrect && (
                 <TouchableOpacity
@@ -223,8 +277,9 @@ export default function TestResultsScreen() {
                   onPress={() => {
                     setExplainData({
                       question: (answer as any).questionText || `Question ${index + 1}`,
-                      userAnswer: formatAnswer(answer.userAnswer),
-                      correctAnswer: formatAnswer(answer.correctAnswer),
+                      userAnswer: formatAnswer(answer.userAnswer, answer.questionSnapshot),
+                      correctAnswer: formatAnswer(answer.correctAnswer, answer.questionSnapshot)
+                        || (answer.questionSnapshot ? formatCorrectAnswerDisplay(answer.questionSnapshot) : ''),
                       options: (answer as any).options,
                     });
                     setShowExplain(true);
@@ -262,6 +317,17 @@ export default function TestResultsScreen() {
 
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
+        {failedQuestions.length > 0 ? (
+          <TouchableOpacity
+            style={styles.practiceFailedButton}
+            onPress={() => void handlePracticeFailed()}
+          >
+            <Ionicons name="school" size={20} color="#10b981" />
+            <Text style={styles.practiceFailedButtonText}>
+              Practice Failed ({failedQuestions.length})
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity 
           style={styles.retryButton}
           onPress={() => navigation.navigate('TestsList')}
@@ -466,6 +532,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9ca3af',
   },
+  questionStem: {
+    fontSize: 13,
+    color: '#e2e8f0',
+    marginBottom: 4,
+  },
+  questionAnswerWrong: {
+    color: '#fca5a5',
+  },
+  questionCorrectAnswer: {
+    fontSize: 12,
+    color: '#86efac',
+    marginTop: 2,
+  },
+  questionExplanation: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
   questionPoints: {
     fontSize: 16,
     fontWeight: '700',
@@ -487,12 +572,29 @@ const styles = StyleSheet.create({
   },
   bottomActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     padding: 20,
     paddingBottom: 32,
     backgroundColor: '#1e293b',
     borderTopWidth: 1,
     borderTopColor: '#334155',
+  },
+  practiceFailedButton: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#10b98120',
+    marginBottom: 4,
+  },
+  practiceFailedButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#10b981',
   },
   retryButton: {
     flex: 1,

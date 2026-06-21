@@ -5,13 +5,99 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
+import { trackStudyActivity } from '../services/gamification';
 import { syncService } from '../services/syncService';
+import { fetchTestResultsCached, clearTestResultsCache } from '../services/dashboardCache';
+import { normalizeApiQuestions, flashcardsToQuestions, filterTestQuestions, formatCorrectAnswerDisplay, resolveCorrectAnswerLabel } from '../utils/questionHelpers';
+import { normalizeUserQuestionStats } from '../utils/buildDashboardStats';
+import { useOfflineStore } from './offlineStore';
+import {
+  normalizeTestQuestionForSession,
+  toUserAnswerRecord,
+  shuffleArray,
+} from '@lantern/shared/utils';
+import { useSettingsStore } from './settingsStore';
 
 const DEMO_MODE = false;
+
+function unwrapFlashcards(response: unknown): api.Flashcard[] {
+  if (Array.isArray(response)) return response as api.Flashcard[];
+  if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
+    return (response as any).data as api.Flashcard[];
+  }
+  return [];
+}
+
+
+function buildQuestionStatsFromAttempts(
+  attempts: TestAttempt[]
+): Record<string, { correctAttempts: number; incorrectAttempts: number }> {
+  const stats: Record<string, { correctAttempts: number; incorrectAttempts: number }> = {};
+  for (const attempt of attempts) {
+    for (const answer of attempt.answers) {
+      if (!stats[answer.questionId]) {
+        stats[answer.questionId] = { correctAttempts: 0, incorrectAttempts: 0 };
+      }
+      if (answer.isCorrect) {
+        stats[answer.questionId].correctAttempts += 1;
+      } else {
+        stats[answer.questionId].incorrectAttempts += 1;
+      }
+    }
+  }
+  return stats;
+}
+
+function buildSessionPayload(
+  activeTest: ActiveTest,
+  attempt: Pick<TestAttempt, 'startedAt' | 'completedAt'>,
+  answers: TestAttempt['answers'],
+  percentage: number,
+  correctCount: number,
+  options?: { groupName?: string; groupId?: string }
+) {
+  const canonicalQuestions = activeTest.questions.map((q, index) =>
+    normalizeTestQuestionForSession(q as unknown as Record<string, unknown>, index)
+  );
+
+  const userAnswers: Record<string, ReturnType<typeof toUserAnswerRecord>> = {};
+  for (const answer of answers) {
+    const question = activeTest.questions.find(q => q.id === answer.questionId);
+    if (!question) continue;
+    userAnswers[answer.questionId] = toUserAnswerRecord(
+      question as unknown as Record<string, unknown>,
+      activeTest.answers[answer.questionId],
+      {
+        isCorrect: answer.isCorrect,
+        timeSpentSeconds: activeTest.answerTimings?.[answer.questionId],
+      }
+    );
+  }
+
+  return {
+    questions: canonicalQuestions,
+    userAnswers,
+    score: percentage,
+    correctAnswersCount: correctCount,
+    totalQuestions: activeTest.questions.length,
+    startTime: attempt.startedAt,
+    endTime: attempt.completedAt,
+    config: {
+      name: activeTest.test.name,
+      testId: activeTest.test.id,
+      deckName: activeTest.test.deckName,
+      groupName: options?.groupName || activeTest.test.deckName,
+      groupId: options?.groupId,
+      passingScore: activeTest.test.passingScore,
+      mode: activeTest.mode,
+    },
+  };
+}
 
 // Storage keys
 const TESTS_STORAGE_KEY = 'lantern_tests';
 const ATTEMPTS_STORAGE_KEY = 'lantern_test_attempts';
+const TEST_QUESTIONS_STORAGE_KEY = 'lantern_test_questions';
 
 // 7 Question Types matching web app
 export type QuestionType = 
@@ -44,6 +130,7 @@ export interface TestQuestion {
   question: string;
   // For MCQ single/multiple and true/false
   options?: string[];
+  optionItems?: Array<{ id: string; text: string }>;
   // For MCQ single, true/false, fill in blank
   correctAnswer?: string;
   // For MCQ multiple - array of correct options
@@ -79,6 +166,8 @@ export interface TestAttempt {
   id: string;
   testId: string;
   testName: string;
+  groupId?: string;
+  groupName?: string;
   startedAt: string;
   completedAt?: string;
   score: number;
@@ -90,6 +179,13 @@ export interface TestAttempt {
     userAnswer: string | string[] | Record<string, string>; // Support different answer formats
     isCorrect: boolean;
     points: number;
+    questionText?: string;
+    questionType?: QuestionType;
+    correctAnswer?: string | string[] | Record<string, string>;
+    options?: string[];
+    explanation?: string;
+    tags?: string[];
+    questionSnapshot?: TestQuestion;
   }[];
   timeSpent: number; // in seconds
 }
@@ -102,17 +198,52 @@ export interface ActiveTest {
   questions: TestQuestion[];
   currentQuestionIndex: number;
   answers: Record<string, string | string[] | Record<string, string>>; // Support different formats
+  answerTimings: Record<string, number>;
   startTime: number;
   timeRemaining: number; // in seconds
   mode: TestMode; // 'test' = timed, no feedback | 'study' = untimed, immediate feedback
   // For study mode - track which questions have been answered and revealed
   revealedAnswers: Set<string>;
+  flaggedQuestions: Set<string>;
+}
+
+export interface StartTestConfig {
+  timeLimit?: number;
+  questionCount?: number;
+  userId?: string;
+  questionTypes?: QuestionType[];
+  tags?: string[];
+  spacedRepetition?: boolean;
+  focusOnNew?: boolean;
+}
+
+export interface UserQuestionStatEntry {
+  correctAttempts: number;
+  incorrectAttempts: number;
+  lastAttempted?: string | null;
+}
+
+export interface TestPresetConfig {
+  numberOfQuestions: number;
+  timerDuration?: number;
+  allowedQuestionTypes: string[];
+  selectedTags?: string[];
+  focusOnNew?: boolean;
+}
+
+export interface TestPreset {
+  id: string;
+  name: string;
+  config: TestPresetConfig;
 }
 
 interface TestState {
   tests: Test[];
   attempts: TestAttempt[];
   activeTest: ActiveTest | null;
+  testQuestionsById: Record<string, TestQuestion[]>;
+  userQuestionStats: Record<string, UserQuestionStatEntry>;
+  testPresets: TestPreset[];
   isLoading: boolean;
   error: string | null;
   
@@ -123,14 +254,23 @@ interface TestState {
   // Actions
   fetchTests: (userId: string) => Promise<void>;
   fetchAttempts: (userId: string) => Promise<void>;
-  startTest: (testId: string, mode?: TestMode) => Promise<void>;
-  answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>) => void;
+  startTest: (testId: string, mode?: TestMode, config?: StartTestConfig) => Promise<void>;
+  startQuestionSet: (testName: string, questions: TestQuestion[], mode?: TestMode, options?: { timeLimitMinutes?: number }) => Promise<void>;
+  answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => void;
   revealAnswer: (questionId: string) => void; // For study mode
   checkCurrentAnswer: () => { isCorrect: boolean; explanation?: string } | null; // For study mode
+  toggleFlag: (questionId: string) => void;
+  goToQuestion: (index: number) => void;
   nextQuestion: () => void;
   previousQuestion: () => void;
-  submitTest: (userId: string) => Promise<TestAttempt>;
+  submitTest: (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => Promise<TestAttempt>;
   exitStudyMode: () => void; // Exit without submitting
+  loadUserQuestionStats: (userId: string) => Promise<void>;
+  loadTestPresets: (userId: string) => Promise<void>;
+  saveTestPreset: (userId: string, name: string, config: TestPresetConfig) => Promise<void>;
+  deleteTestPreset: (userId: string, presetId: string) => Promise<void>;
+  deleteAttempt: (userId: string, sessionId: string) => Promise<void>;
+  clearTestHistory: (userId: string) => Promise<void>;
   createTestFromDeck: (deckId: string, deckName: string, userId: string, config: {
     questionCount: number;
     timeLimit: number;
@@ -292,11 +432,11 @@ const mockAttempts: TestAttempt[] = [
     percentage: 80,
     passed: true,
     answers: [
-      { questionId: 'q1', userAnswer: 'Mitochondria', isCorrect: true, points: 10 },
-      { questionId: 'q2', userAnswer: 'True', isCorrect: true, points: 10 },
-      { questionId: 'q3', userAnswer: 'Ribosome', isCorrect: true, points: 10 },
-      { questionId: 'q4', userAnswer: 'Respiration', isCorrect: false, points: 0 },
-      { questionId: 'q5', userAnswer: 'True', isCorrect: true, points: 10 },
+      { questionId: 'q1', userAnswer: 'Mitochondria', isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-1'][0] },
+      { questionId: 'q2', userAnswer: 'True', isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-1'][1] },
+      { questionId: 'q3', userAnswer: ['Chloroplast', 'Cell wall', 'Vacuole', 'Mitochondria'], isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-1'][2] },
+      { questionId: 'q4', userAnswer: 'Respiration', isCorrect: false, points: 0, questionSnapshot: mockQuestions['test-1'][3] },
+      { questionId: 'q5', userAnswer: { Nucleus: 'Contains genetic material', Ribosome: 'Protein synthesis', Mitochondria: 'Energy production', 'Golgi apparatus': 'Packaging proteins' }, isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-1'][4] },
     ],
     timeSpent: 480,
   },
@@ -311,27 +451,55 @@ const mockAttempts: TestAttempt[] = [
     percentage: 100,
     passed: true,
     answers: [
-      { questionId: 'q6', userAnswer: 'H2O', isCorrect: true, points: 10 },
-      { questionId: 'q7', userAnswer: 'Hydrogen bond', isCorrect: true, points: 10 },
-      { questionId: 'q8', userAnswer: 'False', isCorrect: true, points: 10 },
+      { questionId: 'q6', userAnswer: 'H2O', isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-2'][0] },
+      { questionId: 'q7', userAnswer: '7', isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-2'][1] },
+      { questionId: 'q8', userAnswer: 'False', isCorrect: true, points: 10, questionSnapshot: mockQuestions['test-2'][2] },
     ],
     timeSpent: 240,
   },
 ];
 
+const getCorrectAnswerForQuestion = (question: TestQuestion): string | string[] | Record<string, string> | undefined => {
+  switch (question.type) {
+    case 'multiple_choice_single':
+    case 'true_false':
+    case 'fill_in_blank':
+      return resolveCorrectAnswerLabel(question) || question.correctAnswer;
+    case 'multiple_choice_multiple':
+      return question.correctAnswers?.map(answer =>
+        resolveCorrectAnswerLabel({ ...question, type: 'multiple_choice_single', correctAnswer: answer })
+      );
+    case 'matching':
+      return question.matchingPairs?.reduce<Record<string, string>>((result, pair) => {
+        result[pair.left] = pair.right;
+        return result;
+      }, {});
+    case 'diagram_labeling':
+      return formatCorrectAnswerDisplay(question);
+    case 'open_ended':
+      return question.sampleAnswer || question.keywords || undefined;
+    default:
+      return undefined;
+  }
+};
+
 export const useTestStore = create<TestState>((set, get) => ({
   tests: [],
   attempts: [],
   activeTest: null,
+  testQuestionsById: {},
+  userQuestionStats: {},
+  testPresets: [],
   isLoading: false,
   error: null,
 
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
     try {
-      const [testsJson, attemptsJson] = await Promise.all([
+      const [testsJson, attemptsJson, questionsJson] = await Promise.all([
         AsyncStorage.getItem(TESTS_STORAGE_KEY),
         AsyncStorage.getItem(ATTEMPTS_STORAGE_KEY),
+        AsyncStorage.getItem(TEST_QUESTIONS_STORAGE_KEY),
       ]);
       
       if (testsJson) {
@@ -339,6 +507,9 @@ export const useTestStore = create<TestState>((set, get) => ({
       }
       if (attemptsJson) {
         set({ attempts: JSON.parse(attemptsJson) });
+      }
+      if (questionsJson) {
+        set({ testQuestionsById: JSON.parse(questionsJson) });
       }
     } catch (error) {
       console.error('Failed to load tests from storage:', error);
@@ -348,10 +519,11 @@ export const useTestStore = create<TestState>((set, get) => ({
   // Save current state to AsyncStorage
   saveToStorage: async () => {
     try {
-      const { tests, attempts } = get();
+      const { tests, attempts, testQuestionsById } = get();
       await Promise.all([
         AsyncStorage.setItem(TESTS_STORAGE_KEY, JSON.stringify(tests)),
         AsyncStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(attempts)),
+        AsyncStorage.setItem(TEST_QUESTIONS_STORAGE_KEY, JSON.stringify(testQuestionsById)),
       ]);
     } catch (error) {
       console.error('Failed to save tests to storage:', error);
@@ -372,19 +544,32 @@ export const useTestStore = create<TestState>((set, get) => ({
     
     try {
       const apiTests = await api.fetchTests(userId);
-      // Map API response to store format
-      const tests: Test[] = apiTests.map((t: any) => ({
-        id: t.id,
-        name: t.config?.name || 'Untitled Test',
-        description: t.config?.description,
-        deckId: t.config?.deckId,
-        deckName: t.config?.deckName,
-        questionCount: t.questions?.length || t.config?.numberOfQuestions || 0,
-        timeLimit: t.config?.timerDuration || 0,
-        passingScore: t.config?.passingScore || 70,
-        createdAt: t.created_at,
-      }));
-      set({ tests, isLoading: false });
+      const testQuestionsById: Record<string, TestQuestion[]> = { ...get().testQuestionsById };
+      const tests: Test[] = apiTests
+        .filter((t: any) => {
+          const questions = t.questions || [];
+          const isCompleted = !!(t.end_time || t.endTime);
+          const questionCount = questions.length || t.config?.numberOfQuestions || 0;
+          return !isCompleted && questionCount > 0;
+        })
+        .map((t: any) => {
+        const questions = normalizeApiQuestions(t.questions || []);
+        if (questions.length > 0) {
+          testQuestionsById[t.id] = questions;
+        }
+        return {
+          id: t.id,
+          name: t.config?.name || t.config?.testName || 'Untitled Test',
+          description: t.config?.description,
+          deckId: t.config?.deckId,
+          deckName: t.config?.deckName || t.config?.groupName,
+          questionCount: questions.length || t.config?.numberOfQuestions || 0,
+          timeLimit: t.config?.timerDuration || 0,
+          passingScore: t.config?.passingScore || 70,
+          createdAt: t.created_at,
+        };
+      });
+      set({ tests, testQuestionsById, isLoading: false });
       await get().saveToStorage();
     } catch (error: any) {
       console.warn('Failed to fetch tests from API, using cached:', error);
@@ -402,27 +587,73 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
     
     try {
-      const apiResults = await api.fetchTestResults(userId);
-      // Map API response to store format
-      const attempts: TestAttempt[] = apiResults.map((r: any) => ({
-        id: r.id,
-        testId: r.id,
-        testName: r.config?.name || 'Test',
-        startedAt: r.start_time,
-        completedAt: r.end_time,
-        score: r.score || 0,
-        totalPoints: r.questions?.reduce((sum: number, q: any) => sum + (q.points || 10), 0) || 0,
-        percentage: r.score || 0,
-        passed: (r.score || 0) >= (r.config?.passingScore || 70),
-        answers: Object.entries(r.user_answers || {}).map(([qId, ans]: [string, any]) => ({
-          questionId: qId,
-          userAnswer: ans?.selectedOptionIds?.[0] || ans?.fillText || '',
-          isCorrect: ans?.isCorrect || false,
-          points: ans?.isCorrect ? 10 : 0,
-        })),
-        timeSpent: r.time_spent || 0,
-      }));
-      set({ attempts, isLoading: false });
+      const apiResults = await fetchTestResultsCached(userId, api.fetchTestResults, { limit: 50 });
+      const attempts: TestAttempt[] = apiResults.map((r: any) => {
+        const session = r.session || r;
+        const config = session.config || {};
+        const questions = session.questions || [];
+        const userAnswers = session.userAnswers || session.user_answers || {};
+        const startTime = session.startTime || session.start_time;
+        const endTime = session.endTime || session.end_time;
+        const sessionId = session.id || r.id;
+        const totalQuestions = r.totalQuestions ?? r.total_questions ?? questions.length;
+        const correctAnswersCount = r.correctAnswersCount ?? r.correct_answers_count ?? 0;
+        const percentage = Math.round(r.score ?? 0);
+
+        const answers = Object.entries(userAnswers).map(([qId, ans]: [string, any]) => {
+          const question = questions.find((q: any) => q.id === qId);
+          const userAnswer =
+            ans?.userAnswer ??
+            ans?.selectedOptionIds ??
+            ans?.matchingAnswers ??
+            ans?.diagramAnswers ??
+            ans?.fillText ??
+            ans?.essayText ??
+            '';
+          return {
+            questionId: qId,
+            userAnswer,
+            isCorrect: ans?.isCorrect || false,
+            points: ans?.isCorrect ? (question?.points || 10) : 0,
+            questionText: question?.question || question?.questionStem,
+            questionType: question?.type || question?.questionType,
+            correctAnswer: question ? getCorrectAnswerForQuestion(question) : undefined,
+            options: question?.options,
+            explanation: question?.explanation,
+            tags: question?.tags,
+            questionSnapshot: question,
+          };
+        });
+
+        const timeSpent = Object.values(userAnswers).reduce((sum: number, ans: any) => {
+          return sum + (ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0);
+        }, 0);
+
+        return {
+          id: sessionId,
+          testId: sessionId,
+          testName: config.name || config.groupName || 'Test',
+          groupId: config.groupId,
+          groupName: config.groupName,
+          startedAt: startTime ? new Date(startTime).toISOString() : new Date().toISOString(),
+          completedAt: endTime ? new Date(endTime).toISOString() : undefined,
+          score: correctAnswersCount,
+          totalPoints: totalQuestions,
+          percentage,
+          passed: percentage >= (config.passingScore || 70),
+          answers,
+          timeSpent,
+        };
+      });
+      const localPending = get().attempts.filter(
+        a => a.id.startsWith('attempt-') && !attempts.some(server => server.startedAt === a.startedAt && server.testName === a.testName)
+      );
+      const mergedAttempts = [...attempts, ...localPending].sort(
+        (a, b) =>
+          new Date(b.completedAt || b.startedAt).getTime() -
+          new Date(a.completedAt || a.startedAt).getTime()
+      );
+      set({ attempts: mergedAttempts, isLoading: false });
       await get().saveToStorage();
     } catch (error: any) {
       console.warn('Failed to fetch attempts from API, using cached:', error);
@@ -430,29 +661,140 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
-  startTest: async (testId: string, mode: TestMode = 'test') => {
+  startTest: async (testId: string, mode: TestMode = 'test', config?: StartTestConfig) => {
     const test = get().tests.find(t => t.id === testId);
     if (!test) throw new Error('Test not found');
-    
-    const questions = mockQuestions[testId] || [];
-    
+
+    let questions = get().testQuestionsById[testId] || mockQuestions[testId] || [];
+
+    if (!questions.length && !DEMO_MODE && config?.userId) {
+      try {
+        const apiTests = await api.fetchTests(config.userId);
+        const session = (apiTests as any[]).find(t => t.id === testId);
+        if (session?.questions?.length) {
+          questions = normalizeApiQuestions(session.questions);
+          set(state => ({
+            testQuestionsById: { ...state.testQuestionsById, [testId]: questions },
+          }));
+        }
+      } catch (error) {
+        console.warn('Failed to load test questions from API:', error);
+      }
+    }
+
+    if (!questions.length && test.deckId && !DEMO_MODE) {
+      try {
+        const flashcards = unwrapFlashcards(await api.fetchFlashcards(test.deckId));
+        questions = flashcardsToQuestions(flashcards, test.questionCount || flashcards.length);
+        set(state => ({
+          testQuestionsById: { ...state.testQuestionsById, [testId]: questions },
+        }));
+      } catch (error) {
+        console.warn('Failed to load deck flashcards for test:', error);
+      }
+    }
+
+    const hasAdvancedFilters =
+      !!config?.questionTypes?.length ||
+      !!config?.tags?.length ||
+      config?.spacedRepetition ||
+      config?.focusOnNew;
+
+    if (hasAdvancedFilters || config?.questionCount) {
+      const userQuestionStats = buildQuestionStatsFromAttempts(get().attempts);
+      questions = filterTestQuestions(
+        questions,
+        {
+          numberOfQuestions: config?.questionCount || questions.length,
+          selectedQuestionTypes: config?.questionTypes,
+          selectedTags: config?.tags,
+          useSpacedRepetition: config?.spacedRepetition,
+          focusOnNew: config?.focusOnNew,
+        },
+        userQuestionStats
+      );
+    } else if (config?.questionCount && config.questionCount < questions.length) {
+      questions = questions.slice(0, config.questionCount);
+    }
+
+    const studySettings = useSettingsStore.getState().settings.study;
+    if (studySettings.shuffleQuestions) {
+      questions = shuffleArray(questions);
+    }
+    if (studySettings.shuffleOptions) {
+      questions = questions.map(q => {
+        if (!q.options?.length) return q;
+        return { ...q, options: shuffleArray(q.options) };
+      });
+    }
+
+    const effectiveTest = {
+      ...test,
+      timeLimit: config?.timeLimit ?? test.timeLimit,
+      questionCount: questions.length,
+    };
+
     set({
       activeTest: {
-        test,
+        test: effectiveTest,
         questions,
         currentQuestionIndex: 0,
         answers: {},
+        answerTimings: {},
         startTime: Date.now(),
-        timeRemaining: mode === 'test' ? test.timeLimit * 60 : 0, // No time limit in study mode
+        timeRemaining: mode === 'test' && effectiveTest.timeLimit > 0 ? effectiveTest.timeLimit * 60 : 0,
         mode,
         revealedAnswers: new Set(),
+        flaggedQuestions: new Set(),
+      },
+    });
+    await get().saveToStorage();
+  },
+
+  startQuestionSet: async (
+    testName: string,
+    questions: TestQuestion[],
+    mode: TestMode = 'study',
+    options?: { timeLimitMinutes?: number }
+  ) => {
+    const timeLimit =
+      options?.timeLimitMinutes ??
+      (mode === 'test' ? Math.max(questions.length * 2, 5) : 0);
+
+    const generatedTest: Test = {
+      id: `custom-${Date.now()}`,
+      name: testName,
+      description: `Custom ${mode === 'study' ? 'study' : 'test'} session`,
+      questionCount: questions.length,
+      timeLimit,
+      passingScore: 70,
+      createdAt: new Date().toISOString(),
+    };
+
+    set({
+      activeTest: {
+        test: generatedTest,
+        questions,
+        currentQuestionIndex: 0,
+        answers: {},
+        answerTimings: {},
+        startTime: Date.now(),
+        timeRemaining: mode === 'test' && timeLimit > 0 ? timeLimit * 60 : 0,
+        mode,
+        revealedAnswers: new Set(),
+        flaggedQuestions: new Set(),
       },
     });
   },
 
-  answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>) => {
+  answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
+
+    const nextTimings = { ...(activeTest.answerTimings || {}) };
+    if (timeSpentSeconds !== undefined) {
+      nextTimings[questionId] = timeSpentSeconds;
+    }
     
     set({
       activeTest: {
@@ -461,6 +803,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           ...activeTest.answers,
           [questionId]: answer,
         },
+        answerTimings: nextTimings,
       },
     });
   },
@@ -470,6 +813,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     const activeTest = get().activeTest;
     if (!activeTest || activeTest.mode !== 'study') return;
     
+    const wasAlreadyRevealed = activeTest.revealedAnswers.has(questionId);
     const newRevealedAnswers = new Set(activeTest.revealedAnswers);
     newRevealedAnswers.add(questionId);
     
@@ -479,6 +823,10 @@ export const useTestStore = create<TestState>((set, get) => ({
         revealedAnswers: newRevealedAnswers,
       },
     });
+
+    if (!wasAlreadyRevealed) {
+      trackStudyActivity('study_question', 1);
+    }
   },
 
   // For study mode - check if the current answer is correct
@@ -498,7 +846,7 @@ export const useTestStore = create<TestState>((set, get) => ({
         case 'true_false':
         case 'fill_in_blank':
           const answerStr = typeof userAnswer === 'string' ? userAnswer : '';
-          const correctStr = currentQuestion.correctAnswer || '';
+          const correctStr = resolveCorrectAnswerLabel(currentQuestion) || currentQuestion.correctAnswer || '';
           return answerStr.toLowerCase().trim() === correctStr.toLowerCase().trim();
           
         case 'multiple_choice_multiple':
@@ -515,8 +863,8 @@ export const useTestStore = create<TestState>((set, get) => ({
         case 'diagram_labeling':
           if (typeof userAnswer !== 'object' || !currentQuestion.diagramLabels) return false;
           const labelAnswers = userAnswer as Record<string, string>;
-          return currentQuestion.diagramLabels.every(label => 
-            labelAnswers[label.id]?.toLowerCase().trim() === label.label.toLowerCase().trim()
+          return currentQuestion.diagramLabels.every(label =>
+            labelAnswers[label.id] === label.id
           );
           
         case 'open_ended':
@@ -539,6 +887,38 @@ export const useTestStore = create<TestState>((set, get) => ({
   // Exit study mode without submitting
   exitStudyMode: () => {
     set({ activeTest: null });
+  },
+
+  toggleFlag: (questionId: string) => {
+    const activeTest = get().activeTest;
+    if (!activeTest) return;
+
+    const flaggedQuestions = new Set(activeTest.flaggedQuestions);
+    if (flaggedQuestions.has(questionId)) {
+      flaggedQuestions.delete(questionId);
+    } else {
+      flaggedQuestions.add(questionId);
+    }
+
+    set({
+      activeTest: {
+        ...activeTest,
+        flaggedQuestions,
+      },
+    });
+  },
+
+  goToQuestion: (index: number) => {
+    const activeTest = get().activeTest;
+    if (!activeTest) return;
+    if (index < 0 || index >= activeTest.questions.length) return;
+
+    set({
+      activeTest: {
+        ...activeTest,
+        currentQuestionIndex: index,
+      },
+    });
   },
 
   nextQuestion: () => {
@@ -569,9 +949,10 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
-  submitTest: async () => {
+  submitTest: async (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => {
     const activeTest = get().activeTest;
     if (!activeTest) throw new Error('No active test');
+    const testMode = activeTest.mode;
     
     const timeSpent = Math.round((Date.now() - activeTest.startTime) / 1000);
     
@@ -585,7 +966,7 @@ export const useTestStore = create<TestState>((set, get) => ({
         case 'fill_in_blank':
           // Case-insensitive comparison for text answers
           const answerStr = typeof userAnswer === 'string' ? userAnswer : '';
-          const correctStr = q.correctAnswer || '';
+          const correctStr = resolveCorrectAnswerLabel(q) || q.correctAnswer || '';
           return answerStr.toLowerCase().trim() === correctStr.toLowerCase().trim();
           
         case 'multiple_choice_multiple':
@@ -602,11 +983,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           return q.matchingPairs.every(pair => matchAnswers[pair.left] === pair.right);
           
         case 'diagram_labeling':
-          // Check if all labels are correctly placed
           if (typeof userAnswer !== 'object' || !q.diagramLabels) return false;
           const labelAnswers = userAnswer as Record<string, string>;
-          return q.diagramLabels.every(label => 
-            labelAnswers[label.id]?.toLowerCase().trim() === label.label.toLowerCase().trim()
+          return q.diagramLabels.every(label =>
+            labelAnswers[label.id] === label.id
           );
           
         case 'open_ended':
@@ -631,6 +1011,13 @@ export const useTestStore = create<TestState>((set, get) => ({
         userAnswer: userAnswer || '',
         isCorrect,
         points: isCorrect ? q.points : 0,
+        questionText: q.question,
+        questionType: q.type,
+        correctAnswer: getCorrectAnswerForQuestion(q),
+        options: q.options,
+        explanation: q.explanation,
+        tags: q.tags,
+        questionSnapshot: q,
       };
     });
     
@@ -657,8 +1044,179 @@ export const useTestStore = create<TestState>((set, get) => ({
       attempts: [attempt, ...state.attempts],
       activeTest: null,
     }));
+    await get().saveToStorage();
+
+    const correctCount = answers.filter(a => a.isCorrect).length;
+
+    if (!options?.isOffline && userId) {
+      const updatedStats = { ...get().userQuestionStats };
+      const now = new Date().toISOString();
+      for (const answer of answers) {
+        const current = updatedStats[answer.questionId] || {
+          correctAttempts: 0,
+          incorrectAttempts: 0,
+          lastAttempted: null,
+        };
+        const next = {
+          correctAttempts: current.correctAttempts + (answer.isCorrect ? 1 : 0),
+          incorrectAttempts: current.incorrectAttempts + (answer.isCorrect ? 0 : 1),
+          lastAttempted: now,
+        };
+        updatedStats[answer.questionId] = next;
+        if (!DEMO_MODE) {
+          void api.upsertUserQuestionStat(userId, answer.questionId, {
+            correctAttempts: next.correctAttempts,
+            incorrectAttempts: next.incorrectAttempts,
+            lastAttempted: now,
+          }).catch(err => console.warn('Failed to upsert question stat:', err));
+        }
+      }
+      set({ userQuestionStats: updatedStats });
+    }
+
+    const sessionPayload = buildSessionPayload(
+      activeTest,
+      attempt,
+      answers,
+      percentage,
+      correctCount,
+      options
+    );
+
+    if (options?.isOffline) {
+      await useOfflineStore.getState().savePendingResult({
+        testId: activeTest.test.id,
+        groupName: options.groupName || activeTest.test.name,
+        score: correctCount,
+        totalQuestions: activeTest.questions.length,
+        percentage,
+        completedAt: attempt.completedAt || new Date().toISOString(),
+        timeSpent,
+        sessionPayload,
+      });
+    } else if (!DEMO_MODE && userId) {
+      try {
+        const savedSession = await api.saveTestResult(userId, sessionPayload);
+        const sessionId = savedSession.id;
+        await api.submitTestResult(sessionId, {
+          score: percentage,
+          correctAnswersCount: correctCount,
+          totalQuestions: activeTest.questions.length,
+        });
+
+        set(state => ({
+          attempts: state.attempts.map(a =>
+            a.id === attempt.id
+              ? { ...a, id: sessionId, testId: sessionId, groupName: options?.groupName || a.groupName, groupId: options?.groupId || a.groupId }
+              : a
+          ),
+        }));
+        attempt.id = sessionId;
+        attempt.testId = sessionId;
+        await get().saveToStorage();
+      } catch (error) {
+        console.warn('Failed to save test result to API:', error);
+        await syncService.queueOperation(
+          'test_result',
+          attempt.id,
+          'create',
+          sessionPayload,
+          userId
+        );
+      }
+    }
+
+    if (testMode !== 'study') {
+      trackStudyActivity('test', 1);
+    }
     
     return attempt;
+  },
+
+  loadUserQuestionStats: async (userId: string) => {
+    if (!userId || DEMO_MODE) return;
+    try {
+      const raw = await api.fetchUserQuestionStats(userId);
+      set({ userQuestionStats: normalizeUserQuestionStats(raw) });
+    } catch (error) {
+      console.warn('Failed to load user question stats:', error);
+    }
+  },
+
+  loadTestPresets: async (userId: string) => {
+    if (!userId || DEMO_MODE) return;
+    try {
+      const profile = await api.fetchUserProfile(userId);
+      const presets = ((profile as any).test_presets || (profile as any).testPresets || []) as TestPreset[];
+      set({ testPresets: Array.isArray(presets) ? presets : [] });
+    } catch (error) {
+      console.warn('Failed to load test presets:', error);
+    }
+  },
+
+  saveTestPreset: async (userId: string, name: string, config: TestPresetConfig) => {
+    if (!userId) return;
+    const newPreset: TestPreset = {
+      id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim(),
+      config,
+    };
+    const updated = [...get().testPresets, newPreset].slice(-5);
+    set({ testPresets: updated });
+    if (DEMO_MODE) return;
+    try {
+      await api.updateUserProfile(userId, { test_presets: updated } as any);
+    } catch (error) {
+      console.warn('Failed to save test preset:', error);
+      throw error;
+    }
+  },
+
+  deleteTestPreset: async (userId: string, presetId: string) => {
+    if (!userId) return;
+    const updated = get().testPresets.filter(p => p.id !== presetId);
+    set({ testPresets: updated });
+    if (DEMO_MODE) return;
+    try {
+      await api.updateUserProfile(userId, { test_presets: updated } as any);
+    } catch (error) {
+      console.warn('Failed to delete test preset:', error);
+      throw error;
+    }
+  },
+
+  deleteAttempt: async (userId: string, sessionId: string) => {
+    const isLocalOnly = sessionId.startsWith('attempt-');
+
+    if (!isLocalOnly && !DEMO_MODE && userId) {
+      try {
+        await api.deleteTestSession(sessionId);
+      } catch (error) {
+        console.warn('Failed to delete test session from API:', error);
+        throw error;
+      }
+    }
+
+    set(state => ({
+      attempts: state.attempts.filter(attempt => attempt.id !== sessionId),
+    }));
+    clearTestResultsCache();
+    await get().saveToStorage();
+  },
+
+  clearTestHistory: async (userId: string) => {
+    if (!DEMO_MODE && userId) {
+      try {
+        await api.clearTestHistory();
+      } catch (error) {
+        console.warn('Failed to clear test history from API:', error);
+        throw error;
+      }
+    }
+
+    set({ attempts: [] });
+    clearTestResultsCache();
+    await get().saveToStorage();
   },
 
   createTestFromDeck: async (deckId: string, deckName: string, userId: string, config: { questionCount: number; timeLimit: number; passingScore: number }) => {
@@ -705,6 +1263,14 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
     
     try {
+      let questions: TestQuestion[] = [];
+      try {
+        const flashcards = unwrapFlashcards(await api.fetchFlashcards(deckId));
+        questions = flashcardsToQuestions(flashcards, config.questionCount);
+      } catch (error) {
+        console.warn('Failed to fetch deck flashcards for test creation:', error);
+      }
+
       const testSession = await api.createTestSession({
         userId,
         groupId: '',
@@ -717,23 +1283,28 @@ export const useTestStore = create<TestState>((set, get) => ({
           timerDuration: config.timeLimit,
           passingScore: config.passingScore,
         },
-        questions: [],
+        questions,
       });
       
+      const sessionConfig = testSession.config as { name?: string; description?: string } | undefined;
       const createdTest: Test = {
         id: testSession.id,
-        name: testSession.config?.name || `${deckName} Quiz`,
-        description: testSession.config?.description,
+        name: sessionConfig?.name || `${deckName} Quiz`,
+        description: sessionConfig?.description,
         deckId,
         deckName,
-        questionCount: config.questionCount,
+        questionCount: questions.length || config.questionCount,
         timeLimit: config.timeLimit,
         passingScore: config.passingScore,
         createdAt: testSession.created_at || new Date().toISOString(),
       };
       
       set(state => ({
-        tests: [...state.tests, createdTest],
+        tests: [...state.tests.filter(t => t.id !== newTest.id), createdTest],
+        testQuestionsById: {
+          ...state.testQuestionsById,
+          [createdTest.id]: questions.length ? questions : state.testQuestionsById[createdTest.id] || [],
+        },
       }));
       
       return createdTest;

@@ -2,12 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import type MatterType from 'matter-js';
-import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability } from '../services/supabase';
+import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
+import { LanternIcon } from './ui/LanternIcon';
+import { LEGAL_PATHS, isEmailNotConfirmedError, isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
 }
+
+type AuthView = 'login' | 'signup' | 'forgotPassword' | 'verifyEmail';
 
 const GoogleIcon = () => (
     <svg className="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true">
@@ -18,15 +22,9 @@ const GoogleIcon = () => (
     </svg>
 );
 
-const FacebookIcon = () => (
-    <svg className="w-5 h-5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z"/>
-    </svg>
-);
-
-const TwitterIcon = () => (
-    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+const AppleIcon = () => (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
     </svg>
 );
 
@@ -49,7 +47,15 @@ const AnimatedBackground = () => {
     let localRender: MatterType.Render | null = null;
     let resizeHandler: (() => void) | null = null;
 
-    import('matter-js').then((Matter) => {
+    const loadMatterJs = (retriesLeft = 2): Promise<typeof MatterType> =>
+      import('matter-js').catch((err) => {
+        if (retriesLeft <= 0) throw err;
+        return new Promise<void>((resolve) => setTimeout(resolve, 400)).then(() =>
+          loadMatterJs(retriesLeft - 1)
+        );
+      });
+
+    loadMatterJs().then((Matter) => {
       if (!active) return;
       MatterModule = Matter;
 
@@ -147,8 +153,11 @@ const AnimatedBackground = () => {
 
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
-  const [isLoginView, setIsLoginView] = useState(true);
-  const [isForgotPasswordView, setIsForgotPasswordView] = useState(false);
+  const { lowDataMode } = useUIStore();
+  const [authView, setAuthView] = useState<AuthView>('login');
+  const isLoginView = authView === 'login';
+  const isForgotPasswordView = authView === 'forgotPassword';
+  const isVerifyEmailView = authView === 'verifyEmail';
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
@@ -163,14 +172,88 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [resetEmailSent, setResetEmailSent] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | 'twitter' | null>(null);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [verifyMessage, setVerifyMessage] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  const startResendCooldown = () => setResendCooldown(RESEND_COOLDOWN_SECONDS);
+
+  const finishAuthSession = async (authUser: { id: string; email?: string | null; user_metadata?: Record<string, unknown> }) => {
+    const session = (await supabase.auth.getSession()).data.session;
+    if (session?.access_token) {
+      setCachedAuthToken(session.access_token, authUser.id);
+    }
+
+    let profile: Awaited<ReturnType<typeof fetchUserProfile>> | null = null;
+    try {
+      profile = await fetchUserProfile(authUser.id);
+    } catch (profileError: unknown) {
+      const msg = profileError instanceof Error ? profileError.message : String(profileError);
+      if (msg.includes('404') || msg.includes('status: 404')) {
+        const userName =
+          (typeof authUser.user_metadata?.name === 'string' && authUser.user_metadata.name) ||
+          authUser.email?.split('@')[0] ||
+          'User';
+        profile = await createUserProfile({
+          id: authUser.id,
+          name: userName,
+          phone: undefined,
+          points: 0,
+          stats: {},
+          settings: {},
+          badges: [],
+        });
+      } else {
+        throw profileError;
+      }
+    }
+
+    if (!profile) {
+      throw new Error('Failed to load user profile');
+    }
+
+    const user: User = {
+      id: profile.id,
+      name: profile.name,
+      username: profile.username || undefined,
+      firstName: profile.first_name || undefined,
+      lastName: profile.last_name || undefined,
+      avatarUrl: profile.avatar_url || '',
+      email: authUser.email!,
+      password: '',
+      phoneNumber: profile.phone || '',
+      points: profile.points,
+      badges: profile.badges as User['badges'],
+      stats: profile.stats,
+    };
+    onAuthSuccess(user);
+  };
+
+  const goToVerifyEmail = (verifyEmail: string) => {
+    setEmail(verifyEmail);
+    setOtpCode('');
+    setVerifyMessage('');
+    setError('');
+    setAuthView('verifyEmail');
+  };
 
   // Username validation regex: lowercase alphanumeric + underscore, 3-20 chars
   const usernameRegex = /^[a-z0-9_]{3,20}$/;
 
   // Debounced username availability check
   useEffect(() => {
-    if (!username || isLoginView) return;
+    if (!username || authView !== 'signup') return;
     
     const normalizedUsername = username.toLowerCase().trim();
     
@@ -200,10 +283,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     }, 500); // Debounce 500ms
     
     return () => clearTimeout(timeoutId);
-  }, [username, isLoginView]);
+  }, [username, authView]);
 
   // Handle OAuth sign in
-  const handleSocialLogin = async (provider: 'google' | 'facebook' | 'twitter') => {
+  const handleSocialLogin = async (provider: 'google' | 'apple') => {
     try {
       setSocialLoading(provider);
       setError('');
@@ -447,71 +530,37 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     setError('');
 
     try {
+      if (isVerifyEmailView) {
+        await handleVerifyOtp();
+        return;
+      }
       if (isForgotPasswordView) {
         if (!validateEmail(email)) {
           setError('Please enter a valid email address.');
           return;
         }
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/reset-password`,
-        });
-        if (error) {
-          setError(error.message);
-          return;
+        try {
+          await sendPasswordResetEmail(email);
+          setResetEmailSent(true);
+          setError('');
+          startResendCooldown();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Could not send reset email.');
         }
-        setResetEmailSent(true);
-        setError('');
       } else if (isLoginView) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
+          if (isEmailNotConfirmedError(error)) {
+            goToVerifyEmail(email);
+            return;
+          }
           setError(error.message);
           return;
         }
-        
-        // Fetch profile
-        let profile: any = null;
-        try {
-          profile = await fetchUserProfile(data.user!.id);
-        } catch (profileError: any) {
-          // If profile doesn't exist, create one (handles database reset scenarios)
-          if (profileError.message?.includes('404') || profileError.message?.includes('status: 404')) {
-            const userName = data.user!.user_metadata?.name || data.user!.email?.split('@')[0] || 'User';
-            try {
-              profile = await createUserProfile({
-                id: data.user!.id,
-                name: userName,
-                phone: undefined,
-                points: 0,
-                stats: {},
-                settings: {},
-                badges: []
-              });
-            } catch (insertError) {
-              setError('Failed to create profile. Please try again.');
-              return;
-            }
-          } else {
-            setError('Failed to retrieve user profile. Please try again.');
-            return;
-          }
+
+        if (data.user) {
+          await finishAuthSession(data.user);
         }
-        
-        const user: User = {
-          id: profile.id,
-          name: profile.name,
-          username: profile.username || undefined,
-          firstName: profile.first_name || undefined,
-          lastName: profile.last_name || undefined,
-          avatarUrl: profile.avatar_url || '',
-          email: data.user!.email!,
-          password: '', // not stored
-          phoneNumber: profile.phone || '',
-          points: profile.points,
-          badges: profile.badges as any[], // assume Badge[]
-          stats: profile.stats
-        };
-        console.log('[Auth] Login successful, calling onAuthSuccess with user:', user.id, user.name);
-        onAuthSuccess(user);
       } else {
         if (!firstName.trim() || !lastName.trim()) { setError('Please enter both first and last name.'); return; }
         if (!username.trim()) { setError('Please enter a username.'); return; }
@@ -547,41 +596,80 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
               badges: []
             });
           } catch (insertError) {
-            // Profile might already exist if user previously signed up
             console.log('Profile create error via API (may already exist):', insertError);
           }
-          // Sign in
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-          if (signInError) {
-            setError(signInError.message);
-            return;
+
+          if (data.session?.user) {
+            await finishAuthSession(data.session.user);
+          } else {
+            goToVerifyEmail(email);
           }
-          
-          const user: User = {
-            id: data.user.id,
-            name: `${firstName.trim()} ${lastName.trim()}`,
-            username: username.toLowerCase().trim(),
-            firstName: firstName.trim(),
-            lastName: lastName.trim(),
-            avatarUrl: '',
-            email,
-            password,
-            phoneNumber: phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : '',
-            points: 0,
-            badges: [],
-            stats: {}
-          };
-          onAuthSuccess(user);
         }
       }
     } catch (err) {
-      setError('An error occurred.');
+      setError(err instanceof Error ? err.message : 'An error occurred.');
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!isValidOtpCode(otpCode)) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+    setVerifyLoading(true);
+    setError('');
+    try {
+      const data = await verifySignupOtp(email, otpCode);
+      if (data.user) {
+        setVerifyMessage('Email verified! Signing you in…');
+        await finishAuthSession(data.user);
+      } else {
+        setVerifyMessage('Email verified! You can sign in now.');
+        setAuthView('login');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed.');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (resendCooldown > 0 || !validateEmail(email)) return;
+    setResendLoading(true);
+    setError('');
+    try {
+      await resendSignupConfirmation(email, getWebAuthRedirectOrigin());
+      setVerifyMessage('Confirmation email sent. Check your inbox or enter the new code.');
+      startResendCooldown();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend email.');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleResendResetEmail = async () => {
+    if (resendCooldown > 0 || !validateEmail(email)) return;
+    setResendLoading(true);
+    setError('');
+    try {
+      await sendPasswordResetEmail(email);
+      setResetEmailSent(true);
+      startResendCooldown();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend reset email.');
+    } finally {
+      setResendLoading(false);
     }
   };
 
   const toggleView = () => {
-    setIsLoginView(!isLoginView);
-    setIsForgotPasswordView(false);
+    setAuthView(isLoginView ? 'signup' : 'login');
     setError('');
     setFirstName('');
     setLastName('');
@@ -594,36 +682,41 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     setPassword('');
     setConfirmPassword('');
     setResetEmailSent(false);
+    setOtpCode('');
+    setVerifyMessage('');
   };
 
   const showForgotPassword = () => {
-    setIsForgotPasswordView(true);
-    setIsLoginView(true); // Keep login view but show forgot
+    setAuthView('forgotPassword');
     setError('');
     setEmail('');
     setResetEmailSent(false);
+    setOtpCode('');
+    setVerifyMessage('');
   };
 
   const backToLogin = () => {
-    setIsForgotPasswordView(false);
+    setAuthView('login');
     setError('');
     setEmail('');
     setResetEmailSent(false);
+    setOtpCode('');
+    setVerifyMessage('');
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-300">
       <div className="w-full max-w-5xl m-4 lg:m-8 bg-white dark:bg-slate-800/50 dark:border dark:border-slate-700 rounded-3xl shadow-2xl overflow-hidden grid lg:grid-cols-2">
         {/* Left Branding Column */}
-        <div className="hidden lg:block relative p-12 bg-indigo-50 dark:bg-slate-800">
-          <AnimatedBackground />
+        <div className={`hidden lg:block relative p-12 ${lowDataMode ? 'bg-lantern-accent-background' : 'bg-indigo-50 dark:bg-slate-800'}`}>
+          {!lowDataMode && <AnimatedBackground />}
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
-                <div className="flex items-center text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    <AcademicCapIcon className="w-10 h-10 mr-3 text-indigo-500" />
+                <div className="flex items-center text-2xl font-bold text-slate-900 dark:text-slate-100 gap-3">
+                    <LanternIcon size={40} />
                     <span>Lantern Study</span>
                 </div>
-                <p className="mt-4 text-slate-600 dark:text-slate-300">The ultimate collaborative learning platform designed to help you succeed.</p>
+                <p className="mt-4 text-slate-600 dark:text-slate-300">Study smarter — built for slow connections and offline learning.</p>
             </div>
             <div className="mt-8 text-sm text-slate-500 dark:text-slate-400">
                 <p>"An investment in knowledge pays the best interest."</p>
@@ -636,17 +729,56 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         <div className="p-8 sm:p-12 flex flex-col justify-center">
             <div className="w-full max-w-md mx-auto">
                 <div className="text-center lg:hidden mb-8">
-                    <AcademicCapIcon className="w-12 h-12 mx-auto text-indigo-500" />
+                    <LanternIcon size={48} className="mx-auto" />
                 </div>
                 <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
-                    {isForgotPasswordView ? 'Reset Password' : isLoginView ? 'Welcome Back!' : 'Create an Account'}
+                    {isVerifyEmailView
+                      ? 'Verify your email'
+                      : isForgotPasswordView
+                        ? 'Reset Password'
+                        : isLoginView
+                          ? 'Welcome Back!'
+                          : 'Create an Account'}
                 </h2>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                    {isForgotPasswordView ? 'Enter your email to receive a reset link.' : isLoginView ? 'Sign in to continue your journey.' : 'Join us to illuminate your mind.'}
+                    {isVerifyEmailView
+                      ? `Enter the 6-digit code sent to ${email || 'your email'}. You can also confirm via the link in the email.`
+                      : isForgotPasswordView
+                        ? 'Enter your email to receive a reset link.'
+                        : isLoginView
+                          ? 'Sign in to continue your journey.'
+                          : 'Join us to illuminate your mind.'}
                 </p>
 
                 <form className="mt-8 space-y-5" onSubmit={handleAuthAction}>
-                    {!isForgotPasswordView && (
+                    {isVerifyEmailView && (
+                        <>
+                            <div>
+                                <label htmlFor="verifyEmail" className="sr-only">Email address</label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-slate-400" /></div>
+                                    <input id="verifyEmail" name="verifyEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Email address"/>
+                                </div>
+                            </div>
+                            <div>
+                                <label htmlFor="otpCode" className="sr-only">Verification code</label>
+                                <input
+                                    id="otpCode"
+                                    name="otpCode"
+                                    type="text"
+                                    inputMode="numeric"
+                                    autoComplete="one-time-code"
+                                    maxLength={6}
+                                    value={otpCode}
+                                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center text-2xl tracking-widest font-mono"
+                                    placeholder="000000"
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {!isForgotPasswordView && !isVerifyEmailView && (
                         <>
                             <div className={`transition-all duration-500 ease-in-out ${!isLoginView ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
                                 <div className="space-y-5">
@@ -781,14 +913,83 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         </div>
                     )}
 
+                    {verifyMessage && (
+                        <div className="flex items-center text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
+                            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
+                            {verifyMessage}
+                        </div>
+                    )}
+
                     <div>
-                        <button type="submit" className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-indigo-500 transition-transform hover:scale-105">
-                            {isForgotPasswordView ? 'Send Reset Email' : isLoginView ? 'Sign In' : 'Create Account'}
+                        <button
+                            type="submit"
+                            disabled={verifyLoading || resendLoading}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-indigo-500 transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                        >
+                            {isVerifyEmailView
+                              ? verifyLoading ? 'Verifying…' : 'Verify email'
+                              : isForgotPasswordView
+                                ? resetEmailSent ? 'Send again' : 'Send Reset Email'
+                                : isLoginView
+                                  ? 'Sign In'
+                                  : 'Create Account'}
                         </button>
                     </div>
+
+                    {isVerifyEmailView && (
+                        <button
+                            type="button"
+                            onClick={handleResendConfirmation}
+                            disabled={resendCooldown > 0 || resendLoading}
+                            className="w-full text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        >
+                            {resendLoading
+                              ? 'Sending…'
+                              : resendCooldown > 0
+                                ? `Resend confirmation email (${resendCooldown}s)`
+                                : 'Resend confirmation email'}
+                        </button>
+                    )}
+
+                    {isForgotPasswordView && resetEmailSent && (
+                        <button
+                            type="button"
+                            onClick={handleResendResetEmail}
+                            disabled={resendCooldown > 0 || resendLoading}
+                            className="w-full text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        >
+                            {resendLoading
+                              ? 'Sending…'
+                              : resendCooldown > 0
+                                ? `Resend reset email (${resendCooldown}s)`
+                                : 'Resend reset email'}
+                        </button>
+                    )}
+
+                    {authView === 'signup' && (
+                        <p className="text-xs text-center text-slate-500 dark:text-slate-400">
+                            By signing up, you agree to our{' '}
+                            <a href={LEGAL_PATHS.terms} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                                Terms of Service
+                            </a>{' '}
+                            and{' '}
+                            <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                                Privacy Policy
+                            </a>
+                            .
+                        </p>
+                    )}
                 </form>
 
-                {isLoginView && !isForgotPasswordView && (
+                {isVerifyEmailView && (
+                    <div className="mt-4 text-center">
+                        <button onClick={backToLogin} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                            ← Back to Sign In
+                        </button>
+                    </div>
+                )}
+
+                {isLoginView && (
                     <div className="mt-4 text-center">
                         <button onClick={showForgotPassword} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
                             Forgot your password?
@@ -804,14 +1005,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     </div>
                 )}
 
-                {!isForgotPasswordView && (
+                {!isForgotPasswordView && !isVerifyEmailView && (
                     <>
                         <div className="relative my-6">
                             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-300 dark:border-slate-600" /></div>
                             <div className="relative flex justify-center text-sm"><span className="px-2 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400">Or continue with</span></div>
                         </div>
                         
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                             <button 
                                 type="button" 
                                 onClick={() => handleSocialLogin('google')} 
@@ -830,46 +1031,30 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             </button>
                             <button 
                                 type="button" 
-                                onClick={() => handleSocialLogin('twitter')} 
+                                onClick={() => handleSocialLogin('apple')} 
                                 disabled={socialLoading !== null}
-                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm bg-white dark:bg-slate-700 text-sm font-medium text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm bg-white dark:bg-slate-700 text-sm font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                             >
-                                <span className="sr-only">Sign in with Twitter/X</span>
-                                {socialLoading === 'twitter' ? (
+                                <span className="sr-only">Sign in with Apple</span>
+                                {socialLoading === 'apple' ? (
                                     <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
                                 ) : (
-                                    <TwitterIcon/>
-                                )}
-                            </button>
-                            <button 
-                                type="button" 
-                                onClick={() => handleSocialLogin('facebook')} 
-                                disabled={socialLoading !== null}
-                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm bg-white dark:bg-slate-700 text-sm font-medium text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                            >
-                                <span className="sr-only">Sign in with Facebook</span>
-                                {socialLoading === 'facebook' ? (
-                                    <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                ) : (
-                                    <FacebookIcon/>
+                                    <AppleIcon/>
                                 )}
                             </button>
                         </div>
                         
                         <p className="mt-4 text-xs text-center text-slate-500 dark:text-slate-400">
-                            Social login requires OAuth configuration in Supabase Dashboard
+                            Google and Apple sign-in require OAuth configuration in Supabase Dashboard
                         </p>
                     </>
                 )}
 
                 <div className="mt-8 text-sm text-center">
-                    {!isForgotPasswordView && (
+                    {!isForgotPasswordView && !isVerifyEmailView && (
                         <button onClick={toggleView} className="font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
                             {isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
                         </button>

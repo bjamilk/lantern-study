@@ -1,18 +1,27 @@
 
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, UserQuestionStat, AppMode } from '../types';
-import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, UserQuestionStat, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData } from '../types';
+import DailyQuizWidget from './DailyQuizWidget';
+import { DailyGoalsProgress } from './DailyGoalsProgress';
+import { normalizeUserSettings } from '@lantern/shared/settings';
+import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon, DocumentTextIcon, PlayIcon } from '@heroicons/react/24/solid';
 import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
+import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
+import { syncCopy } from '@lantern/shared/design';
+import { buildActivityMap } from '@lantern/shared/utils';
+import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { useLoginStreak } from '../hooks/useLoginStreak';
+import { DailyQuestsWidget } from './DailyQuestsWidget';
 
 interface DashboardScreenProps {
   testResults: TestResult[];
   groups: Group[];
   currentUser: User;
-  onNavigateToChat: () => void;
+  offlineBundles?: OfflineSessionBundle[];
+  onNavigateToChat?: () => void;
   allMessages: Record<string, Message[]>;
   userQuestionStats: UserQuestionStats;
   onViewAnalysis: (result: TestResult) => void;
@@ -27,14 +36,31 @@ interface DashboardScreenProps {
   // Today's Summary
   pendingSyncCount?: number;
   unreadNotificationCount?: number;
-  // Study flow entry points
-  onOpenQuickTest?: () => void;
-  onOpenQuickStudy?: () => void;
+  // Study flow entry points — called with the selected groupId
+  onOpenQuickTest?: (groupId: string) => void;
+  onOpenQuickStudy?: (groupId: string) => void;
   onGetStudyRecommendations?: (performanceData: {
     recentScores: { topic: string; score: number; date: string }[];
     flashcardAccuracy: { topic: string; correctRate: number }[];
     studyHoursThisWeek: number;
   }) => Promise<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>;
+  onNavigateToNotes?: () => void;
+  onOpenImportAndStudy?: () => void;
+  dailyQuests?: Array<{ id: string; questType: string; targetCount: number; progressCount: number; completed: boolean; rewardXp: number }>;
+  serverStreak?: number;
+  streakFreezes?: number;
+  onPurchaseStreakFreeze?: () => void;
+  studyGoal?: StudyGoalMode;
+  onStudyGoalChange?: (goal: StudyGoalMode) => void;
+  dailyQuiz?: DailyQuizSession | null;
+  dailyQuizProgress?: number;
+  onStartDailyQuiz?: () => void;
+  onDailyQuizAnswer?: (questionId: string, answer: string) => void;
+  onCompleteDailyQuiz?: () => void;
+  activeTestSession?: TestSessionData | null;
+  activeStudySession?: StudySessionData | null;
+  onResumeSession?: () => void;
+  studyActivityDays?: StudyActivityDay[];
 }
 
 interface GroupPerformanceData {
@@ -129,8 +155,55 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
     );
 };
 
-export default function DashboardScreen({ testResults: rawTestResults, groups, currentUser, onNavigateToChat, allMessages, userQuestionStats, onViewAnalysis, theme, onNavigateToFlashcards, onNavigateToMarketplace, onNavigateToCreateGroup, dueCardsCount = 0, flashcards = [], pendingSyncCount = 0, unreadNotificationCount = 0, onOpenQuickTest, onOpenQuickStudy, onGetStudyRecommendations }: DashboardScreenProps) {
-  
+export default function DashboardScreen({
+  testResults: rawTestResults,
+  groups,
+  currentUser,
+  offlineBundles = [],
+  onNavigateToChat,
+  allMessages,
+  userQuestionStats,
+  onViewAnalysis,
+  theme,
+  onNavigateToFlashcards,
+  onNavigateToMarketplace,
+  onNavigateToCreateGroup,
+  onNavigateToNotes,
+  onOpenImportAndStudy,
+  dailyQuests = [],
+  serverStreak = 0,
+  streakFreezes = 0,
+  onPurchaseStreakFreeze,
+  dueCardsCount = 0,
+  flashcards = [],
+  pendingSyncCount = 0,
+  unreadNotificationCount = 0,
+  onOpenQuickTest,
+  onOpenQuickStudy,
+  onGetStudyRecommendations,
+  studyGoal = 'retention',
+  onStudyGoalChange,
+  dailyQuiz = null,
+  dailyQuizProgress = 0,
+  onStartDailyQuiz,
+  onDailyQuizAnswer,
+  onCompleteDailyQuiz,
+  activeTestSession,
+  activeStudySession,
+  onResumeSession,
+  studyActivityDays = [],
+}: DashboardScreenProps) {
+
+  // Group picker state for Quick Test / Quick Study
+  const [quickActionPicker, setQuickActionPicker] = useState<'test' | 'study' | null>(null);
+  const availableGroups = useMemo(() => groups.filter(g => !g.isArchived), [groups]);
+
+  const handleQuickActionGroupSelect = useCallback((groupId: string) => {
+    if (quickActionPicker === 'test') onOpenQuickTest?.(groupId);
+    else if (quickActionPicker === 'study') onOpenQuickStudy?.(groupId);
+    setQuickActionPicker(null);
+  }, [quickActionPicker, onOpenQuickTest, onOpenQuickStudy]);
+
   // Filter out invalid test results and normalize date fields
   const initialTestResults = useMemo(() => {
     return rawTestResults
@@ -171,8 +244,19 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
 
 
   const filteredTestResults = useMemo(() => {
+    // Deduplicate by startTime, preferring entries that have an id (cloud results over pending)
+    const byStartTime = new Map<number, typeof initialTestResults[number]>();
+    for (const r of initialTestResults) {
+      const ts = new Date(r.session.startTime).getTime();
+      const existing = byStartTime.get(ts);
+      if (!existing || (!existing.id && r.id)) {
+        byStartTime.set(ts, r);
+      }
+    }
+    const deduped = Array.from(byStartTime.values());
+
     if (selectedTimePeriod === 'allTime') {
-      return initialTestResults;
+      return deduped;
     }
 
     if (selectedTimePeriod === 'custom') {
@@ -183,25 +267,25 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
 
           if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
             console.warn("Invalid custom dates provided.");
-            return initialTestResults; // Fallback to all if dates are invalid
+            return deduped; // Fallback to all if dates are invalid
           }
           if (startDateObj > endDateObj) {
             console.warn("Custom start date is after end date.");
             return []; // No results possible
           }
 
-          return initialTestResults.filter(result => {
+          return deduped.filter(result => {
             const resultDate = new Date(result.session.startTime);
             return resultDate >= startDateObj && resultDate <= endDateObj;
           });
         } catch (e) {
             console.error("Error parsing custom dates:", e);
-            return initialTestResults; 
+            return deduped; 
         }
       } else {
         // If custom is selected but dates aren't set, effectively show "All Time"
         // or a specific message, here we show all for now.
-        return initialTestResults;
+        return deduped;
       }
     }
     
@@ -216,7 +300,7 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
     cutoffDate.setDate(now.getDate() - daysToSubtract);
     cutoffDate.setHours(0, 0, 0, 0); 
 
-    return initialTestResults.filter(result => {
+    return deduped.filter(result => {
         const resultDate = new Date(result.session.startTime);
         return resultDate >= cutoffDate;
     });
@@ -224,9 +308,16 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
   
   const totalTestsTakenOverall = filteredTestResults.length;
   
-  const getGroupName = (groupId: string): string => {
+  const getGroupName = (groupId: string, storedName?: string): string => {
     const group = groups.find(g => g.id === groupId);
-    return group ? group.name : 'Unknown Group';
+    if (group) return group.name;
+    // Use stored name from session config
+    if (storedName) return storedName;
+    // Fallback: look up the name from any offline bundle with this groupId
+    const bundle = offlineBundles.find(b => b.config.groupId === groupId);
+    const bundleName = bundle?.displayName || bundle?.config.groupName || bundle?.groupName;
+    if (bundleName) return bundleName;
+    return groupId ? 'Unknown Exam' : 'Unknown Exam';
   };
 
   const [allGroupPerformanceData, setAllGroupPerformanceData] = useState<GroupPerformanceData[]>([]);
@@ -238,7 +329,7 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
     if (totalTestsTakenOverall > 0) {
       filteredTestResults.forEach(result => {
         const groupId = result.session.config.groupId;
-        const groupName = getGroupName(groupId);
+        const groupName = getGroupName(groupId, result.session.config.groupName);
         
         let data = groupPerformanceMap.get(groupId);
         if (!data) {
@@ -430,47 +521,10 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
         .slice(0, 5); // Top 5
     }, [filteredTestResults, allMessages, userQuestionStats]);
 
-  const heatmapData = useMemo(() => {
-    const data = new Map<string, number>();
-    // Use local date format (matching StudyHeatmap's formatLocalDate)
-    const toLocalDateStr = (d: Date): string => {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    };
-    // Count completed tests (use ALL results, not filtered by time period)
-    initialTestResults.forEach(result => {
-        const dateStr = toLocalDateStr(new Date(result.session.startTime));
-        data.set(dateStr, (data.get(dateStr) || 0) + 1);
-    });
-    // Count question attempts from userQuestionStats
-    if (userQuestionStats) {
-        const attemptDates = new Set<string>();
-        Object.values(userQuestionStats).forEach((stat: UserQuestionStat) => {
-            if (stat.lastAttempted) {
-                const dateStr = toLocalDateStr(new Date(stat.lastAttempted));
-                attemptDates.add(dateStr);
-            }
-        });
-        attemptDates.forEach(dateStr => {
-            data.set(dateStr, (data.get(dateStr) || 0) + 1);
-        });
-    }
-    // Count flashcard reviews (infer review date from nextReviewDate - interval)
-    if (flashcards && flashcards.length > 0) {
-        flashcards.forEach(fc => {
-            if (fc.srsData?.nextReviewDate && fc.srsData.interval >= 0) {
-                const nextDate = new Date(fc.srsData.nextReviewDate);
-                const reviewDate = new Date(nextDate);
-                reviewDate.setDate(reviewDate.getDate() - (fc.srsData.interval || 1));
-                const dateStr = toLocalDateStr(reviewDate);
-                data.set(dateStr, (data.get(dateStr) || 0) + 1);
-            }
-        });
-    }
-    return data;
-  }, [initialTestResults, userQuestionStats, flashcards]);
+  const heatmapData = useMemo(
+    () => buildActivityMap(studyActivityDays),
+    [studyActivityDays]
+  );
 
   const simulatedGroupAverages = useMemo(() => {
     const averages = new Map<string, number>();
@@ -667,136 +721,105 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
         </div>
       )}
       
-      {/* ═══════════════ HERO SECTION ═══════════════ */}
-      <div className="bg-gradient-to-br from-indigo-600 via-indigo-500 to-purple-600 dark:from-indigo-900 dark:via-indigo-800 dark:to-purple-900 px-4 md:px-8 py-6 md:py-8">
+      {/* ═══════════════ GREETING CARD ═══════════════ */}
+      <div className="px-4 md:px-8 py-6">
         <div className="max-w-6xl mx-auto">
+          <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5'}`} padding="lg">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white">
+              <h1 className="text-2xl md:text-3xl font-bold text-lantern-text">
                 {getGreeting()}, {currentUser.name.split(' ')[0]}!
               </h1>
-              <p className="text-indigo-200 dark:text-indigo-300 mt-1 text-sm md:text-base">
+              <p className="text-lantern-text-secondary mt-1 text-sm md:text-base">
                 {totalTestsTakenOverall > 0
                   ? `You've completed ${totalTestsTakenOverall} test${totalTestsTakenOverall !== 1 ? 's' : ''}. Keep up the great work!`
                   : 'Ready to start studying? Jump into a group or review your flashcards.'}
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Streak badge */}
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2.5">
-                <FireIcon className="w-6 h-6 text-orange-300" />
-                <div>
-                  <p className="text-xs text-indigo-200 font-medium">Streak</p>
-                  <p className="text-xl font-bold text-white leading-none">{streakData.streak} day{streakData.streak !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              {/* Points badge */}
-              <div className="flex items-center gap-2 bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2.5">
-                <SparklesIcon className="w-6 h-6 text-yellow-300" />
-                <div>
-                  <p className="text-xs text-indigo-200 font-medium">Points</p>
-                  <p className="text-xl font-bold text-white leading-none">{currentUser.points.toLocaleString()}</p>
-                </div>
-              </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <StatPill label="Streak" value={`${streakData.streak}d`} accent="accent" icon={<FireIcon className="w-4 h-4" />} />
+              <StatPill label="Points" value={currentUser.points.toLocaleString()} accent="primary" icon={<SparklesIcon className="w-4 h-4" />} />
             </div>
           </div>
 
-          {/* ─── XP Level Progress Bar ─── */}
-          <div className="mt-4 bg-white/10 backdrop-blur-sm rounded-xl px-4 py-3">
+          {/* XP Level Progress Bar */}
+          <div className="mt-4 pt-4 border-t border-lantern-border">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-lg leading-none">{xpInfo.icon}</span>
-                <span className="text-sm font-bold text-white">
+                <span className="text-sm font-bold text-lantern-text">
                   Level {xpInfo.level} — {xpInfo.title}
                 </span>
               </div>
-              <span className="text-xs text-indigo-200">
+              <span className="text-xs text-lantern-text-secondary">
                 {xpInfo.maxPoints === -1
                   ? `${currentUser.points.toLocaleString()} XP · Max Level`
                   : `${xpInfo.pointsToNextLevel.toLocaleString()} XP to Level ${xpInfo.level + 1}`}
               </span>
             </div>
-            <div className="w-full bg-white/20 rounded-full h-2.5 overflow-hidden">
+            <div className="w-full bg-lantern-background-secondary rounded-full h-2.5 overflow-hidden">
               <div
-                className={`h-full rounded-full bg-gradient-to-r ${xpInfo.color} transition-all duration-700`}
+                className="h-full rounded-full bg-lantern-primary transition-all duration-700"
                 style={{ width: `${xpInfo.progressPercent}%` }}
               />
             </div>
           </div>
 
-          {/* ═══════════════ QUICK ACTIONS ═══════════════ */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
-            <button
-              onClick={onNavigateToChat}
-              className="group flex flex-col items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <div className="w-10 h-10 rounded-full bg-blue-400/30 flex items-center justify-center group-hover:bg-blue-400/50 transition-colors">
-                <PlayIcon className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-white">Start Test</span>
-            </button>
-            <button
-              onClick={onNavigateToFlashcards}
-              className="group flex flex-col items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] relative"
-            >
-              <div className="w-10 h-10 rounded-full bg-emerald-400/30 flex items-center justify-center group-hover:bg-emerald-400/50 transition-colors">
-                <RectangleStackIcon className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-white">Flashcards</span>
+          {/* Quick Actions */}
+          <div className={`grid gap-3 mt-5 ${onNavigateToNotes || onOpenImportAndStudy ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+            {onOpenImportAndStudy && (
+              <Button variant="secondary" className="flex-col h-auto py-4" onClick={onOpenImportAndStudy}>
+                <SparklesIcon className="w-5 h-5 text-amber-600" />
+                <span>Import & Study</span>
+              </Button>
+            )}
+            {onNavigateToNotes && (
+              <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToNotes}>
+                <DocumentTextIcon className="w-5 h-5 text-indigo-600" />
+                <span>Notes</span>
+              </Button>
+            )}
+            <Button variant="secondary" className="flex-col h-auto py-4 relative" onClick={onNavigateToFlashcards}>
+              <RectangleStackIcon className="w-5 h-5 text-emerald-600" />
+              <span>Flashcards</span>
               {dueCardsCount > 0 && (
                 <span className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {dueCardsCount > 99 ? '99+' : dueCardsCount}
                 </span>
               )}
-            </button>
-            <button
-              onClick={onNavigateToMarketplace}
-              className="group flex flex-col items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <div className="w-10 h-10 rounded-full bg-purple-400/30 flex items-center justify-center group-hover:bg-purple-400/50 transition-colors">
-                <ShoppingBagIcon className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-white">Marketplace</span>
-            </button>
-            <button
-              onClick={onNavigateToCreateGroup}
-              className="group flex flex-col items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <div className="w-10 h-10 rounded-full bg-amber-400/30 flex items-center justify-center group-hover:bg-amber-400/50 transition-colors">
-                <PlusCircleIcon className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-white">New Group</span>
-            </button>
+            </Button>
+            <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToMarketplace}>
+              <ShoppingBagIcon className="w-5 h-5 text-purple-600" />
+              <span>Marketplace</span>
+            </Button>
+            <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToCreateGroup}>
+              <PlusCircleIcon className="w-5 h-5 text-lantern-primary" />
+              <span>New Group</span>
+            </Button>
           </div>
-
-          {/* ═══════════════ QUICK TEST / QUICK STUDY ═══════════════ */}
-          {(onOpenQuickTest || onOpenQuickStudy) && (
-            <div className="flex gap-3 mt-4">
-              {onOpenQuickTest && (
-                <button
-                  onClick={onOpenQuickTest}
-                  className="flex-1 flex items-center justify-center gap-2 bg-white/15 hover:bg-white/25 backdrop-blur-sm rounded-xl px-4 py-3 transition-all duration-200 hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <BoltIcon className="w-5 h-5 text-yellow-300" />
-                  <span className="text-sm font-semibold text-white">Quick Test</span>
-                </button>
-              )}
-              {onOpenQuickStudy && (
-                <button
-                  onClick={onOpenQuickStudy}
-                  className="flex-1 flex items-center justify-center gap-2 bg-white/15 hover:bg-white/25 backdrop-blur-sm rounded-xl px-4 py-3 transition-all duration-200 hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <AcademicCapOutline className="w-5 h-5 text-emerald-300" />
-                  <span className="text-sm font-semibold text-white">Quick Study</span>
-                </button>
-              )}
-            </div>
-          )}
+          </Card>
         </div>
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="flex-1 px-4 md:px-8 py-6 max-w-6xl mx-auto w-full space-y-6">
+
+        {dailyQuests.length > 0 && (
+          <DailyQuestsWidget
+            quests={dailyQuests.map((q) => ({
+              id: q.id,
+              questType: (q as any).questType ?? (q as any).quest_type,
+              targetCount: (q as any).targetCount ?? (q as any).target_count,
+              progressCount: (q as any).progressCount ?? (q as any).progress_count,
+              completed: q.completed,
+              rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
+            }))}
+            streak={serverStreak || streakData.currentStreak}
+            streakFreezes={streakFreezes}
+            onPurchaseStreakFreeze={onPurchaseStreakFreeze}
+            theme={theme}
+          />
+        )}
 
         {/* ─── Stat Cards Row ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -848,6 +871,41 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
           </div>
         </div>
 
+        {(activeTestSession || activeStudySession) && onResumeSession && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-amber-800 dark:text-amber-300">
+                {activeTestSession ? 'Test in progress' : 'Study session in progress'}
+              </p>
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Pick up where you left off — your answers are saved.
+              </p>
+            </div>
+            <Button onClick={onResumeSession}>
+              <PlayIcon className="w-4 h-4 mr-1" />
+              Resume
+            </Button>
+          </div>
+        )}
+
+        {onStartDailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && onStudyGoalChange && (
+          <DailyQuizWidget
+            theme={theme}
+            studyGoal={studyGoal}
+            dailyQuiz={dailyQuiz}
+            progress={dailyQuizProgress}
+            onStudyGoalChange={onStudyGoalChange}
+            onStartQuiz={onStartDailyQuiz}
+            onAnswer={onDailyQuizAnswer}
+            onComplete={onCompleteDailyQuiz}
+          />
+        )}
+
+        <DailyGoalsProgress
+          study={normalizeUserSettings(currentUser.settings).study}
+          activityDays={studyActivityDays}
+        />
+
         {/* ─── Today's Summary ─── */}
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center mb-4">
@@ -881,7 +939,14 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
 
         {/* ─── AI Study Coach ─── */}
         {onGetStudyRecommendations && (
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5">
+          <Card padding="md">
+            {lowDataMode ? (
+              <p className="text-sm text-lantern-text-secondary flex items-center gap-2">
+                <SparklesIcon className="w-5 h-5 text-lantern-primary shrink-0" />
+                {syncCopy.lowDataAiHint}
+              </p>
+            ) : (
+          <>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                 <SparklesIcon className="w-5 h-5 mr-2 text-purple-500" />
@@ -938,7 +1003,9 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
                 Click "Get Recommendations" to receive personalized study tips based on your performance.
               </p>
             )}
-          </div>
+          </>
+            )}
+          </Card>
         )}
 
         {/* ─── Activity Heatmap & Filter ─── */}
@@ -1207,18 +1274,19 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
           </button>
           {isRecentTestsExpanded && (
             <div className="border-t border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/50">
-              {recentTests.length > 0 ? recentTests.map(result => {
+              {recentTests.length > 0 ? recentTests.map((result, index) => {
                 let testTimeSpentSeconds = 0;
                 const answersWithTime = Object.values(result.session.userAnswers).filter((ans: UserAnswerRecord) => ans.timeSpentSeconds !== undefined);
                 if (answersWithTime.length > 0) {
                   testTimeSpentSeconds = answersWithTime.reduce((sum: number, answer: UserAnswerRecord) => sum + (answer.timeSpentSeconds || 0), 0);
                 }
                 const avgTime = answersWithTime.length > 0 ? (testTimeSpentSeconds / answersWithTime.length).toFixed(1) : null;
-                
+                const recentTestKey = result.id ?? `${result.session.startTime}-${result.session.config.groupId ?? 'group'}-${result.totalQuestions}-${index}`;
+
                 return (
-                  <div key={result.session.startTime.toISOString()} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                  <div key={recentTestKey} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
                     <div className="min-w-0">
-                      <p className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">{getGroupName(result.session.config.groupId)}</p>
+                      <p className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">{getGroupName(result.session.config.groupId, result.session.config.groupName)}</p>
                       <p className="text-xs text-slate-400 mt-0.5">{new Date(result.session.startTime).toLocaleString()}</p>
                     </div>
                     <div className="flex items-center gap-4 flex-shrink-0">
@@ -1293,6 +1361,78 @@ export default function DashboardScreen({ testResults: rawTestResults, groups, c
           </details>
         )}
       </div>
+
+      {/* ═══════════════ GROUP PICKER MODAL ═══════════════ */}
+      {quickActionPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setQuickActionPicker(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2">
+                {quickActionPicker === 'test'
+                  ? <BoltIcon className="w-5 h-5 text-yellow-500" />
+                  : <AcademicCapOutline className="w-5 h-5 text-emerald-500" />
+                }
+                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                  Select a group for Quick {quickActionPicker === 'test' ? 'Test' : 'Study'}
+                </h2>
+              </div>
+              <button
+                onClick={() => setQuickActionPicker(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              </button>
+            </div>
+
+            {/* Group list */}
+            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+              {availableGroups.length === 0 ? (
+                <p className="text-center text-sm text-slate-400 dark:text-slate-500 py-8">
+                  No groups available. Join or create a group first.
+                </p>
+              ) : (
+                availableGroups.map(group => (
+                  <button
+                    key={group.id}
+                    onClick={() => handleQuickActionGroupSelect(group.id)}
+                    className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors"
+                  >
+                    {group.avatarUrl ? (
+                      <img
+                        src={group.avatarUrl}
+                        alt={group.name}
+                        className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
+                        <UsersIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{group.name}</p>
+                      {group.members && group.members.length > 0 && (
+                        <p className="text-xs text-slate-400 dark:text-slate-500">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
+                      )}
+                    </div>
+                    {quickActionPicker === 'test'
+                      ? <BoltIcon className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                      : <AcademicCapOutline className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    }
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,16 +1,28 @@
 import { useState, useCallback } from 'react';
-import { AppMode, Deck, Flashcard, FlashcardType } from '../types';
+import { AppMode, Deck, Flashcard, FlashcardType, TestResult } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useUIStore } from '../stores/uiStore';
 import { shuffleArray } from '../utils/helpers';
-import { calculateSrsData } from '../srs';
+import { calculateFsrsData } from '@lantern/shared/utils';
+import {
+  buildFlashcardReviewQueue,
+  getTodayStudyCounts,
+  getSrsMaxInterval,
+  isNewFlashcard,
+} from '@lantern/shared/settings';
+import { normalizeUserSettings } from '@lantern/shared/settings';
+import { trackQuestProgress } from '../services/questProgress';
+import { trackStudyActivity } from '../services/studyActivity';
+import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
     createFlashcard, fetchFlashcards, updateFlashcard, deleteFlashcard,
-    resetDeckStatistics, exportDeck, importDeck, fetchDecks
+    resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks
 } from '../services/supabase';
 import { aiGenerateFlashcards } from '../services/ai';
+import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
+import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 
 export function useFlashcardHandlers() {
     const { currentUser } = useAuthStore();
@@ -154,7 +166,8 @@ export function useFlashcardHandlers() {
                     imageUrl: data.imageUrl,
                     occlusionData: data.occlusionData,
                     srsData: data.srsData,
-                    tags: data.tags
+                    tags: data.tags,
+                    userId: currentUser.id,
                 });
                 const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
                 setFlashcards(fetchedFlashcards.map((fc: any) => ({
@@ -191,13 +204,14 @@ export function useFlashcardHandlers() {
 
     const handleGenerateFlashcards = useCallback(async (deckId: string, notes: string, count: number) => {
         if (!currentUser) return;
+        const cardCount = normalizeFlashcardCount(count);
         setIsGeneratingFlashcards(true);
         try {
             let cardsToCreate: { front: string; back: string }[] = [];
 
             // ── Try AI generation first ────────────────────────────────
             try {
-                const { flashcards: aiCards } = await aiGenerateFlashcards(notes, { count });
+                const { flashcards: aiCards } = await aiGenerateFlashcards(notes, { count: cardCount });
                 cardsToCreate = aiCards.map(c => ({ front: c.front, back: c.back }));
             } catch {
                 // AI unavailable → fall back to regex parsing
@@ -213,7 +227,7 @@ export function useFlashcardHandlers() {
                 const generatedCards: { front: string; back: string }[] = [];
 
                 for (const line of lines) {
-                    if (generatedCards.length >= count) break;
+                    if (generatedCards.length >= cardCount) break;
 
                     const qaMatch = line.match(/^(?:Q:\s*|Question:\s*)(.+?)\s*(?:A:\s*|Answer:\s*)(.+)$/i);
                     const colonMatch = !qaMatch && line.match(/^([^:]+):\s+(.+)$/);
@@ -247,12 +261,12 @@ export function useFlashcardHandlers() {
                 if (generatedCards.length === 0) {
                     const sentences = notes.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
                     for (const sentence of sentences) {
-                        if (generatedCards.length >= count) break;
+                        if (generatedCards.length >= cardCount) break;
                         generatedCards.push({ front: `Define/explain: ${sentence.substring(0, 60)}`, back: sentence });
                     }
                 }
 
-                cardsToCreate = generatedCards.slice(0, count);
+                cardsToCreate = generatedCards.slice(0, cardCount);
             }
             
             if (cardsToCreate.length === 0) {
@@ -266,6 +280,7 @@ export function useFlashcardHandlers() {
                     type: FlashcardType.BASIC,
                     front: card.front,
                     back: card.back,
+                    userId: currentUser.id,
                 });
             }
 
@@ -293,17 +308,106 @@ export function useFlashcardHandlers() {
         }
     }, [currentUser, setFlashcards]);
 
+    const handleGenerateFlashcardsFromTestResult = useCallback(
+        async (results: TestResult, weakTopics: string[]): Promise<boolean> => {
+            if (!currentUser) return false;
+            setIsGeneratingFlashcards(true);
+            try {
+                const sourceContent = buildFlashcardSourceFromTestResult(results, weakTopics);
+                if (sourceContent.trim().length < 50) {
+                    alert('Not enough test data to generate flashcards. Try a test with tagged questions or missed answers.');
+                    return false;
+                }
+
+                const missedCount = results.totalQuestions - results.correctAnswersCount;
+                const cardCount = normalizeFlashcardCount(
+                    Math.max(10, weakTopics.length * 4 || missedCount || 10)
+                );
+
+                const { flashcards: generated } = await aiGenerateFlashcards(sourceContent, {
+                    count: cardCount,
+                    style: 'concise',
+                });
+                if (!generated?.length) {
+                    alert('Could not generate flashcards. Please try again.');
+                    return false;
+                }
+
+                const deckLabel = weakTopics.length
+                    ? weakTopics.slice(0, 2).join(', ')
+                    : 'Missed Questions';
+                const deckName = `Weak Areas: ${deckLabel}`.slice(0, 80);
+
+                const newDeck = await createDeck(
+                    {
+                        name: deckName,
+                        description: `Auto-generated from test review (${Math.round(results.score)}% score)`,
+                    },
+                    currentUser.id
+                );
+                updateDecks((prev) => [...prev, newDeck]);
+
+                for (const card of generated) {
+                    await createFlashcard({
+                        deckId: newDeck.id,
+                        type: FlashcardType.BASIC,
+                        front: card.front,
+                        back: card.back,
+                        userId: currentUser.id,
+                    });
+                }
+
+                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+                setFlashcards(
+                    fetchedFlashcards.map((fc: any) => ({
+                        id: fc.id,
+                        deckId: fc.deck_id,
+                        type: fc.type,
+                        front: fc.front,
+                        back: fc.back,
+                        clozeText: fc.cloze_text,
+                        imageUrl: fc.image_url,
+                        occlusionData: fc.occlusion_data,
+                        srsData: fc.srs_data,
+                        tags: fc.tags,
+                        createdAt: fc.created_at,
+                    }))
+                );
+
+                setSelectedDeck(newDeck);
+                setAppMode(AppMode.DECK_DETAIL);
+                alert(`Created "${deckName}" with ${generated.length} flashcards.`);
+                return true;
+            } catch (error) {
+                console.error('Error generating flashcards from test:', error);
+                alert('Failed to generate flashcards from test analysis. Please try again.');
+                return false;
+            } finally {
+                setIsGeneratingFlashcards(false);
+            }
+        },
+        [currentUser, updateDecks, setFlashcards, setSelectedDeck, setAppMode]
+    );
+
     const handleStartReview = useCallback((deck: Deck) => {
         if (!currentUser) return;
-        const today = new Date().toISOString().split('T')[0];
+        const settings = normalizeUserSettings(currentUser.settings);
         const cardsInDeck = flashcards.filter(fc => fc.deckId === deck.id);
-        
-        const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions);
-        const dueCards = cardsInDeck.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today);
-        
-        const cardQueue = [...dueCards, ...newCards];
+        const today = getTodayStudyCounts(useTestStore.getState().studyActivityDays);
+
+        const cardQueue = buildFlashcardReviewQueue(cardsInDeck, {
+            srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
+            dailyCardGoal: settings.study.dailyCardGoal,
+            cardsReviewedToday: today.flashcards,
+            newCardsIntroducedToday: today.newFlashcards,
+        });
+
         if (cardQueue.length === 0) {
-            alert("No new or due cards in this deck to review right now.");
+            if (today.flashcards >= settings.study.dailyCardGoal && settings.study.dailyCardGoal > 0) {
+                alert("You've reached your daily card goal. Great work!");
+            } else {
+                alert("No new or due cards in this deck to review right now.");
+            }
             return;
         }
         setActiveReviewSession({ deck, cardQueue });
@@ -355,11 +459,20 @@ export function useFlashcardHandlers() {
         if (cardIndex === -1) return;
         
         const card = flashcards[cardIndex];
-        const newSrsData = calculateSrsData(card.srsData, performanceRating);
+        const settings = normalizeUserSettings(currentUser.settings);
+        const wasNew = isNewFlashcard(card);
+        const newSrsData = calculateFsrsData(card.srsData, performanceRating, {
+            maxInterval: getSrsMaxInterval(settings.study),
+        });
         
         try {
             await updateFlashcard(cardId, { srsData: newSrsData });
             updateFlashcards(prev => prev.map(fc => fc.id === cardId ? { ...fc, srsData: newSrsData } : fc));
+            trackQuestProgress('review_cards');
+            trackStudyActivity('flashcard', 1);
+            if (wasNew) {
+                trackStudyActivity('flashcard_new', 1);
+            }
         } catch (error) {
             console.error('Error updating SRS data:', error);
             alert('Failed to update SRS data. Please try again.');
@@ -392,6 +505,20 @@ export function useFlashcardHandlers() {
             return 0;
         }
     }, [currentUser, updateFlashcards]);
+
+    const handleStartLearn = useCallback((deck: Deck) => {
+        setSelectedDeck(deck);
+        setAppMode(AppMode.FLASHCARD_LEARN);
+    }, [setSelectedDeck, setAppMode]);
+
+    const handleStartMatch = useCallback((deck: Deck) => {
+        setSelectedDeck(deck);
+        setAppMode(AppMode.FLASHCARD_MATCH);
+    }, [setSelectedDeck, setAppMode]);
+
+    const handleEndStudyMode = useCallback(() => {
+        setAppMode(AppMode.DECK_DETAIL);
+    }, [setAppMode]);
 
     const handleResetDeckStatistics = useCallback(async (deckId: string) => {
         if (!currentUser) return;
@@ -426,95 +553,116 @@ export function useFlashcardHandlers() {
         }
     }, [currentUser, updateFlashcards]);
 
-    const handleExportDeck = useCallback(async (deckId: string) => {
+    const handleExportDeck = useCallback(async (deckId: string, format: 'json' | 'csv' = 'json') => {
         if (!currentUser) return;
         try {
-            const exportData = await exportDeck(deckId);
-            const dataStr = JSON.stringify(exportData, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${exportData.deck.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            
+            if (format === 'csv') {
+                const csv = await exportDeckCsv(deckId);
+                const deck = decks.find(d => d.id === deckId);
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${(deck?.name || 'deck').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } else {
+                const exportData = await exportDeck(deckId);
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${exportData.deck.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
             alert('Deck exported successfully!');
         } catch (error) {
             console.error('Error exporting deck:', error);
             alert('Failed to export deck. Please try again.');
         }
-    }, [currentUser]);
+    }, [currentUser, decks]);
+
+    const mergeImportedDeck = useCallback(async (importResult: any) => {
+        const newDeck = importResult.deck || importResult;
+        const insertedCards = importResult.flashcards || [];
+        const fetchedDecks = await fetchDecks(currentUser!.id, { includeShared: true });
+        setDecks(fetchedDecks.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            description: d.description,
+            createdAt: d.created_at || d.createdAt,
+            userId: d.user_id || d.userId,
+            isShared: d.is_shared || d.isShared,
+        })));
+        if (insertedCards.length > 0) {
+            updateFlashcards(prev => [
+                ...prev,
+                ...insertedCards.map((fc: any) => ({
+                    id: fc.id,
+                    deckId: fc.deck_id,
+                    type: fc.type,
+                    front: fc.front,
+                    back: fc.back,
+                    clozeText: fc.cloze_text,
+                    imageUrl: fc.image_url,
+                    occlusionData: fc.occlusion_data,
+                    srsData: fc.srs_data,
+                    tags: fc.tags,
+                    createdAt: fc.created_at
+                }))
+            ]);
+        }
+        const fetchedFlashcardsResult = await fetchFlashcards(undefined, currentUser!.id);
+        setFlashcards(fetchedFlashcardsResult.map((fc: any) => ({
+            id: fc.id,
+            deckId: fc.deck_id,
+            type: fc.type,
+            front: fc.front,
+            back: fc.back,
+            clozeText: fc.cloze_text,
+            imageUrl: fc.image_url,
+            occlusionData: fc.occlusion_data,
+            srsData: fc.srs_data,
+            tags: fc.tags,
+            createdAt: fc.created_at
+        })));
+        alert(`Deck "${newDeck?.name || 'Unknown'}" imported successfully with ${insertedCards.length} cards!`);
+    }, [currentUser, setDecks, setFlashcards, updateFlashcards]);
 
     const handleImportDeck = useCallback(async (file: File) => {
         if (!currentUser) return;
         try {
-            const fileContent = await file.text();
-            const importData = JSON.parse(fileContent);
-            
-            const importResult: any = await importDeck(importData, currentUser.id);
-            // importResult now contains { deck, flashcards }
-            const newDeck = importResult.deck || importResult; // fall back for older clients
-            const insertedCards = importResult.flashcards || [];
-            
-            // refresh deck list (cache should already have been invalidated server-side)
-            const fetchedDecks = await fetchDecks(currentUser.id, { includeShared: true });
-            setDecks(fetchedDecks.map((d: any) => ({
-                id: d.id,
-                name: d.name,
-                description: d.description,
-                createdAt: d.created_at || d.createdAt,
-                userId: d.user_id || d.userId,
-                isShared: d.is_shared || d.isShared,
-            })));
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
+            let importResult: any;
 
-            // optimistically merge imported cards into state to avoid a momentary
-            // gap if the fetch below returns stale data
-            if (insertedCards.length > 0) {
-                // Use the updater version to avoid accidentally setting flashcards to a non-array value
-                updateFlashcards(prev => [
-                    ...prev,
-                    ...insertedCards.map((fc: any) => ({
-                        id: fc.id,
-                        deckId: fc.deck_id,
-                        type: fc.type,
-                        front: fc.front,
-                        back: fc.back,
-                        clozeText: fc.cloze_text,
-                        imageUrl: fc.image_url,
-                        occlusionData: fc.occlusion_data,
-                        srsData: fc.srs_data,
-                        tags: fc.tags,
-                        createdAt: fc.created_at
-                    }))
-                ]);
+            if (ext === 'csv') {
+                const csv = await file.text();
+                importResult = await importDeckCsv(csv, currentUser.id, file.name.replace(/\.csv$/i, ''));
+            } else if (ext === 'apkg') {
+                const buffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                const apkgBase64 = btoa(binary);
+                importResult = await importDeckApkg(apkgBase64, currentUser.id);
+            } else {
+                const fileContent = await file.text();
+                const importData = JSON.parse(fileContent);
+                importResult = await importDeck(importData, currentUser.id);
             }
 
-            // re‑fetch to ensure full consistency (clears any stale cache)
-            const fetchedFlashcardsResult = await fetchFlashcards(undefined, currentUser.id);
-            setFlashcards(fetchedFlashcardsResult.map((fc: any) => ({
-                id: fc.id,
-                deckId: fc.deck_id,
-                type: fc.type,
-                front: fc.front,
-                back: fc.back,
-                clozeText: fc.cloze_text,
-                imageUrl: fc.image_url,
-                occlusionData: fc.occlusion_data,
-                srsData: fc.srs_data,
-                tags: fc.tags,
-                createdAt: fc.created_at
-            })));
-            
-            alert(`Deck "${newDeck?.name || 'Unknown'}" imported successfully with ${insertedCards.length} cards!`);
+            await mergeImportedDeck(importResult);
         } catch (error) {
             console.error('Error importing deck:', error);
             alert('Failed to import deck. Please check the file format and try again.');
         }
-    }, [currentUser, setDecks, setFlashcards]);
+    }, [currentUser, mergeImportedDeck]);
 
     return {
         isGeneratingFlashcards,
@@ -528,6 +676,7 @@ export function useFlashcardHandlers() {
         handleCreateOrUpdateFlashcard,
         handleDeleteFlashcard,
         handleGenerateFlashcards,
+        handleGenerateFlashcardsFromTestResult,
         handleStartReview,
         handleStartCram,
         handleCramAnswer,
@@ -537,6 +686,9 @@ export function useFlashcardHandlers() {
         handleResetDeckStatistics,
         handleExportDeck,
         handleImportDeck,
+        handleStartMatch,
+        handleStartLearn,
+        handleEndStudyMode,
         handleLoadMoreFlashcards,
     };
 }

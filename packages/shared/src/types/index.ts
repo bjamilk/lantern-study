@@ -1,45 +1,95 @@
 // ===========================================
-// Lantern Study - Shared Types
+// Lantern Study - Shared Types (canonical)
 // ===========================================
-// This file is shared between web and mobile apps
 
 export enum FlashcardType {
-    BASIC = 'BASIC',
-    CLOZE = 'CLOZE',
-    IMAGE_OCCLUSION = 'IMAGE_OCCLUSION',
+  BASIC = 'BASIC',
+  CLOZE = 'CLOZE',
+  IMAGE_OCCLUSION = 'IMAGE_OCCLUSION',
+}
+
+export interface OcclusionData {
+  type: 'rectangles' | 'circles' | 'freeform' | 'blur';
+  rectangles?: { x: number; y: number; width: number; height: number }[];
+  circles?: { x: number; y: number; radius: number }[];
+  freeform?: { points: { x: number; y: number }[] };
+  /** Multiple freeform masks (preferred). Legacy cards may only have `freeform`. */
+  freeforms?: { points: { x: number; y: number }[] }[];
+  blur?: { x: number; y: number; width: number; height: number; radius: number; opacity: number }[];
 }
 
 export interface SrsData {
-    interval: number; // in days
-    easeFactor: number;
-    repetitions: number;
-    nextReviewDate: string; // ISO Date string
-    failedAttempts?: number; // Count of "again" ratings
-    isLeech?: boolean; // True if card is difficult (high failed attempts)
+  interval: number;
+  easeFactor: number;
+  repetitions: number;
+  nextReviewDate: string;
+  failedAttempts?: number;
+  isLeech?: boolean;
+  /** FSRS scheduler fields (optional — SM-2 cards omit these) */
+  scheduler?: 'sm2' | 'fsrs';
+  difficulty?: number;
+  stability?: number;
 }
 
 export interface Flashcard {
-    id: string;
-    deckId: string;
-    type: FlashcardType;
-    front?: string; // for Basic
-    back?: string; // for Basic
-    clozeText?: string; // for Cloze, e.g., "The capital of France is {{c1::Paris}}."
-    imageUrl?: string;
-    occlusionData?: any;
-    srsData?: SrsData;
-    tags?: string[];
-    createdAt: string; // ISO Date string
+  id: string;
+  deckId: string;
+  type: FlashcardType;
+  front?: string;
+  back?: string;
+  clozeText?: string;
+  imageUrl?: string;
+  occlusionData?: OcclusionData;
+  srsData?: SrsData;
+  tags?: string[];
+  createdAt: string;
 }
 
 export interface Deck {
-    id: string;
-    name: string;
-    description?: string;
-    createdAt: string; // ISO Date string
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  userId?: string;
+  createdBy?: string;
+  approvedBy?: string;
+  isShared?: boolean;
 }
 
-export type BadgeId = 'GROUP_FOUNDER' | 'QUESTION_ASKER' | 'RISING_STAR' | 'TEST_TAKER' | 'HIGH_SCORER' | 'PERFECTIONIST' | 'DUELIST';
+export interface FlashcardSession {
+  deck: Deck;
+  cardQueue: Flashcard[];
+  timerSeconds?: number;
+  endTime?: string;
+}
+
+export interface FlashcardComment {
+  id: string;
+  flashcardId: string;
+  userId: string;
+  comment: string;
+  createdAt: string;
+  resolved?: boolean;
+}
+
+export interface DeckCollaborator {
+  userId: string;
+  role: 'viewer' | 'editor' | 'owner';
+  addedAt: string;
+  profile?: { id: string; name: string; avatarUrl?: string };
+}
+
+export type BadgeId =
+  | 'GROUP_FOUNDER'
+  | 'QUESTION_ASKER'
+  | 'RISING_STAR'
+  | 'TEST_TAKER'
+  | 'HIGH_SCORER'
+  | 'PERFECTIONIST'
+  | 'DUELIST'
+  | 'MARKETPLACE_SELLER'
+  | 'TRUSTED_SELLER'
+  | 'OFFER_MAKER';
 
 export interface Badge {
   id: BadgeId;
@@ -57,28 +107,26 @@ export interface UserStats {
   highScoreTests: number;
   perfectScoreTests: number;
   gamesWon: number;
+  listingsCreated: number;
+  listingsSold: number;
+  fiveStarReviews: number;
+  offersMade: number;
 }
 
-export interface NotificationSettings {
-  dailyReminder: boolean;
-  groupActivity: boolean;
-  marketplaceUpdates: boolean;
-  badgeUnlocks: boolean;
-  srsReminders: boolean;
-  lastReminderTimestamp?: number;
-  theme?: 'light' | 'dark';
-}
+export type { UserSettings, NotificationSettings } from '../settings/userSettings';
+import type { UserSettings } from '../settings/userSettings';
 
 export interface TestPreset {
-    id: string;
-    name: string;
-    config: Omit<TestConfig, 'questionIds' | 'groupId'>;
+  id: string;
+  name: string;
+  config: Omit<TestConfig, 'questionIds' | 'groupId'>;
 }
 
 export interface User {
   id: string;
   name: string;
-  username?: string; // Unique username (lowercase, alphanumeric + underscore, 3-20 chars)
+  username?: string;
+  isAdmin?: boolean;
   firstName?: string;
   lastName?: string;
   avatarUrl?: string;
@@ -88,7 +136,7 @@ export interface User {
   points: number;
   badges: Badge[];
   stats: UserStats;
-  settings?: NotificationSettings;
+  settings?: UserSettings;
   testPresets?: TestPreset[];
   decks?: Deck[];
   flashcards?: Flashcard[];
@@ -111,7 +159,7 @@ export interface Group {
   lastMessageTime?: string;
   unreadCount?: number;
   memberEmails?: string[];
-  adminIds: string[]; 
+  adminIds: string[];
   moderatorIds?: string[];
   parentId?: string;
   isArchived?: boolean;
@@ -154,9 +202,9 @@ export interface DiagramLabel {
 }
 
 export enum QuestionStatus {
-    PENDING = 'PENDING',
-    VERIFIED = 'VERIFIED',
-    REJECTED = 'REJECTED'
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
 }
 
 export interface Message {
@@ -169,8 +217,8 @@ export interface Message {
   questionStem?: string;
   explanation?: string;
   questionType?: QuestionType;
-  options?: QuestionOption[]; 
-  correctAnswerIds?: string[]; 
+  options?: QuestionOption[];
+  correctAnswerIds?: string[];
   imageUrl?: string;
   tags?: string[];
   questionStatus?: QuestionStatus;
@@ -178,12 +226,14 @@ export interface Message {
   downvotes: number;
   flaggedAsSimilarUserIds?: string[];
   isArchived?: boolean;
-  acceptableAnswers?: string[]; 
-  matchingPromptItems?: MatchingItem[]; 
-  matchingAnswerItems?: MatchingItem[]; 
-  correctMatches?: { promptItemId: string; answerItemId: string }[]; 
+  acceptableAnswers?: string[];
+  matchingPromptItems?: MatchingItem[];
+  matchingAnswerItems?: MatchingItem[];
+  correctMatches?: { promptItemId: string; answerItemId: string }[];
   diagramLabels?: DiagramLabel[];
 }
+
+export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });
 
 export enum AppMode {
   CHAT = 'CHAT',
@@ -198,6 +248,8 @@ export enum AppMode {
   FLASHCARD_REVIEW = 'FLASHCARD_REVIEW',
   DECK_DETAIL = 'DECK_DETAIL',
   FLASHCARD_CRAM = 'FLASHCARD_CRAM',
+  FLASHCARD_MATCH = 'FLASHCARD_MATCH',
+  FLASHCARD_LEARN = 'FLASHCARD_LEARN',
   CREATE_GROUP = 'CREATE_GROUP',
   BUDGET_TRACKER = 'BUDGET_TRACKER',
   MARKETPLACE = 'MARKETPLACE',
@@ -205,17 +257,101 @@ export enum AppMode {
   CREATE_MARKETPLACE_LISTING = 'CREATE_MARKETPLACE_LISTING',
   MY_LISTINGS = 'MY_LISTINGS',
   MARKETPLACE_INQUIRIES = 'MARKETPLACE_INQUIRIES',
+  MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
+  MARKETPLACE_ORDER_DETAIL = 'MARKETPLACE_ORDER_DETAIL',
+  SELLER_CUSTOMERS = 'SELLER_CUSTOMERS',
+  SELLER_PROFILE = 'SELLER_PROFILE',
+  ADMIN = 'ADMIN',
+  NOTES = 'NOTES',
+  NOTE_EDITOR = 'NOTE_EDITOR',
+}
+
+export type StudyNoteSourceType = 'typed' | 'youtube' | 'pdf' | 'audio' | 'import' | 'presentation';
+export type StudyGoalMode = 'casual' | 'retention' | 'exam_prep';
+
+export interface NoteFolder {
+  id: string;
+  userId: string;
+  groupId?: string;
+  parentId?: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudyNote {
+  id: string;
+  userId: string;
+  folderId?: string;
+  groupId?: string;
+  title: string;
+  body: string;
+  summary?: string;
+  sourceType: StudyNoteSourceType;
+  youtubeUrl?: string;
+  youtubeVideoId?: string;
+  isShared?: boolean;
+  shareToken?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoteAttachment {
+  id: string;
+  noteId: string;
+  type: 'pdf' | 'audio' | 'image' | 'youtube' | 'presentation';
+  fileUrl?: string;
+  fileName?: string;
+  extractedText?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface NoteComment {
+  id: string;
+  noteId: string;
+  userId: string;
+  comment: string;
+  createdAt: string;
+  resolved: boolean;
+}
+
+export interface NoteCollaborator {
+  noteId: string;
+  userId: string;
+  role: 'viewer' | 'editor' | 'owner';
+  addedAt: string;
+}
+
+export interface DailyQuizQuestion {
+  id: string;
+  text: string;
+  type: 'multiple_choice' | 'true_false' | 'short_answer';
+  options?: string[];
+  correctAnswer: string;
+  explanation: string;
+  topic: string;
+}
+
+export interface DailyQuizSession {
+  date: string;
+  noteId?: string;
+  questions: DailyQuizQuestion[];
+  answers: Record<string, string>;
+  completed: boolean;
 }
 
 export interface TestQuestion extends Message {
-  questionNumber: number; 
+  questionNumber: number;
 }
 
 export interface TestConfig {
-  groupId: string; 
+  groupId: string;
+  groupName?: string;
   numberOfQuestions: number;
   questionIds: string[];
-  timerDuration?: number; 
+  timerDuration?: number;
   allowedQuestionTypes: QuestionType[];
   selectedTags?: string[];
   focusOnNew?: boolean;
@@ -244,31 +380,84 @@ export interface TestSessionData {
 }
 
 export interface GameSession {
-    id: string;
-    user: User;
-    opponent: User;
-    questions: TestQuestion[];
-    userAnswers: Record<string, UserAnswerRecord>;
-    opponentAnswers: Record<string, UserAnswerRecord>;
-    userScore: number;
-    opponentScore: number;
-    userTime: number;
-    opponentTime: number;
-    isComplete: boolean;
-    winnerId?: string;
-    userStreak?: number;
-    opponentStreak?: number;
-    userStreakMax?: number;
-    opponentStreakMax?: number;
-    userCorrectAnswers?: number;
-    opponentCorrectAnswers?: number;
+  id: string;
+  user: User;
+  opponent: User;
+  questions: TestQuestion[];
+  userAnswers: Record<string, UserAnswerRecord>;
+  opponentAnswers: Record<string, UserAnswerRecord>;
+  userScore: number;
+  opponentScore: number;
+  userTime: number;
+  opponentTime: number;
+  isComplete: boolean;
+  winnerId?: string;
+  userStreak?: number;
+  opponentStreak?: number;
+  userStreakMax?: number;
+  opponentStreakMax?: number;
+  userCorrectAnswers?: number;
+  opponentCorrectAnswers?: number;
+  /** Server-backed challenge id; absent for solo practice */
+  challengeId?: string;
+  /** True when playing alone (no opponent, no win recorded) */
+  isSoloPractice?: boolean;
+  /** True after user submitted but waiting for opponent */
+  awaitingOpponent?: boolean;
+}
+
+export type ChallengeStatus =
+  | 'pending'
+  | 'accepted'
+  | 'declined'
+  | 'expired'
+  | 'completed'
+  | 'cancelled';
+
+export interface ChallengeConfig {
+  numberOfQuestions: number;
+  allowedQuestionTypes?: string[];
+  selectedTags?: string[];
+}
+
+export interface ChallengeParticipant {
+  userId: string;
+  score: number;
+  totalTime: number;
+  correctCount: number;
+  maxStreak: number;
+  answers: Record<string, UserAnswerRecord>;
+  finishedAt?: string;
+  name?: string;
+  avatarUrl?: string;
+}
+
+export interface GroupChallenge {
+  id: string;
+  groupId: string;
+  challengerId: string;
+  opponentId: string;
+  status: ChallengeStatus;
+  config: ChallengeConfig;
+  questionIds: string[];
+  questions?: TestQuestion[];
+  winnerId?: string;
+  createdAt: string;
+  expiresAt: string;
+  completedAt?: string;
+  challenger?: Pick<User, 'id' | 'name' | 'avatarUrl'>;
+  opponent?: Pick<User, 'id' | 'name' | 'avatarUrl'>;
+  participants?: ChallengeParticipant[];
+  myParticipant?: ChallengeParticipant;
+  opponentParticipant?: ChallengeParticipant;
 }
 
 export interface StudySessionData extends TestSessionData {}
 
 export interface TestResult {
+  id: string;
   session: TestSessionData;
-  score: number; 
+  score: number;
   totalQuestions: number;
   correctAnswersCount: number;
 }
@@ -291,15 +480,17 @@ export interface OfflineSessionBundle {
   questions: OfflineQuestion[];
   downloadedAt: Date;
   groupName: string;
+  displayName?: string;
 }
 
 export interface DMThread {
   id: string;
-  participantIds: [string, string];
-  participants: { [userId: string]: { name: string, avatarUrl?: string } };
+  participantIds: [string, string] | string[];
+  participants: { [userId: string]: { name: string; avatarUrl?: string } };
   lastMessage?: string;
-  lastMessageTimestamp?: Date;
+  lastMessageTimestamp?: Date | string;
   unreadCount?: number;
+  isArchived?: boolean;
 }
 
 export interface DirectMessage {
@@ -307,7 +498,7 @@ export interface DirectMessage {
   threadId: string;
   senderId: string;
   text: string;
-  timestamp: Date;
+  timestamp: Date | string;
 }
 
 export interface AppNotification {
@@ -316,12 +507,43 @@ export interface AppNotification {
   date: string;
   read: boolean;
   link?: string;
+  type?: string;
+  data?: Record<string, unknown>;
 }
 
 export enum TransactionType {
   INCOME = 'INCOME',
   EXPENSE = 'EXPENSE',
+  INVESTMENT = 'INVESTMENT',
 }
+
+export const STUDENT_EXPENSE_CATEGORIES = [
+  { id: 'food_feeding', label: 'Food & Feeding', icon: '🍔' },
+  { id: 'accommodation', label: 'Accommodation / Hostel', icon: '🏠' },
+  { id: 'transport', label: 'Transport', icon: '🚌' },
+  { id: 'data_airtime', label: 'Data & Airtime', icon: '📱' },
+  { id: 'books_materials', label: 'Books & Materials', icon: '📚' },
+  { id: 'printing_stationery', label: 'Printing & Stationery', icon: '🖨️' },
+  { id: 'clothing_fashion', label: 'Clothing & Fashion', icon: '👕' },
+  { id: 'tuition_fees', label: 'Tuition & School Fees', icon: '🎓' },
+  { id: 'bills_utilities', label: 'Bills & Utilities', icon: '💡' },
+  { id: 'laundry', label: 'Laundry & Cleaning', icon: '🧹' },
+  { id: 'social_entertainment', label: 'Social & Entertainment', icon: '🎉' },
+  { id: 'health_pharmacy', label: 'Health & Pharmacy', icon: '💊' },
+  { id: 'marketplace_purchase', label: 'Marketplace Purchase', icon: '🛒' },
+  { id: 'other', label: 'Other', icon: '📦' },
+] as const;
+
+export const STUDENT_INCOME_CATEGORIES = [
+  { id: 'allowance', label: 'Allowance (Parents/Guardian)', icon: '👨‍👩‍👧' },
+  { id: 'part_time', label: 'Part-time Job / Side Hustle', icon: '💼' },
+  { id: 'freelance', label: 'Freelance / Gig Work', icon: '💰' },
+  { id: 'scholarship', label: 'Scholarship / Bursary', icon: '📝' },
+  { id: 'marketplace_sale', label: 'Marketplace Sale', icon: '🏪' },
+  { id: 'gift', label: 'Gift', icon: '🎁' },
+  { id: 'study_rewards', label: 'Study Rewards', icon: '🏆' },
+  { id: 'other', label: 'Other', icon: '📦' },
+] as const;
 
 export interface Transaction {
   id: string;
@@ -331,40 +553,83 @@ export interface Transaction {
   category: string;
   description: string;
   date: string;
+  linkedListingId?: string;
+  splitGroupId?: string;
 }
 
 export interface Budget {
+  monthlyLimit: number;
+  monthYear: string;
+  userId?: string;
+  categoryBudgets?: Record<string, number>;
+}
+
+export interface SavingsGoal {
+  id: string;
   userId: string;
-  month: string;
+  name: string;
   targetAmount: number;
+  currentAmount: number;
+  icon: string;
+  deadline?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface ExpenseSplit {
+  id: string;
+  creatorId: string;
+  title: string;
+  totalAmount: number;
+  category: string;
+  participants: ExpenseSplitParticipant[];
+  status: 'active' | 'settled';
+  createdAt: string;
+}
+
+export interface ExpenseSplitParticipant {
+  userId: string;
+  userName: string;
+  amount: number;
+  paid: boolean;
+}
+
+export interface FinancialTip {
+  id: string;
+  title: string;
+  content: string;
+  category: 'saving' | 'budgeting' | 'investing' | 'campus';
+  icon: string;
 }
 
 export interface MarketplaceListing {
   id: string;
   user_id: string;
   seller_id?: string;
-  seller?: {
-    id: string;
-    name: string;
-    avatarUrl?: string;
-  };
-  profiles?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
+  seller?: { id: string; name: string; avatarUrl?: string };
+  profiles?: { id: string; name: string; avatar_url?: string };
   category: string;
   title: string;
   description?: string;
   price?: number;
+  sale_price?: number;
+  sale_ends_at?: string;
+  promo_label?: string;
+  effective_price?: number;
+  is_on_sale?: boolean;
   location?: string;
   images?: string[];
-  status: 'active' | 'sold' | 'inactive';
-  categorySpecificFields?: any;
-  category_specific_fields?: any;
+  status: 'active' | 'sold' | 'inactive' | 'suspended_by_admin' | 'removed_by_admin';
+  categorySpecificFields?: Record<string, unknown>;
+  category_specific_fields?: Record<string, unknown>;
   views_count?: number;
   favorites_count?: number;
   inquiries_count?: number;
+  is_boosted?: boolean;
+  search_score?: number;
+  quantity?: number | null;
+  listing_kind?: 'single' | 'bundle';
+  bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   created_at: string;
   updated_at: string;
   reviews?: MarketplaceReview[];
@@ -374,11 +639,7 @@ export interface MarketplaceReview {
   id: string;
   listing_id: string;
   reviewer_id: string;
-  reviewer?: {
-    id: string;
-    name: string;
-    avatarUrl?: string;
-  };
+  reviewer?: { id: string; name: string; avatarUrl?: string };
   rating: number;
   comment?: string;
   created_at: string;
@@ -400,10 +661,151 @@ export interface MarketplaceTransaction {
   buyer_id: string;
   seller_id: string;
   amount: number;
-  status: 'pending' | 'completed' | 'cancelled' | 'disputed';
-  escrow_status: 'held' | 'released' | 'refunded';
+  status: 'pending' | 'released' | 'refunded' | 'disputed';
   created_at: string;
+}
+
+export type MarketplaceOrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'ready_for_pickup'
+  | 'buyer_confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'disputed';
+
+export type MarketplaceOrderSource = 'buy_now' | 'offer_accept' | 'manual';
+
+export interface MarketplaceOrder {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  offer_id?: string;
+  inquiry_id?: string;
+  transaction_id?: string;
+  coupon_id?: string;
+  discount_amount?: number;
+  payment_proof_url?: string;
+  payment_proof_submitted_at?: string;
+  source: MarketplaceOrderSource;
+  status: MarketplaceOrderStatus;
+  fulfillment_mode: 'campus_meetup' | 'hall_dropoff';
+  meeting_location?: string;
+  seller_note?: string;
+  seller_confirmed_at?: string;
+  buyer_confirmed_at?: string;
   completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  listing?: MarketplaceListing;
+  buyer?: { id: string; name: string; avatar_url?: string };
+  seller?: { id: string; name: string; avatar_url?: string };
+  transaction?: MarketplaceTransaction;
+}
+
+export interface SellerAnalytics {
+  totalRevenue: number;
+  revenue30d: number;
+  avgSalePrice: number;
+  avgTimeToSellDays: number;
+  conversionRate: number;
+  offerAcceptRate: number;
+  pendingOrders: number;
+  openInquiries: number;
+  discountsGiven: number;
+  completedSalesCount: number;
+  topListings: Array<{
+    id: string;
+    title: string;
+    views: number;
+    inquiries: number;
+    offers: number;
+    sold: boolean;
+    revenue: number;
+  }>;
+  salesByWeek: Array<{ weekStart: string; revenue: number; count: number }>;
+  salesBySource?: Array<{ source: string; count: number; revenue: number }>;
+  inquiryToSaleRate?: number;
+  staleListings?: Array<{ id: string; title: string; daysListed: number; views: number }>;
+  highViewsLowEngagement?: Array<{
+    id: string;
+    title: string;
+    views: number;
+    inquiries: number;
+    offers: number;
+  }>;
+  favoriteHighlights?: Array<{ id: string; title: string; favoritesCount: number }>;
+}
+
+export interface SellerBuyerContact {
+  buyerId: string;
+  name: string;
+  avatar_url?: string;
+  lastInteractionAt: string;
+  completedPurchases: number;
+  totalSpent: number;
+  openInquiry: boolean;
+  openOrder: boolean;
+  segments?: string[];
+}
+
+export type SellerCustomerSegment =
+  | 'repeat_buyer'
+  | 'top_spender'
+  | 'open_order'
+  | 'open_inquiry'
+  | 'lead'
+  | 'customer';
+
+export interface MarketplaceCoupon {
+  id: string;
+  seller_id: string;
+  code: string;
+  discount_type: 'percent' | 'fixed';
+  discount_value: number;
+  listing_id?: string | null;
+  max_uses?: number | null;
+  uses_count: number;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CouponValidationResult {
+  code: string;
+  baseAmount: number;
+  discountAmount: number;
+  finalAmount: number;
+}
+
+export interface MarketplaceSellerPreferences {
+  seller_id: string;
+  hall_dropoff_enabled: boolean;
+  hall_dropoff_min_amount?: number | null;
+  onboarding_completed_at?: string | null;
+  boost_credits?: number;
+  require_payment_confirmation?: boolean;
+  favorite_alert_threshold?: number;
+  updated_at: string;
+}
+
+export interface SellerOnboardingStatus {
+  needsOnboarding: boolean;
+  boostCredits: number;
+  listingCount: number;
+  tips: string[];
+}
+
+export interface MarketplacePickupNudge {
+  enabled: boolean;
+  minAmount: number;
+  buyerSpentWithSeller: number;
+  remainingAmount: number;
+  message: string | null;
 }
 
 export interface MarketplaceFavorite {
@@ -425,23 +827,133 @@ export interface MarketplaceInquiry {
   created_at: string;
   updated_at: string;
   listing?: MarketplaceListing;
-  buyer?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
-  seller?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
+  buyer?: { id: string; name: string; avatar_url?: string };
+  seller?: { id: string; name: string; avatar_url?: string };
 }
 
 export interface SellerStats {
   totalListings: number;
   activeListings: number;
   soldListings: number;
+  completedOrders: number;
   totalViews: number;
   totalInquiries: number;
   totalFavorites: number;
+  totalRevenue?: number;
+  revenue30d?: number;
+  conversionRate?: number;
+  pendingOrders?: number;
+  isVerified?: boolean;
+}
+
+export type OfferStatus = 'pending' | 'accepted' | 'declined' | 'countered' | 'expired' | 'withdrawn';
+
+export interface MarketplaceOffer {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  status: OfferStatus;
+  counter_amount?: number;
+  message?: string;
+  parent_offer_id?: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+  listing?: MarketplaceListing;
+  buyer?: { id: string; name: string; avatar_url?: string };
+  seller?: { id: string; name: string; avatar_url?: string };
+}
+
+export interface SavedSearch {
+  id: string;
+  user_id: string;
+  name: string;
+  filters: {
+    category?: string;
+    search?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    location?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  };
+  notify: boolean;
+  last_checked_at: string;
+  created_at: string;
+  newMatchCount?: number;
+}
+
+export interface SellerProfile {
+  user: { id: string; name: string; avatar_url?: string; created_at: string };
+  stats: SellerStats & { avgRating: number; totalReviews: number };
+  badges: Badge[];
+  recentListings: MarketplaceListing[];
+  recentReviews: (MarketplaceReview & { listing_title?: string })[];
+}
+
+export type CompanionActionType =
+  | 'navigate_to_flashcards'
+  | 'open_test_config'
+  | 'open_create_flashcard'
+  | 'navigate_to_dashboard'
+  | 'navigate_to_chat'
+  | 'auto_generate_flashcards'
+  | 'navigate_to_notes'
+  | 'open_note_learn';
+
+export interface CompanionAction {
+  type: CompanionActionType;
+  label: string;
+  payload?: Record<string, string>;
+}
+
+export interface CompanionMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  actions?: CompanionAction[];
+  created_at: string;
+}
+
+export interface CompanionUserContext {
+  userName?: string;
+  groups?: string[];
+  weakTopics?: string[];
+  dueCardsCount?: number;
+  recentTestSummary?: string;
+  budgetSummary?: string;
+  currentScreen?: string;
+  activeSessionSummary?: string;
+  noteContext?: string;
+  noteTitle?: string;
+  studyGoal?: StudyGoalMode;
+}
+
+export interface UserPreferences {
+  theme: 'light' | 'dark';
+  lowDataMode: boolean;
+  studyGoal?: StudyGoalMode;
+}
+
+export interface AIUsageInfo {
+  used: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string;
+}
+
+export type ActivityType =
+  | 'test'
+  | 'flashcard'
+  | 'flashcard_new'
+  | 'study_question'
+  | 'game'
+  | 'daily_quiz';
+
+export interface StudyActivityDay {
+  date: string;
+  count: number;
+  breakdown?: Partial<Record<ActivityType, number>>;
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getAIResetLabel } from '@lantern/shared/utils';
 import { useAuthStore } from '../stores/authStore';
 import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
 
@@ -9,19 +10,27 @@ import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from 
  */
 const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ className = '', compact = false }) => {
   const currentUser = useAuthStore(s => s.currentUser);
+  const isAuthLoading = useAuthStore(s => s.isAuthLoading);
   const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
-  // Fetch usage on mount / user change
+  // Fetch usage after auth session is ready
   useEffect(() => {
-    if (currentUser?.id) {
-      fetchAIUsage(currentUser.id);
-    }
-  }, [currentUser?.id]);
+    if (!currentUser?.id || isAuthLoading) return;
+    fetchAIUsage(currentUser.id);
+  }, [currentUser?.id, isAuthLoading]);
 
   // Subscribe to real-time usage updates (from response headers after each AI call)
   useEffect(() => {
     return subscribeToAIUsage(setUsage);
   }, []);
+
+  // Tick countdown every minute so the label stays accurate without refetch jitter
+  useEffect(() => {
+    if (!usage.limit) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [usage.limit, usage.resetsAt]);
 
   if (!usage.limit) return null;
 
@@ -46,31 +55,32 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
     borderColor = 'border-amber-200 dark:border-amber-800';
   }
 
-  // Format reset countdown
-  let resetLabel = '';
-  if (usage.resetsAt) {
-    const resetDate = new Date(usage.resetsAt);
-    const now = new Date();
-    const diffMs = resetDate.getTime() - now.getTime();
-    if (diffMs > 0) {
-      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      resetLabel = diffHrs > 0 ? `Resets in ${diffHrs}h ${diffMins}m` : `Resets in ${diffMins}m`;
-    }
-  }
+  const resetLabel = getAIResetLabel(usage.resetsAt, {
+    used: usage.used,
+    limit: usage.limit,
+    nowMs,
+  });
 
   if (compact) {
     return (
-      <div className={`flex items-center gap-2 ${className}`} title={`AI Requests: ${remaining}/${usage.limit} remaining${resetLabel ? ` · ${resetLabel}` : ''}`}>
-        <svg className={`w-3.5 h-3.5 ${textColor} flex-shrink-0`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
-        </svg>
-        <div className="flex-1 min-w-0">
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-            <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
+      <div
+        className={`${bgColor} ${borderColor} border rounded-lg px-1.5 py-1.5 shadow-lg w-full max-w-full ${className}`}
+        title={`AI Requests: ${remaining}/${usage.limit} remaining · ${resetLabel}`}
+      >
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <svg className={`w-3 h-3 ${textColor} flex-shrink-0`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <span className={`text-[10px] font-bold ${textColor} flex-shrink-0`}>{remaining}</span>
           </div>
+          <p className="text-[9px] leading-tight text-gray-500 dark:text-gray-400 break-words">{resetLabel}</p>
         </div>
-        <span className={`text-[10px] font-bold ${textColor} whitespace-nowrap`}>{remaining}</span>
       </div>
     );
   }
@@ -89,7 +99,7 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
         <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
-      {resetLabel && <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{resetLabel}</p>}
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{resetLabel}</p>
       {remaining === 0 && <p className="text-[10px] text-red-600 dark:text-red-400 mt-1 font-medium">Daily limit reached</p>}
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SparklesIcon, XCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
+import { AIDisclaimer } from './AIDisclaimer';
 
 interface AIGenerateQuestionsModalProps {
   isOpen: boolean;
@@ -80,9 +81,10 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
             <XCircleIcon className="w-6 h-6" />
           </button>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
           Paste your notes below, and AI will generate practice questions that get posted to the group chat.
         </p>
+        <AIDisclaimer className="mb-4" />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Notes textarea */}

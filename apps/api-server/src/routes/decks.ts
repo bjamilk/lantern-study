@@ -1,350 +1,337 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination, validateUserId } from '../middleware/validation';
+import { handleValidationErrors, validatePagination } from '../middleware/validation';
+import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 
 const router = Router();
+const DEFAULT_DECK_PAGE_SIZE = 20;
+const MAX_DECK_PAGE_SIZE = 50;
+const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
+  profile === 'compact' ? 'compact' : 'full';
 
-// Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
 let cacheService: CacheService;
 
-// Initialize function to be called from main server
 export const initializeDeckRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  console.log('Initializing deck routes...');
   supabaseService = supabase;
   cacheService = cache;
-  console.log('Deck routes initialized');
 };
 
-// GET /api/v1/decks - Get user's decks (optionally include shared decks)
 router.get(
   '/',
-  // authMiddleware,
-  // validatePagination,
+  authMiddleware,
+  validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { page = 1, limit = 20, userId, includeShared } = req.query;
-    const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
+    const { page = 1, limit, includeShared, responseProfile } = req.query;
+    const parsedPage = Math.max(1, parseInt(page as string, 10) || 1);
+    const requestedLimit = parseInt((limit as string) || `${DEFAULT_DECK_PAGE_SIZE}`, 10);
+    const parsedLimit = Math.min(MAX_DECK_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_DECK_PAGE_SIZE));
+    const profile = resolveResponseProfile(responseProfile);
     const includeSharedFlag = includeShared === 'true';
-    logger.debug('Fetching decks', { page, limit, userId: userId || authUserId, includeShared: includeSharedFlag });
 
-    const finalUserId = userId as string || authUserId || '00000000-0000-0000-0000-000000000000'; // Default test user ID
+    logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile });
 
-    const cacheKey = `decks:${finalUserId}:includeShared:${includeSharedFlag}:${page}:${limit}`;
+    const cacheKey = `decks:${userId}:includeShared:${includeSharedFlag}:${parsedPage}:${parsedLimit}:profile:${profile}`;
     let decks = await cacheService.get(cacheKey) as any[];
 
     if (!decks) {
-      decks = await supabaseService.getDecks(finalUserId, includeSharedFlag);
-
-      // Cache for 5 minutes
+      decks = await supabaseService.getDecks(userId, includeSharedFlag, {
+        page: parsedPage,
+        limit: parsedLimit,
+        responseProfile: profile,
+      });
       await cacheService.set(cacheKey, decks, 300);
     }
 
     res.json({
       success: true,
       data: decks,
-      pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-        total: decks.length,
-      },
+      pagination: { page: parsedPage, limit: parsedLimit, total: decks.length },
+      responseProfile: profile,
     });
   })
 );
 
-// GET /api/v1/decks/:deckId - Get deck by ID
 router.get(
   '/:deckId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
-
-    logger.debug('Fetching deck', { deckId, userId: userId || authUserId });
-
-    const finalUserId = userId as string || authUserId;
-
-    const cacheKey = `deck:${deckId}`;
-    let deck = await cacheService.get(cacheKey);
+    const deck = await supabaseService.getDeckForUser(deckId, userId);
 
     if (!deck) {
-      deck = await supabaseService.getDeck(deckId);
-
-      if (!deck) {
-        return res.status(404).json({
-          success: false,
-          error: 'Deck not found or access denied',
-        });
-      }
-
-      // Cache for 10 minutes
-      await cacheService.set(cacheKey, deck, 600);
+      return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
     }
 
-    res.json({
-      success: true,
-      data: deck,
-    });
+    res.json({ success: true, data: deck });
   })
 );
 
-// POST /api/v1/decks - Create new deck
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-const { name, description, userId, isShared } = req.body;
-  const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
-  logger.debug('Creating deck', { name, description, userId: userId || authUserId, isShared });
+    const { name, description, isShared } = req.body;
+    const deck = await supabaseService.createDeck({ name, description, isShared }, userId);
 
-  const finalUserId = userId || authUserId;
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
 
-  if (!finalUserId) {
-    return res.status(400).json({
-      success: false,
-      error: 'User ID is required',
-    });
-  }
-
-  const deck = await supabaseService.createDeck({
-    name,
-    description,
-    isShared,
-    }, finalUserId);
-
-    // Invalidate user's decks cache so the newly-created deck will be fetched on
-    // the next request.  The cache key used by getDecks is `decks:user:<id>`
-    // so we need to explicitly delete that key (and any legacy variants).
-    await cacheService.delete(`decks:user:${finalUserId}`);
-    await cacheService.deletePattern(`decks:user:${finalUserId}*`);
-
-    res.status(201).json({
-      success: true,
-      data: deck,
-    });
+    res.status(201).json({ success: true, data: deck });
   })
 );
 
-// PUT /api/v1/decks/:deckId - Update deck
 router.put(
   '/:deckId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-const { name, description, userId, isShared } = req.body;
-  const authUserId = req.user?.id;
-
-  logger.debug('Updating deck', { deckId, name, description, userId: userId || authUserId, isShared });
-
-  const finalUserId = userId || authUserId;
-
-  const updatedDeck = await supabaseService.updateDeck(deckId, {
-    name,
-    description,
-    isShared,
-    });
+    const { name, description, isShared } = req.body;
+    const updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared }, userId);
 
     if (!updatedDeck) {
-      return res.status(404).json({
-        success: false,
-        error: 'Deck not found',
-      });
+      return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
     }
 
-    // Invalidate caches
-    await cacheService.delete(`deck:${deckId}`);
-    await cacheService.delete(`decks:user:${finalUserId}`);
-    await cacheService.deletePattern(`decks:user:${finalUserId}*`);
+    await cacheService.deletePattern(`deck:${deckId}:user:*`);
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
 
-    res.json({
-      success: true,
-      data: updatedDeck,
-    });
+    res.json({ success: true, data: updatedDeck });
   })
 );
 
-// DELETE /api/v1/decks/:deckId - Delete deck
 router.delete(
   '/:deckId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
-
-    logger.debug('Deleting deck', { deckId, userId: userId || authUserId });
-
-    const finalUserId = userId as string || authUserId;
-
-    const deleted = await supabaseService.deleteDeck(deckId);
+    const deleted = await supabaseService.deleteDeck(deckId, userId);
 
     if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        error: 'Deck not found',
-      });
+      return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
     }
 
-    // Invalidate caches
-    await cacheService.delete(`deck:${deckId}`);
-    await cacheService.delete(`decks:user:${finalUserId}`);
-    await cacheService.deletePattern(`decks:user:${finalUserId}*`);
+    await cacheService.deletePattern(`deck:${deckId}:user:*`);
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
 
-    res.json({
-      success: true,
-      message: 'Deck deleted successfully',
-    });
+    res.json({ success: true, message: 'Deck deleted successfully' });
   })
 );
 
-// GET /api/v1/decks/:deckId/collaborators - List collaborators for a deck
 router.get(
   '/:deckId/collaborators',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const authUserId = req.user?.id;
-
-    logger.debug('Fetching deck collaborators', { deckId, userId: authUserId });
-
-    const collaborators = await supabaseService.getDeckCollaborators(deckId);
-
-    res.json({
-      success: true,
-      data: collaborators,
-    });
+    const collaborators = await supabaseService.getDeckCollaborators(deckId, userId);
+    res.json({ success: true, data: collaborators });
   })
 );
 
-// POST /api/v1/decks/:deckId/collaborators - Add collaborator to deck
 router.post(
   '/:deckId/collaborators',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const { userId, role } = req.body;
-    const authUserId = req.user?.id;
+    const { userId: collaboratorId, role } = req.body;
 
-    logger.debug('Adding deck collaborator', { deckId, userId, role, authUserId });
-
-    if (!userId) {
+    if (!collaboratorId) {
       return res.status(400).json({ success: false, error: 'userId is required' });
     }
 
-    const collaborator = await supabaseService.addDeckCollaborator(deckId, userId, role);
-
-    res.status(201).json({ success: true, data: collaborator });
+    try {
+      const collaborator = await supabaseService.addDeckCollaborator(deckId, collaboratorId, role, userId);
+      res.status(201).json({ success: true, data: collaborator });
+    } catch (error: any) {
+      if (error.message === 'Access denied') {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      throw error;
+    }
   })
 );
 
-// DELETE /api/v1/decks/:deckId/collaborators/:userId - Remove collaborator
 router.delete(
   '/:deckId/collaborators/:userId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const authUserId = requireAuthUserId(req, res);
+    if (!authUserId) return;
+
     const { deckId, userId } = req.params;
-    const authUserId = req.user?.id;
-
-    logger.debug('Removing deck collaborator', { deckId, userId, authUserId });
-
-    await supabaseService.removeDeckCollaborator(deckId, userId);
-
-    res.json({ success: true, message: 'Collaborator removed' });
+    try {
+      await supabaseService.removeDeckCollaborator(deckId, userId, authUserId);
+      res.json({ success: true, message: 'Collaborator removed' });
+    } catch (error: any) {
+      if (error.message === 'Access denied') {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      throw error;
+    }
   })
 );
 
-// POST /api/v1/decks/:deckId/reset - Reset deck statistics
 router.post(
   '/:deckId/reset',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const { userId } = req.body;
-    const authUserId = req.user?.id;
-
-    logger.debug('Resetting deck statistics', { deckId, userId: userId || authUserId });
-
-    const finalUserId = userId || authUserId;
-
-    const result = await supabaseService.resetDeckStatistics(deckId);
-
-    // Invalidate deck cache
-    await cacheService.delete(`deck:${deckId}`);
-
-    res.json({
-      success: true,
-      data: result,
-    });
+    try {
+      const result = await supabaseService.resetDeckStatistics(deckId, userId);
+      await cacheService.deletePattern(`deck:${deckId}:user:*`);
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      if (error.message === 'Deck not found or access denied') {
+        return res.status(404).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
   })
 );
 
-// GET /api/v1/decks/:deckId/export - Export deck
+router.get(
+  '/:deckId/export/csv',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { deckId } = req.params;
+    const exportedData = await supabaseService.exportDeck(deckId, userId);
+    if (!exportedData) {
+      return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
+    }
+
+    const { deckToCsv } = await import('../utils/deckFormats');
+    const csv = deckToCsv(exportedData);
+    const safeName = (exportedData.deck?.name || 'deck').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}.csv"`);
+    res.send(csv);
+  })
+);
+
+router.post(
+  '/import/csv',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { csv, deckName } = req.body;
+    if (!csv || typeof csv !== 'string') {
+      return res.status(400).json({ success: false, error: 'csv field is required' });
+    }
+
+    const { csvToImportData } = await import('../utils/deckFormats');
+    const importData = csvToImportData(csv, deckName || 'Imported Deck');
+    const importedDeck = await supabaseService.importDeck(importData, userId);
+
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
+
+    res.status(201).json({ success: true, data: importedDeck });
+  })
+);
+
+router.post(
+  '/import/apkg',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { apkgBase64 } = req.body;
+    if (!apkgBase64 || typeof apkgBase64 !== 'string') {
+      return res.status(400).json({ success: false, error: 'apkgBase64 field is required' });
+    }
+
+    const buffer = Buffer.from(apkgBase64, 'base64');
+    const { parseApkgBuffer } = await import('../services/apkgImport');
+    const importData = await parseApkgBuffer(buffer);
+    const importedDeck = await supabaseService.importDeck(importData, userId);
+
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
+
+    res.status(201).json({ success: true, data: importedDeck });
+  })
+);
+
 router.get(
   '/:deckId/export',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { deckId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
-
-    logger.debug('Exporting deck', { deckId, userId: userId || authUserId });
-
-    const finalUserId = userId as string || authUserId;
-
-    const exportedData = await supabaseService.exportDeck(deckId);
-
-    res.json({
-      success: true,
-      data: exportedData,
-    });
+    const exportedData = await supabaseService.exportDeck(deckId, userId);
+    if (!exportedData) {
+      return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
+    }
+    res.json({ success: true, data: exportedData });
   })
 );
 
-// POST /api/v1/decks/import - Import deck
 router.post(
   '/import',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { importData, userId } = req.body;
-    const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
-    logger.debug('Importing deck', { userId: userId || authUserId });
+    const { importData } = req.body;
+    const importedDeck = await supabaseService.importDeck(importData, userId);
 
-    const finalUserId = userId || authUserId;
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
 
-    // importDeck now returns both the created deck and an array of
-    // the flashcards that were inserted.  Returning cards avoids an extra
-    // follow-up request on the client and also ensures most recent data is
-    // immediately available.
-    const importedDeck = await supabaseService.importDeck(importData, finalUserId);
-
-    // Invalidate user's decks cache (clear both the correct key and any
-    // legacy variants) so that subsequent GET /decks calls will include the
-    // newly-created deck.
-    await cacheService.delete(`decks:user:${finalUserId}`);
-    await cacheService.deletePattern(`decks:user:${finalUserId}*`);
-
-    res.status(201).json({
-      success: true,
-      data: importedDeck,
-    });
+    res.status(201).json({ success: true, data: importedDeck });
   })
 );
 

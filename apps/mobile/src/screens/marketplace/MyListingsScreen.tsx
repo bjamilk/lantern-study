@@ -1,543 +1,495 @@
-// ===========================================
-// Lantern Study Mobile - My Listings Screen
-// ===========================================
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-  Image,
-  Alert,
   ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Switch,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useMarketplaceStore, getCategoryInfo, type MarketplaceListing } from '../../stores/marketplaceStore';
-import { useTheme } from '../../theme';
+import { useMarketplaceStore, useAuthStore, getCategoryInfo } from '../../stores';
+import {
+  fetchSellerAnalytics,
+  fetchSellerOnboarding,
+  fetchSellerPreferences,
+  updateSellerPreferences,
+} from '../../services/api';
+import { Button } from '../../components/ui';
+import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { SellerOnboardingModal } from './modals/SellerOnboardingModal';
+import { SellerCouponsModal } from './modals/SellerCouponsModal';
+import { CreateBundleModal } from './modals/CreateBundleModal';
+import { SellerCampaignModal } from './modals/SellerCampaignModal';
+import type { SellerAnalytics, SellerOnboardingStatus } from '@lantern/shared/types';
 
-export default function MyListingsScreen() {
-  const navigation = useNavigation<any>();
+type StatusTab = 'active' | 'sold' | 'inactive';
+
+type NavigationProp = {
+  goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+};
+
+export function MyListingsScreen({ navigation }: { navigation: NavigationProp }) {
+  const { user } = useAuthStore();
+  const { myListings, sellerStats, isLoading, fetchMyListings, fetchSellerStats, updateListing, deleteListing } =
+    useMarketplaceStore();
+  const [activeTab, setActiveTab] = useState<StatusTab>('active');
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'sold' | 'inactive'>('all');
-  const { colors } = useTheme();
+  const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
+  const [boostCredits, setBoostCredits] = useState<number | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState<SellerOnboardingStatus | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCoupons, setShowCoupons] = useState(false);
+  const [showBundle, setShowBundle] = useState(false);
+  const [showCampaign, setShowCampaign] = useState(false);
+  const [requirePaymentConfirmation, setRequirePaymentConfirmation] = useState(false);
+  const [hallDropoffEnabled, setHallDropoffEnabled] = useState(false);
+  const [hallDropoffMin, setHallDropoffMin] = useState('');
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(true);
 
-  const { myListings, isLoading, fetchMyListings, deleteListing, updateListing } = useMarketplaceStore();
-
-  useEffect(() => {
-    fetchMyListings('demo-user');
-  }, []);
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchMyListings('demo-user');
-    setRefreshing(false);
-  }, [fetchMyListings]);
-
-  const filteredListings = myListings.filter(listing => {
-    if (activeFilter === 'all') return true;
-    return listing.status === activeFilter;
-  });
-
-  const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
-    const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-      textbook_exchange: 'book',
-      pq_bank: 'sparkles',
-      lecture_notes: 'document-text',
-      project_thesis: 'briefcase',
-      data_collection: 'bar-chart',
-      equipment_rental: 'flask',
-      accommodation: 'home',
-      travel_transport: 'car',
-      personal_goods: 'gift',
-      aso_ebi: 'shirt',
-      campus_services: 'people',
-      events_social: 'ticket',
-    };
-    return iconMap[category] || 'help-circle';
-  };
-
-  const formatPrice = (price?: number) => {
-    if (!price) return 'Free';
-    return `₦${price.toLocaleString()}`;
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-NG', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const handleEditListing = useCallback((listing: MarketplaceListing) => {
-    // Would navigate to edit screen
-    Alert.alert('Edit', 'Editing functionality coming soon!');
-  }, []);
-
-  const handleDeleteListing = useCallback((listing: MarketplaceListing) => {
-    Alert.alert(
-      'Delete Listing',
-      `Are you sure you want to delete "${listing.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteListing(listing.id);
-              Alert.alert('Success', 'Listing deleted successfully.');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete listing.');
-            }
-          }
-        },
-      ]
-    );
-  }, [deleteListing]);
-
-  const handleToggleStatus = useCallback(async (listing: MarketplaceListing) => {
-    const newStatus = listing.status === 'active' ? 'inactive' : 'active';
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    await fetchMyListings(user.id);
+    await fetchSellerStats();
     try {
-      await updateListing(listing.id, { status: newStatus });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update listing status.');
+      setAnalytics(await fetchSellerAnalytics());
+    } catch {
+      setAnalytics(null);
     }
-  }, [updateListing]);
+    try {
+      const prefs = await fetchSellerPreferences();
+      if (prefs) {
+        setRequirePaymentConfirmation(!!prefs.require_payment_confirmation);
+        setHallDropoffEnabled(!!prefs.hall_dropoff_enabled);
+        setHallDropoffMin(prefs.hall_dropoff_min_amount != null ? String(prefs.hall_dropoff_min_amount) : '');
+      }
+    } catch {
+      /* optional */
+    }
+    try {
+      const onboarding = await fetchSellerOnboarding();
+      if (onboarding) {
+        setOnboardingStatus(onboarding);
+        setBoostCredits(onboarding.boostCredits);
+        if (onboarding.needsOnboarding) setShowOnboarding(true);
+      }
+    } catch {
+      /* optional */
+    }
+  }, [fetchMyListings, fetchSellerStats, user?.id]);
 
-  const handleMarkAsSold = useCallback((listing: MarketplaceListing) => {
-    Alert.alert(
-      'Mark as Sold',
-      'This will mark your listing as sold and remove it from search results.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Mark Sold', 
-          onPress: async () => {
-            try {
-              await updateListing(listing.id, { status: 'sold' });
-            } catch (error) {
-              Alert.alert('Error', 'Failed to update listing.');
-            }
-          }
-        },
-      ]
-    );
-  }, [updateListing]);
-
-  const renderListingItem = useCallback(({ item }: { item: MarketplaceListing }) => {
-    const categoryInfo = getCategoryInfo(item.category);
-    
-    return (
-      <TouchableOpacity
-        style={[styles.listingCard, { backgroundColor: colors.card }]}
-        onPress={() => navigation.navigate('Marketplace', {
-          screen: 'ListingDetail',
-          params: { listingId: item.id },
-        })}
-        activeOpacity={0.7}
-      >
-        {/* Image */}
-        <View style={[styles.imageContainer, { backgroundColor: colors.border }]}>
-          {item.images && item.images.length > 0 ? (
-            <Image source={{ uri: item.images[0] }} style={styles.listingImage} />
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Ionicons name={getCategoryIcon(item.category)} size={32} color={colors.textSecondary} />
-            </View>
-          )}
-          
-          {/* Status Badge */}
-          <View style={[styles.statusBadge, 
-            item.status === 'sold' && styles.statusBadgeSold,
-            item.status === 'inactive' && styles.statusBadgeInactive
-          ]}>
-            <Text style={styles.statusBadgeText}>
-              {item.status === 'active' ? 'Active' : item.status === 'sold' ? 'Sold' : 'Inactive'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Content */}
-        <View style={styles.cardContent}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.listingTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-            <Text style={styles.listingPrice}>{formatPrice(item.price)}</Text>
-          </View>
-          
-          <View style={styles.categoryRow}>
-            <Ionicons name={getCategoryIcon(item.category)} size={12} color="#6366f1" />
-            <Text style={[styles.categoryText, { color: colors.textSecondary }]}>{categoryInfo.name}</Text>
-          </View>
-
-          {/* Stats */}
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
-              <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.views_count || 0}</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="heart-outline" size={14} color={colors.textSecondary} />
-              <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.favorites_count || 0}</Text>
-            </View>
-            <Text style={[styles.dateText, { color: colors.textSecondary }]}>{formatDate(item.created_at)}</Text>
-          </View>
-
-          {/* Actions */}
-          <View style={[styles.actionsRow, { borderTopColor: colors.border }]}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleEditListing(item)}
-            >
-              <Ionicons name="pencil" size={16} color="#6366f1" />
-              <Text style={styles.actionButtonText}>Edit</Text>
-            </TouchableOpacity>
-
-            {item.status === 'active' && (
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={() => handleMarkAsSold(item)}
-              >
-                <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
-                <Text style={[styles.actionButtonText, { color: '#22c55e' }]}>Sold</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleToggleStatus(item)}
-            >
-              <Ionicons 
-                name={item.status === 'active' ? 'eye-off' : 'eye'} 
-                size={16} 
-                color="#f59e0b" 
-              />
-              <Text style={[styles.actionButtonText, { color: '#f59e0b' }]}>
-                {item.status === 'active' ? 'Hide' : 'Show'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => handleDeleteListing(item)}
-            >
-              <Ionicons name="trash" size={16} color="#ef4444" />
-              <Text style={[styles.actionButtonText, { color: '#ef4444' }]}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }, [navigation, handleEditListing, handleMarkAsSold, handleToggleStatus, handleDeleteListing, colors]);
-
-  const ListHeaderComponent = () => (
-    <View style={styles.filters}>
-      {(['all', 'active', 'sold', 'inactive'] as const).map(filter => (
-        <TouchableOpacity
-          key={filter}
-          style={[styles.filterChip, { backgroundColor: colors.card }, activeFilter === filter && styles.filterChipActive]}
-          onPress={() => setActiveFilter(filter)}
-        >
-          <Text style={[styles.filterChipText, { color: colors.textSecondary }, activeFilter === filter && styles.filterChipTextActive]}>
-            {filter.charAt(0).toUpperCase() + filter.slice(1)}
-            {filter !== 'all' && ` (${myListings.filter(l => l.status === filter).length})`}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
   );
 
-  const ListEmptyComponent = () => (
-    <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIcon, { backgroundColor: colors.card }]}>
-        <Ionicons name="storefront-outline" size={64} color="#6366f1" />
+  const filtered = useMemo(
+    () => myListings.filter(l => l.status === activeTab),
+    [myListings, activeTab]
+  );
+
+  const tabCounts = useMemo(
+    () => ({
+      active: sellerStats?.active_listings ?? 0,
+      sold: sellerStats?.sold_listings ?? 0,
+      inactive: Math.max(
+        0,
+        (sellerStats?.total_listings ?? 0) -
+          (sellerStats?.active_listings ?? 0) -
+          (sellerStats?.sold_listings ?? 0)
+      ),
+    }),
+    [sellerStats]
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const handleStatusChange = async (listingId: string, status: StatusTab) => {
+    if (!user?.id) return;
+    await updateListing(listingId, { status }, user.id);
+    await load();
+  };
+
+  const handleDelete = (listingId: string, title: string) => {
+    if (!user?.id) return;
+    Alert.alert('Delete listing', `Remove "${title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteListing(listingId, user.id);
+          await load();
+        },
+      },
+    ]);
+  };
+
+  const savePreferences = async () => {
+    setSavingPrefs(true);
+    try {
+      await updateSellerPreferences({
+        requirePaymentConfirmation,
+        hallDropoffEnabled,
+        hallDropoffMinAmount: hallDropoffMin.trim() ? Number(hallDropoffMin) : undefined,
+      });
+      Alert.alert('Saved', 'Seller preferences updated.');
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not save preferences.');
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  const tabs: { id: StatusTab; label: string }[] = [
+    { id: 'active', label: 'Active' },
+    { id: 'sold', label: 'Sold' },
+    { id: 'inactive', label: 'Inactive' },
+  ];
+
+  const weeklyMax = analytics?.salesByWeek?.length
+    ? Math.max(...analytics.salesByWeek.map(w => w.revenue), 1)
+    : 1;
+
+  const listHeader = (
+    <View>
+      <View className="px-4 pb-2 flex-row flex-wrap gap-2">
+        {sellerStats ? (
+          <>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Sold listings</Text>
+              <Text className="font-bold">{sellerStats.sold_listings ?? 0}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Completed sales</Text>
+              <Text className="font-bold">
+                {sellerStats.completed_orders ?? analytics?.completedSalesCount ?? 0}
+              </Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Views</Text>
+              <Text className="font-bold">{sellerStats.total_views ?? 0}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Inquiries</Text>
+              <Text className="font-bold">{sellerStats.total_inquiries ?? 0}</Text>
+            </View>
+          </>
+        ) : null}
+        {analytics ? (
+          <>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Revenue (30d)</Text>
+              <Text className="font-bold text-indigo-600">{formatPrice(analytics.revenue30d)}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">View-to-sale</Text>
+              <Text className="font-bold">{analytics.conversionRate}%</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Pending orders</Text>
+              <Text className="font-bold">{analytics.pendingOrders}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
+              <Text className="text-xs text-slate-500">Offer accept rate</Text>
+              <Text className="font-bold">{analytics.offerAcceptRate}%</Text>
+            </View>
+          </>
+        ) : null}
       </View>
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        {activeFilter === 'all' ? 'No listings yet' : `No ${activeFilter} listings`}
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-        {activeFilter === 'all' 
-          ? 'Create your first listing and start selling!'
-          : 'Your listings with this status will appear here.'}
-      </Text>
-      {activeFilter === 'all' && (
-        <TouchableOpacity 
-          style={styles.createButton}
-          onPress={() => navigation.navigate('CreateListing')}
-        >
-          <Ionicons name="add" size={20} color="#ffffff" />
-          <Text style={styles.createButtonText}>Create Listing</Text>
-        </TouchableOpacity>
-      )}
+
+      <View className="px-4 pb-2 flex-row flex-wrap gap-2">
+        {boostCredits != null ? (
+          <View className="px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40">
+            <Text className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              {boostCredits} boost credit{boostCredits === 1 ? '' : 's'}
+            </Text>
+          </View>
+        ) : null}
+        <Pressable onPress={() => navigation.navigate('Orders')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
+          <Text className="text-xs font-semibold text-indigo-700">Orders</Text>
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('Inquiries')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
+          <Text className="text-xs font-semibold text-indigo-700">Inquiries</Text>
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('SellerCustomers')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
+          <Text className="text-xs font-semibold text-indigo-700">Customers</Text>
+        </Pressable>
+        <Pressable onPress={() => setShowCoupons(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
+          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Coupons</Text>
+        </Pressable>
+        <Pressable onPress={() => setShowBundle(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
+          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bundle</Text>
+        </Pressable>
+        <Pressable onPress={() => setShowCampaign(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
+          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Campaign</Text>
+        </Pressable>
+      </View>
+
+      {analytics && showAnalytics ? (
+        <View className="px-4 pb-3">
+          {analytics.salesByWeek.length > 0 ? (
+            <View className="p-3 mb-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <Text className="text-xs font-semibold text-slate-500 mb-2">Weekly sales</Text>
+              <View className="flex-row items-end gap-1 h-16">
+                {analytics.salesByWeek.map(week => {
+                  const height = Math.max(4, (week.revenue / weeklyMax) * 100);
+                  return (
+                    <View
+                      key={week.weekStart}
+                      className="flex-1 bg-indigo-500/80 rounded-t"
+                      style={{ height: `${height}%` }}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          {analytics.inquiryToSaleRate != null ? (
+            <View className="p-3 mb-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <Text className="text-xs text-slate-500">Inquiry → sale rate</Text>
+              <Text className="text-lg font-bold">{analytics.inquiryToSaleRate}%</Text>
+            </View>
+          ) : null}
+
+          {(analytics.staleListings?.length || analytics.highViewsLowEngagement?.length) ? (
+            <View className="p-3 mb-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
+              <Text className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2">Listing insights</Text>
+              {analytics.highViewsLowEngagement?.slice(0, 3).map(l => (
+                <Text key={l.id} className="text-xs text-amber-900 dark:text-amber-200 mb-1">
+                  "{l.title}" — {l.views} views, no inquiries.
+                </Text>
+              ))}
+              {analytics.staleListings?.slice(0, 3).map(l => (
+                <Text key={l.id} className="text-xs text-amber-900 dark:text-amber-200 mb-1">
+                  "{l.title}" — {l.daysListed} days listed with low activity.
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          {analytics.favoriteHighlights && analytics.favoriteHighlights.length > 0 ? (
+            <View className="p-3 mb-2 rounded-xl bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/40">
+              <Text className="text-xs font-semibold text-pink-800 dark:text-pink-300 mb-2">Favorite highlights</Text>
+              {analytics.favoriteHighlights.map(l => (
+                <Text key={l.id} className="text-xs text-pink-900 dark:text-pink-200 mb-1">
+                  "{l.title}" — {l.favoritesCount} favorite{l.favoritesCount === 1 ? '' : 's'}.
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <View className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <Text className="text-xs font-semibold text-slate-500 mb-2">Seller preferences</Text>
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-sm text-slate-700 dark:text-slate-300 flex-1 mr-2">
+                Require payment proof before marking paid
+              </Text>
+              <Switch value={requirePaymentConfirmation} onValueChange={setRequirePaymentConfirmation} />
+            </View>
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-sm text-slate-700 dark:text-slate-300 flex-1 mr-2">Offer hall dropoff</Text>
+              <Switch value={hallDropoffEnabled} onValueChange={setHallDropoffEnabled} />
+            </View>
+            <TextInput
+              value={hallDropoffMin}
+              onChangeText={setHallDropoffMin}
+              placeholder="Hall dropoff min amount (₦)"
+              keyboardType="numeric"
+              placeholderTextColor="#94a3b8"
+              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+            />
+            <Button loading={savingPrefs} onPress={() => void savePreferences()}>
+              Save preferences
+            </Button>
+          </View>
+        </View>
+      ) : null}
+
+      <Pressable onPress={() => setShowAnalytics(v => !v)} className="px-4 pb-2">
+        <Text className="text-xs font-semibold text-indigo-600">
+          {showAnalytics ? 'Hide analytics' : 'Show analytics & preferences'}
+        </Text>
+      </Pressable>
+
+      <View className="flex-row px-4 mb-2">
+        {tabs.map(tab => (
+          <Pressable
+            key={tab.id}
+            onPress={() => setActiveTab(tab.id)}
+            className={`flex-1 py-2.5 items-center border-b-2 ${
+              activeTab === tab.id ? 'border-indigo-600' : 'border-transparent'
+            }`}
+          >
+            <Text
+              className={`text-sm font-medium ${
+                activeTab === tab.id
+                  ? 'text-indigo-600 dark:text-indigo-400'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              {tab.label} ({tabCounts[tab.id]})
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>My Listings</Text>
-        <TouchableOpacity 
-          style={styles.addButton}
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
+        <View className="flex-row items-center flex-1">
+          <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+            <Ionicons name="arrow-back" size={22} color="#64748b" />
+          </Pressable>
+          <View className="flex-1">
+            <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">My Listings</Text>
+            {boostCredits != null ? (
+              <Text className="text-xs text-amber-700 dark:text-amber-400">{boostCredits} boost credits</Text>
+            ) : null}
+          </View>
+        </View>
+        <Pressable
           onPress={() => navigation.navigate('CreateListing')}
+          className="p-2 rounded-xl bg-indigo-600"
         >
-          <Ionicons name="add" size={24} color="#ffffff" />
-        </TouchableOpacity>
+          <Ionicons name="add" size={20} color="#fff" />
+        </Pressable>
       </View>
 
-      {/* Listings */}
-      <FlatList
-        data={filteredListings}
-        keyExtractor={(item) => item.id}
-        renderItem={renderListingItem}
-        ListHeaderComponent={ListHeaderComponent}
-        ListEmptyComponent={!isLoading ? ListEmptyComponent : null}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#6366f1"
-            colors={['#6366f1']}
-          />
-        }
-      />
-
-      {isLoading && filteredListings.length === 0 && (
-        <View style={styles.loadingOverlay}>
+      {isLoading && !filtered.length && !myListings.length ? (
+        <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#6366f1" />
         </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={item => item.id}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          ListEmptyComponent={
+            <View className="items-center py-16">
+              <Ionicons name="storefront-outline" size={48} color="#cbd5e1" />
+              <Text className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-4">
+                No {activeTab} listings
+              </Text>
+              <Button className="mt-6" onPress={() => navigation.navigate('CreateListing')}>
+                Create Listing
+              </Button>
+            </View>
+          }
+          renderItem={({ item }) => {
+            const category = getCategoryInfo(item.category);
+            return (
+              <Pressable
+                onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                className="flex-row bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden mb-3"
+              >
+                <View className="w-24 h-24">
+                  <ListingImage uri={item.images?.[0]} className="w-full h-full" />
+                </View>
+                <View className="flex-1 p-3">
+                  <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                    {formatPrice(item.price)}
+                  </Text>
+                  <Text className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{category.name}</Text>
+                  <View className="flex-row items-center flex-wrap gap-2 mt-2">
+                    <Text className="text-xs text-slate-400">{item.views_count ?? 0} views</Text>
+                    <Pressable
+                      onPress={e => {
+                        e.stopPropagation?.();
+                        navigation.navigate('EditListing', { listingId: item.id });
+                      }}
+                    >
+                      <Text className="text-xs font-medium text-indigo-600">Edit</Text>
+                    </Pressable>
+                    {activeTab === 'active' ? (
+                      <>
+                        <Pressable
+                          onPress={e => {
+                            e.stopPropagation?.();
+                            void handleStatusChange(item.id, 'sold');
+                          }}
+                        >
+                          <Text className="text-xs font-medium text-emerald-600">Mark sold</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={e => {
+                            e.stopPropagation?.();
+                            void handleStatusChange(item.id, 'inactive');
+                          }}
+                        >
+                          <Text className="text-xs font-medium text-slate-600">Deactivate</Text>
+                        </Pressable>
+                      </>
+                    ) : null}
+                    {activeTab === 'inactive' ? (
+                      <Pressable
+                        onPress={e => {
+                          e.stopPropagation?.();
+                          void handleStatusChange(item.id, 'active');
+                        }}
+                      >
+                        <Text className="text-xs font-medium text-emerald-600">Reactivate</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={e => {
+                        e.stopPropagation?.();
+                        handleDelete(item.id, item.title);
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                    </Pressable>
+                  </View>
+                </View>
+              </Pressable>
+            );
+          }}
+        />
       )}
+
+      {onboardingStatus ? (
+        <SellerOnboardingModal
+          visible={showOnboarding}
+          status={onboardingStatus}
+          onComplete={async () => {
+            setShowOnboarding(false);
+            const onboarding = await fetchSellerOnboarding();
+            if (onboarding) {
+              setOnboardingStatus(onboarding);
+              setBoostCredits(onboarding.boostCredits);
+            }
+          }}
+          onDismiss={() => setShowOnboarding(false)}
+        />
+      ) : null}
+      <SellerCouponsModal visible={showCoupons} onClose={() => setShowCoupons(false)} />
+      <CreateBundleModal
+        visible={showBundle}
+        listings={myListings}
+        onClose={() => setShowBundle(false)}
+        onCreated={() => void load()}
+      />
+      <SellerCampaignModal visible={showCampaign} onClose={() => setShowCampaign(false)} />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  addButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  filters: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-  },
-  filterChipActive: {
-    backgroundColor: '#6366f1',
-  },
-  filterChipText: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-  filterChipTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  listingCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  imageContainer: {
-    height: 120,
-    backgroundColor: '#334155',
-    position: 'relative',
-  },
-  listingImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  placeholderImage: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statusBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusBadgeSold: {
-    backgroundColor: '#6366f1',
-  },
-  statusBadgeInactive: {
-    backgroundColor: '#6b7280',
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  cardContent: {
-    padding: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  listingTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginRight: 12,
-  },
-  listingPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#6366f1',
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
-  },
-  categoryText: {
-    fontSize: 12,
-    color: '#6366f1',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 16,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statText: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  dateText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 'auto',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-    paddingTop: 12,
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 4,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6366f1',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 40,
-  },
-  emptyIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#6366f120',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
+import { useCompanionStore } from '../stores/companionStore';
 import {
   aiGenerateQuestions,
   aiGenerateFlashcards,
@@ -13,6 +14,7 @@ import {
   AIGeneratedFlashcard,
   AIStudyRecommendation,
 } from '../services/ai';
+import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { MessageType, QuestionType, QuestionStatus } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { sendMessage } from '../services/supabase';
@@ -21,6 +23,7 @@ export function useAIHandlers() {
   const { currentUser } = useAuthStore();
   const { selectedChat, closeModal } = useUIStore();
   const { updateMessages } = useGroupStore();
+  const { openWithMessage } = useCompanionStore();
 
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -136,7 +139,10 @@ export function useAIHandlers() {
       setIsAILoading(true);
       setAiError(null);
       try {
-        const { flashcards } = await aiGenerateFlashcards(notes, options);
+        const { flashcards } = await aiGenerateFlashcards(notes, {
+          ...options,
+          count: normalizeFlashcardCount(options?.count),
+        });
         return flashcards;
       } catch (err: any) {
         setAiError(err.message || 'Failed to generate flashcards');
@@ -148,7 +154,7 @@ export function useAIHandlers() {
     []
   );
 
-  // ─── 3. Explain Answer ──────────────────────────────────────
+  // ─── 3. Explain Answer → opens companion ───────────────────
 
   const handleAIExplainAnswer = useCallback(
     async (
@@ -157,6 +163,20 @@ export function useAIHandlers() {
       correctAnswer: string,
       options?: string[]
     ): Promise<string | null> => {
+      // Build a conversational prompt for the companion
+      const optionsText = options?.length
+        ? `\n\nOptions:\n${options.map((o, i) => `${String.fromCharCode(65 + i)}) ${o}`).join('\n')}`
+        : '';
+      const companionPrompt =
+        `Please explain this question:\n\n"${question}"${optionsText}\n\n` +
+        `My answer: ${userAnswer}\n` +
+        `Correct answer: ${correctAnswer}\n\n` +
+        `Why is the correct answer right, and where did I go wrong?`;
+
+      // Open companion panel with the pre-populated message
+      openWithMessage(companionPrompt);
+
+      // Still return a short inline explanation from the API as fallback
       setIsAILoading(true);
       setAiError(null);
       try {
@@ -169,7 +189,7 @@ export function useAIHandlers() {
         setIsAILoading(false);
       }
     },
-    []
+    [openWithMessage]
   );
 
   // ─── 4. Study Recommendations (Coach) ──────────────────────

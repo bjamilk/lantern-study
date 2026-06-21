@@ -21,15 +21,30 @@ import {
   useBudgetStore,
   formatCurrency,
   getProgressBarColor,
+  getCategoryLabel,
   type Transaction,
 } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
 
 const { width } = Dimensions.get('window');
 
+type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
+type TxFilter = 'all' | 'income' | 'expense';
+
+const TABS: { key: BudgetTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'overview', label: 'Overview', icon: 'pie-chart-outline' },
+  { key: 'transactions', label: 'Transactions', icon: 'receipt-outline' },
+  { key: 'goals', label: 'Goals', icon: 'trophy-outline' },
+  { key: 'insights', label: 'Insights', icon: 'bulb-outline' },
+];
+
 export default function BudgetScreen() {
   const navigation = useNavigation<any>();
+  const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
+  const [txFilter, setTxFilter] = useState<TxFilter>('all');
   const { colors } = useTheme();
 
   const {
@@ -40,24 +55,32 @@ export default function BudgetScreen() {
     monthlyIncome,
     budgetProgress,
     expensesByCategory,
+    savingsGoals,
+    expenseSplits,
+    walletBalance,
     fetchTransactions,
     fetchBudget,
+    loadBudgetExtras,
     deleteTransaction,
   } = useBudgetStore();
 
   useEffect(() => {
-    fetchTransactions('demo-user');
-    fetchBudget('demo-user');
-  }, []);
+    if (!userId) return;
+    fetchTransactions(userId);
+    fetchBudget(userId);
+    loadBudgetExtras(userId);
+  }, [userId, fetchTransactions, fetchBudget, loadBudgetExtras]);
 
   const onRefresh = useCallback(async () => {
+    if (!userId) return;
     setRefreshing(true);
     await Promise.all([
-      fetchTransactions('demo-user'),
-      fetchBudget('demo-user'),
+      fetchTransactions(userId),
+      fetchBudget(userId),
+      loadBudgetExtras(userId),
     ]);
     setRefreshing(false);
-  }, [fetchTransactions, fetchBudget]);
+  }, [userId, fetchTransactions, fetchBudget, loadBudgetExtras]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthlyTransactions = useMemo(() => 
@@ -65,6 +88,16 @@ export default function BudgetScreen() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [transactions, currentMonth]
   );
+
+  const filteredTransactions = useMemo(() => {
+    if (txFilter === 'income') return monthlyTransactions.filter(t => t.type === 'INCOME');
+    if (txFilter === 'expense') return monthlyTransactions.filter(t => t.type === 'EXPENSE');
+    return monthlyTransactions;
+  }, [monthlyTransactions, txFilter]);
+
+  const biggestCategory = expensesByCategory[0];
+  const avgDailySpend = monthlyExpenses / Math.max(1, new Date().getDate());
+  const projectedMonth = avgDailySpend * 30;
 
   const netAmount = monthlyIncome - monthlyExpenses;
 
@@ -105,15 +138,41 @@ export default function BudgetScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.title, { color: colors.text }]}>Budget Tracker</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Manage your finances</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Campus Pocket</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </Text>
         </View>
         <TouchableOpacity
           style={[styles.settingsButton, { backgroundColor: colors.card }]}
-          onPress={() => navigation.navigate('Budget', { screen: 'SetBudget' })}
+          onPress={() => navigation.navigate('SetBudget')}
         >
           <Ionicons name="settings-outline" size={22} color={colors.text} />
         </TouchableOpacity>
+      </View>
+
+      <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {TABS.map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
+            onPress={() => setActiveTab(tab.key)}
+          >
+            <Ionicons
+              name={tab.icon}
+              size={16}
+              color={activeTab === tab.key ? '#6366f1' : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                { color: activeTab === tab.key ? '#6366f1' : colors.textSecondary },
+              ]}
+            >
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ScrollView
@@ -128,12 +187,14 @@ export default function BudgetScreen() {
           />
         }
       >
+        {activeTab === 'overview' && (
+          <>
         {/* Budget Progress Card */}
         <View style={[styles.budgetCard, { backgroundColor: colors.card }]}>
           <View style={styles.budgetHeader}>
             <Text style={[styles.budgetTitle, { color: colors.text }]}>This Month's Budget</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate('Budget', { screen: 'SetBudget' })}
+              onPress={() => navigation.navigate('SetBudget')}
             >
               <Text style={styles.editBudgetText}>
                 {budget ? 'Edit' : 'Set Budget'}
@@ -174,7 +235,7 @@ export default function BudgetScreen() {
               <Text style={[styles.noBudgetText, { color: colors.textSecondary }]}>No budget set for this month</Text>
               <TouchableOpacity
                 style={styles.setBudgetButton}
-                onPress={() => navigation.navigate('Budget', { screen: 'SetBudget' })}
+                onPress={() => navigation.navigate('SetBudget')}
               >
                 <Text style={styles.setBudgetButtonText}>Set a monthly budget</Text>
               </TouchableOpacity>
@@ -215,7 +276,7 @@ export default function BudgetScreen() {
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.expenseButton]}
-            onPress={() => navigation.navigate('Budget', { screen: 'AddExpense' })}
+            onPress={() => navigation.navigate('AddExpense')}
           >
             <Ionicons name="arrow-down" size={24} color="#ffffff" />
             <Text style={styles.actionButtonText}>Add Expense</Text>
@@ -223,11 +284,34 @@ export default function BudgetScreen() {
 
           <TouchableOpacity
             style={[styles.actionButton, styles.incomeButton]}
-            onPress={() => navigation.navigate('Budget', { screen: 'AddIncome' })}
+            onPress={() => navigation.navigate('AddIncome')}
           >
             <Ionicons name="arrow-up" size={24} color="#ffffff" />
             <Text style={styles.actionButtonText}>Add Income</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Extended tools */}
+        <View style={[styles.sectionCard, { backgroundColor: colors.card, marginBottom: 16 }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>More tools</Text>
+          {[
+            { label: 'Savings goals', icon: 'flag-outline', route: 'SavingsGoals' },
+            { label: 'Study wallet', icon: 'wallet-outline', route: 'Wallet' },
+            { label: 'Expense splits', icon: 'people-outline', route: 'ExpenseSplit' },
+            { label: 'Category budgets', icon: 'grid-outline', route: 'SetCategoryBudget' },
+            { label: 'Financial toolkit', icon: 'analytics-outline', route: 'FinancialToolkit' },
+            { label: 'Add investment', icon: 'trending-up-outline', route: 'AddInvestment' },
+          ].map(item => (
+            <TouchableOpacity
+              key={item.route}
+              style={[styles.menuRow, { borderBottomColor: colors.border }]}
+              onPress={() => navigation.navigate(item.route)}
+            >
+              <Ionicons name={item.icon as any} size={20} color="#6366f1" />
+              <Text style={[styles.menuRowText, { color: colors.text }]}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* Spending by Category */}
@@ -270,73 +354,241 @@ export default function BudgetScreen() {
             </View>
           )}
         </View>
+          </>
+        )}
 
-        {/* Recent Transactions */}
-        <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Transactions</Text>
-
-          {monthlyTransactions.length > 0 ? (
-            <View style={styles.transactionsList}>
-              {monthlyTransactions.slice(0, 10).map(transaction => (
-                <View key={transaction.id} style={[styles.transactionItem, { borderBottomColor: colors.border }]}>
-                  <View
+        {activeTab === 'transactions' && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+            <View style={styles.txFilterRow}>
+              {(['all', 'income', 'expense'] as TxFilter[]).map(filter => (
+                <TouchableOpacity
+                  key={filter}
+                  style={[
+                    styles.txFilterBtn,
+                    txFilter === filter && styles.txFilterBtnActive,
+                  ]}
+                  onPress={() => setTxFilter(filter)}
+                >
+                  <Text
                     style={[
-                      styles.transactionIcon,
-                      transaction.type === 'INCOME'
-                        ? styles.incomeIcon
-                        : styles.expenseIcon,
+                      styles.txFilterText,
+                      txFilter === filter && styles.txFilterTextActive,
                     ]}
                   >
-                    <Ionicons
-                      name={transaction.type === 'INCOME' ? 'arrow-up' : 'arrow-down'}
-                      size={18}
-                      color={transaction.type === 'INCOME' ? '#22c55e' : '#ef4444'}
-                    />
-                  </View>
-
-                  <View style={styles.transactionDetails}>
-                    <Text style={[styles.transactionDescription, { color: colors.text }]} numberOfLines={1}>
-                      {transaction.description}
-                    </Text>
-                    <Text style={[styles.transactionMeta, { color: colors.textSecondary }]}>
-                      {transaction.category} • {formatDate(transaction.date)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.transactionRight}>
-                    <Text
-                      style={[
-                        styles.transactionAmount,
-                        transaction.type === 'INCOME'
-                          ? styles.incomeAmount
-                          : styles.expenseAmount,
-                      ]}
-                    >
-                      {transaction.type === 'INCOME' ? '+' : '-'}
-                      {formatCurrency(transaction.amount)}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleDeleteTransaction(transaction)}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                    {filter === 'all' ? 'All' : filter === 'income' ? 'Income' : 'Expense'}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
-          ) : (
-            <View style={styles.emptyTransactions}>
-              <Ionicons name="receipt-outline" size={48} color={colors.textSecondary} />
-              <Text style={[styles.emptyTransactionsText, { color: colors.textSecondary }]}>
-                No transactions this month
-              </Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>This Month</Text>
+            {filteredTransactions.length > 0 ? (
+              <View style={styles.transactionsList}>
+                {filteredTransactions.map(transaction => (
+                  <View key={transaction.id} style={[styles.transactionItem, { borderBottomColor: colors.border }]}>
+                    <View
+                      style={[
+                        styles.transactionIcon,
+                        transaction.type === 'INCOME'
+                          ? styles.incomeIcon
+                          : styles.expenseIcon,
+                      ]}
+                    >
+                      <Ionicons
+                        name={transaction.type === 'INCOME' ? 'arrow-up' : 'arrow-down'}
+                        size={18}
+                        color={transaction.type === 'INCOME' ? '#22c55e' : '#ef4444'}
+                      />
+                    </View>
+                    <View style={styles.transactionDetails}>
+                      <Text style={[styles.transactionDescription, { color: colors.text }]} numberOfLines={1}>
+                        {transaction.description}
+                      </Text>
+                      <Text style={[styles.transactionMeta, { color: colors.textSecondary }]}>
+                        {getCategoryLabel(transaction.category, transaction.type)} • {formatDate(transaction.date)}
+                      </Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Text
+                        style={[
+                          styles.transactionAmount,
+                          transaction.type === 'INCOME'
+                            ? styles.incomeAmount
+                            : styles.expenseAmount,
+                        ]}
+                      >
+                        {transaction.type === 'INCOME' ? '+' : '-'}
+                        {formatCurrency(transaction.amount)}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => handleDeleteTransaction(transaction)}
+                      >
+                        <Ionicons name="trash-outline" size={16} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyTransactions}>
+                <Ionicons name="receipt-outline" size={48} color={colors.textSecondary} />
+                <Text style={[styles.emptyTransactionsText, { color: colors.textSecondary }]}>
+                  No transactions this month
+                </Text>
+              </View>
+            )}
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.expenseButton]}
+                onPress={() => navigation.navigate('AddExpense')}
+              >
+                <Ionicons name="arrow-down" size={20} color="#ffffff" />
+                <Text style={styles.actionButtonText}>Expense</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.incomeButton]}
+                onPress={() => navigation.navigate('AddIncome')}
+              >
+                <Ionicons name="arrow-up" size={20} color="#ffffff" />
+                <Text style={styles.actionButtonText}>Income</Text>
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
-        {/* Bottom spacing */}
-        <View style={{ height: 100 }} />
+        {activeTab === 'goals' && (
+          <>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+              <View style={styles.goalsHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Savings goals</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('SavingsGoals')}>
+                  <Text style={styles.editBudgetText}>Manage</Text>
+                </TouchableOpacity>
+              </View>
+              {savingsGoals.length === 0 ? (
+                <Text style={[styles.emptyChartText, { color: colors.textSecondary }]}>No savings goals yet.</Text>
+              ) : (
+                savingsGoals.slice(0, 5).map(goal => {
+                  const pct = Math.min(100, (goal.currentAmount / goal.targetAmount) * 100);
+                  return (
+                    <View key={goal.id} style={{ marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ color: colors.text, fontWeight: '600' }}>{goal.name}</Text>
+                        <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                          {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
+                        </Text>
+                      </View>
+                      <View style={[styles.progressBackground, { backgroundColor: colors.border, marginTop: 6 }]}>
+                        <View style={[styles.progressBar, { width: `${pct}%`, backgroundColor: '#22c55e' }]} />
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+              <View style={styles.goalsHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Expense splits</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('ExpenseSplit')}>
+                  <Text style={styles.editBudgetText}>Manage</Text>
+                </TouchableOpacity>
+              </View>
+              {expenseSplits.length === 0 ? (
+                <Text style={[styles.emptyChartText, { color: colors.textSecondary }]}>No expense splits yet.</Text>
+              ) : (
+                expenseSplits.slice(0, 5).map(split => (
+                  <View key={split.id} style={[styles.menuRow, { borderBottomColor: colors.border }]}>
+                    <Text style={{ flex: 1, color: colors.text }}>{split.title}</Text>
+                    <Text style={{ color: colors.textSecondary }}>{formatCurrency(split.totalAmount)}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.sectionCard, { backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: 12 }]}
+              onPress={() => navigation.navigate('Wallet')}
+            >
+              <Ionicons name="wallet-outline" size={24} color="#6366f1" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: '600' }}>Study wallet</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{walletBalance} coins</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </>
+        )}
+
+        {activeTab === 'insights' && (
+          <>
+            <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Summary</Text>
+              <View style={styles.insightsGrid}>
+                <View style={styles.insightItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Budget used</Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{Math.round(budgetProgress)}%</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Avg daily</Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCurrency(avgDailySpend)}</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Projected</Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCurrency(projectedMonth)}</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Transactions</Text>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{monthlyTransactions.length}</Text>
+                </View>
+              </View>
+            </View>
+            {biggestCategory ? (
+              <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Biggest category</Text>
+                <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>{biggestCategory.name}</Text>
+                <Text style={{ color: colors.textSecondary, marginTop: 4 }}>{formatCurrency(biggestCategory.amount)} this month</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.sectionCard, { backgroundColor: colors.card }]}
+              onPress={() => navigation.navigate('FinancialToolkit')}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Ionicons name="bulb-outline" size={28} color="#06b6d4" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.text, fontWeight: '600' }}>Financial toolkit</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Tips, simulator & calculator</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </View>
+            </TouchableOpacity>
+            {pieData.length > 0 ? (
+              <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Spending breakdown</Text>
+                <View style={styles.chartContainer}>
+                  <PieChart
+                    data={pieData}
+                    donut
+                    radius={70}
+                    innerRadius={45}
+                    innerCircleColor={colors.card}
+                  />
+                  <View style={styles.legendContainer}>
+                    {expensesByCategory.slice(0, 6).map(cat => (
+                      <View key={cat.name} style={styles.legendItem}>
+                        <View style={[styles.legendDot, { backgroundColor: cat.color }]} />
+                        <Text style={[styles.legendText, { color: colors.text }]} numberOfLines={1}>{cat.name}</Text>
+                        <Text style={[styles.legendAmount, { color: colors.textSecondary }]}>{formatCurrency(cat.amount)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            ) : null}
+          </>
+        )}
+
+        {/* Bottom spacing for tab bar */}
+        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -624,5 +876,78 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginTop: 8,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  menuRowText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingHorizontal: 8,
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: '#6366f1',
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  txFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  txFilterBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#334155',
+  },
+  txFilterBtnActive: {
+    backgroundColor: '#6366f1',
+  },
+  txFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94a3b8',
+  },
+  txFilterTextActive: {
+    color: '#ffffff',
+  },
+  goalsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  insightsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  insightItem: {
+    width: '47%',
+    backgroundColor: '#334155',
+    borderRadius: 12,
+    padding: 12,
   },
 });

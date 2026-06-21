@@ -18,6 +18,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
+import { useAuthStore } from '../../stores/authStore';
 import Confetti from '../../components/Confetti';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -44,6 +45,9 @@ interface UserAnswerRecord {
 
 interface GameSession {
   id: string;
+  challengeId?: string;
+  isSoloPractice?: boolean;
+  awaitingOpponent?: boolean;
   user: User;
   opponent: User;
   questions: TestQuestion[];
@@ -55,6 +59,8 @@ interface GameSession {
   opponentTime: number;
   isComplete: boolean;
   winnerId?: string;
+  userCorrectAnswers?: number;
+  opponentCorrectAnswers?: number;
 }
 
 type GameResultRouteParams = {
@@ -68,9 +74,32 @@ export default function GameResultScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<GameResultRouteParams, 'GameResult'>>();
-  const { resetGame, setChallengeOpponent } = useGameStore();
-  
-  const { session, currentUser } = route.params;
+  const { resetGame, setChallengeOpponent, activeSession, refreshChallengeSession } = useGameStore();
+  const profileName = useAuthStore(s => s.profileName);
+
+  const session = activeSession ?? route.params.session;
+  const routeCurrentUser = route.params.currentUser;
+  const currentUser = {
+    ...routeCurrentUser,
+    name: profileName?.trim() || routeCurrentUser.name,
+  };
+
+  useEffect(() => {
+    if (!session.awaitingOpponent || !session.challengeId) return;
+    let cancelled = false;
+    const poll = async () => {
+      const updated = await refreshChallengeSession(session.challengeId!, currentUser);
+      if (!cancelled && updated) {
+        // activeSession in store updates; component re-renders
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 6000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [session.awaitingOpponent, session.challengeId, currentUser, refreshChallengeSession]);
 
   const isWinner = session.winnerId === currentUser.id;
   const isDraw = !session.winnerId;
@@ -122,6 +151,8 @@ export default function GameResultScreen() {
   }, []);
 
   const getResultText = () => {
+    if (session.isSoloPractice) return 'Practice Complete';
+    if (session.awaitingOpponent) return 'Answers Submitted';
     if (isDraw) return "It's a Draw!";
     if (isWinner) return 'You Won! 🎉';
     return 'You Lost';
@@ -169,7 +200,8 @@ export default function GameResultScreen() {
 
   const renderPlayerStats = (
     user: User,
-    score: number,
+    correct: number,
+    points: number,
     time: number,
     isCurrentUser: boolean
   ) => (
@@ -187,10 +219,16 @@ export default function GameResultScreen() {
       </View>
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>{score}</Text>
+          <Text style={[styles.statValue, { color: colors.primary }]}>{correct}</Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
             / {session.questions.length}
           </Text>
+          <Text style={[styles.statSubLabel, { color: colors.textSecondary }]}>Correct</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{points}</Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>pts</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
@@ -200,6 +238,18 @@ export default function GameResultScreen() {
       </View>
     </View>
   );
+
+  const isCurrentUserChallenger = session.user.id === currentUser.id;
+  const myCorrect = isCurrentUserChallenger
+    ? session.userCorrectAnswers ?? 0
+    : session.opponentCorrectAnswers ?? 0;
+  const myPoints = isCurrentUserChallenger ? session.userScore : session.opponentScore;
+  const myTime = isCurrentUserChallenger ? session.userTime : session.opponentTime;
+  const oppCorrect = isCurrentUserChallenger
+    ? session.opponentCorrectAnswers ?? 0
+    : session.userCorrectAnswers ?? 0;
+  const oppPoints = isCurrentUserChallenger ? session.opponentScore : session.userScore;
+  const oppTime = isCurrentUserChallenger ? session.opponentTime : session.userTime;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -247,21 +297,11 @@ export default function GameResultScreen() {
             },
           ]}
         >
-          {renderPlayerStats(
-            currentUser,
-            session.user.id === currentUser.id ? session.userScore : session.opponentScore,
-            session.user.id === currentUser.id ? session.userTime : session.opponentTime,
-            true
-          )}
+          {renderPlayerStats(currentUser, myCorrect, myPoints, myTime, true)}
           <View style={styles.vsContainer}>
             <Text style={[styles.vsText, { color: colors.textTertiary }]}>VS</Text>
           </View>
-          {renderPlayerStats(
-            opponent,
-            session.user.id === opponent.id ? session.userScore : session.opponentScore,
-            session.user.id === opponent.id ? session.userTime : session.opponentTime,
-            false
-          )}
+          {renderPlayerStats(opponent, oppCorrect, oppPoints, oppTime, false)}
         </Animated.View>
 
         {/* Action Buttons */}
@@ -387,6 +427,10 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
+    marginTop: 2,
+  },
+  statSubLabel: {
+    fontSize: 11,
     marginTop: 2,
   },
   statDivider: {

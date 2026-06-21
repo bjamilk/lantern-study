@@ -1,606 +1,536 @@
-// ===========================================
-// Lantern Study Mobile - Marketplace Screen
-// ===========================================
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  Alert,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   RefreshControl,
-  TextInput,
-  Image,
   ScrollView,
-  Dimensions,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { 
-  useMarketplaceStore, 
-  ACADEMIC_CATEGORIES, 
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  useMarketplaceStore,
+  useAuthStore,
+  ACADEMIC_CATEGORIES,
   STUDENT_LIFE_CATEGORIES,
   getCategoryInfo,
   type MarketplaceListing,
   type MarketplaceCategory,
-} from '../../stores/marketplaceStore';
-import { useTheme } from '../../theme';
+} from '../../stores';
+import { fetchMarketplaceListing, checkSavedSearchMatches } from '../../services/api';
+import { Button } from '../../components/ui';
+import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
+import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 48) / 2;
+type NavigationProp = {
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+};
 
-export default function MarketplaceScreen() {
-  const navigation = useNavigation<any>();
-  const [refreshing, setRefreshing] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const { colors } = useTheme();
-  
+export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }) {
+  const { user } = useAuthStore();
   const {
     listings,
     favorites,
+    favoriteListings,
+    savedSearches,
     isLoading,
     searchQuery,
     selectedCategory,
     activeTab,
+    minPrice,
+    maxPrice,
+    locationFilter,
+    sortBy,
+    sortOrder,
+    listingsHasMore,
+    listingsPage,
+    showFavoritesOnly,
     fetchListings,
-    toggleFavorite,
+    fetchServerFavorites,
+    fetchSavedSearches,
+    createSavedSearch,
+    deleteSavedSearch,
     setSearchQuery,
     setSelectedCategory,
     setActiveTab,
+    setMinPrice,
+    setMaxPrice,
+    setLocationFilter,
+    setSortBy,
+    setSortOrder,
+    setShowFavoritesOnly,
+    toggleFavorite,
+    loadFromStorage,
   } = useMarketplaceStore();
 
+  const [showCategories, setShowCategories] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSavedSearches, setShowSavedSearches] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [recentListings, setRecentListings] = useState<MarketplaceListing[]>([]);
+  const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
+
+  const categories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
+  const activeCategoryLabel = selectedCategory
+    ? getCategoryInfo(selectedCategory).name
+    : 'All categories';
+
+  const academicCategoryIds = useMemo(() => ACADEMIC_CATEGORIES.map(c => c.id), []);
+  const studentLifeCategoryIds = useMemo(() => STUDENT_LIFE_CATEGORIES.map(c => c.id), []);
+
+  const loadRecent = useCallback(async () => {
+    const ids = await getRecentlyViewedListingIds();
+    const loaded: MarketplaceListing[] = [];
+    for (const id of ids.slice(0, 6)) {
+      try {
+        const l = await fetchMarketplaceListing(id);
+        loaded.push({
+          id: l.id,
+          user_id: l.user_id,
+          seller_id: l.user_id,
+          category: l.category,
+          title: l.title,
+          description: l.description,
+          price: l.price,
+          location: l.location,
+          images: l.images || [],
+          status: l.status,
+          views_count: l.views_count,
+          favorites_count: l.favorites_count,
+          created_at: l.created_at,
+          updated_at: l.updated_at,
+        });
+      } catch {
+        // skip missing
+      }
+    }
+    setRecentListings(loaded);
+  }, []);
+
+  const loadSavedSearchMatches = useCallback(async () => {
+    if (!savedSearches.length) {
+      setSavedSearchNewMatches(0);
+      return;
+    }
+    let total = 0;
+    for (const search of savedSearches) {
+      try {
+        const result = await checkSavedSearchMatches(search.id);
+        total += result.count || 0;
+      } catch {
+        // ignore per-search errors
+      }
+    }
+    setSavedSearchNewMatches(total);
+  }, [savedSearches]);
+
   useEffect(() => {
-    fetchListings();
+    void (async () => {
+      if (user?.id) await fetchServerFavorites();
+      await fetchSavedSearches();
+      await fetchListings({ page: 1 });
+      await loadRecent();
+    })();
   }, [activeTab, selectedCategory]);
 
-  const onRefresh = useCallback(async () => {
+  useEffect(() => {
+    void loadSavedSearchMatches();
+  }, [loadSavedSearchMatches]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchListings({ page: 1 });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery, minPrice, maxPrice, locationFilter, sortBy, sortOrder, fetchListings]);
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    await fetchListings();
+    await loadFromStorage();
+    if (user?.id) await fetchServerFavorites();
+    await fetchSavedSearches();
+    await loadSavedSearchMatches();
+    await fetchListings({ page: 1 });
+    await loadRecent();
     setRefreshing(false);
-  }, [fetchListings]);
-
-  const handleSearch = useCallback(() => {
-    fetchListings({ search: searchQuery });
-  }, [searchQuery, fetchListings]);
-
-  const handleListingPress = useCallback((listing: MarketplaceListing) => {
-    navigation.navigate('ListingDetail', { listingId: listing.id });
-  }, [navigation]);
-
-  const handleCreateListing = useCallback(() => {
-    navigation.navigate('CreateListing');
-  }, [navigation]);
-
-  const currentCategories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
-
-  const formatPrice = (price?: number) => {
-    if (!price) return 'Free';
-    return `₦${price.toLocaleString()}`;
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
+  const loadMore = () => {
+    if (!listingsHasMore || isLoading) return;
+    void fetchListings({ page: listingsPage + 1, append: true });
   };
 
-  const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
-    const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-      textbook_exchange: 'book',
-      pq_bank: 'sparkles',
-      lecture_notes: 'document-text',
-      project_thesis: 'briefcase',
-      data_collection: 'bar-chart',
-      equipment_rental: 'flask',
-      accommodation: 'home',
-      travel_transport: 'car',
-      personal_goods: 'gift',
-      aso_ebi: 'shirt',
-      campus_services: 'people',
-      events_social: 'ticket',
-    };
-    return iconMap[category] || 'help-circle';
-  };
+  const listingMatchesFilters = useCallback(
+    (listing: MarketplaceListing) => {
+      const tabMatch =
+        activeTab === 'academic'
+          ? academicCategoryIds.includes(listing.category as MarketplaceCategory) ||
+            listing.category.startsWith('custom:')
+          : studentLifeCategoryIds.includes(listing.category as MarketplaceCategory) ||
+            listing.category.startsWith('custom:');
+      if (!tabMatch) return false;
+      if (selectedCategory && listing.category !== selectedCategory) return false;
+      return true;
+    },
+    [activeTab, selectedCategory, academicCategoryIds, studentLifeCategoryIds]
+  );
 
-  const renderListingCard = useCallback(({ item }: { item: MarketplaceListing }) => {
-    const isFavorite = favorites.has(item.id);
-    const categoryInfo = getCategoryInfo(item.category);
-    
-    return (
-      <TouchableOpacity
-        style={[styles.listingCard, { backgroundColor: colors.card }]}
-        onPress={() => handleListingPress(item)}
-        activeOpacity={0.7}
-      >
-        {/* Image */}
-        <View style={[styles.imageContainer, { backgroundColor: colors.border }]}>
-          {item.images && item.images.length > 0 ? (
-            <Image source={{ uri: item.images[0] }} style={styles.listingImage} />
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Ionicons name={getCategoryIcon(item.category)} size={32} color={colors.textSecondary} />
-            </View>
-          )}
-          
-          {/* Favorite Button */}
-          <TouchableOpacity
-            style={styles.favoriteButton}
-            onPress={() => toggleFavorite(item.id)}
-          >
-            <Ionicons
-              name={isFavorite ? 'heart' : 'heart-outline'}
-              size={20}
-              color={isFavorite ? '#ef4444' : '#9ca3af'}
-            />
-          </TouchableOpacity>
-          
-          {/* Category Badge */}
-          <View style={styles.categoryBadge}>
-            <Ionicons name={getCategoryIcon(item.category)} size={10} color="#ffffff" />
-            <Text style={styles.categoryBadgeText}>{categoryInfo.name}</Text>
-          </View>
-        </View>
-        
-        {/* Content */}
-        <View style={styles.cardContent}>
-          <Text style={[styles.listingTitle, { color: colors.text }]} numberOfLines={2}>{item.title}</Text>
-          
-          <Text style={styles.listingPrice}>{formatPrice(item.price)}</Text>
-          
-          <View style={styles.listingMeta}>
-            <View style={styles.metaItem}>
-              <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]} numberOfLines={1}>{item.location || 'N/A'}</Text>
-            </View>
-            <Text style={[styles.metaDate, { color: colors.textSecondary }]}>{formatDate(item.created_at)}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
+  const displayListings = useMemo(() => {
+    const base = showFavoritesOnly
+      ? favoriteListings.length
+        ? favoriteListings
+        : listings.filter(l => favorites.has(l.id))
+      : listings;
+    const filtered = base.filter(listingMatchesFilters);
+    if (!searchQuery.trim()) return filtered;
+    const q = searchQuery.toLowerCase();
+    return filtered.filter(
+      l =>
+        l.title.toLowerCase().includes(q) ||
+        l.description?.toLowerCase().includes(q) ||
+        l.location?.toLowerCase().includes(q)
     );
-  }, [favorites, handleListingPress, toggleFavorite, colors]);
+  }, [
+    listings,
+    favoriteListings,
+    favorites,
+    showFavoritesOnly,
+    searchQuery,
+    listingMatchesFilters,
+  ]);
 
-  const ListHeaderComponent = useMemo(() => (
-    <View style={styles.listHeader}>
-      {/* Tabs */}
-      <View style={[styles.tabsContainer, { backgroundColor: colors.card }]}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'academic' && [styles.tabActive, { backgroundColor: colors.background }]]}
-          onPress={() => setActiveTab('academic')}
-        >
-          <Ionicons 
-            name="school" 
-            size={18} 
-            color={activeTab === 'academic' ? '#6366f1' : colors.textSecondary} 
-          />
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'academic' && styles.tabTextActive]}>
-            Academic
+  const handleSaveSearch = async () => {
+    try {
+      await createSavedSearch(
+        {
+          search: searchQuery,
+          category: selectedCategory,
+          minPrice,
+          maxPrice,
+          location: locationFilter,
+          sortBy,
+          sortOrder,
+          activeTab,
+        },
+        searchQuery.trim() || activeCategoryLabel
+      );
+      Alert.alert('Saved', 'Search saved.');
+    } catch {
+      Alert.alert('Error', 'Could not save search.');
+    }
+  };
+
+  const applySavedSearch = (filters: Record<string, unknown>) => {
+    if (typeof filters.search === 'string') setSearchQuery(filters.search);
+    if (typeof filters.category === 'string') setSelectedCategory(filters.category as MarketplaceCategory);
+    if (typeof filters.minPrice === 'string') setMinPrice(filters.minPrice);
+    if (typeof filters.maxPrice === 'string') setMaxPrice(filters.maxPrice);
+    if (typeof filters.location === 'string') setLocationFilter(filters.location);
+    if (typeof filters.sortBy === 'string') setSortBy(filters.sortBy);
+    if (filters.sortOrder === 'asc' || filters.sortOrder === 'desc') setSortOrder(filters.sortOrder);
+    if (filters.activeTab === 'academic' || filters.activeTab === 'student-life') setActiveTab(filters.activeTab);
+    setShowSavedSearches(false);
+    void fetchListings({ page: 1 });
+  };
+
+  const renderListing = ({ item }: { item: MarketplaceListing }) => {
+    const category = getCategoryInfo(item.category);
+    const favorited = favorites.has(item.id);
+    const own = isOwnListing(item, user?.id);
+
+    return (
+      <Pressable
+        onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+        className={`flex-1 m-1.5 rounded-2xl overflow-hidden border ${
+          own
+            ? 'bg-indigo-50/80 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-700'
+            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+        }`}
+      >
+        <View className="aspect-[4/3] relative">
+          <ListingImage uri={item.images?.[0]} className="w-full h-full" icon={categoryIcon(category.icon)} />
+          <Pressable
+            onPress={() => {
+              if (user?.id) void toggleFavorite(item.id, user.id);
+            }}
+            className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/90 dark:bg-slate-800/90"
+          >
+            <Ionicons name={favorited ? 'heart' : 'heart-outline'} size={16} color={favorited ? '#ef4444' : '#94a3b8'} />
+          </Pressable>
+          {own ? (
+            <View className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-indigo-600/90">
+              <Text className="text-[10px] font-semibold text-white">Yours</Text>
+            </View>
+          ) : null}
+        </View>
+        <View className="p-2.5">
+          <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+            {item.title}
           </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'student-life' && [styles.tabActive, { backgroundColor: colors.background }]]}
-          onPress={() => setActiveTab('student-life')}
-        >
-          <Ionicons 
-            name="briefcase" 
-            size={18} 
-            color={activeTab === 'student-life' ? '#6366f1' : colors.textSecondary} 
-          />
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'student-life' && styles.tabTextActive]}>
-            Student Life
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder={`Search ${activeTab === 'academic' ? 'academic resources' : 'student essentials'}...`}
-          placeholderTextColor={colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={handleSearch}
-          returnKeyType="search"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity 
-          style={styles.filterButton}
-          onPress={() => setShowFilters(!showFilters)}
-        >
-          <Ionicons name="options" size={20} color="#6366f1" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Category Filters */}
-      {showFilters && (
-        <View style={styles.filtersContainer}>
-          <Text style={[styles.filtersTitle, { color: colors.textSecondary }]}>Categories</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <TouchableOpacity
-              style={[styles.filterChip, { backgroundColor: colors.card }, !selectedCategory && styles.filterChipActive]}
-              onPress={() => setSelectedCategory(null)}
-            >
-              <Text style={[styles.filterChipText, { color: colors.textSecondary }, !selectedCategory && styles.filterChipTextActive]}>
-                All
+          {item.is_on_sale && item.effective_price != null ? (
+            <View className="mt-1">
+              <Text className="text-xs text-slate-400 line-through">{formatPrice(item.price)}</Text>
+              <Text className="text-base font-bold text-red-600 dark:text-red-400">
+                {formatPrice(item.effective_price)}
               </Text>
-            </TouchableOpacity>
-            
-            {currentCategories.map(category => (
-              <TouchableOpacity
-                key={category.id}
-                style={[
-                  styles.filterChip,
-                  { backgroundColor: colors.card },
-                  selectedCategory === category.id && styles.filterChipActive
-                ]}
-                onPress={() => setSelectedCategory(category.id)}
+            </View>
+          ) : (
+            <Text className="text-base font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+              {formatPrice(item.price)}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
+
+  const listHeader = (
+    <View>
+      {recentListings.length > 0 && !showFavoritesOnly ? (
+        <View className="px-2 pt-3">
+          <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2 px-1">
+            Recently viewed
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {recentListings.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
               >
-                <Ionicons 
-                  name={getCategoryIcon(category.id)} 
-                  size={14} 
-                  color={selectedCategory === category.id ? '#ffffff' : colors.textSecondary} 
-                />
-                <Text style={[
-                  styles.filterChipText,
-                  { color: colors.textSecondary },
-                  selectedCategory === category.id && styles.filterChipTextActive
-                ]}>
-                  {category.name}
+                <ListingImage uri={item.images?.[0]} className="w-full h-20" />
+                <Text numberOfLines={2} className="text-[10px] p-1.5 text-slate-700 dark:text-slate-200">
+                  {item.title}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
-      )}
-
-      {/* Results Count */}
-      <Text style={[styles.resultsCount, { color: colors.textSecondary }]}>
-        {listings.length} listing{listings.length !== 1 ? 's' : ''}
-      </Text>
+      ) : null}
     </View>
-  ), [activeTab, searchQuery, selectedCategory, showFilters, listings.length, currentCategories, handleSearch, colors]);
-
-  const ListEmptyComponent = useMemo(() => (
-    <View style={styles.emptyContainer}>
-      <View style={[styles.emptyIcon, { backgroundColor: colors.card }]}>
-        <Ionicons name="storefront-outline" size={64} color="#6366f1" />
-      </View>
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>No listings found</Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-        {searchQuery || selectedCategory
-          ? "Try adjusting your search or filters"
-          : "Be the first to create a listing!"
-        }
-      </Text>
-      <TouchableOpacity style={styles.createButton} onPress={handleCreateListing}>
-        <Ionicons name="add" size={20} color="#ffffff" />
-        <Text style={styles.createButtonText}>Create Listing</Text>
-      </TouchableOpacity>
-    </View>
-  ), [searchQuery, selectedCategory, handleCreateListing, colors]);
+  );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.title, { color: colors.text }]}>Marketplace</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Discover resources & essentials</Text>
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <LinearGradient colors={['#4f46e5', '#6366f1', '#7c3aed']} className="px-4 pt-2 pb-4">
+        <View className="flex-row items-start justify-between pb-2">
+          <View className="flex-1 pr-3">
+            <Text className="text-2xl font-bold text-white">Marketplace</Text>
+            <Text className="text-sm text-indigo-100 mt-0.5">Buy & sell on campus</Text>
+          </View>
+          <View className="flex-row flex-wrap gap-2 justify-end max-w-[160px]">
+            <Pressable onPress={() => navigation.navigate('Orders')} className="p-2 rounded-xl bg-white/15">
+              <Ionicons name="receipt-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('Offers')} className="p-2 rounded-xl bg-white/15">
+              <Ionicons name="pricetag-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('Favorites')} className="p-2 rounded-xl bg-white/15">
+              <Ionicons name="heart-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('MyListings')} className="p-2 rounded-xl bg-white/15">
+              <Ionicons name="storefront-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('Inquiries')} className="p-2 rounded-xl bg-white/15">
+              <Ionicons name="chatbubbles-outline" size={20} color="#fff" />
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('CreateListing')} className="p-2 rounded-xl bg-white">
+              <Ionicons name="add" size={20} color="#4f46e5" />
+            </Pressable>
+          </View>
         </View>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            style={[styles.headerButton, { backgroundColor: colors.card }]}
-            onPress={() => navigation.navigate('MyListings')}
-          >
-            <Ionicons name="list" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.headerButton, { backgroundColor: colors.card }]}
-            onPress={() => navigation.navigate('Inquiries')}
-          >
-            <Ionicons name="chatbubbles" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton} onPress={handleCreateListing}>
-            <Ionicons name="add" size={24} color="#ffffff" />
-          </TouchableOpacity>
+
+        <View className="flex-row items-center bg-white dark:bg-slate-800 rounded-xl px-3 py-2">
+          <Ionicons name="search" size={18} color="#94a3b8" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search listings…"
+            placeholderTextColor="#94a3b8"
+            className="flex-1 ml-2 text-sm text-slate-900 dark:text-slate-100"
+          />
+          <Pressable onPress={() => setShowFilters(v => !v)} className="p-1">
+            <Ionicons name="options-outline" size={18} color="#64748b" />
+          </Pressable>
         </View>
+      </LinearGradient>
+
+      <View className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+        <View className="flex-row px-4 items-center">
+          {(['academic', 'student-life'] as const).map(tab => (
+            <Pressable
+              key={tab}
+              onPress={() => {
+                setActiveTab(tab);
+                setShowCategories(false);
+              }}
+              className={`flex-1 py-3 items-center border-b-2 ${
+                activeTab === tab ? 'border-indigo-600' : 'border-transparent'
+              }`}
+            >
+              <Text className={`text-sm font-medium ${activeTab === tab ? 'text-indigo-600' : 'text-slate-500'}`}>
+                {tab === 'academic' ? 'Academic' : 'Student Life'}
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            className={`px-2 py-1 rounded-lg ${showFavoritesOnly ? 'bg-red-100' : 'bg-slate-100 dark:bg-slate-700'}`}
+          >
+            <Ionicons name="heart" size={16} color={showFavoritesOnly ? '#ef4444' : '#64748b'} />
+          </Pressable>
+        </View>
+
+        <View className="flex-row px-3 pb-2 gap-2 flex-wrap">
+          <Pressable
+            onPress={() => setShowCategories(v => !v)}
+            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700"
+          >
+            <Text className="text-[11px] font-medium text-slate-600 dark:text-slate-300">{activeCategoryLabel}</Text>
+            <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
+          </Pressable>
+          <Pressable
+            onPress={() => setShowSavedSearches(v => !v)}
+            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700"
+          >
+            <Ionicons name="bookmark-outline" size={14} color="#64748b" />
+            <Text className="text-[11px] text-slate-600 dark:text-slate-300">Saved</Text>
+            {savedSearchNewMatches > 0 ? (
+              <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-indigo-600">
+                <Text className="text-[9px] font-bold text-white">{savedSearchNewMatches}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable onPress={handleSaveSearch} className="px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
+            <Text className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Save search</Text>
+          </Pressable>
+        </View>
+
+        {showFilters ? (
+          <View className="px-3 pb-3 gap-2">
+            <View className="flex-row gap-2">
+              <TextInput
+                value={minPrice}
+                onChangeText={setMinPrice}
+                placeholder="Min ₦"
+                keyboardType="numeric"
+                className="flex-1 p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+              />
+              <TextInput
+                value={maxPrice}
+                onChangeText={setMaxPrice}
+                placeholder="Max ₦"
+                keyboardType="numeric"
+                className="flex-1 p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+              />
+            </View>
+            <TextInput
+              value={locationFilter}
+              onChangeText={setLocationFilter}
+              placeholder="Location filter"
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+            />
+            <View className="flex-row gap-2">
+              <Pressable
+                onPress={() => {
+                  setSortBy('created_at');
+                  setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+                }}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700"
+              >
+                <Text className="text-xs text-slate-600 dark:text-slate-300">
+                  Date {sortOrder === 'desc' ? '↓' : '↑'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setSortBy(sortBy === 'price' ? 'created_at' : 'price')}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700"
+              >
+                <Text className="text-xs text-slate-600 dark:text-slate-300">
+                  Sort: {sortBy === 'price' ? 'Price' : 'Newest'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {showCategories ? (
+          <View className="px-3 pb-3 flex-row flex-wrap gap-2">
+            <Pressable
+              onPress={() => setSelectedCategory(null)}
+              className={`px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200 dark:border-slate-600'}`}
+            >
+              <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-slate-600'}`}>All</Text>
+            </Pressable>
+            {categories.map(cat => (
+              <Pressable
+                key={cat.id}
+                onPress={() => setSelectedCategory(cat.id as MarketplaceCategory)}
+                className={`px-3 py-1.5 rounded-full border ${
+                  selectedCategory === cat.id ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200 dark:border-slate-600'
+                }`}
+              >
+                <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-slate-600'}`}>
+                  {cat.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {showSavedSearches && savedSearches.length > 0 ? (
+          <View className="px-3 pb-3">
+            {savedSearches.map(s => (
+              <View key={s.id} className="flex-row items-center justify-between py-2 border-b border-slate-100 dark:border-slate-700">
+                <Pressable className="flex-1" onPress={() => applySavedSearch(s.filters)}>
+                  <Text className="text-sm text-slate-800 dark:text-slate-100">{s.name}</Text>
+                </Pressable>
+                <Pressable onPress={() => void deleteSavedSearch(s.id)}>
+                  <Ionicons name="trash-outline" size={16} color="#94a3b8" />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </View>
 
-      {/* Listings Grid */}
-      <FlatList
-        data={listings}
-        keyExtractor={(item) => item.id}
-        renderItem={renderListingCard}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
-        ListHeaderComponent={ListHeaderComponent}
-        ListEmptyComponent={!isLoading ? ListEmptyComponent : null}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#6366f1"
-            colors={['#6366f1']}
-          />
-        }
-      />
+      {isLoading && !displayListings.length ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      ) : (
+        <FlatList
+          data={displayListings}
+          keyExtractor={item => item.id}
+          numColumns={2}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={{ padding: 8, paddingBottom: 24 }}
+          columnWrapperStyle={{ justifyContent: 'space-between' }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            isLoading && displayListings.length > 0 ? (
+              <ActivityIndicator className="my-4" color="#6366f1" />
+            ) : null
+          }
+          ListEmptyComponent={
+            <View className="items-center py-16 px-6">
+              <Ionicons name="bag-outline" size={48} color="#cbd5e1" />
+              <Text className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-4">No listings found</Text>
+              <Button className="mt-4" onPress={() => navigation.navigate('CreateListing')}>
+                Create Listing
+              </Button>
+            </View>
+          }
+          renderItem={renderListing}
+        />
+      )}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 2,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-  },
-  listHeader: {
-    marginBottom: 16,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 6,
-  },
-  tabActive: {
-    backgroundColor: '#0f172a',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  tabTextActive: {
-    color: '#6366f1',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 48,
-    fontSize: 16,
-    color: '#ffffff',
-  },
-  filterButton: {
-    padding: 8,
-    backgroundColor: '#6366f120',
-    borderRadius: 8,
-  },
-  filtersContainer: {
-    marginBottom: 12,
-  },
-  filtersTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#9ca3af',
-    marginBottom: 8,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    gap: 6,
-  },
-  filterChipActive: {
-    backgroundColor: '#6366f1',
-  },
-  filterChipText: {
-    fontSize: 13,
-    color: '#9ca3af',
-  },
-  filterChipTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  resultsCount: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  row: {
-    justifyContent: 'space-between',
-  },
-  listingCard: {
-    width: CARD_WIDTH,
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  imageContainer: {
-    height: 140,
-    backgroundColor: '#334155',
-    position: 'relative',
-  },
-  listingImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  placeholderImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  favoriteButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  categoryBadge: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  categoryBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  cardContent: {
-    padding: 12,
-  },
-  listingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 6,
-    lineHeight: 18,
-  },
-  listingPrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#6366f1',
-    marginBottom: 8,
-  },
-  listingMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 11,
-    color: '#6b7280',
-    flex: 1,
-  },
-  metaDate: {
-    fontSize: 11,
-    color: '#6b7280',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 40,
-  },
-  emptyIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#6366f120',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  createButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-});

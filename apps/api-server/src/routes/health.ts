@@ -1,67 +1,65 @@
 import { Router, Request, Response } from 'express';
+import { requireOperationalAccess } from '../middleware/operationalAuth';
+import { isProductionEnv } from '../utils/safeError';
 
 const router = Router();
 const startTime = Date.now();
 
-// Simple health check - for load balancer probes
 router.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({ 
-    status: 'ok', 
+  res.status(200).json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });
 });
 
-// Detailed readiness check - verifies all dependencies
-router.get('/ready', async (req: Request, res: Response) => {
+router.get('/ready', requireOperationalAccess, async (req: Request, res: Response) => {
   const checks: Record<string, { status: 'ok' | 'error'; latency?: number; error?: string }> = {};
   let isHealthy = true;
 
-  // Check database connection
   const dbStart = Date.now();
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(
-      process.env.SUPABASE_URL || 'http://127.0.0.1:54321',
+      process.env.SUPABASE_URL || 'http://127.0.0.1:55421',
       process.env.SUPABASE_SERVICE_ROLE_KEY || ''
     );
-    
+
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    
+
     if (error && error.code !== 'PGRST116') throw error;
-    
-    checks.database = { 
-      status: 'ok', 
-      latency: Date.now() - dbStart 
-    };
-  } catch (error: any) {
-    checks.database = { 
-      status: 'error', 
+
+    checks.database = {
+      status: 'ok',
       latency: Date.now() - dbStart,
-      error: error.message 
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Database check failed';
+    checks.database = {
+      status: 'error',
+      latency: Date.now() - dbStart,
+      error: isProductionEnv() ? 'Database check failed' : message,
     };
     isHealthy = false;
   }
 
-  // Check memory usage
   const memUsage = process.memoryUsage();
   const memUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
-  
+
   checks.memory = {
     status: memUsedPercent < 90 ? 'ok' : 'error',
     latency: Math.round(memUsedPercent),
   };
-  
+
   if (memUsedPercent >= 90) {
     checks.memory.error = 'Memory usage above 90%';
     isHealthy = false;
   }
 
-  // Check event loop lag
   const eventLoopStart = Date.now();
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
   const eventLoopLag = Date.now() - eventLoopStart;
-  
+
   checks.eventLoop = {
     status: eventLoopLag < 100 ? 'ok' : 'error',
     latency: eventLoopLag,
@@ -70,6 +68,25 @@ router.get('/ready', async (req: Request, res: Response) => {
   if (eventLoopLag >= 100) {
     checks.eventLoop.error = 'Event loop lag too high';
     isHealthy = false;
+  }
+
+  if (process.env.REDIS_ENABLED === 'true') {
+    const redisStart = Date.now();
+    try {
+      const { getRedisClient } = await import('../services/redisStore');
+      const client = await getRedisClient();
+      if (!client) throw new Error('Redis client unavailable');
+      await client.ping();
+      checks.redis = { status: 'ok', latency: Date.now() - redisStart };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Redis check failed';
+      checks.redis = {
+        status: 'error',
+        latency: Date.now() - redisStart,
+        error: isProductionEnv() ? 'Redis check failed' : message,
+      };
+      isHealthy = false;
+    }
   }
 
   res.status(isHealthy ? 200 : 503).json({
@@ -81,11 +98,10 @@ router.get('/ready', async (req: Request, res: Response) => {
   });
 });
 
-// Metrics endpoint for monitoring systems
-router.get('/metrics', (req: Request, res: Response) => {
+router.get('/metrics', requireOperationalAccess, (req: Request, res: Response) => {
   const memUsage = process.memoryUsage();
   const cpuUsage = process.cpuUsage();
-  
+
   res.json({
     uptime: process.uptime(),
     uptimeHuman: formatUptime(process.uptime()),
@@ -113,13 +129,13 @@ function formatUptime(seconds: number): string {
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  
+
   const parts = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
   parts.push(`${secs}s`);
-  
+
   return parts.join(' ');
 }
 

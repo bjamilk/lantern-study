@@ -213,7 +213,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
   };
 
   const userProgress = (Object.keys(session.userAnswers).length / totalQuestions) * 100;
-  const opponentProgress = (Object.keys(session.opponentAnswers).length / totalQuestions) * 100;
+  const opponentProgress = session.isSoloPractice
+    ? 0
+    : (Object.keys(session.opponentAnswers).length / totalQuestions) * 100;
+  const showOpponent = !session.isSoloPractice;
 
   return (
     <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
@@ -242,7 +245,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 
                 {/* Audio Controls */}
                 <div className="flex items-center space-x-4">
-                  <span className="text-red-500 text-sm md:text-base font-extrabold">VS</span>
+                  {showOpponent && <span className="text-red-500 text-sm md:text-base font-extrabold">VS</span>}
+                  {!showOpponent && <span className="text-indigo-600 text-sm font-semibold">Solo Practice</span>}
                   <button 
                     onClick={toggleMute}
                     className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
@@ -256,6 +260,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                   </button>
                 </div>
 
+                 {showOpponent && (
                  <div className="flex items-center">
                     <div className="mr-3 flex flex-col items-end">
                       <span className="leading-tight">{session.opponent.name}</span>
@@ -273,6 +278,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         </div>
                     )}
                 </div>
+                 )}
             </div>
             <div className="space-y-2">
                  <div>
@@ -284,6 +290,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         <div className="bg-blue-500 h-4 rounded-full transition-all duration-500" style={{ width: `${userProgress}%` }}></div>
                     </div>
                  </div>
+                 {showOpponent && (
                  <div>
                      <div className="flex justify-between text-xs mb-1 text-slate-600 dark:text-slate-400">
                         <span className="font-semibold text-gray-600 dark:text-gray-400">Score: {session.opponentScore} pts <span className="text-slate-400">({session.opponentCorrectAnswers || 0} correct)</span></span>
@@ -293,6 +300,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         <div className="bg-gray-500 h-4 rounded-full transition-all duration-500" style={{ width: `${opponentProgress}%` }}></div>
                     </div>
                  </div>
+                 )}
             </div>
              <p className="text-center text-sm text-slate-600 dark:text-slate-400 mt-4 font-medium">
                 Question {currentQuestionIndex + 1} of {totalQuestions}
@@ -436,8 +444,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                             Next Question <ChevronRightIcon className="w-5 h-5 ml-1" />
                         </button>
                     ) : (
-                        <div className="text-right text-sm text-slate-500 dark:text-slate-400 font-medium italic animate-pulse">
-                            Waiting for opponent to complete...
+                        <div className="text-right text-sm text-slate-500 dark:text-slate-400 font-medium italic">
+                            {session.isSoloPractice
+                              ? 'Finishing session…'
+                              : session.challengeId
+                                ? 'Submitting your answers…'
+                                : 'All questions answered.'}
                         </div>
                     )}
                 </div>

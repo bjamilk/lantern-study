@@ -9,10 +9,38 @@ import { User, UserStats } from '../types';
 import {
   supabase,
   setCachedAuthToken,
+  bootstrapAuthFromStorage,
+  readPersistedAuthUser,
   fetchUserProfile as apiFetchUserProfile,
   createUserProfile as apiCreateUserProfile,
   updateUserProfile as apiUpdateUserProfile,
 } from '../services/supabase';
+import { resolvePlatformAdmin } from '../utils/platformAdmin';
+
+function getInitialAuthState(): {
+  currentUser: User | null;
+  isAuthenticated: boolean;
+  isAuthLoading: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
+  }
+  const boot = bootstrapAuthFromStorage();
+  if (!boot) {
+    return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
+  }
+  const persisted = readPersistedAuthUser();
+  if (!persisted?.id || persisted.id !== boot.userId) {
+    return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
+  }
+  return {
+    currentUser: persisted as unknown as User,
+    isAuthenticated: true,
+    isAuthLoading: false,
+  };
+}
+
+const initialAuthState = getInitialAuthState();
 
 // Initial user stats
 const initialUserStats: UserStats = {
@@ -33,11 +61,13 @@ interface AuthState {
   currentUser: User | null;
   isAuthLoading: boolean;
   isAuthenticated: boolean;
+  isPasswordRecovery: boolean;
   error: string | null;
   
   // Actions
   setCurrentUser: (user: User | null) => void;
   setAuthLoading: (loading: boolean) => void;
+  setPasswordRecovery: (active: boolean) => void;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -51,24 +81,31 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      // Initial State
-      currentUser: null,
-      isAuthLoading: true,
-      isAuthenticated: false,
+      // Initial State — sync fast-boot from localStorage when token + user are cached
+      currentUser: initialAuthState.currentUser,
+      isAuthLoading: initialAuthState.isAuthLoading,
+      isAuthenticated: initialAuthState.isAuthenticated,
+      isPasswordRecovery:
+        typeof window !== 'undefined' &&
+        (window.location.pathname === '/reset-password' ||
+          window.location.hash.includes('type=recovery')),
       error: null,
 
       // Set current user
       setCurrentUser: (user) => {
-        set({ 
-          currentUser: user, 
+        set({
+          currentUser: user,
           isAuthenticated: !!user,
-          isAuthLoading: false,
         });
       },
 
       // Set loading state
       setAuthLoading: (loading) => {
         set({ isAuthLoading: loading });
+      },
+
+      setPasswordRecovery: (active) => {
+        set({ isPasswordRecovery: active });
       },
 
       // Login
@@ -113,7 +150,8 @@ export const useAuthStore = create<AuthState>()(
               id: profile.id,
               name: profile.name || 'User',
               email: email,
-              avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || email)}&background=random&color=fff`,
+              isAdmin: data.user.app_metadata?.is_platform_admin === true,
+              avatarUrl: profile.avatar_url || '',
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
@@ -124,7 +162,8 @@ export const useAuthStore = create<AuthState>()(
               id: data.user.id,
               name: data.user.user_metadata?.name || email.split('@')[0],
               email: email,
-              avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.user_metadata?.name || email)}&background=random&color=fff`,
+              isAdmin: data.user.app_metadata?.is_platform_admin === true,
+              avatarUrl: '',
               points: 0,
               badges: [],
               stats: initialUserStats,
@@ -187,7 +226,8 @@ export const useAuthStore = create<AuthState>()(
               id: data.user.id,
               name: name,
               email: email,
-              avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+              isAdmin: data.user.app_metadata?.is_platform_admin === true,
+              avatarUrl: '',
               points: 0,
               badges: [],
               stats: initialUserStats,
@@ -219,6 +259,9 @@ export const useAuthStore = create<AuthState>()(
         try {
           await supabase.auth.signOut();
         } finally {
+          try {
+            localStorage.removeItem('auth-storage-v2');
+          } catch {}
           set({ 
             currentUser: null, 
             isAuthenticated: false,
@@ -233,7 +276,9 @@ export const useAuthStore = create<AuthState>()(
         if (!currentUser) return;
 
         try {
+          const { data: sessionData } = await supabase.auth.getSession();
           const profile = await apiFetchUserProfile(currentUser.id);
+          const isAdmin = resolvePlatformAdmin(sessionData.session?.user, profile?.settings);
           if (profile) {
             set({
               currentUser: {
@@ -246,8 +291,11 @@ export const useAuthStore = create<AuthState>()(
                 username: profile.username || currentUser.username,
                 firstName: profile.first_name || currentUser.firstName,
                 lastName: profile.last_name || currentUser.lastName,
+                isAdmin,
               }
             });
+          } else {
+            set({ currentUser: { ...currentUser, isAdmin } });
           }
         } catch (error) {
           console.error('Failed to refresh user:', error);
@@ -352,7 +400,8 @@ export const useAuthStore = create<AuthState>()(
               id: profile.id,
               name: profile.name || 'User',
               email: session.user.email || '',
-              avatarUrl: profile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'User')}&background=random&color=fff`,
+              isAdmin: session.user.app_metadata?.is_platform_admin === true,
+              avatarUrl: profile.avatar_url || '',
               points: profile.points || 0,
               badges: profile.badges || [],
               stats: profile.stats || initialUserStats,
@@ -363,7 +412,8 @@ export const useAuthStore = create<AuthState>()(
               id: session.user.id,
               name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
               email: session.user.email || '',
-              avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(session.user.user_metadata?.name || 'User')}&background=random&color=fff`,
+              isAdmin: session.user.app_metadata?.is_platform_admin === true,
+              avatarUrl: '',
               points: 0,
               badges: [],
               stats: initialUserStats,
@@ -390,9 +440,11 @@ export const useAuthStore = create<AuthState>()(
       clearError: () => set({ error: null }),
     }),
     {
-      name: 'auth-storage',
+      name: 'auth-storage-v2',
       partialize: (state) => ({
-        currentUser: state.currentUser,
+        currentUser: state.currentUser
+          ? { ...state.currentUser, isAdmin: undefined }
+          : null,
         isAuthenticated: state.isAuthenticated,
       }),
     }

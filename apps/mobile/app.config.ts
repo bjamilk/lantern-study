@@ -1,8 +1,24 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
+const APP_VARIANT = process.env.APP_VARIANT || process.env.EAS_BUILD_PROFILE || 'development';
+const IS_DEV_VARIANT = APP_VARIANT === 'development';
+const IS_PRODUCTION_BUILD = ['production', 'preview'].includes(process.env.EAS_BUILD_PROFILE || '');
+const ANDROID_PACKAGE = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
+const IOS_BUNDLE_ID = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
+
+if (IS_PRODUCTION_BUILD) {
+  const required = ['EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_ANON_KEY', 'EXPO_PUBLIC_API_URL'] as const;
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required Expo env vars for ${process.env.EAS_BUILD_PROFILE} build: ${missing.join(', ')}`);
+  }
+}
+
+const SPLASH_BACKGROUND_COLOR = '#7B88E8';
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Lantern Study',
+  name: IS_DEV_VARIANT ? 'Lantern Study Dev' : 'Lantern Study',
   slug: 'lantern-study',
   version: '1.0.0',
   orientation: 'portrait',
@@ -17,21 +33,21 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
-    backgroundColor: '#4F46E5', // Indigo-600
+    backgroundColor: SPLASH_BACKGROUND_COLOR,
   },
   
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.lanternstudy.app',
+    bundleIdentifier: IOS_BUNDLE_ID,
     associatedDomains: ['applinks:lanternstudy.app'],
   },
   
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#4F46E5',
+      backgroundColor: SPLASH_BACKGROUND_COLOR,
     },
-    package: 'com.lanternstudy.app',
+    package: ANDROID_PACKAGE,
     intentFilters: [
       {
         action: 'VIEW',
@@ -60,33 +76,40 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-font',
     'expo-secure-store',
     'expo-web-browser',
+    ['expo-apple-authentication', { usesAppleSignIn: true }],
     [
       'expo-splash-screen',
       {
         image: './assets/splash-icon.png',
-        imageWidth: 200,
+        imageWidth: 260,
         resizeMode: 'contain',
-        backgroundColor: '#4F46E5',
+        backgroundColor: SPLASH_BACKGROUND_COLOR,
       },
     ],
   ],
   
-  // EAS Update configuration
-  updates: {
-    url: 'https://u.expo.dev/your-project-id', // Replace with actual project ID after eas init
-    fallbackToCacheTimeout: 30000,
-  },
-  
+  updates: IS_PRODUCTION_BUILD
+    ? {
+        url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
+        fallbackToCacheTimeout: 30000,
+      }
+    : {
+        enabled: false,
+      },
+
   runtimeVersion: {
     policy: 'appVersion',
   },
-  
+
   extra: {
-    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || 'http://192.168.4.38:54321',
-    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
-    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://192.168.4.38:3001',
+    appVariant: APP_VARIANT,
+    lanApiHost: process.env.EXPO_PUBLIC_LAN_API_HOST || '127.0.0.1',
+    emulatorApiHost: process.env.EXPO_PUBLIC_EMULATOR_API_HOST || '10.0.2.2',
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    apiUrl: process.env.EXPO_PUBLIC_API_URL,
     eas: {
-      projectId: 'your-project-id', // Replace after eas init
+      projectId: '2e6076dd-b213-42d0-a966-3a15e3f9cb33',
     },
   },
   

@@ -1,0 +1,71 @@
+import React from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import type { DailyQuest } from '../services/gamification';
+import { Card } from './ui';
+
+const QUEST_LABELS: Record<string, string> = {
+  review_cards: 'Review flashcards',
+  answer_questions: 'Answer group questions',
+  create_note: 'Create or edit a note',
+  complete_test: 'Complete a practice test',
+};
+
+interface Props {
+  quests: DailyQuest[];
+  streak: number;
+}
+
+export function DailyQuestsWidget({ quests, streak }: Props) {
+  if (quests.length === 0) return null;
+  const completedCount = quests.filter(q => q.completed).length;
+
+  return (
+    <Card className="mb-4 p-4">
+      <View className="flex-row items-center justify-between mb-3">
+        <Text className="font-semibold text-slate-900 dark:text-slate-100">Daily Quests</Text>
+        <View className="flex-row items-center gap-1">
+          <Ionicons name="flame" size={16} color="#f97316" />
+          <Text className="text-sm font-bold text-orange-600">{streak} day streak</Text>
+        </View>
+      </View>
+      <Text className="text-xs text-slate-500 mb-3">
+        {completedCount}/{quests.length} completed today
+      </Text>
+      <View className="gap-3">
+        {quests.map((quest, index) => {
+          const pct = Math.min(100, (quest.progress_count / quest.target_count) * 100);
+          return (
+            <View key={quest.id || `${quest.quest_type}-${index}`} className="flex-row items-center gap-3">
+              <Ionicons
+                name={quest.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                size={20}
+                color={quest.completed ? '#10b981' : '#94a3b8'}
+              />
+              <View className="flex-1">
+                <View className="flex-row justify-between mb-1">
+                  <Text
+                    className={`text-sm ${quest.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}
+                    numberOfLines={1}
+                  >
+                    {QUEST_LABELS[quest.quest_type] || quest.quest_type}
+                  </Text>
+                  <Text className="text-xs text-slate-400">
+                    {quest.progress_count}/{quest.target_count}
+                  </Text>
+                </View>
+                <View className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <View
+                    className={`h-full rounded-full ${quest.completed ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </View>
+              </View>
+              <Text className="text-xs text-amber-600 font-medium">+{quest.reward_xp}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}

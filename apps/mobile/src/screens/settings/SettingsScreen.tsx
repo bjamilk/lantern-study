@@ -3,7 +3,7 @@
 // Synced with backend (shared with web app)
 // ===========================================
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +34,9 @@ import {
 } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import { supabase } from '../../services/supabase';
+import { deleteUserAccount, exportUserData } from '../../services/api';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../navigation/types';
 
 interface SettingItemProps {
   icon: string;
@@ -82,6 +86,29 @@ const formatTime = (timeString: string) => {
   return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`;
 };
 
+const FAQ_ITEMS = [
+  {
+    q: 'How do flashcard reviews work?',
+    a: 'Open a deck and tap Review. Rate each card Again, Hard, Good, or Easy — Lantern Study schedules the next review using spaced repetition.',
+  },
+  {
+    q: 'How do group tests and study sessions work?',
+    a: 'In a group chat, tap Test or Study to pick question types, tags, and how many questions to include. Shared questions from the group become your session.',
+  },
+  {
+    q: 'What is the difference between JSON and CSV export?',
+    a: 'JSON is a full deck backup including images, card types, and SRS progress. CSV is front/back text only for spreadsheets.',
+  },
+  {
+    q: 'How do duel challenges work?',
+    a: 'Challenge a group member from the group menu or Challenges inbox. When they accept, both players answer the same questions and results appear when finished.',
+  },
+  {
+    q: 'Can I use Lantern Study offline?',
+    a: 'Download decks and bundles from Settings > Offline. Changes sync automatically when you reconnect.',
+  },
+];
+
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const { user, signOut } = useAuthStore();
@@ -98,13 +125,36 @@ export default function SettingsScreen() {
   
   // Theme
   const { colors, isDark, themeMode, setThemeMode } = useTheme();
+
+  const modalTheme = useMemo(
+    () => ({
+      overlay: { backgroundColor: colors.modalOverlay },
+      content: { backgroundColor: colors.modalBackground },
+      title: { color: colors.text },
+      label: { color: colors.textSecondary },
+      value: { color: colors.primary },
+      optionItem: {
+        backgroundColor: colors.backgroundSecondary,
+        borderColor: 'transparent' as const,
+      },
+      optionItemActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryBackground,
+      },
+      optionTitle: { color: colors.text },
+      optionDescription: { color: colors.textSecondary },
+    }),
+    [colors]
+  );
   
   // Modal states
   const [showDailyGoalModal, setShowDailyGoalModal] = useState(false);
   const [showReminderTimeModal, setShowReminderTimeModal] = useState(false);
   const [showSRSSettingsModal, setShowSRSSettingsModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showDirectMessagesModal, setShowDirectMessagesModal] = useState(false);
   const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   
   // Temp values for modals
@@ -140,6 +190,45 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             signOut();
+          },
+        },
+      ]
+    );
+  }, [signOut]);
+
+  const handleExportData = useCallback(async () => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) return;
+    try {
+      const res = await exportUserData(userId);
+      const payload = (res as any)?.data ?? res;
+      const FileSystem = await import('expo-file-system/legacy');
+      const path = `${FileSystem.documentDirectory}lantern-export-${Date.now()}.json`;
+      await FileSystem.writeAsStringAsync(path, JSON.stringify(payload, null, 2));
+      Alert.alert('Export saved', `Your data was saved to:\n${path}`);
+    } catch {
+      Alert.alert('Export failed', 'You may only export once every 24 hours.');
+    }
+  }, []);
+
+  const handleDeleteAccount = useCallback(() => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) return;
+    Alert.alert(
+      'Delete Account',
+      'This permanently deletes your account and data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteUserAccount(userId);
+              await signOut();
+            } catch {
+              Alert.alert('Error', 'Failed to delete account. Please try again.');
+            }
           },
         },
       ]
@@ -207,7 +296,10 @@ export default function SettingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12, padding: 4 }}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: colors.text, flex: 1 }]}>Settings</Text>
             <SyncIndicator />
           </View>
           {settings.sync.lastSyncTime && (
@@ -230,7 +322,7 @@ export default function SettingsScreen() {
           </View>
           <TouchableOpacity
             style={styles.editProfileButton}
-            onPress={() => navigation.navigate('EditProfile')}
+            onPress={() => navigation.navigate('EditProfile' as never)}
           >
             <Ionicons name="pencil" size={18} color="#6366f1" />
           </TouchableOpacity>
@@ -252,6 +344,38 @@ export default function SettingsScreen() {
                   onValueChange={(val) => updateSingleSetting('notifications', 'pushEnabled', val)}
                   trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
                   thumbColor={settings.notifications.pushEnabled ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="notifications-outline"
+              iconColor="#6366f1"
+              title="Email Notifications"
+              subtitle="Receive email updates"
+              rightElement={
+                <Switch
+                  value={settings.notifications.emailEnabled}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'emailEnabled', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.emailEnabled ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="mail-outline"
+              iconColor="#8b5cf6"
+              title="Weekly Digest"
+              subtitle="Summary of your study week"
+              rightElement={
+                <Switch
+                  value={settings.notifications.weeklyDigest}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'weeklyDigest', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.weeklyDigest ? colors.switchThumbOn : colors.switchThumbOff}
                 />
               }
               showChevron={false}
@@ -284,6 +408,22 @@ export default function SettingsScreen() {
                   onValueChange={(val) => updateSingleSetting('notifications', 'groupActivity', val)}
                   trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
                   thumbColor={settings.notifications.groupActivity ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="storefront-outline"
+              iconColor="#a855f7"
+              title="Marketplace Updates"
+              subtitle="Listing and inquiry alerts"
+              rightElement={
+                <Switch
+                  value={settings.notifications.marketplaceUpdates}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'marketplaceUpdates', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.marketplaceUpdates ? colors.switchThumbOn : colors.switchThumbOff}
                 />
               }
               showChevron={false}
@@ -373,6 +513,28 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="school-outline"
+              iconColor="#6366f1"
+              title="Default Session Mode"
+              subtitle={settings.study.defaultTestMode === 'exam' ? 'Timed test mode' : 'Study mode'}
+              rightElement={
+                <Switch
+                  value={settings.study.defaultTestMode === 'exam'}
+                  onValueChange={(val) =>
+                    updateSingleSetting('study', 'defaultTestMode', val ? 'exam' : 'study')
+                  }
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={
+                    settings.study.defaultTestMode === 'exam'
+                      ? colors.switchThumbOn
+                      : colors.switchThumbOff
+                  }
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
               icon="shuffle-outline"
               iconColor="#8b5cf6"
               title="Shuffle Questions"
@@ -446,6 +608,57 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
+            <SettingItem
+              colors={colors}
+              icon="contract-outline"
+              iconColor="#0ea5e9"
+              title="Compact Mode"
+              subtitle="Tighter spacing across the app"
+              rightElement={
+                <Switch
+                  value={settings.appearance.compactMode}
+                  onValueChange={(val) => updateSingleSetting('appearance', 'compactMode', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.appearance.compactMode ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="sparkles-outline"
+              iconColor="#fbbf24"
+              title="Show Animations"
+              subtitle="Enable UI animations"
+              rightElement={
+                <Switch
+                  value={settings.appearance.showAnimations}
+                  onValueChange={(val) => updateSingleSetting('appearance', 'showAnimations', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.appearance.showAnimations ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="text-outline"
+              iconColor="#6366f1"
+              title="Font Size"
+              subtitle={
+                settings.appearance.fontSize === 'small'
+                  ? 'Small'
+                  : settings.appearance.fontSize === 'large'
+                    ? 'Large'
+                    : 'Medium'
+              }
+              onPress={() => {
+                const order = ['small', 'medium', 'large'] as const;
+                const idx = order.indexOf(settings.appearance.fontSize);
+                const next = order[(idx + 1) % order.length];
+                updateSingleSetting('appearance', 'fontSize', next);
+              }}
+            />
           </View>
         </View>
 
@@ -461,6 +674,20 @@ export default function SettingsScreen() {
               subtitle={settings.privacy.profileVisibility === 'public' ? 'Visible to everyone' : 
                        settings.privacy.profileVisibility === 'groups' ? 'Visible to group members' : 'Private'}
               onPress={() => setShowPrivacyModal(true)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="chatbubble-ellipses-outline"
+              iconColor="#8b5cf6"
+              title="Direct Messages"
+              subtitle={
+                settings.privacy.allowDirectMessages === 'everyone'
+                  ? 'Anyone can message you'
+                  : settings.privacy.allowDirectMessages === 'groups'
+                    ? 'Group members only'
+                    : 'No direct messages'
+              }
+              onPress={() => setShowDirectMessagesModal(true)}
             />
             <SettingItem
               colors={colors}
@@ -604,6 +831,26 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
+            <SettingItem
+              colors={colors}
+              icon="accessibility-outline"
+              iconColor="#6366f1"
+              title="Screen Reader Optimized"
+              subtitle="Stronger focus and readable layout"
+              rightElement={
+                <Switch
+                  value={settings.accessibility.screenReaderOptimized}
+                  onValueChange={(val) => updateSingleSetting('accessibility', 'screenReaderOptimized', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={
+                    settings.accessibility.screenReaderOptimized
+                      ? colors.switchThumbOn
+                      : colors.switchThumbOff
+                  }
+                />
+              }
+              showChevron={false}
+            />
           </View>
         </View>
 
@@ -616,14 +863,14 @@ export default function SettingsScreen() {
               icon="help-circle-outline"
               iconColor="#6366f1"
               title="Help & FAQ"
-              onPress={() => Alert.alert('Coming Soon', 'Help center will be available soon!')}
+              onPress={() => setShowHelpModal(true)}
             />
             <SettingItem
               colors={colors}
               icon="chatbubble-outline"
               iconColor="#10b981"
               title="Contact Support"
-              onPress={() => Alert.alert('Coming Soon', 'Contact support will be available soon!')}
+              onPress={() => void Linking.openURL('mailto:support@lanternstudy.app?subject=Lantern%20Study%20Support')}
             />
             <SettingItem
               colors={colors}
@@ -632,6 +879,50 @@ export default function SettingsScreen() {
               title="Reset Settings"
               subtitle="Restore default settings"
               onPress={handleResetSettings}
+            />
+          </View>
+        </View>
+
+        {/* Account & Legal */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Account</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            <SettingItem
+              colors={colors}
+              icon="download-outline"
+              iconColor="#6366f1"
+              title="Export my data"
+              subtitle="Download a JSON copy (once per 24h)"
+              onPress={() => void handleExportData()}
+            />
+            <SettingItem
+              colors={colors}
+              icon="document-text-outline"
+              iconColor="#8b5cf6"
+              title="Privacy Policy"
+              onPress={() => navigation.navigate('LegalDocument' as never, { document: 'privacy' } as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="cookie-outline"
+              iconColor="#8b5cf6"
+              title="Cookie Notice"
+              onPress={() => navigation.navigate('LegalDocument' as never, { document: 'cookies' } as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="shield-outline"
+              iconColor="#8b5cf6"
+              title="Terms of Service"
+              onPress={() => navigation.navigate('LegalDocument' as never, { document: 'terms' } as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="trash-outline"
+              iconColor="#ef4444"
+              title="Delete account"
+              subtitle="Permanent — cannot be undone"
+              onPress={handleDeleteAccount}
             />
           </View>
         </View>
@@ -648,6 +939,40 @@ export default function SettingsScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
+      <Modal
+        visible={showHelpModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowHelpModal(false)}
+      >
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Help & FAQ</Text>
+              <TouchableOpacity onPress={() => setShowHelpModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {FAQ_ITEMS.map(item => (
+                <View key={item.q} style={{ marginBottom: 16 }}>
+                  <Text style={[styles.goalLabel, modalTheme.label]}>{item.q}</Text>
+                  <Text style={[styles.settingSubtitle, modalTheme.optionDescription, { marginTop: 4 }]}>
+                    {item.a}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
+              onPress={() => void Linking.openURL('mailto:support@lanternstudy.app?subject=Lantern%20Study%20Support')}
+            >
+              <Text style={styles.saveButtonText}>Email Support</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Daily Goal Modal */}
       <Modal
         visible={showDailyGoalModal}
@@ -655,18 +980,18 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setShowDailyGoalModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Daily Goal</Text>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Daily Goal</Text>
               <TouchableOpacity onPress={() => setShowDailyGoalModal(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
             <View style={styles.goalSection}>
-              <Text style={styles.goalLabel}>Daily Card Goal</Text>
-              <Text style={styles.goalValue}>{tempDailyCardGoal} cards</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>Daily Card Goal</Text>
+              <Text style={[styles.goalValue, modalTheme.value]}>{tempDailyCardGoal} cards</Text>
               <Slider
                 style={styles.slider}
                 minimumValue={5}
@@ -674,15 +999,15 @@ export default function SettingsScreen() {
                 step={5}
                 value={tempDailyCardGoal}
                 onValueChange={setTempDailyCardGoal}
-                minimumTrackTintColor="#6366f1"
-                maximumTrackTintColor="#334155"
-                thumbTintColor="#6366f1"
+                minimumTrackTintColor={colors.primary}
+                maximumTrackTintColor={colors.switchTrackOff}
+                thumbTintColor={colors.primary}
               />
             </View>
 
             <View style={styles.goalSection}>
-              <Text style={styles.goalLabel}>Daily Test Goal</Text>
-              <Text style={styles.goalValue}>{tempDailyTestGoal} test(s)</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>Daily Test Goal</Text>
+              <Text style={[styles.goalValue, modalTheme.value]}>{tempDailyTestGoal} test(s)</Text>
               <Slider
                 style={styles.slider}
                 minimumValue={0}
@@ -690,13 +1015,16 @@ export default function SettingsScreen() {
                 step={1}
                 value={tempDailyTestGoal}
                 onValueChange={setTempDailyTestGoal}
-                minimumTrackTintColor="#6366f1"
-                maximumTrackTintColor="#334155"
-                thumbTintColor="#6366f1"
+                minimumTrackTintColor={colors.primary}
+                maximumTrackTintColor={colors.switchTrackOff}
+                thumbTintColor={colors.primary}
               />
             </View>
 
-            <TouchableOpacity style={styles.saveButton} onPress={saveDailyGoals}>
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              onPress={saveDailyGoals}
+            >
               <Text style={styles.saveButtonText}>Save</Text>
             </TouchableOpacity>
           </View>
@@ -710,18 +1038,18 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setShowSRSSettingsModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>SRS Settings</Text>
+              <Text style={[styles.modalTitle, modalTheme.title]}>SRS Settings</Text>
               <TouchableOpacity onPress={() => setShowSRSSettingsModal(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
             <View style={styles.goalSection}>
-              <Text style={styles.goalLabel}>New Cards Per Day</Text>
-              <Text style={styles.goalValue}>{settings.study.srsNewCardsPerDay} cards</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>New Cards Per Day</Text>
+              <Text style={[styles.goalValue, modalTheme.value]}>{settings.study.srsNewCardsPerDay} cards</Text>
               <Slider
                 style={styles.slider}
                 minimumValue={5}
@@ -729,15 +1057,15 @@ export default function SettingsScreen() {
                 step={5}
                 value={settings.study.srsNewCardsPerDay}
                 onValueChange={(val) => updateSingleSetting('study', 'srsNewCardsPerDay', val)}
-                minimumTrackTintColor="#6366f1"
-                maximumTrackTintColor="#334155"
-                thumbTintColor="#6366f1"
+                minimumTrackTintColor={colors.primary}
+                maximumTrackTintColor={colors.switchTrackOff}
+                thumbTintColor={colors.primary}
               />
             </View>
 
             <View style={styles.goalSection}>
-              <Text style={styles.goalLabel}>Max Interval (Days)</Text>
-              <Text style={styles.goalValue}>{settings.study.srsMaxInterval} days</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>Max Interval (Days)</Text>
+              <Text style={[styles.goalValue, modalTheme.value]}>{settings.study.srsMaxInterval} days</Text>
               <Slider
                 style={styles.slider}
                 minimumValue={30}
@@ -745,13 +1073,16 @@ export default function SettingsScreen() {
                 step={30}
                 value={settings.study.srsMaxInterval}
                 onValueChange={(val) => updateSingleSetting('study', 'srsMaxInterval', val)}
-                minimumTrackTintColor="#6366f1"
-                maximumTrackTintColor="#334155"
-                thumbTintColor="#6366f1"
+                minimumTrackTintColor={colors.primary}
+                maximumTrackTintColor={colors.switchTrackOff}
+                thumbTintColor={colors.primary}
               />
             </View>
 
-            <TouchableOpacity style={styles.saveButton} onPress={() => setShowSRSSettingsModal(false)}>
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: colors.primary }]}
+              onPress={() => setShowSRSSettingsModal(false)}
+            >
               <Text style={styles.saveButtonText}>Done</Text>
             </TouchableOpacity>
           </View>
@@ -765,12 +1096,12 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setShowPrivacyModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Profile Visibility</Text>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Profile Visibility</Text>
               <TouchableOpacity onPress={() => setShowPrivacyModal(false)}>
-                <Ionicons name="close" size={24} color="#9ca3af" />
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
@@ -779,7 +1110,9 @@ export default function SettingsScreen() {
                 key={option}
                 style={[
                   styles.optionItem,
-                  settings.privacy.profileVisibility === option && styles.optionItemActive
+                  modalTheme.optionItem,
+                  settings.privacy.profileVisibility === option && styles.optionItemActive,
+                  settings.privacy.profileVisibility === option && modalTheme.optionItemActive,
                 ]}
                 onPress={() => {
                   updateSingleSetting('privacy', 'profileVisibility', option);
@@ -787,17 +1120,68 @@ export default function SettingsScreen() {
                 }}
               >
                 <View>
-                  <Text style={styles.optionTitle}>
+                  <Text style={[styles.optionTitle, modalTheme.optionTitle]}>
                     {option === 'public' ? 'Public' : option === 'groups' ? 'Group Members Only' : 'Private'}
                   </Text>
-                  <Text style={styles.optionDescription}>
+                  <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
                     {option === 'public' ? 'Anyone can see your profile' : 
                      option === 'groups' ? 'Only members of your groups can see' : 
                      'Only you can see your profile'}
                   </Text>
                 </View>
                 {settings.privacy.profileVisibility === option && (
-                  <Ionicons name="checkmark-circle" size={24} color="#6366f1" />
+                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Direct Messages Modal */}
+      <Modal
+        visible={showDirectMessagesModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDirectMessagesModal(false)}
+      >
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Direct Messages</Text>
+              <TouchableOpacity onPress={() => setShowDirectMessagesModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {(['everyone', 'groups', 'none'] as const).map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={[
+                  styles.optionItem,
+                  modalTheme.optionItem,
+                  settings.privacy.allowDirectMessages === option && styles.optionItemActive,
+                  settings.privacy.allowDirectMessages === option && modalTheme.optionItemActive,
+                ]}
+                onPress={() => {
+                  updateSingleSetting('privacy', 'allowDirectMessages', option);
+                  setShowDirectMessagesModal(false);
+                }}
+              >
+                <View>
+                  <Text style={[styles.optionTitle, modalTheme.optionTitle]}>
+                    {option === 'everyone' ? 'Everyone' : option === 'groups' ? 'Group Members Only' : 'No One'}
+                  </Text>
+                  <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
+                    {option === 'everyone'
+                      ? 'Any signed-in user can message you'
+                      : option === 'groups'
+                        ? 'Only people in your shared groups'
+                        : 'Block all new direct messages'}
+                  </Text>
+                </View>
+                {settings.privacy.allowDirectMessages === option && (
+                  <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
                 )}
               </TouchableOpacity>
             ))}
@@ -974,14 +1358,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
   },
-  // Modal styles
+  // Modal styles (colors applied via modalTheme from useTheme)
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1e293b',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -996,7 +1378,6 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   goalSection: {
     marginBottom: 24,
@@ -1004,13 +1385,11 @@ const styles = StyleSheet.create({
   goalLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#9ca3af',
     marginBottom: 8,
   },
   goalValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#6366f1',
     marginBottom: 8,
   },
   slider: {
@@ -1018,7 +1397,6 @@ const styles = StyleSheet.create({
     height: 40,
   },
   saveButton: {
-    backgroundColor: '#6366f1',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -1033,26 +1411,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'transparent',
   },
   optionItemActive: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f120',
+    borderWidth: 1,
   },
   optionTitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#ffffff',
     marginBottom: 4,
   },
   optionDescription: {
     fontSize: 13,
-    color: '#9ca3af',
   },
   themeOptionContent: {
     flexDirection: 'row',

@@ -1,0 +1,44 @@
+/**
+ * Format AI quota reset as a relative countdown (e.g. "Resets in 4h 23m").
+ */
+export function formatAIResetCountdown(resetsAt: string, nowMs = Date.now()): string {
+  if (!resetsAt) return '';
+  const diffMs = new Date(resetsAt).getTime() - nowMs;
+  if (diffMs <= 0) return 'Resets soon';
+  const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  return diffHrs > 0 ? `Resets in ${diffHrs}h ${diffMins}m` : `Resets in ${diffMins}m`;
+}
+
+/**
+ * Format AI quota reset as an absolute local time (e.g. "Jun 14, 3:42 PM").
+ */
+export function formatAIResetTime(resetsAt: string): string {
+  if (!resetsAt) return '';
+  const date = new Date(resetsAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * Human-readable reset label with fallbacks when the API has no active window yet.
+ */
+export function getAIResetLabel(
+  resetsAt: string,
+  opts: { used: number; limit: number; nowMs?: number }
+): string {
+  const { used, limit, nowMs = Date.now() } = opts;
+  if (limit <= 0) return '';
+
+  const countdown = formatAIResetCountdown(resetsAt, nowMs);
+  if (countdown) return countdown;
+
+  if (used === 0) return 'Resets 24h after first AI use';
+  if (used >= limit) return 'Resets soon';
+  return 'Reset time updating...';
+}

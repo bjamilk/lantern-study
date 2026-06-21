@@ -66,6 +66,7 @@ export interface Group {
   parentId?: string;
   isArchived: boolean;
   inviteId: string;
+  createdAt?: string;
   unreadCount?: number;
   members?: User[];
   pendingMembers?: User[];
@@ -121,4 +122,6 @@ export interface Notification {
   date: string;
   read: boolean;
   link?: string;
+  type?: string;
+  data?: Record<string, unknown>;
 }

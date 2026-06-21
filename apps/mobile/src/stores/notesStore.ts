@@ -1,0 +1,97 @@
+import { create } from 'zustand';
+import * as notesApi from '../services/notes';
+import type { NoteAttachment, NoteFolder, StudyNote } from '../services/notes';
+
+interface NotesState {
+  folders: NoteFolder[];
+  notes: StudyNote[];
+  selectedNote: (StudyNote & { attachments?: NoteAttachment[] }) | null;
+  isLoading: boolean;
+  isSaving: boolean;
+  error: string | null;
+  selectedFolderId: string | null;
+  loadFolders: () => Promise<void>;
+  loadNotes: (folderId?: string) => Promise<void>;
+  loadNote: (noteId: string) => Promise<void>;
+  createFolder: (name: string) => Promise<NoteFolder>;
+  createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
+  saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
+  removeNote: (noteId: string) => Promise<void>;
+  setSelectedFolderId: (id: string | null) => void;
+  setError: (e: string | null) => void;
+}
+
+export const useNotesStore = create<NotesState>((set, get) => ({
+  folders: [],
+  notes: [],
+  selectedNote: null,
+  isLoading: false,
+  isSaving: false,
+  error: null,
+  selectedFolderId: null,
+
+  setSelectedFolderId: (selectedFolderId) => set({ selectedFolderId }),
+  setError: (error) => set({ error }),
+
+  loadFolders: async () => {
+    try {
+      const folders = await notesApi.fetchNoteFolders();
+      set({ folders });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load folders' });
+    }
+  },
+
+  loadNotes: async (folderId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const notes = await notesApi.fetchNotes(folderId || undefined);
+      set({ notes, isLoading: false });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load notes', isLoading: false });
+    }
+  },
+
+  loadNote: async (noteId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const note = await notesApi.fetchNote(noteId);
+      set({ selectedNote: note, isLoading: false });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load note', isLoading: false });
+    }
+  },
+
+  createFolder: async (name) => {
+    const folder = await notesApi.createNoteFolder({ name });
+    set({ folders: [...get().folders, folder] });
+    return folder;
+  },
+
+  createNote: async (payload) => {
+    const note = await notesApi.createNote(payload || { title: 'Untitled Note', body: '' });
+    set({ notes: [note, ...get().notes] });
+    return note;
+  },
+
+  saveNote: async (noteId, updates) => {
+    set({ isSaving: true });
+    try {
+      const saved = await notesApi.updateNote(noteId, updates);
+      set({
+        notes: get().notes.map((n) => (n.id === noteId ? { ...n, ...saved } : n)),
+        selectedNote: get().selectedNote?.id === noteId ? { ...get().selectedNote!, ...saved } : get().selectedNote,
+        isSaving: false,
+      });
+      return saved;
+    } catch (e: unknown) {
+      set({ isSaving: false, error: e instanceof Error ? e.message : 'Save failed' });
+      throw e;
+    }
+  },
+
+  removeNote: async (noteId) => {
+    await notesApi.deleteNote(noteId);
+    set({ notes: get().notes.filter((n) => n.id !== noteId) });
+  },
+}));

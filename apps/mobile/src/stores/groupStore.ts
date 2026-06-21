@@ -4,8 +4,15 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
+import { resolveQuestionStatusAfterVote, normalizeStorageUrl } from '@lantern/shared/utils';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+
+export type DMThread = SharedDMThread;
+export type DirectMessage = SharedDirectMessage;
+
+const MESSAGES_PAGE_SIZE = 50;
 
 // Demo mode - use mock data without API
 const DEMO_MODE = false;
@@ -18,9 +25,39 @@ export interface GroupMember {
   id: string;
   userId: string;
   name: string;
+  username?: string;
   avatarUrl?: string;
   role: 'owner' | 'admin' | 'member';
   joinedAt: string;
+}
+
+export interface GroupPermissions {
+  canSendMessages: boolean;
+  canAddMembers: boolean;
+  canEditSettings: boolean;
+  canApproveMembers: boolean;
+}
+
+export interface CreateGroupInput {
+  name: string;
+  description?: string;
+  ownerId: string;
+  ownerName: string;
+  avatarUrl?: string;
+  permissions?: GroupPermissions;
+  parentId?: string;
+  memberIds?: string[];
+  memberDetails?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  }>;
+}
+
+export interface PendingMember {
+  id: string;
+  name: string;
+  avatarUrl?: string;
 }
 
 export interface Group {
@@ -29,9 +66,13 @@ export interface Group {
   description?: string;
   avatarUrl?: string;
   ownerId: string;
-  parentId?: string; // ID of parent group if this is a subgroup
+  parentId?: string;
+  adminIds?: string[];
+  permissions?: GroupPermissions;
   members: GroupMember[];
+  pendingMembers?: PendingMember[];
   memberCount: number;
+  unreadCount?: number;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -48,41 +89,265 @@ export interface Message {
   type: 'text' | 'question' | 'system';
   createdAt: string;
   isArchived?: boolean;
+  upvotes?: number;
+  downvotes?: number;
+  flaggedAsSimilarUserIds?: string[];
+  questionStem?: string;
+  questionStatus?: string;
+  questionType?: string;
+  options?: string[];
+  optionItems?: Array<{ id: string; text: string }>;
+  tags?: string[];
+  correctAnswerIds?: string[];
+  acceptableAnswers?: string[];
+  matchingPromptItems?: Array<{ id: string; text: string }>;
+  matchingAnswerItems?: Array<{ id: string; text: string }>;
+  correctMatches?: Array<{ promptItemId: string; answerItemId: string }>;
+  diagramLabels?: Array<{ id: string; text: string; x?: number; y?: number; label?: string }>;
+  imageUrl?: string;
+  explanation?: string;
+}
+
+function mapApiMember(m: any, adminIds: string[]): GroupMember {
+  const userId = m.user_id || m.userId || m.id;
+  const isOwner = userId === adminIds[0];
+  const isAdmin = adminIds.includes(userId);
+
+  return {
+    id: m.id || userId,
+    userId,
+    name: m.name || 'Unknown',
+    username: m.username,
+    avatarUrl: m.avatar_url || m.avatarUrl,
+    role: isOwner ? 'owner' : isAdmin ? 'admin' : 'member',
+    joinedAt: m.joined_at || m.joinedAt || new Date().toISOString(),
+  };
+}
+
+function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
+  const adminIds = g.admin_ids || g.adminIds || [];
+  const lastMessageText = g.last_message || g.lastMessage;
+  const lastMessageTime = g.last_message_time || g.lastMessageTime || g.updated_at || g.updatedAt;
+  const mappedMembers = (g.members || []).map((m: any) => mapApiMember(m, adminIds));
+
+  return {
+    id: g.id,
+    name: g.name,
+    description: g.description,
+    avatarUrl: g.avatar_url || g.avatarUrl,
+    ownerId: adminIds[0] || '',
+    parentId: g.parent_id || g.parentId,
+    adminIds,
+    members: mappedMembers,
+    pendingMembers: (g.pending_members || g.pendingMembers || []).map((m: any) => ({
+      id: m.id || m.user_id || m.userId,
+      name: m.name,
+      avatarUrl: m.avatar_url || m.avatarUrl,
+    })),
+    memberCount: g.member_count ?? g.memberCount ?? (mappedMembers.length > 0 ? mappedMembers.length : 0),
+    unreadCount: unreadCounts[g.id] || 0,
+    isArchived: g.is_archived || g.isArchived || false,
+    createdAt: g.created_at || g.createdAt || '',
+    updatedAt: g.updated_at || g.updatedAt || '',
+    lastMessage: lastMessageText
+      ? {
+          id: `preview-${g.id}`,
+          groupId: g.id,
+          senderId: '',
+          senderName: '',
+          text: lastMessageText,
+          type: 'text',
+          createdAt: lastMessageTime || new Date().toISOString(),
+        }
+      : undefined,
+  };
+}
+
+interface MessagePagination {
+  page: number;
+  hasMore: boolean;
 }
 
 interface GroupState {
   groups: Group[];
   currentGroup: Group | null;
   messages: Message[];
-  messagesCache: Record<string, Message[]>; // Cache messages by groupId
+  messagesCache: Record<string, Message[]>;
+  messagePagination: Record<string, MessagePagination>;
+  dmThreads: DMThread[];
+  directMessages: Record<string, DirectMessage[]>;
+  dmUnreadCounts: Record<string, number>;
+  groupUnreadCounts: Record<string, number>;
+  userVotes: Record<string, 'up' | 'down' | undefined>;
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
-  
-  // Actions
+
   loadFromStorage: () => Promise<void>;
   saveToStorage: () => Promise<void>;
   fetchGroups: (userId: string) => Promise<void>;
+  fetchGroupMembers: (groupId: string) => Promise<GroupMember[]>;
+  fetchGroupUnreadCounts: (userId: string) => Promise<void>;
+  markGroupAsRead: (groupId: string, userId: string) => Promise<void>;
   selectGroup: (groupId: string) => void;
-  fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean }) => Promise<void>;
+  fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
+  loadMoreMessages: (groupId: string) => Promise<number>;
   sendMessage: (groupId: string, text: string, senderId: string, senderName: string) => Promise<void>;
-  createGroup: (name: string, description: string, ownerId: string, ownerName: string, parentId?: string) => Promise<Group>;
+  createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
-  
-  // Admin actions
-  updateGroupDetails: (groupId: string, name: string, description: string, userId: string) => Promise<void>;
+
+  fetchDmThreads: (userId: string) => Promise<void>;
+  fetchDMUnreadCounts: (userId: string) => Promise<void>;
+  fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<void>;
+  sendDirectMessageTo: (senderId: string, recipientId: string, text: string, threadId: string) => Promise<void>;
+  markDMAsRead: (threadId: string, userId: string) => Promise<void>;
+  archiveDmThread: (threadId: string, userId: string) => Promise<void>;
+  unarchiveDmThread: (threadId: string, userId: string) => Promise<void>;
+  deleteDmThread: (threadId: string, userId: string) => Promise<void>;
+  removeDmThread: (threadId: string) => void;
+  addDirectMessage: (threadId: string, message: DirectMessage) => void;
+
+  updateGroupDetails: (groupId: string, name: string, description: string) => Promise<void>;
   promoteToAdmin: (groupId: string, userId: string) => Promise<void>;
   demoteAdmin: (groupId: string, userId: string) => Promise<void>;
+  promoteGroupAdmin: (groupId: string, userId: string) => Promise<void>;
+  demoteGroupAdmin: (groupId: string, userId: string) => Promise<void>;
   removeMember: (groupId: string, userId: string) => Promise<void>;
   archiveGroup: (groupId: string) => Promise<void>;
   deleteGroup: (groupId: string) => Promise<void>;
   inviteByEmail: (groupId: string, emails: string[]) => Promise<void>;
   submitQuestion: (groupId: string, question: any) => Promise<void>;
-  
-  // Subgroup helpers
+  flagMessageAsSimilar: (messageId: string, groupId: string, userId: string) => Promise<void>;
+  approvePendingMember: (groupId: string, userId: string) => Promise<void>;
+  rejectPendingMember: (groupId: string, userId: string) => Promise<void>;
+  fetchUserVotesForGroup: (groupId: string, userId: string) => Promise<void>;
+  voteOnMessage: (groupId: string, messageId: string, userId: string, voteType: 'up' | 'down') => Promise<void>;
+
   getSubgroups: (parentId: string) => Group[];
+  getSubgroupsWithLevel: (parentId: string) => Array<{ group: Group; level: number }>;
+  getMessagesForGroups: (groupIds: string[]) => Promise<Message[]>;
   getParentGroup: (groupId: string) => Group | null;
   getBreadcrumbs: (groupId: string) => Group[];
   getTopLevelGroups: () => Group[];
+  getActiveDmThreads: () => DMThread[];
+}
+
+function mapApiMessage(m: any, groupId: string): Message {
+  let parsed: any = {};
+  const rawContent = m.content || m.text || '';
+  if (typeof rawContent === 'string' && rawContent.trim().startsWith('{')) {
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const questionStem =
+    m.questionStem ||
+    m.question_stem ||
+    parsed.questionStem ||
+    parsed.question_stem;
+
+  const isQuestion =
+    m.type === 'QUESTION' ||
+    m.type === 'question' ||
+    parsed.type === 'QUESTION' ||
+    parsed.type === 'question' ||
+    !!questionStem;
+
+  const sender = m.sender || {};
+  const timestamp = m.timestamp || m.created_at || m.createdAt || new Date().toISOString();
+  const rawOptions = m.options || parsed.options || [];
+  const optionItems = rawOptions
+    .map((opt: any) => {
+      if (typeof opt === 'string') {
+        return { id: opt, text: opt };
+      }
+      if (opt?.id && opt?.text) {
+        return { id: String(opt.id), text: String(opt.text) };
+      }
+      if (opt?.text) {
+        return { id: String(opt.id || opt.text), text: String(opt.text) };
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{ id: string; text: string }>;
+  const options = optionItems.map(opt => opt.text).filter(Boolean);
+
+  const correctAnswerIds =
+    m.correct_answer_ids ||
+    m.correctAnswerIds ||
+    parsed.correctAnswerIds ||
+    parsed.correct_answer_ids;
+
+  return {
+    id: m.id,
+    groupId: m.group_id || m.groupId || groupId,
+    senderId: m.sender_id || sender.id || '',
+    senderName: sender.name || m.senderName || 'Unknown',
+    senderAvatar: sender.avatar_url || sender.avatarUrl,
+    text: isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
+    type: isQuestion ? 'question' : 'text',
+    createdAt: typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString(),
+    isArchived: m.is_archived || m.isArchived,
+    upvotes: m.upvotes ?? 0,
+    downvotes: m.downvotes ?? 0,
+    flaggedAsSimilarUserIds:
+      m.flagged_as_similar_user_ids ||
+      m.flaggedAsSimilarUserIds ||
+      m.flaggedUserIds ||
+      [],
+    questionStem,
+    questionStatus: m.question_status || m.questionStatus || parsed.questionStatus,
+    questionType: m.question_type || m.questionType || parsed.questionType,
+    options: options.length > 0 ? options : undefined,
+    optionItems: optionItems.length > 0 ? optionItems : undefined,
+    tags: m.tags || parsed.tags,
+    correctAnswerIds: Array.isArray(correctAnswerIds) ? correctAnswerIds : undefined,
+    acceptableAnswers: m.acceptable_answers || m.acceptableAnswers || parsed.acceptableAnswers,
+    matchingPromptItems: m.matching_prompt_items || m.matchingPromptItems || parsed.matchingPromptItems,
+    matchingAnswerItems: m.matching_answer_items || m.matchingAnswerItems || parsed.matchingAnswerItems,
+    correctMatches: m.correct_matches || m.correctMatches || parsed.correctMatches,
+    diagramLabels: m.diagram_labels || m.diagramLabels || parsed.diagramLabels,
+    imageUrl: (() => {
+      const raw = m.image_url || m.imageUrl || parsed.imageUrl;
+      return raw ? normalizeStorageUrl(raw) : undefined;
+    })(),
+    explanation: m.explanation || parsed.explanation,
+  };
+}
+
+function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
+  const participants: DMThread['participants'] = {};
+  const rawParticipants = t.participants || {};
+  for (const [userId, info] of Object.entries(rawParticipants)) {
+    const p = info as { name?: string; avatar_url?: string; avatarUrl?: string };
+    participants[userId] = {
+      name: p.name || 'User',
+      avatarUrl: p.avatar_url || p.avatarUrl,
+    };
+  }
+
+  return {
+    id: t.id,
+    participantIds: t.participant_ids || t.participantIds || [],
+    participants,
+    lastMessage: t.last_message || t.lastMessage,
+    lastMessageTimestamp: t.last_message_timestamp || t.lastMessageTimestamp,
+    unreadCount: unreadCounts[t.id] ?? t.unread_count ?? 0,
+    isArchived: t.is_archived ?? t.isArchived ?? false,
+  };
+}
+
+function mapDirectMessage(m: any, threadId: string): DirectMessage {
+  return {
+    id: m.id,
+    threadId: m.thread_id || threadId,
+    senderId: m.sender_id || m.senderId,
+    text: m.content || m.text || '',
+    timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+  };
 }
 
 // Mock data
@@ -245,7 +510,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   currentGroup: null,
   messages: [],
   messagesCache: {},
+  messagePagination: {},
+  dmThreads: [],
+  directMessages: {},
+  dmUnreadCounts: {},
+  groupUnreadCounts: {},
+  userVotes: {},
   isLoading: false,
+  isLoadingMore: false,
   error: null,
 
   // Load cached data from AsyncStorage
@@ -294,29 +566,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
     
     try {
-      const apiGroups = await api.fetchGroups(userId);
-      // Map API response to store format
-      const groups: Group[] = apiGroups.map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        description: g.description,
-        avatarUrl: g.avatar_url,
-        ownerId: g.admin_ids?.[0] || '',
-        parentId: g.parent_id,
-        members: (g.members || []).map((m: any) => ({
-          id: m.id,
-          userId: m.user_id || m.id,
-          name: m.name,
-          avatarUrl: m.avatar_url,
-          role: g.admin_ids?.includes(m.id) ? 'admin' : 'member',
-          joinedAt: m.joined_at || new Date().toISOString(),
-        })),
-        memberCount: g.member_count || g.members?.length || 0,
-        isArchived: g.is_archived || false,
-        createdAt: g.created_at,
-        updatedAt: g.updated_at,
-      }));
-      set({ groups, isLoading: false });
+      const [apiGroups, unreadCounts] = await Promise.all([
+        api.fetchGroups(userId, { limit: 50 }),
+        api.fetchGroupUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+      ]);
+
+      const groups: Group[] = apiGroups.map((g: any) => mapApiGroup(g, unreadCounts));
+
+      set({ groups, groupUnreadCounts: unreadCounts, isLoading: false });
       await get().saveToStorage();
     } catch (error: any) {
       console.warn('[GroupStore] API fetch failed, using cached data:', error);
@@ -324,50 +581,168 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  selectGroup: (groupId: string) => {
-    const group = get().groups.find(g => g.id === groupId) || null;
-    set({ currentGroup: group });
+  fetchGroupMembers: async (groupId: string) => {
+    const group = get().groups.find(g => g.id === groupId);
+    const adminIds = group?.adminIds || [];
+
+    try {
+      const apiMembers = await api.fetchGroupMembers(groupId);
+      const members = (Array.isArray(apiMembers) ? apiMembers : []).map((m: any) =>
+        mapApiMember(m, adminIds)
+      );
+
+      const applyMembers = (g: Group): Group =>
+        g.id === groupId ? { ...g, members, memberCount: members.length } : g;
+
+      set(state => ({
+        groups: state.groups.map(applyMembers),
+        currentGroup: state.currentGroup?.id === groupId
+          ? applyMembers(state.currentGroup)
+          : state.currentGroup,
+      }));
+
+      return members;
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch group members:', error);
+      return group?.members || [];
+    }
   },
 
-  fetchMessages: async (groupId: string) => {
-    set({ isLoading: true });
-    
+  fetchGroupUnreadCounts: async (userId: string) => {
+    try {
+      const counts = await api.fetchGroupUnreadCounts(userId);
+      set(state => ({
+        groupUnreadCounts: counts,
+        groups: state.groups.map(g => ({ ...g, unreadCount: counts[g.id] || 0 })),
+      }));
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch group unread counts:', error);
+    }
+  },
+
+  markGroupAsRead: async (groupId: string, userId: string) => {
+    try {
+      await api.markGroupAsRead(groupId, userId);
+      set(state => ({
+        groupUnreadCounts: { ...state.groupUnreadCounts, [groupId]: 0 },
+        groups: state.groups.map(g => g.id === groupId ? { ...g, unreadCount: 0 } : g),
+      }));
+    } catch (error) {
+      console.warn('[GroupStore] Failed to mark group as read:', error);
+    }
+  },
+
+  selectGroup: (groupId: string) => {
+    const group = get().groups.find(g => g.id === groupId) || null;
+    const cached = get().messagesCache[groupId] || [];
+    set({ currentGroup: group, messages: cached });
+    void get().fetchGroupMembers(groupId);
+  },
+
+  fetchMessages: async (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => {
+    const page = options?.page ?? 1;
+    const limit = options?.limit ?? MESSAGES_PAGE_SIZE;
+    const refresh = options?.refresh ?? page === 1;
+
+    if (page === 1) {
+      set({ isLoading: true });
+    } else {
+      set({ isLoadingMore: true });
+    }
+
     if (DEMO_MODE) {
       await new Promise(resolve => setTimeout(resolve, 300));
-      const messages = mockMessages[groupId] || [];
-      set({ messages, isLoading: false });
+      const demoMessages = mockMessages[groupId] || [];
+      set({
+        messages: demoMessages,
+        messagesCache: { ...get().messagesCache, [groupId]: demoMessages },
+        messagePagination: { ...get().messagePagination, [groupId]: { page: 1, hasMore: false } },
+        isLoading: false,
+        isLoadingMore: false,
+      });
       return;
     }
-    
+
     try {
-      const apiMessages = await api.fetchMessages(groupId);
-      // Map API response to store format
-      const messages: Message[] = apiMessages.map((m: any) => ({
-        id: m.id,
-        groupId: m.group_id || groupId,
-        senderId: m.sender_id || m.sender?.id,
-        senderName: m.sender?.name || 'Unknown',
-        senderAvatar: m.sender?.avatar_url,
-        text: m.content || m.text || '',
-        type: m.type === 'QUESTION' ? 'question' : 'text',
-        createdAt: m.created_at,
-        isArchived: m.is_archived,
-      }));
-      set({ messages, isLoading: false });
+      const result = await api.fetchMessages(groupId, { page, limit });
+      const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
+      const pagination = Array.isArray(result) ? undefined : (result as any)?.pagination;
+      const mapped = apiMessages.map((m: any) => mapApiMessage(m, groupId));
+
+      const existing = refresh ? [] : (get().messagesCache[groupId] || []);
+      const existingIds = new Set(existing.map(m => m.id));
+      const merged = refresh
+        ? mapped
+        : [...mapped.filter((m: Message) => !existingIds.has(m.id)), ...existing];
+
+      const hasMore = pagination
+        ? pagination.page * pagination.limit < pagination.total
+        : mapped.length >= limit;
+
+      set({
+        messages: merged,
+        messagesCache: { ...get().messagesCache, [groupId]: merged },
+        messagePagination: {
+          ...get().messagePagination,
+          [groupId]: { page, hasMore },
+        },
+        isLoading: false,
+        isLoadingMore: false,
+      });
     } catch (error: any) {
-      set({ error: error.message || 'Failed to fetch messages', isLoading: false });
+      set({
+        error: error.message || 'Failed to fetch messages',
+        isLoading: false,
+        isLoadingMore: false,
+      });
     }
+  },
+
+  loadMoreMessages: async (groupId: string) => {
+    const pagination = get().messagePagination[groupId];
+    if (!pagination?.hasMore || get().isLoadingMore) return 0;
+
+    const nextPage = pagination.page + 1;
+    const beforeCount = get().messagesCache[groupId]?.length || 0;
+    await get().fetchMessages(groupId, { page: nextPage, refresh: false });
+    const afterCount = get().messagesCache[groupId]?.length || 0;
+    return Math.max(0, afterCount - beforeCount);
   },
 
   sendMessage: async (groupId: string, text: string, senderId: string, senderName: string) => {
+    let parsed: any = {};
+    if (text.trim().startsWith('{')) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = {};
+      }
+    }
+    const isQuestion =
+      parsed.type === 'QUESTION' ||
+      parsed.type === 'question' ||
+      !!parsed.questionStem ||
+      !!parsed.question_stem;
+    const questionStem = parsed.questionStem || parsed.question_stem;
+
     const newMessage: Message = {
       id: `msg-${Date.now()}`,
       groupId,
       senderId,
       senderName,
-      text,
-      type: 'text',
+      text: isQuestion ? questionStem || text : text,
+      type: isQuestion ? 'question' : 'text',
       createdAt: new Date().toISOString(),
+      questionStem,
+      questionStatus: isQuestion ? 'PENDING' : undefined,
+      questionType: parsed.questionType || parsed.question_type,
+      options: (parsed.options || []).map((opt: any) =>
+        typeof opt === 'string' ? opt : opt?.text || ''
+      ).filter(Boolean),
+      tags: parsed.tags,
+      upvotes: 0,
+      downvotes: 0,
+      flaggedAsSimilarUserIds: [],
     };
     
     if (DEMO_MODE) {
@@ -391,41 +766,73 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       return;
     }
     
+    // Optimistic update for immediate feedback
+    const currentMessages = get().messages;
+    set({ messages: [...currentMessages, newMessage] });
+
+    const groups = get().groups.map(g => {
+      if (g.id === groupId) {
+        return { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() };
+      }
+      return g;
+    });
+    set({ groups });
+
     try {
-      await api.sendMessage(groupId, { content: text, userId: senderId });
-      // Add message locally for immediate feedback
-      const currentMessages = get().messages;
-      set({ messages: [...currentMessages, newMessage] });
-      
-      // Update group's last message
-      const groups = get().groups.map(g => {
-        if (g.id === groupId) {
-          return { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() };
-        }
-        return g;
-      });
-      set({ groups });
+      await api.sendMessage(groupId, senderId, { content: text });
     } catch (error: any) {
       set({ error: error.message || 'Failed to send message' });
+      await syncService.queueOperation(
+        'message',
+        newMessage.id,
+        'create',
+        { groupId, content: text, type: isQuestion ? 'QUESTION' : 'TEXT' },
+        senderId
+      );
     }
   },
 
-  createGroup: async (name: string, description: string, ownerId: string, ownerName: string, parentId?: string) => {
-    const newGroup: Group = {
-      id: `group-${Date.now()}`,
-      name,
-      description,
-      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`,
-      ownerId,
-      parentId, // Set parent if creating a subgroup
-      members: [{
-        id: `member-${Date.now()}`,
-        userId: ownerId,
-        name: ownerName,
+  createGroup: async (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => {
+    const groupInput: CreateGroupInput = typeof input === 'string'
+      ? {
+          name: input,
+          description,
+          ownerId: ownerId || '',
+          ownerName: ownerName || 'User',
+          parentId,
+        }
+      : input;
+
+    const selectedMembers = groupInput.memberDetails || [];
+    const selectedMemberIds = groupInput.memberIds || selectedMembers.map(member => member.id);
+    const allMembers: GroupMember[] = [
+      {
+        id: `member-owner-${Date.now()}`,
+        userId: groupInput.ownerId,
+        name: groupInput.ownerName,
         role: 'owner',
         joinedAt: new Date().toISOString(),
-      }],
-      memberCount: 1,
+      },
+      ...selectedMembers.map((member, index) => ({
+        id: `member-selected-${Date.now()}-${index}`,
+        userId: member.id,
+        name: member.name,
+        avatarUrl: member.avatarUrl,
+        role: 'member' as const,
+        joinedAt: new Date().toISOString(),
+      })),
+    ];
+
+    const newGroup: Group = {
+      id: `group-${Date.now()}`,
+      name: groupInput.name,
+      description: groupInput.description,
+      avatarUrl: groupInput.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(groupInput.name)}&background=6366f1&color=fff`,
+      ownerId: groupInput.ownerId,
+      parentId: groupInput.parentId, // Set parent if creating a subgroup
+      permissions: groupInput.permissions,
+      members: allMembers,
+      memberCount: allMembers.length,
       isArchived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -442,31 +849,24 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     
     try {
       const apiGroup = await api.createGroup({
-        name,
-        description,
+        name: groupInput.name,
+        description: groupInput.description,
+        avatar_url: groupInput.avatarUrl,
+        permissions: groupInput.permissions,
         invite_id: `invite-${Date.now()}`,
-        userId: ownerId,
-        memberIds: [],
+        parent_id: groupInput.parentId,
+        userId: groupInput.ownerId,
+        memberIds: selectedMemberIds,
       });
       
       const createdGroup: Group = {
-        id: apiGroup.id,
-        name: apiGroup.name,
-        description: apiGroup.description,
-        avatarUrl: apiGroup.avatar_url || newGroup.avatarUrl,
-        ownerId,
-        parentId,
-        members: [{
-          id: `member-${Date.now()}`,
-          userId: ownerId,
-          name: ownerName,
-          role: 'owner',
-          joinedAt: new Date().toISOString(),
-        }],
-        memberCount: 1,
-        isArchived: false,
-        createdAt: apiGroup.created_at,
-        updatedAt: apiGroup.updated_at,
+        ...mapApiGroup(apiGroup, {}),
+        avatarUrl: apiGroup.avatar_url || (apiGroup as any).avatarUrl || newGroup.avatarUrl,
+        ownerId: groupInput.ownerId,
+        parentId: (apiGroup as any).parent_id || (apiGroup as any).parentId || groupInput.parentId,
+        permissions: ((apiGroup as any).permissions as GroupPermissions | undefined) || groupInput.permissions,
+        members: allMembers,
+        memberCount: allMembers.length,
       };
       
       const groups = [...get().groups, createdGroup];
@@ -532,54 +932,81 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  promoteToAdmin: async (groupId: string, userId: string) => {
-    if (DEMO_MODE) {
+  promoteGroupAdmin: async (groupId: string, userId: string) => {
+    const applyAdminUpdate = (adminIds: string[]) => {
       const groups = get().groups.map(g => {
-        if (g.id === groupId) {
-          return {
-            ...g,
-            members: g.members.map(m => 
-              m.userId === userId ? { ...m, role: 'admin' as const } : m
-            ),
-          };
-        }
-        return g;
+        if (g.id !== groupId) return g;
+        return {
+          ...g,
+          adminIds,
+          members: g.members.map(m =>
+            m.userId === userId ? { ...m, role: 'admin' as const } : m
+          ),
+        };
       });
       const currentGroup = get().currentGroup;
-      set({ 
+      set({
         groups,
-        currentGroup: currentGroup?.id === groupId 
-          ? groups.find(g => g.id === groupId) || currentGroup
-          : currentGroup
+        currentGroup: currentGroup?.id === groupId ? groups.find(g => g.id === groupId) || currentGroup : currentGroup,
       });
+    };
+
+    if (DEMO_MODE) {
+      const group = get().groups.find(g => g.id === groupId);
+      applyAdminUpdate([...(group?.adminIds || []), userId]);
       return;
     }
-    // TODO: Implement real API call
+
+    try {
+      const result = await api.promoteGroupAdmin(groupId, userId) as any;
+      const adminIds = result?.adminIds || result?.admin_ids || [];
+      applyAdminUpdate(adminIds.length ? adminIds : [...(get().groups.find(g => g.id === groupId)?.adminIds || []), userId]);
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to promote admin' });
+    }
+  },
+
+  demoteGroupAdmin: async (groupId: string, userId: string) => {
+    const applyAdminUpdate = (adminIds: string[]) => {
+      const groups = get().groups.map(g => {
+        if (g.id !== groupId) return g;
+        return {
+          ...g,
+          adminIds,
+          members: g.members.map(m =>
+            m.userId === userId ? { ...m, role: 'member' as const } : m
+          ),
+        };
+      });
+      const currentGroup = get().currentGroup;
+      set({
+        groups,
+        currentGroup: currentGroup?.id === groupId ? groups.find(g => g.id === groupId) || currentGroup : currentGroup,
+      });
+    };
+
+    if (DEMO_MODE) {
+      const group = get().groups.find(g => g.id === groupId);
+      applyAdminUpdate((group?.adminIds || []).filter(id => id !== userId));
+      return;
+    }
+
+    try {
+      const result = await api.demoteGroupAdmin(groupId, userId) as any;
+      const adminIds = result?.adminIds || result?.admin_ids
+        || (get().groups.find(g => g.id === groupId)?.adminIds || []).filter(id => id !== userId);
+      applyAdminUpdate(adminIds);
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to demote admin' });
+    }
+  },
+
+  promoteToAdmin: async (groupId: string, userId: string) => {
+    return get().promoteGroupAdmin(groupId, userId);
   },
 
   demoteAdmin: async (groupId: string, userId: string) => {
-    if (DEMO_MODE) {
-      const groups = get().groups.map(g => {
-        if (g.id === groupId) {
-          return {
-            ...g,
-            members: g.members.map(m => 
-              m.userId === userId ? { ...m, role: 'member' as const } : m
-            ),
-          };
-        }
-        return g;
-      });
-      const currentGroup = get().currentGroup;
-      set({ 
-        groups,
-        currentGroup: currentGroup?.id === groupId 
-          ? groups.find(g => g.id === groupId) || currentGroup
-          : currentGroup
-      });
-      return;
-    }
-    // TODO: Implement real API call
+    return get().demoteGroupAdmin(groupId, userId);
   },
 
   removeMember: async (groupId: string, userId: string) => {
@@ -596,15 +1023,32 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         return g;
       });
       const currentGroup = get().currentGroup;
-      set({ 
+      set({
         groups,
-        currentGroup: currentGroup?.id === groupId 
+        currentGroup: currentGroup?.id === groupId
           ? groups.find(g => g.id === groupId) || currentGroup
-          : currentGroup
+          : currentGroup,
       });
       return;
     }
-    // TODO: Implement real API call
+
+    try {
+      await api.removeGroupMember(groupId, userId);
+      const groups = get().groups.map(g => {
+        if (g.id !== groupId) return g;
+        const updatedMembers = g.members.filter(m => m.userId !== userId);
+        return { ...g, members: updatedMembers, memberCount: updatedMembers.length };
+      });
+      const currentGroup = get().currentGroup;
+      set({
+        groups,
+        currentGroup: currentGroup?.id === groupId
+          ? groups.find(g => g.id === groupId) || currentGroup
+          : currentGroup,
+      });
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to remove member' });
+    }
   },
 
   archiveGroup: async (groupId: string) => {
@@ -647,40 +1091,120 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   inviteByEmail: async (groupId: string, emails: string[]) => {
     if (DEMO_MODE) {
-      // In demo mode, just log the invitations
       console.log(`Invitations sent to ${emails.join(', ')} for group ${groupId}`);
       return;
     }
-    // TODO: Implement real API call
+
+    for (const email of emails) {
+      const trimmed = email.trim();
+      if (!trimmed) continue;
+      try {
+        const results = await api.searchUsers(trimmed, 5);
+        const match = (results as any[]).find(
+          u => (u.email || '').toLowerCase() === trimmed.toLowerCase()
+        ) || (results as any[])[0];
+        if (match?.id) {
+          await api.addGroupMember(groupId, match.id);
+        }
+      } catch (error) {
+        console.warn(`Failed to invite ${trimmed}:`, error);
+      }
+    }
   },
 
   submitQuestion: async (groupId: string, question: any) => {
+    const user = question.senderId ? { id: question.senderId, name: question.senderName || 'You' } : null;
+
     if (DEMO_MODE) {
-      // Add question as a message
       const newMessage: Message = {
         id: `msg-q-${Date.now()}`,
         groupId,
-        senderId: 'demo-user',
-        senderName: 'Demo User',
-        text: `📝 New Question: ${question.stem}`,
+        senderId: user?.id || 'demo-user',
+        senderName: user?.name || 'Demo User',
+        text: `📝 New Question: ${question.stem || question.questionStem}`,
         type: 'question',
         createdAt: new Date().toISOString(),
+        questionStem: question.stem || question.questionStem,
+        questionStatus: 'PENDING',
+        questionType: question.questionType,
+        options: question.options?.map((o: any) => (typeof o === 'string' ? o : o.text)),
+        correctAnswerIds: question.correctAnswerIds,
+        tags: question.tags,
       };
-      
+
       const currentMessages = get().messages;
       set({ messages: [...currentMessages, newMessage] });
-      
-      if (mockMessages[groupId]) {
-        mockMessages[groupId].push(newMessage);
-      }
       return;
     }
-    // TODO: Implement real API call
+
+    const payload = {
+      type: 'QUESTION',
+      groupId,
+      questionStem: question.stem || question.questionStem,
+      explanation: question.explanation,
+      questionType: question.questionType,
+      options: question.options,
+      correctAnswerIds: question.correctAnswerIds,
+      imageUrl: question.imageUrl,
+      tags: question.tags,
+      questionStatus: 'PENDING',
+      acceptableAnswers: question.acceptableAnswers,
+      matchingPromptItems: question.matchingPromptItems,
+      matchingAnswerItems: question.matchingAnswerItems,
+      correctMatches: question.correctMatches,
+      diagramLabels: question.diagramLabels,
+    };
+
+    const senderId = user?.id || question.senderId;
+    const senderName = user?.name || question.senderName || 'You';
+    if (!senderId) throw new Error('Missing sender for question submission');
+
+    await get().sendMessage(groupId, JSON.stringify(payload), senderId, senderName);
   },
 
   // Subgroup helper functions
   getSubgroups: (parentId: string) => {
     return get().groups.filter(g => g.parentId === parentId && !g.isArchived);
+  },
+
+  getSubgroupsWithLevel: (parentId: string) => {
+    const walk = (pid: string, level = 0): Array<{ group: Group; level: number }> => {
+      const direct = get().groups.filter(g => g.parentId === pid && !g.isArchived);
+      return direct.flatMap(g => [{ group: g, level }, ...walk(g.id, level + 1)]);
+    };
+    return walk(parentId);
+  },
+
+  getMessagesForGroups: async (groupIds: string[]) => {
+    const uniqueIds = [...new Set(groupIds.filter(Boolean))];
+    const allMessages: Message[] = [];
+    const seen = new Set<string>();
+
+    for (const gid of uniqueIds) {
+      let cached = get().messagesCache[gid];
+      if (!cached?.length && !DEMO_MODE) {
+        try {
+          const result = await api.fetchMessages(gid, { page: 1, limit: 500 });
+          const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
+          cached = apiMessages.map((m: any) => mapApiMessage(m, gid));
+          set(state => ({
+            messagesCache: { ...state.messagesCache, [gid]: cached! },
+          }));
+        } catch (error) {
+          console.warn(`Failed to fetch messages for group ${gid}:`, error);
+          cached = [];
+        }
+      }
+
+      for (const msg of cached || []) {
+        if (!seen.has(msg.id)) {
+          seen.add(msg.id);
+          allMessages.push(msg);
+        }
+      }
+    }
+
+    return allMessages;
   },
 
   getParentGroup: (groupId: string) => {
@@ -707,5 +1231,339 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   getTopLevelGroups: () => {
     return get().groups.filter(g => !g.parentId && !g.isArchived);
+  },
+
+  getActiveDmThreads: () => {
+    return get().dmThreads.filter(t => !t.isArchived);
+  },
+
+  fetchDmThreads: async (userId: string) => {
+    if (DEMO_MODE) return;
+
+    try {
+      const [threads, unreadCounts] = await Promise.all([
+        api.fetchDMThreads(userId),
+        api.fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+      ]);
+      const dmThreads = threads.map(t => mapDmThread(t, unreadCounts));
+      set({ dmThreads, dmUnreadCounts: unreadCounts });
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch DM threads:', error);
+    }
+  },
+
+  fetchDMUnreadCounts: async (userId: string) => {
+    try {
+      const counts = await api.fetchDMUnreadCounts(userId);
+      set(state => ({
+        dmUnreadCounts: counts,
+        dmThreads: state.dmThreads.map(t => ({ ...t, unreadCount: counts[t.id] || 0 })),
+      }));
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch DM unread counts:', error);
+    }
+  },
+
+  fetchDirectMessagesForThread: async (userId: string, otherUserId: string, threadId: string) => {
+    try {
+      const result = await api.fetchDirectMessages(userId, otherUserId);
+      const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
+      const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
+      set(state => ({
+        directMessages: { ...state.directMessages, [threadId]: mapped },
+      }));
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch direct messages:', error);
+    }
+  },
+
+  sendDirectMessageTo: async (senderId: string, recipientId: string, text: string, threadId: string) => {
+    const optimistic: DirectMessage = {
+      id: `optimistic-${Date.now()}`,
+      threadId,
+      senderId,
+      text,
+      timestamp: new Date().toISOString(),
+    };
+
+    set(state => ({
+      directMessages: {
+        ...state.directMessages,
+        [threadId]: [...(state.directMessages[threadId] || []), optimistic],
+      },
+      dmThreads: state.dmThreads.map(t =>
+        t.id === threadId
+          ? { ...t, lastMessage: text, lastMessageTimestamp: new Date().toISOString() }
+          : t
+      ),
+    }));
+
+    try {
+      const sent = await api.sendDirectMessage(senderId, recipientId, text);
+      const confirmed = mapDirectMessage(sent, threadId);
+      set(state => ({
+        directMessages: {
+          ...state.directMessages,
+          [threadId]: (state.directMessages[threadId] || []).map(m =>
+            m.id === optimistic.id ? confirmed : m
+          ),
+        },
+      }));
+    } catch (error) {
+      set(state => ({
+        directMessages: {
+          ...state.directMessages,
+          [threadId]: (state.directMessages[threadId] || []).filter(m => m.id !== optimistic.id),
+        },
+      }));
+      throw error;
+    }
+  },
+
+  markDMAsRead: async (threadId: string, userId: string) => {
+    try {
+      await api.markDMAsRead(threadId, userId);
+      set(state => ({
+        dmUnreadCounts: { ...state.dmUnreadCounts, [threadId]: 0 },
+        dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, unreadCount: 0 } : t),
+      }));
+    } catch (error) {
+      console.warn('[GroupStore] Failed to mark DM as read:', error);
+    }
+  },
+
+  archiveDmThread: async (threadId: string, userId: string) => {
+    set(state => ({
+      dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: true } : t),
+    }));
+    try {
+      await api.archiveDmThread(threadId, userId);
+    } catch (error) {
+      console.warn('[GroupStore] Failed to archive DM thread:', error);
+    }
+  },
+
+  unarchiveDmThread: async (threadId: string, userId: string) => {
+    set(state => ({
+      dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: false } : t),
+    }));
+    try {
+      await api.unarchiveDmThread(threadId, userId);
+    } catch (error) {
+      console.warn('[GroupStore] Failed to unarchive DM thread:', error);
+    }
+  },
+
+  deleteDmThread: async (threadId: string, userId: string) => {
+    get().removeDmThread(threadId);
+    try {
+      await api.deleteDmThread(threadId, userId);
+    } catch (error) {
+      console.warn('[GroupStore] Failed to delete DM thread:', error);
+    }
+  },
+
+  removeDmThread: (threadId: string) => {
+    set(state => {
+      const { [threadId]: _msgs, ...directMessages } = state.directMessages;
+      const { [threadId]: _unread, ...dmUnreadCounts } = state.dmUnreadCounts;
+      return {
+        dmThreads: state.dmThreads.filter(t => t.id !== threadId),
+        directMessages,
+        dmUnreadCounts,
+      };
+    });
+  },
+
+  addDirectMessage: (threadId: string, message: DirectMessage) => {
+    set(state => {
+      const existing = state.directMessages[threadId] || [];
+      if (existing.some(m => m.id === message.id)) return state;
+      return {
+        directMessages: { ...state.directMessages, [threadId]: [...existing, message] },
+        dmThreads: state.dmThreads.map(t =>
+          t.id === threadId
+            ? {
+                ...t,
+                lastMessage: message.text,
+                lastMessageTimestamp: message.timestamp,
+                unreadCount: (t.unreadCount || 0) + 1,
+              }
+            : t
+        ),
+      };
+    });
+  },
+
+  flagMessageAsSimilar: async (messageId: string, groupId: string, userId: string) => {
+    const groupMessages = get().messagesCache[groupId] || get().messages;
+    const message = groupMessages.find(m => m.id === messageId);
+    if (!message) return;
+
+    const group = get().groups.find(g => g.id === groupId);
+    const currentFlags = message.flaggedAsSimilarUserIds || [];
+    const userHasFlagged = currentFlags.includes(userId);
+    const newFlags = userHasFlagged
+      ? currentFlags.filter(id => id !== userId)
+      : [...currentFlags, userId];
+
+    const updateMessagesInState = (msgs: Message[]) =>
+      msgs.map(m => {
+        if (m.id !== messageId) return m;
+        const updated = { ...m, flaggedAsSimilarUserIds: newFlags };
+        const archiveThreshold = group ? Math.ceil(group.memberCount * 0.05) : 1;
+        if (newFlags.length >= archiveThreshold) {
+          updated.isArchived = true;
+        }
+        return updated;
+      });
+
+    set(state => ({
+      messages: updateMessagesInState(state.messages),
+      messagesCache: {
+        ...state.messagesCache,
+        [groupId]: updateMessagesInState(state.messagesCache[groupId] || state.messages),
+      },
+    }));
+
+    try {
+      await api.updateMessage(messageId, { flagged_as_similar_user_ids: newFlags });
+    } catch (error) {
+      console.warn('[GroupStore] Failed to flag message:', error);
+    }
+  },
+
+  approvePendingMember: async (groupId: string, userId: string) => {
+    const group = get().groups.find(g => g.id === groupId);
+    const pending = group?.pendingMembers?.find(m => m.id === userId);
+    if (!pending) return;
+
+    try {
+      await api.addGroupMember(groupId, userId);
+    } catch (error) {
+      console.warn('[GroupStore] addGroupMember failed, updating locally:', error);
+    }
+
+    set(state => ({
+      groups: state.groups.map(g => {
+        if (g.id !== groupId) return g;
+        return {
+          ...g,
+          pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId),
+          members: [
+            ...g.members,
+            {
+              id: `member-${userId}`,
+              userId,
+              name: pending.name,
+              avatarUrl: pending.avatarUrl,
+              role: 'member' as const,
+              joinedAt: new Date().toISOString(),
+            },
+          ],
+          memberCount: g.memberCount + 1,
+        };
+      }),
+    }));
+  },
+
+  rejectPendingMember: async (groupId: string, userId: string) => {
+    set(state => ({
+      groups: state.groups.map(g =>
+        g.id === groupId
+          ? { ...g, pendingMembers: (g.pendingMembers || []).filter(m => m.id !== userId) }
+          : g
+      ),
+    }));
+  },
+
+  fetchUserVotesForGroup: async (groupId: string, userId: string) => {
+    try {
+      const votes = await api.fetchUserVotesForGroup(groupId, userId);
+      set({ userVotes: { ...get().userVotes, ...votes } });
+    } catch (error) {
+      console.warn('[GroupStore] Failed to fetch user votes:', error);
+    }
+  },
+
+  voteOnMessage: async (groupId: string, messageId: string, userId: string, voteType: 'up' | 'down') => {
+    const groupMessages = get().messagesCache[groupId] || get().messages;
+    const message = groupMessages.find(m => m.id === messageId);
+    if (!message) return;
+
+    const currentVote = get().userVotes[messageId];
+    let newUpvotes = message.upvotes ?? 0;
+    let newDownvotes = message.downvotes ?? 0;
+    let newUserVote: 'up' | 'down' | undefined;
+    let newQuestionStatus = message.questionStatus;
+
+    try {
+      if (currentVote === voteType) {
+        const removeResult = await api.removeVote(messageId, userId) as any;
+        if (removeResult?.upvotes !== undefined) {
+          newUpvotes = removeResult.upvotes;
+          newDownvotes = removeResult.downvotes;
+        } else if (voteType === 'up') {
+          newUpvotes--;
+        } else {
+          newDownvotes--;
+        }
+        newUserVote = undefined;
+      } else {
+        const result = await api.voteOnMessage(messageId, userId, voteType) as any;
+        if (result?.upvotes !== undefined) {
+          newUpvotes = result.upvotes;
+          newDownvotes = result.downvotes;
+        } else {
+          if (currentVote === 'up') newUpvotes--;
+          if (currentVote === 'down') newDownvotes--;
+          if (voteType === 'up') newUpvotes++;
+          else newDownvotes++;
+        }
+        newUserVote = voteType;
+      }
+    } catch (error) {
+      console.warn('[GroupStore] Failed to vote:', error);
+      return;
+    }
+
+    if (message.type === 'question') {
+      const group = get().groups.find(g => g.id === groupId);
+      const memberCount = group?.memberCount || group?.members?.length || 0;
+      const resolvedStatus = resolveQuestionStatusAfterVote({
+        upvotes: newUpvotes,
+        downvotes: newDownvotes,
+        memberCount,
+      });
+      if (resolvedStatus !== newQuestionStatus) {
+        newQuestionStatus = resolvedStatus;
+        try {
+          await api.updateQuestionStatus(messageId, resolvedStatus);
+        } catch (error) {
+          console.warn('[GroupStore] Failed to update question status:', error);
+        }
+      }
+    }
+
+    const updateMessagesInState = (msgs: Message[]) =>
+      msgs.map(m =>
+        m.id === messageId
+          ? {
+              ...m,
+              upvotes: newUpvotes,
+              downvotes: newDownvotes,
+              questionStatus: newQuestionStatus,
+            }
+          : m
+      );
+
+    set(state => ({
+      messages: updateMessagesInState(state.messages),
+      messagesCache: {
+        ...state.messagesCache,
+        [groupId]: updateMessagesInState(state.messagesCache[groupId] || state.messages),
+      },
+      userVotes: { ...state.userVotes, [messageId]: newUserVote },
+    }));
   },
 }));

@@ -1,13 +1,55 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requirePlatformAdmin } from '../middleware/auth';
+import { mergeUserSettings, isPushEnabledInSettings } from '../utils/sanitizeSettings';
+import { parseUserSettings } from '../utils/userSettingsPolicy';
+import { canViewStudyActivity, resolvePublicOnlineStatus } from '@lantern/shared/settings';
 import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { requireAuthUserId } from '../utils/requestAuth';
 import { AuthenticatedRequest, User, Group } from '../types';
+import { dataExportRateLimit } from '../middleware/rateLimit';
+import { logAdminAction } from '../services/adminAudit';
+
+const NON_ADMIN_UPDATABLE_FIELDS = new Set([
+  'name',
+  'phoneNumber',
+  'phone',
+  'avatarUrl',
+  'avatar_url',
+  'stats',
+  'settings',
+  'test_presets',
+]);
+
+const ADMIN_ONLY_USER_FIELDS = ['points', 'badges', 'isAdmin'] as const;
 
 const router = Router();
+
+async function applySettingsSideEffects(
+  userId: string,
+  previousSettings: Record<string, unknown> | null | undefined,
+  mergedSettings: Record<string, unknown>
+): Promise<void> {
+  const wasPushEnabled = isPushEnabledInSettings(previousSettings);
+  const isPushEnabled = isPushEnabledInSettings(mergedSettings);
+  if (wasPushEnabled && !isPushEnabled) {
+    await supabaseService.clearExpoPushToken(userId);
+  }
+}
+
+const toPublicUser = (user: User) => ({
+  id: user.id,
+  name: user.name,
+  username: user.username,
+  firstName: user.firstName,
+  lastName: user.lastName,
+  avatarUrl: user.avatarUrl,
+  points: user.points,
+  badges: user.badges,
+});
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -19,15 +61,18 @@ export const initializeUserRoutes = (supabase: SupabaseService, cache: CacheServ
   cacheService = cache;
 };
 
-// GET /api/v1/users - Get all users with pagination
+// GET /api/v1/users - Platform admin only (use /search for scoped lookup)
 router.get(
   '/',
-  // authMiddleware,
+  authMiddleware,
+  requirePlatformAdmin,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { page = 1, limit = 20, search } = req.query;
-    const userId = req.user?.id;
 
     logger.debug('Fetching users', { page, limit, search, userId });
 
@@ -57,20 +102,92 @@ router.get(
   })
 );
 
+// GET /api/v1/users/search - Search users by username or name
+router.get(
+  '/search',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const currentUserId = requireAuthUserId(req, res);
+    if (!currentUserId) return;
+
+    const { q, limit = 20 } = req.query;
+
+    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search query must be at least 2 characters',
+      });
+    }
+
+    const searchQuery = q.trim().toLowerCase();
+    const resultLimit = Math.min(parseInt(limit as string) || 20, 50);
+
+    logger.debug('Searching users', { query: searchQuery, limit: resultLimit, currentUserId });
+
+    try {
+      // Use the search_users database function
+      const { data, error } = await supabaseService.getClient()
+        .rpc('search_users', {
+          search_query: searchQuery,
+          exclude_user_id: currentUserId || null,
+          viewer_id: currentUserId || null,
+          result_limit: resultLimit,
+        });
+
+      if (error) {
+        logger.error('User search error', { error });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to search users',
+        });
+      }
+
+      // Format response with @username display and privacy-safe online status
+      const users = (data || []).map((user: any) => ({
+        id: user.id,
+        username: user.username,
+        displayUsername: user.username ? `@${user.username}` : null,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        avatarUrl: user.avatar_url,
+        onlineStatus: resolvePublicOnlineStatus(user.settings, user.last_seen_at),
+      }));
+
+      res.json({
+        success: true,
+        data: users,
+        query: searchQuery,
+        count: users.length,
+      });
+    } catch (error) {
+      logger.error('User search error', { error });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to search users',
+      });
+    }
+  })
+);
+
 // GET /api/v1/users/:userId - Get user by ID
 router.get(
   '/:userId',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
-    const { userId } = req.params;
-    const requestingUserId = req.user?.id;
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
 
-    logger.debug('Fetching user', { userId, requestingUserId });
+    const { userId } = req.params;
+    const isOwner = requestingUserId === userId;
+    const isAdmin = !!req.user?.isAdmin;
+
+    logger.debug('Fetching user', { userId, requestingUserId, isOwner, isAdmin });
 
     const cacheKey = `user:${userId}`;
-    let user = await cacheService.get(cacheKey);
+    let user = await cacheService.get(cacheKey) as User | null;
 
     if (!user) {
       user = await supabaseService.getUserById(userId);
@@ -86,9 +203,11 @@ router.get(
       await cacheService.set(cacheKey, user, 600);
     }
 
+    const responseUser = isOwner || isAdmin ? user : toPublicUser(user);
+
     res.json({
       success: true,
-      data: user,
+      data: responseUser,
     });
   })
 );
@@ -96,25 +215,54 @@ router.get(
 // POST /api/v1/users - Create new user
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validateCreateUser,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const userData = req.body;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Creating user', { userData, requestingUserId });
 
-    // Check if user already exists
-    const existingUser = await supabaseService.getUserByEmail(userData.email);
-    if (existingUser) {
-      return res.status(409).json({
+    if (requestingUserId !== userData.id && !req.user?.isAdmin) {
+      return res.status(403).json({
         success: false,
-        error: 'User with this email already exists',
+        error: 'Access denied: cannot create profile for another user',
       });
     }
 
-    const newUser = await supabaseService.createUser(userData);
+    const existingById = userData.id ? await supabaseService.getUserById(userData.id) : null;
+    if (existingById) {
+      return res.status(409).json({
+        success: false,
+        error: 'User profile already exists',
+      });
+    }
+
+    if (userData.email) {
+      const existingUser = await supabaseService.getUserByEmail(userData.email);
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          error: 'User with this email already exists',
+        });
+      }
+    }
+
+    const newUser = userData.email
+      ? await supabaseService.createUser(userData)
+      : await supabaseService.createUserProfile({
+          id: userData.id || requestingUserId,
+          name: userData.name,
+          avatarUrl: userData.avatarUrl || userData.avatar_url,
+          phoneNumber: userData.phoneNumber || userData.phone,
+          points: userData.points,
+          stats: userData.stats,
+          badges: userData.badges,
+          settings: userData.settings,
+        });
 
     // Invalidate users list cache
     await cacheService.deletePattern('users:list:*');
@@ -126,17 +274,90 @@ router.post(
   })
 );
 
+// PUT /api/v1/users/settings - Update current user's settings (must be before /:userId)
+router.put(
+  '/settings',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { settings } = req.body;
+
+    logger.debug('Updating current user settings', { userId });
+
+    if (!settings) {
+      return res.status(400).json({
+        success: false,
+        error: 'Settings object is required',
+      });
+    }
+
+    const existingUser = await supabaseService.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const mergedSettings = mergeUserSettings(
+      existingUser.settings as Record<string, unknown>,
+      settings as Record<string, unknown>
+    );
+    await applySettingsSideEffects(
+      userId,
+      existingUser.settings as Record<string, unknown>,
+      mergedSettings
+    );
+    const updatedUser = await supabaseService.updateUser(userId, { settings: mergedSettings });
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Invalidate settings cache
+    await cacheService.delete(`user:settings:${userId}`);
+    await cacheService.delete(`user:${userId}`);
+
+    res.json({
+      success: true,
+      data: { settings: updatedUser.settings },
+      message: 'Settings synced successfully',
+    });
+  })
+);
+
 // PUT /api/v1/users/:userId - Update user
 router.put(
   '/:userId',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   validateUpdateUser,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const updateData = req.body;
-    const requestingUserId = req.user?.id;
+
+    if (requestingUserId !== userId && !req.user?.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied',
+      });
+    }
+
+    let updateData = { ...req.body };
+    if (!req.user?.isAdmin) {
+      for (const field of ADMIN_ONLY_USER_FIELDS) {
+        delete updateData[field];
+      }
+      updateData = Object.fromEntries(
+        Object.entries(updateData).filter(([key]) => NON_ADMIN_UPDATABLE_FIELDS.has(key))
+      );
+    }
 
     logger.debug('Updating user', { userId, updateData, requestingUserId });
 
@@ -167,8 +388,10 @@ router.delete(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Deleting user', { userId, requestingUserId });
 
@@ -189,6 +412,15 @@ router.delete(
       });
     }
 
+    if (requestingUserId !== userId && req.user?.isAdmin) {
+      await logAdminAction(supabaseService, {
+        actorId: requestingUserId,
+        action: 'user_delete',
+        targetType: 'user',
+        targetId: userId,
+      });
+    }
+
     // Invalidate caches
     await cacheService.delete(`user:${userId}`);
     await cacheService.deletePattern('users:list:*');
@@ -202,6 +434,36 @@ router.delete(
   })
 );
 
+// GET /api/v1/users/:userId/export - GDPR data portability export
+router.get(
+  '/:userId/export',
+  authMiddleware,
+  dataExportRateLimit,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+
+    if (requestingUserId !== userId && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    logger.info('Exporting user data', { userId, requestingUserId });
+
+    const archive = await supabaseService.exportUserData(userId);
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="lantern-study-export-${userId}-${Date.now()}.json"`
+    );
+    res.json({ success: true, data: archive });
+  })
+);
+
 // GET /api/v1/users/:userId/stats - Get user statistics
 router.get(
   '/:userId/stats',
@@ -209,8 +471,10 @@ router.get(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user stats', { userId, requestingUserId });
 
@@ -247,9 +511,11 @@ router.get(
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { page = 1, limit = 20 } = req.query;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user groups', { userId, page, limit, requestingUserId });
 
@@ -293,8 +559,10 @@ router.get(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user settings', { userId, requestingUserId });
 
@@ -322,6 +590,7 @@ router.get(
       settings = user.settings || null;
 
       if (settings) {
+        settings = parseUserSettings(settings) as unknown as typeof settings;
         // Cache for 10 minutes
         await cacheService.set(cacheKey, settings, 600);
       }
@@ -341,9 +610,11 @@ router.put(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { settings } = req.body;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Updating user settings', { userId, requestingUserId });
 
@@ -362,7 +633,21 @@ router.put(
       });
     }
 
-    const updatedUser = await supabaseService.updateUser(userId, { settings });
+    const existingUser = await supabaseService.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const mergedSettings = mergeUserSettings(
+      existingUser.settings as Record<string, unknown>,
+      settings as Record<string, unknown>
+    );
+    await applySettingsSideEffects(
+      userId,
+      existingUser.settings as Record<string, unknown>,
+      mergedSettings
+    );
+    const updatedUser = await supabaseService.updateUser(userId, { settings: mergedSettings });
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -380,115 +665,6 @@ router.put(
       data: { settings: updatedUser.settings },
       message: 'Settings updated successfully',
     });
-  })
-);
-
-// PUT /api/v1/users/settings - Update current user's settings (convenience endpoint)
-router.put(
-  '/settings',
-  authMiddleware,
-  handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
-    const { settings } = req.body;
-    const userId = req.user?.id;
-
-    logger.debug('Updating current user settings', { userId });
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      });
-    }
-
-    if (!settings) {
-      return res.status(400).json({
-        success: false,
-        error: 'Settings object is required',
-      });
-    }
-
-    const updatedUser = await supabaseService.updateUser(userId, { settings });
-
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found',
-      });
-    }
-
-    // Invalidate settings cache
-    await cacheService.delete(`user:settings:${userId}`);
-    await cacheService.delete(`user:${userId}`);
-
-    res.json({
-      success: true,
-      data: { settings: updatedUser.settings },
-      message: 'Settings synced successfully',
-    });
-  })
-);
-
-// GET /api/v1/users/search - Search users by username or name
-router.get(
-  '/search',
-  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
-    const { q, limit = 20 } = req.query;
-    const currentUserId = req.user?.id;
-
-    if (!q || typeof q !== 'string' || q.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        error: 'Search query must be at least 2 characters',
-      });
-    }
-
-    const searchQuery = q.trim().toLowerCase();
-    const resultLimit = Math.min(parseInt(limit as string) || 20, 50);
-
-    logger.debug('Searching users', { query: searchQuery, limit: resultLimit, currentUserId });
-
-    try {
-      // Use the search_users database function
-      const { data, error } = await supabaseService.getClient()
-        .rpc('search_users', {
-          search_query: searchQuery,
-          exclude_user_id: currentUserId || null,
-          result_limit: resultLimit,
-        });
-
-      if (error) {
-        logger.error('User search error', { error });
-        return res.status(500).json({
-          success: false,
-          error: 'Failed to search users',
-        });
-      }
-
-      // Format response with @username display
-      const users = (data || []).map((user: any) => ({
-        id: user.id,
-        username: user.username,
-        displayUsername: user.username ? `@${user.username}` : null,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-        avatarUrl: user.avatar_url,
-      }));
-
-      res.json({
-        success: true,
-        data: users,
-        query: searchQuery,
-        count: users.length,
-      });
-    } catch (error) {
-      logger.error('User search error', { error });
-      res.status(500).json({
-        success: false,
-        error: 'Failed to search users',
-      });
-    }
   })
 );
 
@@ -553,16 +729,17 @@ router.get(
 // PUT /api/v1/users/:userId/username - Set or update username
 router.put(
   '/:userId/username',
+  authMiddleware,
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { username, firstName, lastName } = req.body;
 
-    // Basic auth check - user can only update their own username
-    // In production, use proper auth middleware
-    const requestingUserId = req.user?.id;
-    if (requestingUserId && requestingUserId !== userId) {
+    if (requestingUserId !== userId) {
       return res.status(403).json({
         success: false,
         error: 'You can only update your own username',
@@ -677,6 +854,58 @@ router.put(
         error: 'Failed to update username',
       });
     }
+  })
+);
+
+// POST /api/v1/users/push-token - Register Expo push token for mobile notifications
+router.post(
+  '/push-token',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { token } = req.body;
+    if (!token || typeof token !== 'string' || token.length > 512) {
+      return res.status(400).json({ success: false, error: 'Valid push token required' });
+    }
+
+    const user = await supabaseService.getUserById(userId);
+    if (!user || !isPushEnabledInSettings(user.settings as Record<string, unknown>)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Push notifications are disabled in your settings',
+      });
+    }
+
+    await supabaseService.updateExpoPushToken(userId, token.trim());
+    res.json({ success: true, message: 'Push token registered' });
+  })
+);
+
+// DELETE /api/v1/users/push-token - Clear registered push token
+router.delete(
+  '/push-token',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    await supabaseService.clearExpoPushToken(userId);
+    res.json({ success: true, message: 'Push token cleared' });
+  })
+);
+
+// POST /api/v1/users/presence/heartbeat - Update last seen for online status
+router.post(
+  '/presence/heartbeat',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    await supabaseService.touchLastSeen(userId);
+    res.json({ success: true });
   })
 );
 

@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
+import { AIDisclaimer } from './AIDisclaimer';
 
 interface AITutorModalProps {
   visible: boolean;
@@ -92,6 +93,9 @@ export default function AITutorModal({
               <Text style={[styles.headerTitle, { color: colors.text }]}>AI Tutor</Text>
             </View>
             <AIUsageBadge variant="badge" />
+          </View>
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+            <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
           </View>
 
           {/* Chat History */}

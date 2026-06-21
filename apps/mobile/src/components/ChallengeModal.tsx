@@ -1,9 +1,9 @@
 // ===========================================
 // Lantern Study Mobile - Challenge Modal
-// Configure and start a 1v1 quiz battle
+// Send a real duel challenge to a group member
 // ===========================================
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,64 +12,137 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useGameStore, GameUser, GameConfig } from '../stores';
 import { useAuthStore } from '../stores/authStore';
+import type { QuestionType } from '../stores/testStore';
+import { buildCurrentGameUser } from '../utils/currentGameUser';
+import { mobileQuestionTypesToWeb } from '../utils/questionHelpers';
+import type { TestConfigAvailableFilter } from './TestConfigModal';
 
 interface ChallengeModalProps {
   visible: boolean;
   onClose: () => void;
   opponent: GameUser;
-  onGameStart: (session: any) => void;
+  onChallengeSent?: () => void;
+  onSoloStart?: () => void;
   groupId?: string;
+  availableTags?: string[];
+  maxQuestions?: number;
+  getAvailableCount?: (filter: TestConfigAvailableFilter) => number;
 }
 
 const QUESTION_COUNT_OPTIONS = [5, 10, 15, 20];
-const DIFFICULTY_OPTIONS: { value: GameConfig['difficulty']; label: string }[] = [
-  { value: 'easy', label: 'Easy' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'hard', label: 'Hard' },
-  { value: 'mixed', label: 'Mixed' },
+
+const QUESTION_TYPE_OPTIONS: { type: QuestionType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { type: 'multiple_choice_single', label: 'Multiple Choice', icon: 'radio-button-on' },
+  { type: 'multiple_choice_multiple', label: 'Multi-Select', icon: 'checkbox' },
+  { type: 'true_false', label: 'True/False', icon: 'swap-horizontal' },
+  { type: 'fill_in_blank', label: 'Fill in Blank', icon: 'text' },
+  { type: 'matching', label: 'Matching', icon: 'git-compare' },
+  { type: 'diagram_labeling', label: 'Diagram Label', icon: 'image' },
 ];
 
 export default function ChallengeModal({
   visible,
   onClose,
   opponent,
-  onGameStart,
+  onChallengeSent,
+  onSoloStart,
   groupId,
+  availableTags = [],
+  maxQuestions = 20,
+  getAvailableCount,
 }: ChallengeModalProps) {
   const { colors } = useTheme();
-  const { user } = useAuthStore();
-  const { startGame, isLoading, error } = useGameStore();
-  
+  const { user, profileName } = useAuthStore();
+  const { sendChallenge, startSoloPractice, isLoading, error } = useGameStore();
+
   const [questionCount, setQuestionCount] = useState(10);
-  const [difficulty, setDifficulty] = useState<GameConfig['difficulty']>('mixed');
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<QuestionType[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  const handleStartGame = async () => {
-    if (!user) return;
+  const currentUser: GameUser | null = user ? buildCurrentGameUser(user, profileName) : null;
 
-    const currentUser: GameUser = {
-      id: user.id,
-      name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'You',
-      avatarUrl: user.user_metadata?.avatar_url,
-    };
+  const filterState: TestConfigAvailableFilter = useMemo(
+    () => ({
+      selectedQuestionTypes,
+      selectedTags,
+      useSpacedRepetition: false,
+      focusOnNew: false,
+      subgroupIds: [],
+    }),
+    [selectedQuestionTypes, selectedTags]
+  );
 
-    const config: GameConfig = {
-      questionCount,
-      difficulty,
-      groupId,
-    };
+  const availableCount = useMemo(() => {
+    if (getAvailableCount) return getAvailableCount(filterState);
+    return maxQuestions;
+  }, [getAvailableCount, filterState, maxQuestions]);
 
+  const effectiveMax = Math.max(1, Math.min(maxQuestions, availableCount));
+  const canSend = availableCount >= questionCount && questionCount > 0;
+
+  const buildConfig = (): GameConfig => ({
+    questionCount,
+    groupId,
+    allowedQuestionTypes:
+      selectedQuestionTypes.length > 0
+        ? mobileQuestionTypesToWeb(selectedQuestionTypes)
+        : undefined,
+    selectedTags: selectedTags.length > 0 ? selectedTags : undefined,
+  });
+
+  const toggleQuestionType = (type: QuestionType) => {
+    setSelectedQuestionTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleSendChallenge = async () => {
+    if (!currentUser) return;
+    if (!canSend) {
+      Alert.alert(
+        'Not enough questions',
+        `Only ${availableCount} question${availableCount === 1 ? '' : 's'} match your filters. Lower the count or adjust filters.`
+      );
+      return;
+    }
     try {
-      const session = await startGame(config, currentUser, opponent);
-      onGameStart(session);
+      await sendChallenge(buildConfig(), currentUser, opponent);
+      Alert.alert(
+        'Challenge Sent',
+        `${opponent.name} will be notified and can accept or decline your duel.`
+      );
+      onChallengeSent?.();
       onClose();
     } catch (err) {
-      console.error('Failed to start game:', err);
+      console.error('Failed to send challenge:', err);
+    }
+  };
+
+  const handleSoloPractice = async () => {
+    if (!currentUser) return;
+    if (availableCount < 1) {
+      Alert.alert('No questions', 'No testable questions match your filters.');
+      return;
+    }
+    try {
+      await startSoloPractice(buildConfig(), currentUser);
+      onSoloStart?.();
+      onClose();
+    } catch (err) {
+      console.error('Failed to start solo practice:', err);
     }
   };
 
@@ -80,10 +153,10 @@ export default function ChallengeModal({
       justifyContent: 'flex-end',
     },
     container: {
-      backgroundColor: colors.background,
+      backgroundColor: colors.card,
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
-      maxHeight: '80%',
+      maxHeight: '90%',
     },
     header: {
       flexDirection: 'row',
@@ -93,257 +166,271 @@ export default function ChallengeModal({
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    headerTitle: {
-      fontSize: 20,
+    title: {
+      fontSize: 18,
       fontWeight: '700',
       color: colors.text,
-    },
-    closeButton: {
-      padding: 8,
     },
     content: {
-      padding: 20,
+      padding: 16,
     },
-    opponentCard: {
+    vsRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 16,
-      marginBottom: 24,
-    },
-    opponentAvatar: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-      backgroundColor: colors.primary,
-      alignItems: 'center',
       justifyContent: 'center',
-      marginRight: 12,
+      marginVertical: 12,
+      gap: 12,
     },
-    opponentAvatarText: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: '#FFFFFF',
-    },
-    opponentInfo: {
-      flex: 1,
-    },
-    opponentLabel: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginBottom: 2,
-    },
-    opponentName: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    vsIcon: {
-      backgroundColor: colors.error + '20',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 8,
-    },
-    vsText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.error,
-    },
-    sectionTitle: {
+    playerName: {
       fontSize: 16,
       fontWeight: '600',
       color: colors.text,
-      marginBottom: 12,
+    },
+    vsText: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#ef4444',
+    },
+    availableText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.textSecondary,
+      marginBottom: 8,
+      marginTop: 12,
     },
     optionRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 10,
-      marginBottom: 24,
-    },
-    optionButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 8,
-      borderWidth: 2,
-      minWidth: 60,
-      alignItems: 'center',
-    },
-    optionButtonSelected: {
-      backgroundColor: colors.primary + '20',
-      borderColor: colors.primary,
-    },
-    optionButtonUnselected: {
-      backgroundColor: colors.card,
-      borderColor: colors.border,
-    },
-    optionText: {
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    optionTextSelected: {
-      color: colors.primary,
-    },
-    optionTextUnselected: {
-      color: colors.textSecondary,
-    },
-    startButton: {
-      backgroundColor: colors.primary,
-      borderRadius: 12,
-      paddingVertical: 16,
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'center',
       gap: 8,
     },
-    startButtonDisabled: {
-      opacity: 0.6,
+    optionChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
-    startButtonText: {
-      fontSize: 18,
-      fontWeight: '700',
+    optionChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    optionChipDisabled: {
+      opacity: 0.4,
+    },
+    optionText: {
+      fontSize: 13,
+      color: colors.text,
+    },
+    optionTextSelected: {
       color: '#FFFFFF',
+      fontWeight: '600',
+    },
+    typeChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    typeChipSelected: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    tagChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    tagChipSelected: {
+      backgroundColor: '#ec4899',
+      borderColor: '#ec4899',
+    },
+    tagText: {
+      fontSize: 12,
+      color: colors.text,
+    },
+    tagTextSelected: {
+      color: '#fff',
+      fontWeight: '600',
+    },
+    primaryButton: {
+      backgroundColor: '#ef4444',
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginTop: 20,
+    },
+    primaryButtonDisabled: {
+      opacity: 0.5,
+    },
+    secondaryButton: {
+      backgroundColor: colors.background,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    secondaryButtonText: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '600',
     },
     errorText: {
-      color: colors.error,
-      fontSize: 14,
+      color: '#ef4444',
+      fontSize: 13,
+      marginTop: 8,
       textAlign: 'center',
-      marginBottom: 16,
     },
-    infoCard: {
-      backgroundColor: colors.primary + '10',
-      borderRadius: 12,
-      padding: 16,
-      marginBottom: 24,
-    },
-    infoText: {
-      fontSize: 14,
+    hint: {
+      fontSize: 13,
       color: colors.textSecondary,
-      lineHeight: 20,
-    },
-    infoBold: {
-      fontWeight: '600',
-      color: colors.text,
+      textAlign: 'center',
+      marginTop: 12,
+      lineHeight: 18,
     },
   });
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <SafeAreaView edges={['bottom']} style={styles.container}>
-          {/* Header */}
+        <SafeAreaView style={styles.container} edges={['bottom']}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Challenge</Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.text} />
+            <Text style={styles.title}>Challenge to a Duel</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content}>
-            {/* Opponent Card */}
-            <View style={styles.opponentCard}>
-              <View style={styles.opponentAvatar}>
-                <Text style={styles.opponentAvatarText}>
-                  {opponent.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.opponentInfo}>
-                <Text style={styles.opponentLabel}>Challenging</Text>
-                <Text style={styles.opponentName}>{opponent.name}</Text>
-              </View>
-              <View style={styles.vsIcon}>
-                <Text style={styles.vsText}>1v1</Text>
-              </View>
+          <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+            <View style={styles.vsRow}>
+              <Text style={styles.playerName}>{currentUser?.name || 'You'}</Text>
+              <Text style={styles.vsText}>VS</Text>
+              <Text style={styles.playerName}>{opponent.name}</Text>
             </View>
 
-            {/* Info Card */}
-            <View style={styles.infoCard}>
-              <Text style={styles.infoText}>
-                <Text style={styles.infoBold}>Quiz Battle Mode:</Text> Answer questions faster 
-                and more accurately than your opponent to win! Score is based on 
-                correct answers and speed.
-              </Text>
-            </View>
+            <Text style={styles.availableText}>
+              {availableCount} question{availableCount === 1 ? '' : 's'} available
+              {!canSend ? ' — reduce count or adjust filters' : ''}
+            </Text>
 
-            {/* Question Count */}
             <Text style={styles.sectionTitle}>Number of Questions</Text>
             <View style={styles.optionRow}>
-              {QUESTION_COUNT_OPTIONS.map((count) => (
-                <TouchableOpacity
-                  key={count}
-                  style={[
-                    styles.optionButton,
-                    questionCount === count
-                      ? styles.optionButtonSelected
-                      : styles.optionButtonUnselected,
-                  ]}
-                  onPress={() => setQuestionCount(count)}
-                >
-                  <Text
+              {QUESTION_COUNT_OPTIONS.map(count => {
+                const disabled = count > effectiveMax;
+                return (
+                  <TouchableOpacity
+                    key={count}
                     style={[
-                      styles.optionText,
-                      questionCount === count
-                        ? styles.optionTextSelected
-                        : styles.optionTextUnselected,
+                      styles.optionChip,
+                      questionCount === count && styles.optionChipSelected,
+                      disabled && styles.optionChipDisabled,
                     ]}
+                    onPress={() => !disabled && setQuestionCount(count)}
+                    disabled={disabled}
                   >
-                    {count}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.optionText,
+                        questionCount === count && styles.optionTextSelected,
+                      ]}
+                    >
+                      {count}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {/* Difficulty */}
-            <Text style={styles.sectionTitle}>Difficulty</Text>
+            <Text style={styles.sectionTitle}>Filter by Question Type</Text>
+            <Text style={[styles.hint, { marginTop: 0, marginBottom: 8, textAlign: 'left' }]}>
+              Leave all unselected to include every type.
+            </Text>
             <View style={styles.optionRow}>
-              {DIFFICULTY_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.optionButton,
-                    difficulty === option.value
-                      ? styles.optionButtonSelected
-                      : styles.optionButtonUnselected,
-                  ]}
-                  onPress={() => setDifficulty(option.value)}
-                >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      difficulty === option.value
-                        ? styles.optionTextSelected
-                        : styles.optionTextUnselected,
-                    ]}
+              {QUESTION_TYPE_OPTIONS.map(option => {
+                const selected = selectedQuestionTypes.includes(option.type);
+                return (
+                  <TouchableOpacity
+                    key={option.type}
+                    style={[styles.typeChip, selected && styles.typeChipSelected]}
+                    onPress={() => toggleQuestionType(option.type)}
                   >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Ionicons
+                      name={option.icon}
+                      size={14}
+                      color={selected ? '#fff' : colors.textSecondary}
+                    />
+                    <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {/* Error */}
-            {error && <Text style={styles.errorText}>{error}</Text>}
+            {availableTags.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>Filter by Tags</Text>
+                <View style={styles.optionRow}>
+                  {availableTags.map(tag => {
+                    const selected = selectedTags.includes(tag);
+                    return (
+                      <TouchableOpacity
+                        key={tag}
+                        style={[styles.tagChip, selected && styles.tagChipSelected]}
+                        onPress={() => toggleTag(tag)}
+                      >
+                        <Text style={[styles.tagText, selected && styles.tagTextSelected]}>
+                          {tag}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
 
-            {/* Start Button */}
+            <Text style={styles.hint}>
+              Your opponent will receive a notification and must accept before either of you can play the same question set.
+            </Text>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
             <TouchableOpacity
-              style={[styles.startButton, isLoading && styles.startButtonDisabled]}
-              onPress={handleStartGame}
-              disabled={isLoading}
+              style={[styles.primaryButton, !canSend && styles.primaryButtonDisabled]}
+              onPress={handleSendChallenge}
+              disabled={isLoading || !canSend}
             >
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <>
-                  <Ionicons name="flash" size={20} color="#FFFFFF" />
-                  <Text style={styles.startButtonText}>Start Battle!</Text>
-                </>
+                <Text style={styles.buttonText}>Send Challenge</Text>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={handleSoloPractice}
+              disabled={isLoading || availableCount < 1}
+            >
+              <Text style={styles.secondaryButtonText}>Solo Practice Instead</Text>
             </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>

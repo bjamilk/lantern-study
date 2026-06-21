@@ -40,6 +40,7 @@ interface UIState {
     duplicateQuestion: boolean;
     addExpense: boolean;
     addIncome: boolean;
+    addInvestment: boolean;
     setBudget: boolean;
     setMonthlyPlan: boolean;
     savingsGoal: boolean;
@@ -51,6 +52,7 @@ interface UIState {
     testAnalysis: boolean;
     usernameRequired: boolean;
     aiGenerateQuestions: boolean;
+    challenges: boolean;
   };
   openModal: (modal: keyof UIState['modals']) => void;
   closeModal: (modal: keyof UIState['modals']) => void;
@@ -103,6 +105,8 @@ interface UIState {
   setMarketplaceListingCategory: (category: 'academic' | 'student-life') => void;
   selectedMarketplaceListingId: string | null;
   setSelectedMarketplaceListingId: (id: string | null) => void;
+  selectedMarketplaceOrderId: string | null;
+  setSelectedMarketplaceOrderId: (id: string | null) => void;
   editingMarketplaceListing: any | null;
   setEditingMarketplaceListing: (listing: any) => void;
   selectedSellerId: string | null;
@@ -131,6 +135,7 @@ const initialModals = {
   duplicateQuestion: false,
   addExpense: false,
   addIncome: false,
+  addInvestment: false,
   setBudget: false,
   setMonthlyPlan: false,
   savingsGoal: false,
@@ -142,6 +147,7 @@ const initialModals = {
   testAnalysis: false,
   usernameRequired: false,
   aiGenerateQuestions: false,
+  challenges: false,
 };
 
 export const useUIStore = create<UIState>()(
@@ -232,6 +238,8 @@ export const useUIStore = create<UIState>()(
       setMarketplaceListingCategory: (category) => set({ marketplaceListingCategory: category }),
       selectedMarketplaceListingId: null,
       setSelectedMarketplaceListingId: (id) => set({ selectedMarketplaceListingId: id }),
+      selectedMarketplaceOrderId: null,
+      setSelectedMarketplaceOrderId: (id) => set({ selectedMarketplaceOrderId: id }),
       editingMarketplaceListing: null,
       setEditingMarketplaceListing: (listing) => set({ editingMarketplaceListing: listing }),
       selectedSellerId: null,
@@ -242,7 +250,7 @@ export const useUIStore = create<UIState>()(
       setIsOnline: (online) => set({ isOnline: online }),
 
       // Low-Data Mode
-      lowDataMode: false,
+      lowDataMode: true,
       setLowDataMode: (enabled) => set({ lowDataMode: enabled }),
     }),
     {

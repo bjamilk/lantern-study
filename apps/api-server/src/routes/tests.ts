@@ -5,6 +5,7 @@ import { handleValidationErrors, validateTestConfig, validatePagination, validat
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { requireAuthUserId } from '../utils/requestAuth';
 
 console.log('Loading tests.ts');
 
@@ -22,24 +23,25 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // GET /api/v1/tests - Get user's tests
   router.get(
     '/',
-    // authMiddleware,
+    authMiddleware,
     validatePagination,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
-      const { page = 1, limit = 20, status, subject, userId } = req.query;
-      const authUserId = req.user?.id;
-      const finalUserId = userId as string || authUserId;
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
 
-      logger.debug('Fetching tests', { page, limit, status, subject, userId: finalUserId });
+      const { page = 1, limit = 20, status, subject } = req.query;
+
+      logger.debug('Fetching tests', { page, limit, status, subject, userId });
 
       try {
-        const cacheKey = `tests:${finalUserId || 'anonymous'}:${page}:${limit}:${status || ''}:${subject || ''}`;
+        const cacheKey = `tests:${userId}:${page}:${limit}:${status || ''}:${subject || ''}`;
         let tests = await cacheService.get(cacheKey) as any[];
 
         if (!tests) {
-          if (supabaseService && finalUserId) {
-            logger.debug('Calling supabaseService.getUserTests', { finalUserId, page, limit, status, subject });
-            tests = await supabaseService.getUserTests(finalUserId, {
+          if (supabaseService) {
+            logger.debug('Calling supabaseService.getUserTests', { userId, page, limit, status, subject });
+            tests = await supabaseService.getUserTests(userId, {
               page: parseInt(page as string),
               limit: parseInt(limit as string),
               status: status as string,
@@ -47,7 +49,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
             });
             logger.debug('getUserTests returned', { testsCount: tests?.length });
           } else {
-            logger.debug('No supabaseService or userId', { supabaseService: !!supabaseService, finalUserId });
+            logger.debug('No supabaseService', { supabaseService: !!supabaseService });
             tests = [];
           }
 
@@ -71,14 +73,79 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     })
   );
 
+  // DELETE /api/v1/tests/history - Clear all completed test sessions for user
+  router.delete(
+    '/history',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      logger.debug('Clearing completed test history', { userId });
+
+      const deletedCount = await supabaseService.clearCompletedTestHistory(userId);
+
+      res.json({
+        success: true,
+        deletedCount,
+        message: 'Test history cleared',
+      });
+    })
+  );
+
+  // DELETE /api/v1/tests/sessions/:sessionId - Delete one completed test session
+  router.delete(
+    '/sessions/:sessionId',
+    authMiddleware,
+    handleValidationErrors,
+    asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      const { sessionId } = req.params;
+
+      logger.debug('Deleting completed test session', { sessionId, userId });
+
+      try {
+        const deleted = await supabaseService.deleteCompletedTestSession(sessionId, userId);
+        if (!deleted) {
+          return res.status(404).json({
+            success: false,
+            error: 'Test session not found or access denied',
+          });
+        }
+
+        await cacheService.deletePattern(`tests:${userId}:*`);
+        await cacheService.delete(`user:stats:${userId}`);
+
+        res.json({
+          success: true,
+          deleted: true,
+          message: 'Test session deleted',
+        });
+      } catch (error: any) {
+        if (error?.message?.includes('in-progress')) {
+          return res.status(400).json({
+            success: false,
+            error: error.message,
+          });
+        }
+        throw error;
+      }
+    })
+  );
+
   // GET /api/v1/tests/:testId - Get test by ID
   router.get(
     '/:testId',
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const userId = req.user?.id;
 
       logger.debug('Fetching test', { testId, userId });
 
@@ -109,12 +176,14 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // POST /api/v1/tests - Create new test
   router.post(
     '/',
-    // authMiddleware,
+    authMiddleware,
     validateTestConfig,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const testConfig = req.body;
-      const userId = req.body.userId || req.user?.id;
 
       logger.debug('Creating test', { testConfig, userId });
 
@@ -136,8 +205,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const userId = req.user?.id;
 
       logger.debug('Starting test', { testId, userId });
 
@@ -173,16 +244,16 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // PUT /api/v1/tests/:testId/submit - Submit test answers
   router.put(
     '/:testId/submit',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const { answers, userId } = req.body;
-      const authUserId = req.user?.id;
+      const { answers } = req.body;
 
-      logger.debug('Submitting test', { testId, answersCount: answers?.length, userId: userId || authUserId });
-
-      const finalUserId = userId || authUserId;
+      logger.debug('Submitting test', { testId, answersCount: answers?.length, userId });
 
       if (!answers || !Array.isArray(answers)) {
         return res.status(400).json({
@@ -191,7 +262,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const test = await supabaseService.getTestById(testId, finalUserId);
+      const test = await supabaseService.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -207,12 +278,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const result = await supabaseService.submitTest(testId, finalUserId, answers);
+      const result = await supabaseService.submitTest(testId, userId, answers);
 
       // Invalidate caches
       await cacheService.delete(`test:${testId}`);
-      await cacheService.deletePattern(`tests:${finalUserId}:*`);
-      await cacheService.delete(`user:stats:${finalUserId}`);
+      await cacheService.deletePattern(`tests:${userId}:*`);
+      await cacheService.delete(`user:stats:${userId}`);
 
       res.json({
         success: true,
@@ -224,18 +295,17 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // GET /api/v1/tests/:testId/results - Get test results
   router.get(
     '/:testId/results',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const { userId } = req.query;
-      const authUserId = req.user?.id;
 
-      logger.debug('Fetching test results', { testId, userId: userId || authUserId });
+      logger.debug('Fetching test results', { testId, userId });
 
-      const finalUserId = userId as string || authUserId;
-
-      const test = await supabaseService.getTestById(testId, finalUserId);
+      const test = await supabaseService.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -255,7 +325,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let results = await cacheService.get(cacheKey);
 
       if (!results) {
-        results = await supabaseService.getTestResults(testId, finalUserId);
+        results = await supabaseService.getTestResults(testId, userId);
 
         // Cache for 30 minutes (results don't change)
         await cacheService.set(cacheKey, results, 1800);
@@ -271,26 +341,26 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   // POST /api/v1/tests/:testId/results - Create test result
   router.post(
     '/:testId/results',
-    // authMiddleware,
+    authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const { score, correctAnswersCount, totalQuestions, userId } = req.body;
-      const authUserId = req.user?.id;
+      const { score, correctAnswersCount, totalQuestions } = req.body;
 
-      logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId: userId || authUserId });
-
-      const finalUserId = userId || authUserId;
+      logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId });
 
       const result = await supabaseService.createTestResult(testId, {
         score,
         correctAnswersCount,
         totalQuestions,
-      });
+      }, userId);
 
       // Invalidate caches
       await cacheService.delete(`test:results:${testId}`);
-      await cacheService.deletePattern(`tests:${finalUserId}:*`);
+      await cacheService.deletePattern(`tests:${userId}:*`);
 
       res.status(201).json({
         success: true,
@@ -305,8 +375,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const userId = req.user?.id;
 
       logger.debug('Fetching test questions', { testId, userId });
 
@@ -349,8 +421,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { testId } = req.params;
-      const userId = req.user?.id;
 
       logger.debug('Deleting test', { testId, userId });
 
@@ -398,7 +472,8 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
-      const userId = req.user?.id;
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
 
       logger.debug('Fetching subject stats', { userId });
 
@@ -425,8 +500,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     authMiddleware,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { period = 'month' } = req.query;
-      const userId = req.user?.id;
 
       logger.debug('Fetching performance stats', { period, userId });
 
@@ -454,9 +531,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     validatePagination,
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
       const { page = 1, limit = 20, subject, difficulty } = req.query;
 
-      logger.debug('Fetching test templates', { page, limit, subject, difficulty });
+      logger.debug('Fetching test templates', { page, limit, subject, difficulty, userId });
 
       const cacheKey = `tests:templates:${page}:${limit}:${subject || ''}:${difficulty || ''}`;
       let templates = await cacheService.get(cacheKey) as any[];

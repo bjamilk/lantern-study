@@ -1,0 +1,136 @@
+import { Router } from 'express';
+import { asyncHandler } from '../middleware/errorHandler';
+import { authMiddleware } from '../middleware/auth';
+import { handleValidationErrors, validateCreateChallenge, validateSubmitChallenge, validateChallengeId } from '../middleware/validation';
+import { requireAuthUserId } from '../utils/requestAuth';
+import { ChallengeService } from '../services/challengeService';
+import { SupabaseService } from '../services/supabase';
+import { CacheService } from '../services/cache';
+import { logger } from '../utils/logger';
+import { clientErrorMessage } from '../utils/safeError';
+
+const router = Router();
+
+let challengeService: ChallengeService;
+
+export const initializeChallengeRoutes = (supabase: SupabaseService, _cache: CacheService) => {
+  challengeService = new ChallengeService(supabase);
+};
+
+// POST /api/v1/challenges - Send a challenge
+router.post(
+  '/',
+  authMiddleware,
+  validateCreateChallenge,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId, opponentId, config } = req.body;
+    logger.debug('Creating challenge', { groupId, opponentId, userId });
+
+    try {
+      const challenge = await challengeService.createChallenge(userId, { groupId, opponentId, config });
+      res.status(201).json({ success: true, data: challenge });
+    } catch (err: any) {
+      const status = err.statusCode || 500;
+      res.status(status).json({ success: false, error: clientErrorMessage(err, 'Failed to create challenge') });
+    }
+  })
+);
+
+// GET /api/v1/challenges - List my challenges
+router.get(
+  '/',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { status } = req.query;
+    const challenges = await challengeService.listChallenges(userId, status as string | undefined);
+    res.json({ success: true, data: challenges });
+  })
+);
+
+// GET /api/v1/challenges/:challengeId
+router.get(
+  '/:challengeId',
+  authMiddleware,
+  validateChallengeId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { challengeId } = req.params;
+    const challenge = await challengeService.getChallenge(challengeId, userId);
+    if (!challenge) {
+      return res.status(404).json({ success: false, error: 'Challenge not found' });
+    }
+    res.json({ success: true, data: challenge });
+  })
+);
+
+// POST /api/v1/challenges/:challengeId/accept
+router.post(
+  '/:challengeId/accept',
+  authMiddleware,
+  validateChallengeId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const challenge = await challengeService.acceptChallenge(req.params.challengeId, userId);
+      res.json({ success: true, data: challenge });
+    } catch (err: any) {
+      res.status(err.statusCode || 500).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+// POST /api/v1/challenges/:challengeId/decline
+router.post(
+  '/:challengeId/decline',
+  authMiddleware,
+  validateChallengeId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const challenge = await challengeService.declineChallenge(req.params.challengeId, userId);
+      res.json({ success: true, data: challenge });
+    } catch (err: any) {
+      res.status(err.statusCode || 500).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+// POST /api/v1/challenges/:challengeId/submit
+router.post(
+  '/:challengeId/submit',
+  authMiddleware,
+  validateChallengeId,
+  validateSubmitChallenge,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { answers } = req.body;
+    try {
+      const challenge = await challengeService.submitChallenge(req.params.challengeId, userId, answers);
+      res.json({ success: true, data: challenge });
+    } catch (err: any) {
+      res.status(err.statusCode || 500).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
+export default router;

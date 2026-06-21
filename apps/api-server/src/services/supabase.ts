@@ -2,10 +2,92 @@ import { createClient } from '@supabase/supabase-js';
 import { DatabaseConfig, User, Group, Message, TestResult, Notification } from '../types';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
+import {
+  buildMarketplaceBudgetTxIds,
+  buildManualSaleBudgetTxId,
+  buildMarketplacePurchaseDescription,
+  buildMarketplaceSaleDescription,
+  MARKETPLACE_BUDGET_CATEGORIES,
+  MARKETPLACE_BUDGET_TYPES,
+} from '@lantern/shared/utils';
 
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
+  private static readonly DEFAULT_GROUP_PAGE_SIZE = 20;
+  private static readonly MAX_GROUP_PAGE_SIZE = 50;
+  private static readonly DEFAULT_DECK_PAGE_SIZE = 20;
+  private static readonly MAX_DECK_PAGE_SIZE = 50;
+  private static readonly DEFAULT_FLASHCARD_PAGE_SIZE = 50;
+  private static readonly MAX_FLASHCARD_PAGE_SIZE = 100;
+  private static readonly DEFAULT_MESSAGE_PAGE_SIZE = 50;
+  private static readonly MAX_MESSAGE_PAGE_SIZE = 100;
+
+  private getResponseProfile(profile?: string): 'compact' | 'full' {
+    return profile === 'compact' ? 'compact' : 'full';
+  }
+
+  /** Rewrite legacy localhost:54321 storage URLs to the configured Supabase URL. */
+  private normalizeStorageUrl(url: string): string {
+    if (!url) return url;
+    const base = this.supabaseUrl.replace(/\/$/, '');
+    return url.replace(/https?:\/\/(localhost|127\.0\.0\.1):54321/gi, base);
+  }
+
+  private normalizeListingRecord(listing: any): any {
+    if (!listing) return listing;
+    const salePrice = listing.sale_price != null ? Number(listing.sale_price) : null;
+    const onSale =
+      salePrice != null &&
+      !!listing.sale_ends_at &&
+      new Date(listing.sale_ends_at) > new Date();
+    const base = !Array.isArray(listing.images)
+      ? listing
+      : {
+          ...listing,
+          images: listing.images.map((url: string) => this.normalizeStorageUrl(url)),
+        };
+    return {
+      ...base,
+      effective_price: onSale ? salePrice : Number(listing.price) || 0,
+      is_on_sale: onSale,
+    };
+  }
+
+  private normalizeInquiryRecord(inquiry: any): any {
+    if (!inquiry) return inquiry;
+    return {
+      ...inquiry,
+      listing: inquiry.listing ? this.normalizeListingRecord(inquiry.listing) : inquiry.listing,
+    };
+  }
+
+  private normalizeFavoriteRecord(favorite: any): any {
+    if (!favorite) return favorite;
+    return {
+      ...favorite,
+      listing: favorite.listing ? this.normalizeListingRecord(favorite.listing) : favorite.listing,
+    };
+  }
+
+  private normalizeOfferRecord(offer: any): any {
+    if (!offer) return offer;
+    return {
+      ...offer,
+      listing: offer.listing ? this.normalizeListingRecord(offer.listing) : offer.listing,
+    };
+  }
+
+  private normalizeMessageRecord(msg: any): Partial<Message> & { type: 'TEXT' | 'QUESTION' } {
+    const parsed = this.parseMessageContent(msg);
+    const imageUrl = msg.image_url || parsed.imageUrl;
+    const type = (parsed.type || msg.type || 'TEXT') as 'TEXT' | 'QUESTION';
+    return {
+      ...parsed,
+      type,
+      ...(imageUrl ? { imageUrl: this.normalizeStorageUrl(imageUrl) } : {}),
+    };
+  }
 
   constructor(config: DatabaseConfig) {
     this.supabaseUrl = config.url;
@@ -60,6 +142,86 @@ export class SupabaseService {
     await cacheService.invalidateUserCache(userId);
 
     return data;
+  }
+
+  async updateExpoPushToken(userId: string, token: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({ expo_push_token: token })
+      .eq('id', userId);
+
+    if (error) throw error;
+    await cacheService.invalidateUserCache(userId);
+  }
+
+  async clearExpoPushToken(userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({ expo_push_token: null })
+      .eq('id', userId);
+
+    if (error) throw error;
+    await cacheService.invalidateUserCache(userId);
+  }
+
+  private async sendExpoPushForNotification(
+    userId: string,
+    notification: { message: string; type?: string; link?: string; data?: Record<string, unknown> }
+  ): Promise<void> {
+    const pushTypes = new Set([
+      'challenge_invite',
+      'challenge_accepted',
+      'challenge_result',
+      'challenge_opponent_finished',
+      'marketplace_inquiry',
+      'marketplace_purchase',
+      'marketplace_order_update',
+      'marketplace_review_prompt',
+      'saved_search_match',
+      'group_invite',
+      'badge_unlock',
+      'test_result',
+      'srs_reminder',
+    ]);
+    if (notification.type && !pushTypes.has(notification.type)) return;
+
+    try {
+      const { data: profile, error } = await this.supabase
+        .from('profiles')
+        .select('expo_push_token, settings')
+        .eq('id', userId)
+        .single();
+
+      if (error || !profile?.expo_push_token) return;
+
+      const { shouldSendExpoPush } = await import('../utils/userSettingsPolicy');
+      if (!shouldSendExpoPush(profile.settings, notification.type)) return;
+
+      const token = profile.expo_push_token as string;
+      if (!token.startsWith('ExponentPushToken')) return;
+
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: token,
+          title: 'Lantern Study',
+          body: notification.message,
+          data: {
+            type: notification.type,
+            link: notification.link,
+            ...(notification.data || {}),
+          },
+          sound: 'default',
+        }),
+      });
+    } catch (err) {
+      logger.warn('Expo push notification failed', { userId, err });
+    }
   }
 
   async createUserProfile(profile: Partial<User>): Promise<User> {
@@ -139,20 +301,64 @@ export class SupabaseService {
     return data;
   }
 
+  /** Resolve a UUID, @username, email, or display name to a profile id. */
+  async resolveCollaboratorUserId(identifier: string): Promise<string> {
+    const trimmed = identifier.trim();
+    if (!trimmed) {
+      throw new Error('Enter a username, email, or user ID.');
+    }
+
+    const uuidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(trimmed)) {
+      const user = await this.getUserById(trimmed);
+      if (!user) throw new Error('No user found with that ID.');
+      return user.id;
+    }
+
+    if (trimmed.includes('@') && trimmed.includes('.')) {
+      const user = await this.getUserByEmail(trimmed);
+      if (!user) throw new Error('No user found with that email.');
+      return user.id;
+    }
+
+    const username = trimmed.replace(/^@/, '').toLowerCase();
+    const { data: byUsername, error: usernameError } = await this.supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle();
+    if (usernameError) throw usernameError;
+    if (byUsername?.id) return byUsername.id;
+
+    const matches = await this.getUsers({ search: trimmed, limit: 5 });
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1) {
+      throw new Error('Multiple users match. Use @username or email instead.');
+    }
+
+    throw new Error('No user found. Try @username or their email address.');
+  }
+
   async createUser(userData: Partial<User>): Promise<User> {
+    const insertData: Record<string, unknown> = {
+      id: userData.id,
+      name: userData.name,
+      avatar_url: userData.avatarUrl,
+      phone: userData.phoneNumber,
+      points: userData.points || 0,
+      stats: userData.stats || {},
+      badges: userData.badges || [],
+      settings: userData.settings || {},
+    };
+
+    if (userData.email) {
+      insertData.email = userData.email;
+    }
+
     const { data, error } = await this.supabase
       .from('profiles')
-      .insert({
-        id: userData.id,
-        name: userData.name,
-        email: userData.email,
-        avatar_url: userData.avatarUrl,
-        phone: userData.phoneNumber,
-        points: userData.points || 0,
-        stats: userData.stats || {},
-        badges: userData.badges || [],
-        settings: userData.settings || {},
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -195,6 +401,17 @@ export class SupabaseService {
   }
 
   async deleteUser(userId: string): Promise<boolean> {
+    const { deleteUserAccountFully } = await import('./userDataLifecycle');
+    return deleteUserAccountFully(this, userId);
+  }
+
+  async exportUserData(userId: string): Promise<Record<string, unknown>> {
+    const { exportUserDataArchive } = await import('./userDataLifecycle');
+    return exportUserDataArchive(this, userId);
+  }
+
+  /** @deprecated use deleteUser — kept for internal reference */
+  async deleteUserProfileOnly(userId: string): Promise<boolean> {
     const { error } = await this.supabase
       .from('profiles')
       .delete()
@@ -294,17 +511,32 @@ export class SupabaseService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     userId?: string;
+    responseProfile?: 'compact' | 'full';
   } = {}): Promise<Group[]> {
-    const { page = 1, limit = 20, search, sortBy = 'created_at', sortOrder = 'desc', userId } = options;
-    const offset = (page - 1) * limit;
+    const {
+      page = 1,
+      limit = SupabaseService.DEFAULT_GROUP_PAGE_SIZE,
+      search,
+      sortBy = 'created_at',
+      sortOrder = 'desc',
+      userId,
+      responseProfile = 'full',
+    } = options;
+    const profile = this.getResponseProfile(responseProfile);
+    const safeLimit = Math.min(SupabaseService.MAX_GROUP_PAGE_SIZE, Math.max(1, limit));
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * safeLimit;
 
-    const cacheKey = `groups:list:${page}:${limit}:${search || ''}:${sortBy}:${sortOrder}:${userId || ''}`;
+    const cacheKey = `groups:list:${safePage}:${safeLimit}:${search || ''}:${sortBy}:${sortOrder}:${userId || ''}:profile:${profile}`;
 
     return cacheService.cached(cacheKey, async () => {
+      const selectClause = profile === 'compact'
+        ? 'id, name, avatar_url, last_message_time, is_archived'
+        : 'id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at';
       let query = this.supabase
         .from('groups')
-        .select('*')
-        .range(offset, offset + limit - 1);
+        .select(selectClause)
+        .range(offset, offset + safeLimit - 1);
 
       if (search) {
         query = query.ilike('name', `%${search}%`);
@@ -331,6 +563,22 @@ export class SupabaseService {
       const { data, error } = await query;
       if (error) throw error;
 
+      const groupIds = (data || []).map((item: any) => item.id);
+      const memberCounts: Record<string, number> = {};
+
+      if (groupIds.length > 0) {
+        const { data: memberRows, error: memberCountError } = await this.supabase
+          .from('group_members')
+          .select('group_id')
+          .in('group_id', groupIds);
+
+        if (!memberCountError && memberRows) {
+          memberRows.forEach((row: { group_id: string }) => {
+            memberCounts[row.group_id] = (memberCounts[row.group_id] || 0) + 1;
+          });
+        }
+      }
+
       // Transform snake_case to camelCase
       return (data || []).map((item: any) => ({
         id: item.id,
@@ -344,17 +592,43 @@ export class SupabaseService {
         parentId: item.parent_id,
         isArchived: item.is_archived,
         inviteId: item.invite_id,
+        createdAt: item.created_at,
+        memberCount: memberCounts[item.id] || 0,
       })) as Group[];
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 
   async getGroupById(groupId: string, userId?: string): Promise<Group | null> {
-    const cacheKey = `group:${groupId}`;
+    if (!userId) {
+      const { data, error } = await this.supabase
+        .from('groups')
+        .select('id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at')
+        .eq('id', groupId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        avatarUrl: data.avatar_url,
+        lastMessage: data.last_message,
+        lastMessageTime: data.last_message_time,
+        adminIds: data.admin_ids || [],
+        permissions: data.permissions || {},
+        parentId: data.parent_id,
+        isArchived: data.is_archived,
+        inviteId: data.invite_id,
+        createdAt: data.created_at,
+      } as Group;
+    }
+
+    const cacheKey = `group:${groupId}:user:${userId}`;
 
     return cacheService.cached(cacheKey, async () => {
       const { data, error } = await this.supabase
         .from('groups')
-        .select('*')
+        .select('id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, created_at')
         .eq('id', groupId)
         .single();
 
@@ -389,6 +663,7 @@ export class SupabaseService {
         parentId: data.parent_id,
         isArchived: data.is_archived,
         inviteId: data.invite_id,
+        createdAt: data.created_at,
       } as Group;
     }, { ttl: 600 }); // Cache for 10 minutes
   }
@@ -464,6 +739,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      createdAt: data.created_at,
     } as Group;
   }
 
@@ -478,6 +754,7 @@ export class SupabaseService {
         invite_id: updates.inviteId,
         parent_id: updates.parentId,
         is_archived: updates.isArchived,
+        admin_ids: updates.adminIds,
       })
       .eq('id', groupId)
       .select()
@@ -505,6 +782,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      createdAt: data.created_at,
     } as Group;
   }
 
@@ -532,6 +810,7 @@ export class SupabaseService {
       parentId: data.parent_id,
       isArchived: data.is_archived,
       inviteId: data.invite_id,
+      createdAt: data.created_at,
     } as Group;
   }
 
@@ -633,7 +912,7 @@ export class SupabaseService {
       const userIds = memberData.map(m => m.user_id);
       const { data: profileData, error: profileError } = await this.supabase
         .from('profiles')
-        .select('id, name, avatar_url, phone, points, stats, badges, settings')
+        .select('id, name, username, avatar_url, phone, points, stats, badges, settings')
         .in('id', userIds);
 
       if (profileError) {
@@ -645,6 +924,7 @@ export class SupabaseService {
       return (profileData || []).map((profile: any) => ({
         id: profile.id,
         name: profile.name,
+        username: profile.username,
         avatarUrl: profile.avatar_url,
         phoneNumber: profile.phone,
         points: profile.points || 0,
@@ -703,20 +983,45 @@ export class SupabaseService {
     limit?: number;
     before?: string;
     after?: string;
+    responseProfile?: 'compact' | 'full';
   } = {}): Promise<Message[]> {
-    const { page = 1, limit = 500, before, after } = options;
-    const offset = (page - 1) * limit;
+    const {
+      page = 1,
+      limit = SupabaseService.DEFAULT_MESSAGE_PAGE_SIZE,
+      before,
+      after,
+      responseProfile = 'full',
+    } = options;
+    const profile = this.getResponseProfile(responseProfile);
+    const safeLimit = Math.min(SupabaseService.MAX_MESSAGE_PAGE_SIZE, Math.max(1, limit));
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * safeLimit;
 
-    const cacheKey = `messages:group:${groupId}:${page}:${limit}:${before || ''}:${after || ''}`;
+    const cacheKey = `messages:group:${groupId}:${safePage}:${safeLimit}:${before || ''}:${after || ''}:profile:${profile}`;
 
-    logger.debug('getGroupMessages: Fetching messages', { groupId, page, limit, cacheKey });
+    logger.debug('getGroupMessages: Fetching messages', { groupId, page: safePage, limit: safeLimit, cacheKey });
 
     return cacheService.cached(cacheKey, async () => {
       logger.debug('getGroupMessages: Cache miss, querying database');
-      
-      let query = this.supabase
-        .from('messages')
-        .select(`
+      const selectClause = profile === 'compact'
+        ? `
+          id,
+          group_id,
+          sender_id,
+          type,
+          text,
+          timestamp,
+          upvotes,
+          downvotes,
+          is_archived,
+          image_url,
+          profiles!sender_id (
+            id,
+            name,
+            avatar_url
+          )
+        `
+        : `
           id,
           group_id,
           sender_id,
@@ -734,7 +1039,11 @@ export class SupabaseService {
             name,
             avatar_url
           )
-        `)
+        `;
+      
+      let query = this.supabase
+        .from('messages')
+        .select(selectClause)
         .eq('group_id', groupId);
 
       if (before) {
@@ -746,7 +1055,7 @@ export class SupabaseService {
 
       const { data, error } = await query
         .order('timestamp', { ascending: false })
-        .range(offset, offset + limit - 1);
+        .range(offset, offset + safeLimit - 1);
 
       if (error) {
         logger.error('getGroupMessages: Database error', { error });
@@ -775,9 +1084,7 @@ export class SupabaseService {
         upvotes: msg.upvotes || 0,
         downvotes: msg.downvotes || 0,
         isArchived: msg.is_archived || false,
-        imageUrl: msg.image_url,
-        type: msg.type || 'TEXT',
-        ...this.parseMessageContent(msg),
+        ...this.normalizeMessageRecord(msg),
       }));
     }, { ttl: 120 }); // Cache for 2 minutes
   }
@@ -842,8 +1149,7 @@ export class SupabaseService {
         flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
         upvotes: data.upvotes || 0,
         downvotes: data.downvotes || 0,
-        type: data.type || 'TEXT',
-        ...this.parseMessageContent(data),
+        ...this.normalizeMessageRecord(data),
       };
     }, { ttl: 600 }); // Cache for 10 minutes
   }
@@ -992,12 +1298,12 @@ export class SupabaseService {
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
     // Also invalidate group messages cache
-    const { data: msg } = await this.supabase.from('messages').select('group_id').eq('id', messageId).single();
+    const { data: msg } = await this.supabase.from('messages').select('group_id, upvotes, downvotes').eq('id', messageId).single();
     if (msg) {
       await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
     }
 
-    return { success: true, voteType };
+    return { success: true, voteType, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
   }
 
   async removeVote(messageId: string, userId: string): Promise<any> {
@@ -1043,12 +1349,12 @@ export class SupabaseService {
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
     // Also invalidate group messages cache
-    const { data: msg } = await this.supabase.from('messages').select('group_id').eq('id', messageId).single();
+    const { data: msg } = await this.supabase.from('messages').select('group_id, upvotes, downvotes').eq('id', messageId).single();
     if (msg) {
       await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
     }
 
-    return { success: true };
+    return { success: true, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
   }
 
   async getUserVotesForGroup(groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> {
@@ -1192,15 +1498,31 @@ export class SupabaseService {
     return data;
   }
 
-  async getDecks(userId: string, includeShared: boolean = false): Promise<any[]> {
-    const cacheKey = `decks:user:${userId}:includeShared:${includeShared}`;
+  async getDecks(
+    userId: string,
+    includeShared: boolean = false,
+    options: { page?: number; limit?: number; responseProfile?: 'compact' | 'full' } = {}
+  ): Promise<any[]> {
+    const page = Math.max(1, options.page || 1);
+    const limit = Math.min(
+      SupabaseService.MAX_DECK_PAGE_SIZE,
+      Math.max(1, options.limit || SupabaseService.DEFAULT_DECK_PAGE_SIZE)
+    );
+    const profile = this.getResponseProfile(options.responseProfile);
+    const offset = (page - 1) * limit;
+    const cacheKey = `decks:user:${userId}:includeShared:${includeShared}:p${page}:l${limit}:profile:${profile}`;
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
 
+    const selectClause = profile === 'compact'
+      ? 'id, name, user_id, is_shared, created_at'
+      : 'id, name, description, user_id, is_shared, created_at';
+
     let query = this.supabase
       .from('decks')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(selectClause)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (includeShared) {
       // Include decks owned by the user and decks that are shared by others
@@ -1213,8 +1535,31 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    const decks = (data || []) as unknown as Array<{ id: string; [key: string]: unknown }>;
+    const deckIds = decks.map(d => d.id);
+    const cardCountByDeck: Record<string, number> = {};
+
+    if (deckIds.length > 0) {
+      const { data: cardRows, error: countError } = await this.supabase
+        .from('flashcards')
+        .select('deck_id')
+        .in('deck_id', deckIds);
+
+      if (!countError && cardRows) {
+        for (const row of cardRows) {
+          const deckId = row.deck_id as string;
+          cardCountByDeck[deckId] = (cardCountByDeck[deckId] || 0) + 1;
+        }
+      }
+    }
+
+    const decksWithCounts = decks.map(d => ({
+      ...d,
+      card_count: cardCountByDeck[d.id] || 0,
+    }));
+
+    await cacheService.set(cacheKey, decksWithCounts, 1800); // 30 minutes
+    return decksWithCounts;
   }
 
   async getSharedDecks(): Promise<any[]> {
@@ -1234,7 +1579,10 @@ export class SupabaseService {
     return data;
   }
 
-  async getDeckCollaborators(deckId: string): Promise<any[]> {
+  async getDeckCollaborators(deckId: string, userId: string): Promise<any[]> {
+    const hasAccess = await this.verifyDeckAccess(userId, deckId, 'read');
+    if (!hasAccess) return [];
+
     const cacheKey = `deck_collaborators:${deckId}`;
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
@@ -1250,7 +1598,11 @@ export class SupabaseService {
     return data;
   }
 
-  async addDeckCollaborator(deckId: string, userId: string, role: string = 'editor'): Promise<any> {
+  async addDeckCollaborator(deckId: string, userId: string, role: string = 'editor', requesterId?: string): Promise<any> {
+    const actorId = requesterId || userId;
+    const canManage = await this.verifyDeckAccess(actorId, deckId, 'owner');
+    if (!canManage) throw new Error('Access denied');
+
     const { data, error } = await this.supabase
       .from('deck_collaborators')
       .insert({ deck_id: deckId, user_id: userId, role })
@@ -1263,7 +1615,11 @@ export class SupabaseService {
     return data;
   }
 
-  async removeDeckCollaborator(deckId: string, userId: string): Promise<boolean> {
+  async removeDeckCollaborator(deckId: string, userId: string, requesterId?: string): Promise<boolean> {
+    const actorId = requesterId || userId;
+    const isOwner = await this.verifyDeckAccess(actorId, deckId, 'owner');
+    if (!isOwner && actorId !== userId) throw new Error('Access denied');
+
     const { error } = await this.supabase
       .from('deck_collaborators')
       .delete()
@@ -1283,7 +1639,7 @@ export class SupabaseService {
 
     const { data, error } = await this.supabase
       .from('decks')
-      .select('*')
+      .select('id, name, description, user_id, is_shared, created_at')
       .eq('id', deckId)
       .single();
 
@@ -1296,7 +1652,10 @@ export class SupabaseService {
     return data;
   }
 
-  async updateDeck(deckId: string, updates: { name?: string; description?: string; isPublic?: boolean; isShared?: boolean }): Promise<any | null> {
+  async updateDeck(deckId: string, updates: { name?: string; description?: string; isPublic?: boolean; isShared?: boolean }, userId: string): Promise<any | null> {
+    const canEdit = await this.verifyDeckAccess(userId, deckId, 'edit');
+    if (!canEdit) return null;
+
     const { data, error } = await this.supabase
       .from('decks')
       .update({
@@ -1316,11 +1675,15 @@ export class SupabaseService {
 
     // Update cache
     await cacheService.set(`deck:${deckId}`, data, 1800);
+    await cacheService.deletePattern(`deck:${deckId}:user:*`);
 
     return data;
   }
 
-  async deleteDeck(deckId: string): Promise<boolean> {
+  async deleteDeck(deckId: string, userId: string): Promise<boolean> {
+    const isOwner = await this.verifyDeckAccess(userId, deckId, 'owner');
+    if (!isOwner) return false;
+
     const { error } = await this.supabase
       .from('decks')
       .delete()
@@ -1330,13 +1693,14 @@ export class SupabaseService {
 
     // Clear cache
     await cacheService.delete(`deck:${deckId}`);
+    await cacheService.deletePattern(`deck:${deckId}:user:*`);
     await cacheService.deletePattern(`decks:user:*`);
 
     return true;
   }
 
-  async exportDeck(deckId: string): Promise<any | null> {
-    const deck = await this.getDeck(deckId);
+  async exportDeck(deckId: string, userId: string): Promise<any | null> {
+    const deck = await this.getDeckForUser(deckId, userId);
     if (!deck) return null;
 
     const { data: flashcards, error } = await this.supabase
@@ -1381,9 +1745,21 @@ export class SupabaseService {
         
         if (cardType === 'CLOZE') {
           insertData.cloze_text = card.clozeText || card.cloze_text;
+        } else if (cardType === 'IMAGE_OCCLUSION') {
+          insertData.front = card.front;
+          insertData.back = card.back;
+          const occlusionData = card.occlusion_data || card.occlusionData;
+          if (occlusionData) {
+            insertData.occlusion_data = occlusionData;
+          }
         } else {
           insertData.front = card.front;
           insertData.back = card.back;
+        }
+
+        const imageUrl = card.image_url || card.imageUrl;
+        if (imageUrl) {
+          insertData.image_url = imageUrl;
         }
         
         if (card.tags && card.tags.length > 0) {
@@ -1439,6 +1815,14 @@ export class SupabaseService {
     userId?: string 
   }): Promise<any> {
     const cardType = flashcardData.type || 'BASIC';
+
+    if (!flashcardData.userId) {
+      throw new Error('Authentication required');
+    }
+    const canEdit = await this.verifyDeckAccess(flashcardData.userId, flashcardData.deckId, 'edit');
+    if (!canEdit) {
+      throw new Error('Deck not found or access denied');
+    }
     
     const insertData: any = {
       deck_id: flashcardData.deckId,
@@ -1552,6 +1936,7 @@ export class SupabaseService {
       config: bundle.config || {},
       questions: bundle.questions || [],
       group_name: bundle.groupName || null,
+      display_name: bundle.displayName ?? null,
       downloaded_at: bundle.downloadedAt || new Date().toISOString(),
     };
 
@@ -1582,39 +1967,135 @@ export class SupabaseService {
     return;
   }
 
-  async getFlashcards(userId: string, deckId?: string, options?: { page?: number; limit?: number }): Promise<any[]> {
-    const { page = 1, limit = 500 } = options || {};
-    const offset = (page - 1) * limit;
+  async getAccessibleDeckIds(userId: string): Promise<string[]> {
+    const [{ data: ownedDecks, error: ownedError }, { data: collaboratorRows, error: collabError }] =
+      await Promise.all([
+        this.supabase.from('decks').select('id').eq('user_id', userId),
+        this.supabase.from('deck_collaborators').select('deck_id').eq('user_id', userId),
+      ]);
 
-    // First, get the user's deck IDs to filter flashcards
-    const { data: userDecks, error: deckError } = await this.supabase
+    if (ownedError) throw ownedError;
+    if (collabError) throw collabError;
+
+    const ids = new Set<string>();
+    for (const deck of ownedDecks || []) ids.add(deck.id);
+    for (const row of collaboratorRows || []) {
+      if (row.deck_id) ids.add(row.deck_id);
+    }
+    return Array.from(ids);
+  }
+
+  /** Internal fetch — no access check. */
+  private async fetchDeckRecord(deckId: string): Promise<any | null> {
+    const { data, error } = await this.supabase
       .from('decks')
-      .select('id')
-      .eq('user_id', userId);
+      .select('id, name, description, user_id, is_shared, created_at')
+      .eq('id', deckId)
+      .maybeSingle();
 
-    if (deckError) throw deckError;
+    if (error) throw error;
+    return data;
+  }
 
-    const userDeckIds = userDecks?.map(d => d.id) || [];
+  async verifyDeckAccess(userId: string, deckId: string, level: 'read' | 'edit' | 'owner' = 'read'): Promise<boolean> {
+    const deck = await this.fetchDeckRecord(deckId);
+    if (!deck) return false;
 
-    if (userDeckIds.length === 0) {
-      return []; // User has no decks, so no flashcards
+    const isOwner = deck.user_id === userId;
+    if (level === 'owner') return isOwner;
+    if (isOwner) return true;
+
+    const { data: collab, error: collabError } = await this.supabase
+      .from('deck_collaborators')
+      .select('role')
+      .eq('deck_id', deckId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (collabError) throw collabError;
+
+    if (collab) {
+      if (level === 'read') return true;
+      if (level === 'edit') return collab.role === 'editor' || collab.role === 'owner';
+    }
+
+    if (level === 'read' && deck.is_shared) return true;
+    return false;
+  }
+
+  async getDeckForUser(deckId: string, userId: string): Promise<any | null> {
+    const cacheKey = `deck:${deckId}:user:${userId}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached !== null) return cached;
+
+    const hasAccess = await this.verifyDeckAccess(userId, deckId, 'read');
+    if (!hasAccess) return null;
+
+    const deck = await this.fetchDeckRecord(deckId);
+    if (deck) await cacheService.set(cacheKey, deck, 1800);
+    return deck;
+  }
+
+  async getFlashcardForUser(flashcardId: string, userId: string): Promise<any | null> {
+    const cacheKey = `flashcard:${flashcardId}:user:${userId}`;
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached !== null) return cached;
+
+    const { data, error } = await this.supabase
+      .from('flashcards')
+      .select('*')
+      .eq('id', flashcardId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    const hasAccess = await this.verifyDeckAccess(userId, data.deck_id, 'read');
+    if (!hasAccess) return null;
+
+    await cacheService.set(cacheKey, data, 1800);
+    return data;
+  }
+
+  async getFlashcards(
+    userId: string,
+    deckId?: string,
+    options?: { page?: number; limit?: number; responseProfile?: 'compact' | 'full' }
+  ): Promise<any[]> {
+    const {
+      page = 1,
+      limit = SupabaseService.DEFAULT_FLASHCARD_PAGE_SIZE,
+      responseProfile = 'full',
+    } = options || {};
+    const profile = this.getResponseProfile(responseProfile);
+    const safeLimit = Math.min(SupabaseService.MAX_FLASHCARD_PAGE_SIZE, Math.max(1, limit));
+    const safePage = Math.max(1, page);
+    const offset = (safePage - 1) * safeLimit;
+
+    const selectClause = profile === 'compact'
+      ? 'id, deck_id, type, front, image_url, tags, created_at'
+      : 'id, deck_id, type, front, back, cloze_text, image_url, occlusion_data, srs_data, tags, created_at';
+
+    const accessibleDeckIds = await this.getAccessibleDeckIds(userId);
+
+    if (accessibleDeckIds.length === 0) {
+      return [];
     }
 
     let query = this.supabase
       .from('flashcards')
-      .select('*')
-      .in('deck_id', userDeckIds)
+      .select(selectClause)
+      .in('deck_id', accessibleDeckIds)
       .order('created_at', { ascending: false });
 
     if (deckId) {
-      // If specific deck requested, verify it belongs to user
-      if (!userDeckIds.includes(deckId)) {
-        return []; // Requested deck doesn't belong to user
+      if (!accessibleDeckIds.includes(deckId)) {
+        return [];
       }
       query = query.eq('deck_id', deckId);
     }
 
-    const { data, error } = await query.range(offset, offset + limit - 1);
+    const { data, error } = await query.range(offset, offset + safeLimit - 1);
 
     if (error) throw error;
 
@@ -1671,95 +2152,6 @@ export class SupabaseService {
     return data;
   }
 
-  async createStudySession(deckId: string, createdBy: string, endsAt?: string, metadata?: any): Promise<any> {
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .insert({
-        deck_id: deckId,
-        created_by: createdBy,
-        ends_at: endsAt || null,
-        metadata: metadata || {},
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return data;
-  }
-
-  async getStudySessionsByDeck(deckId: string): Promise<any[]> {
-    const cacheKey = `study_sessions:deck:${deckId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .select('*')
-      .eq('deck_id', deckId)
-      .order('started_at', { ascending: false });
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
-  }
-
-  async getStudySession(sessionId: string): Promise<any | null> {
-    const cacheKey = `study_session:${sessionId}`;
-    const cached = await cacheService.get<any>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .select('*, study_session_participants(*)')
-      .eq('id', sessionId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
-  }
-
-  async joinStudySession(sessionId: string, userId: string): Promise<any> {
-    const { data, error } = await this.supabase
-      .from('study_session_participants')
-      .insert({ session_id: sessionId, user_id: userId })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    return data;
-  }
-
-  async leaveStudySession(sessionId: string, userId: string): Promise<boolean> {
-    const { error } = await this.supabase
-      .from('study_session_participants')
-      .delete()
-      .eq('session_id', sessionId)
-      .eq('user_id', userId);
-
-    if (error) throw error;
-    return true;
-  }
-
-  async endStudySession(sessionId: string): Promise<any> {
-    const { data, error } = await this.supabase
-      .from('study_sessions')
-      .update({ is_active: false, ends_at: new Date().toISOString() })
-      .eq('id', sessionId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
   async updateFlashcard(flashcardId: string, updates: { 
     front?: string; 
     back?: string; 
@@ -1768,7 +2160,16 @@ export class SupabaseService {
     occlusionData?: any;
     srsData?: any;
     tags?: string[];
-  }): Promise<any | null> {
+  }, userId?: string): Promise<any | null> {
+    const existing = userId
+      ? await this.getFlashcardForUser(flashcardId, userId)
+      : await this.getFlashcard(flashcardId);
+    if (!existing) return null;
+    if (userId) {
+      const canEdit = await this.verifyDeckAccess(userId, existing.deck_id, 'edit');
+      if (!canEdit) return null;
+    }
+
     // Build update object with only defined fields
     const updateData: any = {};
     if (updates.front !== undefined) updateData.front = updates.front;
@@ -1781,7 +2182,7 @@ export class SupabaseService {
 
     // If no fields to update, just return the current flashcard
     if (Object.keys(updateData).length === 0) {
-      return this.getFlashcard(flashcardId);
+      return existing;
     }
 
     const { data, error } = await this.supabase
@@ -1799,15 +2200,21 @@ export class SupabaseService {
 
     // Update cache and invalidate deck cache
     await cacheService.set(`flashcard:${flashcardId}`, data, 1800);
+    if (userId) await cacheService.delete(`flashcard:${flashcardId}:user:${userId}`);
     await cacheService.deletePattern(`flashcards:*`);
 
     return data;
   }
 
-  async deleteFlashcard(flashcardId: string): Promise<boolean> {
-    // Get the flashcard first to know which deck to invalidate
-    const flashcard = await this.getFlashcard(flashcardId);
+  async deleteFlashcard(flashcardId: string, userId?: string): Promise<boolean> {
+    const flashcard = userId
+      ? await this.getFlashcardForUser(flashcardId, userId)
+      : await this.getFlashcard(flashcardId);
     if (!flashcard) return false;
+    if (userId) {
+      const canEdit = await this.verifyDeckAccess(userId, flashcard.deck_id, 'edit');
+      if (!canEdit) return false;
+    }
 
     const { error } = await this.supabase
       .from('flashcards')
@@ -1973,7 +2380,10 @@ export class SupabaseService {
     return result;
   }
 
-  async resetDeckStatistics(deckId: string): Promise<any> {
+  async resetDeckStatistics(deckId: string, userId: string): Promise<any> {
+    const canEdit = await this.verifyDeckAccess(userId, deckId, 'edit');
+    if (!canEdit) throw new Error('Deck not found or access denied');
+
     // clear srs_data on all cards in deck so they appear new again
     const { error: cardError } = await this.supabase
       .from('flashcards')
@@ -1981,14 +2391,6 @@ export class SupabaseService {
       .eq('deck_id', deckId);
 
     if (cardError) throw cardError;
-
-    // reset deck-level stat fields (mastered_count etc)
-    const { error: deckError } = await this.supabase
-      .from('decks')
-      .update({ mastered_count: 0 })
-      .eq('id', deckId);
-
-    if (deckError) throw deckError;
 
     // also invalidate any related cache entries
     await cacheService.deletePattern(`flashcards:*`);
@@ -2085,7 +2487,35 @@ export class SupabaseService {
     }
   }
 
-  async sendDirectMessage(senderId: string, recipientId: string, content: string): Promise<Message> {
+  async sendDirectMessage(
+    senderId: string,
+    recipientId: string,
+    content: string,
+    options?: { bypassPrivacy?: boolean }
+  ): Promise<Message> {
+    if (!options?.bypassPrivacy) {
+      const { data: recipientProfile, error: recipientError } = await this.supabase
+        .from('profiles')
+        .select('settings')
+        .eq('id', recipientId)
+        .single();
+
+      if (recipientError || !recipientProfile) {
+        throw new Error('Recipient not found');
+      }
+
+      const { canRecipientReceiveDirectMessage } = await import('../utils/userSettingsPolicy');
+      const dmPolicy = await canRecipientReceiveDirectMessage(
+        this.supabase,
+        senderId,
+        recipientId,
+        recipientProfile.settings
+      );
+      if (!dmPolicy.allowed) {
+        throw new Error(dmPolicy.reason || 'Direct messages are not allowed');
+      }
+    }
+
     // Create thread ID from sorted user IDs
     const sortedIds = [senderId, recipientId].sort();
     const threadId = sortedIds.join('-');
@@ -2244,8 +2674,7 @@ export class SupabaseService {
       flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
       upvotes: 0,
       downvotes: 0,
-      type: msg.type || 'TEXT',
-      ...this.parseMessageContent(msg),
+      ...this.normalizeMessageRecord(msg),
     }));
   }
 
@@ -2308,13 +2737,32 @@ export class SupabaseService {
     message: string;
     link?: string;
     type?: string;
-  }): Promise<Notification> {
+    data?: Record<string, unknown>;
+    force?: boolean;
+  }): Promise<Notification | null> {
+    if (!notificationData.force) {
+      const { data: profile, error: profileError } = await this.supabase
+        .from('profiles')
+        .select('settings')
+        .eq('id', userId)
+        .single();
+
+      if (!profileError && profile) {
+        const { shouldCreateInAppNotification } = await import('../utils/userSettingsPolicy');
+        if (!shouldCreateInAppNotification(profile.settings, notificationData.type)) {
+          return null;
+        }
+      }
+    }
+
     const { data, error } = await this.supabase
       .from('notifications')
       .insert({
         user_id: userId,
         message: notificationData.message,
         link: notificationData.link,
+        type: notificationData.type || 'info',
+        data: notificationData.data || {},
         read: false,
       })
       .select()
@@ -2324,6 +2772,8 @@ export class SupabaseService {
 
     // Invalidate caches
     await cacheService.deletePattern(`notifications:${userId}:*`);
+
+    void this.sendExpoPushForNotification(userId, notificationData);
 
     return data;
   }
@@ -2543,7 +2993,7 @@ export class SupabaseService {
   }
 
   async getTestById(testId: string, userId?: string): Promise<any | null> {
-    const cacheKey = `test:${testId}`;
+    const cacheKey = userId ? `test:${testId}:user:${userId}` : `test:${testId}`;
 
     return cacheService.cached(cacheKey, async () => {
       const { data, error } = await this.supabase
@@ -2692,14 +3142,25 @@ export class SupabaseService {
     score: number;
     correctAnswersCount: number;
     totalQuestions: number;
-  }): Promise<any> {
+  }, userId?: string): Promise<any> {
+    let score = resultData.score;
+    let correctAnswersCount = resultData.correctAnswersCount;
+    let totalQuestions = resultData.totalQuestions;
+
+    const test = userId ? await this.getTestById(testId, userId) : await this.getTestById(testId);
+    if (test?.questions?.length && test.user_answers?.length) {
+      score = this.calculateTestScore(test.questions, test.user_answers);
+      totalQuestions = test.questions.length;
+      correctAnswersCount = Math.round((score / 100) * totalQuestions);
+    }
+
     const { data, error } = await this.supabase
       .from('test_results')
       .insert({
         session_id: testId,
-        score: resultData.score,
-        correct_answers_count: resultData.correctAnswersCount,
-        total_questions: resultData.totalQuestions,
+        score,
+        correct_answers_count: correctAnswersCount,
+        total_questions: totalQuestions,
       })
       .select()
       .single();
@@ -2772,6 +3233,61 @@ export class SupabaseService {
     await cacheService.deletePattern(`tests:*`);
 
     return true;
+  }
+
+  async deleteCompletedTestSession(sessionId: string, userId: string): Promise<boolean> {
+    const { data: session, error: fetchError } = await this.supabase
+      .from('test_sessions')
+      .select('id, user_id, end_time')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!session || session.user_id !== userId) return false;
+    if (!session.end_time) {
+      throw new Error('Cannot delete an in-progress test session');
+    }
+
+    return this.deleteTest(sessionId);
+  }
+
+  async clearCompletedTestHistory(userId: string): Promise<number> {
+    const { data: sessions, error } = await this.supabase
+      .from('test_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .not('end_time', 'is', null);
+
+    if (error) throw error;
+    if (!sessions?.length) return 0;
+
+    const sessionIds = sessions.map((row: { id: string }) => row.id);
+
+    const { error: resultsError } = await this.supabase
+      .from('test_results')
+      .delete()
+      .in('session_id', sessionIds);
+
+    if (resultsError) throw resultsError;
+
+    const { error: sessionsError } = await this.supabase
+      .from('test_sessions')
+      .delete()
+      .in('id', sessionIds);
+
+    if (sessionsError) throw sessionsError;
+
+    for (const sessionId of sessionIds) {
+      await cacheService.delete(`test:${sessionId}`);
+      await cacheService.delete(`test:results:${sessionId}`);
+      await cacheService.delete(`test:questions:${sessionId}`);
+    }
+    await cacheService.deletePattern(`tests:${userId}:*`);
+    await cacheService.delete(`tests:stats:subject:${userId}`);
+    await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
+    await cacheService.delete(`user:stats:${userId}`);
+
+    return sessionIds.length;
   }
 
   async getSubjectStats(userId: string): Promise<any> {
@@ -3313,6 +3829,56 @@ export class SupabaseService {
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 
+  async recordStudyActivity(userId: string, type: string, amount = 1): Promise<any> {
+    const { data, error } = await this.supabase.rpc('record_study_activity', {
+      p_user_id: userId,
+      p_type: type,
+      p_amount: amount,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async touchLastSeen(userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) throw error;
+  }
+
+  async getStudyActivity(userId: string, days = 112): Promise<Array<{
+    date: string;
+    count: number;
+    breakdown: Partial<Record<string, number>>;
+  }>> {
+    const since = new Date();
+    since.setDate(since.getDate() - Math.max(1, days) + 1);
+    const sinceDate = since.toISOString().slice(0, 10);
+
+    const { data, error } = await this.supabase
+      .from('study_activity')
+      .select('activity_date, count, test_count, flashcard_count, new_flashcard_count, question_count, game_count, daily_quiz_count')
+      .eq('user_id', userId)
+      .gte('activity_date', sinceDate)
+      .order('activity_date', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      date: row.activity_date,
+      count: row.count ?? 0,
+      breakdown: {
+        test: row.test_count ?? 0,
+        flashcard: row.flashcard_count ?? 0,
+        flashcard_new: row.new_flashcard_count ?? 0,
+        study_question: row.question_count ?? 0,
+        game: row.game_count ?? 0,
+        daily_quiz: row.daily_quiz_count ?? 0,
+      },
+    }));
+  }
+
   // Helper methods
   private generateTestQuestions(config: any): any[] {
     // Simplified question generation - in a real app this would be more sophisticated
@@ -3554,9 +4120,7 @@ export class SupabaseService {
         upvotes: msg.upvotes || 0,
         downvotes: msg.downvotes || 0,
         isArchived: msg.is_archived || false,
-        imageUrl: msg.image_url,
-        type: msg.type || 'TEXT',
-        ...this.parseMessageContent(msg),
+        ...this.normalizeMessageRecord(msg),
       }));
     }, { ttl: 30 }); // Cache for 30 seconds
   }
@@ -3594,6 +4158,7 @@ export class SupabaseService {
 
       return data.flatMap((session: any) =>
         session.test_results.map((result: any) => ({
+          id: result.id,
           session: {
             ...session,
             startTime: session.start_time,
@@ -3614,6 +4179,19 @@ export class SupabaseService {
   // Real-time subscription helpers (for future use)
   getSupabaseClient() {
     return this.supabase;
+  }
+
+  async isPlatformAdmin(userId: string): Promise<boolean> {
+    const { data: row } = await this.supabase
+      .from('platform_admins')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (row) return true;
+
+    const { data: authData, error } = await this.supabase.auth.admin.getUserById(userId);
+    if (error || !authData?.user) return false;
+    return authData.user.app_metadata?.is_platform_admin === true;
   }
 
   async healthCheck(): Promise<boolean> {
@@ -3655,6 +4233,7 @@ export class SupabaseService {
     location?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    responseProfile?: 'compact' | 'full';
   } = {}): Promise<any[]> {
     const {
       page = 1,
@@ -3665,21 +4244,42 @@ export class SupabaseService {
       maxPrice,
       location,
       sortBy = 'created_at',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      responseProfile = 'full',
     } = options;
+    const profile = this.getResponseProfile(responseProfile);
 
     const offset = (page - 1) * limit;
 
-    let query = this.supabase
-      .from('marketplace_listings')
-      .select(`
-        *,
-        profiles!user_id (
+    const selectClause = profile === 'compact'
+      ? `
+        id,
+        user_id,
+        category,
+        title,
+        price,
+        location,
+        images,
+        created_at,
+        status,
+        seller:profiles!user_id (
           id,
           name,
           avatar_url
         )
-      `)
+      `
+      : `
+        *,
+        seller:profiles!user_id (
+          id,
+          name,
+          avatar_url
+        )
+      `;
+
+    let query = this.supabase
+      .from('marketplace_listings')
+      .select(selectClause)
       .eq('status', 'active')
       .range(offset, offset + limit - 1);
 
@@ -3709,7 +4309,33 @@ export class SupabaseService {
     const { data, error } = await query;
     if (error) throw error;
 
-    return data || [];
+    return (data || []).map((listing: any) => this.normalizeListingRecord(listing));
+  }
+
+  async getMarketplaceCategoryAnalytics(): Promise<Array<{
+    category: string;
+    total: number;
+    active: number;
+    sold: number;
+  }>> {
+    const { data, error } = await this.supabase
+      .from('marketplace_listings')
+      .select('category, status');
+    if (error) throw error;
+
+    const counts = new Map<string, { total: number; active: number; sold: number }>();
+    for (const row of data || []) {
+      const category = String(row.category || 'unknown');
+      const entry = counts.get(category) || { total: 0, active: 0, sold: 0 };
+      entry.total += 1;
+      if (row.status === 'active') entry.active += 1;
+      if (row.status === 'sold') entry.sold += 1;
+      counts.set(category, entry);
+    }
+
+    return Array.from(counts.entries())
+      .map(([category, stats]) => ({ category, ...stats }))
+      .sort((a, b) => b.total - a.total);
   }
 
   async getMarketplaceListingById(listingId: string): Promise<any | null> {
@@ -3717,7 +4343,7 @@ export class SupabaseService {
       .from('marketplace_listings')
       .select(`
         *,
-        profiles!user_id (
+        seller:profiles!user_id (
           id,
           name,
           avatar_url
@@ -3731,7 +4357,7 @@ export class SupabaseService {
       throw error;
     }
 
-    return data;
+    return this.normalizeListingRecord(data);
   }
 
   async createMarketplaceListing(listingData: any, userId: string): Promise<any> {
@@ -3742,9 +4368,15 @@ export class SupabaseService {
       title: listingData.title,
       description: listingData.description,
       price: listingData.price,
+      sale_price: listingData.sale_price ?? listingData.salePrice,
+      sale_ends_at: listingData.sale_ends_at ?? listingData.saleEndsAt,
+      promo_label: listingData.promo_label ?? listingData.promoLabel,
       location: listingData.location,
       images: listingData.images || [],
       category_specific_fields: listingData.categorySpecificFields || listingData.category_specific_fields || {},
+      listing_kind: listingData.listing_kind || listingData.listingKind || 'single',
+      bundle_items: listingData.bundle_items || listingData.bundleItems || [],
+      quantity: listingData.quantity ?? null,
       status: listingData.status || 'active',
     };
 
@@ -3772,6 +4404,10 @@ export class SupabaseService {
     if (error) {
       if (error.code === 'PGRST116') return null;
       throw error;
+    }
+
+    if (updates?.status === 'sold' && data?.user_id) {
+      await this.maybeLogManualSoldBudget(listingId, data.user_id);
     }
 
     return data;
@@ -3803,6 +4439,98 @@ export class SupabaseService {
     return data;
   }
 
+  async getMarketplaceReviews(listingId: string): Promise<any[]> {
+    const { data, error } = await this.supabase
+      .from('marketplace_reviews')
+      .select(`
+        id,
+        listing_id,
+        reviewer_id,
+        rating,
+        comment,
+        created_at,
+        profiles!reviewer_id (
+          id,
+          name,
+          avatar_url
+        )
+      `)
+      .eq('listing_id', listingId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      listing_id: row.listing_id,
+      reviewer_id: row.reviewer_id,
+      rating: row.rating,
+      comment: row.comment,
+      created_at: row.created_at,
+      reviewer: row.profiles
+        ? {
+            id: row.profiles.id,
+            name: row.profiles.name,
+            avatar_url: row.profiles.avatar_url,
+          }
+        : undefined,
+    }));
+  }
+
+  async buyMarketplaceListingNow(
+    listingId: string,
+    buyerId: string,
+    couponCode?: string
+  ): Promise<{ order: Record<string, unknown>; budgetLogged?: boolean }> {
+    const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
+    const order = await getMarketplaceOrdersService(this).createOrderFromBuyNow(
+      listingId,
+      buyerId,
+      couponCode
+    );
+    return { order, budgetLogged: false };
+  }
+
+  async boostMarketplaceListing(
+    listingId: string,
+    userId: string,
+    durationHours: number = 72
+  ): Promise<any> {
+    const listing = await this.getMarketplaceListingById(listingId);
+    if (!listing) throw new Error('Listing not found');
+    if (listing.user_id !== userId) throw new Error('Unauthorized: You do not own this listing');
+
+    const existingFields =
+      listing.category_specific_fields || listing.categorySpecificFields || {};
+    const boostedUntil = existingFields.boosted_until as string | undefined;
+    if (boostedUntil && new Date(boostedUntil) > new Date()) {
+      return this.normalizeListingRecord(listing);
+    }
+
+    const { getMarketplaceSellerToolsService } = await import('./marketplaceSellerTools');
+    await getMarketplaceSellerToolsService(this).consumeBoostCredit(userId);
+
+    const newBoostedUntil = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+    const categorySpecificFields = {
+      ...existingFields,
+      boosted_until: newBoostedUntil,
+      boost_level: 'standard',
+    };
+
+    const { data, error } = await this.supabase
+      .from('marketplace_listings')
+      .update({
+        category_specific_fields: categorySpecificFields,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', listingId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return this.normalizeListingRecord(data);
+  }
+
   async reportMarketplaceListing(listingId: string, reporterId: string, report: { reason: string; details?: string }): Promise<any> {
     const { data, error } = await this.supabase
       .from('marketplace_reports')
@@ -3819,7 +4547,13 @@ export class SupabaseService {
     return data;
   }
 
-  async initiateMarketplaceTransaction(listingId: string, buyerId: string, amount: number): Promise<any> {
+  async initiateMarketplaceTransaction(
+    listingId: string,
+    buyerId: string,
+    amount: number,
+    source: 'buy_now' | 'offer_accept' = 'buy_now',
+    options?: { skipBudgetLog?: boolean }
+  ): Promise<any> {
     // Get listing to verify seller
     const listing = await this.getMarketplaceListingById(listingId);
     if (!listing) throw new Error('Listing not found');
@@ -3836,7 +4570,111 @@ export class SupabaseService {
       .single();
 
     if (error) throw error;
+
+    if (!options?.skipBudgetLog) {
+      await this.logMarketplaceBudgetTransactions({
+        listingId,
+        listingTitle: listing.title || 'Marketplace item',
+        amount,
+        sellerId: listing.user_id,
+        buyerId,
+        marketplaceTransactionId: data.id,
+        source,
+      });
+    }
+
     return data;
+  }
+
+  async logMarketplaceBudgetTransactions(params: {
+    listingId: string;
+    listingTitle: string;
+    amount: number;
+    sellerId: string;
+    buyerId?: string;
+    marketplaceTransactionId?: string;
+    source: 'buy_now' | 'offer_accept' | 'manual_sold';
+  }): Promise<boolean> {
+    const amount = Number(params.amount) || 0;
+    if (amount <= 0 || !params.sellerId) return false;
+
+    const date = new Date().toISOString().split('T')[0];
+    const title = params.listingTitle || 'Marketplace item';
+    const rows: Record<string, unknown>[] = [];
+
+    if (params.marketplaceTransactionId && params.buyerId) {
+      const { purchaseTxId, saleTxId } = buildMarketplaceBudgetTxIds(params.marketplaceTransactionId);
+      rows.push(
+        {
+          id: purchaseTxId,
+          user_id: params.buyerId,
+          type: MARKETPLACE_BUDGET_TYPES.PURCHASE,
+          amount,
+          category: MARKETPLACE_BUDGET_CATEGORIES.PURCHASE,
+          description: buildMarketplacePurchaseDescription(title),
+          date,
+        },
+        {
+          id: saleTxId,
+          user_id: params.sellerId,
+          type: MARKETPLACE_BUDGET_TYPES.SALE,
+          amount,
+          category: MARKETPLACE_BUDGET_CATEGORIES.SALE,
+          description: buildMarketplaceSaleDescription(title),
+          date,
+        }
+      );
+    } else if (params.source === 'manual_sold') {
+      rows.push({
+        id: buildManualSaleBudgetTxId(params.listingId),
+        user_id: params.sellerId,
+        type: MARKETPLACE_BUDGET_TYPES.SALE,
+        amount,
+        category: MARKETPLACE_BUDGET_CATEGORIES.SALE,
+        description: buildMarketplaceSaleDescription(title),
+        date,
+      });
+    }
+
+    if (rows.length === 0) return false;
+
+    const { error } = await this.supabase
+      .from('budget_transactions')
+      .upsert(rows, { onConflict: 'id' });
+
+    if (error) {
+      logger.warn('Failed to log marketplace budget transactions', { error, source: params.source });
+      return false;
+    }
+    return true;
+  }
+
+  async maybeLogManualSoldBudget(listingId: string, sellerId: string): Promise<boolean> {
+    const { data: existingTxn } = await this.supabase
+      .from('marketplace_transactions')
+      .select('id')
+      .eq('listing_id', listingId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingTxn) return false;
+
+    const listing = await this.getMarketplaceListingById(listingId);
+    if (!listing) return false;
+
+    return this.logMarketplaceBudgetTransactions({
+      listingId,
+      listingTitle: listing.title || 'Marketplace item',
+      amount: Number(listing.price) || 0,
+      sellerId,
+      source: 'manual_sold',
+    });
+  }
+
+  async finalizeOfferAcceptSale(offerId: string): Promise<{ orderId: string; budgetLogged: boolean }> {
+    const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
+    const order = await getMarketplaceOrdersService(this).createOrderFromOfferAccept(offerId);
+    return { orderId: order.id, budgetLogged: false };
   }
 
   // Get unread message count for a group for a specific user
@@ -4223,7 +5061,7 @@ export class SupabaseService {
     }
 
     // Transform the count results
-    return (data || []).map(listing => ({
+    return (data || []).map(listing => this.normalizeListingRecord({
       ...listing,
       favorites_count: listing.favorites_count?.[0]?.count || 0,
       inquiries_count: listing.inquiries_count?.[0]?.count || 0
@@ -4235,13 +5073,15 @@ export class SupabaseService {
     // Verify ownership
     const { data: listing } = await this.supabase
       .from('marketplace_listings')
-      .select('user_id')
+      .select('user_id, status, title')
       .eq('id', listingId)
       .single();
 
     if (!listing || listing.user_id !== userId) {
       throw new Error('Unauthorized: You do not own this listing');
     }
+
+    const previousStatus = listing.status;
 
     const { data, error } = await this.supabase
       .from('marketplace_listings')
@@ -4251,6 +5091,16 @@ export class SupabaseService {
       .single();
 
     if (error) throw error;
+
+    if (status === 'sold') {
+      await this.maybeLogManualSoldBudget(listingId, userId);
+    }
+
+    if (status === 'active' && previousStatus !== 'active') {
+      const { notifyListingBackAvailable } = await import('./marketplaceFavoriteAlerts');
+      await notifyListingBackAvailable(this, { id: listingId, user_id: userId, title: data.title || listing.title }, previousStatus);
+    }
+
     return data;
   }
 
@@ -4283,33 +5133,42 @@ export class SupabaseService {
     totalListings: number;
     activeListings: number;
     soldListings: number;
+    completedOrders: number;
     totalViews: number;
     totalInquiries: number;
     totalFavorites: number;
   }> {
-    const { data: listings, error } = await this.supabase
-      .from('marketplace_listings')
-      .select(`
-        id,
-        status,
-        views_count,
-        favorites:marketplace_favorites(count),
-        inquiries:marketplace_inquiries(count)
-      `)
-      .eq('user_id', userId);
+    const [listingsRes, ordersRes] = await Promise.all([
+      this.supabase
+        .from('marketplace_listings')
+        .select(`
+          id,
+          status,
+          views_count,
+          favorites:marketplace_favorites(count),
+          inquiries:marketplace_inquiries(count)
+        `)
+        .eq('user_id', userId),
+      this.supabase
+        .from('marketplace_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('seller_id', userId)
+        .eq('status', 'completed'),
+    ]);
 
+    const { data: listings, error } = listingsRes;
     if (error) throw error;
+    if (ordersRes.error) throw ordersRes.error;
 
-    const stats = {
+    return {
       totalListings: listings?.length || 0,
       activeListings: listings?.filter(l => l.status === 'active').length || 0,
       soldListings: listings?.filter(l => l.status === 'sold').length || 0,
+      completedOrders: ordersRes.count || 0,
       totalViews: listings?.reduce((sum, l) => sum + (l.views_count || 0), 0) || 0,
       totalInquiries: listings?.reduce((sum, l) => sum + (l.inquiries?.[0]?.count || 0), 0) || 0,
-      totalFavorites: listings?.reduce((sum, l) => sum + (l.favorites?.[0]?.count || 0), 0) || 0
+      totalFavorites: listings?.reduce((sum, l) => sum + (l.favorites?.[0]?.count || 0), 0) || 0,
     };
-
-    return stats;
   }
 
   // ============ MARKETPLACE FAVORITES METHODS ============
@@ -4360,7 +5219,7 @@ export class SupabaseService {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map((favorite: any) => this.normalizeFavoriteRecord(favorite));
   }
 
   // Check if listing is favorited by user
@@ -4450,7 +5309,7 @@ export class SupabaseService {
 
     const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return (data || []).map((inquiry: any) => this.normalizeInquiryRecord(inquiry));
   }
 
   // Get buyer's inquiries
@@ -4466,7 +5325,7 @@ export class SupabaseService {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map((inquiry: any) => this.normalizeInquiryRecord(inquiry));
   }
 
   // Update inquiry status
@@ -4505,7 +5364,7 @@ export class SupabaseService {
       .single();
 
     if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    return data ? this.normalizeInquiryRecord(data) : data;
   }
 
   // ============ MARKETPLACE NOTIFICATIONS ============
@@ -4624,6 +5483,515 @@ export class SupabaseService {
     }
 
     return data;
+  }
+
+  // ─── Notes ───────────────────────────────────────────────────
+
+  private mapNote(row: any) {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      folderId: row.folder_id || undefined,
+      groupId: row.group_id || undefined,
+      title: row.title,
+      body: row.body || '',
+      summary: row.summary || undefined,
+      sourceType: row.source_type || 'typed',
+      youtubeUrl: row.youtube_url || undefined,
+      youtubeVideoId: row.youtube_video_id || undefined,
+      isShared: row.is_shared || false,
+      shareToken: row.share_token || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private mapNoteFolder(row: any) {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      groupId: row.group_id || undefined,
+      parentId: row.parent_id || undefined,
+      name: row.name,
+      color: row.color || '#6366f1',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async getNoteFolders(userId: string) {
+    const { data, error } = await this.supabase
+      .from('note_folders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((row: any) => this.mapNoteFolder(row));
+  }
+
+  async createNoteFolder(userId: string, payload: { name: string; color?: string; groupId?: string; parentId?: string }) {
+    const { data, error } = await this.supabase
+      .from('note_folders')
+      .insert({
+        user_id: userId,
+        name: payload.name,
+        color: payload.color || '#6366f1',
+        group_id: payload.groupId || null,
+        parent_id: payload.parentId || null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNoteFolder(data);
+  }
+
+  async updateNoteFolder(userId: string, folderId: string, updates: { name?: string; color?: string }) {
+    const { data, error } = await this.supabase
+      .from('note_folders')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', folderId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNoteFolder(data);
+  }
+
+  async deleteNoteFolder(userId: string, folderId: string) {
+    const { error } = await this.supabase
+      .from('note_folders')
+      .delete()
+      .eq('id', folderId)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return true;
+  }
+
+  async getNotes(userId: string, options?: { folderId?: string; groupId?: string }) {
+    let query = this.supabase
+      .from('notes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    if (options?.folderId) query = query.eq('folder_id', options.folderId);
+    if (options?.groupId) query = query.eq('group_id', options.groupId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map((row: any) => this.mapNote(row));
+  }
+
+  async getNote(noteId: string, userId: string) {
+    const { data, error } = await this.supabase
+      .from('notes')
+      .select('*')
+      .eq('id', noteId)
+      .single();
+    if (error) throw error;
+    if (data.user_id !== userId) {
+      const { data: collab } = await this.supabase
+        .from('note_collaborators')
+        .select('role')
+        .eq('note_id', noteId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!collab && data.group_id) {
+        const { data: member } = await this.supabase
+          .from('group_members')
+          .select('user_id')
+          .eq('group_id', data.group_id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (!member) throw new Error('Note not found or access denied');
+      } else if (!collab) {
+        throw new Error('Note not found or access denied');
+      }
+    }
+    return this.mapNote(data);
+  }
+
+  async createNote(userId: string, payload: {
+    title?: string;
+    body?: string;
+    folderId?: string;
+    groupId?: string;
+    sourceType?: string;
+    youtubeUrl?: string;
+    youtubeVideoId?: string;
+    summary?: string;
+  }) {
+    const { data, error } = await this.supabase
+      .from('notes')
+      .insert({
+        user_id: userId,
+        title: payload.title || 'Untitled Note',
+        body: payload.body || '',
+        folder_id: payload.folderId || null,
+        group_id: payload.groupId || null,
+        source_type: payload.sourceType || 'typed',
+        youtube_url: payload.youtubeUrl || null,
+        youtube_video_id: payload.youtubeVideoId || null,
+        summary: payload.summary || null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNote(data);
+  }
+
+  async updateNote(userId: string, noteId: string, updates: Record<string, unknown>) {
+    const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.body !== undefined) dbUpdates.body = updates.body;
+    if (updates.summary !== undefined) dbUpdates.summary = updates.summary;
+    if (updates.folderId !== undefined) dbUpdates.folder_id = updates.folderId || null;
+    if (updates.groupId !== undefined) dbUpdates.group_id = updates.groupId || null;
+    if (updates.isShared !== undefined) dbUpdates.is_shared = updates.isShared;
+    if (updates.youtubeUrl !== undefined) dbUpdates.youtube_url = updates.youtubeUrl;
+    if (updates.youtubeVideoId !== undefined) dbUpdates.youtube_video_id = updates.youtubeVideoId;
+
+    const { data, error } = await this.supabase
+      .from('notes')
+      .update(dbUpdates)
+      .eq('id', noteId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNote(data);
+  }
+
+  async deleteNote(userId: string, noteId: string) {
+    const { error } = await this.supabase
+      .from('notes')
+      .delete()
+      .eq('id', noteId)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return true;
+  }
+
+  async getNoteAttachment(noteId: string, attachmentId: string) {
+    const { data, error } = await this.supabase
+      .from('note_attachments')
+      .select('*')
+      .eq('note_id', noteId)
+      .eq('id', attachmentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      id: data.id,
+      noteId: data.note_id,
+      type: data.type,
+      fileUrl: data.file_url || undefined,
+      fileName: data.file_name || undefined,
+      extractedText: data.extracted_text || undefined,
+      metadata: data.metadata || {},
+      createdAt: data.created_at,
+    };
+  }
+
+  async uploadNoteFile(params: {
+    storagePath: string;
+    buffer: Buffer;
+    contentType: string;
+  }): Promise<{ path: string }> {
+    const bucket = 'note-files';
+    const attemptUpload = async () =>
+      this.supabase.storage.from(bucket).upload(params.storagePath, params.buffer, {
+        contentType: params.contentType,
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    let uploadResult = await attemptUpload();
+    if (
+      uploadResult.error &&
+      typeof uploadResult.error.message === 'string' &&
+      uploadResult.error.message.toLowerCase().includes('bucket') &&
+      uploadResult.error.message.toLowerCase().includes('not found')
+    ) {
+      await this.supabase.storage.createBucket(bucket, { public: false });
+      uploadResult = await attemptUpload();
+    }
+
+    const { error } = uploadResult;
+    if (error) {
+      logger.error('Error uploading note file:', { error, path: params.storagePath });
+      throw new Error(error.message);
+    }
+    return { path: params.storagePath };
+  }
+
+  async createSignedNoteFileUrl(storagePath: string, expiresInSeconds = 60 * 60 * 24): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from('note-files')
+      .createSignedUrl(storagePath, expiresInSeconds);
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message || 'Failed to create signed URL');
+    }
+    return data.signedUrl;
+  }
+
+  async downloadNoteFile(storagePath: string): Promise<{ buffer: Buffer; contentType: string }> {
+    const { data, error } = await this.supabase.storage.from('note-files').download(storagePath);
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to download note file');
+    }
+    const arrayBuffer = await data.arrayBuffer();
+    const lower = storagePath.toLowerCase();
+    let contentType = 'application/octet-stream';
+    if (lower.endsWith('.pdf')) contentType = 'application/pdf';
+    else if (lower.endsWith('.pptx')) {
+      contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    } else if (lower.endsWith('.ppt')) contentType = 'application/vnd.ms-powerpoint';
+    return { buffer: Buffer.from(arrayBuffer), contentType };
+  }
+
+  resolveNoteAttachmentStoragePath(attachment: {
+    fileUrl?: string;
+    metadata?: Record<string, unknown>;
+    type?: string;
+  }): string | null {
+    const meta = attachment.metadata || {};
+    if (typeof meta.previewStoragePath === 'string' && meta.previewStoragePath) {
+      return meta.previewStoragePath;
+    }
+    if (typeof meta.storagePath === 'string' && meta.storagePath) {
+      return meta.storagePath;
+    }
+    if (!attachment.fileUrl) return null;
+    try {
+      const url = new URL(attachment.fileUrl);
+      const marker = '/storage/v1/object/';
+      const idx = url.pathname.indexOf(marker);
+      if (idx === -1) return null;
+      let after = url.pathname.slice(idx + marker.length);
+      if (after.startsWith('sign/')) after = after.slice('sign/'.length);
+      if (after.startsWith('public/')) after = after.slice('public/'.length);
+      const parts = after.split('/');
+      if (parts.length < 2) return null;
+      const bucket = parts[0];
+      if (bucket !== 'note-files') return null;
+      return decodeURIComponent(parts.slice(1).join('/'));
+    } catch {
+      return null;
+    }
+  }
+
+  async getNoteAttachments(noteId: string) {
+    const { data, error } = await this.supabase
+      .from('note_attachments')
+      .select('*')
+      .eq('note_id', noteId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      noteId: row.note_id,
+      type: row.type,
+      fileUrl: row.file_url || undefined,
+      fileName: row.file_name || undefined,
+      extractedText: row.extracted_text || undefined,
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+    }));
+  }
+
+  async addNoteAttachment(noteId: string, payload: {
+    type: string;
+    fileUrl?: string;
+    fileName?: string;
+    extractedText?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const { data, error } = await this.supabase
+      .from('note_attachments')
+      .insert({
+        note_id: noteId,
+        type: payload.type,
+        file_url: payload.fileUrl || null,
+        file_name: payload.fileName || null,
+        extracted_text: payload.extractedText || null,
+        metadata: payload.metadata || {},
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return {
+      id: data.id,
+      noteId: data.note_id,
+      type: data.type,
+      fileUrl: data.file_url || undefined,
+      fileName: data.file_name || undefined,
+      extractedText: data.extracted_text || undefined,
+      metadata: data.metadata || {},
+      createdAt: data.created_at,
+    };
+  }
+
+  async getNoteCollaborators(noteId: string) {
+    const { data, error } = await this.supabase
+      .from('note_collaborators')
+      .select('*, profiles(id, name, avatar_url)')
+      .eq('note_id', noteId);
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      noteId: row.note_id,
+      userId: row.user_id,
+      role: row.role,
+      addedAt: row.added_at,
+      user: row.profiles ? { id: row.profiles.id, name: row.profiles.name, avatarUrl: row.profiles.avatar_url } : undefined,
+    }));
+  }
+
+  async addNoteCollaborator(noteId: string, ownerId: string, collaboratorUserId: string, role: string = 'editor') {
+    const note = await this.getNote(noteId, ownerId);
+    if (note.userId !== ownerId) throw new Error('Only the note owner can add collaborators');
+
+    const resolvedUserId = await this.resolveCollaboratorUserId(collaboratorUserId);
+    if (resolvedUserId === ownerId) {
+      throw new Error('You cannot add yourself as a collaborator.');
+    }
+
+    const { data, error } = await this.supabase
+      .from('note_collaborators')
+      .upsert({
+        note_id: noteId,
+        user_id: resolvedUserId,
+        role,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return { noteId: data.note_id, userId: data.user_id, role: data.role, addedAt: data.added_at };
+  }
+
+  async removeNoteCollaborator(noteId: string, ownerId: string, collaboratorUserId: string) {
+    const note = await this.getNote(noteId, ownerId);
+    if (note.userId !== ownerId) throw new Error('Only the note owner can remove collaborators');
+
+    const { error } = await this.supabase
+      .from('note_collaborators')
+      .delete()
+      .eq('note_id', noteId)
+      .eq('user_id', collaboratorUserId);
+    if (error) throw error;
+    return true;
+  }
+
+  async getNoteComments(noteId: string) {
+    const { data, error } = await this.supabase
+      .from('note_comments')
+      .select('*, profiles(id, name, avatar_url)')
+      .eq('note_id', noteId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      noteId: row.note_id,
+      userId: row.user_id,
+      comment: row.comment,
+      createdAt: row.created_at,
+      resolved: row.resolved,
+      user: row.profiles ? { id: row.profiles.id, name: row.profiles.name, avatarUrl: row.profiles.avatar_url } : undefined,
+    }));
+  }
+
+  async addNoteComment(noteId: string, userId: string, comment: string) {
+    const { data, error } = await this.supabase
+      .from('note_comments')
+      .insert({ note_id: noteId, user_id: userId, comment })
+      .select()
+      .single();
+    if (error) throw error;
+    return {
+      id: data.id,
+      noteId: data.note_id,
+      userId: data.user_id,
+      comment: data.comment,
+      createdAt: data.created_at,
+      resolved: data.resolved,
+    };
+  }
+
+  async shareNoteWithGroup(noteId: string, userId: string, groupId: string) {
+    return this.updateNote(userId, noteId, { groupId, isShared: true });
+  }
+
+  private mapNoteQuiz(row: any) {
+    return {
+      date: String(row.updated_at || row.created_at || '').slice(0, 10),
+      noteId: row.note_id,
+      questions: Array.isArray(row.questions) ? row.questions : [],
+      answers: row.answers && typeof row.answers === 'object' ? row.answers : {},
+      completed: Boolean(row.completed),
+      studyGoal: row.study_goal || 'retention',
+    };
+  }
+
+  async getNoteQuiz(userId: string, noteId: string) {
+    await this.getNote(noteId, userId);
+    const { data, error } = await this.supabase
+      .from('note_quizzes')
+      .select('*')
+      .eq('note_id', noteId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? this.mapNoteQuiz(data) : null;
+  }
+
+  async upsertNoteQuiz(
+    userId: string,
+    noteId: string,
+    payload: {
+      studyGoal: string;
+      questions: unknown[];
+    }
+  ) {
+    await this.getNote(noteId, userId);
+    const { data, error } = await this.supabase
+      .from('note_quizzes')
+      .upsert(
+        {
+          note_id: noteId,
+          user_id: userId,
+          study_goal: payload.studyGoal,
+          questions: payload.questions,
+          answers: {},
+          completed: false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'note_id,user_id' }
+      )
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNoteQuiz(data);
+  }
+
+  async updateNoteQuiz(
+    userId: string,
+    noteId: string,
+    updates: { answers?: Record<string, string>; completed?: boolean }
+  ) {
+    await this.getNote(noteId, userId);
+    const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.answers !== undefined) dbUpdates.answers = updates.answers;
+    if (updates.completed !== undefined) dbUpdates.completed = updates.completed;
+
+    const { data, error } = await this.supabase
+      .from('note_quizzes')
+      .update(dbUpdates)
+      .eq('note_id', noteId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapNoteQuiz(data);
   }
 }
 

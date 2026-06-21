@@ -1,30 +1,55 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const { withNativeWind } = require('nativewind/metro');
+const fs = require('fs');
 const path = require('path');
 
-// Find the project and workspace directories
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
+const isExpoGoRuntime = process.env.EXPO_PUBLIC_APP_RUNTIME === 'expo-go';
+const expoNotificationsStub = path.resolve(projectRoot, 'src/stubs/expo-notifications.ts');
+
+function resolvePackageDir(packageName) {
+  const mobilePath = path.resolve(projectRoot, 'node_modules', packageName);
+  if (fs.existsSync(mobilePath)) return mobilePath;
+  return path.resolve(monorepoRoot, 'node_modules', packageName);
+}
+
+// Expo Go ships native worklets 0.5.1; monorepo root may hoist 0.7.x via NativeWind peers.
+const pinnedNativeModules = {
+  'react-native-worklets': resolvePackageDir('react-native-worklets'),
+  'react-native-reanimated': resolvePackageDir('react-native-reanimated'),
+  'react-native-webview': resolvePackageDir('react-native-webview'),
+};
 
 const config = getDefaultConfig(projectRoot);
 
-// 1. Watch all files within the monorepo
 config.watchFolders = [monorepoRoot];
-
-// 2. Let Metro know where to resolve packages and in what order
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(monorepoRoot, 'node_modules'),
 ];
-
-// 3. Don't disable hierarchical lookup - needed for nested dependencies like semver
-// config.resolver.disableHierarchicalLookup = true;
-
-// 4. Add additional file extensions if needed
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules ?? {}),
+  ...pinnedNativeModules,
+};
 config.resolver.sourceExts = [...config.resolver.sourceExts, 'mjs'];
 
-// 5. Extra node_modules to resolve from (for packages like semver)
-config.resolver.extraNodeModules = {
-  ...config.resolver.extraNodeModules,
+const originalResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (isExpoGoRuntime && moduleName === 'expo-notifications') {
+    return { type: 'sourceFile', filePath: expoNotificationsStub };
+  }
+  if (Object.hasOwn(pinnedNativeModules, moduleName)) {
+    return context.resolveRequest(
+      { ...context, originModulePath: path.join(projectRoot, 'index.ts') },
+      moduleName,
+      platform,
+    );
+  }
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
 };
 
-module.exports = config;
+module.exports = withNativeWind(config, { input: './global.css' });

@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer } from '../types';
+import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder } from '../types';
 import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
 import GroupListItem from './GroupListItem';
+import { summarizeGroupChat } from '../services/ai';
+import { Avatar } from './ui';
+import { resolveAvatarSrc } from '../utils/avatar';
+import { normalizeStorageUrl } from '../utils/storageUrl';
+import { useUIStore } from '../stores/uiStore';
 import {
   EllipsisVerticalIcon,
   UserGroupIcon,
@@ -27,9 +32,12 @@ import {
   fetchOffers,
   respondToOffer,
   updateInquiryStatus,
-  updateMarketplaceListing
+  fetchOrderForInquiry,
+  updateMarketplaceOrder,
+  requestOrderPayment,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
+import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 
 
 interface ChatWindowProps {
@@ -79,6 +87,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onUnarchiveDmThread,
   onLoadMoreMessages,
 }) => {
+  const { lowDataMode } = useUIStore();
+  const { refreshBudgetTransactions } = useBudgetHandlers();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -87,12 +97,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [isSummarizingChat, setIsSummarizingChat] = useState(false);
 
   // Reset loading/hasMore states when the chat changes
   useEffect(() => {
     setHasMore(true);
     setIsLoadingMore(false);
   }, [chat?.id]);
+
+  const handleSummarizeGroup = async () => {
+    if (!chat || chat.chatType !== 'group' || isSummarizingChat) return;
+    const groupName = (chat as Group).name || 'Group';
+    const msgTexts = messages
+      .filter(m => !m.isArchived && (m.text || m.questionStem))
+      .slice(-50)
+      .map(m => m.text || m.questionStem || '');
+    if (msgTexts.length === 0) { alert('No messages to summarize.'); return; }
+    setIsSummarizingChat(true);
+    try {
+      const { summary } = await summarizeGroupChat(msgTexts, groupName);
+      const companion = useCompanionStore.getState();
+      companion.open();
+      await companion.sendMessage(`Here's a summary of recent activity in #${groupName}:\n\n${summary}\n\nIs there anything specific from this you'd like help with?`);
+    } catch {
+      alert('Failed to summarize group chat. Please try again.');
+    } finally {
+      setIsSummarizingChat(false);
+    }
+  };
 
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
@@ -136,6 +168,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [counterValue, setCounterValue] = useState('');
   const [offerLoading, setOfferLoading] = useState(false);
   const [offerError, setOfferError] = useState('');
+  const [activeOrder, setActiveOrder] = useState<MarketplaceOrder | null>(null);
+  const [orderActionLoading, setOrderActionLoading] = useState(false);
 
   const loadOfferHistory = async (inquiryData: MarketplaceInquiry) => {
     try {
@@ -173,7 +207,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       // Send DM notification for visual history
       let dmContent = '';
       if (action === 'accept') {
-        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! The item is now marked as sold.`;
+        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup in Orders.`;
       } else if (action === 'decline') {
         dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;
       } else if (action === 'withdraw') {
@@ -192,12 +226,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
       if (action === 'accept') {
         try {
-          await updateInquiryStatus(inquiry.id, 'purchased');
-          await updateMarketplaceListing(inquiry.listing_id, { status: 'sold' });
-          const updated = await getInquiryByThread(chat.id);
-          if (updated) setInquiry(updated);
+          await updateInquiryStatus(inquiry.id, 'negotiating');
+          const order = await fetchOrderForInquiry(inquiry.id);
+          if (order) setActiveOrder(order);
+          await refreshBudgetTransactions(currentUser.id);
         } catch (err) {
-          console.error('Failed to update statuses on offer acceptance:', err);
+          console.error('Failed to load order after offer acceptance:', err);
         }
       } else if (action === 'counter') {
         try {
@@ -226,6 +260,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setShowCounterInput(false);
     setCounterValue('');
     setOfferError('');
+    setActiveOrder(null);
 
     if (chat && chat.chatType === 'dm') {
       const loadInquiryContext = async () => {
@@ -234,6 +269,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           if (inquiryData) {
             setInquiry(inquiryData);
             await loadOfferHistory(inquiryData);
+            const order = await fetchOrderForInquiry(inquiryData.id);
+            if (order) setActiveOrder(order);
           }
         } catch (err) {
           console.error('Error loading inquiry context:', err);
@@ -465,16 +502,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </button>
             )}
             <div className="relative flex-shrink-0">
-              {isGroup || avatarUrl ? (
-                <img
-                  src={avatarUrl || `https://ui-avatars.com/api/?name=${name.replace(/\s/g, '+')}&background=6366f1&color=fff&size=40`}
-                  alt={name}
-                  className="w-10 h-10 rounded-full object-cover ring-2 ring-white dark:ring-slate-700"
-                  onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
-                />
-              ) : (
-                <UserCircleIcon className="w-10 h-10 text-slate-400 dark:text-slate-500" />
-              )}
+              <Avatar
+                name={name}
+                src={resolveAvatarSrc(avatarUrl, lowDataMode)}
+                size="md"
+                localOnly={lowDataMode}
+                className="ring-2 ring-white dark:ring-slate-700"
+              />
               {isGroup && !isArchived && (
                 <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-slate-800 rounded-full" aria-label="Active group" />
               )}
@@ -517,6 +551,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 >
                   <BookOpenIcon className="w-4 h-4" />
                   <span className="hidden lg:inline">Study</span>
+                </button>
+                <button
+                  onClick={handleSummarizeGroup}
+                  disabled={isSummarizingChat}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-900/30 dark:hover:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors duration-150"
+                  aria-label="Summarize group chat with AI"
+                  title="AI Summary"
+                >
+                  <SparklesIcon className="w-4 h-4" />
+                  <span className="hidden lg:inline">{isSummarizingChat ? 'Summarizing…' : 'Summarize'}</span>
                 </button>
 
               </div>
@@ -600,6 +644,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           AI Generate Questions
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDropdownAction(handleSummarizeGroup)}
+                        disabled={isSummarizingChat}
+                        className="w-full text-left px-4 py-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-2.5 transition-colors duration-150 disabled:opacity-50"
+                        role="menuitem"
+                      >
+                        <SparklesIcon className="w-4 h-4" />
+                        {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
+                      </button>
                       <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
                       <button
                         onClick={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
@@ -686,7 +739,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="flex items-center gap-3 min-w-0">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                 <img
-                  src={inquiry.listing.images[0]}
+                  src={normalizeStorageUrl(inquiry.listing.images[0])}
                   alt={inquiry.listing.title}
                   className="w-12 h-12 rounded-lg object-cover bg-slate-100 dark:bg-slate-700 flex-shrink-0 border border-slate-200 dark:border-slate-600"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -743,6 +796,65 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {chat.chatType === 'dm' && inquiry && activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
+          <div className="flex-shrink-0 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900 flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-medium text-indigo-800 dark:text-indigo-200">
+              Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
+            </span>
+            {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
+              <>
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md bg-indigo-600 text-white"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
+                      setActiveOrder(updated);
+                    } catch (e: any) { alert(e.message); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Mark ready
+                </button>
+                <button
+                  type="button"
+                  disabled={orderActionLoading}
+                  className="text-xs px-2 py-1 rounded-md border border-indigo-600 text-indigo-700 dark:text-indigo-300"
+                  onClick={async () => {
+                    setOrderActionLoading(true);
+                    try {
+                      await requestOrderPayment(activeOrder.id);
+                      alert('Payment request sent');
+                    } catch (e: any) { alert(e.message); }
+                    finally { setOrderActionLoading(false); }
+                  }}
+                >
+                  Request payment
+                </button>
+              </>
+            )}
+            {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
+              <button
+                type="button"
+                disabled={orderActionLoading}
+                className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white"
+                onClick={async () => {
+                  setOrderActionLoading(true);
+                  try {
+                    const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'confirm_received' });
+                    setActiveOrder(updated);
+                  } catch (e: any) { alert(e.message); }
+                  finally { setOrderActionLoading(false); }
+                }}
+              >
+                Confirm received
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -844,7 +956,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                 <img
-                  src={inquiry.listing.images[0]}
+                  src={normalizeStorageUrl(inquiry.listing.images[0])}
                   alt={inquiry.listing.title}
                   className="w-full sm:w-32 h-32 rounded-xl object-cover bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex-shrink-0"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}

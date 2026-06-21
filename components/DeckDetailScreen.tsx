@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { Deck, Flashcard, FlashcardType } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIcon, SparklesIcon, BoltIcon, ArrowPathIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIcon, SparklesIcon, BoltIcon, ArrowPathIcon, ClockIcon, UserGroupIcon, Squares2X2Icon, AcademicCapIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import CollaboratorsModal from './CollaboratorsModal';
-import StudySessionModal from './StudySessionModal';
 import { MarkdownRenderer } from '@lantern/shared';
 
 interface DeckDetailScreenProps {
@@ -13,6 +12,8 @@ interface DeckDetailScreenProps {
   onBack: () => void;
   onStartReview: (deck: Deck) => void;
   onStartCram: (deck: Deck, timerSeconds?: number) => void;
+  onStartMatch?: (deck: Deck) => void;
+  onStartLearn?: (deck: Deck) => void;
   onOpenCreateFlashcard: (deckId: string) => void;
   onOpenEditFlashcard: (flashcard: Flashcard) => void;
   onDeleteFlashcard: (flashcardId: string) => void;
@@ -21,11 +22,45 @@ interface DeckDetailScreenProps {
   onGenerateFlashcards: (deckId: string, notes: string, count: number) => void;
   isGenerating: boolean;
   onResetStatistics: (deckId: string) => void;
+  onExportDeck: (deckId: string, format: 'json' | 'csv') => void;
   onLoadMoreCards?: (deckId: string, page: number) => Promise<number>;
   onEnhanceFlashcard?: (front: string, back: string) => Promise<{ front: string; back: string; mnemonic?: string; example?: string } | null>;
-  autoJoinSessionId?: string;
-  onDeepLinkHandled?: () => void;
 }
+
+interface DeckActionButtonProps {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  subtitle: string;
+  colorClass: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+const DeckActionButton: React.FC<DeckActionButtonProps> = ({
+  onClick,
+  icon,
+  label,
+  subtitle,
+  colorClass,
+  disabled,
+  className = '',
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`group flex items-center gap-2.5 px-3 py-2.5 min-h-[58px] rounded-xl text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${colorClass} ${className}`}
+  >
+    <span className="flex-shrink-0 rounded-lg bg-black/10 p-1.5 group-hover:bg-black/15 transition-colors">
+      {icon}
+    </span>
+    <span className="text-left min-w-0 flex-1">
+      <span className="block text-sm font-semibold leading-snug truncate">{label}</span>
+      <span className="block text-[11px] leading-snug opacity-80 mt-0.5 truncate">{subtitle}</span>
+    </span>
+  </button>
+);
 
 const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   deck,
@@ -33,6 +68,8 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   onBack,
   onStartReview,
   onStartCram,
+  onStartMatch,
+  onStartLearn,
   onOpenCreateFlashcard,
   onOpenEditFlashcard,
   onDeleteFlashcard,
@@ -41,17 +78,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   onGenerateFlashcards,
   isGenerating,
   onResetStatistics,
+  onExportDeck,
   onLoadMoreCards,
   onEnhanceFlashcard,
-  autoJoinSessionId,
-  onDeepLinkHandled,
 }) => {
   const currentUser = useAuthStore(s => s.currentUser);
   const cardsInDeck = flashcards.filter(fc => fc && fc.deckId === deck.id);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
-  const [isStudySessionModalOpen, setIsStudySessionModalOpen] = useState(false);
-  const [pendingJoinSessionId, setPendingJoinSessionId] = useState<string | null>(null);
   const [enhancingCardId, setEnhancingCardId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -81,14 +115,6 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     onGenerateFlashcards(deck.id, notes, count);
     setIsGenerateModalOpen(false);
   };
-
-  React.useEffect(() => {
-    if (autoJoinSessionId) {
-      setIsStudySessionModalOpen(true);
-      setPendingJoinSessionId(autoJoinSessionId);
-      onDeepLinkHandled?.();
-    }
-  }, [autoJoinSessionId, onDeepLinkHandled]);
 
   const handleLoadMore = async () => {
     if (!onLoadMoreCards || isLoadingMore || !hasMore) return;
@@ -137,14 +163,9 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             <div className="flex space-x-2 mt-3 sm:mt-0 flex-wrap gap-2">
                 <button onClick={() => onOpenEditDeck(deck)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-md flex items-center text-sm shadow"><PencilIcon className="w-4 h-4 mr-1.5" /> Edit</button>
                 {deck.isShared && (
-                  <>
-                    <button onClick={() => setIsCollaboratorsModalOpen(true)} className="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md flex items-center text-sm shadow">
-                      <UserGroupIcon className="w-4 h-4 mr-1.5" /> Collaborators
-                    </button>
-                    <button onClick={() => setIsStudySessionModalOpen(true)} className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md flex items-center text-sm shadow">
-                      <SparklesIcon className="w-4 h-4 mr-1.5" /> Shared Session
-                    </button>
-                  </>
+                  <button onClick={() => setIsCollaboratorsModalOpen(true)} className="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md flex items-center text-sm shadow">
+                    <UserGroupIcon className="w-4 h-4 mr-1.5" /> Collaborators
+                  </button>
                 )}
                 <button onClick={() => { if(window.confirm('Are you sure you want to reset all SRS statistics for this deck? This will mark all cards as new.')) onResetStatistics(deck.id) }} className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center text-sm shadow"><ArrowPathIcon className="w-4 h-4 mr-1.5" /> Reset Stats</button>
                 <button onClick={handleDeleteDeckClick} className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md flex items-center text-sm shadow"><TrashIcon className="w-4 h-4 mr-1.5" /> Delete</button>
@@ -152,56 +173,84 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-3">
-         <button onClick={() => onStartReview(deck)} className="p-3 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm text-left flex items-center justify-center transition-transform hover:scale-105">
-             <PlayCircleIcon className="w-6 h-6 mr-2" />
-             <div>
-                <h2 className="text-lg font-semibold">Study Now</h2>
-                <p className="text-xs">Spaced Repetition</p>
-             </div>
-        </button>
-         <div className="grid grid-cols-2 gap-2">
-           <button onClick={() => onStartCram(deck)} className="p-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg shadow-sm text-left flex items-center justify-center transition-transform hover:scale-105">
-             <BoltIcon className="w-6 h-6 mr-2" />
-             <div>
-                <h2 className="text-lg font-semibold">Cram Mode</h2>
-                <p className="text-xs">Review all cards</p>
-             </div>
-           </button>
-           <button
-             onClick={() => {
-               const minutes = window.prompt('Enter duration in minutes for timed cram (e.g. 5):');
-               if (!minutes) return;
-               const parsed = parseFloat(minutes);
-               if (isNaN(parsed) || parsed <= 0) {
-                 alert('Please enter a valid number of minutes.');
-                 return;
-               }
-               onStartCram(deck, Math.round(parsed * 60));
-             }}
-             className="p-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm text-left flex items-center justify-center transition-transform hover:scale-105"
-           >
-             <ClockIcon className="w-6 h-6 mr-2" />
-             <div>
-                <h2 className="text-lg font-semibold">Timed Cram</h2>
-                <p className="text-xs">Beat the clock</p>
-             </div>
-           </button>
-         </div>
-         <button onClick={() => onOpenCreateFlashcard(deck.id)} className="p-3 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-sm text-left flex items-center justify-center transition-transform hover:scale-105">
-             <PlusCircleIcon className="w-6 h-6 mr-2" />
-             <div>
-                <h2 className="text-lg font-semibold">Add Card</h2>
-                <p className="text-xs">Manually create</p>
-             </div>
-        </button>
-         <button onClick={() => setIsGenerateModalOpen(true)} disabled={isGenerating} className="p-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg shadow-sm text-left flex items-center justify-center transition-transform hover:scale-105">
-             <SparklesIcon className="w-6 h-6 mr-2" />
-             <div>
-                <h2 className="text-lg font-semibold">{isGenerating ? 'Generating...' : 'Generate'}</h2>
-                <p className="text-xs">From your notes</p>
-             </div>
-        </button>
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5">
+        <DeckActionButton
+          onClick={() => onStartReview(deck)}
+          icon={<PlayCircleIcon className="w-5 h-5" />}
+          label="Study Now"
+          subtitle="FSRS spaced repetition"
+          colorClass="bg-rose-500 hover:bg-rose-600 ring-1 ring-inset ring-white/20"
+        />
+        {onStartMatch && (
+          <DeckActionButton
+            onClick={() => onStartMatch(deck)}
+            icon={<Squares2X2Icon className="w-5 h-5" />}
+            label="Match"
+            subtitle="Pair terms quickly"
+            colorClass="bg-teal-500 hover:bg-teal-600"
+          />
+        )}
+        {onStartLearn && (
+          <DeckActionButton
+            onClick={() => onStartLearn(deck)}
+            icon={<AcademicCapIcon className="w-5 h-5" />}
+            label="Learn"
+            subtitle="Adaptive MCQ mode"
+            colorClass="bg-sky-500 hover:bg-sky-600"
+          />
+        )}
+        <DeckActionButton
+          onClick={() => onStartCram(deck)}
+          icon={<BoltIcon className="w-5 h-5" />}
+          label="Cram Mode"
+          subtitle="Review every card"
+          colorClass="bg-purple-500 hover:bg-purple-600"
+        />
+        <DeckActionButton
+          onClick={() => {
+            const minutes = window.prompt('Enter duration in minutes for timed cram (e.g. 5):');
+            if (!minutes) return;
+            const parsed = parseFloat(minutes);
+            if (isNaN(parsed) || parsed <= 0) {
+              alert('Please enter a valid number of minutes.');
+              return;
+            }
+            onStartCram(deck, Math.round(parsed * 60));
+          }}
+          icon={<ClockIcon className="w-5 h-5" />}
+          label="Timed Cram"
+          subtitle="Beat the clock"
+          colorClass="bg-indigo-500 hover:bg-indigo-600"
+        />
+        <DeckActionButton
+          onClick={() => onOpenCreateFlashcard(deck.id)}
+          icon={<PlusCircleIcon className="w-5 h-5" />}
+          label="Add Card"
+          subtitle="Create manually"
+          colorClass="bg-emerald-500 hover:bg-emerald-600"
+        />
+        <DeckActionButton
+          onClick={() => setIsGenerateModalOpen(true)}
+          disabled={isGenerating}
+          icon={<SparklesIcon className="w-5 h-5" />}
+          label={isGenerating ? 'Generating…' : 'Generate'}
+          subtitle="From your notes"
+          colorClass="bg-amber-500 hover:bg-amber-600"
+        />
+        <DeckActionButton
+          onClick={() => onExportDeck(deck.id, 'json')}
+          icon={<ArrowDownTrayIcon className="w-5 h-5" />}
+          label="Export JSON"
+          subtitle="Full backup (images + progress)"
+          colorClass="bg-slate-600 hover:bg-slate-700 ring-1 ring-inset ring-white/10"
+        />
+        <DeckActionButton
+          onClick={() => onExportDeck(deck.id, 'csv')}
+          icon={<ArrowDownTrayIcon className="w-5 h-5" />}
+          label="Export CSV"
+          subtitle="Spreadsheet (front/back only)"
+          colorClass="bg-slate-500 hover:bg-slate-600"
+        />
       </div>
 
       <h2 className="text-xl font-semibold mb-3 text-slate-700 dark:text-slate-300">
@@ -302,15 +351,6 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         onClose={() => setIsCollaboratorsModalOpen(false)}
         deckId={deck.id}
         currentUserId={currentUser?.id}
-      />
-      <StudySessionModal
-        isOpen={isStudySessionModalOpen}
-        onClose={() => {
-          setIsStudySessionModalOpen(false);
-          setPendingJoinSessionId(null);
-        }}
-        deckId={deck.id}
-        autoJoinCode={pendingJoinSessionId ?? undefined}
       />
     </div>
   );

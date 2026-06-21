@@ -20,9 +20,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOfflineStore, OfflineTest, PendingResult, DownloadOptions } from '../../stores/offlineStore';
+import { useTestStore } from '../../stores/testStore';
+import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useGroupStore } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
 
 // Question type options
 const QUESTION_TYPES = [
@@ -34,6 +37,7 @@ const QUESTION_TYPES = [
 
 export default function OfflineScreen() {
   const navigation = useNavigation<any>();
+  const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
@@ -64,6 +68,7 @@ export default function OfflineScreen() {
     clearAllOfflineData,
     downloadTest,
   } = useOfflineStore();
+  const startQuestionSet = useTestStore(s => s.startQuestionSet);
 
   // flashcard offline data
   const { decks, offlineDeckIds, unmarkDeckOffline } = useFlashcardStore();
@@ -112,13 +117,31 @@ export default function OfflineScreen() {
     );
   };
 
-  const handleStartOfflineTest = (test: OfflineTest) => {
-    navigation.navigate('TestTaking', {
-      testId: test.testId,
-      testName: test.testName,
-      isOffline: true,
-      offlineTestId: test.id,
-    });
+  const handleStartOfflineTest = async (test: OfflineTest) => {
+    if (!test.questions.length) {
+      Alert.alert('No Questions', 'This offline bundle has no questions.');
+      return;
+    }
+
+    try {
+      const questions = offlineQuestionsToTestQuestions(test.questions);
+      await startQuestionSet(test.testName, questions, 'test', {
+        timeLimitMinutes: test.timeLimit || Math.max(questions.length * 2, 5),
+      });
+      navigation.navigate('StudyTab', {
+        screen: 'TestTaking',
+        params: {
+          testId: test.testId,
+          testName: test.testName,
+          mode: 'test',
+          isOffline: true,
+          offlineTestId: test.id,
+          groupName: test.groupName,
+        },
+      });
+    } catch {
+      Alert.alert('Error', 'Failed to start offline test.');
+    }
   };
 
   const handleSync = async () => {
@@ -128,7 +151,7 @@ export default function OfflineScreen() {
     }
     
     try {
-      await syncPendingResults();
+      await syncPendingResults(userId);
       Alert.alert('Success', 'All results have been synced!');
     } catch (error) {
       Alert.alert('Sync Failed', 'Please check your internet connection and try again.');

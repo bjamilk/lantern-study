@@ -3,9 +3,15 @@
 // Provides dark/light mode theming
 // ===========================================
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import { useSettingsStore } from '../stores/settingsStore';
+import {
+  applyAccentToColors,
+  applyHighContrastToColors,
+  getAppearanceEffectFlags,
+  type AppearanceEffectFlags,
+} from '@lantern/shared/settings';
 
 // Theme color definitions
 export const lightColors = {
@@ -128,6 +134,11 @@ interface ThemeContextValue {
   isDark: boolean;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  effects: AppearanceEffectFlags;
+  fontScale: number;
+  compactMode: boolean;
+  reduceMotion: boolean;
+  screenReaderOptimized: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -136,7 +147,7 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
+export const ColorsThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const { settings, updateSingleSetting } = useSettingsStore();
   const themeMode = settings.appearance.theme;
@@ -145,15 +156,36 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const isDark = themeMode === 'system' 
     ? systemColorScheme === 'dark'
     : themeMode === 'dark';
-  
-  const colors = isDark ? darkColors : lightColors;
+
+  const effects = useMemo(() => getAppearanceEffectFlags(settings), [settings]);
+
+  const colors = useMemo(() => {
+    const base = isDark ? darkColors : lightColors;
+    let resolved = applyAccentToColors(base, effects.accentColor);
+    if (effects.highContrast) {
+      resolved = applyHighContrastToColors(resolved);
+    }
+    return resolved;
+  }, [isDark, effects.accentColor, effects.highContrast]);
   
   const setThemeMode = (mode: ThemeMode) => {
     updateSingleSetting('appearance', 'theme', mode);
   };
   
   return (
-    <ThemeContext.Provider value={{ colors, isDark, themeMode, setThemeMode }}>
+    <ThemeContext.Provider
+      value={{
+        colors,
+        isDark,
+        themeMode,
+        setThemeMode,
+        effects,
+        fontScale: effects.fontScale,
+        compactMode: effects.compactMode,
+        reduceMotion: effects.reduceMotion,
+        screenReaderOptimized: effects.screenReaderOptimized,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

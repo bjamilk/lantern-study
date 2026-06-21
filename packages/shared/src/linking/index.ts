@@ -13,6 +13,7 @@ export type DeepLinkType =
     | 'group'
     | 'profile'
     | 'marketplace'
+    | 'budget'
     | 'listing';
 
 export interface DeepLinkParams {
@@ -84,6 +85,13 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
         }
 
         const segments = path.split('/').filter(Boolean);
+        if (segments.length === 1) {
+            const route = segments[0];
+            if (route === 'budget' || route === 'marketplace') {
+                return { type: route as DeepLinkType, id: '' };
+            }
+            return null;
+        }
         if (segments.length < 2) return null;
 
         const type = segments[0] as DeepLinkType;

@@ -7,12 +7,18 @@
  */
 
 const CACHE_NAME = 'lantern-v1';
+const IS_LOCAL_DEV = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
 
 // Files that must be available offline for the app shell to load
 const PRECACHE_ASSETS = ['/', '/index.html'];
 
 // ── Install: pre-cache the app shell ──────────────────────────────────────
 self.addEventListener('install', (event) => {
+  if (IS_LOCAL_DEV) {
+    self.skipWaiting();
+    return;
+  }
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS))
   );
@@ -21,6 +27,11 @@ self.addEventListener('install', (event) => {
 
 // ── Activate: remove old cache versions ───────────────────────────────────
 self.addEventListener('activate', (event) => {
+  if (IS_LOCAL_DEV) {
+    event.waitUntil(self.clients.claim());
+    return;
+  }
+
   event.waitUntil(
     caches
       .keys()
@@ -33,6 +44,10 @@ self.addEventListener('activate', (event) => {
 
 // ── Fetch: route requests ──────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
+  if (IS_LOCAL_DEV) {
+    return;
+  }
+
   const { request } = event;
 
   // Only handle GET requests
@@ -45,10 +60,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Never intercept Supabase or the API server – always go to network
+  // Never intercept Supabase, API server, or authenticated API paths
   if (
     url.hostname.includes('supabase') ||
     url.port === '3001' ||
+    url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/rest/v1') ||
     url.pathname.startsWith('/auth/v1') ||
     url.pathname.startsWith('/storage/v1')

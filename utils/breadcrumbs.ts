@@ -45,6 +45,23 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
         { label: 'Marketplace', onClick: () => setAppMode(AppMode.MARKETPLACE) },
         { label: 'Inquiries' },
       ];
+    case AppMode.MARKETPLACE_ORDERS:
+      return [
+        { label: 'Marketplace', onClick: () => setAppMode(AppMode.MARKETPLACE) },
+        { label: 'Orders' },
+      ];
+    case AppMode.MARKETPLACE_ORDER_DETAIL:
+      return [
+        { label: 'Marketplace', onClick: () => setAppMode(AppMode.MARKETPLACE) },
+        { label: 'Orders', onClick: () => setAppMode(AppMode.MARKETPLACE_ORDERS) },
+        { label: 'Order Details' },
+      ];
+    case AppMode.SELLER_CUSTOMERS:
+      return [
+        { label: 'Marketplace', onClick: () => setAppMode(AppMode.MARKETPLACE) },
+        { label: 'My Listings', onClick: () => setAppMode(AppMode.MY_LISTINGS) },
+        { label: 'Customers' },
+      ];
     case AppMode.CREATE_MARKETPLACE_LISTING:
       return [
         { label: 'Marketplace', onClick: () => setAppMode(AppMode.MARKETPLACE) },
@@ -59,6 +76,11 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
       return [
         { label: 'Chat', onClick: () => setAppMode(AppMode.CHAT) },
         { label: 'Create Group' },
+      ];
+    case AppMode.NOTE_EDITOR:
+      return [
+        { label: 'Notes', onClick: () => setAppMode(AppMode.NOTES) },
+        { label: 'Editor' },
       ];
     default:
       return [];

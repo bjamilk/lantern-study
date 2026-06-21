@@ -4,10 +4,27 @@
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FlashcardType, type Flashcard as SharedFlashcard } from '@lantern/shared';
+import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import { getDeckCardStats, groupFlashcardsByDeck } from '../utils/flashcardHelpers';
 
-export type { Deck, Flashcard } from '../services/api';
+export interface Deck {
+  id: string;
+  name: string;
+  description?: string;
+  user_id?: string;
+  is_shared?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  card_count?: number;
+  due_count?: number;
+  new_count?: number;
+  mastered_count?: number;
+}
+
+export type Flashcard = SharedFlashcard;
 
 // Storage keys
 const DECKS_STORAGE_KEY = 'lantern_decks';
@@ -15,11 +32,86 @@ const FLASHCARDS_STORAGE_KEY = 'lantern_flashcards';
 // keep track of which decks have been explicitly downloaded for offline use
 const OFFLINE_DECKS_KEY = 'lantern_offline_decks';
 
+// Debounce AsyncStorage writes during rapid SRS grading
+let saveStorageTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleSaveToStorage(saveFn: () => Promise<void>) {
+  if (saveStorageTimer) clearTimeout(saveStorageTimer);
+  saveStorageTimer = setTimeout(() => {
+    saveStorageTimer = null;
+    void saveFn();
+  }, 400);
+}
+
+function flushScheduledSave(saveFn: () => Promise<void>) {
+  if (saveStorageTimer) {
+    clearTimeout(saveStorageTimer);
+    saveStorageTimer = null;
+  }
+  void saveFn();
+}
+
 // Demo mode flag - matches authStore
 const DEMO_MODE = false;
 
+function mapDeckFromApi(data: any): Deck {
+  return {
+    id: data.id,
+    name: data.name,
+    description: data.description,
+    user_id: data.user_id,
+    is_shared: data.is_shared ?? data.isShared,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    card_count: data.card_count ?? data.cardCount,
+  };
+}
+
+function enrichDecksWithStats(decks: Deck[], flashcards: Record<string, Flashcard[]>): Deck[] {
+  return decks.map(deck => {
+    const stats = getDeckCardStats(deck.id, flashcards);
+    const cachedTotal = stats.total;
+    return {
+      ...deck,
+      card_count: cachedTotal > 0 ? cachedTotal : (deck.card_count ?? 0),
+      due_count: stats.dueCards,
+      new_count: stats.newCards,
+      mastered_count: stats.mastered,
+    };
+  });
+}
+
+function unwrapFlashcardResponse(response: unknown): any[] {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === 'object' && Array.isArray((response as { data?: unknown }).data)) {
+    return (response as { data: any[] }).data;
+  }
+  return [];
+}
+
+async function fetchFlashcardPages(deckId?: string): Promise<Flashcard[]> {
+  if (deckId) {
+    const response = await api.fetchFlashcards(deckId);
+    return mapFlashcardsFromApi(unwrapFlashcardResponse(response));
+  }
+
+  const collected: any[] = [];
+  let page = 1;
+  const limit = 100;
+
+  while (true) {
+    const response = await api.fetchFlashcards(undefined, { page, limit });
+    const batch = unwrapFlashcardResponse(response);
+    collected.push(...batch);
+    if (batch.length < limit) break;
+    page += 1;
+  }
+
+  return mapFlashcardsFromApi(collected);
+}
+
 // Mock data for demo mode
-const DEMO_DECKS: api.Deck[] = [
+const DEMO_DECKS: Deck[] = [
   {
     id: 'demo-deck-1',
     name: 'Biology 101',
@@ -58,7 +150,16 @@ const DEMO_DECKS: api.Deck[] = [
   },
 ];
 
-const DEMO_FLASHCARDS: Record<string, api.Flashcard[]> = {
+const DEMO_FLASHCARDS: Record<string, Array<{
+  id: string;
+  deck_id: string;
+  type: 'BASIC' | 'CLOZE';
+  front?: string;
+  back?: string;
+  cloze_text?: string;
+  created_at: string;
+  updated_at: string;
+}>> = {
   'demo-deck-1': [
     { id: 'card-1', deck_id: 'demo-deck-1', type: 'BASIC', front: 'What is the powerhouse of the cell?', back: 'Mitochondria', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
     { id: 'card-2', deck_id: 'demo-deck-1', type: 'BASIC', front: 'What is DNA?', back: 'Deoxyribonucleic acid - carries genetic information', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
@@ -80,9 +181,9 @@ const DEMO_FLASHCARDS: Record<string, api.Flashcard[]> = {
 };
 
 interface FlashcardState {
-  decks: api.Deck[];
-  flashcards: Record<string, api.Flashcard[]>; // Keyed by deck ID
-  currentDeck: api.Deck | null;
+  decks: Deck[];
+  flashcards: Record<string, Flashcard[]>;
+  currentDeck: Deck | null;
   isLoading: boolean;
   error: string | null;
   // explicitly-downloaded deck ids, used to drive manual offline mode
@@ -91,19 +192,20 @@ interface FlashcardState {
   // Actions
   fetchDecks: (userId: string) => Promise<void>;
   fetchFlashcards: (deckId: string) => Promise<void>;
-  setCurrentDeck: (deck: api.Deck | null) => void;
-  createDeck: (name: string, description: string | undefined, userId: string) => Promise<api.Deck>;
+  syncAllFlashcards: (userId: string) => Promise<void>;
+  setCurrentDeck: (deck: Deck | null) => void;
+  createDeck: (name: string, description: string | undefined, userId: string) => Promise<Deck>;
   updateDeck: (deckId: string, updates: { name?: string; description?: string }, userId: string) => Promise<void>;
   deleteDeck: (deckId: string, userId: string) => Promise<void>;
   createFlashcard: (data: {
     deckId: string;
-    type: 'BASIC' | 'CLOZE';
+    type: FlashcardType;
     front?: string;
     back?: string;
     clozeText?: string;
     tags?: string[];
     userId: string;
-  }) => Promise<api.Flashcard>;
+  }) => Promise<Flashcard>;
   updateFlashcard: (flashcardId: string, deckId: string, updates: any, userId: string) => Promise<void>;
   deleteFlashcard: (flashcardId: string, deckId: string, userId: string) => Promise<void>;
   clearError: () => void;
@@ -124,6 +226,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   currentDeck: null,
   isLoading: false,
   error: null,
+  offlineDeckIds: [],
   
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
@@ -138,7 +241,12 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         set({ decks: JSON.parse(decksJson) });
       }
       if (flashcardsJson) {
-        set({ flashcards: JSON.parse(flashcardsJson) });
+        const parsed = JSON.parse(flashcardsJson) as Record<string, any[]>;
+        const normalized: Record<string, Flashcard[]> = {};
+        for (const [key, cards] of Object.entries(parsed)) {
+          normalized[key] = mapFlashcardsFromApi(Array.isArray(cards) ? cards : []);
+        }
+        set({ flashcards: normalized });
       }
       if (offlineJson) {
         set({ offlineDeckIds: JSON.parse(offlineJson) });
@@ -165,78 +273,122 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   fetchDecks: async (userId: string) => {
     try {
       set({ isLoading: true, error: null });
-      
-      // Load from local storage first for instant UI
       await get().loadFromStorage();
-      
-      // Demo mode - use mock data
+
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
         set({ decks: DEMO_DECKS, isLoading: false });
         return;
       }
-      
-      // Fetch from API and merge
+
       try {
-        const decks = await api.fetchDecks(userId);
-        set({ decks, isLoading: false });
+        const rawDecks = await api.fetchDecks(userId, { includeShared: true });
+        const decks = enrichDecksWithStats(
+          (rawDecks || []).map(mapDeckFromApi),
+          get().flashcards
+        );
+        set({ decks, isLoading: false, error: null });
         await get().saveToStorage();
-      } catch (apiError) {
+        // Load flashcards so due/new counts match web (and refresh card totals)
+        void get().syncAllFlashcards(userId);
+      } catch (apiError: any) {
         console.warn('Failed to fetch decks from API, using cached:', apiError);
-        set({ isLoading: false });
+        set({
+          isLoading: false,
+          error: apiError?.message || 'Could not load decks. Showing cached data.',
+        });
       }
     } catch (error: any) {
       console.error('Failed to fetch decks:', error);
       set({ error: error.message, isLoading: false });
     }
   },
-  
+
   fetchFlashcards: async (deckId: string) => {
     try {
-      set({ isLoading: true, error: null });
-      
-      // Demo mode - use mock data
+      const hasCached = (get().flashcards[deckId] || []).length > 0;
+      if (!hasCached) {
+        set({ isLoading: true, error: null });
+      } else {
+        set({ error: null });
+      }
+      await get().loadFromStorage();
+
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 200));
+        const demoCards = mapFlashcardsFromApi(
+          (DEMO_FLASHCARDS[deckId] || []).map(card => ({
+            ...card,
+            deck_id: card.deck_id,
+          }))
+        );
         set(state => ({
-          flashcards: {
+          flashcards: { ...state.flashcards, [deckId]: demoCards },
+          decks: enrichDecksWithStats(state.decks, {
             ...state.flashcards,
-            [deckId]: DEMO_FLASHCARDS[deckId] || [],
-          },
+            [deckId]: demoCards,
+          }),
           isLoading: false,
         }));
         return;
       }
-      
-      // Fetch from API
+
       try {
-        const cards = await api.fetchFlashcards(deckId);
-        set(state => ({
-          flashcards: {
-            ...state.flashcards,
-            [deckId]: cards,
-          },
-          isLoading: false,
-        }));
+        const cards = await fetchFlashcardPages(deckId);
+        set(state => {
+          const flashcards = { ...state.flashcards, [deckId]: cards };
+          return {
+            flashcards,
+            decks: enrichDecksWithStats(state.decks, flashcards),
+            isLoading: false,
+            error: null,
+          };
+        });
         await get().saveToStorage();
-      } catch (apiError) {
+      } catch (apiError: any) {
         console.warn('Failed to fetch flashcards from API:', apiError);
-        set({ isLoading: false });
+        const cached = get().flashcards[deckId] || [];
+        set({
+          isLoading: false,
+          error: cached.length
+            ? `${apiError?.message || 'Could not refresh cards.'} Showing cached cards.`
+            : apiError?.message || 'Could not load flashcards for this deck.',
+        });
       }
     } catch (error: any) {
       console.error('Failed to fetch flashcards:', error);
       set({ error: error.message, isLoading: false });
     }
   },
+
+  syncAllFlashcards: async (_userId: string) => {
+    if (DEMO_MODE) return;
+
+    try {
+      const cards = await fetchFlashcardPages();
+      const grouped = groupFlashcardsByDeck(cards);
+      set(state => ({
+        flashcards: { ...state.flashcards, ...grouped },
+        decks: enrichDecksWithStats(state.decks, { ...state.flashcards, ...grouped }),
+        error: null,
+      }));
+      await get().saveToStorage();
+    } catch (apiError: any) {
+      console.warn('Failed to sync all flashcards:', apiError);
+      set(state => ({
+        error: state.error || apiError?.message || 'Could not sync flashcard data.',
+      }));
+    }
+  },
   
-  setCurrentDeck: (deck: api.Deck | null) => {
+  setCurrentDeck: (deck: Deck | null) => {
     set({ currentDeck: deck });
   },
   
   createDeck: async (name: string, description: string | undefined, userId: string) => {
     // Optimistic local ID
     const tempId = `temp_deck_${Date.now()}`;
-    const tempDeck: api.Deck = {
+    const tempDeck: Deck = {
       id: tempId,
       name,
       description,
@@ -254,9 +406,9 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     
     try {
       // Try API call
-      const deck = await api.createDeck(userId, { name, description });
-      
-      // Replace temp with real deck
+      const created = await api.createDeck(userId, { name, description });
+      const deck = mapDeckFromApi(created);
+
       set(state => ({
         decks: state.decks.map(d => d.id === tempId ? deck : d),
       }));
@@ -326,16 +478,15 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     
     // Optimistic local ID
     const tempId = `temp_card_${Date.now()}`;
-    const tempCard: api.Flashcard = {
+    const tempCard: Flashcard = {
       id: tempId,
-      deck_id: deckId,
-      type: data.type,
+      deckId,
+      type: data.type as FlashcardType,
       front: data.front,
       back: data.back,
-      cloze_text: data.clozeText,
+      clozeText: data.clozeText,
       tags: data.tags,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
     
     // Optimistic update
@@ -348,15 +499,22 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     await get().saveToStorage();
     
     try {
-      const card = await api.createFlashcard(userId, deckId, cardData);
-      
-      // Replace temp with real card
-      set(state => ({
-        flashcards: {
+      const created = await api.createFlashcard(userId, deckId, {
+        ...cardData,
+        type: cardData.type as 'BASIC' | 'CLOZE',
+      });
+      const card = mapFlashcardFromApi(created);
+
+      set(state => {
+        const flashcards = {
           ...state.flashcards,
-          [deckId]: (state.flashcards[deckId] || []).map(c => c.id === tempId ? card : c),
-        },
-      }));
+          [deckId]: (state.flashcards[deckId] || []).map(c => (c.id === tempId ? card : c)),
+        };
+        return {
+          flashcards,
+          decks: enrichDecksWithStats(state.decks, flashcards),
+        };
+      });
       await get().saveToStorage();
       return card;
     } catch (error: any) {
@@ -369,38 +527,58 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
-  updateFlashcard: async (flashcardId: string, deckId: string, updates: any, userId: string) => {
-    // Optimistic update
-    set(state => ({
-      flashcards: {
+  updateFlashcard: async (flashcardId: string, deckId: string, updates: Partial<Flashcard>, userId: string) => {
+    set(state => {
+      const flashcards = {
         ...state.flashcards,
-        [deckId]: (state.flashcards[deckId] || []).map(c => 
-          c.id === flashcardId ? { ...c, ...updates, updated_at: new Date().toISOString() } : c
+        [deckId]: (state.flashcards[deckId] || []).map(c =>
+          c.id === flashcardId ? { ...c, ...updates } : c
         ),
-      },
-    }));
-    await get().saveToStorage();
-    
+      };
+      return {
+        flashcards,
+        decks: enrichDecksWithStats(state.decks, flashcards),
+      };
+    });
+    scheduleSaveToStorage(() => get().saveToStorage());
+
     try {
-      await api.updateFlashcard(flashcardId, updates);
+      const updated = await api.updateFlashcard(flashcardId, updates);
+      const mapped = mapFlashcardFromApi(updated);
+      set(state => {
+        const flashcards = {
+          ...state.flashcards,
+          [deckId]: (state.flashcards[deckId] || []).map(c =>
+            c.id === flashcardId ? mapped : c
+          ),
+        };
+        return {
+          flashcards,
+          decks: enrichDecksWithStats(state.decks, flashcards),
+        };
+      });
+      flushScheduledSave(() => get().saveToStorage());
     } catch (error: any) {
       console.error('Failed to update flashcard on server:', error);
-      
-      // Queue for later sync
       await syncService.queueOperation('flashcard', flashcardId, 'update', updates, userId);
+      flushScheduledSave(() => get().saveToStorage());
     }
   },
   
   deleteFlashcard: async (flashcardId: string, deckId: string, userId: string) => {
     // Optimistic delete
-    set(state => ({
-      flashcards: {
+    set(state => {
+      const flashcards = {
         ...state.flashcards,
         [deckId]: (state.flashcards[deckId] || []).filter(c => c.id !== flashcardId),
-      },
-    }));
+      };
+      return {
+        flashcards,
+        decks: enrichDecksWithStats(state.decks, flashcards),
+      };
+    });
     await get().saveToStorage();
-    
+
     try {
       await api.deleteFlashcard(flashcardId);
     } catch (error: any) {

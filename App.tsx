@@ -1,5 +1,10 @@
-import React, { useEffect, lazy, Suspense } from 'react';
-import { AppMode, DirectMessage, MessageType } from './types';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { useToastStore } from './stores/toastStore';
+import { ToastBanner } from './components/ui/ToastBanner';
+import { setSessionExpiredHandler } from './services/sessionHandler';
+import { supabase as supabaseClient } from './services/supabase';
+import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
 import { useGroupStore } from './stores/groupStore';
@@ -8,7 +13,10 @@ import { useTestStore } from './stores/testStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
-import { fetchNotifications, fetchDecks, getStudySession } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
+import { fetchChallenge } from './services/challenges';
+import { aiGenerateFlashcards } from './services/ai';
+import { recordLoginStreak, fetchDailyQuests, purchaseStreakFreeze } from './services/gamificationStreak';
 import ChatWindow from './components/ChatWindow';
 import QuestionModal from './components/QuestionModal';
 import CreateGroupModal from './components/CreateGroupModal';
@@ -17,6 +25,7 @@ import { TestConfigModal } from './components/TestConfigModal';
 import DashboardScreen from './components/DashboardScreen';
 import OfflineModeScreen from './components/OfflineModeScreen';
 import AuthScreen from './components/AuthScreen';
+import ResetPasswordScreen from './components/ResetPasswordScreen';
 import SettingsModal from './components/SettingsModal';
 import DuplicateQuestionModal from './components/DuplicateQuestionModal';
 import CreateDeckModal from './components/CreateDeckModal';
@@ -25,9 +34,11 @@ import NewDirectMessageModal from './components/NewDirectMessageModal';
 import AddMembersModal from './components/AddMembersModal';
 import UsernameRequiredModal from './components/UsernameRequiredModal';
 import NotificationModal from './components/NotificationModal';
+import ChallengesInboxModal from './components/ChallengesInboxModal';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import AddExpenseModal from './components/AddExpenseModal';
 import AddIncomeModal from './components/AddIncomeModal';
+import AddInvestmentModal from './components/AddInvestmentModal';
 import SetBudgetModal from './components/SetBudgetModal';
 import SetMonthlyPlanModal from './components/SetMonthlyPlanModal';
 import SavingsGoalModal from './components/InvestModal';
@@ -39,9 +50,14 @@ import CreateMarketplaceListingModal from './components/CreateMarketplaceListing
 import EditMarketplaceListingModal from './components/EditMarketplaceListingModal';
 // Heavy screens — loaded on demand to reduce initial bundle size
 const FlashcardsScreen = lazy(() => import('./components/FlashcardsScreen'));
+const DeckDetailScreen = lazy(() => import('./components/DeckDetailScreen'));
 const FlashcardReviewScreen = lazy(() => import('./components/FlashcardReviewScreen'));
 const CramSessionScreen = lazy(() => import('./components/CramSessionScreen'));
-const DeckDetailScreen = lazy(() => import('./components/DeckDetailScreen'));
+const MatchStudyScreen = lazy(() => import('./components/MatchStudyScreen'));
+const LearnStudyScreen = lazy(() => import('./components/LearnStudyScreen'));
+const ImportAndStudyModal = lazy(() => import('./components/ImportAndStudyModal'));
+const OnboardingFlow = lazy(() => import('./components/OnboardingFlow'));
+const DailyQuestsWidget = lazy(() => import('./components/DailyQuestsWidget'));
 const GameScreen = lazy(() => import('./components/GameScreen').then(m => ({ default: m.GameScreen })));
 const GameResultScreen = lazy(() => import('./components/GameResultScreen'));
 const TestTakingScreen = lazy(() => import('./components/TestTakingScreen').then(m => ({ default: m.TestTakingScreen })));
@@ -51,7 +67,13 @@ const MarketplaceScreen = lazy(() => import('./components/MarketplaceScreen'));
 const MarketplaceListingDetailScreen = lazy(() => import('./components/MarketplaceListingDetailScreen'));
 const MyListingsScreen = lazy(() => import('./components/MyListingsScreen'));
 const MarketplaceInquiriesScreen = lazy(() => import('./components/MarketplaceInquiriesScreen'));
+const MarketplaceOrdersScreen = lazy(() => import('./components/MarketplaceOrdersScreen'));
+const MarketplaceOrderDetailScreen = lazy(() => import('./components/MarketplaceOrderDetailScreen'));
+const SellerCustomersScreen = lazy(() => import('./components/SellerCustomersScreen'));
 const SellerProfileScreen = lazy(() => import('./components/SellerProfileScreen'));
+const AdminScreen = lazy(() => import('./components/AdminScreen'));
+const NotesScreen = lazy(() => import('./components/NotesScreen'));
+const NoteEditorScreen = lazy(() => import('./components/NoteEditorScreen'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers } from './hooks/useAuthHandlers';
@@ -62,17 +84,42 @@ import { useFlashcardHandlers } from './hooks/useFlashcardHandlers';
 import { useBudgetHandlers } from './hooks/useBudgetHandlers';
 import { useOfflineHandlers } from './hooks/useOfflineHandlers';
 import { useAppEffects } from './hooks/useAppEffects';
+import { useFontMode } from './hooks/useFontMode';
 import { useInviteLink } from './hooks/useInviteLink';
 import { useAIHandlers } from './hooks/useAIHandlers';
 import AIGenerateQuestionsModal from './components/AIGenerateQuestionsModal';
+import AICompanionPanel from './components/AICompanionPanel';
+import { usePlatformAdmin } from './hooks/usePlatformAdmin';
+import { useCompanionStore } from './stores/companionStore';
+import { useNotesStore } from './stores/notesStore';
+import { useStudyGoalsStore } from './stores/studyGoalsStore';
+import { useNoteHandlers } from './hooks/useNoteHandlers';
+import { CompanionAction } from './types';
+import { buildFlashcardSourceContent } from './utils/buildFlashcardSource';
+import { normalizeFlashcardCount } from './utils/flashcardGeneration';
 
 export const App: React.FC = () => {
-    const { currentUser, setCurrentUser, isAuthLoading } = useAuthStore();
+    const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery } = useAuthStore();
+    const isPlatformAdmin = usePlatformAdmin();
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
-        const { testResults, offlineBundles, pendingSyncResults, userQuestionStats,
+        const { testResults, offlineBundles, pendingSyncResults, userQuestionStats, studyActivityDays,
             activeTestSession, activeStudySession, activeGameSession, setActiveGameSession } = useTestStore();
+    const { folders, notes, selectedNote, comments, isLoading: notesLoading, isSaving: notesSaving, error: notesError, selectedFolderId, setSelectedFolderId } = useNotesStore();
+    const { toast, showToast, dismissToast } = useToastStore();
+    const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+
+    useEffect(() => {
+        setSessionExpiredHandler(async (message) => {
+            showToast(message || 'Your session has expired. Please sign in again.', 'error');
+            await supabaseClient.auth.signOut();
+            setCurrentUser(null);
+            setAuthLoading(false);
+        });
+    }, [showToast, setCurrentUser, setAuthLoading]);
+    const { studyGoal, dailyQuiz, dailyQuizProgress, setStudyGoal, setDailyQuiz, answerDailyQuestion, completeDailyQuiz, getDailyQuizForToday, getQuizForNote } = useStudyGoalsStore();
     const { decks, flashcards, dueCardsCount } = useFlashcardStore();
     const { transactions, budget } = useBudgetStore();
+    const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
 
     // ensure offline deck IDs and any cached decks/flashcards are loaded on web
     useEffect(() => {
@@ -86,7 +133,7 @@ export const App: React.FC = () => {
         isSidebarExpanded, toggleSidebar,
         theme,
         modals, openModal, closeModal,
-        activeTestConfigMode,
+        activeTestConfigMode, setActiveTestConfigMode,
         subgroupParentId,
         selectedDeck, setSelectedDeck,
         editingDeck, editingFlashcard, flashcardInitialDeckId,
@@ -98,15 +145,18 @@ export const App: React.FC = () => {
         selectedChat, setSelectedChat,
         marketplaceListingCategory, setMarketplaceListingCategory,
         selectedMarketplaceListingId, setSelectedMarketplaceListingId,
+        selectedMarketplaceOrderId, setSelectedMarketplaceOrderId,
         editingMarketplaceListing, setEditingMarketplaceListing,
         selectedSellerId, setSelectedSellerId,
         isOnline
     } = useUIStore();
     const {
         users, dataLoaded, setDataLoaded,
-        toggleTheme, handleLogin, handleLogout, handleRegister,
-        handleUpdateSettings, handleUpdateProfile, handleUpdateCurrentUserAvatar,
-        handleUpdatePassword, handleDeleteAccount,
+        toggleTheme, handleLogout,
+        getUserSettings, handleUpdateSettingsCategory,
+        handleUpdateProfile, handleUpdateCurrentUserAvatar,
+        handleUpdatePassword, handleDeleteAccount, handleExportAccount,
+        handleResetSettings,
         handleSavePreset, handleDeletePreset
     } = useAuthHandlers();
     const {
@@ -131,7 +181,13 @@ export const App: React.FC = () => {
         handleCancelActiveSession, handlePauseSession, handleResumeSession,
         handleRetakeTest, handlePracticeFailedQuestions
     } = useTestHandlers({ addNotification });
-    const { handleStartGame, handleGameAnswer, handleEndGame, handleRematch } = useGameHandlers({ addNotification, handleChallengeUser });
+    const {
+        handleSendChallenge,
+        handleStartSoloPractice,
+        handleStartChallengePlay,
+        handleGameAnswer,
+        handleRematch,
+    } = useGameHandlers({ addNotification, handleChallengeUser });
     const {
         isGeneratingFlashcards,
         handleSelectDeck, handleOpenCreateDeckModal, handleOpenEditDeckModal,
@@ -139,19 +195,272 @@ export const App: React.FC = () => {
         handleOpenCreateFlashcardModal, handleOpenEditFlashcardModal,
         handleCreateOrUpdateFlashcard, handleDeleteFlashcard,
         handleGenerateFlashcards,
+        handleGenerateFlashcardsFromTestResult,
         handleStartReview, handleStartCram, handleCramAnswer, handleCramIncorrect, handleEndCramSession,
         handleUpdateSrsData, handleResetDeckStatistics,
         handleExportDeck, handleImportDeck,
+        handleStartMatch, handleStartLearn, handleEndStudyMode,
         handleLoadMoreFlashcards
     } = useFlashcardHandlers();
 
-    const [deepLinkSessionId, setDeepLinkSessionId] = React.useState<string | null>(null);
-    const [pendingDeepLinkJoinSessionId, setPendingDeepLinkJoinSessionId] = React.useState<string | null>(null);
+    const [showImportAndStudy, setShowImportAndStudy] = React.useState(false);
+    const [showOnboarding, setShowOnboarding] = React.useState(() => {
+        if (typeof window === 'undefined') return false;
+        return !localStorage.getItem('lantern_onboarding_complete');
+    });
+    const [dailyQuests, setDailyQuests] = React.useState<any[]>([]);
+    const [serverStreak, setServerStreak] = React.useState(0);
+    const [streakFreezes, setStreakFreezes] = React.useState(0);
+    const refreshQuests = React.useCallback(() => {
+        fetchDailyQuests().then(setDailyQuests).catch(() => {});
+        recordLoginStreak().then((s) => {
+            setServerStreak(s?.current_streak ?? 0);
+            setStreakFreezes(s?.streak_freezes ?? 0);
+        }).catch(() => {});
+    }, []);
+
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction } = useBudgetHandlers();
-    const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults } = useOfflineHandlers({ addNotification });
-    useAppEffects({ dataLoaded, setDataLoaded });
+    const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
+    const handleChallengeNotification = React.useCallback(async (type: string, challengeId: string) => {
+        if (type === 'challenge_result') {
+            void handleStartChallengePlay(challengeId);
+            return;
+        }
+        if (type === 'challenge_accepted') {
+            try {
+                const challenge = await fetchChallenge(challengeId);
+                const opponentName = challenge.opponent?.name || 'Your opponent';
+                const startNow = window.confirm(`${opponentName} accepted your duel! Start playing now?`);
+                if (startNow) {
+                    void handleStartChallengePlay(challengeId);
+                } else {
+                    openModal('challenges');
+                }
+            } catch {
+                openModal('challenges');
+            }
+            return;
+        }
+        openModal('challenges');
+    }, [handleStartChallengePlay, openModal]);
+    useAppEffects({
+        dataLoaded,
+        setDataLoaded,
+        onChallengeNotification: handleChallengeNotification,
+    });
+
+    React.useEffect(() => {
+        if (!currentUser?.id) return;
+        refreshQuests();
+    }, [currentUser?.id, refreshQuests]);
+
+    const handlePurchaseStreakFreeze = React.useCallback(async () => {
+        const { walletBalance, addWalletCoins } = useBudgetStore.getState();
+        if (walletBalance < 50) {
+            alert('You need 50 wallet coins to buy a streak freeze.');
+            return;
+        }
+        try {
+            await purchaseStreakFreeze();
+            addWalletCoins(-50);
+            refreshQuests();
+        } catch (e: any) {
+            alert(e?.message || 'Could not purchase streak freeze');
+        }
+    }, [refreshQuests]);
+
+    useFontMode();
     useInviteLink(currentUser?.id);
     const { isAILoading, handleAIGenerateQuestions, handleAIExplainAnswer, handleAIStudyRecommendations, handleAIAskTutor, handleAIEnhanceFlashcard } = useAIHandlers();
+    const noteHandlers = useNoteHandlers(currentUser?.id);
+
+    const handleWeakAreaFlashcardsFromAnalysis = React.useCallback(
+        async (results: TestResult, weakTopics: string[]) => {
+            const ok = await handleGenerateFlashcardsFromTestResult(results, weakTopics);
+            if (ok) setAnalyzingResult(null);
+        },
+        [handleGenerateFlashcardsFromTestResult, setAnalyzingResult]
+    );
+
+    // Build context object for the AI companion
+    const companionContext = React.useMemo(() => {
+        const weakTopics = testResults.flatMap(r => r.tagBreakdown ? Object.entries(r.tagBreakdown)
+            .filter(([, s]: [string, any]) => s.total > 0 && s.correct / s.total < 0.6)
+            .map(([tag]) => tag) : []);
+        const uniqueWeak = [...new Set(weakTopics)].slice(0, 5);
+        const recentScore = testResults.length > 0
+            ? `Last test: ${Math.round(testResults[testResults.length - 1].score)}%`
+            : undefined;
+        // Budget summary for current month
+        let budgetSummary: string | undefined;
+        if (transactions.length > 0) {
+            const thisMonth = new Date().toISOString().slice(0, 7);
+            const monthlyExpenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.date?.startsWith(thisMonth));
+            const totalSpent = monthlyExpenses.reduce((s, t) => s + (t.amount || 0), 0);
+            if (budget?.monthlyLimit && budget.monthlyLimit > 0) {
+                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} of ₦${budget.monthlyLimit.toFixed(0)} monthly budget this month`;
+            } else if (totalSpent > 0) {
+                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} this month (no budget limit set)`;
+            }
+        }
+        return {
+            userName: currentUser?.firstName || currentUser?.name,
+            groups: groups.filter(g => !g.isArchived).map(g => g.name).slice(0, 5),
+            weakTopics: uniqueWeak,
+            dueCardsCount,
+            recentTestSummary: recentScore,
+            budgetSummary,
+            currentScreen: (() => {
+                switch (appMode) {
+                    case AppMode.DASHBOARD: return 'Dashboard';
+                    case AppMode.CHAT: return selectedChat ? `Group chat: ${(selectedChat as any).name || 'Chat'}` : 'Chat (no group selected)';
+                    case AppMode.FLASHCARDS: return selectedDeck ? `Flashcards – deck: ${selectedDeck.name}` : 'Flashcards (deck list)';
+                    case AppMode.TEST_ACTIVE: return 'Active test session';
+                    case AppMode.STUDY_ACTIVE: return 'Active study session';
+                    case AppMode.GAME: return 'Multiplayer quiz game';
+                    case AppMode.MARKETPLACE: return 'Marketplace';
+                    case AppMode.BUDGET_TRACKER: return 'Budget Tracker';
+                    case AppMode.OFFLINE: return 'Offline mode';
+                    case AppMode.NOTES: return 'Notes library';
+                    case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
+                    default: return undefined;
+                }
+            })(),
+            noteContext: appMode === AppMode.NOTE_EDITOR && selectedNote
+                ? [selectedNote.summary, selectedNote.body].filter(Boolean).join('\n\n').substring(0, 6000)
+                : undefined,
+            noteTitle: appMode === AppMode.NOTE_EDITOR ? selectedNote?.title : undefined,
+            studyGoal,
+            activeSessionSummary: activeTestSession
+                ? `Taking a ${activeTestSession.config?.mode || 'test'} with ${activeTestSession.questions?.length ?? 0} questions`
+                : activeStudySession
+                ? `Study session with ${activeStudySession.questions?.length ?? 0} questions`
+                : undefined,
+        };
+    }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal]);
+
+    const handleCompanionAction = React.useCallback((action: CompanionAction) => {
+        switch (action.type) {
+            case 'navigate_to_flashcards':
+                setAppMode(AppMode.FLASHCARDS);
+                setSelectedDeck(null);
+                break;
+            case 'open_test_config':
+                if (selectedChat?.chatType === 'group') {
+                    setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
+                    openModal('testConfig');
+                } else if (groups.length > 0) {
+                    handleSelectChat({ ...groups[0], chatType: 'group' });
+                    setTimeout(() => {
+                        setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
+                        openModal('testConfig');
+                    }, 50);
+                }
+                break;
+            case 'open_create_flashcard':
+                openModal('createFlashcard');
+                break;
+            case 'navigate_to_dashboard':
+                setAppMode(AppMode.DASHBOARD);
+                break;
+            case 'navigate_to_chat':
+                if (action.payload?.groupId) {
+                    const targetGroup = groups.find(g => g.id === action.payload!.groupId);
+                    if (targetGroup) { handleSelectChat({ ...targetGroup, chatType: 'group' }); setAppMode(AppMode.CHAT); }
+                } else {
+                    setAppMode(AppMode.CHAT);
+                }
+                break;
+            case 'navigate_to_notes':
+                noteHandlers.navigateToNotes();
+                break;
+            case 'open_note_learn':
+                if (selectedNote) setAppMode(AppMode.NOTE_EDITOR);
+                else noteHandlers.navigateToNotes();
+                break;
+            case 'auto_generate_flashcards': {
+                if (!currentUser) break;
+                const topicsRaw = action.payload?.topics || '';
+                const deckName = action.payload?.deckName || (topicsRaw ? `Weak Areas: ${topicsRaw.split(',').slice(0, 2).join(', ')}` : 'Weak Areas Review');
+                const topics = topicsRaw || (companionContext.weakTopics?.join(', ') || '');
+
+                (async () => {
+                    try {
+                        const sourceContent = buildFlashcardSourceContent({
+                            topics,
+                            weakTopics: companionContext.weakTopics,
+                            selectedNote,
+                            notes,
+                        });
+                        if (sourceContent.trim().length < 50) {
+                            showToast('Add a note with at least 50 characters, or specify topics to generate flashcards.', 'error');
+                            return;
+                        }
+
+                        const topicList = (topics || companionContext.weakTopics?.join(', ') || 'review')
+                            .split(',')
+                            .map((t: string) => t.trim())
+                            .filter(Boolean);
+                        const cardCount = normalizeFlashcardCount(topicList.length * 4 || 10);
+
+                        const { flashcards: generated } = await aiGenerateFlashcards(sourceContent, {
+                            count: cardCount,
+                            style: 'concise',
+                        });
+                        if (!generated?.length) {
+                            showToast('Could not generate flashcards. Try again with more study material.', 'error');
+                            return;
+                        }
+
+                        const flashcardStore = useFlashcardStore.getState();
+                        const newDeck = await createDeck(
+                            { name: deckName, description: `Auto-generated by Lantern for: ${topics || 'weak areas review'}` },
+                            currentUser.id
+                        );
+                        flashcardStore.updateDecks((prev) => [...prev, newDeck]);
+
+                        for (const card of generated) {
+                            await createFlashcard({
+                                deckId: newDeck.id,
+                                type: 'BASIC',
+                                front: card.front,
+                                back: card.back,
+                                userId: currentUser.id,
+                            });
+                        }
+
+                        const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
+                        flashcardStore.setFlashcards(
+                            fetchedFlashcards.map((fc: any) => ({
+                                id: fc.id,
+                                deckId: fc.deck_id,
+                                type: fc.type,
+                                front: fc.front,
+                                back: fc.back,
+                                clozeText: fc.cloze_text,
+                                imageUrl: fc.image_url,
+                                occlusionData: fc.occlusion_data,
+                                srsData: fc.srs_data,
+                                tags: fc.tags,
+                                createdAt: fc.created_at,
+                            }))
+                        );
+                        setSelectedDeck(newDeck);
+                        setAppMode(AppMode.DECK_DETAIL);
+                        showToast(`Created "${deckName}" with ${generated.length} flashcards`, 'success');
+                        addNotification(`Created "${deckName}" with ${generated.length} flashcards!`);
+                        useCompanionStore.getState().sendMessageStreaming(
+                            `[system] Flashcard generation complete: created ${generated.length} cards in the deck "${deckName}". Confirm to the user in a friendly way, mention they can find the deck in Flashcards.`,
+                            companionContext
+                        );
+                    } catch (err: any) {
+                        showToast(err?.message || 'Failed to auto-generate flashcards', 'error');
+                    }
+                })();
+                break;
+            }
+        }
+    }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast]);
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
     const messagesForChat = !selectedChat ? [] : selectedChat.chatType === 'group'
@@ -169,39 +478,51 @@ export const App: React.FC = () => {
             };
         });
     const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
-    const handleOpenQuickTest = () => { const group = findFirstGroup(); if (!group) { alert('Join or create a group first to start a test.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
-    const handleOpenQuickStudy = () => { const group = findFirstGroup(); if (!group) { alert('Join or create a group first to start a study session.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
+    const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
+    const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
     const handleFlashcardStudy = () => {
         const today = new Date().toISOString().split('T')[0];
         const best = decks.map(d => ({ deck: d, due: flashcards.filter(fc => fc.deckId === d.id && fc.srsData?.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length })).sort((a, b) => b.due - a.due)[0];
         if (best?.deck) { handleSelectDeck(best.deck); handleStartReview(best.deck); }
         else alert('No flashcard decks available. Create a deck first.');
     };
-    // Redirect invalid mode/state combinations (avoids setState during render)
+    // Redirect invalid mode/state combinations
     useEffect(() => {
-        // guard against invalid combinations but log to help debug race conditions
-        console.log('[App] mode check', { appMode, hasSession: !!activeTestSession });
         if (appMode === AppMode.TEST_ACTIVE && !activeTestSession) {
-            console.warn('[App] resetting mode to CHAT because TEST_ACTIVE without activeTestSession');
             setAppMode(AppMode.CHAT);
-        }
-        else if (appMode === AppMode.STUDY_ACTIVE && !activeStudySession) {
-            console.warn('[App] resetting mode to CHAT because STUDY_ACTIVE without activeStudySession');
+        } else if (appMode === AppMode.STUDY_ACTIVE && !activeStudySession) {
             setAppMode(AppMode.CHAT);
-        }
-        else if (appMode === AppMode.GAME_ACTIVE && !activeGameSession) {
-            console.warn('[App] resetting mode to CHAT because GAME_ACTIVE without activeGameSession');
+        } else if (appMode === AppMode.GAME_ACTIVE && !activeGameSession) {
             setAppMode(AppMode.CHAT);
-        }
-        else if (appMode === AppMode.GAME_RESULTS && (!activeGameSession || !activeGameSession.isComplete)) {
-            console.warn('[App] resetting mode to CHAT because GAME_RESULTS invalid state');
+        } else if (
+            appMode === AppMode.GAME_RESULTS
+            && (!activeGameSession || (!activeGameSession.isComplete && !activeGameSession.awaitingOpponent))
+        ) {
             setAppMode(AppMode.CHAT);
-        }
-        else if (appMode === AppMode.TEST_REVIEW && !activeTestResult) {
-            console.warn('[App] resetting mode to CHAT because TEST_REVIEW without activeTestResult');
+        } else if (appMode === AppMode.TEST_REVIEW && !activeTestResult) {
             setAppMode(AppMode.CHAT);
+        } else if (appMode === AppMode.ADMIN && !isAuthLoading && !isPlatformAdmin) {
+            setAppMode(AppMode.DASHBOARD);
+        } else if (appMode === AppMode.NOTE_EDITOR && !selectedNote) {
+            setAppMode(AppMode.NOTES);
+        } else if (appMode === AppMode.DECK_DETAIL && !selectedDeck) {
+            setAppMode(AppMode.FLASHCARDS);
+        } else if (appMode === AppMode.FLASHCARD_REVIEW && !activeReviewSession) {
+            setAppMode(AppMode.FLASHCARDS);
+        } else if (appMode === AppMode.FLASHCARD_CRAM && !activeCramSession) {
+            setAppMode(AppMode.FLASHCARDS);
+        } else if ((appMode === AppMode.FLASHCARD_MATCH || appMode === AppMode.FLASHCARD_LEARN) && !selectedDeck) {
+            setAppMode(AppMode.FLASHCARDS);
+        } else if (appMode === AppMode.MARKETPLACE_LISTING_DETAIL && !selectedMarketplaceListingId) {
+            setAppMode(AppMode.MARKETPLACE);
+        } else if (appMode === AppMode.SELLER_PROFILE && !selectedSellerId) {
+            setAppMode(AppMode.MARKETPLACE);
         }
-    }, [appMode, activeTestSession, activeStudySession, activeGameSession, activeTestResult, setAppMode]);
+    }, [
+        appMode, activeTestSession, activeStudySession, activeGameSession, activeTestResult,
+        isAuthLoading, isPlatformAdmin, selectedNote, selectedDeck, activeReviewSession,
+        activeCramSession, selectedMarketplaceListingId, selectedSellerId, setAppMode,
+    ]);
 
     // Re-fetch notifications from DB when the notification modal opens
     useEffect(() => {
@@ -213,61 +534,55 @@ export const App: React.FC = () => {
             }).catch(() => { /* handled in service layer */ });
         }
     }, [modals.notification, currentUser, setNotifications]);
-    // Deep link support for study sessions (e.g. ?studySession=<id>)
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('studySession');
-        if (!sessionId) return;
 
-        // Clean up URL so it doesn't re-trigger
-        params.delete('studySession');
-        const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
-        window.history.replaceState({}, '', newUrl);
-
-        setDeepLinkSessionId(sessionId);
-    }, []);
-
-    useEffect(() => {
-        if (!deepLinkSessionId) return;
-        if (!currentUser) return;
-
-        (async () => {
-            try {
-                const session = await getStudySession(deepLinkSessionId);
-                if (!session) {
-                    setDeepLinkSessionId(null);
-                    return;
-                }
-
-                // Ensure we have the deck loaded, then select it
-                const deckId = (session as any).deck_id || (session as any).deckId;
-                const found = decks.find(d => d.id === deckId);
-                if (!found) {
-                    const refreshed = await fetchDecks(currentUser.id, { includeShared: true });
-                    const newDeck = refreshed.find(d => d.id === deckId);
-                    if (newDeck) {
-                        handleSelectDeck(newDeck);
-                        setPendingDeepLinkJoinSessionId(deepLinkSessionId);
-                        setDeepLinkSessionId(null);
-                    }
-                } else {
-                    handleSelectDeck(found);
-                    setPendingDeepLinkJoinSessionId(deepLinkSessionId);
-                    setDeepLinkSessionId(null);
-                }
-            } catch (err) {
-                console.warn('Failed to apply deep link session', err);
-                setDeepLinkSessionId(null);
-            }
-        })();
-    }, [deepLinkSessionId, currentUser, decks, handleSelectDeck]);
     if (isAuthLoading) return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-8">
+            <img src="/lantern-icon.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400" />
         </div>
     );
-    if (!currentUser) return <AuthScreen onAuthSuccess={setCurrentUser} />;
+    if (isPasswordRecovery) {
+        return (
+            <ResetPasswordScreen
+                onComplete={async () => {
+                    setPasswordRecovery(false);
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    if (session?.user) {
+                        try {
+                            const profile = await fetchUserProfile(session.user.id);
+                            if (profile) {
+                                setCurrentUser({
+                                    id: profile.id,
+                                    name: profile.name,
+                                    username: profile.username || undefined,
+                                    firstName: profile.first_name || undefined,
+                                    lastName: profile.last_name || undefined,
+                                    avatarUrl: profile.avatar_url || '',
+                                    email: session.user.email!,
+                                    password: '',
+                                    phoneNumber: profile.phone || '',
+                                    points: profile.points,
+                                    badges: profile.badges as User['badges'],
+                                    stats: profile.stats,
+                                });
+                                bootstrapAuthFromStorage();
+                                setAuthLoading(false);
+                                setAppMode(AppMode.DASHBOARD);
+                            }
+                        } catch {
+                            setCurrentUser(null);
+                        }
+                    }
+                }}
+            />
+        );
+    }
+    if (!currentUser) return <AuthScreen onAuthSuccess={(user) => {
+        bootstrapAuthFromStorage();
+        setCurrentUser(user);
+        setAuthLoading(false);
+        setAppMode(AppMode.DASHBOARD);
+    }} />;
 
     const mainContent = () => {
         switch (appMode) {
@@ -302,6 +617,7 @@ export const App: React.FC = () => {
             case AppMode.STUDY_ACTIVE:
                 if (!activeStudySession) return null;
                 return <TestTakingScreen mode="study" session={activeStudySession}
+                    showExplanationsImmediately={getUserSettings().study.showExplanationsImmediately}
                     onUpdateAnswer={handleUpdateAnswer} onChangeQuestion={handleChangeQuestion}
                     onToggleBookmark={handleToggleBookmark} onEndSession={handleEndStudySession}
                     onPauseSession={handlePauseSession} onCancelSession={handleCancelActiveSession} />;
@@ -309,7 +625,7 @@ export const App: React.FC = () => {
                 if (!activeGameSession) return null;
                 return <GameScreen session={activeGameSession} onUpdateAnswer={handleGameAnswer} />;
             case AppMode.GAME_RESULTS:
-                if (!activeGameSession || !activeGameSession.isComplete) return null;
+                if (!activeGameSession || (!activeGameSession.isComplete && !activeGameSession.awaitingOpponent)) return null;
                 return <GameResultScreen session={activeGameSession} currentUser={currentUser} onRematch={handleRematch}
                     onExit={() => { setActiveGameSession(null); setAppMode(AppMode.CHAT); }} />;
             case AppMode.TEST_REVIEW:
@@ -320,52 +636,203 @@ export const App: React.FC = () => {
                     onRetakeTest={handleRetakeTest} onPracticeFailedQuestions={handlePracticeFailedQuestions}
                     onExplainAnswer={handleAIExplainAnswer} />;
             case AppMode.DASHBOARD:
-                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser}
+                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
+                    studyActivityDays={studyActivityDays}
                     onNavigateToChat={() => setAppMode(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
                     onNavigateToFlashcards={() => setAppMode(AppMode.FLASHCARDS)}
                     onNavigateToMarketplace={() => setAppMode(AppMode.MARKETPLACE)}
                     onNavigateToCreateGroup={() => setAppMode(AppMode.CREATE_GROUP)}
+                    onNavigateToNotes={noteHandlers.navigateToNotes}
+                    onOpenImportAndStudy={() => setShowImportAndStudy(true)}
+                    dailyQuests={dailyQuests}
+                    serverStreak={serverStreak}
+                    streakFreezes={streakFreezes}
+                    onPurchaseStreakFreeze={handlePurchaseStreakFreeze}
                     dueCardsCount={dueCardsCount} flashcards={flashcards} pendingSyncCount={pendingSyncResults.length}
                     unreadNotificationCount={notifications.filter(n => !n.read).length}
                     onOpenQuickTest={handleOpenQuickTest} onOpenQuickStudy={handleOpenQuickStudy}
-                    onGetStudyRecommendations={handleAIStudyRecommendations} />;
+                    onGetStudyRecommendations={handleAIStudyRecommendations}
+                    studyGoal={studyGoal}
+                    onStudyGoalChange={setStudyGoal}
+                    dailyQuiz={getDailyQuizForToday()}
+                    dailyQuizProgress={dailyQuizProgress}
+                    onStartDailyQuiz={async () => {
+                        const source = notes.find(n => (n.body?.length ?? 0) > 50) || notes[0];
+                        const content = source?.body || source?.summary || '';
+                        if (content.length < 50) {
+                            alert('Add or import a note with at least 50 characters to generate a daily quiz.');
+                            return;
+                        }
+                        await noteHandlers.handleStartDailyQuiz(content, source?.id);
+                    }}
+                    onDailyQuizAnswer={answerDailyQuestion}
+                    onCompleteDailyQuiz={completeDailyQuiz}
+                    activeTestSession={activeTestSession}
+                    activeStudySession={activeStudySession}
+                    onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
+                />;
+            case AppMode.NOTES:
+                return (
+                    <NotesScreen
+                        theme={theme}
+                        folders={folders}
+                        notes={notes}
+                        isLoading={notesLoading}
+                        error={notesError}
+                        selectedFolderId={selectedFolderId}
+                        onSelectFolder={setSelectedFolderId}
+                        onCreateNote={async () => {
+                            try {
+                                await noteHandlers.handleCreateNote();
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to create note', 'error');
+                            }
+                        }}
+                        onCreateFolder={(name) => {
+                            void noteHandlers.handleCreateFolder(name).catch((e: any) => {
+                                showToast(e?.message || 'Failed to create folder', 'error');
+                            });
+                        }}
+                        onSelectNote={(id) => { void noteHandlers.openNote(id); }}
+                        onYouTubeImport={async (url) => {
+                            try {
+                                await noteHandlers.handleYouTubeImport(url, selectedFolderId || undefined);
+                            } catch (e: any) {
+                                showToast(e?.message || 'YouTube import failed', 'error');
+                            }
+                        }}
+                        onPdfImport={async (file) => {
+                            try {
+                                await noteHandlers.handlePdfImport(file, selectedFolderId || undefined);
+                            } catch (e: any) {
+                                showToast(e?.message || 'PDF import failed', 'error');
+                            }
+                        }}
+                        onPresentationImport={async (file) => {
+                            try {
+                                await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
+                            } catch (e: any) {
+                                showToast(e?.message || 'PowerPoint import failed', 'error');
+                            }
+                        }}
+                    />
+                );
+            case AppMode.NOTE_EDITOR:
+                if (!selectedNote) return null;
+                return (
+                    <NoteEditorScreen
+                        theme={theme}
+                        note={selectedNote}
+                        comments={comments}
+                        groups={groups}
+                        currentUserId={currentUser.id}
+                        isSaving={notesSaving}
+                        onBack={() => setAppMode(AppMode.NOTES)}
+                        onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
+                        onDelete={async () => {
+                            if (confirm('Delete this note?')) {
+                                await noteHandlers.handleDeleteNote(selectedNote.id);
+                                setAppMode(AppMode.NOTES);
+                            }
+                        }}
+                        onSummarize={() => noteHandlers.handleSummarize(selectedNote.id)}
+                        onChatWithNote={noteHandlers.handleChatWithNote}
+                        onGenerateFlashcards={async () => {
+                            try {
+                                const result = await noteHandlers.handleCreateFlashcardDeckFromNote(10);
+                                if (result?.deck) {
+                                    setSelectedDeck(result.deck);
+                                    setAppMode(AppMode.DECK_DETAIL);
+                                    showToast(`Created ${result.count} flashcards in "${result.deck.name}"`, 'success');
+                                }
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to generate flashcards', 'error');
+                            }
+                        }}
+                        onGenerateQuiz={async () => {
+                            try {
+                                const session = await noteHandlers.handleStartNoteQuiz();
+                                if (session?.questions?.length) {
+                                    showToast(`Quiz ready — ${session.questions.length} questions below`, 'success');
+                                }
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to generate quiz', 'error');
+                            }
+                        }}
+                        studyGoal={studyGoal}
+                        dailyQuiz={getQuizForNote(selectedNote.id)}
+                        dailyQuizProgress={dailyQuizProgress}
+                        onStudyGoalChange={setStudyGoal}
+                        onDailyQuizAnswer={answerDailyQuestion}
+                        onCompleteDailyQuiz={completeDailyQuiz}
+                        onRegenerateQuiz={async () => {
+                            try {
+                                await noteHandlers.handleStartNoteQuiz();
+                                showToast('New quiz ready!', 'success');
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to generate quiz', 'error');
+                            }
+                        }}
+                        onPostComment={(text) => { void noteHandlers.handlePostComment(selectedNote.id, text); }}
+                        onShareWithGroup={(groupId) => { void noteHandlers.handleShareWithGroup(selectedNote.id, groupId); }}
+                        onTranscriptReady={() => { void useNotesStore.getState().loadNote(selectedNote.id); }}
+                    />
+                );
             case AppMode.FLASHCARDS:
-                return <FlashcardsScreen decks={decks} flashcards={flashcards}
+                return <FlashcardsScreen decks={decks} flashcards={flashcards} isInitialLoading={!dataLoaded}
                     onOpenCreateDeck={handleOpenCreateDeckModal} onOpenCreateFlashcard={() => handleOpenCreateFlashcardModal()}
-                    onSelectDeck={handleSelectDeck} onExportDeck={handleExportDeck} onImportDeck={handleImportDeck}
+                    onSelectDeck={handleSelectDeck} onImportDeck={handleImportDeck}
                     onStartStudy={handleFlashcardStudy} />;
             case AppMode.DECK_DETAIL:
-                if (!selectedDeck) { setAppMode(AppMode.FLASHCARDS); return null; }
+                if (!selectedDeck) return null;
                 return <DeckDetailScreen deck={selectedDeck} flashcards={flashcards}
                     onBack={() => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); }}
                     onStartReview={handleStartReview} onStartCram={handleStartCram}
+                    onStartMatch={handleStartMatch} onStartLearn={handleStartLearn}
                     onOpenCreateFlashcard={handleOpenCreateFlashcardModal} onOpenEditFlashcard={handleOpenEditFlashcardModal}
                     onDeleteFlashcard={handleDeleteFlashcard} onOpenEditDeck={handleOpenEditDeckModal}
                     onDeleteDeck={handleDeleteDeck} onGenerateFlashcards={handleGenerateFlashcards}
                     isGenerating={isGeneratingFlashcards} onResetStatistics={handleResetDeckStatistics}
+                    onExportDeck={handleExportDeck}
                     onLoadMoreCards={handleLoadMoreFlashcards}
                     onEnhanceFlashcard={handleAIEnhanceFlashcard}
-                    autoJoinSessionId={pendingDeepLinkJoinSessionId}
-                    onDeepLinkHandled={() => setPendingDeepLinkJoinSessionId(null)}
                 />;
             case AppMode.FLASHCARD_REVIEW:
-                if (!activeReviewSession) { setAppMode(AppMode.FLASHCARDS); return null; }
+                if (!activeReviewSession) return null;
                 return <FlashcardReviewScreen session={activeReviewSession} onUpdateSrs={handleUpdateSrsData}
                     onEndSession={() => { setAppMode(AppMode.DECK_DETAIL); setActiveReviewSession(null); }} />;
             case AppMode.FLASHCARD_CRAM:
-                if (!activeCramSession) { setAppMode(AppMode.FLASHCARDS); return null; }
+                if (!activeCramSession) return null;
                 return <CramSessionScreen session={activeCramSession} onAnswer={handleCramAnswer}
                     onEndSession={handleEndCramSession} onCramIncorrect={handleCramIncorrect} />;
+            case AppMode.FLASHCARD_MATCH:
+                if (!selectedDeck) return null;
+                return <MatchStudyScreen
+                    cards={flashcards.filter(fc => fc.deckId === selectedDeck.id)}
+                    deckName={selectedDeck.name}
+                    onExit={handleEndStudyMode}
+                    theme={theme}
+                />;
+            case AppMode.FLASHCARD_LEARN:
+                if (!selectedDeck) return null;
+                return <LearnStudyScreen
+                    cards={flashcards.filter(fc => fc.deckId === selectedDeck.id)}
+                    deckName={selectedDeck.name}
+                    onExit={handleEndStudyMode}
+                    theme={theme}
+                />;
             case AppMode.OFFLINE_MODE:
                 return <OfflineModeScreen offlineBundles={offlineBundles} pendingSyncResultsCount={pendingSyncResults.length}
                     onStartOfflineSession={handleStartOfflineSession} onDeleteBundle={handleDeleteBundle}
-                    onSyncPendingResults={handleSyncResults} isOnline={isOnline} />;
+                    onSyncPendingResults={handleSyncResults} onImportBundle={handleImportBundle}
+                    onRenameBundle={handleRenameBundle} isOnline={isOnline} />;
             case AppMode.BUDGET_TRACKER:
                 return <BudgetTrackerScreen currentUser={currentUser}
                     transactions={transactions.filter(t => t.userId === currentUser.id)}
                     budget={budget?.userId === currentUser.id ? budget : null}
                     onOpenAddExpense={() => openModal('addExpense')} onOpenAddIncome={() => openModal('addIncome')}
+                    onOpenAddInvestment={() => openModal('addInvestment')}
                     onOpenSetBudget={() => openModal('setBudget')} onDeleteTransaction={handleDeleteTransaction}
                     onToggleSidebar={toggleSidebar}
                     onOpenSetMonthlyPlan={() => openModal('setMonthlyPlan')}
@@ -385,10 +852,12 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MY_LISTINGS);
                     } else if (screen === 'MarketplaceInquiries') {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                    } else if (screen === 'MarketplaceOrders') {
+                        setAppMode(AppMode.MARKETPLACE_ORDERS);
                     }
                 }} />;
             case AppMode.MARKETPLACE_LISTING_DETAIL:
-                if (!selectedMarketplaceListingId) { setAppMode(AppMode.MARKETPLACE); return null; }
+                if (!selectedMarketplaceListingId) return null;
                 return <MarketplaceListingDetailScreen listingId={selectedMarketplaceListingId}
                     onBack={() => setAppMode(AppMode.MARKETPLACE)}
                     onNavigate={(screen, params) => {
@@ -396,9 +865,11 @@ export const App: React.FC = () => {
                         else if (screen === 'SellerProfile' && params?.userId) {
                             setSelectedSellerId(params.userId);
                             setAppMode(AppMode.SELLER_PROFILE);
-                        } else if (screen === 'MarketplaceTransaction') {
-                            alert('Purchase initiated! You can coordinate with the seller via direct message.');
-                            setAppMode(AppMode.MARKETPLACE);
+                        } else if (screen === 'MarketplaceTransaction' || screen === 'MarketplaceOrderDetail') {
+                            setSelectedMarketplaceOrderId(params?.orderId);
+                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        } else if (screen === 'MarketplaceOrders') {
+                            setAppMode(AppMode.MARKETPLACE_ORDERS);
                         } else if (screen === 'MyListings') {
                             setAppMode(AppMode.MY_LISTINGS);
                         } else if (screen === 'EditMarketplaceListing' && params?.listing) {
@@ -419,8 +890,42 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MarketplaceInquiries') {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                    } else if (screen === 'MarketplaceOrders') {
+                        setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'SellerCustomers') {
+                        setAppMode(AppMode.SELLER_CUSTOMERS);
                     }
-                }} onBack={() => setAppMode(AppMode.MARKETPLACE)} />;
+                }} onBack={() => setAppMode(AppMode.MARKETPLACE)} refreshKey={myListingsRefreshKey} />;
+            case AppMode.MARKETPLACE_ORDERS:
+                return <MarketplaceOrdersScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                            setSelectedMarketplaceOrderId(params.orderId);
+                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        }
+                    }}
+                />;
+            case AppMode.MARKETPLACE_ORDER_DETAIL:
+                if (!selectedMarketplaceOrderId) return null;
+                return <MarketplaceOrderDetailScreen
+                    orderId={selectedMarketplaceOrderId}
+                    onBack={() => setAppMode(AppMode.MARKETPLACE_ORDERS)}
+                    onOrderUpdated={() => setMyListingsRefreshKey((k) => k + 1)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        }
+                    }}
+                />;
+            case AppMode.SELLER_CUSTOMERS:
+                return <SellerCustomersScreen
+                    onBack={() => setAppMode(AppMode.MY_LISTINGS)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
+                    }}
+                />;
             case AppMode.MARKETPLACE_INQUIRIES:
                 return <MarketplaceInquiriesScreen onNavigate={(screen, params) => {
                     if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
@@ -430,7 +935,7 @@ export const App: React.FC = () => {
                     }
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} userId={currentUser.id} />;
             case AppMode.SELLER_PROFILE:
-                if (!selectedSellerId) { setAppMode(AppMode.MARKETPLACE); return null; }
+                if (!selectedSellerId) return null;
                 return <SellerProfileScreen userId={selectedSellerId}
                     onBack={() => { setSelectedSellerId(null); setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL); }}
                     onNavigate={(screen, params) => {
@@ -451,6 +956,9 @@ export const App: React.FC = () => {
                     } else if (screen === 'MyListings') setAppMode(AppMode.MY_LISTINGS);
                     else if (screen === 'MarketplaceInquiries') setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                 }} />;
+            case AppMode.ADMIN:
+                if (!isPlatformAdmin) return null;
+                return <AdminScreen onBackToDashboard={() => setAppMode(AppMode.DASHBOARD)} />;
             default:
                 return <div className="p-4">Mode not implemented yet.</div>;
         }
@@ -463,8 +971,10 @@ export const App: React.FC = () => {
         onNavigateToDashboard: () => setAppMode(AppMode.DASHBOARD),
         onNavigateToOfflineMode: () => setAppMode(AppMode.OFFLINE_MODE),
         onNavigateToFlashcards: () => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); },
+        onNavigateToNotes: noteHandlers.navigateToNotes,
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => setAppMode(AppMode.MARKETPLACE),
+        onNavigateToAdmin: () => setAppMode(AppMode.ADMIN),
         pendingSyncCount: pendingSyncResults.length, isOnline,
         onSyncPendingResults: handleSyncResults,
         onUpdateCurrentUserAvatar: handleUpdateCurrentUserAvatar,
@@ -477,8 +987,11 @@ export const App: React.FC = () => {
         activeTestSession, activeStudySession,
         onResumeSession: handleResumeSession, onCancelSession: handleCancelActiveSession,
         theme, onToggleTheme: toggleTheme, dueCardsCount,
+        onToggleCompanion: toggleCompanion,
+        isCompanionOpen,
     };
     return (
+        <ErrorBoundary>
         <Suspense fallback={
             <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900">
                 <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-200 border-t-indigo-600" />
@@ -509,18 +1022,23 @@ export const App: React.FC = () => {
                 testPresets={currentUser.testPresets || []} challengeOpponent={challengeOpponent}
                 onSavePreset={handleSavePreset} onDeletePreset={handleDeletePreset}
                 onSubmit={(config, mode, useSpacedRepetition, selectedSubgroupIDs) => {
-                    if (mode === 'game') { handleStartGame(config, useSpacedRepetition); }
+                    if (mode === 'game') { handleSendChallenge(config); }
                     else { handleTestSubmit(config, mode, useSpacedRepetition, selectedSubgroupIDs); }
-                }} onDownloadForOffline={handleDownloadForOffline} />}
+                }}
+                onSoloPractice={(config) => handleStartSoloPractice(config)}
+                onDownloadForOffline={handleDownloadForOffline} />}
             <NewDirectMessageModal isOpen={modals.newDm} onClose={() => closeModal('newDm')}
                 currentUser={currentUser} allUsers={users}
                 onStartDm={(userId) => { handleInitiateDm(userId); closeModal('newDm'); }} />
             <SettingsModal isOpen={modals.settings} onClose={() => closeModal('settings')}
-                currentUser={currentUser} settings={currentUser.settings}
-                onUpdateSettings={handleUpdateSettings} onUpdateProfile={handleUpdateProfile}
+                currentUser={currentUser} userSettings={getUserSettings()}
+                onUpdateSettingsCategory={handleUpdateSettingsCategory}
+                onUpdateProfile={handleUpdateProfile}
                 onUpdateAvatar={handleUpdateCurrentUserAvatar}
                 onUpdatePassword={handleUpdatePassword} onLogout={handleLogout}
-                onDeleteAccount={handleDeleteAccount} />
+                onDeleteAccount={handleDeleteAccount}
+                onExportAccount={handleExportAccount}
+                onResetSettings={handleResetSettings} />
             <CreateDeckModal isOpen={modals.createDeck} onClose={() => closeModal('createDeck')}
                 onSubmit={handleCreateOrUpdateDeck} editingDeck={editingDeck} />
             <CreateFlashcardModal isOpen={modals.createFlashcard} onClose={() => closeModal('createFlashcard')}
@@ -542,17 +1060,36 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'Marketplace') {
                         setAppMode(AppMode.MARKETPLACE);
+                    } else if (screen === 'Challenges') {
+                        openModal('challenges');
+                    } else if (screen === 'PlayChallenge' && params?.challengeId) {
+                        void handleStartChallengePlay(params.challengeId);
                     }
                 }} />
+            <ChallengesInboxModal
+                isOpen={modals.challenges}
+                onClose={() => closeModal('challenges')}
+                currentUserId={currentUser.id}
+                onPlayChallenge={(id) => { void handleStartChallengePlay(id); }}
+            />
             <AddExpenseModal isOpen={modals.addExpense} onClose={() => closeModal('addExpense')} onSubmit={handleAddTransaction} />
             <AddIncomeModal isOpen={modals.addIncome} onClose={() => closeModal('addIncome')} onSubmit={handleAddTransaction} />
+            <AddInvestmentModal isOpen={modals.addInvestment} onClose={() => closeModal('addInvestment')} onSubmit={handleAddTransaction} />
             <SetBudgetModal isOpen={modals.setBudget} onClose={() => closeModal('setBudget')} onSubmit={handleSetBudget} currentBudget={budget} />
             <SetMonthlyPlanModal isOpen={modals.setMonthlyPlan} onClose={() => closeModal('setMonthlyPlan')} currentBudget={budget} onSave={(categoryBudgets) => { if (budget) { handleSetBudget({ ...budget, categoryBudgets }); } }} />
             <SavingsGoalModal isOpen={modals.savingsGoal} onClose={() => closeModal('savingsGoal')} currentUserId={currentUser?.id || ''} />
             <WalletModal isOpen={modals.wallet} onClose={() => closeModal('wallet')} />
             <SimulationControls isOpen={modals.financialToolkit} onClose={() => closeModal('financialToolkit')} />
             <ExpenseSplitModal isOpen={modals.expenseSplit} onClose={() => closeModal('expenseSplit')} currentUserId={currentUser?.id || ''} currentUserName={currentUser?.name || ''} />
-            {analyzingResult && <TestAnalysisModal isOpen={!!analyzingResult} onClose={() => setAnalyzingResult(null)} results={analyzingResult} />}
+            {analyzingResult && (
+                <TestAnalysisModal
+                    isOpen={!!analyzingResult}
+                    onClose={() => setAnalyzingResult(null)}
+                    results={analyzingResult}
+                    onGenerateWeakTopicFlashcards={handleWeakAreaFlashcardsFromAnalysis}
+                    isGeneratingFlashcards={isGeneratingFlashcards}
+                />
+            )}
             {duplicateInfo && <DuplicateQuestionModal isOpen={modals.duplicateQuestion}
                 onClose={() => { closeModal('duplicateQuestion'); setDuplicateInfo(null); }}
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
@@ -577,7 +1114,51 @@ export const App: React.FC = () => {
                     });
                     closeModal('usernameRequired');
                 }} />}
+            <AICompanionPanel
+                context={companionContext}
+                onAction={handleCompanionAction}
+                theme={theme}
+            />
+            {showImportAndStudy && (
+                <Suspense fallback={null}>
+                    <ImportAndStudyModal
+                        isOpen={showImportAndStudy}
+                        onClose={() => setShowImportAndStudy(false)}
+                        onComplete={() => setShowImportAndStudy(false)}
+                        onOpenNote={(noteId) => { noteHandlers.openNote(noteId); setShowImportAndStudy(false); }}
+                        theme={theme}
+                    />
+                </Suspense>
+            )}
+            {showOnboarding && currentUser && (
+                <Suspense fallback={null}>
+                    <OnboardingFlow
+                        isOpen={showOnboarding}
+                        onSkip={() => { localStorage.setItem('lantern_onboarding_complete', '1'); setShowOnboarding(false); }}
+                        onComplete={({ streakTarget }) => {
+                            localStorage.setItem('lantern_onboarding_complete', '1');
+                            localStorage.setItem('lantern_streak_target', String(streakTarget));
+                            setShowOnboarding(false);
+                        }}
+                        onGenerateStarter={async (notes) => {
+                            const { flashcards: cards } = await aiGenerateFlashcards(notes, {
+                                count: normalizeFlashcardCount(),
+                            });
+                            if (cards?.length && currentUser) {
+                                const deck = await createDeck({ name: 'My First Deck', description: 'From onboarding' }, currentUser.id);
+                                for (const c of cards) {
+                                    await createFlashcard({ deckId: deck.id, type: 'BASIC' as any, front: c.front, back: c.back, userId: currentUser.id });
+                                }
+                                await fetchFlashcards(undefined, currentUser.id);
+                            }
+                        }}
+                        theme={theme}
+                    />
+                </Suspense>
+            )}
+            <ToastBanner toast={toast} onDismiss={dismissToast} />
         </AppShell>
         </Suspense>
+        </ErrorBoundary>
     );
 };

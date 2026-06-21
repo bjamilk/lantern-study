@@ -33,6 +33,7 @@ interface GroupInfoModalProps {
   onDeleteGroup: (groupId: string) => void;
   onAddMembers: () => void;
   onChallenge: (member: GroupMember) => void;
+  onCreateSubgroup?: () => void;
   onMessageMember?: (member: GroupMember) => void;
 }
 
@@ -49,6 +50,7 @@ export default function GroupInfoModal({
   onDeleteGroup,
   onAddMembers,
   onChallenge,
+  onCreateSubgroup,
   onMessageMember,
 }: GroupInfoModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
@@ -210,7 +212,13 @@ export default function GroupInfoModal({
         </View>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>
-            {new Date(group.createdAt).toLocaleDateString()}
+            {group.createdAt && !Number.isNaN(Date.parse(group.createdAt))
+              ? new Date(group.createdAt).toLocaleDateString(undefined, {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : '—'}
           </Text>
           <Text style={styles.statLabel}>Created</Text>
         </View>
@@ -222,6 +230,14 @@ export default function GroupInfoModal({
           <Text style={styles.saveButtonText}>Save Changes</Text>
         </TouchableOpacity>
       )}
+
+      {/* Create Sub-group */}
+      {isAdmin && onCreateSubgroup ? (
+        <TouchableOpacity style={styles.createSubgroupButton} onPress={onCreateSubgroup}>
+          <Ionicons name="git-network" size={20} color="#ffffff" />
+          <Text style={styles.createSubgroupText}>Create Sub-group</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -578,6 +594,21 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   saveButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  createSubgroupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0ea5e9',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    gap: 8,
+  },
+  createSubgroupText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',

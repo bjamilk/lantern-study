@@ -18,12 +18,13 @@ export type {
   TroublesomeQuestion, 
   DashboardStats,
   UserLevel,
-} from './statsStore';
+} from '../types/dashboardStats';
 export { useMarketplaceStore, getCategoryInfo, ACADEMIC_CATEGORIES, STUDENT_LIFE_CATEGORIES } from './marketplaceStore';
 export type { 
   MarketplaceListing, 
   MarketplaceReview, 
-  MarketplaceInquiry, 
+  MarketplaceInquiry,
+  MarketplaceOffer,
   MarketplaceCategory, 
   MarketplaceTab 
 } from './marketplaceStore';
@@ -37,3 +38,10 @@ export type {
   UserAnswerRecord as GameAnswerRecord 
 } from './gameStore';
 export type { Transaction, Budget } from './budgetStore';
+export { useSettingsStore, DEFAULT_SETTINGS, useNotificationSettings, useStudySettings, useAppearanceSettings, usePrivacySettings, useAccessibilitySettings, useSyncSettings } from './settingsStore';
+export type { UserSettings, NotificationSettings, StudySettings, AppearanceSettings, PrivacySettings, AccessibilitySettings, SyncSettings } from './settingsStore';
+export { useOfflineStore } from './offlineStore';
+export type { OfflineTest, OfflineQuestion, PendingResult, DownloadOptions } from './offlineStore';
+export { useCompanionStore } from './companionStore';
+export { useStudyGoalsStore } from './studyGoalsStore';
+export { useNotificationStore } from './notificationStore';

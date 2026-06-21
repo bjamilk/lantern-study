@@ -1,0 +1,73 @@
+import React, { useCallback, useEffect } from 'react';
+import { FlatList, Pressable, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore, useMarketplaceStore } from '../../stores';
+import { formatPrice, ListingImage } from './marketplaceHelpers';
+
+type NavigationProp = {
+  goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
+};
+
+export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) {
+  const { user } = useAuthStore();
+  const { favoriteListings, favorites, listings, fetchServerFavorites, toggleFavorite } = useMarketplaceStore();
+
+  const load = useCallback(async () => {
+    await fetchServerFavorites();
+  }, [fetchServerFavorites]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const items =
+    favoriteListings.length > 0
+      ? favoriteListings
+      : listings.filter(l => favorites.has(l.id));
+
+  return (
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <View className="px-4 pt-2 pb-3 flex-row items-center">
+        <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+          <Ionicons name="arrow-back" size={22} color="#64748b" />
+        </Pressable>
+        <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">Saved Listings</Text>
+      </View>
+
+      <FlatList
+        data={items}
+        keyExtractor={item => item.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        ListEmptyComponent={
+          <Text className="text-center text-slate-500 dark:text-slate-400 mt-12">
+            No saved listings yet. Tap the heart on any listing to save it.
+          </Text>
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+            className="flex-row mb-3 rounded-2xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          >
+            <ListingImage uri={item.images?.[0]} className="w-24 h-24" />
+            <View className="flex-1 p-3 justify-center">
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text className="text-sm font-bold text-indigo-600 mt-1">{formatPrice(item.price)}</Text>
+            </View>
+            {user?.id ? (
+              <Pressable
+                onPress={() => void toggleFavorite(item.id, user.id)}
+                className="justify-center pr-3"
+              >
+                <Ionicons name="heart" size={20} color="#ef4444" />
+              </Pressable>
+            ) : null}
+          </Pressable>
+        )}
+      />
+    </SafeAreaView>
+  );
+}

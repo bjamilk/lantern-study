@@ -3,7 +3,7 @@
 // Supports all 7 question types + Test/Study modes
 // ===========================================
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,19 @@ import {
   Dimensions,
   TextInput,
   Image,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode } from '../../stores/testStore';
-import { useTheme } from '../../theme';
+import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
+import { useTheme, type ThemeColors } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
+import { useStudySettings } from '../../stores/settingsStore';
+import { shuffleArray } from '@lantern/shared/utils';
+import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
+import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,6 +35,10 @@ type TestTakingRouteParams = {
     testId: string;
     testName: string;
     mode?: TestMode;
+    isOffline?: boolean;
+    offlineTestId?: string;
+    groupName?: string;
+    groupId?: string;
   };
 };
 
@@ -39,11 +50,13 @@ type TestTakingRouteParams = {
 const MCQSingleComponent = ({ 
   question, 
   selectedAnswer, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   selectedAnswer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => (
   <View style={styles.optionsContainer}>
     {question.options?.map((option, index) => (
@@ -51,19 +64,22 @@ const MCQSingleComponent = ({
         key={index}
         style={[
           styles.optionButton,
-          selectedAnswer === option && styles.optionSelected
+          { backgroundColor: colors.inputBackground, borderColor: colors.border },
+          selectedAnswer === option && { backgroundColor: colors.primary, borderColor: colors.primary },
         ]}
         onPress={() => onAnswer(option)}
         activeOpacity={0.7}
       >
         <View style={[
           styles.optionRadio,
+          { borderColor: colors.border },
           selectedAnswer === option && styles.optionRadioSelected
         ]}>
           {selectedAnswer === option && <View style={styles.optionRadioInner} />}
         </View>
         <Text style={[
           styles.optionText,
+          { color: colors.text },
           selectedAnswer === option && styles.optionTextSelected
         ]}>
           {option}
@@ -77,11 +93,13 @@ const MCQSingleComponent = ({
 const MCQMultipleComponent = ({ 
   question, 
   selectedAnswers, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   selectedAnswers?: string[]; 
   onAnswer: (answers: string[]) => void;
+  colors: ThemeColors;
 }) => {
   const toggleOption = (option: string) => {
     const current = selectedAnswers || [];
@@ -94,7 +112,7 @@ const MCQMultipleComponent = ({
 
   return (
     <View style={styles.optionsContainer}>
-      <Text style={styles.multiSelectHint}>Select all that apply</Text>
+      <Text style={[styles.multiSelectHint, { color: colors.textSecondary }]}>Select all that apply</Text>
       {question.options?.map((option, index) => {
         const isSelected = selectedAnswers?.includes(option);
         return (
@@ -102,19 +120,22 @@ const MCQMultipleComponent = ({
             key={index}
             style={[
               styles.optionButton,
-              isSelected && styles.optionSelected
+              { backgroundColor: colors.inputBackground, borderColor: colors.border },
+              isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
             ]}
             onPress={() => toggleOption(option)}
             activeOpacity={0.7}
           >
             <View style={[
               styles.optionCheckbox,
+              { borderColor: colors.border },
               isSelected && styles.optionCheckboxSelected
             ]}>
               {isSelected && <Ionicons name="checkmark" size={16} color="#ffffff" />}
             </View>
             <Text style={[
               styles.optionText,
+              { color: colors.text },
               isSelected && styles.optionTextSelected
             ]}>
               {option}
@@ -128,32 +149,35 @@ const MCQMultipleComponent = ({
 
 // True/False
 const TrueFalseComponent = ({ 
-  question, 
   selectedAnswer, 
-  onAnswer 
+  onAnswer,
+  colors,
 }: { 
   question: TestQuestion; 
   selectedAnswer?: string; 
   onAnswer: (answer: string) => void;
+  colors: ThemeColors;
 }) => (
   <View style={styles.trueFalseContainer}>
     <TouchableOpacity
       style={[
         styles.trueFalseButton,
-        styles.trueButton,
+        {
+          backgroundColor: selectedAnswer === 'True' ? colors.success : colors.successBackground,
+          borderColor: colors.success,
+        },
         selectedAnswer === 'True' && styles.trueFalseSelected,
-        selectedAnswer === 'True' && styles.trueButtonSelected,
       ]}
       onPress={() => onAnswer('True')}
     >
       <Ionicons 
         name="checkmark-circle" 
         size={32} 
-        color={selectedAnswer === 'True' ? '#ffffff' : '#10b981'} 
+        color={selectedAnswer === 'True' ? colors.textInverse : colors.success} 
       />
       <Text style={[
         styles.trueFalseText,
-        selectedAnswer === 'True' && styles.trueFalseTextSelected
+        { color: selectedAnswer === 'True' ? colors.textInverse : colors.text },
       ]}>
         True
       </Text>
@@ -162,20 +186,22 @@ const TrueFalseComponent = ({
     <TouchableOpacity
       style={[
         styles.trueFalseButton,
-        styles.falseButton,
+        {
+          backgroundColor: selectedAnswer === 'False' ? colors.error : colors.errorBackground,
+          borderColor: colors.error,
+        },
         selectedAnswer === 'False' && styles.trueFalseSelected,
-        selectedAnswer === 'False' && styles.falseButtonSelected,
       ]}
       onPress={() => onAnswer('False')}
     >
       <Ionicons 
         name="close-circle" 
         size={32} 
-        color={selectedAnswer === 'False' ? '#ffffff' : '#ef4444'} 
+        color={selectedAnswer === 'False' ? colors.textInverse : colors.error} 
       />
       <Text style={[
         styles.trueFalseText,
-        selectedAnswer === 'False' && styles.trueFalseTextSelected
+        { color: selectedAnswer === 'False' ? colors.textInverse : colors.text },
       ]}>
         False
       </Text>
@@ -312,55 +338,102 @@ const MatchingComponent = ({
 };
 
 // Diagram Labeling
-const DiagramLabelingComponent = ({ 
-  question, 
-  labels, 
-  onAnswer 
-}: { 
-  question: TestQuestion; 
-  labels?: Record<string, string>; 
+const DiagramLabelingComponent = ({
+  question,
+  labels,
+  onAnswer,
+}: {
+  question: TestQuestion;
+  labels?: Record<string, string>;
   onAnswer: (labels: Record<string, string>) => void;
 }) => {
-  const handleLabelChange = (id: string, value: string) => {
-    onAnswer({ ...(labels || {}), [id]: value });
+  const shuffledOptions = useMemo(
+    () => shuffleArray(question.diagramLabels || []),
+    [question.id, question.diagramLabels]
+  );
+  const [pickerLabelId, setPickerLabelId] = useState<string | null>(null);
+  const imageUri = question.diagramUrl || (question as TestQuestion & { imageUrl?: string }).imageUrl;
+
+  const handleSelect = (pointId: string, selectedId: string) => {
+    onAnswer({ ...(labels || {}), [pointId]: selectedId });
+    setPickerLabelId(null);
   };
+
+  const selectedOptionText = (selectedId?: string) =>
+    shuffledOptions.find(opt => opt.id === selectedId)?.label || 'Select a label...';
 
   return (
     <View style={styles.diagramContainer}>
-      {/* Placeholder for diagram image */}
-      <View style={styles.diagramImagePlaceholder}>
-        {question.diagramUrl ? (
-          <Image 
-            source={{ uri: question.diagramUrl }} 
-            style={styles.diagramImage}
-            resizeMode="contain"
-          />
+      <View style={styles.diagramImageWrapper}>
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.diagramImage} resizeMode="contain" />
         ) : (
-          <>
+          <View style={styles.diagramImagePlaceholder}>
             <Ionicons name="image-outline" size={48} color="#64748b" />
             <Text style={styles.diagramPlaceholderText}>Diagram will appear here</Text>
-          </>
+          </View>
         )}
+        {imageUri
+          ? question.diagramLabels?.map((label, index) => (
+              <View
+                key={label.id}
+                style={[
+                  styles.diagramMarker,
+                  { left: `${label.x}%`, top: `${label.y}%` },
+                ]}
+              >
+                <Text style={styles.diagramMarkerText}>{index + 1}</Text>
+              </View>
+            ))
+          : null}
       </View>
-      
-      <Text style={styles.diagramHint}>Label each part:</Text>
-      
+
+      <Text style={styles.diagramHint}>Match each numbered point to the correct label:</Text>
+
       <View style={styles.labelInputsContainer}>
         {question.diagramLabels?.map((label, index) => (
           <View key={label.id} style={styles.labelInputRow}>
             <View style={styles.labelNumber}>
               <Text style={styles.labelNumberText}>{index + 1}</Text>
             </View>
-            <TextInput
-              style={styles.labelInput}
-              value={labels?.[label.id] || ''}
-              onChangeText={(value) => handleLabelChange(label.id, value)}
-              placeholder={`Label for point ${index + 1}...`}
-              placeholderTextColor="#64748b"
-            />
+            <TouchableOpacity
+              style={[
+                styles.labelPicker,
+                labels?.[label.id] ? styles.labelPickerSelected : null,
+              ]}
+              onPress={() => setPickerLabelId(label.id)}
+            >
+              <Text
+                style={[
+                  styles.labelPickerText,
+                  !labels?.[label.id] ? styles.labelPickerPlaceholder : null,
+                ]}
+                numberOfLines={1}
+              >
+                {selectedOptionText(labels?.[label.id])}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color="#94a3b8" />
+            </TouchableOpacity>
           </View>
         ))}
       </View>
+
+      <Modal visible={pickerLabelId !== null} transparent animationType="fade">
+        <Pressable style={styles.pickerOverlay} onPress={() => setPickerLabelId(null)}>
+          <Pressable style={styles.pickerSheet} onPress={e => e.stopPropagation?.()}>
+            <Text style={styles.pickerTitle}>Select label</Text>
+            {shuffledOptions.map((opt: DiagramLabel) => (
+              <TouchableOpacity
+                key={opt.id}
+                style={styles.pickerOption}
+                onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
+              >
+                <Text style={styles.pickerOptionText}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -410,7 +483,9 @@ const OpenEndedComponent = ({
 export default function TestTakingScreen() {
   const route = useRoute<RouteProp<TestTakingRouteParams, 'TestTaking'>>();
   const navigation = useNavigation<any>();
-  const { testName } = route.params;
+  const { colors } = useTheme();
+  const userId = useAuthStore(s => s.user?.id) || '';
+  const { testName, isOffline, groupName, groupId } = route.params;
 
   const {
     activeTest,
@@ -421,14 +496,30 @@ export default function TestTakingScreen() {
     previousQuestion,
     submitTest,
     exitStudyMode,
+    toggleFlag,
+    goToQuestion,
   } = useTestStore();
 
+  const { showExplanationsImmediately } = useStudySettings();
   const [timeRemaining, setTimeRemaining] = useState(activeTest?.timeRemaining || 0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const questionViewStartTimeRef = useRef<number | null>(null);
 
   // Get mode from active test
   const isStudyMode = activeTest?.mode === 'study';
+
+  useConfirmBeforeExit(!!activeTest && !isSubmitting, {
+    title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
+    message: isStudyMode
+      ? 'Are you sure you want to exit? You can come back anytime.'
+      : 'Are you sure you want to exit? Your progress will be lost.',
+    confirmLabel: 'Exit',
+    destructive: !isStudyMode,
+    onConfirm: isStudyMode ? exitStudyMode : undefined,
+  });
 
   // Timer effect - only for test mode
   useEffect(() => {
@@ -452,6 +543,7 @@ export default function TestTakingScreen() {
   useEffect(() => {
     setShowFeedback(false);
     setFeedbackResult(null);
+    questionViewStartTimeRef.current = Date.now();
   }, [activeTest?.currentQuestionIndex]);
 
   const currentQuestion = useMemo(() => {
@@ -481,6 +573,33 @@ export default function TestTakingScreen() {
     return activeTest.revealedAnswers.has(currentQuestion.id);
   }, [activeTest, currentQuestion]);
 
+  useEffect(() => {
+    if (
+      !isStudyMode ||
+      !showExplanationsImmediately ||
+      !hasAnsweredCurrent ||
+      isAnswerRevealed ||
+      !currentQuestion
+    ) {
+      return;
+    }
+
+    const result = checkCurrentAnswer();
+    if (result) {
+      setFeedbackResult(result);
+      setShowFeedback(true);
+      revealAnswer(currentQuestion.id);
+    }
+  }, [
+    isStudyMode,
+    showExplanationsImmediately,
+    hasAnsweredCurrent,
+    isAnswerRevealed,
+    currentQuestion,
+    checkCurrentAnswer,
+    revealAnswer,
+  ]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -502,7 +621,10 @@ export default function TestTakingScreen() {
 
   const handleAnswer = useCallback((answer: string | string[] | Record<string, string>) => {
     if (!currentQuestion) return;
-    answerQuestion(currentQuestion.id, answer);
+    const timeSpentSeconds = questionViewStartTimeRef.current
+      ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000)
+      : 0;
+    answerQuestion(currentQuestion.id, answer, timeSpentSeconds);
   }, [currentQuestion, answerQuestion]);
 
   // Check answer in study mode
@@ -516,6 +638,32 @@ export default function TestTakingScreen() {
       revealAnswer(currentQuestion.id);
     }
   }, [currentQuestion, activeTest, checkCurrentAnswer, revealAnswer]);
+
+  const flaggedCount = useMemo(() => {
+    if (!activeTest) return 0;
+    return activeTest.flaggedQuestions.size;
+  }, [activeTest]);
+
+  const isCurrentFlagged = useMemo(() => {
+    if (!activeTest || !currentQuestion) return false;
+    return activeTest.flaggedQuestions.has(currentQuestion.id);
+  }, [activeTest, currentQuestion]);
+
+  const finalizeSubmit = useCallback(async () => {
+    if (!activeTest) return;
+    setIsSubmitting(true);
+    try {
+      const attempt = await submitTest(userId, {
+        isOffline: !!isOffline,
+        groupName: groupName || activeTest.test.name,
+        groupId,
+      });
+      setShowReviewModal(false);
+      navigation.replace('TestResults', { attemptId: attempt.id });
+    } catch {
+      setIsSubmitting(false);
+    }
+  }, [activeTest, submitTest, userId, isOffline, groupName, groupId, navigation]);
 
   const handleSubmit = useCallback(async (timeUp = false) => {
     if (!activeTest) return;
@@ -536,53 +684,14 @@ export default function TestTakingScreen() {
       return;
     }
 
-    const unanswered = activeTest.questions.length - answeredCount;
-
-    if (unanswered > 0 && !timeUp) {
-      Alert.alert(
-        'Unanswered Questions',
-        `You have ${unanswered} unanswered question${unanswered > 1 ? 's' : ''}. Are you sure you want to submit?`,
-        [
-          { text: 'Continue Test', style: 'cancel' },
-          { text: 'Submit Anyway', style: 'destructive', onPress: async () => {
-            const attempt = await submitTest();
-            navigation.replace('TestResults', { attemptId: attempt.id });
-          }},
-        ]
-      );
-    } else {
-      if (timeUp) {
-        Alert.alert('Time\'s Up!', 'Your test has been submitted automatically.');
-      }
-      const attempt = await submitTest();
-      navigation.replace('TestResults', { attemptId: attempt.id });
+    if (timeUp) {
+      Alert.alert('Time\'s Up!', 'Your test has been submitted automatically.');
+      await finalizeSubmit();
+      return;
     }
-  }, [activeTest, answeredCount, submitTest, exitStudyMode, navigation]);
 
-  const handleExit = useCallback(() => {
-    if (isStudyMode) {
-      Alert.alert(
-        'Exit Study Mode',
-        'Are you sure you want to exit? You can come back anytime.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Exit', onPress: () => {
-            exitStudyMode();
-            navigation.goBack();
-          }},
-        ]
-      );
-    } else {
-      Alert.alert(
-        'Exit Test',
-        'Are you sure you want to exit? Your progress will be lost.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Exit', style: 'destructive', onPress: () => navigation.goBack() },
-        ]
-      );
-    }
-  }, [navigation, isStudyMode, exitStudyMode]);
+    setShowReviewModal(true);
+  }, [activeTest, finalizeSubmit, exitStudyMode, navigation]);
 
   // Render question based on type
   const renderQuestionInput = () => {
@@ -597,6 +706,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             selectedAnswer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -606,6 +716,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             selectedAnswers={answer as string[]}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -615,6 +726,7 @@ export default function TestTakingScreen() {
             question={currentQuestion}
             selectedAnswer={answer as string}
             onAnswer={handleAnswer}
+            colors={colors}
           />
         );
       
@@ -663,11 +775,11 @@ export default function TestTakingScreen() {
 
   if (!activeTest || !currentQuestion) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: '#0f172a' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Test not found</Text>
+          <Text style={[styles.errorText, { color: colors.textSecondary }]}>Test not found</Text>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.errorLink}>Go Back</Text>
+            <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -675,16 +787,16 @@ export default function TestTakingScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, isStudyMode && styles.headerStudy]}>
-        <TouchableOpacity onPress={handleExit} style={styles.exitButton}>
-          <Ionicons name="close" size={24} color="#ffffff" />
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }, isStudyMode && styles.headerStudy]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.exitButton}>
+          <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         
         <View style={styles.headerCenter}>
           <View style={styles.headerTitleRow}>
-            <Text style={styles.testName} numberOfLines={1}>{testName}</Text>
+            <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{testName}</Text>
             {isStudyMode && (
               <View style={styles.studyBadge}>
                 <Ionicons name="book" size={12} color="#10b981" />
@@ -719,16 +831,34 @@ export default function TestTakingScreen() {
         )}
       </View>
 
+      {!isStudyMode && currentQuestion && (
+        <View style={styles.flagRow}>
+          <TouchableOpacity
+            style={[styles.flagButton, isCurrentFlagged && styles.flagButtonActive]}
+            onPress={() => toggleFlag(currentQuestion.id)}
+          >
+            <Ionicons
+              name={isCurrentFlagged ? 'flag' : 'flag-outline'}
+              size={18}
+              color={isCurrentFlagged ? '#f97316' : '#94a3b8'}
+            />
+            <Text style={[styles.flagButtonText, isCurrentFlagged && styles.flagButtonTextActive]}>
+              {isCurrentFlagged ? 'Flagged' : 'Flag for review'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, isStudyMode && styles.progressBarStudy]}>
+        <View style={[styles.progressBar, { backgroundColor: colors.border }, isStudyMode && styles.progressBarStudy]}>
           <View style={[
             styles.progressFill, 
             { width: `${progress * 100}%` },
             isStudyMode && styles.progressFillStudy
           ]} />
         </View>
-        <Text style={styles.progressText}>
+        <Text style={[styles.progressText, { color: colors.textSecondary }]}>
           {activeTest.currentQuestionIndex + 1} / {activeTest.questions.length}
         </Text>
       </View>
@@ -740,23 +870,23 @@ export default function TestTakingScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.questionCard}>
+        <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
           <View style={styles.questionHeader}>
-            <View style={styles.questionTypeBadge}>
-              <Text style={styles.questionTypeText}>
+            <View style={[styles.questionTypeBadge, { backgroundColor: colors.primaryBackground }]}>
+              <Text style={[styles.questionTypeText, { color: colors.primary }]}>
                 {getQuestionTypeLabel(currentQuestion.type)}
               </Text>
             </View>
-            <Text style={styles.pointsText}>{currentQuestion.points} pts</Text>
+            <Text style={[styles.pointsText, { color: colors.textSecondary }]}>{currentQuestion.points} pts</Text>
           </View>
           
-          <Text style={styles.questionText}>{currentQuestion.question}</Text>
+          <Text style={[styles.questionText, { color: colors.text }]}>{currentQuestion.question}</Text>
           
           {currentQuestion.tags && currentQuestion.tags.length > 0 && (
             <View style={styles.tagsContainer}>
-              {currentQuestion.tags.map((tag, i) => (
-                <View key={i} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
+              {currentQuestion.tags.map((tag) => (
+                <View key={tag} style={[styles.tag, { backgroundColor: colors.inputBackground }]}>
+                  <Text style={[styles.tagText, { color: colors.textSecondary }]}>{tag}</Text>
                 </View>
               ))}
             </View>
@@ -788,10 +918,12 @@ export default function TestTakingScreen() {
             {feedbackResult.explanation && (
               <Text style={styles.feedbackExplanation}>{feedbackResult.explanation}</Text>
             )}
-            {!feedbackResult.isCorrect && currentQuestion.correctAnswer && (
+            {!feedbackResult.isCorrect && (
               <View style={styles.correctAnswerBox}>
                 <Text style={styles.correctAnswerLabel}>Correct answer:</Text>
-                <Text style={styles.correctAnswerText}>{currentQuestion.correctAnswer}</Text>
+                <Text style={styles.correctAnswerText}>
+                  {formatCorrectAnswerDisplay(currentQuestion)}
+                </Text>
               </View>
             )}
           </View>
@@ -811,7 +943,7 @@ export default function TestTakingScreen() {
       </ScrollView>
 
       {/* Navigation */}
-      <View style={[styles.navigation, isStudyMode && styles.navigationStudy]}>
+      <View style={[styles.navigation, { backgroundColor: colors.card, borderTopColor: colors.border }, isStudyMode && styles.navigationStudy]}>
         <TouchableOpacity
           style={[
             styles.navButton,
@@ -823,11 +955,12 @@ export default function TestTakingScreen() {
           <Ionicons 
             name="chevron-back" 
             size={24} 
-            color={activeTest.currentQuestionIndex === 0 ? '#4b5563' : '#ffffff'} 
+            color={activeTest.currentQuestionIndex === 0 ? colors.textTertiary : colors.text} 
           />
           <Text style={[
             styles.navButtonText,
-            activeTest.currentQuestionIndex === 0 && styles.navButtonTextDisabled
+            { color: colors.text },
+            activeTest.currentQuestionIndex === 0 && { color: colors.textTertiary },
           ]}>
             Previous
           </Text>
@@ -842,17 +975,25 @@ export default function TestTakingScreen() {
             const isAnswered = !!activeTest.answers[q.id];
             const isCurrent = actualIndex === activeTest.currentQuestionIndex;
             const isRevealed = activeTest.revealedAnswers.has(q.id);
+            const isFlagged = activeTest.flaggedQuestions.has(q.id);
             
             return (
-              <View
+              <TouchableOpacity
                 key={q.id}
-                style={[
-                  styles.dot,
-                  isAnswered && styles.dotAnswered,
-                  isCurrent && styles.dotCurrent,
-                  isStudyMode && isRevealed && styles.dotRevealed,
-                ]}
-              />
+                onPress={() => goToQuestion(actualIndex)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <View
+                  style={[
+                    styles.dot,
+                    { backgroundColor: colors.border },
+                    isAnswered && { backgroundColor: colors.success },
+                    isCurrent && { backgroundColor: colors.primary, width: 12 },
+                    isStudyMode && isRevealed && { backgroundColor: colors.info },
+                    isFlagged && { backgroundColor: colors.warning },
+                  ]}
+                />
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -861,19 +1002,19 @@ export default function TestTakingScreen() {
         {activeTest.currentQuestionIndex === activeTest.questions.length - 1 ? (
           isStudyMode ? (
             <TouchableOpacity
-              style={[styles.navButton, styles.finishStudyButton]}
+              style={[styles.navButton, styles.finishStudyButton, { backgroundColor: colors.successBackground }]}
               onPress={() => handleSubmit()}
             >
-              <Text style={styles.finishStudyText}>Finish</Text>
-              <Ionicons name="checkmark" size={24} color="#10b981" />
+              <Text style={[styles.finishStudyText, { color: colors.success }]}>Finish</Text>
+              <Ionicons name="checkmark" size={24} color={colors.success} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               style={[styles.navButton, styles.navButtonDisabled]}
               disabled
             >
-              <Text style={styles.navButtonTextDisabled}>Next</Text>
-              <Ionicons name="chevron-forward" size={24} color="#4b5563" />
+              <Text style={[styles.navButtonTextDisabled, { color: colors.textTertiary }]}>Next</Text>
+              <Ionicons name="chevron-forward" size={24} color={colors.textTertiary} />
             </TouchableOpacity>
           )
         ) : (
@@ -881,11 +1022,65 @@ export default function TestTakingScreen() {
             style={styles.navButton}
             onPress={nextQuestion}
           >
-            <Text style={styles.navButtonText}>Next</Text>
-            <Ionicons name="chevron-forward" size={24} color="#ffffff" />
+            <Text style={[styles.navButtonText, { color: colors.primary }]}>Next</Text>
+            <Ionicons name="chevron-forward" size={24} color={colors.primary} />
           </TouchableOpacity>
         )}
       </View>
+
+      <Modal
+        visible={showReviewModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <View style={styles.reviewOverlay}>
+          <View style={styles.reviewModal}>
+            <Text style={styles.reviewTitle}>Review & Submit</Text>
+            <Text style={styles.reviewSubtitle}>
+              {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} flagged
+            </Text>
+
+            <ScrollView style={styles.reviewGridScroll} contentContainerStyle={styles.reviewGrid}>
+              {activeTest.questions.map((q, index) => {
+                const isAnswered = !!activeTest.answers[q.id];
+                const isFlagged = activeTest.flaggedQuestions.has(q.id);
+                return (
+                  <TouchableOpacity
+                    key={q.id}
+                    style={[
+                      styles.reviewCell,
+                      isAnswered && styles.reviewCellAnswered,
+                      isFlagged && styles.reviewCellFlagged,
+                    ]}
+                    onPress={() => {
+                      setShowReviewModal(false);
+                      goToQuestion(index);
+                    }}
+                  >
+                    <Text style={styles.reviewCellText}>{index + 1}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.reviewActions}>
+              <TouchableOpacity
+                style={styles.reviewCancelButton}
+                onPress={() => setShowReviewModal(false)}
+              >
+                <Text style={styles.reviewCancelText}>Continue Test</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.reviewSubmitButton}
+                onPress={() => void finalizeSubmit()}
+              >
+                <Text style={styles.reviewSubmitText}>Submit Test</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1137,11 +1332,7 @@ const styles = StyleSheet.create({
   trueFalseText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#e2e8f0',
     marginTop: 8,
-  },
-  trueFalseTextSelected: {
-    color: '#ffffff',
   },
   
   // Fill in Blank styles
@@ -1239,6 +1430,13 @@ const styles = StyleSheet.create({
   diagramContainer: {
     gap: 16,
   },
+  diagramImageWrapper: {
+    position: 'relative',
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    overflow: 'hidden',
+    minHeight: 200,
+  },
   diagramImagePlaceholder: {
     backgroundColor: '#1e293b',
     borderRadius: 12,
@@ -1248,8 +1446,26 @@ const styles = StyleSheet.create({
   },
   diagramImage: {
     width: '100%',
-    height: '100%',
+    height: 220,
     borderRadius: 12,
+  },
+  diagramMarker: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    marginLeft: -14,
+    marginTop: -14,
+    borderRadius: 14,
+    backgroundColor: '#dc2626',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  diagramMarkerText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   diagramPlaceholderText: {
     fontSize: 14,
@@ -1272,7 +1488,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#dc2626',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1281,15 +1497,56 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
-  labelInput: {
+  labelPicker: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#1e293b',
     borderRadius: 10,
-    padding: 12,
-    fontSize: 14,
-    color: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#334155',
+  },
+  labelPickerSelected: {
+    borderColor: '#6366f1',
+  },
+  labelPickerText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#ffffff',
+    marginRight: 8,
+  },
+  labelPickerPlaceholder: {
+    color: '#64748b',
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: '#1e293b',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    maxHeight: '50%',
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: 12,
+  },
+  pickerOption: {
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    color: '#e2e8f0',
   },
   
   // Open Ended styles
@@ -1348,11 +1605,11 @@ const styles = StyleSheet.create({
   },
   navButtonText: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#ffffff',
+    fontWeight: '600',
   },
   navButtonTextDisabled: {
-    color: '#4b5563',
+    fontSize: 16,
+    fontWeight: '500',
   },
   questionDots: {
     flexDirection: 'row',
@@ -1373,6 +1630,115 @@ const styles = StyleSheet.create({
   },
   dotRevealed: {
     backgroundColor: '#f59e0b',
+  },
+  dotFlagged: {
+    borderWidth: 1,
+    borderColor: '#f97316',
+  },
+  flagRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    backgroundColor: '#1e293b',
+  },
+  flagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  flagButtonActive: {
+    backgroundColor: '#f9731620',
+  },
+  flagButtonText: {
+    color: '#94a3b8',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  flagButtonTextActive: {
+    color: '#f97316',
+  },
+  reviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    justifyContent: 'flex-end',
+  },
+  reviewModal: {
+    backgroundColor: '#1e293b',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  reviewTitle: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  reviewSubtitle: {
+    color: '#94a3b8',
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  reviewGridScroll: {
+    maxHeight: 280,
+  },
+  reviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingBottom: 8,
+  },
+  reviewCell: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewCellAnswered: {
+    backgroundColor: '#10b98130',
+    borderWidth: 1,
+    borderColor: '#10b981',
+  },
+  reviewCellFlagged: {
+    borderWidth: 1,
+    borderColor: '#f97316',
+  },
+  reviewCellText: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  reviewActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  reviewCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+  },
+  reviewCancelText: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  reviewSubmitButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+  },
+  reviewSubmitText: {
+    color: '#ffffff',
+    fontWeight: '700',
   },
   
   // Study Mode styles

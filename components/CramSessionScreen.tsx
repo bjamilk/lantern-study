@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Deck, Flashcard, FlashcardSession, FlashcardType } from '../types';
-import { ArrowUturnLeftIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowUturnLeftIcon, CheckIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
+import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
+import { useCompanionStore } from '../stores/companionStore';
 
 interface CramSessionScreenProps {
   session: FlashcardSession;
@@ -149,16 +151,26 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
                 />
               ))}
 
-              {card.occlusionData?.type === 'freeform' && card.occlusionData.freeform?.points && (
-                <svg className={`${overlayTransition} absolute inset-0 w-full h-full pointer-events-none`} style={{ opacity: overlayOpacity }}>
-                  <polyline
-                    points={card.occlusionData.freeform.points.map(p => `${p.x * 100},${p.y * 100}`).join(' ')}
-                    className="fill-black/50 stroke-white/70 stroke-2"
-                  />
+              {card.occlusionData?.type === 'freeform' && getFreeformPaths(card.occlusionData).length > 0 && (
+                <svg
+                  className={`${overlayTransition} absolute inset-0 w-full h-full pointer-events-none`}
+                  style={{ opacity: overlayOpacity }}
+                  viewBox="0 0 1 1"
+                  preserveAspectRatio="none"
+                >
+                  {getFreeformPaths(card.occlusionData).map((path, idx) => (
+                    <polygon
+                      key={idx}
+                      points={formatFreeformPointsForSvg(path.points)}
+                      fill="rgba(0,0,0,0.7)"
+                      stroke="rgba(255,255,255,0.7)"
+                      strokeWidth={0.004}
+                    />
+                  ))}
                 </svg>
               )}
 
-              {card.occlusionData?.type === 'blur' && (Array.isArray(card.occlusionData.blur) ? card.occlusionData.blur : [card.occlusionData.blur]).map((blur, idx) => (
+              {card.occlusionData?.type === 'blur' && getBlurRegions(card.occlusionData).map((blur, idx) => (
                 <div
                   key={idx}
                   className={`${overlayTransition} absolute border border-white/40`}
@@ -258,6 +270,23 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
                 </button>
                  <button onClick={() => handleAnswer(true)} className="py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold flex items-center justify-center">
                     <CheckIcon className="w-6 h-6 mr-2" /> Correct
+                </button>
+              </div>
+            )}
+            {/* Leech card helper */}
+            {isAnswerShown && (currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
+              <div className="mt-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
+                <span className="text-sm text-amber-700 dark:text-amber-400">Keep struggling with this one?</span>
+                <button
+                  onClick={() => {
+                    const companion = useCompanionStore.getState();
+                    companion.open();
+                    companion.sendMessage(`I keep getting this flashcard wrong in cram mode. Can you explain it differently and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
+                  }}
+                  className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
+                >
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  Ask Lantern
                 </button>
               </div>
             )}

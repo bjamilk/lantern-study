@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode, TestConfig, TestQuestion, UserAnswerRecord, TestSessionData, StudySessionData, TestResult, UserStats, UserQuestionStats, Message } from '../types';
 import { useAuthStore } from '../stores/authStore';
+import { useCompanionStore } from '../stores/companionStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { useTestStore } from '../stores/testStore';
@@ -11,6 +12,10 @@ import {
     createTestSession, createTestResult, upsertUserQuestionStat,
     updateUserProfile, createNotification
 } from '../services/supabase';
+import { trackQuestProgress } from '../services/questProgress';
+import { trackStudyActivity } from '../services/studyActivity';
+import { normalizeUserSettings } from '@lantern/shared/settings';
+
 
 interface UseTestHandlersParams {
     addNotification: (message: string) => Promise<void>;
@@ -23,12 +28,13 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         appMode, setAppMode, selectedChat,
         activeTestResult, setActiveTestResult,
         setAnalyzingResult,
-        closeModal
+        closeModal, isOnline
     } = useUIStore();
     const {
         activeTestSession, setActiveTestSession,
         activeStudySession, setActiveStudySession,
-        userQuestionStats, setUserQuestionStats, updateTestResults
+        userQuestionStats, setUserQuestionStats, updateTestResults,
+        addPendingSyncResult,
     } = useTestStore();
 
     const handleTestSubmit = useCallback((config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
@@ -119,11 +125,15 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             return;
         }
 
-        const testQuestions: TestQuestion[] = createShuffledQuestionSet(selectedQuestions);
+        const studySettings = normalizeUserSettings(currentUser?.settings).study;
+        const testQuestions: TestQuestion[] = studySettings.shuffleQuestions
+            ? createShuffledQuestionSet(selectedQuestions)
+            : selectedQuestions.map((q, i) => ({ ...q, questionNumber: i + 1 })) as TestQuestion[];
     
         const sessionConfig: TestConfig = {
             ...config,
             groupId: selectedChat.id,
+            groupName: selectedChat.name,
             questionIds: selectedQuestions.map(q => q.id),
         };
     
@@ -153,22 +163,30 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         closeModal('testConfig');
     }, [activeTestSession, activeStudySession, selectedChat, messages, userQuestionStats, setActiveTestSession, setActiveStudySession, setAppMode, closeModal]);
     
-    const handleUpdateAnswer = useCallback((questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>) => {
+    const handleUpdateAnswer = useCallback((questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean }) => {
+        const { revealAnswer, ...answerFields } = answerData;
+        const showExplanationsImmediately = normalizeUserSettings(currentUser?.settings).study.showExplanationsImmediately;
+        const shouldReveal = revealAnswer === true || showExplanationsImmediately;
+
         const updateSession = (session: TestSessionData | null): TestSessionData | null => {
             if (!session) return null;
             const existingAnswer = session.userAnswers[questionId] || { questionId };
-            const updatedAnswer = { ...existingAnswer, ...answerData };
+            const updatedAnswer = { ...existingAnswer, ...answerFields };
             
             if (appMode === AppMode.STUDY_ACTIVE) {
                 const question = session.questions.find(q => q.id === questionId);
                 if (question) {
-                    updatedAnswer.isCorrect = checkAnswerIsCorrect(question, updatedAnswer);
-                    
-                    const hasAnswerData = answerData.selectedOptionIds || answerData.fillText || 
-                                          answerData.matchingAnswers || answerData.diagramAnswers;
+                    const hasAnswerData = answerFields.selectedOptionIds || answerFields.fillText || 
+                                          answerFields.matchingAnswers || answerFields.diagramAnswers;
                     const alreadyAnswered = existingAnswer.isCorrect !== undefined;
+
+                    if (shouldReveal) {
+                        updatedAnswer.isCorrect = checkAnswerIsCorrect(question, updatedAnswer);
+                    } else if (!alreadyAnswered) {
+                        delete updatedAnswer.isCorrect;
+                    }
                     
-                    if (hasAnswerData && !alreadyAnswered && currentUser) {
+                    if (shouldReveal && hasAnswerData && !alreadyAnswered && currentUser) {
                         const currentStats = userQuestionStats[questionId] || { 
                             correctAttempts: 0, 
                             incorrectAttempts: 0, 
@@ -188,6 +206,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                         upsertUserQuestionStat(currentUser.id, questionId, newStats).catch(error => {
                             console.error('Error saving study mode question stat:', error);
                         });
+                        trackStudyActivity('study_question', 1);
                     }
                 }
             }
@@ -282,15 +301,58 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         };
     
         try {
-            const sessionData = {
-                config: finalSessionData.config,
-                questions: finalSessionData.questions,
-                user_answers: finalUserAnswers,
-                start_time: finalSessionData.startTime.toISOString(),
-                end_time: finalSessionData.endTime?.toISOString(),
-                is_offline: finalSessionData.isOffline || false
-            };
-            const savedSession = await createTestSession(sessionData, currentUser.id);
+            if (finalSessionData.isOffline || !isOnline) {
+                // ── OFFLINE PATH ──────────────────────────────────────────
+                // Store the result locally and sync it to the server later
+                // when the user is back online (via "Sync Results" in Offline Mode).
+                addPendingSyncResult(result);
+                updateTestResults(prev => [result, ...prev]);
+
+                const newUserQuestionStats: UserQuestionStats = { ...userQuestionStats };
+                Object.values(finalUserAnswers).forEach((answer: UserAnswerRecord) => {
+                    const questionId = answer.questionId;
+                    const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                    if (answer.isCorrect) stats.correctAttempts++;
+                    else stats.incorrectAttempts++;
+                    stats.lastAttempted = new Date().toISOString();
+                    newUserQuestionStats[questionId] = stats;
+                });
+                setUserQuestionStats(newUserQuestionStats);
+                setActiveTestResult(result);
+                setActiveTestSession(null);
+                setAppMode(AppMode.TEST_REVIEW);
+                trackQuestProgress('complete_test');
+                trackStudyActivity('test', 1);
+                addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
+                // Post-test debrief via Lantern companion
+                const _tagStats: Record<string, { correct: number; total: number }> = {};
+                finalSessionData.questions.forEach(q => {
+                    const isCorrect = finalUserAnswers[q.id]?.isCorrect ?? false;
+                    (q.tags?.length ? q.tags : ['General']).forEach(tag => {
+                        if (!_tagStats[tag]) _tagStats[tag] = { correct: 0, total: 0 };
+                        _tagStats[tag].total++;
+                        if (isCorrect) _tagStats[tag].correct++;
+                    });
+                });
+                const _weakTags = Object.entries(_tagStats)
+                    .filter(([, s]) => s.total >= 2 && s.correct / s.total < 0.6)
+                    .sort((a, b) => a[1].correct / a[1].total - b[1].correct / b[1].total)
+                    .map(([tag]) => tag).slice(0, 3);
+                const _debriefMsg = `I just finished a test: ${Math.round(score)}% (${correctAnswersCount}/${result.totalQuestions} correct)${_weakTags.length ? `. I struggled with: ${_weakTags.join(', ')}` : ''}. Give me a quick debrief and next steps.`;
+                const _companion = useCompanionStore.getState();
+                _companion.open();
+                _companion.sendMessage(_debriefMsg, { weakTopics: _weakTags, recentTestSummary: `${Math.round(score)}% on ${result.totalQuestions} questions` });
+            } else {
+                // ── ONLINE PATH ───────────────────────────────────────────
+                const sessionData = {
+                    config: finalSessionData.config,
+                    questions: finalSessionData.questions,
+                    user_answers: finalUserAnswers,
+                    start_time: finalSessionData.startTime.toISOString(),
+                    end_time: finalSessionData.endTime?.toISOString(),
+                    is_offline: false
+                };
+                const savedSession = await createTestSession(sessionData, currentUser.id);
             
             const resultData = {
                 session_id: savedSession.id,
@@ -346,24 +408,45 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             });
             setUserQuestionStats(newUserQuestionStats);
             
-            setActiveTestResult(result);
-            setActiveTestSession(null);
-            setAppMode(AppMode.TEST_REVIEW);
-
-            try {
-                await createNotification({
-                    user_id: currentUser.id,
-                    message: `Test completed! You scored ${score}% (${correctAnswersCount}/${finalSessionData.questions.length} correct)`,
-                    link: `/dashboard`
+                setActiveTestResult(result);
+                setActiveTestSession(null);
+                setAppMode(AppMode.TEST_REVIEW);
+                trackQuestProgress('complete_test');
+                trackStudyActivity('test', 1);
+                // Post-test debrief via Lantern companion
+                const __tagStats: Record<string, { correct: number; total: number }> = {};
+                finalSessionData.questions.forEach(q => {
+                    const isCorrect = finalUserAnswers[q.id]?.isCorrect ?? false;
+                    (q.tags?.length ? q.tags : ['General']).forEach(tag => {
+                        if (!__tagStats[tag]) __tagStats[tag] = { correct: 0, total: 0 };
+                        __tagStats[tag].total++;
+                        if (isCorrect) __tagStats[tag].correct++;
+                    });
                 });
-            } catch (error) {
-                console.error('Failed to create test completion notification:', error);
-            }
+                const __weakTags = Object.entries(__tagStats)
+                    .filter(([, s]) => s.total >= 2 && s.correct / s.total < 0.6)
+                    .sort((a, b) => a[1].correct / a[1].total - b[1].correct / b[1].total)
+                    .map(([tag]) => tag).slice(0, 3);
+                const __debriefMsg = `I just finished a test: ${Math.round(score)}% (${correctAnswersCount}/${result.totalQuestions} correct)${__weakTags.length ? `. I struggled with: ${__weakTags.join(', ')}` : ''}. Give me a quick debrief and next steps.`;
+                const __companion = useCompanionStore.getState();
+                __companion.open();
+                __companion.sendMessage(__debriefMsg, { weakTopics: __weakTags, recentTestSummary: `${Math.round(score)}% on ${result.totalQuestions} questions` });
+
+                try {
+                    await createNotification({
+                        user_id: currentUser.id,
+                        message: `Test completed! You scored ${score}% (${correctAnswersCount}/${finalSessionData.questions.length} correct)`,
+                        link: `/dashboard`
+                    });
+                } catch (error) {
+                    console.error('Failed to create test completion notification:', error);
+                }
+            } // end else (online path)
         } catch (error) {
             console.error('Error saving test result:', error);
             alert('Failed to save test result. Please try again.');
         }
-    }, [activeTestSession, currentUser, userQuestionStats, setCurrentUser, updateTestResults, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification]);
+    }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification]);
     
     const handleEndStudySession = useCallback(() => {
         setActiveStudySession(null);

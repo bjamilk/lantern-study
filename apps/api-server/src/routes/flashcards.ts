@@ -2,11 +2,19 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validatePagination } from '../middleware/validation';
+import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { burstRateLimit } from '../middleware/rateLimit';
+import { clientErrorMessage } from '../utils/safeError';
 
 const router = Router();
+const DEFAULT_FLASHCARD_PAGE_SIZE = 50;
+const MAX_FLASHCARD_PAGE_SIZE = 100;
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
+  profile === 'compact' ? 'compact' : 'full';
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -21,31 +29,30 @@ export const initializeFlashcardRoutes = (supabase: SupabaseService, cache: Cach
 // GET /api/v1/flashcards - Get flashcards (optionally filtered by deck)
 router.get(
   '/',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { page = 1, limit = 20, deckId, userId } = req.query;
-    const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
-    logger.debug('Fetching flashcards', { page, limit, deckId, userId: userId || authUserId });
+    const { page = 1, limit, deckId, responseProfile } = req.query;
+    const profile = resolveResponseProfile(responseProfile);
 
-    const finalUserId = userId as string || authUserId;
+    logger.debug('Fetching flashcards', { page, limit, deckId, userId, profile });
 
-    if (!finalUserId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required to fetch flashcards',
-      });
-    }
-
-    const parsedLimit = parseInt(limit as string) || 500;
-    const parsedPage = parseInt(page as string) || 1;
-    const cacheKey = `flashcards:${deckId || 'all'}:${finalUserId}:${parsedPage}:${parsedLimit}`;
+    const parsedPage = Math.max(1, parseInt(page as string, 10) || 1);
+    const requestedLimit = parseInt((limit as string) || `${DEFAULT_FLASHCARD_PAGE_SIZE}`, 10);
+    const parsedLimit = Math.min(MAX_FLASHCARD_PAGE_SIZE, Math.max(1, requestedLimit || DEFAULT_FLASHCARD_PAGE_SIZE));
+    const cacheKey = `flashcards:${deckId || 'all'}:${userId}:${parsedPage}:${parsedLimit}:profile:${profile}`;
     let flashcards = await cacheService.get(cacheKey) as any[];
 
     if (!flashcards) {
-      flashcards = await supabaseService.getFlashcards(finalUserId, deckId as string, { page: parsedPage, limit: parsedLimit });
+      flashcards = await supabaseService.getFlashcards(userId, deckId as string, {
+        page: parsedPage,
+        limit: parsedLimit,
+        responseProfile: profile,
+      });
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, flashcards, 300);
@@ -55,10 +62,11 @@ router.get(
       success: true,
       data: flashcards,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: parsedPage,
+        limit: parsedLimit,
         total: flashcards.length,
       },
+      responseProfile: profile,
     });
   })
 );
@@ -66,22 +74,21 @@ router.get(
 // GET /api/v1/flashcards/:flashcardId - Get flashcard by ID
 router.get(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { flashcardId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
 
-    logger.debug('Fetching flashcard', { flashcardId, userId: userId || authUserId });
-
-    const finalUserId = userId as string || authUserId;
+    logger.debug('Fetching flashcard', { flashcardId, userId });
 
     const cacheKey = `flashcard:${flashcardId}`;
     let flashcard = await cacheService.get(cacheKey);
 
     if (!flashcard) {
-      flashcard = await supabaseService.getFlashcard(flashcardId);
+      flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
 
       if (!flashcard) {
         return res.status(404).json({
@@ -104,13 +111,15 @@ router.get(
 // GET /api/v1/flashcards/:flashcardId/comments - Get comments for a flashcard
 router.get(
   '/:flashcardId/comments',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { flashcardId } = req.params;
-    const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
-    logger.debug('Fetching flashcard comments', { flashcardId, userId: authUserId });
+    const { flashcardId } = req.params;
+
+    logger.debug('Fetching flashcard comments', { flashcardId, userId });
 
     const comments = await supabaseService.getFlashcardComments(flashcardId);
 
@@ -124,26 +133,22 @@ router.get(
 // POST /api/v1/flashcards/:flashcardId/comments - Add comment to flashcard
 router.post(
   '/:flashcardId/comments',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { flashcardId } = req.params;
-    const { comment, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { comment } = req.body;
 
-    logger.debug('Adding flashcard comment', { flashcardId, userId: userId || authUserId, comment: comment?.substring(0, 100) });
-
-    const finalUserId = userId || authUserId;
-
-    if (!finalUserId) {
-      return res.status(400).json({ success: false, error: 'User ID is required' });
-    }
+    logger.debug('Adding flashcard comment', { flashcardId, userId, comment: comment?.substring(0, 100) });
 
     if (!comment || !comment.trim()) {
       return res.status(400).json({ success: false, error: 'Comment text is required' });
     }
 
-    const newComment = await supabaseService.addFlashcardComment(flashcardId, finalUserId, comment.trim());
+    const newComment = await supabaseService.addFlashcardComment(flashcardId, userId, comment.trim());
 
     res.status(201).json({
       success: true,
@@ -155,15 +160,15 @@ router.post(
 // POST /api/v1/flashcards - Create new flashcard
 router.post(
   '/',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const { deckId, type, front, back, clozeText, imageUrl, occlusionData, tags, userId } = req.body;
-    const authUserId = req.user?.id;
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
 
-    logger.debug('Creating flashcard', { deckId, type, front: front?.substring(0, 50), imageUrl, userId: userId || authUserId });
+    const { deckId, type, front, back, clozeText, imageUrl, occlusionData, tags } = req.body;
 
-    const finalUserId = userId || authUserId;
+    logger.debug('Creating flashcard', { deckId, type, front: front?.substring(0, 50), imageUrl, userId });
 
     const flashcard = await supabaseService.createFlashcard({
       deckId,
@@ -174,7 +179,7 @@ router.post(
       imageUrl,
       occlusionData,
       tags,
-      userId: finalUserId,
+      userId,
     });
 
     // Invalidate deck's flashcards cache
@@ -190,21 +195,32 @@ router.post(
 // POST /api/v1/flashcards/upload-image - Upload an image for a flashcard
 router.post(
   '/upload-image',
-  // authMiddleware,
+  burstRateLimit,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { fileName, base64Data, contentType, folder } = req.body;
 
     if (!fileName || !base64Data) {
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
 
+    if (contentType && !ALLOWED_IMAGE_TYPES.includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+
     try {
       const result = await supabaseService.uploadFlashcardImage({ fileName, base64Data, contentType, folder });
       res.json({ success: true, data: result });
     } catch (error: any) {
-      logger.error('Failed to upload flashcard image', { error });
-      res.status(500).json({ success: false, error: error.message || 'Failed to upload image' });
+      logger.error('Failed to upload flashcard image', { error, userId });
+      res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to upload image') });
     }
   })
 );
@@ -212,16 +228,16 @@ router.post(
 // PUT /api/v1/flashcards/:flashcardId - Update flashcard
 router.put(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { flashcardId } = req.params;
-    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags, userId } = req.body;
-    const authUserId = req.user?.id;
+    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags } = req.body;
 
-    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, srsData: !!srsData, userId: userId || authUserId });
-
-    const finalUserId = userId || authUserId;
+    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, srsData: !!srsData, userId });
 
     const updatedFlashcard = await supabaseService.updateFlashcard(flashcardId, {
       front,
@@ -231,7 +247,7 @@ router.put(
       occlusionData,
       srsData,
       tags,
-    });
+    }, userId);
 
     if (!updatedFlashcard) {
       return res.status(404).json({
@@ -254,18 +270,17 @@ router.put(
 // DELETE /api/v1/flashcards/:flashcardId - Delete flashcard
 router.delete(
   '/:flashcardId',
-  // authMiddleware,
+  authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { flashcardId } = req.params;
-    const { userId } = req.query;
-    const authUserId = req.user?.id;
 
-    logger.debug('Deleting flashcard', { flashcardId, userId: userId || authUserId });
+    logger.debug('Deleting flashcard', { flashcardId, userId });
 
-    const finalUserId = userId as string || authUserId;
-
-    const deleted = await supabaseService.deleteFlashcard(flashcardId);
+    const deleted = await supabaseService.deleteFlashcard(flashcardId, userId);
 
     if (!deleted) {
       return res.status(404).json({

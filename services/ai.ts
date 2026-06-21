@@ -4,6 +4,7 @@
  */
 import { getApiBaseUrl } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
+import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -16,7 +17,7 @@ export interface AIUsageInfo {
   resetsAt: string;
 }
 
-let _latestUsage: AIUsageInfo = { used: 0, limit: 10, remaining: 10, resetsAt: '' };
+let _latestUsage: AIUsageInfo = { used: 0, limit: 20, remaining: 20, resetsAt: '' };
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
 
 export function getLatestAIUsage(): AIUsageInfo {
@@ -33,9 +34,12 @@ function updateUsage(usage: AIUsageInfo) {
   _usageListeners.forEach(fn => fn(usage));
 }
 
-export async function fetchAIUsage(userId: string): Promise<AIUsageInfo> {
+export async function fetchAIUsage(_userId?: string): Promise<AIUsageInfo> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage?userId=${encodeURIComponent(userId)}`);
+    const ready = await ensureAuthTokenReady();
+    if (!ready) return _latestUsage;
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage`, { headers });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const usage: AIUsageInfo = {
@@ -54,13 +58,12 @@ export async function fetchAIUsage(userId: string): Promise<AIUsageInfo> {
 // ─── Base request helper ────────────────────────────────────
 
 async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promise<T> {
-  const userId = useAuthStore.getState().currentUser?.id;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers = await getAuthHeaders();
 
   const response = await fetch(`${API_BASE_URL}/api/v1/ai${endpoint}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ...body, userId }),
+    body: JSON.stringify(body),
   });
 
   // Read usage from response headers (set by aiRateLimit middleware)
@@ -159,6 +162,191 @@ export async function aiEnhanceFlashcard(
   return aiRequest('/enhance-flashcard', { front, back });
 }
 
+// ─── AI Companion ────────────────────────────────────────────
+
+export interface CompanionUserContext {
+  userName?: string;
+  groups?: string[];
+  weakTopics?: string[];
+  dueCardsCount?: number;
+  recentTestSummary?: string;
+  budgetSummary?: string;
+  currentScreen?: string;
+  activeSessionSummary?: string;
+}
+
+export interface CompanionAction {
+  type: 'navigate_to_flashcards' | 'open_test_config' | 'open_create_flashcard' | 'navigate_to_dashboard' | 'navigate_to_chat';
+  label: string;
+  payload?: Record<string, string>;
+}
+
+async function companionRequest<T>(
+  endpoint: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  body?: Record<string, any>
+): Promise<T> {
+  const url = `${API_BASE_URL}/api/v1/ai/companion${endpoint}`;
+  const authHeaders = await getAuthHeaders();
+
+  const options: RequestInit = {
+    method,
+    headers: authHeaders,
+  };
+
+  if (method === 'POST' || method === 'DELETE') {
+    options.body = JSON.stringify(body || {});
+  }
+
+  const response = await fetch(url, options);
+
+  // Track AI usage from headers (companion uses the same rate limit)
+  const usedHeader = response.headers.get('X-AI-Usage-Used');
+  const limitHeader = response.headers.get('X-AI-Usage-Limit');
+  const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
+  if (usedHeader && limitHeader) {
+    const used = parseInt(usedHeader, 10);
+    const limit = parseInt(limitHeader, 10);
+    updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || `Companion request failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export async function companionSendMessage(
+  message: string,
+  context?: CompanionUserContext
+): Promise<{ reply: string; actions: CompanionAction[]; provider: string }> {
+  return companionRequest('/message', 'POST', { message, context });
+}
+
+export async function fetchCompanionHistory(): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; actions?: CompanionAction[]; created_at: string }> }> {
+  return companionRequest('/history', 'GET');
+}
+
+export async function clearCompanionHistory(): Promise<{ success: boolean }> {
+  return companionRequest('/history', 'DELETE');
+}
+
+/**
+ * Stream a companion message via SSE.
+ * Calls `onToken` for each text chunk, `onDone` with final actions, `onError` on failure.
+ */
+export async function companionSendMessageStream(
+  message: string,
+  context: CompanionUserContext | undefined,
+  onToken: (token: string) => void,
+  onDone: (actions: CompanionAction[]) => void,
+  onError: (err: Error) => void
+): Promise<void> {
+  const userId = useAuthStore.getState().currentUser?.id;
+  if (!userId) { onError(new Error('Not authenticated')); return; }
+
+  const authHeaders = await getAuthHeaders();
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/v1/ai/companion/message/stream`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ message, context }),
+    });
+  } catch (e: any) {
+    onError(new Error(e.message || 'Network error'));
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    onError(new Error(`Stream request failed (${response.status})`));
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() ?? '';
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(part.slice(6));
+          if (data.error) { onError(new Error(data.error)); return; }
+          if (data.token !== undefined) onToken(data.token as string);
+          if (data.done) onDone((data.actions as CompanionAction[]) || []);
+        } catch { /* malformed chunk — skip */ }
+      }
+    }
+  } catch (e: any) {
+    onError(new Error(e.message || 'Stream read error'));
+  }
+}
+
+export async function submitCompanionFeedback(
+  messageId: string,
+  rating: 'up' | 'down'
+): Promise<void> {
+  const userId = useAuthStore.getState().currentUser?.id;
+  if (!userId) return;
+  try {
+    const headers = await getAuthHeaders();
+    await fetch(`${API_BASE_URL}/api/v1/ai/companion/feedback`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ messageId, rating }),
+    });
+  } catch { /* non-critical */ }
+}
+
+export async function trackAIAnalyticsEvent(
+  event: string,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  const userId = useAuthStore.getState().currentUser?.id;
+  if (!userId) return;
+  try {
+    const headers = await getAuthHeaders();
+    await fetch(`${API_BASE_URL}/api/v1/ai/companion/analytics`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ event, metadata }),
+    });
+  } catch { /* non-critical */ }
+}
+
+export async function aiGenerateListingDescription(details: {
+  title: string;
+  category: string;
+  subcategory?: string;
+  price?: string;
+  condition?: string;
+  courseCode?: string;
+  isbn?: string;
+  edition?: string;
+  bedrooms?: string;
+  furnished?: string;
+  distanceToCampus?: string;
+}): Promise<{ description: string; provider: string }> {
+  return aiRequest('/generate-listing-description', details);
+}
+
+export async function summarizeGroupChat(
+  messages: string[],
+  groupName: string
+): Promise<{ summary: string; provider: string }> {
+  return companionRequest('/summarize-group', 'POST', { messages, groupName });
+}
+
 // ─── Health check (no auth needed) ──────────────────────────
 
 export async function aiHealthCheck(): Promise<{
@@ -168,5 +356,44 @@ export async function aiHealthCheck(): Promise<{
 }> {
   const response = await fetch(`${API_BASE_URL}/api/v1/ai/health`);
   if (!response.ok) throw new Error('AI health check failed');
+  return response.json();
+}
+
+// ─── Study Plan ──────────────────────────────────────────────
+
+export interface StudyPlanContext {
+  userName?: string;
+  dueCardsCount?: number;
+  weakTopics?: string[];
+  recentTestSummary?: string;
+  studyGoal?: string;
+  availableHoursPerDay?: number;
+  daysUntilExam?: number;
+}
+
+export interface StudyPlanDay {
+  day: string;
+  focus: string;
+  tasks: string[];
+  estimatedMinutes: number;
+}
+
+export interface StudyPlan {
+  overview: string;
+  days: StudyPlanDay[];
+  tips: string[];
+  provider: string;
+}
+
+export async function aiGenerateStudyPlan(context: StudyPlanContext): Promise<StudyPlan> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/ai/study-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error || 'Failed to generate study plan');
+  }
   return response.json();
 }

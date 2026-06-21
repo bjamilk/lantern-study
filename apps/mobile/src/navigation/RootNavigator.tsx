@@ -1,501 +1,888 @@
-// ===========================================
-// Lantern Study Mobile - Root Navigator
-// ===========================================
+import React, { useEffect, useMemo, useState } from 'react';
 
-import React, { useEffect, useCallback } from 'react';
-import { View, ActivityIndicator, StyleSheet, Alert } from 'react-native';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { View } from 'react-native';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { navigationRef } from './navigationRef';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { ThemeProvider, useTheme } from '../theme';
 
-// Import screens
-import {
-  LoginScreen,
-  SignUpScreen,
-  DashboardScreen,
-  FlashcardsScreen,
-  DeckDetailScreen,
-  FlashcardReviewScreen,
-  GroupsScreen,
-  TestScreen,
-  TestTakingScreen,
-  TestResultsScreen,
-} from '../screens';
-import { GameScreen, GameResultScreen } from '../screens/games';
-import CramSessionScreen from '../screens/flashcards/CramSessionScreen';
-import GroupChatScreen from '../screens/groups/GroupChatScreen';
-import DirectMessageScreen from '../screens/groups/DirectMessageScreen';
-import {
-  BudgetScreen,
-  AddExpenseScreen,
-  AddIncomeScreen,
-  SetBudgetScreen,
-} from '../screens/budget';
-import { MoreNavigator } from '../screens/MoreScreen';
+import { ThemeProvider, useAppTheme } from '../theme';
 
-// Import linking configuration
-import { linkingConfig } from './linking';
+import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
 
-// Import auth store
+import { MoreSheet } from '../components/layout/MoreSheet';
+
+import { AICompanionPanel } from '../components/AICompanionPanel';
+
+import { AIUsageFloatingBadge } from '../components/AIUsageFloatingBadge';
+
+import { BootLoadingScreen } from '../components/BootLoadingScreen';
+
+import * as SplashScreen from 'expo-splash-screen';
+
 import { useAuthStore } from '../stores/authStore';
 
-// Import realtime subscriptions
-import { useRealtimeSubscriptions, Notification } from '../hooks';
-import { Message, useGroupStore } from '../stores/groupStore';
-import NetInfo from '@react-native-community/netinfo';
 import { useFlashcardStore } from '../stores/flashcardStore';
 
-// Types
-export type RootStackParamList = {
-  Auth: undefined;
-  Main: undefined;
-};
+import { useGroupStore } from '../stores/groupStore';
 
-export type AuthStackParamList = {
-  Login: undefined;
-  SignUp: undefined;
-};
+import { useSettingsStore } from '../stores/settingsStore';
 
-export type MainTabParamList = {
-  Dashboard: undefined;
-  Flashcards: undefined;
-  Tests: undefined;
-  Groups: undefined;
-  Budget: undefined;
-  More: undefined;
-};
+import { useCompanionStore } from '../stores/companionStore';
+import { useNotificationStore } from '../stores/notificationStore';
 
-export type FlashcardsStackParamList = {
-  FlashcardsList: undefined;
-  DeckDetail: { deckId: string; deckName: string };
-  FlashcardReview: { deckId: string; deckName: string; mode: 'review' | 'cram' };
-  CramSession: { deckId: string; deckName: string; cards: any[] };
-};
+import { useChallengeNotificationHandler } from '../hooks/useChallengeNotificationHandler';
+import { useDeepLinkHandler } from '../hooks/useDeepLinkHandler';
+import { useDailyStudyReminder } from '../hooks/useDailyStudyReminder';
+import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 
-export type GamesStackParamList = {
-  GameScreen: { session: any };
-  GameResult: { session: any; currentUser: any };
-};
+import {
 
-export type GroupsStackParamList = {
-  GroupsList: undefined;
-  GroupChat: { groupId: string; groupName: string };
-  DirectMessage: { recipientId: string; recipientName: string };
-  GameScreen: { session: any };
-  GameResult: { session: any; currentUser: any };
-};
+  shouldHideTabBar,
 
-export type TestsStackParamList = {
-  TestsList: undefined;
-  TestTaking: { testId: string; testName: string };
-  TestResults: { attemptId: string };
-};
+  RootStackParamList,
 
-export type MarketplaceStackParamList = {
-  MarketplaceHome: undefined;
-  ListingDetail: { listingId: string };
-  CreateListing: undefined;
-  MyListings: undefined;
-  Inquiries: undefined;
-};
+  AuthStackParamList,
 
-export type BudgetStackParamList = {
-  BudgetHome: undefined;
-  AddExpense: undefined;
-  AddIncome: undefined;
-  SetBudget: undefined;
-};
+  HomeStackParamList,
 
-// Create navigators
+  StudyStackParamList,
+
+  ChatStackParamList,
+
+  MarketStackParamList,
+
+  MainTabParamList,
+
+  BudgetStackParamList,
+
+} from './types';
+
+import { LoginScreen, SignUpScreen, VerifyEmailScreen, ForgotPasswordScreen, ResetPasswordScreen } from '../screens/auth';
+import LegalDocumentScreen from '../screens/legal/LegalDocumentScreen';
+
+import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
+
+import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
+
+import {
+
+  FlashcardsScreen,
+
+  DeckDetailScreen,
+
+  FlashcardReviewScreen,
+
+  CramSessionScreen,
+
+  MatchStudyScreen,
+
+  LearnStudyScreen,
+
+} from '../screens/flashcards';
+
+import { NotesScreen, NoteEditorScreen } from '../screens/notes';
+
+import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
+
+import {
+
+  MarketplaceScreen,
+
+  ListingDetailScreen,
+
+  MyListingsScreen,
+
+  InquiriesScreen,
+
+  CreateListingScreen,
+
+  EditListingScreen,
+
+  MakeOfferScreen,
+
+  SellerProfileScreen,
+
+  OffersScreen,
+
+  FavoritesScreen,
+
+  OrdersScreen,
+
+  OrderDetailScreen,
+
+  SellerCustomersScreen,
+
+} from '../screens/marketplace';
+
+import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen } from '../screens/settings';
+
+import { TestScreen, TestTakingScreen, TestResultsScreen } from '../screens/tests';
+
+import { GameScreen, GameResultScreen, ChallengesInboxScreen } from '../screens/games';
+
+import {
+
+  BudgetScreen,
+
+  AddExpenseScreen,
+
+  AddIncomeScreen,
+
+  SetBudgetScreen,
+
+  SavingsGoalsScreen,
+
+  WalletScreen,
+
+  ExpenseSplitScreen,
+
+  SetCategoryBudgetScreen,
+
+  FinancialToolkitScreen,
+
+  AddInvestmentScreen,
+
+} from '../screens/budget';
+
+import { isRunningInExpoGo } from 'expo';
+
+import { linkingConfig } from './linking';
+
+import { registerForPushNotifications, uploadPushToken } from '../services/pushNotifications';
+
+import { useLowDataMode } from '../hooks/useLowDataMode';
+
+import UsernameRequiredModal from '../components/UsernameRequiredModal';
+
+import { supabase } from '../services/supabase';
+
+
+
 const RootStack = createNativeStackNavigator<RootStackParamList>();
+
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
-const MainTab = createBottomTabNavigator<MainTabParamList>();
-const FlashcardsStack = createNativeStackNavigator<FlashcardsStackParamList>();
-const GroupsStack = createNativeStackNavigator<GroupsStackParamList>();
-const TestsStack = createNativeStackNavigator<TestsStackParamList>();
+
+const HomeStack = createNativeStackNavigator<HomeStackParamList>();
+
+const StudyStack = createNativeStackNavigator<StudyStackParamList>();
+
+const ChatStack = createNativeStackNavigator<ChatStackParamList>();
+
+const MarketStack = createNativeStackNavigator<MarketStackParamList>();
+
 const BudgetStack = createNativeStackNavigator<BudgetStackParamList>();
 
-// Loading Screen
-const LoadingScreen = () => (
-  <View style={styles.loadingContainer}>
-    <ActivityIndicator size="large" color="#6366f1" />
-  </View>
-);
+const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Auth Stack Navigator
-const AuthNavigator = () => (
-  <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-    <AuthStack.Screen name="Login" component={LoginScreen} />
-    <AuthStack.Screen name="SignUp" component={SignUpScreen} />
-  </AuthStack.Navigator>
-);
 
-// Flashcards Stack Navigator
-const FlashcardsNavigator = () => (
-  <FlashcardsStack.Navigator screenOptions={{ headerShown: false }}>
-    <FlashcardsStack.Screen 
-      name="FlashcardsList" 
-      component={FlashcardsScreen}
-    />
-    <FlashcardsStack.Screen 
-      name="DeckDetail" 
-      component={DeckDetailScreen}
-    />
-    <FlashcardsStack.Screen 
-      name="FlashcardReview" 
-      component={FlashcardReviewScreen}
-      options={{ 
-        presentation: 'fullScreenModal',
-        animation: 'slide_from_bottom',
-      }}
-    />
-    <FlashcardsStack.Screen 
-      name="CramSession" 
-      component={CramSessionScreen}
-      options={{ 
-        presentation: 'fullScreenModal',
-        animation: 'slide_from_bottom',
-      }}
-    />
-  </FlashcardsStack.Navigator>
-);
 
-// Groups Stack Navigator
-const GroupsNavigator = () => (
-  <GroupsStack.Navigator screenOptions={{ headerShown: false }}>
-    <GroupsStack.Screen 
-      name="GroupsList" 
-      component={GroupsScreen}
-    />
-    <GroupsStack.Screen 
-      name="GroupChat" 
-      component={GroupChatScreen}
-    />
-    <GroupsStack.Screen 
-      name="DirectMessage" 
-      component={DirectMessageScreen}
-    />
-    <GroupsStack.Screen 
-      name="GameScreen" 
-      component={GameScreen}
-      options={{ 
-        presentation: 'fullScreenModal',
-        animation: 'slide_from_bottom',
-        gestureEnabled: false,
-      }}
-    />
-    <GroupsStack.Screen 
-      name="GameResult" 
-      component={GameResultScreen}
-      options={{ 
-        presentation: 'fullScreenModal',
-        animation: 'fade',
-        gestureEnabled: false,
-      }}
-    />
-  </GroupsStack.Navigator>
-);
+function AuthNavigator() {
 
-// Tests Stack Navigator
-const TestsNavigator = () => (
-  <TestsStack.Navigator screenOptions={{ headerShown: false }}>
-    <TestsStack.Screen 
-      name="TestsList" 
-      component={TestScreen}
-    />
-    <TestsStack.Screen 
-      name="TestTaking" 
-      component={TestTakingScreen}
-      options={{ 
-        presentation: 'fullScreenModal',
-        animation: 'slide_from_bottom',
-        gestureEnabled: false,
-      }}
-    />
-    <TestsStack.Screen 
-      name="TestResults" 
-      component={TestResultsScreen}
-    />
-  </TestsStack.Navigator>
-);
-
-// Budget Stack Navigator
-const BudgetNavigator = () => (
-  <BudgetStack.Navigator screenOptions={{ headerShown: false }}>
-    <BudgetStack.Screen 
-      name="BudgetHome" 
-      component={BudgetScreen}
-    />
-    <BudgetStack.Screen 
-      name="AddExpense" 
-      component={AddExpenseScreen}
-      options={{ 
-        presentation: 'modal',
-        animation: 'slide_from_bottom',
-      }}
-    />
-    <BudgetStack.Screen 
-      name="AddIncome" 
-      component={AddIncomeScreen}
-      options={{ 
-        presentation: 'modal',
-        animation: 'slide_from_bottom',
-      }}
-    />
-    <BudgetStack.Screen 
-      name="SetBudget" 
-      component={SetBudgetScreen}
-      options={{ 
-        presentation: 'modal',
-        animation: 'slide_from_bottom',
-      }}
-    />
-  </BudgetStack.Navigator>
-);
-
-// Tab Bar Icon component
-const TabBarIcon = ({ name, focused, color }: { name: string; focused: boolean; color: string }) => (
-  <Ionicons 
-    name={name as any} 
-    size={24} 
-    color={color} 
-  />
-);
-
-// Main Tab Navigator
-const MainNavigator = () => {
-  const { colors, isDark } = useTheme();
-  
   return (
-    <MainTab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.tabBarActive,
-        tabBarInactiveTintColor: colors.tabBarInactive,
-        tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.tabBarBorder,
-          borderTopWidth: 1,
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 70,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
-      }}
-    >
-      <MainTab.Screen 
-        name="Dashboard" 
-        component={DashboardScreen}
-        options={{
-          tabBarLabel: 'Home',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'home' : 'home-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-      <MainTab.Screen 
-        name="Flashcards" 
-        component={FlashcardsNavigator}
-        options={{
-          tabBarLabel: 'Cards',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'albums' : 'albums-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-      <MainTab.Screen 
-        name="Tests" 
-        component={TestsNavigator}
-        options={{
-          tabBarLabel: 'Tests',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'document-text' : 'document-text-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-      <MainTab.Screen 
-        name="Groups" 
-        component={GroupsNavigator}
-        options={{
-          tabBarLabel: 'Groups',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'people' : 'people-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-      <MainTab.Screen 
-        name="Budget" 
-        component={BudgetNavigator}
-        options={{
-          tabBarLabel: 'Budget',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'wallet' : 'wallet-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-      <MainTab.Screen 
-        name="More" 
-        component={MoreNavigator}
-        options={{
-          tabBarLabel: 'More',
-          tabBarIcon: ({ focused, color }) => (
-            <TabBarIcon name={focused ? 'grid' : 'grid-outline'} focused={focused} color={color} />
-          ),
-        }}
-      />
-    </MainTab.Navigator>
+
+  <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+
+    <AuthStack.Screen name="Login" component={LoginScreen} />
+
+    <AuthStack.Screen name="SignUp" component={SignUpScreen} />
+
+    <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+
+    <AuthStack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+
+    <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+
+    <AuthStack.Screen name="LegalDocument" component={LegalDocumentScreen} options={{ presentation: 'modal' }} />
+
+  </AuthStack.Navigator>
+
   );
-};
 
-// Inner Root Navigator (needs theme context)
-const RootNavigatorInner = () => {
-  const { user, isLoading, isInitialized, initialize } = useAuthStore();
-  const { colors, isDark } = useTheme();
-  const { fetchGroups, fetchMessages, currentGroup } = useGroupStore();
-  
-  // Initialize auth on mount
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
+}
 
-  // Handle incoming notifications
-  const handleNotification = useCallback((notification: Notification) => {
-    console.log('[RootNavigator] Received notification:', notification.type);
-    
-    // Show an alert for important notifications (could be replaced with a custom toast)
-    if (notification.type === 'group_invite') {
-      Alert.alert(
-        notification.title,
-        notification.body,
-        [
-          { text: 'Dismiss', style: 'cancel' },
-          { text: 'View', onPress: () => {
-            // Could navigate to groups screen
-            console.log('[RootNavigator] View group invite');
-          }},
-        ]
-      );
-    }
-  }, []);
 
-  // Handle incoming group messages
-  const handleMessage = useCallback((message: Message) => {
-    console.log('[RootNavigator] Received message in group:', message.groupId);
-    
-    // If we're viewing this group, refresh messages
-    if (currentGroup?.id === message.groupId) {
-      fetchMessages(message.groupId, { refresh: true });
-    }
-    
-    // Could also update unread count, show notification, etc.
-  }, [currentGroup?.id, fetchMessages]);
 
-  // Handle settings updates from other devices
-  const handleSettingsUpdate = useCallback((settings: Record<string, unknown>) => {
-    console.log('[RootNavigator] Settings synced from another device');
-    // Settings store handles the actual update via loadFromRemote
-  }, []);
+function HomeNavigator() {
 
-  // Initialize realtime subscriptions when authenticated
-  const { isSubscribed, channelCount } = useRealtimeSubscriptions({
-    onNotification: handleNotification,
-    onMessage: handleMessage,
-    onSettingsUpdate: handleSettingsUpdate,
-    autoSubscribe: true,
-  });
+  return (
 
-  // Log subscription status for debugging
-  useEffect(() => {
-    if (user) {
-      console.log(`[RootNavigator] Realtime status: subscribed=${isSubscribed}, channels=${channelCount}`);
-    }
-  }, [user, isSubscribed, channelCount]);
+    <HomeStack.Navigator screenOptions={{ headerShown: false }}>
 
-  // refresh offline decks when network connectivity comes back
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected && user?.id) {
-        useFlashcardStore.getState().refreshOfflineDecks(user.id).catch(() => {});
-      }
-    });
-    return () => unsubscribe();
-  }, [user?.id]);
+      <HomeStack.Screen name="Dashboard" component={DashboardScreen} />
 
-  // Custom navigation theme
-  const navigationTheme = {
-    dark: isDark,
-    colors: {
-      primary: colors.primary,
-      background: colors.background,
-      card: colors.card,
-      text: colors.text,
-      border: colors.border,
-      notification: colors.error,
-    },
-    fonts: {
-      regular: {
-        fontFamily: 'System',
-        fontWeight: '400' as const,
-      },
-      medium: {
-        fontFamily: 'System',
-        fontWeight: '500' as const,
-      },
-      bold: {
-        fontFamily: 'System',
-        fontWeight: '700' as const,
-      },
-      heavy: {
-        fontFamily: 'System',
-        fontWeight: '900' as const,
-      },
-    },
+    </HomeStack.Navigator>
+
+  );
+
+}
+
+
+
+function StudyNavigator() {
+
+  return (
+
+    <StudyStack.Navigator screenOptions={{ headerShown: false }}>
+
+      <StudyStack.Screen name="FlashcardsList" component={FlashcardsScreen} />
+
+      <StudyStack.Screen name="DeckDetail" component={DeckDetailScreen} />
+
+      <StudyStack.Screen name="FlashcardReview" component={FlashcardReviewScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <StudyStack.Screen name="CramSession" component={CramSessionScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <StudyStack.Screen name="MatchStudy" component={MatchStudyScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <StudyStack.Screen name="LearnStudy" component={LearnStudyScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <StudyStack.Screen name="NotesList" component={NotesScreen} />
+
+      <StudyStack.Screen name="NoteEditor" component={NoteEditorScreen} />
+
+      <StudyStack.Screen name="TestsList" component={TestScreen} />
+
+      <StudyStack.Screen name="TestTaking" component={TestTakingScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <StudyStack.Screen name="TestResults" component={TestResultsScreen} options={{ presentation: 'fullScreenModal' }} />
+
+    </StudyStack.Navigator>
+
+  );
+
+}
+
+
+
+function ChatNavigator() {
+
+  return (
+
+    <ChatStack.Navigator screenOptions={{ headerShown: false }}>
+
+      <ChatStack.Screen name="GroupsList" component={GroupsScreen} />
+
+      <ChatStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+
+      <ChatStack.Screen name="GroupChat" component={GroupChatScreen} />
+
+      <ChatStack.Screen name="DirectMessage" component={DirectMessageScreen} />
+
+      <ChatStack.Screen name="GameScreen" component={GameScreen} options={{ presentation: 'fullScreenModal' }} />
+
+      <ChatStack.Screen name="ChallengesInbox" component={ChallengesInboxScreen} />
+
+      <ChatStack.Screen name="GameResult" component={GameResultScreen} options={{ presentation: 'fullScreenModal' }} />
+
+    </ChatStack.Navigator>
+
+  );
+
+}
+
+
+
+function MarketNavigator() {
+
+  return (
+
+    <MarketStack.Navigator screenOptions={{ headerShown: false }}>
+
+      <MarketStack.Screen name="MarketplaceHome" component={MarketplaceScreen} />
+
+      <MarketStack.Screen name="ListingDetail" component={ListingDetailScreen} />
+
+      <MarketStack.Screen name="MyListings" component={MyListingsScreen} />
+
+      <MarketStack.Screen name="Inquiries" component={InquiriesScreen} />
+
+      <MarketStack.Screen name="CreateListing" component={CreateListingScreen} />
+
+      <MarketStack.Screen name="EditListing" component={EditListingScreen} />
+
+      <MarketStack.Screen name="MakeOffer" component={MakeOfferScreen} />
+
+      <MarketStack.Screen name="SellerProfile" component={SellerProfileScreen} />
+
+      <MarketStack.Screen name="Offers" component={OffersScreen} />
+
+      <MarketStack.Screen name="Favorites" component={FavoritesScreen} />
+
+      <MarketStack.Screen name="Orders" component={OrdersScreen} />
+
+      <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
+
+      <MarketStack.Screen name="SellerCustomers" component={SellerCustomersScreen} />
+
+    </MarketStack.Navigator>
+
+  );
+
+}
+
+
+
+function BudgetNavigator() {
+
+  return (
+
+    <BudgetStack.Navigator screenOptions={{ headerShown: false }}>
+
+      <BudgetStack.Screen name="BudgetHome" component={BudgetScreen} />
+
+      <BudgetStack.Screen name="AddExpense" component={AddExpenseScreen} />
+
+      <BudgetStack.Screen name="AddIncome" component={AddIncomeScreen} />
+
+      <BudgetStack.Screen name="SetBudget" component={SetBudgetScreen} />
+
+      <BudgetStack.Screen name="SavingsGoals" component={SavingsGoalsScreen} />
+
+      <BudgetStack.Screen name="Wallet" component={WalletScreen} />
+
+      <BudgetStack.Screen name="ExpenseSplit" component={ExpenseSplitScreen} />
+
+      <BudgetStack.Screen name="SetCategoryBudget" component={SetCategoryBudgetScreen} />
+
+      <BudgetStack.Screen name="FinancialToolkit" component={FinancialToolkitScreen} />
+
+      <BudgetStack.Screen name="AddInvestment" component={AddInvestmentScreen} />
+
+    </BudgetStack.Navigator>
+
+  );
+
+}
+
+
+
+function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
+
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const theme = useAppTheme();
+
+  const { updateSettings } = useSettingsStore();
+
+  const { lowDataMode, toggleLowDataMode } = useLowDataMode();
+
+  const signOut = useAuthStore(s => s.signOut);
+
+  const openCompanion = useCompanionStore(s => s.open);
+
+  const companionOpen = useCompanionStore(s => s.isOpen);
+
+  const decks = useFlashcardStore(s => s.decks);
+
+  const flashcards = useFlashcardStore(s => s.flashcards);
+
+  const groups = useGroupStore(s => s.groups);
+
+  const dmThreads = useGroupStore(s => s.dmThreads);
+
+
+
+  const rootNav = navigation.getParent();
+
+
+
+  const tabKeyMap: Record<TabKey, string | null> = {
+
+    Home: 'HomeTab',
+
+    Study: 'StudyTab',
+
+    Chat: 'ChatTab',
+
+    Notifications: 'NotificationsTab',
+
+    Budget: 'BudgetTab',
+
+    Marketplace: 'MarketTab',
+
+    AI: null,
+
+    Notes: null,
+
+    Offline: null,
+
+    More: null,
+
   };
 
-  // Show loading screen while initializing
-  if (!isInitialized || isLoading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+
+
+  const routeNameToTabKey: Record<string, TabKey> = {
+
+    HomeTab: 'Home',
+
+    StudyTab: 'Study',
+
+    ChatTab: 'Chat',
+
+    NotificationsTab: 'Notifications',
+
+    BudgetTab: 'Budget',
+
+    MarketTab: 'Marketplace',
+
+  };
+
+
+
+  const route = state.routes[state.index];
+
+  const focused = getFocusedRouteNameFromRoute(route);
+
+  const hideBar = shouldHideTabBar(focused);
+
+
+
+  const activeTab: TabKey = useMemo(() => {
+
+    if (companionOpen) return 'AI';
+
+    const currentRoute = state.routes[state.index]?.name as string | undefined;
+
+    if (currentRoute === 'MarketTab') return 'Marketplace';
+
+    if (currentRoute === 'StudyTab' && focused && (focused === 'NotesList' || focused === 'NoteEditor')) {
+
+      return 'Notes';
+
+    }
+
+    return routeNameToTabKey[currentRoute ?? ''] ?? 'Home';
+
+  }, [companionOpen, state.routes, state.index, focused]);
+
+
+
+  const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
+
+
+
+  const dueCardsCount = useMemo(
+
+    () => decks.reduce((sum, d) => sum + (d.due_count || 0), 0),
+
+    [decks, flashcards]
+
+  );
+
+  const unreadChatCount = useMemo(
+
+    () =>
+
+      groups.reduce((s, g) => s + (g.unreadCount || 0), 0) +
+
+      dmThreads.reduce((s, t) => s + (t.unreadCount || 0), 0),
+
+    [groups, dmThreads]
+
+  );
+
+
+
+  const navigateTab = (tab: TabKey) => {
+
+    if (tab === 'More') {
+
+      setMoreOpen(true);
+
+      return;
+
+    }
+
+    setMoreOpen(false);
+
+    if (tab === 'AI') {
+
+      openCompanion();
+
+      return;
+
+    }
+
+    if (tab === 'Notes') {
+
+      jumpStudyNotes();
+
+      return;
+
+    }
+
+    if (tab === 'Offline') {
+
+      navigateRoot('Offline');
+
+      return;
+
+    }
+
+    const routeName = tabKeyMap[tab];
+
+    if (routeName) navigation.navigate(routeName);
+
+  };
+
+
+
+  const jumpStudyNotes = () => {
+
+    navigation.navigate('StudyTab', { screen: 'NotesList' });
+
+  };
+
+
+
+  const navigateRoot = (screen: keyof RootStackParamList) => {
+
+    rootNav?.navigate(screen);
+
+  };
+
+
+
+  const toggleTheme = () => {
+
+    const next = theme === 'dark' ? 'light' : 'dark';
+
+    void updateSettings('appearance', { theme: next });
+
+  };
+
+
+  
+  return (
+
+    <>
+
+      {!hideBar ? (
+
+        <BottomTabBar
+
+          activeTab={activeTab}
+
+          onTabPress={navigateTab}
+
+          dueCardsCount={dueCardsCount}
+
+          unreadChatCount={unreadChatCount}
+
+          unreadNotificationCount={unreadNotificationCount}
+
+          isMoreActive={moreOpen}
+
+        />
+
+      ) : null}
+
+      {!hideBar ? (
+        <AIUsageFloatingBadge activeTab={activeTab} hidden={moreOpen || companionOpen || activeTab === 'AI'} />
+      ) : null}
+
+      <MoreSheet
+
+        visible={moreOpen}
+
+        onClose={() => setMoreOpen(false)}
+
+        theme={theme}
+
+        onToggleTheme={toggleTheme}
+
+        lowDataMode={lowDataMode}
+
+        onToggleLowData={toggleLowDataMode}
+
+        items={[
+
+          { id: 'settings', label: 'Settings', icon: 'settings-outline', onPress: () => navigateRoot('Settings') },
+
+          { id: 'logout', label: 'Log out', icon: 'log-out-outline', onPress: () => void signOut(), destructive: true },
+
+        ]}
+
+      />
+
+      <AICompanionPanel />
+
+    </>
+
+  );
+
+}
+
+
+
+function MainTabs() {
+
+  return (
+
+    <View className="flex-1 bg-lantern-background dark:bg-slate-900">
+
+      <Tab.Navigator
+        tabBar={props => <CustomTabBar {...props} />}
+        screenOptions={{ headerShown: false, lazy: true }}
+      >
+
+        <Tab.Screen name="HomeTab" component={HomeNavigator} />
+
+        <Tab.Screen name="StudyTab" component={StudyNavigator} />
+
+        <Tab.Screen name="ChatTab" component={ChatNavigator} />
+
+        <Tab.Screen name="NotificationsTab" component={NotificationsScreen} />
+
+        <Tab.Screen name="BudgetTab" component={BudgetNavigator} />
+
+        <Tab.Screen name="MarketTab" component={MarketNavigator} options={{ tabBarButton: () => null }} />
+
+      </Tab.Navigator>
+
+    </View>
+
+  );
+
+}
+
+
+
+function RootNavigatorInner() {
+
+  const { user, isInitialized, initialize, isPasswordRecovery } = useAuthStore();
+
+  const fetchDecks = useFlashcardStore(s => s.fetchDecks);
+
+  const fetchGroups = useGroupStore(s => s.fetchGroups);
+
+  const fetchDmThreads = useGroupStore(s => s.fetchDmThreads);
+
+  const loadUnreadCount = useNotificationStore(s => s.loadUnreadCount);
+
+  const loadSettings = useSettingsStore(s => s.loadSettings);
+  const pushEnabled = useSettingsStore(s => s.settings.notifications.pushEnabled);
+
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const [userProfile, setUserProfile] = useState<{
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+  } | null>(null);
+
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+
+
+
+  useChallengeNotificationHandler();
+  useDeepLinkHandler();
+  useDailyStudyReminder();
+  usePresenceHeartbeat();
+
+
+
+  useEffect(() => {
+    if (!isPasswordRecovery) return;
+    const timer = setInterval(() => {
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('Auth', { screen: 'ResetPassword' });
+        clearInterval(timer);
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [isPasswordRecovery]);
+
+  useEffect(() => {
+
+    void initialize();
+
+  }, [initialize]);
+
+
+
+  useEffect(() => {
+
+    if (!user?.id) {
+
+      setOnboardingChecked(true);
+
+      setShowOnboarding(false);
+
+      return;
+
+    }
+
+    void loadSettings(user.id);
+
+    void fetchDecks(user.id);
+
+    void fetchGroups(user.id);
+
+    void fetchDmThreads(user.id);
+
+    void loadUnreadCount(user.id);
+
+    if (!isRunningInExpoGo() && pushEnabled) {
+      void registerForPushNotifications().then(token => {
+        if (token && user?.id) void uploadPushToken(token);
+      });
+    }
+
+    AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
+
+      setShowOnboarding(v !== 'true');
+
+      setOnboardingChecked(true);
+
+    });
+
+  }, [user?.id, pushEnabled, loadSettings, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
+
+
+
+  useEffect(() => {
+
+    if (!user?.id || showOnboarding) {
+
+      setUserProfile(null);
+
+      setShowUsernameModal(false);
+
+      return;
+
+    }
+
+    void supabase
+      .from('profiles')
+      .select('username, first_name, last_name, name')
+      .eq('id', user.id)
+      .single()
+      .then(({ data: profile, error }) => {
+        if (error || !profile) {
+          setUserProfile({ name: user.user_metadata?.name || 'User' });
+          setShowUsernameModal(true);
+          return;
+        }
+
+        const nextProfile = {
+          username: profile.username || undefined,
+          firstName: profile.first_name || undefined,
+          lastName: profile.last_name || undefined,
+          name: profile.name || user.user_metadata?.name || 'User',
+        };
+
+        setUserProfile(nextProfile);
+        setShowUsernameModal(!nextProfile.username);
+      });
+
+  }, [user?.id, showOnboarding]);
+
+
+
+  useEffect(() => {
+    if (isInitialized && (!user || onboardingChecked)) {
+      void SplashScreen.hideAsync();
+    }
+  }, [isInitialized, user, onboardingChecked]);
+
+
+
+  if (!isInitialized || (user && !onboardingChecked && !isPasswordRecovery)) {
+    return <BootLoadingScreen />;
   }
 
-  const isAuthenticated = !!user;
+
 
   return (
-    <NavigationContainer linking={linkingConfig} theme={navigationTheme}>
+
+    <>
+
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        {isAuthenticated ? (
-          <RootStack.Screen name="Main" component={MainNavigator} />
-        ) : (
+
+        {!user || isPasswordRecovery ? (
+
           <RootStack.Screen name="Auth" component={AuthNavigator} />
+
+        ) : showOnboarding ? (
+
+          <RootStack.Screen name="Onboarding">
+            {() => <OnboardingScreen onComplete={() => setShowOnboarding(false)} />}
+          </RootStack.Screen>
+
+        ) : (
+
+          <>
+
+            <RootStack.Screen name="Main" component={MainTabs} />
+
+            <RootStack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="Offline" component={OfflineScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="LegalDocument" component={LegalDocumentScreen} options={{ presentation: 'modal' }} />
+
+          </>
+
         )}
+
       </RootStack.Navigator>
-    </NavigationContainer>
-  );
-};
 
-// Root Navigator with Theme Provider
-export const RootNavigator = () => {
+      {user && !showOnboarding ? (
+        <UsernameRequiredModal
+          visible={showUsernameModal}
+          onClose={() => {}}
+          currentUser={{
+            id: user.id,
+            name: userProfile?.name || user.user_metadata?.name || 'User',
+            email: user.email,
+            username: userProfile?.username,
+            firstName: userProfile?.firstName,
+            lastName: userProfile?.lastName,
+          }}
+          onSuccess={(username, firstName, lastName) => {
+            setUserProfile({ username, firstName, lastName, name: `${firstName} ${lastName}` });
+            setShowUsernameModal(false);
+          }}
+        />
+      ) : null}
+
+    </>
+
+  );
+
+}
+
+
+
+export function RootNavigator() {
+
   return (
+
     <ThemeProvider>
+
+      <NavigationContainer ref={navigationRef} linking={linkingConfig}>
+
       <RootNavigatorInner />
+
+      </NavigationContainer>
+
     </ThemeProvider>
+
   );
-};
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
+}
 
-export default RootNavigator;
+

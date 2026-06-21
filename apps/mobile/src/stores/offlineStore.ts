@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as api from '../services/api';
 
 export interface OfflineTest {
   id: string;
@@ -44,6 +45,16 @@ export interface PendingResult {
   completedAt: string;
   timeSpent: number;
   synced: boolean;
+  sessionPayload?: {
+    questions?: unknown[];
+    userAnswers?: Record<string, unknown>;
+    score: number;
+    correctAnswersCount: number;
+    totalQuestions: number;
+    startTime?: string;
+    endTime?: string;
+    config?: unknown;
+  };
 }
 
 export interface DownloadOptions {
@@ -65,22 +76,58 @@ interface OfflineState {
   totalStorageUsed: number; // in KB
   
   // Actions
-  loadOfflineData: () => Promise<void>;
-  downloadTest: (testId: string, groupId: string, groupName: string, testName: string, options?: DownloadOptions) => Promise<void>;
-  deleteDownloadedTest: (id: string) => Promise<void>;
+  loadOfflineData: (userId?: string) => Promise<void>;
+  downloadTest: (
+    testId: string,
+    groupId: string,
+    groupName: string,
+    testName: string,
+    options?: DownloadOptions,
+    userId?: string
+  ) => Promise<void>;
+  deleteDownloadedTest: (id: string, userId?: string) => Promise<void>;
   savePendingResult: (result: Omit<PendingResult, 'id' | 'synced'>) => Promise<void>;
-  syncPendingResults: () => Promise<void>;
-  clearAllOfflineData: () => Promise<void>;
+  syncPendingResults: (userId: string) => Promise<void>;
+  clearAllOfflineData: (userId?: string) => Promise<void>;
   getOfflineTest: (testId: string) => OfflineTest | undefined;
 }
 
 const STORAGE_KEY = '@lantern_offline_data';
 const RESULTS_KEY = '@lantern_pending_results';
 
-// All question types available
 const ALL_QUESTION_TYPES = ['mcq-single', 'mcq-multiple', 'true-false', 'fill-blank'] as const;
 
-// Mock questions for demo download
+type ApiOfflineBundle = Awaited<ReturnType<typeof api.fetchOfflineBundles>>[number];
+
+const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
+  const config = (bundle.config || {}) as Record<string, unknown>;
+  const questions = (bundle.questions || []) as OfflineQuestion[];
+  const size = Math.round(JSON.stringify(bundle).length / 1024);
+
+  return {
+    id: bundle.bundle_id,
+    testId: bundle.bundle_id,
+    groupId: (config.groupId as string) || bundle.bundle_id,
+    groupName: bundle.group_name,
+    testName: bundle.display_name || bundle.group_name,
+    questionCount: questions.length,
+    downloadedAt: bundle.downloaded_at,
+    size,
+    questions,
+    timeLimit: config.timerDuration ? Math.round(Number(config.timerDuration) / 60) : undefined,
+    questionTypes: config.allowedQuestionTypes as string[] | undefined,
+    shuffled: config.shuffleQuestions as boolean | undefined,
+    recentlyAddedDays: config.recentlyAddedDays as number | undefined,
+  };
+};
+
+const persistLocalTests = async (downloadedTests: OfflineTest[]) => {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
+  const totalStorageUsed = downloadedTests.reduce((sum, t) => sum + t.size, 0);
+  return totalStorageUsed;
+};
+
+// Mock questions — dev fallback only when group has no question messages
 const generateMockQuestions = (count: number, allowedTypes?: string[], recentlyAddedDays?: number): OfflineQuestion[] => {
   const types = allowedTypes && allowedTypes.length > 0 
     ? allowedTypes 
@@ -111,6 +158,63 @@ const generateMockQuestions = (count: number, allowedTypes?: string[], recentlyA
   });
 };
 
+const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuestion | null => {
+  const payload = message.question || message.questionData || message;
+  const stem = payload.questionStem || payload.stem || message.text || message.content;
+  if (!stem) return null;
+
+  const rawOptions = payload.options || [];
+  const options = Array.isArray(rawOptions)
+    ? rawOptions.map((opt: any, i: number) => ({
+        id: String(opt.id ?? opt.optionId ?? `opt-${i}`),
+        text: String(opt.text ?? opt.optionText ?? opt.label ?? ''),
+        isCorrect: Boolean(opt.isCorrect ?? opt.correct ?? payload.correctAnswerIds?.includes?.(opt.id)),
+      }))
+    : [];
+
+  return {
+    id: String(message.id ?? `q-${index}`),
+    stem: String(stem),
+    type: String(payload.questionType || payload.type || 'mcq-single'),
+    options,
+    explanation: payload.explanation || message.explanation,
+    tags: payload.tags || message.tags || [],
+    imageUrl: payload.imageUrl || message.imageUrl,
+    createdAt: message.created_at || message.timestamp || new Date().toISOString(),
+  };
+};
+
+const fetchGroupQuestionsForOffline = async (
+  groupId: string,
+  options?: DownloadOptions
+): Promise<OfflineQuestion[]> => {
+  const messages = await api.fetchMessages(groupId, { limit: 200 });
+  const list = Array.isArray(messages) ? messages : (messages as any)?.data || [];
+  let questions = list
+    .filter((m: any) => m.type === 'QUESTION' || m.questionType || m.questionStem)
+    .map(mapMessageToOfflineQuestion)
+    .filter(Boolean) as OfflineQuestion[];
+
+  if (options?.questionTypes?.length) {
+    questions = questions.filter(q => options.questionTypes!.includes(q.type as any));
+  }
+
+  if (options?.recentlyAddedDays && options.recentlyAddedDays > 0) {
+    const cutoff = Date.now() - options.recentlyAddedDays * 24 * 60 * 60 * 1000;
+    questions = questions.filter(q => !q.createdAt || new Date(q.createdAt).getTime() >= cutoff);
+  }
+
+  if (options?.questionCount && options.questionCount > 0) {
+    questions = questions.slice(0, options.questionCount);
+  }
+
+  if (questions.length === 0) {
+    throw new Error('No questions found in this group. Add questions to the group chat first.');
+  }
+
+  return questions;
+};
+
 export const useOfflineStore = create<OfflineState>((set, get) => ({
   downloadedTests: [],
   pendingResults: [],
@@ -120,17 +224,26 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   lastSyncAt: null,
   totalStorageUsed: 0,
 
-  loadOfflineData: async () => {
+  loadOfflineData: async (userId?: string) => {
     try {
       const [testsData, resultsData] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY),
         AsyncStorage.getItem(RESULTS_KEY),
       ]);
       
-      const downloadedTests = testsData ? JSON.parse(testsData) : [];
+      let downloadedTests: OfflineTest[] = testsData ? JSON.parse(testsData) : [];
       const pendingResults = resultsData ? JSON.parse(resultsData) : [];
+
+      if (userId) {
+        try {
+          const apiBundles = await api.fetchOfflineBundles(userId);
+          downloadedTests = apiBundles.map(mapApiBundleToOfflineTest);
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
+        } catch (apiError) {
+          console.warn('Failed to fetch offline bundles from API, using cache:', apiError);
+        }
+      }
       
-      // Calculate total storage
       const totalStorageUsed = downloadedTests.reduce((sum: number, t: OfflineTest) => sum + t.size, 0);
       
       set({ downloadedTests, pendingResults, totalStorageUsed });
@@ -139,7 +252,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
-  downloadTest: async (testId: string, groupId: string, groupName: string, testName: string, options?: DownloadOptions) => {
+  downloadTest: async (testId, groupId, groupName, testName, options, userId) => {
     set({ isDownloading: true, downloadProgress: 0 });
     
     try {
@@ -149,13 +262,22 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         set({ downloadProgress: i });
       }
       
-      // Use options or defaults
-      const questionCount = options?.questionCount || Math.floor(Math.random() * 20) + 10;
-      const questionTypes = options?.questionTypes;
-      const recentlyAddedDays = options?.recentlyAddedDays;
+      set({ downloadProgress: 30 });
+
+      let questions: OfflineQuestion[];
+      try {
+        questions = await fetchGroupQuestionsForOffline(groupId, options);
+      } catch (fetchError) {
+        if (__DEV__) {
+          console.warn('[OfflineStore] Falling back to sample questions in dev:', fetchError);
+          const questionCount = options?.questionCount || 10;
+          questions = generateMockQuestions(questionCount, options?.questionTypes, options?.recentlyAddedDays);
+        } else {
+          throw fetchError;
+        }
+      }
       
-      // Generate mock questions (in real app, fetch from API with filters)
-      let questions = generateMockQuestions(questionCount, questionTypes, recentlyAddedDays);
+      set({ downloadProgress: 70 });
       
       // Shuffle if requested
       if (options?.shuffleQuestions) {
@@ -170,9 +292,20 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       // Calculate approximate size (rough estimate)
       const size = Math.round(JSON.stringify(questions).length / 1024);
       
+      const bundleId = `offline-${Date.now()}`;
+      const config = {
+        groupId,
+        groupName,
+        numberOfQuestions: questions.length,
+        timerDuration: (options?.timeLimit || 0) * 60,
+        allowedQuestionTypes: options?.questionTypes,
+        shuffleQuestions: options?.shuffleQuestions,
+        recentlyAddedDays: options?.recentlyAddedDays,
+      };
+
       const newTest: OfflineTest = {
-        id: `offline-${Date.now()}`,
-        testId,
+        id: bundleId,
+        testId: bundleId,
         groupId,
         groupName,
         testName,
@@ -181,15 +314,28 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         size,
         questions,
         timeLimit: options?.timeLimit,
-        questionTypes: questionTypes,
+        questionTypes: options?.questionTypes,
         shuffled: options?.shuffleQuestions,
-        recentlyAddedDays: recentlyAddedDays,
+        recentlyAddedDays: options?.recentlyAddedDays,
       };
       
       const downloadedTests = [...get().downloadedTests, newTest];
-      const totalStorageUsed = downloadedTests.reduce((sum, t) => sum + t.size, 0);
-      
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
+      const totalStorageUsed = await persistLocalTests(downloadedTests);
+
+      if (userId) {
+        try {
+          await api.saveOfflineBundle(userId, {
+            bundleId,
+            config,
+            questions,
+            groupName,
+            displayName: testName,
+            downloadedAt: newTest.downloadedAt,
+          });
+        } catch (apiError) {
+          console.warn('Failed to save offline bundle to API:', apiError);
+        }
+      }
       
       set({ 
         downloadedTests, 
@@ -204,12 +350,18 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
-  deleteDownloadedTest: async (id: string) => {
+  deleteDownloadedTest: async (id: string, userId?: string) => {
     try {
       const downloadedTests = get().downloadedTests.filter(t => t.id !== id);
-      const totalStorageUsed = downloadedTests.reduce((sum, t) => sum + t.size, 0);
-      
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
+      const totalStorageUsed = await persistLocalTests(downloadedTests);
+
+      if (userId) {
+        try {
+          await api.deleteOfflineBundle(userId, id);
+        } catch (apiError) {
+          console.warn('Failed to delete offline bundle from API:', apiError);
+        }
+      }
       
       set({ downloadedTests, totalStorageUsed });
     } catch (error) {
@@ -237,23 +389,46 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
-  syncPendingResults: async () => {
+  syncPendingResults: async (userId: string) => {
     set({ isSyncing: true });
     
     try {
-      // Simulate sync delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const unsynced = get().pendingResults.filter(r => !r.synced);
+      const syncedIds = new Set<string>();
+
+      for (const result of unsynced) {
+        try {
+          if (result.sessionPayload) {
+            const savedSession = await api.saveTestResult(userId, result.sessionPayload);
+            if (savedSession?.id) {
+              await api.submitTestResult(savedSession.id, {
+                score: result.sessionPayload.score,
+                correctAnswersCount: result.sessionPayload.correctAnswersCount,
+                totalQuestions: result.sessionPayload.totalQuestions,
+              });
+            }
+          } else {
+            await api.saveTestResult(userId, {
+              score: result.percentage,
+              correctAnswersCount: result.score,
+              totalQuestions: result.totalQuestions,
+              startTime: result.completedAt,
+              endTime: result.completedAt,
+              config: { groupName: result.groupName, testId: result.testId },
+            });
+          }
+          syncedIds.add(result.id);
+        } catch (syncError) {
+          console.error('Failed to sync result:', result.id, syncError);
+        }
+      }
+
+      const pendingResults = get().pendingResults.filter(r => !syncedIds.has(r.id));
       
-      // Mark all as synced
-      const pendingResults = get().pendingResults.map(r => ({ ...r, synced: true }));
-      
-      // In a real app, you would send these to the server, then remove synced ones
-      const unsyncedResults = pendingResults.filter(r => !r.synced);
-      
-      await AsyncStorage.setItem(RESULTS_KEY, JSON.stringify(unsyncedResults));
+      await AsyncStorage.setItem(RESULTS_KEY, JSON.stringify(pendingResults));
       
       set({ 
-        pendingResults: unsyncedResults,
+        pendingResults,
         isSyncing: false,
         lastSyncAt: new Date().toISOString(),
       });
@@ -264,8 +439,19 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
-  clearAllOfflineData: async () => {
+  clearAllOfflineData: async (userId?: string) => {
     try {
+      if (userId) {
+        const { downloadedTests } = get();
+        await Promise.all(
+          downloadedTests.map(t =>
+            api.deleteOfflineBundle(userId, t.id).catch(err =>
+              console.warn('Failed to delete bundle from API:', t.id, err)
+            )
+          )
+        );
+      }
+
       await Promise.all([
         AsyncStorage.removeItem(STORAGE_KEY),
         AsyncStorage.removeItem(RESULTS_KEY),

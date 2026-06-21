@@ -22,8 +22,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
 import { supabase } from '../../services/supabase';
 import { useTheme } from '../../theme';
+import { LanternLogo } from '../../components/LanternLogo';
+import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import type { AuthStackParamList } from '../../navigation/types';
 
-type SignUpScreenProps = NativeStackScreenProps<any, 'SignUp'>;
+type SignUpScreenProps = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
 
 interface FormErrors {
   firstName?: string;
@@ -284,23 +287,11 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
           console.log('Profile insert error (may already exist):', profileError);
         }
 
-        // Sign in immediately
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (signInError) {
-          Alert.alert('Sign In Error', 'Account created but failed to sign in. Please try logging in.');
-          navigation.goBack();
-          return;
+        if (data.session?.user) {
+          Alert.alert('Welcome to Lantern Study!', 'Your account has been created successfully.');
+        } else {
+          navigation.replace('VerifyEmail', { email });
         }
-
-        Alert.alert(
-          'Welcome to Lantern Study!',
-          'Your account has been created successfully.',
-          [{ text: 'Get Started' }]
-        );
       }
     } catch (error: any) {
       Alert.alert('Sign Up Failed', error.message || 'Something went wrong');
@@ -347,8 +338,8 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
           >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
-          <View style={[styles.logoContainer, { backgroundColor: colors.card }]}>
-            <Ionicons name="book" size={50} color={colors.primary} />
+          <View style={styles.logoContainer}>
+            <LanternLogo size={72} />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join us to illuminate your mind.</Text>
@@ -589,10 +580,23 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
           {/* Terms */}
           <Text style={[styles.termsText, { color: colors.textSecondary }]}>
             By signing up, you agree to our{' '}
-            <Text style={[styles.termsLink, { color: colors.primary }]}>Terms of Service</Text> and{' '}
-            <Text style={[styles.termsLink, { color: colors.primary }]}>Privacy Policy</Text>
+            <Text
+              style={[styles.termsLink, { color: colors.primary }]}
+              onPress={() => navigation.navigate('LegalDocument', { document: 'terms' })}
+            >
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text
+              style={[styles.termsLink, { color: colors.primary }]}
+              onPress={() => navigation.navigate('LegalDocument', { document: 'privacy' })}
+            >
+              Privacy Policy
+            </Text>
           </Text>
         </View>
+
+        <SocialAuthButtons disabled={isLoading} />
 
         {/* Sign In Link */}
         <View style={styles.footer}>

@@ -24,6 +24,7 @@ import type {
   TransactionType,
   Budget,
 } from '../types';
+import { normalizeStorageUrl } from './storageUrl';
 
 // ============================================
 // USER MAPPERS
@@ -70,6 +71,10 @@ export const mapUserStatsFromApi = (data: any): UserStats => {
     highScoreTests: data.high_score_tests || data.highScoreTests || 0,
     perfectScoreTests: data.perfect_score_tests || data.perfectScoreTests || 0,
     gamesWon: data.games_won || data.gamesWon || 0,
+    listingsCreated: data.listings_created || data.listingsCreated || 0,
+    listingsSold: data.listings_sold || data.listingsSold || 0,
+    fiveStarReviews: data.five_star_reviews || data.fiveStarReviews || 0,
+    offersMade: data.offers_made || data.offersMade || 0,
   };
 };
 
@@ -124,7 +129,10 @@ export const mapMessageFromApi = (data: any): Message => {
     questionType: data.question_type || data.questionType,
     options: (data.options || []).map(mapQuestionOptionFromApi),
     correctAnswerIds: data.correct_answer_ids || data.correctAnswerIds,
-    imageUrl: data.image_url || data.imageUrl,
+    imageUrl: (() => {
+      const raw = data.image_url || data.imageUrl;
+      return raw ? normalizeStorageUrl(raw) : undefined;
+    })(),
     tags: data.tags,
     questionStatus: data.question_status || data.questionStatus,
     upvotes: data.upvotes || 0,
@@ -177,7 +185,7 @@ export const mapSrsDataFromApi = (data: any): SrsData | undefined => {
     interval: data.interval || 0,
     easeFactor: data.ease_factor || data.easeFactor || 2.5,
     repetitions: data.repetitions || 0,
-    nextReviewDate: data.next_review_date || data.nextReviewDate,
+    nextReviewDate: data.next_review_date || data.nextReviewDate || data.next_review,
     failedAttempts: data.failed_attempts || data.failedAttempts || 0,
     isLeech: data.is_leech || data.isLeech || false,
   };
@@ -193,7 +201,10 @@ export const mapFlashcardFromApi = (data: any): Flashcard => {
     front: data.front,
     back: data.back,
     clozeText: data.cloze_text || data.clozeText,
-    imageUrl: data.image_url || data.imageUrl,
+    imageUrl: (() => {
+      const raw = data.image_url || data.imageUrl;
+      return raw ? normalizeStorageUrl(raw) : undefined;
+    })(),
     occlusionData: data.occlusion_data || data.occlusionData,
     srsData: mapSrsDataFromApi(data.srs_data || data.srsData),
     tags: data.tags,
@@ -353,8 +364,9 @@ export const mapBudgetFromApi = (data: any): Budget => {
   
   return {
     userId: data.user_id || data.userId,
-    month: data.month_year || data.month,
-    targetAmount: parseFloat(data.monthly_limit || data.targetAmount) || 0,
+    monthYear: data.month_year || data.monthYear || data.month,
+    monthlyLimit: parseFloat(data.monthly_limit || data.monthlyLimit || data.targetAmount) || 0,
+    categoryBudgets: data.category_budgets || data.categoryBudgets,
   };
 };
 

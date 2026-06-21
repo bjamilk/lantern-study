@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMyListings, fetchSellerStats, updateListingStatus, deleteMarketplaceListing } from '../services/supabase';
-import { MarketplaceListing, SellerStats, TransactionType } from '../types';
+import {
+  fetchMyListings,
+  fetchSellerStats,
+  fetchSellerAnalytics,
+  updateListingStatus,
+  deleteMarketplaceListing,
+  fetchSellerPreferences,
+  updateSellerPreferences,
+  fetchSellerOnboarding,
+} from '../services/supabase';
+import { MarketplaceListing, SellerStats, SellerAnalytics, SellerOnboardingStatus } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { useBudgetStore } from '../stores/budgetStore';
+import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
+import CreateBundleModal from './marketplace/CreateBundleModal';
+import SellerCampaignPanel from './marketplace/SellerCampaignPanel';
+import SellerCouponsPanel from './marketplace/SellerCouponsPanel';
+import SellerOnboardingWizard from './marketplace/SellerOnboardingWizard';
 import {
   PlusIcon,
   PencilIcon,
@@ -21,21 +34,58 @@ import {
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
   onBack: () => void;
+  refreshKey?: number;
 }
 
-const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack }) => {
+const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack, refreshKey = 0 }) => {
   const { currentUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'active' | 'sold' | 'inactive'>('active');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [stats, setStats] = useState<SellerStats | null>(null);
+  const [analytics, setAnalytics] = useState<SellerAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const { addTransaction } = useBudgetStore();
+  const [showBundleModal, setShowBundleModal] = useState(false);
+  const [bundleListings, setBundleListings] = useState<MarketplaceListing[]>([]);
+  const [showCampaign, setShowCampaign] = useState(false);
+  const [showCoupons, setShowCoupons] = useState(false);
+  const [hallDropoffEnabled, setHallDropoffEnabled] = useState(false);
+  const [hallDropoffMin, setHallDropoffMin] = useState('');
+  const [requirePaymentConfirmation, setRequirePaymentConfirmation] = useState(false);
+  const [boostCredits, setBoostCredits] = useState<number | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState<SellerOnboardingStatus | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const { refreshBudgetTransactions } = useBudgetHandlers();
+
+  useEffect(() => {
+    (async () => {
+      const [prefs, onboarding] = await Promise.all([
+        fetchSellerPreferences(),
+        fetchSellerOnboarding(),
+      ]);
+      if (prefs) {
+        setHallDropoffEnabled(!!prefs.hall_dropoff_enabled);
+        setHallDropoffMin(
+          prefs.hall_dropoff_min_amount != null ? String(prefs.hall_dropoff_min_amount) : ''
+        );
+        setRequirePaymentConfirmation(!!prefs.require_payment_confirmation);
+        setBoostCredits(prefs.boost_credits ?? null);
+      }
+      if (onboarding) {
+        setOnboardingStatus(onboarding);
+        setBoostCredits(onboarding.boostCredits);
+        if (onboarding.needsOnboarding) {
+          setShowOnboarding(true);
+        }
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
+  }, [activeTab, refreshKey]);
 
   const loadData = async () => {
     setLoading(true);
@@ -47,19 +97,29 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
     
     try {
       // Fetch listings and stats in parallel, but don't wait for both
-      const listingsPromise = fetchMyListings(activeTab, currentUser?.id).catch(err => {
+      const listingsPromise = fetchMyListings(activeTab).catch(err => {
         console.error('Error fetching listings:', err);
         return [];
       });
       
-      const statsPromise = fetchSellerStats(currentUser?.id).catch(err => {
+      const statsPromise = fetchSellerStats().catch(err => {
         console.error('Error fetching stats:', err);
         return null;
       });
+
+      const analyticsPromise = fetchSellerAnalytics().catch(err => {
+        console.error('Error fetching analytics:', err);
+        return null;
+      });
       
-      const [listingsData, statsData] = await Promise.all([listingsPromise, statsPromise]);
+      const [listingsData, statsData, analyticsData] = await Promise.all([
+        listingsPromise,
+        statsPromise,
+        analyticsPromise,
+      ]);
       setListings(listingsData || []);
       setStats(statsData);
+      setAnalytics(analyticsData);
     } catch (error) {
       console.error('Error loading data:', error);
       setListings([]);
@@ -72,21 +132,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
   const handleStatusChange = async (listingId: string, newStatus: 'active' | 'inactive' | 'sold') => {
     try {
       await updateListingStatus(listingId, newStatus);
-      // Auto-log sale to budget when marking as sold
-      if (newStatus === 'sold') {
-        const listing = listings.find(l => l.id === listingId);
-        if (listing) {
-          addTransaction({
-            id: crypto.randomUUID(),
-            userId: listing.seller_id,
-            type: TransactionType.INCOME,
-            amount: listing.price,
-            category: 'marketplace_sale',
-            description: `Sold: ${listing.title}`,
-            date: new Date().toISOString().split('T')[0],
-            linkedListingId: listingId,
-          });
-        }
+      if (newStatus === 'sold' && currentUser) {
+        await refreshBudgetTransactions(currentUser.id);
       }
       await loadData();
       setActionMenuOpen(null);
@@ -132,6 +179,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
     return categoryNames[category] || category;
   };
 
+  const tabCounts = {
+    active: stats?.activeListings ?? 0,
+    sold: stats?.soldListings ?? 0,
+    inactive: Math.max(
+      0,
+      (stats?.totalListings ?? 0) - (stats?.activeListings ?? 0) - (stats?.soldListings ?? 0)
+    ),
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
       {/* Header */}
@@ -151,10 +207,50 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
               </h1>
               <p className="text-slate-600 dark:text-slate-400 mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
                 Manage your marketplace listings
+                {boostCredits != null && (
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+                    {boostCredits} boost credit{boostCredits === 1 ? '' : 's'}
+                  </span>
+                )}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => onNavigate('MarketplaceOrders')}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+            >
+              <ShoppingBagIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Orders</span>
+            </button>
+            <button
+              onClick={() => onNavigate('SellerCustomers')}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
+            >
+              <ChartBarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              Customers
+            </button>
+            <button
+              onClick={() => setShowCampaign(true)}
+              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+            >
+              Campaign
+            </button>
+            <button
+              onClick={async () => {
+                setBundleListings(await fetchMyListings('active'));
+                setShowBundleModal(true);
+              }}
+              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+            >
+              Bundle
+            </button>
+            <button
+              onClick={() => setShowCoupons(true)}
+              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+            >
+              Coupons
+            </button>
             <button
               onClick={() => onNavigate('MarketplaceInquiries')}
               className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
@@ -222,10 +318,156 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
         <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 p-3 sm:p-4 md:p-6">
           <StatCard icon={ShoppingBagIcon} label="Total Listings" value={stats.totalListings} color="indigo" />
           <StatCard icon={CheckCircleIcon} label="Active" value={stats.activeListings} color="green" />
-          <StatCard icon={ShoppingBagIcon} label="Sold" value={stats.soldListings} color="blue" />
+          <StatCard icon={ShoppingBagIcon} label="Sold Listings" value={stats.soldListings} color="blue" />
+          <StatCard icon={CheckCircleIcon} label="Completed Sales" value={stats.completedOrders ?? analytics?.completedSalesCount ?? 0} color="purple" />
           <StatCard icon={EyeIcon} label="Total Views" value={stats.totalViews} color="purple" />
           <StatCard icon={ChatBubbleLeftIcon} label="Inquiries" value={stats.totalInquiries} color="orange" />
-          <StatCard icon={HeartIcon} label="Favorites" value={stats.totalFavorites} color="red" />
+        </div>
+      )}
+
+      {analytics && (
+        <div className="px-3 sm:px-4 md:px-6 pb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-3">
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs text-slate-500">Revenue (30d)</p>
+              <p className="text-lg font-bold text-indigo-600">₦{analytics.revenue30d.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs text-slate-500">View-to-sale rate</p>
+              <p className="text-lg font-bold">{analytics.conversionRate}%</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs text-slate-500">Pending orders</p>
+              <p className="text-lg font-bold">{analytics.pendingOrders}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs text-slate-500">Offer accept rate</p>
+              <p className="text-lg font-bold">{analytics.offerAcceptRate}%</p>
+            </div>
+          </div>
+          {analytics.salesByWeek.length > 0 && (
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+              <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+                <ChartBarIcon className="w-4 h-4" /> Weekly sales
+              </p>
+              <div className="flex items-end gap-1 h-16">
+                {analytics.salesByWeek.map((week) => {
+                  const max = Math.max(...analytics.salesByWeek.map((w) => w.revenue), 1);
+                  const height = Math.max(4, (week.revenue / max) * 100);
+                  return (
+                    <div
+                      key={week.weekStart}
+                      className="flex-1 bg-indigo-500/80 rounded-t"
+                      style={{ height: `${height}%` }}
+                      title={`₦${week.revenue} · ${week.count} sales`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(analytics.salesBySource?.length || analytics.inquiryToSaleRate != null) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+              {analytics.salesBySource && analytics.salesBySource.length > 0 && (
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-semibold text-slate-500 mb-2">Sales by channel</p>
+                  <div className="space-y-1">
+                    {analytics.salesBySource.map((row) => (
+                      <div key={row.source} className="flex justify-between text-sm">
+                        <span className="capitalize">{row.source.replace(/_/g, ' ')}</span>
+                        <span>{row.count} · ₦{row.revenue.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {analytics.inquiryToSaleRate != null && (
+                <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs text-slate-500">Inquiry → sale rate</p>
+                  <p className="text-lg font-bold">{analytics.inquiryToSaleRate}%</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(analytics.staleListings?.length || analytics.highViewsLowEngagement?.length) ? (
+            <div className="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2">Listing insights</p>
+              {analytics.highViewsLowEngagement?.slice(0, 3).map((l) => (
+                <p key={l.id} className="text-xs text-amber-900 dark:text-amber-200">
+                  "{l.title}" — {l.views} views, no inquiries. Try a price drop or better photos.
+                </p>
+              ))}
+              {analytics.staleListings?.slice(0, 3).map((l) => (
+                <p key={l.id} className="text-xs text-amber-900 dark:text-amber-200 mt-1">
+                  "{l.title}" — listed {l.daysListed} days with low activity.
+                </p>
+              ))}
+            </div>
+          ) : null}
+
+          {analytics.favoriteHighlights && analytics.favoriteHighlights.length > 0 && (
+            <div className="mt-3 p-3 rounded-xl bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/40">
+              <p className="text-xs font-semibold text-pink-800 dark:text-pink-300 mb-2 flex items-center gap-1">
+                <HeartIcon className="w-4 h-4" /> Favorite highlights
+              </p>
+              {analytics.favoriteHighlights.map((l) => (
+                <p key={l.id} className="text-xs text-pink-900 dark:text-pink-200">
+                  "{l.title}" — {l.favoritesCount} favorite{l.favoritesCount === 1 ? '' : 's'}. Consider reaching out with a coupon.
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+            <p className="text-xs font-semibold text-slate-500 mb-1">Seller preferences</p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={requirePaymentConfirmation}
+                onChange={(e) => setRequirePaymentConfirmation(e.target.checked)}
+              />
+              Require payment proof before marking orders paid
+            </label>
+            <p className="text-xs font-semibold text-slate-500 mb-2">Hall dropoff threshold</p>
+            <label className="flex items-center gap-2 text-sm mb-2">
+              <input
+                type="checkbox"
+                checked={hallDropoffEnabled}
+                onChange={(e) => setHallDropoffEnabled(e.target.checked)}
+              />
+              Offer hall dropoff on combined orders
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={hallDropoffMin}
+                onChange={(e) => setHallDropoffMin(e.target.value)}
+                placeholder="Min ₦ amount"
+                className="lantern-field flex-1 text-sm"
+              />
+              <button
+                type="button"
+                disabled={savingPrefs}
+                onClick={async () => {
+                  setSavingPrefs(true);
+                  try {
+                    await updateSellerPreferences({
+                      hallDropoffEnabled,
+                      hallDropoffMinAmount: hallDropoffMin ? Number(hallDropoffMin) : null,
+                      requirePaymentConfirmation,
+                    });
+                  } finally {
+                    setSavingPrefs(false);
+                  }
+                }}
+                className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -242,7 +484,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
                   : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
-              {tab} ({listings.filter(l => l.status === tab).length || 0})
+              {tab} ({tabCounts[tab]})
             </button>
           ))}
         </div>
@@ -391,6 +633,11 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
                       <span className="font-semibold text-base sm:text-lg text-indigo-600 dark:text-indigo-400">
                         {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
                       </span>
+                      {listing.quantity != null && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                          {listing.quantity > 0 ? `${listing.quantity} in stock` : 'Out of stock'}
+                        </span>
+                      )}
                       <span className="flex items-center">
                         <EyeIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
                         {listing.views_count || 0}<span className="hidden sm:inline">&nbsp;views</span>
@@ -420,6 +667,32 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack 
         <div 
           className="fixed inset-0 z-0" 
           onClick={() => setActionMenuOpen(null)}
+        />
+      )}
+
+      {showBundleModal && (
+        <CreateBundleModal
+          listings={bundleListings}
+          onClose={() => setShowBundleModal(false)}
+          onCreated={() => loadData()}
+        />
+      )}
+      {showCampaign && <SellerCampaignPanel onClose={() => setShowCampaign(false)} />}
+      {showCoupons && <SellerCouponsPanel onClose={() => setShowCoupons(false)} />}
+      {showOnboarding && onboardingStatus?.needsOnboarding && (
+        <SellerOnboardingWizard
+          status={onboardingStatus}
+          onComplete={async () => {
+            setShowOnboarding(false);
+            const onboarding = await fetchSellerOnboarding();
+            if (onboarding) {
+              setOnboardingStatus(onboarding);
+              setBoostCredits(onboarding.boostCredits);
+            }
+            const prefs = await fetchSellerPreferences();
+            if (prefs?.boost_credits != null) setBoostCredits(prefs.boost_credits);
+          }}
+          onDismiss={() => setShowOnboarding(false)}
         />
       )}
     </div>

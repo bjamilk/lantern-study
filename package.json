@@ -32,13 +32,17 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "overrides": {
+    "react-native-reanimated": "~4.1.1",
+    "react-native-worklets": "0.5.1"
+  },
   "dependencies": {
     "katex": "^0.16.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
-    "react-native-worklets": "^0.7.4",
     "rehype-katex": "^6.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^3.0.1",
     "remark-math": "^6.0.0",
     "semver": "^7.7.3"

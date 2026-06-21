@@ -1,0 +1,372 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { XMarkIcon, TrashIcon, PaperAirplaneIcon, SparklesIcon, HandThumbUpIcon, HandThumbDownIcon } from '@heroicons/react/24/outline';
+import { HandThumbUpIcon as ThumbUpSolid, HandThumbDownIcon as ThumbDownSolid } from '@heroicons/react/24/solid';
+import { useCompanionStore } from '../stores/companionStore';
+import { useAuthStore } from '../stores/authStore';
+import { CompanionMessage, CompanionAction, CompanionUserContext } from '../types';
+import { submitCompanionFeedback, trackAIAnalyticsEvent } from '../services/ai';
+import { AIDisclaimer } from './AIDisclaimer';
+
+interface AICompanionPanelProps {
+  context?: CompanionUserContext;
+  onAction?: (action: CompanionAction) => void;
+  theme?: 'light' | 'dark';
+}
+
+const QUICK_PROMPTS = [
+  'What should I study today?',
+  'Generate flashcards for my weak topics',
+  'Quiz me on my weak topics',
+  'Give me a study tip',
+  'Explain spaced repetition',
+  'Build my study plan for this week',
+  'How am I spending this month?',
+];
+
+const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, theme = 'light' }) => {
+  const {
+    isOpen, close, messages, isLoading, isStreaming, error,
+    loadHistory, sendMessageStreaming, clearHistory, clearError,
+    pendingMessage, setPendingMessage,
+  } = useCompanionStore();
+  const currentUser = useAuthStore(s => s.currentUser);
+  const [input, setInput] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Load history on first open
+  const hasLoaded = useRef(false);
+  useEffect(() => {
+    if (isOpen && !hasLoaded.current && currentUser) {
+      hasLoaded.current = true;
+      loadHistory();
+    }
+  }, [isOpen, currentUser, loadHistory]);
+
+  // Auto-send pending message (e.g. explain-answer pre-population)
+  useEffect(() => {
+    if (isOpen && pendingMessage && !isLoading && !isStreaming) {
+      const msg = pendingMessage;
+      setPendingMessage(null);
+      setInput('');
+      handleSend(msg);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, pendingMessage]);
+
+  // Scroll to bottom on new messages / streaming tokens
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading, isStreaming]);
+
+  // Focus input when panel opens
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen]);
+
+  const enrichedContext: CompanionUserContext = {
+    userName: currentUser?.firstName || currentUser?.name || 'Student',
+    ...context,
+  };
+
+  const isBusy = isLoading || isStreaming;
+
+  const handleSend = useCallback(async (text?: string) => {
+    const msg = (text ?? input).trim();
+    if (!msg || isBusy) return;
+    setInput('');
+    await sendMessageStreaming(msg, enrichedContext);
+    trackAIAnalyticsEvent('companion_message_sent', { screen: context?.currentScreen });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, isBusy, sendMessageStreaming, enrichedContext]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleClear = async () => {
+    setShowClearConfirm(false);
+    await clearHistory();
+  };
+
+  const handleAction = (action: CompanionAction) => {
+    onAction?.(action);
+    trackAIAnalyticsEvent('companion_action_clicked', { action_type: action.type, label: action.label });
+    close();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Backdrop (mobile) */}
+      <div
+        className="fixed inset-0 z-40 bg-black/20 md:hidden"
+        onClick={close}
+      />
+
+      {/* Slide-in panel */}
+      <div className={`fixed right-0 top-0 h-full w-full max-w-sm z-50 flex flex-col shadow-2xl transition-transform duration-300
+        ${theme === 'dark' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}>
+
+        {/* Header */}
+        <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
+          ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-indigo-50'}`}>
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600 flex-shrink-0">
+            <SparklesIcon className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-indigo-700 dark:text-indigo-300">Lantern</p>
+            <p className={`text-xs truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+              {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              title="Clear conversation"
+              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+            >
+              <TrashIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={close}
+              title="Close"
+              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+            >
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Clear confirm banner */}
+        {showClearConfirm && (
+          <div className={`px-4 py-2 flex items-center gap-2 text-sm border-b flex-shrink-0
+            ${theme === 'dark' ? 'bg-red-900/30 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
+            <span className="flex-1">Clear entire conversation?</span>
+            <button onClick={handleClear} className="font-medium hover:underline">Yes</button>
+            <button onClick={() => setShowClearConfirm(false)} className="font-medium hover:underline">Cancel</button>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {error && (
+          <div className={`px-4 py-2 flex items-center gap-2 text-sm border-b flex-shrink-0
+            ${theme === 'dark' ? 'bg-red-900/30 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
+            <span className="flex-1">{error}</span>
+            <button onClick={clearError} className="font-medium hover:underline">Dismiss</button>
+          </div>
+        )}
+
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+          {messages.length === 0 && !isBusy && (
+            <EmptyState theme={theme} onQuickPrompt={handleSend} />
+          )}
+
+          {messages.map(msg => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              theme={theme}
+              onAction={handleAction}
+              isStreaming={isStreaming && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id}
+            />
+          ))}
+
+          {/* Typing indicator (non-streaming fallback) */}
+          {isLoading && !isStreaming && (
+            <div className="flex items-start gap-2">
+              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 flex-shrink-0 mt-0.5">
+                <SparklesIcon className="w-4 h-4 text-white" />
+              </div>
+              <div className={`px-3 py-2 rounded-2xl rounded-tl-none max-w-[80%]
+                ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                <TypingDots />
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input area */}
+        <div className={`px-4 py-3 border-t flex-shrink-0
+          ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+          <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
+            ${theme === 'dark' ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-300'}`}>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask Lantern anything…"
+              rows={1}
+              className={`flex-1 resize-none bg-transparent text-sm outline-none max-h-24 leading-relaxed
+                placeholder:text-slate-400 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}
+              style={{ height: 'auto' }}
+              onInput={e => {
+                const t = e.currentTarget;
+                t.style.height = 'auto';
+                t.style.height = Math.min(t.scrollHeight, 96) + 'px';
+              }}
+              disabled={isBusy}
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isBusy}
+              className="flex-shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+            >
+              <PaperAirplaneIcon className="w-4 h-4" />
+            </button>
+          </div>
+          <div className={`mt-1.5 text-center ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
+            <AIDisclaimer compact />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ─── Sub-components ────────────────────────────────────────
+
+interface MessageBubbleProps {
+  message: CompanionMessage;
+  theme: 'light' | 'dark';
+  onAction: (action: CompanionAction) => void;
+  isStreaming?: boolean;
+}
+
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, isStreaming }) => {
+  const isUser = message.role === 'user';
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+
+  const handleFeedback = async (rating: 'up' | 'down') => {
+    if (feedback) return; // already rated
+    setFeedback(rating);
+    await submitCompanionFeedback(message.id, rating);
+    trackAIAnalyticsEvent('companion_feedback', { rating, messageId: message.id });
+  };
+
+  return (
+    <div className={`flex items-start gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+      {!isUser && (
+        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 flex-shrink-0 mt-0.5">
+          <SparklesIcon className="w-4 h-4 text-white" />
+        </div>
+      )}
+      <div className={`flex flex-col gap-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
+        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
+          ${isUser
+            ? 'bg-indigo-600 text-white rounded-tr-none'
+            : theme === 'dark'
+              ? 'bg-slate-700 text-white rounded-tl-none'
+              : 'bg-slate-100 text-slate-900 rounded-tl-none'
+          }`}>
+          {message.content}
+          {isStreaming && (
+            <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-current animate-pulse align-middle" />
+          )}
+        </div>
+        {/* Action buttons */}
+        {message.actions && message.actions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-0.5">
+            {message.actions.map((action, i) => (
+              <button
+                key={i}
+                onClick={() => onAction(action)}
+                className={`text-xs px-3 py-1 rounded-full border font-medium transition-colors
+                  ${theme === 'dark'
+                    ? 'border-indigo-400 text-indigo-300 hover:bg-indigo-900'
+                    : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50'
+                  }`}
+              >
+                → {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Thumbs feedback (only on completed assistant messages) */}
+        {!isUser && !isStreaming && message.content.length > 0 && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <button
+              onClick={() => handleFeedback('up')}
+              title="Good response"
+              disabled={!!feedback}
+              className={`p-1 rounded transition-colors disabled:cursor-default
+                ${feedback === 'up'
+                  ? 'text-green-500'
+                  : theme === 'dark' ? 'text-slate-500 hover:text-green-400' : 'text-slate-400 hover:text-green-500'
+                }`}
+            >
+              {feedback === 'up' ? <ThumbUpSolid className="w-3.5 h-3.5" /> : <HandThumbUpIcon className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              onClick={() => handleFeedback('down')}
+              title="Poor response"
+              disabled={!!feedback}
+              className={`p-1 rounded transition-colors disabled:cursor-default
+                ${feedback === 'down'
+                  ? 'text-red-500'
+                  : theme === 'dark' ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-500'
+                }`}
+            >
+              {feedback === 'down' ? <ThumbDownSolid className="w-3.5 h-3.5" /> : <HandThumbDownIcon className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: string) => void }> = ({ theme, onQuickPrompt }) => (
+  <div className="flex flex-col items-center gap-4 py-6 text-center">
+    <div className="flex items-center justify-center w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900">
+      <SparklesIcon className="w-8 h-8 text-indigo-600 dark:text-indigo-300" />
+    </div>
+    <div>
+      <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>Hi, I'm Lantern!</p>
+      <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+        Your personal AI study companion. Ask me anything.
+      </p>
+    </div>
+    <div className="flex flex-wrap justify-center gap-2 mt-1">
+      {QUICK_PROMPTS.map(p => (
+        <button
+          key={p}
+          onClick={() => onQuickPrompt(p)}
+          className={`text-xs px-3 py-1.5 rounded-full border transition-colors
+            ${theme === 'dark'
+              ? 'border-slate-600 text-slate-300 hover:bg-slate-700'
+              : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+            }`}
+        >
+          {p}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+const TypingDots: React.FC = () => (
+  <div className="flex items-center gap-1 h-5">
+    {[0, 1, 2].map(i => (
+      <span
+        key={i}
+        className="w-2 h-2 rounded-full bg-slate-400 animate-bounce"
+        style={{ animationDelay: `${i * 150}ms`, animationDuration: '800ms' }}
+      />
+    ))}
+  </div>
+);
+
+export default AICompanionPanel;
+

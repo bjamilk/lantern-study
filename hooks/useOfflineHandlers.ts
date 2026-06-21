@@ -36,7 +36,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         closeModal
     } = useUIStore();
 
-    const handleDownloadForOffline = useCallback((
+    const handleDownloadForOffline = useCallback(async (
         config: Omit<TestConfig, 'questionIds' | 'groupId'>,
         useSpacedRepetition: boolean,
         selectedSubgroupIDs: string[]
@@ -117,21 +117,40 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         const sessionConfig: TestConfig = {
             ...config,
             groupId: selectedChat.id,
+            groupName: selectedChat.name,
             questionIds: selectedQuestions.map(q => q.id),
         };
 
-        const questionsForBundle: OfflineQuestion[] = shuffleArray(selectedQuestions).map(q => {
-            const questionWithOptions: Message = { ...q };
-            if (
-                (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
-                 q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
-                 q.questionType === QuestionType.TRUE_FALSE) &&
-                q.options
-            ) {
-                questionWithOptions.options = shuffleArray(q.options);
-            }
-            return questionWithOptions as OfflineQuestion;
-        });
+        const questionsForBundle: OfflineQuestion[] = await Promise.all(
+            shuffleArray(selectedQuestions).map(async (q) => {
+                const questionWithOptions: Message = { ...q };
+                if (
+                    (q.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
+                     q.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE ||
+                     q.questionType === QuestionType.TRUE_FALSE) &&
+                    q.options
+                ) {
+                    questionWithOptions.options = shuffleArray(q.options);
+                }
+                // Convert remote imageUrl to base64 so it works offline and in imports
+                if (q.imageUrl && !q.imageUrl.startsWith('data:')) {
+                    try {
+                        const imgResp = await fetch(q.imageUrl);
+                        const blob = await imgResp.blob();
+                        const base64 = await new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result as string);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(blob);
+                        });
+                        questionWithOptions.imageUrl = base64;
+                    } catch (err) {
+                        console.warn('[Offline] Failed to convert image to base64, keeping URL:', q.imageUrl, err);
+                    }
+                }
+                return questionWithOptions as OfflineQuestion;
+            })
+        );
 
         const newBundle: OfflineSessionBundle = {
             bundleId: uuidv4(),
@@ -173,7 +192,11 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         const endTime = bundle.config.timerDuration ? new Date(startTime.getTime() + bundle.config.timerDuration * 1000) : undefined;
         
         const sessionData: TestSessionData = {
-            config: bundle.config,
+            config: {
+                ...bundle.config,
+                // Prefer user-set displayName, then the original group name from config/bundle
+                groupName: bundle.displayName || bundle.config.groupName || bundle.groupName,
+            },
             questions: testQuestions,
             userAnswers: {},
             currentQuestionIndex: 0,
@@ -192,7 +215,10 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
             }, 0);
         } else {
             const studySessionData: StudySessionData = {
-                config: bundle.config,
+                config: {
+                    ...bundle.config,
+                    groupName: bundle.config.groupName || bundle.groupName,
+                },
                 questions: testQuestions,
                 userAnswers: {},
                 currentQuestionIndex: 0,
@@ -233,8 +259,9 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                     config: result.session.config,
                     questions: result.session.questions,
                     user_answers: result.session.userAnswers,
-                    start_time: result.session.startTime.toISOString(),
-                    end_time: result.session.endTime?.toISOString(),
+                    // Dates may be plain strings when rehydrated from localStorage
+                    start_time: new Date(result.session.startTime).toISOString(),
+                    end_time: result.session.endTime ? new Date(result.session.endTime).toISOString() : undefined,
                     is_offline: result.session.isOffline || false
                 };
                 const savedSession = await createTestSession(sessionData, currentUser.id);
@@ -264,7 +291,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                         const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
                         if (answer.isCorrect) stats.correctAttempts++;
                         else stats.incorrectAttempts++;
-                        stats.lastAttempted = result.session.endTime?.toISOString() || new Date().toISOString();
+                        stats.lastAttempted = result.session.endTime ? new Date(result.session.endTime).toISOString() : new Date().toISOString();
                         newUserQuestionStats[questionId] = stats;
 
                         upsertUserQuestionStat(currentUser.id, questionId, stats).catch(error => {
@@ -301,10 +328,62 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         }
     }, [isOnline, pendingSyncResults, currentUser, userQuestionStats, updateTestResults, setPendingSyncResults, setUserQuestionStats, setCurrentUser, addNotification]);
 
+    const handleImportBundle = useCallback((bundle: OfflineSessionBundle): string | null => {
+        // Assign a fresh bundleId so it never collides with an existing one
+        const imported: OfflineSessionBundle = {
+            ...bundle,
+            bundleId: uuidv4(),
+            downloadedAt: new Date(),
+        };
+
+        // Guard: reject if there's already a bundle with the same questions
+        const isDuplicate = offlineBundles.some(
+            b => b.groupName === imported.groupName &&
+                 b.questions.length === imported.questions.length &&
+                 b.config.numberOfQuestions === imported.config.numberOfQuestions
+        );
+        if (isDuplicate) {
+            alert(`A bundle for "${imported.groupName}" with ${imported.questions.length} questions already exists.`);
+            return null;
+        }
+
+        updateOfflineBundles(prev => [...prev, imported]);
+
+        if (currentUser) {
+            saveOfflineBundle(currentUser.id, imported).catch(err =>
+                console.error('[Offline] Failed to save imported bundle to cloud:', err)
+            );
+        }
+
+        addNotification(`Bundle "${imported.groupName}" imported with ${imported.questions.length} questions. Ready to start!`);
+        return imported.bundleId;
+    }, [offlineBundles, currentUser, updateOfflineBundles, addNotification]);
+
+    const handleRenameBundle = useCallback((bundleId: string, newName: string) => {
+        const trimmed = newName.trim();
+        updateOfflineBundles(prev => {
+            const updated = prev.map(b =>
+                b.bundleId === bundleId ? { ...b, displayName: trimmed || undefined } : b
+            );
+            // Persist the rename to the server so it survives device switches
+            if (currentUser) {
+                const renamedBundle = updated.find(b => b.bundleId === bundleId);
+                if (renamedBundle) {
+                    saveOfflineBundle(currentUser.id, renamedBundle).catch(err =>
+                        console.error('[Offline] Failed to persist bundle rename to server:', err)
+                    );
+                }
+            }
+            return updated;
+        });
+    }, [updateOfflineBundles, currentUser]);
+
     return {
         handleDownloadForOffline,
         handleStartOfflineSession,
         handleDeleteBundle,
         handleSyncResults,
+        handleImportBundle,
+        handleRenameBundle,
     };
 }

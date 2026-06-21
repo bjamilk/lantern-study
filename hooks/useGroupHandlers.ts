@@ -5,12 +5,13 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { checkAndAwardBadges, initialUserStats } from '../utils/helpers';
+import { resolveQuestionStatusAfterVote } from '@lantern/shared/utils';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
     sendMessage, fetchMessages, fetchUserVotesForGroup, voteQuestion,
     removeVote, updateMessage, updateQuestionStatus, createNotification,
-    updateUserProfile, deleteGroup, updateGroup, fetchDirectMessages,
+    updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
     sendDirectMessage, markGroupAsRead, markDMAsRead,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread
@@ -200,6 +201,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 ...prev,
                 [threadId]: (prev[threadId] || []).filter(m => m.id !== optimisticMessage.id),
             }));
+            const message = error instanceof Error ? error.message : 'Failed to send direct message';
+            alert(message);
         }
     }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads]);
 
@@ -576,17 +579,26 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
         try {
             if (currentUserVote === voteType) {
-                await removeVote(messageId, currentUser.id);
-                if (voteType === 'up') newUpvotes--;
-                else newDownvotes--;
+                const removeResult = await removeVote(messageId, currentUser.id);
+                if (removeResult?.upvotes !== undefined) {
+                    newUpvotes = removeResult.upvotes;
+                    newDownvotes = removeResult.downvotes;
+                } else {
+                    if (voteType === 'up') newUpvotes--;
+                    else newDownvotes--;
+                }
                 newUserVote = undefined;
             } else {
-                await voteQuestion(messageId, currentUser.id, voteType);
-                if (currentUserVote === 'up') newUpvotes--;
-                if (currentUserVote === 'down') newDownvotes--;
-                
-                if (voteType === 'up') newUpvotes++;
-                else newDownvotes++;
+                const voteResult = await voteQuestion(messageId, currentUser.id, voteType);
+                if (voteResult?.upvotes !== undefined) {
+                    newUpvotes = voteResult.upvotes;
+                    newDownvotes = voteResult.downvotes;
+                } else {
+                    if (currentUserVote === 'up') newUpvotes--;
+                    if (currentUserVote === 'down') newDownvotes--;
+                    if (voteType === 'up') newUpvotes++;
+                    else newDownvotes++;
+                }
                 newUserVote = voteType;
             }
         } catch (error) {
@@ -597,23 +609,23 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
         const updatedMessage = { ...message, upvotes: newUpvotes, downvotes: newDownvotes };
         
-        if (
-            updatedMessage.type === MessageType.QUESTION &&
-            updatedMessage.questionStatus === QuestionStatus.PENDING
-        ) {
+        if (updatedMessage.type === MessageType.QUESTION) {
             const group = groups.find(g => g.id === selectedChat.id);
-            if (group) {
-                const memberCount = group.members.length;
-                const threshold = Math.ceil(memberCount * 0.2);
-                if (newUpvotes >= threshold) {
-                    updatedMessage.questionStatus = QuestionStatus.VERIFIED;
-                    
-                    try {
-                        await updateQuestionStatus(messageId, QuestionStatus.VERIFIED);
-                    } catch (error) {
-                        console.error('Failed to update question status:', error);
-                    }
-                    
+            const memberCount = group?.members.length || 0;
+            const resolvedStatus = resolveQuestionStatusAfterVote({
+                upvotes: newUpvotes,
+                downvotes: newDownvotes,
+                memberCount,
+            });
+            if (resolvedStatus !== updatedMessage.questionStatus) {
+                updatedMessage.questionStatus = resolvedStatus;
+                try {
+                    await updateQuestionStatus(messageId, resolvedStatus);
+                } catch (error) {
+                    console.error('Failed to update question status:', error);
+                }
+
+                if (resolvedStatus === QuestionStatus.VERIFIED) {
                     if (updatedMessage.sender.id === currentUser.id) {
                         addNotification(`Your question "${updatedMessage.questionStem?.substring(0, 20)}..." has been verified and is now available in tests!`);
                     } else {
@@ -626,6 +638,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         } catch (error) {
                             console.error('Failed to create question verification notification:', error);
                         }
+                    }
+                } else if (resolvedStatus === QuestionStatus.REJECTED) {
+                    if (updatedMessage.sender.id === currentUser.id) {
+                        addNotification(`Your question "${updatedMessage.questionStem?.substring(0, 20)}..." was rejected by group votes and is not available in tests.`);
                     }
                 }
             }
@@ -802,26 +818,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [updateGroups]);
 
-    const handlePromoteToAdmin = useCallback((groupId: string, userId: string) => {
-        let newAdminIds: string[] | undefined;
+    const handlePromoteToAdmin = useCallback(async (groupId: string, userId: string) => {
         const group = groups.find(g => g.id === groupId);
         const user = users.find(u => u.id === userId);
 
-        updateGroups(prev => prev.map(g => {
-            if (g.id === groupId && !g.adminIds.includes(userId)) {
-                newAdminIds = [...g.adminIds, userId];
-                return { ...g, adminIds: newAdminIds };
-            }
-            return g;
-        }));
-        
-        if (newAdminIds && selectedChat?.id === groupId) {
-            setSelectedChat(prev => {
-                if (prev?.chatType === 'group') {
-                    return { ...prev, adminIds: newAdminIds! };
+        try {
+            const updatedGroup = await promoteGroupAdmin(groupId, userId);
+            if (updatedGroup?.adminIds) {
+                updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, adminIds: updatedGroup.adminIds } : g));
+                if (selectedChat?.id === groupId && selectedChat?.chatType === 'group') {
+                    setSelectedChat(prev => prev?.chatType === 'group' ? { ...prev, adminIds: updatedGroup.adminIds } : prev);
                 }
-                return prev;
-            });
+            }
+        } catch (error) {
+            console.error('Failed to promote admin:', error);
+            alert('Failed to promote member to admin.');
+            return;
         }
 
         if (group && user && currentUser && userId !== currentUser.id) {
@@ -837,7 +849,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, users, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
-    const handleDemoteAdmin = useCallback((groupId: string, userId: string) => {
+    const handleDemoteAdmin = useCallback(async (groupId: string, userId: string) => {
         const groupToUpdate = groups.find(g => g.id === groupId);
         if (!groupToUpdate) return;
     
@@ -845,35 +857,26 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             alert("Cannot demote the only admin of the group.");
             return;
         }
-        
-        const newAdminIds = groupToUpdate.adminIds.filter(id => id !== userId);
-    
-        if (newAdminIds.length < groupToUpdate.adminIds.length) {
-            updateGroups(prev => prev.map(g => 
-                g.id === groupId ? { ...g, adminIds: newAdminIds } : g
-            ));
-            
+
+        try {
+            const updatedGroup = await demoteGroupAdmin(groupId, userId);
+            const newAdminIds = updatedGroup?.adminIds || groupToUpdate.adminIds.filter(id => id !== userId);
+            updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, adminIds: newAdminIds } : g));
             if (selectedChat?.id === groupId) {
-                setSelectedChat(prev => {
-                    if (prev?.chatType === 'group') {
-                        return { ...prev, adminIds: newAdminIds };
-                    }
-                    return prev;
-                });
+                setSelectedChat(prev => prev?.chatType === 'group' ? { ...prev, adminIds: newAdminIds } : prev);
             }
 
             const user = users.find(u => u.id === userId);
             if (groupToUpdate && user && currentUser && userId !== currentUser.id) {
-                try {
-                    createNotification({
-                        user_id: userId,
-                        message: `You've been demoted from admin in "${groupToUpdate.name}" by ${currentUser.name}`,
-                        link: `/chat/${groupId}`
-                    }).catch(error => console.error('Failed to create demotion notification:', error));
-                } catch (error) {
-                    console.error('Failed to create demotion notification:', error);
-                }
+                createNotification({
+                    user_id: userId,
+                    message: `You've been demoted from admin in "${groupToUpdate.name}" by ${currentUser.name}`,
+                    link: `/chat/${groupId}`
+                }).catch(error => console.error('Failed to create demotion notification:', error));
             }
+        } catch (error) {
+            console.error('Failed to demote admin:', error);
+            alert('Failed to demote admin.');
         }
     }, [groups, users, currentUser, selectedChat, updateGroups, setSelectedChat]);
 

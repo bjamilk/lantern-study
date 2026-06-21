@@ -1,24 +1,32 @@
 import React from 'react';
-import { getPlatform } from '../config';
 
 // Web renderer uses react-markdown + KaTeX
-// Mobile renderer uses react-native-math-view for inline TeX
+// Mobile renderer uses React Native Text (required — raw strings cannot live inside View)
 
 export interface MarkdownRendererProps {
   content?: string;
   className?: string;
+  style?: Record<string, unknown>;
 }
 
-const isWeb = getPlatform() === 'web';
-
-// Lazy imports to avoid bundling/react native conflicts
-let MathView: any;
-
-// react-native-math-view is only available in React Native / Expo environment
-if (!isWeb && typeof require !== 'undefined') {
-  const requireFunc = require;
-  MathView = requireFunc('react-native-math-view').MathView;
+function isReactNativeRuntime(): boolean {
+  try {
+    const { Platform } = require('react-native');
+    return !!Platform?.OS;
+  } catch {
+    return false;
+  }
 }
+
+function getMobileTextComponent(): React.ComponentType<any> | null {
+  try {
+    return require('react-native').Text;
+  } catch {
+    return null;
+  }
+}
+
+const isWeb = !isReactNativeRuntime();
 
 const useWebMarkdownDeps = () => {
   const [deps, setDeps] = React.useState<{
@@ -26,6 +34,7 @@ const useWebMarkdownDeps = () => {
     remarkMath: any;
     remarkGfm: any;
     rehypeKatex: any;
+    rehypeSanitize: any;
   } | null>(null);
 
   React.useEffect(() => {
@@ -35,13 +44,19 @@ const useWebMarkdownDeps = () => {
 
     (async () => {
       try {
-        const [{ default: ReactMarkdown }, remarkMath, remarkGfm, rehypeKatex] = await Promise.all([
+        const [
+          { default: ReactMarkdown },
+          remarkMath,
+          remarkGfm,
+          rehypeKatex,
+          rehypeSanitize,
+        ] = await Promise.all([
           import('react-markdown'),
           import('remark-math'),
           import('remark-gfm'),
           import('rehype-katex'),
-          // Load KaTeX CSS only in web environments
-          // @ts-ignore: CSS imports are handled by Vite, but TS doesn't have types for it
+          import('rehype-sanitize'),
+          // @ts-ignore: CSS imports are handled by Vite
           import('katex/dist/katex.min.css').catch(() => null),
         ]);
 
@@ -49,17 +64,22 @@ const useWebMarkdownDeps = () => {
         const mathPlugin = normalizePkg(remarkMath);
         const gfmPlugin = normalizePkg(remarkGfm);
         const katexPlugin = normalizePkg(rehypeKatex);
+        const sanitizePlugin = normalizePkg(rehypeSanitize);
 
         if (isMounted) {
-          // If any plugin didn’t resolve properly, skip setting deps to avoid passing empty presets to react-markdown.
-          if (!mathPlugin || !gfmPlugin || !katexPlugin) {
+          if (!mathPlugin || !gfmPlugin || !katexPlugin || !sanitizePlugin) {
             setDeps(null);
           } else {
-            setDeps({ ReactMarkdown, remarkMath: mathPlugin, remarkGfm: gfmPlugin, rehypeKatex: katexPlugin });
+            setDeps({
+              ReactMarkdown,
+              remarkMath: mathPlugin,
+              remarkGfm: gfmPlugin,
+              rehypeKatex: katexPlugin,
+              rehypeSanitize: sanitizePlugin,
+            });
           }
         }
       } catch {
-        // If imports fail (e.g., in unit tests or odd environments), just keep deps null
         if (isMounted) setDeps(null);
       }
     })();
@@ -72,7 +92,10 @@ const useWebMarkdownDeps = () => {
   return deps;
 };
 
-const renderMobile = (content: string) => {
+const MobileMarkdownText: React.FC<{ content: string; style?: Record<string, unknown> }> = ({ content, style }) => {
+  const Text = getMobileTextComponent();
+  if (!Text) return null;
+
   const segments: Array<{ type: 'text' | 'math'; value: string }> = [];
   const regex = /\$(.+?)\$/g;
   let lastIndex = 0;
@@ -91,44 +114,49 @@ const renderMobile = (content: string) => {
     segments.push({ type: 'text', value: content.slice(lastIndex) });
   }
 
+  if (segments.length === 0) {
+    return <Text style={style}>{content}</Text>;
+  }
+
   return (
-    <>
-      {segments.map((segment, idx) => {
-        if (segment.type === 'math' && MathView) {
-          return <MathView key={idx} math={segment.value} resizeMode="cover" />;
-        }
-        return <React.Fragment key={idx}>{segment.value}</React.Fragment>;
-      })}
-    </>
+    <Text style={style}>
+      {segments.map((segment, idx) => (
+        <Text
+          key={idx}
+          style={segment.type === 'math' ? { fontStyle: 'italic' } : undefined}
+        >
+          {segment.type === 'math' ? `$${segment.value}$` : segment.value}
+        </Text>
+      ))}
+    </Text>
   );
 };
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, style }) => {
   const safeContent = content ?? '';
   const deps = useWebMarkdownDeps();
 
-  if (isWeb) {
-    // If deps haven't loaded yet, just render plaintext to avoid crashes.
-    if (!deps) {
-      return <div className={className}>{safeContent}</div>;
-    }
-
-    const { ReactMarkdown, remarkMath, remarkGfm, rehypeKatex } = deps;
-
-    return (
-      <div className={className}>
-        <ReactMarkdown
-          remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeKatex]}
-          components={{
-            a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-          }}
-        >
-          {safeContent}
-        </ReactMarkdown>
-      </div>
-    );
+  if (!isWeb) {
+    return <MobileMarkdownText content={safeContent} style={style} />;
   }
 
-  return <>{renderMobile(safeContent)}</>;
+  if (!deps) {
+    return <div className={className}>{safeContent}</div>;
+  }
+
+  const { ReactMarkdown, remarkMath, remarkGfm, rehypeKatex, rehypeSanitize } = deps;
+
+  return (
+    <div className={className}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath, remarkGfm]}
+        rehypePlugins={[rehypeSanitize, rehypeKatex]}
+        components={{
+          a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+        }}
+      >
+        {safeContent}
+      </ReactMarkdown>
+    </div>
+  );
 };

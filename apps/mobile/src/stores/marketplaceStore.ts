@@ -6,14 +6,118 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import { useBudgetStore } from './budgetStore';
+import { useAuthStore } from './authStore';
 
 // Demo mode flag
 const DEMO_MODE = false;
 
-// Storage keys
-const LISTINGS_STORAGE_KEY = 'lantern_marketplace_listings';
-const MY_LISTINGS_STORAGE_KEY = 'lantern_my_listings';
-const FAVORITES_STORAGE_KEY = 'lantern_marketplace_favorites';
+let listingsRequestSeq = 0;
+
+function unwrapListings<T>(raw: T[] | { data: T[] }): T[] {
+  return Array.isArray(raw) ? raw : raw.data;
+}
+
+type RemoteListing = {
+  id: string;
+  user_id: string;
+  category: string;
+  title: string;
+  description?: string;
+  price?: number;
+  sale_price?: number;
+  sale_ends_at?: string;
+  promo_label?: string;
+  effective_price?: number;
+  is_on_sale?: boolean;
+  quantity?: number | null;
+  listing_kind?: 'single' | 'bundle';
+  bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
+  location?: string;
+  images?: string[];
+  status?: string;
+  seller?: { id: string; name: string; avatar_url?: string };
+  profiles?: { id: string; name: string; avatar_url?: string };
+  views_count?: number;
+  favorites_count?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapSellerFromRemote(l: RemoteListing): MarketplaceListing['seller'] {
+  const profile = l.seller ?? l.profiles;
+  return profile
+    ? {
+        id: profile.id,
+        name: profile.name,
+        avatarUrl: profile.avatar_url,
+      }
+    : undefined;
+}
+
+function mapRemoteListing(l: RemoteListing): MarketplaceListing {
+  const status = (l.status === 'sold' || l.status === 'inactive' ? l.status : 'active') as MarketplaceListing['status'];
+  return {
+    id: l.id,
+    user_id: l.user_id,
+    seller_id: l.user_id,
+    seller: mapSellerFromRemote(l),
+    category: l.category,
+    title: l.title,
+    description: l.description,
+    price: l.price,
+    sale_price: l.sale_price,
+    sale_ends_at: l.sale_ends_at,
+    promo_label: l.promo_label,
+    effective_price: l.effective_price,
+    is_on_sale: l.is_on_sale,
+    quantity: l.quantity,
+    listing_kind: l.listing_kind,
+    bundle_items: l.bundle_items,
+    location: l.location,
+    images: l.images || [],
+    status,
+    views_count: l.views_count || 0,
+    favorites_count: l.favorites_count || 0,
+    created_at: l.created_at,
+    updated_at: l.updated_at,
+  };
+}
+
+// Legacy device-global keys (pre user-scoping)
+const LEGACY_LISTINGS_STORAGE_KEY = 'lantern_marketplace_listings';
+const LEGACY_MY_LISTINGS_STORAGE_KEY = 'lantern_my_listings';
+const LEGACY_FAVORITES_STORAGE_KEY = 'lantern_marketplace_favorites';
+
+export const LEGACY_MARKETPLACE_STORAGE_KEYS = [
+  LEGACY_LISTINGS_STORAGE_KEY,
+  LEGACY_MY_LISTINGS_STORAGE_KEY,
+  LEGACY_FAVORITES_STORAGE_KEY,
+] as const;
+
+function listingsStorageKey(userId?: string | null): string {
+  return `lantern_marketplace_listings_${userId ?? 'anonymous'}`;
+}
+
+function myListingsStorageKey(userId?: string | null): string {
+  return `lantern_my_listings_${userId ?? 'anonymous'}`;
+}
+
+function favoritesStorageKey(userId?: string | null): string {
+  return `lantern_marketplace_favorites_${userId ?? 'anonymous'}`;
+}
+
+export function getMarketplaceStorageKeysForUser(userId?: string | null): string[] {
+  return [
+    listingsStorageKey(userId),
+    myListingsStorageKey(userId),
+    favoritesStorageKey(userId),
+  ];
+}
+
+function getCurrentUserId(): string | null {
+  return useAuthStore.getState().user?.id ?? null;
+}
 
 export interface MarketplaceListing {
   id: string;
@@ -28,6 +132,14 @@ export interface MarketplaceListing {
   title: string;
   description?: string;
   price?: number;
+  sale_price?: number;
+  sale_ends_at?: string;
+  promo_label?: string;
+  effective_price?: number;
+  is_on_sale?: boolean;
+  quantity?: number | null;
+  listing_kind?: 'single' | 'bundle';
+  bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
   images?: string[];
   status: 'active' | 'sold' | 'inactive';
@@ -64,6 +176,55 @@ export interface MarketplaceInquiry {
   message: string;
   created_at: string;
 }
+
+export interface MarketplaceOffer {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id?: string;
+  amount: number;
+  message?: string;
+  status: 'pending' | 'accepted' | 'declined' | 'countered' | 'withdrawn';
+  created_at: string;
+  updated_at?: string;
+  buyer?: {
+    id: string;
+    name: string;
+    avatarUrl?: string;
+  };
+}
+
+export interface SavedSearch {
+  id: string;
+  user_id: string;
+  name: string;
+  filters: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SellerProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  total_listings?: number;
+  active_listings?: number;
+  sold_listings?: number;
+  completed_orders?: number;
+  total_views?: number;
+  total_inquiries?: number;
+  total_favorites?: number;
+  average_rating?: number;
+  review_count?: number;
+}
+
+const refreshMarketplaceBudget = async (userId: string) => {
+  if (DEMO_MODE || !userId) return;
+  try {
+    await useBudgetStore.getState().fetchTransactions(userId);
+  } catch (error) {
+    console.warn('Failed to refresh budget after marketplace action:', error);
+  }
+};
 
 export type MarketplaceCategory = 
   | 'textbook_exchange' 
@@ -250,19 +411,68 @@ interface MarketplaceState {
   listings: MarketplaceListing[];
   myListings: MarketplaceListing[];
   currentListing: MarketplaceListing | null;
+  reviews: MarketplaceReview[];
+  similarListings: MarketplaceListing[];
+  buyerOffers: MarketplaceOffer[];
+  sellerOffers: MarketplaceOffer[];
+  favoriteListings: MarketplaceListing[];
+  sellerStats: SellerProfile | null;
   favorites: Set<string>;
   inquiries: MarketplaceInquiry[];
+  offers: MarketplaceOffer[];
+  savedSearches: SavedSearch[];
+  sellerProfile: SellerProfile | null;
   isLoading: boolean;
   error: string | null;
   searchQuery: string;
   selectedCategory: MarketplaceCategory | null;
   activeTab: MarketplaceTab;
+  minPrice: string;
+  maxPrice: string;
+  locationFilter: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+  listingsPage: number;
+  listingsHasMore: boolean;
+  showFavoritesOnly: boolean;
   
   // Actions
-  fetchListings: (filters?: { category?: string; search?: string }) => Promise<void>;
+  fetchListings: (filters?: {
+    category?: string;
+    search?: string;
+    page?: number;
+    append?: boolean;
+  }) => Promise<void>;
   fetchMyListings: (userId: string) => Promise<void>;
   fetchListing: (listingId: string) => Promise<void>;
-  fetchInquiries: (userId: string) => Promise<void>;
+  fetchListingReviews: (listingId: string) => Promise<void>;
+  addReview: (listingId: string, rating: number, comment?: string) => Promise<void>;
+  reportListing: (listingId: string, reason: string, details?: string) => Promise<void>;
+  fetchSimilar: (listingId: string) => Promise<void>;
+  fetchOffers: (role: 'buyer' | 'seller') => Promise<void>;
+  fetchServerFavorites: () => Promise<void>;
+  fetchInquiries: (userId: string, role?: 'seller' | 'buyer') => Promise<void>;
+  updateInquiryStatus: (inquiryId: string, status: 'open' | 'negotiating' | 'closed' | 'purchased') => Promise<void>;
+  fetchListingOffers: (listingId: string) => Promise<void>;
+  createMarketplaceOffer: (listingId: string, amount: number, message?: string) => Promise<MarketplaceOffer>;
+  respondToOffer: (
+    offerId: string,
+    action: 'accept' | 'decline' | 'counter' | 'withdraw',
+    userId: string,
+    counterAmount?: number,
+    message?: string
+  ) => Promise<void>;
+  buyNowListing: (
+    listingId: string,
+    userId: string,
+    couponCode?: string
+  ) => Promise<{ order: import('@lantern/shared/types').MarketplaceOrder } | void>;
+  boostListing: (listingId: string, userId: string) => Promise<void>;
+  fetchSavedSearches: () => Promise<void>;
+  createSavedSearch: (filters: Record<string, unknown>, name?: string) => Promise<SavedSearch>;
+  deleteSavedSearch: (id: string) => Promise<void>;
+  fetchSellerProfile: (sellerId: string) => Promise<void>;
+  fetchSellerStats: () => Promise<void>;
   createListing: (listing: Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>, userId: string) => Promise<MarketplaceListing>;
   updateListing: (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => Promise<void>;
   deleteListing: (listingId: string, userId: string) => Promise<void>;
@@ -270,9 +480,15 @@ interface MarketplaceState {
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: MarketplaceCategory | null) => void;
   setActiveTab: (tab: MarketplaceTab) => void;
-  sendInquiry: (listingId: string, message: string) => Promise<void>;
+  setMinPrice: (value: string) => void;
+  setMaxPrice: (value: string) => void;
+  setLocationFilter: (value: string) => void;
+  setSortBy: (value: string) => void;
+  setSortOrder: (value: 'asc' | 'desc') => void;
+  setShowFavoritesOnly: (value: boolean) => void;
+  sendInquiry: (listingId: string, message: string) => Promise<{ threadId?: string; sellerId?: string }>;
   clearError: () => void;
-  // Local storage helpers
+  reset: () => Promise<void>;
   loadFromStorage: () => Promise<void>;
   saveToStorage: () => Promise<void>;
 }
@@ -281,138 +497,207 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   listings: [],
   myListings: [],
   currentListing: null,
+  reviews: [],
+  similarListings: [],
+  buyerOffers: [],
+  sellerOffers: [],
+  favoriteListings: [],
+  sellerStats: null,
   favorites: new Set(),
   inquiries: [],
+  offers: [],
+  savedSearches: [],
+  sellerProfile: null,
   isLoading: false,
   error: null,
   searchQuery: '',
   selectedCategory: null,
   activeTab: 'academic',
+  minPrice: '',
+  maxPrice: '',
+  locationFilter: '',
+  sortBy: 'created_at',
+  sortOrder: 'desc',
+  listingsPage: 1,
+  listingsHasMore: true,
+  showFavoritesOnly: false,
   
-  // Load cached data from AsyncStorage
+  // Load cached data from AsyncStorage (scoped to current user)
   loadFromStorage: async () => {
     try {
+      const userId = getCurrentUserId();
       const [listingsJson, myListingsJson, favoritesJson] = await Promise.all([
-        AsyncStorage.getItem(LISTINGS_STORAGE_KEY),
-        AsyncStorage.getItem(MY_LISTINGS_STORAGE_KEY),
-        AsyncStorage.getItem(FAVORITES_STORAGE_KEY),
+        AsyncStorage.getItem(listingsStorageKey(userId)),
+        AsyncStorage.getItem(myListingsStorageKey(userId)),
+        AsyncStorage.getItem(favoritesStorageKey(userId)),
       ]);
-      
-      if (listingsJson) {
-        set({ listings: JSON.parse(listingsJson) });
-      }
-      if (myListingsJson) {
-        set({ myListings: JSON.parse(myListingsJson) });
-      }
-      if (favoritesJson) {
-        set({ favorites: new Set(JSON.parse(favoritesJson)) });
-      }
+
+      const parsedMyListings = myListingsJson
+        ? (JSON.parse(myListingsJson) as MarketplaceListing[])
+        : [];
+
+      set({
+        listings: listingsJson ? JSON.parse(listingsJson) : [],
+        myListings: userId ? parsedMyListings.filter((l) => l.user_id === userId) : [],
+        favorites: favoritesJson ? new Set(JSON.parse(favoritesJson)) : new Set(),
+      });
     } catch (error) {
       console.error('Failed to load marketplace from storage:', error);
     }
   },
-  
-  // Save current state to AsyncStorage
+
+  // Save current state to AsyncStorage (scoped to current user)
   saveToStorage: async () => {
     try {
+      const userId = getCurrentUserId();
       const { listings, myListings, favorites } = get();
       await Promise.all([
-        AsyncStorage.setItem(LISTINGS_STORAGE_KEY, JSON.stringify(listings)),
-        AsyncStorage.setItem(MY_LISTINGS_STORAGE_KEY, JSON.stringify(myListings)),
-        AsyncStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...favorites])),
+        AsyncStorage.setItem(listingsStorageKey(userId), JSON.stringify(listings)),
+        AsyncStorage.setItem(
+          myListingsStorageKey(userId),
+          JSON.stringify(userId ? myListings.filter((l) => l.user_id === userId) : [])
+        ),
+        AsyncStorage.setItem(favoritesStorageKey(userId), JSON.stringify([...favorites])),
       ]);
     } catch (error) {
       console.error('Failed to save marketplace to storage:', error);
     }
   },
+
+  reset: async () => {
+    const userId = getCurrentUserId();
+    const keysToRemove = [
+      ...LEGACY_MARKETPLACE_STORAGE_KEYS,
+      ...getMarketplaceStorageKeysForUser(userId),
+      ...getMarketplaceStorageKeysForUser('anonymous'),
+    ];
+
+    set({
+      listings: [],
+      myListings: [],
+      currentListing: null,
+      reviews: [],
+      similarListings: [],
+      buyerOffers: [],
+      sellerOffers: [],
+      favoriteListings: [],
+      sellerStats: null,
+      favorites: new Set(),
+      inquiries: [],
+      offers: [],
+      savedSearches: [],
+      sellerProfile: null,
+      isLoading: false,
+      error: null,
+      searchQuery: '',
+      selectedCategory: null,
+      activeTab: 'academic',
+      minPrice: '',
+      maxPrice: '',
+      locationFilter: '',
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      listingsPage: 1,
+      listingsHasMore: true,
+      showFavoritesOnly: false,
+    });
+
+    await AsyncStorage.multiRemove([...new Set(keysToRemove)]).catch(() => {});
+  },
   
   fetchListings: async (filters) => {
+    const requestId = ++listingsRequestSeq;
     try {
-      set({ isLoading: true, error: null });
-      
-      // Load from local storage first for instant UI
-      await get().loadFromStorage();
-      
+      const page = filters?.page ?? 1;
+      const append = filters?.append ?? false;
+      if (page === 1 && !append) {
+        set({ isLoading: true, error: null, listings: [], listingsPage: 1, listingsHasMore: true });
+      } else {
+        set({ isLoading: true, error: null });
+      }
+
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        
         let filtered = [...DEMO_LISTINGS];
         const { activeTab, selectedCategory, searchQuery } = get();
-        
-        // Filter by tab
         const academicCategories = ACADEMIC_CATEGORIES.map(c => c.id);
         const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
-        
         filtered = filtered.filter(listing => {
           if (activeTab === 'academic') {
             return academicCategories.includes(listing.category as MarketplaceCategory);
           }
           return studentLifeCategories.includes(listing.category as MarketplaceCategory);
         });
-        
-        // Filter by category
         if (selectedCategory || filters?.category) {
           const cat = selectedCategory || filters?.category;
           filtered = filtered.filter(l => l.category === cat);
         }
-        
-        // Filter by search
         const query = searchQuery || filters?.search || '';
         if (query) {
           const lowerQuery = query.toLowerCase();
-          filtered = filtered.filter(l => 
+          filtered = filtered.filter(l =>
             l.title.toLowerCase().includes(lowerQuery) ||
             l.description?.toLowerCase().includes(lowerQuery)
           );
         }
-        
-        set({ listings: filtered, isLoading: false });
+        set({ listings: filtered, listingsPage: 1, listingsHasMore: false, isLoading: false });
         return;
       }
-      
-      // Real API call
-      const { activeTab, selectedCategory, searchQuery } = get();
-      const apiListings = await api.fetchMarketplaceListings({
+
+      const {
+        activeTab,
+        selectedCategory,
+        searchQuery,
+        minPrice,
+        maxPrice,
+        locationFilter,
+        sortBy,
+        sortOrder,
+      } = get();
+
+      const raw = await api.fetchMarketplaceListings({
+        page,
+        limit: 20,
         category: selectedCategory || filters?.category,
         search: searchQuery || filters?.search,
+        minPrice: minPrice ? Number(minPrice) : undefined,
+        maxPrice: maxPrice ? Number(maxPrice) : undefined,
+        location: locationFilter || undefined,
+        sortBy,
+        sortOrder,
       });
-      
-      // Map API response
-      const listings: MarketplaceListing[] = apiListings.map((l) => ({
-        id: l.id,
-        user_id: l.user_id,
-        seller_id: l.user_id,
-        seller: l.seller ? {
-          id: l.seller.id,
-          name: l.seller.name,
-          avatarUrl: l.seller.avatar_url,
-        } : undefined,
-        category: l.category,
-        title: l.title,
-        description: l.description,
-        price: l.price,
-        location: l.location,
-        images: l.images || [],
-        status: l.status,
-        views_count: l.views_count || 0,
-        favorites_count: l.favorites_count || 0,
-        created_at: l.created_at,
-        updated_at: l.updated_at,
-      }));
-      
-      // Filter by tab (client-side if API doesn't support it)
+
+      const apiListings = unwrapListings(raw);
+      const pagination =
+        raw && typeof raw === 'object' && 'pagination' in raw
+          ? (raw as { pagination?: { page: number; limit: number; total: number } }).pagination
+          : undefined;
+
+      const listings = apiListings.map(mapRemoteListing);
       const academicCategories = ACADEMIC_CATEGORIES.map(c => c.id);
       const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
       const filtered = listings.filter(listing => {
         if (activeTab === 'academic') {
-          return academicCategories.includes(listing.category as MarketplaceCategory);
+          return academicCategories.includes(listing.category as MarketplaceCategory) || listing.category.startsWith('custom:');
         }
-        return studentLifeCategories.includes(listing.category as MarketplaceCategory);
+        return studentLifeCategories.includes(listing.category as MarketplaceCategory) || listing.category.startsWith('custom:');
       });
-      
-      set({ listings: filtered, isLoading: false });
+
+      const total = pagination?.total ?? filtered.length;
+      const limit = pagination?.limit ?? 20;
+      const hasMore = page * limit < total;
+
+      if (requestId !== listingsRequestSeq) return;
+
+      set(state => ({
+        listings: append ? [...state.listings, ...filtered] : filtered,
+        listingsPage: page,
+        listingsHasMore: hasMore,
+        isLoading: false,
+      }));
       await get().saveToStorage();
     } catch (error: any) {
+      if (requestId !== listingsRequestSeq) return;
       console.error('Failed to fetch listings:', error);
       set({ error: error.message, isLoading: false });
     }
@@ -420,47 +705,31 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   
   fetchMyListings: async (userId: string) => {
     try {
-      set({ isLoading: true, error: null });
-      
+      set({ isLoading: true, error: null, myListings: [] });
+
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
         set({ myListings: DEMO_MY_LISTINGS, isLoading: false });
         return;
       }
-      
-      // Try API call
+
+      await get().loadFromStorage();
+
       try {
         const apiListings = await api.fetchMyListings();
-        const myListings: MarketplaceListing[] = apiListings.map((l) => ({
-          id: l.id,
-          user_id: l.user_id,
-          seller_id: l.user_id,
-          seller: l.seller ? {
-            id: l.seller.id,
-            name: l.seller.name,
-            avatarUrl: l.seller.avatar_url,
-          } : undefined,
-          category: l.category,
-          title: l.title,
-          description: l.description,
-          price: l.price,
-          location: l.location,
-          images: l.images || [],
-          status: l.status,
-          views_count: l.views_count || 0,
-          favorites_count: l.favorites_count || 0,
-          created_at: l.created_at,
-          updated_at: l.updated_at,
-        }));
+        const myListings = apiListings
+          .map((l) => mapRemoteListing(l as RemoteListing))
+          .filter((l) => l.user_id === userId);
         set({ myListings, isLoading: false });
         await get().saveToStorage();
       } catch (apiError) {
-        console.warn('Failed to fetch my listings from API, using cached:', apiError);
-        set({ isLoading: false });
+        console.warn('Failed to fetch my listings from API, using user-scoped cache:', apiError);
+        const cached = get().myListings.filter((l) => l.user_id === userId);
+        set({ myListings: cached, isLoading: false });
       }
     } catch (error: any) {
       console.error('Failed to fetch my listings:', error);
-      set({ error: error.message, isLoading: false });
+      set({ error: error.message, isLoading: false, myListings: [] });
     }
   },
   
@@ -481,11 +750,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         id: l.id,
         user_id: l.user_id,
         seller_id: l.user_id,
-        seller: l.seller ? {
-          id: l.seller.id,
-          name: l.seller.name,
-          avatarUrl: l.seller.avatar_url,
-        } : undefined,
+        seller: mapSellerFromRemote(l as RemoteListing),
         category: l.category,
         title: l.title,
         description: l.description,
@@ -505,7 +770,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
   
-  fetchInquiries: async (userId: string) => {
+  fetchInquiries: async (userId: string, role: 'seller' | 'buyer' = 'seller') => {
     try {
       set({ isLoading: true, error: null });
       
@@ -515,9 +780,17 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return;
       }
       
-      // Note: fetchMarketplaceInquiries not available in current API
-      // Using empty array as placeholder until API is extended
-      set({ inquiries: [], isLoading: false });
+      const rows = await api.fetchMyInquiries(role);
+      set({
+        inquiries: rows.map(inq => ({
+          id: inq.id,
+          listing_id: inq.listing_id,
+          sender_id: role === 'seller' ? inq.buyer_id : inq.seller_id,
+          message: inq.initial_message,
+          created_at: inq.created_at,
+        })),
+        isLoading: false,
+      });
     } catch (error: any) {
       console.error('Failed to fetch inquiries:', error);
       set({ error: error.message, isLoading: false });
@@ -555,24 +828,15 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         price: listingData.price,
         location: listingData.location,
         images: listingData.images,
+        sale_price: (listingData as any).sale_price,
+        sale_ends_at: (listingData as any).sale_ends_at,
+        promo_label: (listingData as any).promo_label,
       });
       
-      const newListing: MarketplaceListing = {
-        id: created.id,
-        user_id: created.user_id,
-        seller_id: created.user_id,
-        category: created.category,
-        title: created.title,
-        description: created.description,
-        price: created.price,
-        location: created.location,
-        images: created.images || [],
+      const newListing: MarketplaceListing = mapRemoteListing({
+        ...created,
         status: created.status,
-        views_count: 0,
-        favorites_count: 0,
-        created_at: created.created_at,
-        updated_at: created.updated_at,
-      };
+      } as RemoteListing);
       
       // Replace temp with real listing
       set(state => ({
@@ -585,7 +849,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to create listing on server:', error);
       // Queue for later sync
-      await syncService.queueOperation('notification', tempId, 'create', listingData, userId);
+      await syncService.queueOperation('listing', tempId, 'create', listingData, userId);
       return tempListing;
     }
   },
@@ -609,10 +873,13 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     
     try {
       await api.updateMarketplaceListing(listingId, updates);
+      if (updates.status === 'sold') {
+        await refreshMarketplaceBudget(userId);
+      }
     } catch (error: any) {
       console.error('Failed to update listing on server:', error);
       // Queue for later sync (keep local changes)
-      await syncService.queueOperation('notification', listingId, 'update', updates, userId);
+      await syncService.queueOperation('listing', listingId, 'update', updates, userId);
     }
   },
   
@@ -632,7 +899,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to delete listing on server:', error);
       // Queue for later sync
-      await syncService.queueOperation('notification', listingId, 'delete', {}, userId);
+      await syncService.queueOperation('listing', listingId, 'delete', {}, userId);
     }
   },
   
@@ -678,32 +945,469 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
   
   setSelectedCategory: (category: MarketplaceCategory | null) => {
-    set({ selectedCategory: category });
+    listingsRequestSeq += 1;
+    set({
+      selectedCategory: category,
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+    });
   },
   
   setActiveTab: (tab: MarketplaceTab) => {
-    set({ activeTab: tab, selectedCategory: null });
+    listingsRequestSeq += 1;
+    set({
+      activeTab: tab,
+      selectedCategory: null,
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+    });
   },
   
   sendInquiry: async (listingId: string, message: string) => {
     try {
       set({ isLoading: true, error: null });
-      
+
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
-        // Would create inquiry in real app
         set({ isLoading: false });
-        return;
+        return {};
       }
-      
-      // Note: sendMarketplaceInquiry not available in current API
-      // Would need to implement this endpoint
-      console.warn('sendInquiry: API endpoint not yet available');
+
+      const result = await api.createInquiry(listingId, message);
       set({ isLoading: false });
+      return {
+        threadId: result.dm_thread_id,
+        sellerId: result.seller_id,
+      };
     } catch (error: any) {
       console.error('Failed to send inquiry:', error);
       set({ error: error.message, isLoading: false });
       throw error;
+    }
+  },
+
+  fetchListingReviews: async (listingId: string) => {
+    try {
+      if (DEMO_MODE) {
+        set({ reviews: [] });
+        return;
+      }
+      const rows = await api.fetchListingReviews(listingId);
+      set({
+        reviews: rows.map(r => ({
+          id: r.id,
+          listing_id: r.listing_id,
+          reviewer_id: r.reviewer_id,
+          reviewer: r.reviewer
+            ? { id: r.reviewer.id, name: r.reviewer.name, avatarUrl: r.reviewer.avatar_url }
+            : undefined,
+          rating: r.rating,
+          comment: r.comment,
+          created_at: r.created_at,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Failed to fetch listing reviews:', error);
+    }
+  },
+
+  addReview: async (listingId: string, rating: number, comment?: string) => {
+    await api.addMarketplaceReview(listingId, { rating, comment });
+    await get().fetchListingReviews(listingId);
+  },
+
+  reportListing: async (listingId: string, reason: string, details?: string) => {
+    await api.reportMarketplaceListing(listingId, { reason, details });
+  },
+
+  fetchSimilar: async (listingId: string) => {
+    try {
+      if (DEMO_MODE) {
+        set({ similarListings: [] });
+        return;
+      }
+      const rows = await api.fetchSimilarListings(listingId);
+      set({ similarListings: rows.map(r => mapRemoteListing(r as RemoteListing)) });
+    } catch (error: any) {
+      console.error('Failed to fetch similar listings:', error);
+      set({ similarListings: [] });
+    }
+  },
+
+  fetchOffers: async (role: 'buyer' | 'seller') => {
+    try {
+      set({ isLoading: true, error: null });
+      if (DEMO_MODE) {
+        set({ buyerOffers: [], sellerOffers: [], isLoading: false });
+        return;
+      }
+      const rows = await api.fetchMarketplaceOffers(role);
+      const mapped: MarketplaceOffer[] = rows.map(o => ({
+        id: o.id,
+        listing_id: o.listing_id,
+        buyer_id: o.buyer_id,
+        seller_id: o.seller_id,
+        amount: o.amount,
+        message: o.message,
+        status: o.status as MarketplaceOffer['status'],
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+      }));
+      if (role === 'buyer') {
+        set({ buyerOffers: mapped, isLoading: false });
+      } else {
+        set({ sellerOffers: mapped, isLoading: false });
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch offers:', error);
+      set({ error: error.message, isLoading: false });
+    }
+  },
+
+  fetchServerFavorites: async () => {
+    try {
+      if (DEMO_MODE) return;
+      const rows = await api.fetchMyFavorites();
+      const favoriteIds = new Set<string>();
+      const favoriteListings: MarketplaceListing[] = [];
+      for (const fav of rows as Array<{ listing?: RemoteListing; listing_id?: string }>) {
+        const listing = fav.listing;
+        const listingId = listing?.id || fav.listing_id;
+        if (listingId) favoriteIds.add(listingId);
+        if (listing) favoriteListings.push(mapRemoteListing(listing));
+      }
+      set({ favorites: favoriteIds, favoriteListings });
+      await get().saveToStorage();
+    } catch (error: any) {
+      console.error('Failed to fetch server favorites:', error);
+    }
+  },
+
+  updateInquiryStatus: async (inquiryId, status) => {
+    await api.updateInquiryStatus(inquiryId, status);
+  },
+
+  fetchSellerStats: async () => {
+    try {
+      const stats = await api.fetchSellerStats();
+      if (!stats) return;
+      set({
+        sellerStats: {
+          id: 'me',
+          name: 'My stats',
+          total_listings: stats.totalListings,
+          active_listings: stats.activeListings,
+          sold_listings: stats.soldListings,
+          completed_orders: stats.completedOrders,
+          total_views: stats.totalViews,
+          total_inquiries: stats.totalInquiries,
+          total_favorites: stats.totalFavorites,
+        },
+      });
+    } catch (error: any) {
+      console.error('Failed to fetch seller stats:', error);
+    }
+  },
+
+  setMinPrice: (value: string) => set({ minPrice: value }),
+  setMaxPrice: (value: string) => set({ maxPrice: value }),
+  setLocationFilter: (value: string) => set({ locationFilter: value }),
+  setSortBy: (value: string) => set({ sortBy: value }),
+  setSortOrder: (value: 'asc' | 'desc') => set({ sortOrder: value }),
+  setShowFavoritesOnly: (value: boolean) => set({ showFavoritesOnly: value }),
+
+  fetchListingOffers: async (listingId: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        set({ offers: [], isLoading: false });
+        return;
+      }
+
+      const apiOffers = await api.fetchListingOffers(listingId);
+      const offers: MarketplaceOffer[] = apiOffers.map((o) => ({
+        id: o.id,
+        listing_id: o.listing_id,
+        buyer_id: o.buyer_id,
+        amount: o.amount,
+        status: o.status as MarketplaceOffer['status'],
+        created_at: o.created_at,
+      }));
+      set({ offers, isLoading: false });
+    } catch (error: any) {
+      console.error('Failed to fetch listing offers:', error);
+      set({ error: error.message, isLoading: false });
+    }
+  },
+
+  createMarketplaceOffer: async (listingId: string, amount: number, message?: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        const demoOffer: MarketplaceOffer = {
+          id: `offer-${Date.now()}`,
+          listing_id: listingId,
+          buyer_id: 'demo-user',
+          amount,
+          message,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        };
+        set(state => ({ offers: [demoOffer, ...state.offers], isLoading: false }));
+        return demoOffer;
+      }
+
+      const created = await api.createMarketplaceOffer(listingId, amount, message);
+      const offer: MarketplaceOffer = {
+        id: created.id,
+        listing_id: created.listing_id,
+        buyer_id: created.buyer_id,
+        seller_id: created.seller_id,
+        amount: created.amount,
+        message: created.message,
+        status: created.status as MarketplaceOffer['status'],
+        created_at: created.created_at,
+      };
+      set(state => ({ offers: [offer, ...state.offers], isLoading: false }));
+      return offer;
+    } catch (error: any) {
+      console.error('Failed to create offer:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  respondToOffer: async (offerId, action, userId, counterAmount, message) => {
+    try {
+      set({ isLoading: true, error: null });
+      const existingOffer =
+        get().sellerOffers.find(o => o.id === offerId) ||
+        get().buyerOffers.find(o => o.id === offerId) ||
+        get().offers.find(o => o.id === offerId);
+
+      if (DEMO_MODE) {
+        set(state => ({
+          offers: state.offers.map(o =>
+            o.id === offerId
+              ? { ...o, status: action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : o.status }
+              : o
+          ),
+          isLoading: false,
+        }));
+        if (action === 'accept' && existingOffer) {
+          await refreshMarketplaceBudget(userId);
+        }
+        return;
+      }
+
+      const updated = await api.respondToOffer(offerId, action, counterAmount, message);
+      set(state => ({
+        offers: state.offers.map(o =>
+          o.id === offerId
+            ? { ...o, status: updated.status as MarketplaceOffer['status'], amount: updated.amount, updated_at: updated.updated_at }
+            : o
+        ),
+        sellerOffers: state.sellerOffers.map(o =>
+          o.id === offerId
+            ? { ...o, status: updated.status as MarketplaceOffer['status'], amount: updated.amount, updated_at: updated.updated_at }
+            : o
+        ),
+        buyerOffers: state.buyerOffers.map(o =>
+          o.id === offerId
+            ? { ...o, status: updated.status as MarketplaceOffer['status'], amount: updated.amount, updated_at: updated.updated_at }
+            : o
+        ),
+        isLoading: false,
+      }));
+
+      if (action === 'accept') {
+        await refreshMarketplaceBudget(userId);
+      }
+    } catch (error: any) {
+      console.error('Failed to respond to offer:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  buyNowListing: async (listingId: string, userId: string, couponCode?: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        const listing = get().currentListing;
+        if (listing) {
+          await get().updateListing(listingId, { status: 'sold' }, userId);
+        }
+        await refreshMarketplaceBudget(userId);
+        set({ isLoading: false });
+        return;
+      }
+
+      const result = await api.buyNowListing(listingId, couponCode);
+      await get().fetchMyListings(userId);
+      set({ isLoading: false });
+      return result;
+    } catch (error: any) {
+      console.error('Failed to buy listing:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  boostListing: async (listingId: string, userId: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        set({ isLoading: false });
+        return;
+      }
+
+      await api.boostListing(listingId);
+      await get().fetchListing(listingId);
+      set({ isLoading: false });
+    } catch (error: any) {
+      console.error('Failed to boost listing:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  fetchSavedSearches: async () => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        set({ savedSearches: [], isLoading: false });
+        return;
+      }
+
+      const apiSearches = await api.fetchSavedSearches();
+      const savedSearches: SavedSearch[] = apiSearches.map(s => ({
+        id: s.id,
+        user_id: s.user_id,
+        name: s.name,
+        filters: s.filters,
+        created_at: s.created_at,
+      }));
+      set({ savedSearches, isLoading: false });
+    } catch (error: any) {
+      console.error('Failed to fetch saved searches:', error);
+      set({ error: error.message, isLoading: false });
+    }
+  },
+
+  createSavedSearch: async (filters, name) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        const demo: SavedSearch = {
+          id: `search-${Date.now()}`,
+          user_id: 'demo-user',
+          name: name || 'Saved search',
+          filters,
+          created_at: new Date().toISOString(),
+        };
+        set(state => ({ savedSearches: [demo, ...state.savedSearches], isLoading: false }));
+        return demo;
+      }
+
+      const created = await api.createSavedSearch({ filters, name });
+      const saved: SavedSearch = {
+        id: created.id,
+        user_id: created.user_id,
+        name: created.name,
+        filters: created.filters,
+        created_at: created.created_at,
+      };
+      set(state => ({ savedSearches: [saved, ...state.savedSearches], isLoading: false }));
+      return saved;
+    } catch (error: any) {
+      console.error('Failed to create saved search:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  deleteSavedSearch: async (id: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (!DEMO_MODE) {
+        await api.deleteSavedSearch(id);
+      }
+
+      set(state => ({
+        savedSearches: state.savedSearches.filter(s => s.id !== id),
+        isLoading: false,
+      }));
+    } catch (error: any) {
+      console.error('Failed to delete saved search:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  fetchSellerProfile: async (sellerId: string) => {
+    try {
+      set({ isLoading: true, error: null });
+
+      if (DEMO_MODE) {
+        set({
+          sellerProfile: {
+            id: sellerId,
+            name: 'Demo Seller',
+            total_listings: 5,
+            active_listings: 3,
+            sold_listings: 2,
+            average_rating: 4.5,
+            review_count: 12,
+          },
+          isLoading: false,
+        });
+        return;
+      }
+
+      const profile = await api.fetchSellerProfile(sellerId);
+      const data = profile as {
+        user?: { id: string; name: string; avatar_url?: string };
+        stats?: {
+          totalListings: number;
+          activeListings: number;
+          soldListings: number;
+          avgRating?: number;
+          totalReviews?: number;
+          isVerified?: boolean;
+        };
+        badges?: Array<{ id: string; label: string }>;
+      };
+      set({
+        sellerProfile: {
+          id: data.user?.id || sellerId,
+          name: data.user?.name || 'Seller',
+          avatarUrl: data.user?.avatar_url,
+          total_listings: data.stats?.totalListings || 0,
+          active_listings: data.stats?.activeListings || 0,
+          sold_listings: data.stats?.soldListings || 0,
+          average_rating: data.stats?.avgRating || 0,
+          review_count: data.stats?.totalReviews || 0,
+          is_verified: data.stats?.isVerified,
+          badges: data.badges,
+        },
+        isLoading: false,
+      });
+    } catch (error: any) {
+      console.error('Failed to fetch seller profile:', error);
+      set({ error: error.message, isLoading: false });
     }
   },
   

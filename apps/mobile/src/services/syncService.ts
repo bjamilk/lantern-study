@@ -13,7 +13,8 @@ import {
   IStorageAdapter 
 } from '@lantern/shared';
 import * as api from './api';
-import { supabase } from './supabase';
+import { supabase, saveBudgetTransaction, deleteBudgetTransaction } from './supabase';
+import * as notesApi from './notes';
 
 // ============================================
 // ASYNC STORAGE ADAPTER
@@ -254,19 +255,17 @@ class SyncService {
       }
     });
 
-    // Transaction handler
+    // Transaction handler (Supabase — same path as web)
     this.queue.registerHandler('transaction', async (op: SyncOperation) => {
       try {
         switch (op.operation) {
           case 'create':
-            await api.saveBudgetTransaction(
-              op.userId, 
+            return await saveBudgetTransaction(
+              op.userId,
               op.data as { id: string; type: string; amount: number; category?: string; description?: string; date: string }
             );
-            break;
           case 'delete':
-            await api.deleteBudgetTransaction(op.userId, op.entityId);
-            break;
+            return await deleteBudgetTransaction(op.entityId);
         }
         return true;
       } catch (error) {
@@ -298,12 +297,27 @@ class SyncService {
     this.queue.registerHandler('test_result', async (op: SyncOperation) => {
       try {
         switch (op.operation) {
-          case 'create':
-            await api.saveTestResult(
-              op.userId, 
-              op.data as { score: number; correctAnswersCount: number; totalQuestions: number; sessionId?: string }
-            );
+          case 'create': {
+            const payload = op.data as {
+              questions?: unknown[];
+              userAnswers?: Record<string, unknown>;
+              score: number;
+              correctAnswersCount: number;
+              totalQuestions: number;
+              startTime?: string;
+              endTime?: string;
+              config?: unknown;
+            };
+            const savedSession = await api.saveTestResult(op.userId, payload);
+            if (savedSession?.id) {
+              await api.submitTestResult(savedSession.id, {
+                score: payload.score,
+                correctAnswersCount: payload.correctAnswersCount,
+                totalQuestions: payload.totalQuestions,
+              });
+            }
             break;
+          }
         }
         return true;
       } catch (error) {
@@ -319,6 +333,36 @@ class SyncService {
         return true;
       } catch (error) {
         console.error('[SyncHandler:settings] Error:', error);
+        return false;
+      }
+    });
+
+    // Marketplace listing handler
+    this.queue.registerHandler('listing', async (op: SyncOperation) => {
+      try {
+        switch (op.operation) {
+          case 'create':
+            await api.createMarketplaceListing(
+              op.data as {
+                category: string;
+                title: string;
+                description?: string;
+                price?: number;
+                location?: string;
+                images?: string[];
+              }
+            );
+            break;
+          case 'update':
+            await api.updateMarketplaceListing(op.entityId, op.data);
+            break;
+          case 'delete':
+            await api.deleteMarketplaceListing(op.entityId);
+            break;
+        }
+        return true;
+      } catch (error) {
+        console.error('[SyncHandler:listing] Error:', error);
         return false;
       }
     });
@@ -345,6 +389,27 @@ class SyncService {
         return true;
       } catch (error) {
         console.error('[SyncHandler:group] Error:', error);
+        return false;
+      }
+    });
+
+    // Notes handler (API-backed, same as web)
+    this.queue.registerHandler('note', async (op: SyncOperation) => {
+      try {
+        switch (op.operation) {
+          case 'create':
+            await notesApi.createNote(op.data as { title: string; body?: string; folderId?: string });
+            break;
+          case 'update':
+            await notesApi.updateNote(op.entityId, op.data);
+            break;
+          case 'delete':
+            await notesApi.deleteNote(op.entityId);
+            break;
+        }
+        return true;
+      } catch (error) {
+        console.error('[SyncHandler:note] Error:', error);
         return false;
       }
     });

@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
+import { isUserBanned } from '../services/adminAudit';
 import { AuthenticatedRequest } from '../types';
 
 // Will be set by initializeAuthMiddleware
@@ -23,6 +24,20 @@ const tokenCache = new LRUCache<string, CachedUser>({
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
+  if (!supabaseService) return false;
+  const banned = await isUserBanned(supabaseService, userId);
+  if (banned) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'Your account has been suspended. Contact support if you believe this is an error.',
+      code: 'ACCOUNT_BANNED',
+    });
+    return true;
+  }
+  return false;
 }
 
 export const initializeAuthMiddleware = (supabase: SupabaseService) => {
@@ -98,7 +113,13 @@ export const authMiddleware = async (
     // Fast path: return cached user (avoids Supabase Auth DB call)
     const cached = tokenCache.get(tokenKey);
     if (cached) {
-      req.user = { id: cached.id, apiKey: token, permissions: ['read', 'write'] };
+      if (await rejectIfBanned(cached.id, res)) return;
+        req.user = {
+          id: cached.id,
+          apiKey: token,
+          permissions: ['read', 'write'],
+          isAdmin: cached.app_metadata?.is_platform_admin === true,
+        };
       next();
       return;
     }
@@ -107,35 +128,38 @@ export const authMiddleware = async (
     if (supabaseService) {
       const supabaseResult = await supabaseService.verifySupabaseToken(token);
       if (supabaseResult.isValid && supabaseResult.user) {
+        if (await rejectIfBanned(supabaseResult.user.id, res)) return;
         tokenCache.set(tokenKey, supabaseResult.user);
         req.user = {
           id: supabaseResult.user.id,
           apiKey: token,
           permissions: ['read', 'write'],
+            isAdmin: supabaseResult.user.app_metadata?.is_platform_admin === true,
         };
         next();
         return;
       }
     }
 
-    // Fallback to API key authentication
-    const validation = await apiKeyService.validateApiKey(token);
-
-    if (!validation.isValid || !validation.userId) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid token',
-      });
-      return;
+    // API-key JWT fallback — disabled in production (impersonation risk)
+    if (process.env.ENABLE_API_KEY_AUTH === 'true' && process.env.NODE_ENV !== 'production') {
+      const validation = await apiKeyService.validateApiKey(token);
+      if (validation.isValid && validation.userId) {
+        req.user = {
+          id: validation.userId,
+          apiKey: token,
+          permissions: validation.permissions || [],
+        };
+        next();
+        return;
+      }
     }
 
-    req.user = {
-      id: validation.userId,
-      apiKey: token,
-      permissions: validation.permissions || [],
-    };
-
-    next();
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Invalid token',
+    });
+    return;
   } catch (error) {
     console.error('Authentication error:', error);
     res.status(500).json({
@@ -199,17 +223,18 @@ export const optionalAuthMiddleware = async (
       }
     }
 
-    // Try API key auth
-    const validation = await apiKeyService.validateApiKey(token);
-    if (validation.isValid && validation.userId) {
-      req.user = {
-        id: validation.userId,
-        apiKey: token,
-        permissions: validation.permissions || [],
-      };
+    // API-key fallback only in non-production when explicitly enabled
+    if (process.env.ENABLE_API_KEY_AUTH === 'true' && process.env.NODE_ENV !== 'production') {
+      const validation = await apiKeyService.validateApiKey(token);
+      if (validation.isValid && validation.userId) {
+        req.user = {
+          id: validation.userId,
+          apiKey: token,
+          permissions: validation.permissions || [],
+        };
+      }
     }
 
-    // Continue regardless (user may or may not be set)
     next();
   } catch (error) {
     // On error, just continue without auth
@@ -264,6 +289,32 @@ export const requestLogger = (
       `${new Date().toISOString()} - ${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`
     );
   });
+
+  next();
+};
+
+export const requirePlatformAdmin = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ success: false, error: 'Unauthorized' });
+    return;
+  }
+
+  if (!req.user.isAdmin) {
+    res.status(403).json({ success: false, error: 'Platform admin access required' });
+    return;
+  }
+
+  if (supabaseService) {
+    const isAdmin = await supabaseService.isPlatformAdmin(req.user.id);
+    if (!isAdmin) {
+      res.status(403).json({ success: false, error: 'Platform admin access required' });
+      return;
+    }
+  }
 
   next();
 };

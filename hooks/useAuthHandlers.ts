@@ -1,96 +1,128 @@
 import { useState, useCallback } from 'react';
-import { User, NotificationSettings, TestPreset, TestConfig } from '../types';
+import { User, TestPreset, TestConfig } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
-import { initialUserStats, MOCK_USERS } from '../utils/helpers';
+import { MOCK_USERS } from '../utils/helpers';
 import { v4 as uuidv4 } from 'uuid';
 import {
-    fetchUserProfile, updateUserProfile, createUserProfile,
-    saveUserPreferences, supabase, deleteUserAccount
+    updateUserProfile,
+    saveUserPreferences,
+    saveUserSettings,
+    supabase,
+    deleteUserAccount,
+    exportUserAccountData,
+    hasValidSession,
 } from '../services/supabase';
+import {
+    type UserSettings,
+    DEFAULT_USER_SETTINGS,
+    normalizeUserSettings,
+    mergeSettingsCategory,
+} from '@lantern/shared/settings';
+import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 
 export function useAuthHandlers() {
     const { currentUser, setCurrentUser, setAuthLoading } = useAuthStore();
     const { setGroups, setAllMessages, setDmThreads, setAllDirectMessages } = useGroupStore();
-    const { theme, setTheme, setSelectedChat } = useUIStore();
+    const { theme, setTheme, setSelectedChat, setLowDataMode, lowDataMode } = useUIStore();
 
     const [users, setUsers] = useState<User[]>(MOCK_USERS);
     const [dataLoaded, setDataLoaded] = useState(false);
 
-    const toggleTheme = useCallback(async () => {
-        const newTheme = theme === 'light' ? 'dark' : 'light';
-        setTheme(newTheme);
-        
-        // Always persist to localStorage immediately for quick access on next load
-        localStorage.setItem('theme', newTheme);
-        
-        // Apply theme class to document immediately
-        if (newTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-        
-        // Persist to user settings in database for cross-device sync
-        if (currentUser) {
-            const updatedSettings = { ...currentUser.settings, theme: newTheme as 'light' | 'dark' };
-            setCurrentUser({ ...currentUser, settings: updatedSettings });
-            try {
-                await updateUserProfile(currentUser.id, { settings: updatedSettings });
-                await saveUserPreferences(currentUser.id, { theme: newTheme });
-            } catch (error) {
-                console.error('Failed to save theme preference to database:', error);
-            }
-        }
-    }, [theme, currentUser, setTheme, setCurrentUser]);
+    const getUserSettings = useCallback((): UserSettings => {
+        return normalizeUserSettings(currentUser?.settings);
+    }, [currentUser?.settings]);
 
-    const handleLogin = useCallback(async (user: User) => {
-        try {
-            const profile = await fetchUserProfile(user.id);
-            const dbUser: User = {
-                id: profile.id,
-                name: profile.name,
-                avatarUrl: profile.avatar_url,
-                email: user.email,
-                phoneNumber: profile.phone,
-                points: profile.points || 0,
-                badges: profile.badges || [],
-                stats: profile.stats || initialUserStats,
-                settings: profile.settings || {}
-            };
-            setCurrentUser(dbUser);
-            
-            if (dbUser.settings?.theme) {
-                const userTheme = dbUser.settings.theme;
-                setTheme(userTheme);
-                localStorage.setItem('theme', userTheme);
-                if (userTheme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-            }
-        } catch (error) {
-            console.log('Creating new user profile for:', user.id);
-            try {
-                await createUserProfile({
-                    id: user.id,
-                    name: user.name,
-                    avatar_url: user.avatarUrl,
-                    phone: user.phoneNumber,
-                    points: user.points,
-                    stats: user.stats,
-                    badges: user.badges,
-                    settings: user.settings
-                });
-                setCurrentUser(user);
-            } catch (createError) {
-                console.error('Error creating user profile:', createError);
-                setCurrentUser(user);
-            }
+    const persistUserSettings = useCallback(async (settings: UserSettings) => {
+        if (!currentUser) return false;
+        if (!(await hasValidSession())) {
+            console.warn('Skipping settings update because no valid session is available.');
+            return false;
         }
-    }, [setCurrentUser, setTheme]);
+        const saved = await saveUserSettings(currentUser.id, settings);
+        if (saved) {
+            await updateUserProfile(currentUser.id, { settings }).catch(() => undefined);
+        }
+        return saved;
+    }, [currentUser]);
+
+    const persistProfileUpdate = useCallback(async (updates: {
+        name?: string;
+        avatar_url?: string;
+        phone?: string;
+        settings?: UserSettings;
+        test_presets?: any[];
+    }) => {
+        if (!currentUser) return false;
+        if (!(await hasValidSession())) {
+            console.warn('Skipping profile update because no valid session is available.');
+            return false;
+        }
+        await updateUserProfile(currentUser.id, updates);
+        return true;
+    }, [currentUser]);
+
+    const applySettingsToUi = useCallback((settings: UserSettings) => {
+        applyUserSettingsToDom(settings, { setTheme, setLowDataMode });
+    }, [setTheme, setLowDataMode]);
+
+    const handleUpdateSettingsCategory = useCallback(<K extends keyof UserSettings>(
+        category: K,
+        updates: Partial<UserSettings[K]>
+    ) => {
+        if (!currentUser) return;
+        const current = getUserSettings();
+        const next = mergeSettingsCategory(current, category, updates);
+        setCurrentUser({ ...currentUser, settings: next });
+        void persistUserSettings(next);
+        if (category === 'appearance' || category === 'accessibility') {
+            applySettingsToUi(next);
+        }
+        if (category === 'appearance') {
+            const themeForPrefs = next.appearance.theme === 'system' ? theme : next.appearance.theme;
+            void saveUserPreferences(currentUser.id, {
+                theme: themeForPrefs === 'dark' ? 'dark' : 'light',
+                lowDataMode: next.appearance.lowDataMode,
+            });
+        }
+    }, [currentUser, getUserSettings, persistUserSettings, applySettingsToUi, setCurrentUser, theme]);
+
+    const handleUpdateNotificationSettings = useCallback((
+        updates: Partial<UserSettings['notifications']>
+    ) => {
+        handleUpdateSettingsCategory('notifications', updates);
+    }, [handleUpdateSettingsCategory]);
+
+    const handleUpdatePrivacySettings = useCallback((
+        updates: Partial<UserSettings['privacy']>
+    ) => {
+        handleUpdateSettingsCategory('privacy', updates);
+    }, [handleUpdateSettingsCategory]);
+
+    const handleResetSettings = useCallback(async () => {
+        if (!currentUser) return;
+        if (!window.confirm('Reset all settings to defaults? Your study data will not be affected.')) {
+            return;
+        }
+        const reset = {
+            ...DEFAULT_USER_SETTINGS,
+            updatedAt: new Date().toISOString(),
+        };
+        setCurrentUser({ ...currentUser, settings: reset });
+        await persistUserSettings(reset);
+        applySettingsToUi(reset);
+        alert('Settings have been reset to defaults.');
+    }, [currentUser, persistUserSettings, applySettingsToUi, setCurrentUser]);
+
+    const toggleTheme = useCallback(async () => {
+        const current = getUserSettings();
+        const resolvedTheme = current.appearance.theme === 'system'
+            ? theme
+            : current.appearance.theme;
+        const newTheme = resolvedTheme === 'light' ? 'dark' : 'light';
+        handleUpdateSettingsCategory('appearance', { theme: newTheme });
+    }, [getUserSettings, theme, handleUpdateSettingsCategory]);
 
     const handleLogout = useCallback(async () => {
         localStorage.removeItem('lantern_access_token');
@@ -117,61 +149,19 @@ export function useAuthHandlers() {
         setDataLoaded(false);
     }, [setCurrentUser, setGroups, setAllMessages, setSelectedChat, setDmThreads, setAllDirectMessages]);
 
-    const handleRegister = useCallback(async (name: string, email: string, password: string, phoneNumber: string) => {
-        if (users.some(u => u.email === email)) {
-            alert("An account with this email already exists.");
-            return;
-        }
-        const { v4: uuidv4 } = await import('uuid');
-        const newUser: User = {
-            id: uuidv4(),
-            name,
-            email,
-            password,
-            phoneNumber,
-            avatarUrl: `https://ui-avatars.com/api/?name=${name.replace(/\s/g, '+')}&background=random&color=fff&size=100`,
-            points: 0,
-            badges: [],
-            stats: initialUserStats
-        };
-
-        try {
-            await createUserProfile({
-                id: newUser.id,
-                name: newUser.name,
-                avatar_url: newUser.avatarUrl,
-                phone: newUser.phoneNumber,
-                points: newUser.points,
-                stats: newUser.stats,
-                badges: newUser.badges
-            });
-        } catch (error) {
-            console.error('Error creating user profile in database:', error);
-        }
-
-        setUsers(prev => [...prev, newUser]);
-        setCurrentUser(newUser);
-    }, [users, setCurrentUser]);
-
-    const handleUpdateSettings = useCallback((newSettings: NotificationSettings) => {
-        if (!currentUser) return;
-        setCurrentUser({ ...currentUser, settings: newSettings });
-        updateUserProfile(currentUser.id, { settings: newSettings }).catch(error => console.error('Failed to update user settings:', error));
-    }, [currentUser, setCurrentUser]);
-
     const handleUpdateProfile = useCallback((name: string, phone: string) => {
         if (!currentUser) return;
         setCurrentUser({ ...currentUser, name, phoneNumber: phone });
         setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? { ...u, name, phoneNumber: phone } : u));
-        updateUserProfile(currentUser.id, { name, phone }).catch(error => console.error('Failed to update user profile:', error));
+        persistProfileUpdate({ name, phone }).catch(error => console.error('Failed to update user profile:', error));
         alert("Profile updated successfully!");
-    }, [currentUser, setCurrentUser]);
+    }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     const handleUpdateCurrentUserAvatar = useCallback((avatarUrl: string) => {
         if (!currentUser) return;
         setCurrentUser({ ...currentUser, avatarUrl });
-        updateUserProfile(currentUser.id, { avatar_url: avatarUrl }).catch(error => console.error('Failed to update user avatar:', error));
-    }, [currentUser, setCurrentUser]);
+        persistProfileUpdate({ avatar_url: avatarUrl }).catch(error => console.error('Failed to update user avatar:', error));
+    }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     const handleUpdatePassword = useCallback((current: string, newPass: string): boolean => {
         if (!currentUser) return false;
@@ -205,36 +195,60 @@ export function useAuthHandlers() {
         }
     }, [currentUser, handleLogout]);
 
+    const handleExportAccount = useCallback(async () => {
+        if (!currentUser) return;
+        try {
+            const data = await exportUserAccountData(currentUser.id);
+            if (!data) {
+                alert('Export failed. You may only export once every 24 hours.');
+                return;
+            }
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lantern-study-export-${currentUser.id}-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Failed to export data. Please try again.');
+        }
+    }, [currentUser]);
+
     const handleSavePreset = useCallback((name: string, config: Omit<TestConfig, 'questionIds' | 'groupId'>) => {
         if (!currentUser) return;
         const newPreset: TestPreset = { id: uuidv4(), name, config };
         const updatedPresets = [...(currentUser.testPresets || []), newPreset];
         setCurrentUser({ ...currentUser, testPresets: updatedPresets });
-        updateUserProfile(currentUser.id, { test_presets: updatedPresets }).catch(error => console.error('Failed to save test preset:', error));
+        persistProfileUpdate({ test_presets: updatedPresets }).catch(error => console.error('Failed to save test preset:', error));
         alert(`Preset "${name}" saved!`);
-    }, [currentUser, setCurrentUser]);
+    }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     const handleDeletePreset = useCallback((id: string) => {
         if (!currentUser) return;
         const updatedPresets = (currentUser.testPresets || []).filter(p => p.id !== id);
         setCurrentUser({ ...currentUser, testPresets: updatedPresets });
-        updateUserProfile(currentUser.id, { test_presets: updatedPresets }).catch(error => console.error('Failed to delete test preset:', error));
-    }, [currentUser, setCurrentUser]);
+        persistProfileUpdate({ test_presets: updatedPresets }).catch(error => console.error('Failed to delete test preset:', error));
+    }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     return {
         users,
         setUsers,
         dataLoaded,
         setDataLoaded,
+        getUserSettings,
         toggleTheme,
-        handleLogin,
         handleLogout,
-        handleRegister,
-        handleUpdateSettings,
+        handleUpdateSettingsCategory,
+        handleUpdateNotificationSettings,
         handleUpdateProfile,
         handleUpdateCurrentUserAvatar,
         handleUpdatePassword,
         handleDeleteAccount,
+        handleExportAccount,
+        handleUpdatePrivacySettings,
+        handleResetSettings,
         handleSavePreset,
         handleDeletePreset,
     };

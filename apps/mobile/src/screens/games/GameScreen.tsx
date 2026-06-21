@@ -14,7 +14,6 @@ import {
   Image,
   Dimensions,
   Animated,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
@@ -22,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
+import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -118,10 +118,10 @@ export default function GameScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<GameScreenRouteParams, 'GameScreen'>>();
   const { user } = useAuthStore();
-  const { activeSession, updateAnswer, endGame, resetGame } = useGameStore();
+  const { activeSession, updateAnswer, resetGame } = useGameStore();
   
-  // Get session from route params or active session
-  const session = route.params?.session || activeSession;
+  // Prefer live store session (updates after each answer / submit)
+  const session = activeSession || route.params?.session;
   
   // Safety check
   if (!session) {
@@ -144,36 +144,48 @@ export default function GameScreen() {
   const [matchSelections, setMatchSelections] = useState<Record<string, string>>({});
   const [diagramSelections, setDiagramSelections] = useState<Record<string, string>>({});
   const [shuffledAnswers, setShuffledAnswers] = useState<MatchingItem[] | DiagramLabel[]>([]);
-  const [isAnswered, setIsAnswered] = useState(false);
   const [showMatchingDropdown, setShowMatchingDropdown] = useState<string | null>(null);
+
+  const isQuestionAnswered = !!session.userAnswers[currentQuestion.id];
+
+  const resetQuestionState = useCallback(
+    (questionIndex: number) => {
+      const question = session.questions[questionIndex];
+      if (!question) return;
+
+      const existingAnswer = session.userAnswers[question.id];
+      setCurrentSelections(existingAnswer?.selectedOptionIds || []);
+      setFillText(existingAnswer?.fillText || '');
+      setMatchSelections(
+        Object.fromEntries(
+          (existingAnswer?.matchingAnswers || []).map(m => [m.promptItemId, m.answerItemId])
+        )
+      );
+      setDiagramSelections(
+        Object.fromEntries(
+          (existingAnswer?.diagramAnswers || []).map(d => [d.labelId, d.selectedLabelId])
+        )
+      );
+      setShowMatchingDropdown(null);
+      questionViewStartTimeRef.current = Date.now();
+
+      if (question.questionType === QuestionType.MATCHING && question.matchingAnswerItems) {
+        setShuffledAnswers(shuffleArray(question.matchingAnswerItems));
+      } else if (question.questionType === QuestionType.DIAGRAM_LABELING && question.diagramLabels) {
+        setShuffledAnswers(shuffleArray(question.diagramLabels));
+      } else {
+        setShuffledAnswers([]);
+      }
+    },
+    [session.questions, session.userAnswers]
+  );
 
   const questionViewStartTimeRef = useRef<number | null>(null);
   const progressAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    questionViewStartTimeRef.current = Date.now();
-    const existingAnswer = session.userAnswers[currentQuestion.id];
-    setIsAnswered(!!existingAnswer);
-    setCurrentSelections(existingAnswer?.selectedOptionIds || []);
-    setFillText(existingAnswer?.fillText || '');
-    setMatchSelections(
-      Object.fromEntries(
-        (existingAnswer?.matchingAnswers || []).map(m => [m.promptItemId, m.answerItemId])
-      )
-    );
-    setDiagramSelections(
-      Object.fromEntries(
-        (existingAnswer?.diagramAnswers || []).map(d => [d.labelId, d.selectedLabelId])
-      )
-    );
-
-    if (currentQuestion.questionType === QuestionType.MATCHING && currentQuestion.matchingAnswerItems) {
-      setShuffledAnswers(shuffleArray(currentQuestion.matchingAnswerItems));
-    }
-    if (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && currentQuestion.diagramLabels) {
-      setShuffledAnswers(shuffleArray(currentQuestion.diagramLabels));
-    }
-  }, [currentQuestionIndex, currentQuestion.id, session.userAnswers]);
+    resetQuestionState(currentQuestionIndex);
+  }, [currentQuestionIndex]); // eslint-disable-line react-hooks/exhaustive-deps -- reset UI only when changing questions
 
   // Animate progress bar
   useEffect(() => {
@@ -186,50 +198,44 @@ export default function GameScreen() {
   }, [session.userAnswers, totalQuestions]);
 
   const submitAnswer = useCallback((answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>) => {
-    if (isAnswered) return;
+    if (isQuestionAnswered) return;
     const timeSpentSeconds = questionViewStartTimeRef.current
       ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000)
       : 0;
-    // Use store to update answer
     updateAnswer(currentQuestion.id, answerData, timeSpentSeconds);
-    setIsAnswered(true);
-  }, [isAnswered, currentQuestion.id, updateAnswer]);
+  }, [isQuestionAnswered, currentQuestion.id, updateAnswer]);
 
   const handleNextQuestion = useCallback(() => {
     if (currentQuestionIndex < totalQuestions - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-    } else {
-      // Game complete - end the game and navigate to results
-      const completedSession = endGame();
-      if (completedSession) {
-        navigation.replace('GameResult', { 
-          session: completedSession, 
-          currentUser: { id: user?.id, name: session.user.name } 
-        });
-      }
+      const nextIndex = currentQuestionIndex + 1;
+      resetQuestionState(nextIndex);
+      setCurrentQuestionIndex(nextIndex);
     }
-  }, [currentQuestionIndex, totalQuestions, endGame, navigation, user?.id, session.user.name]);
+  }, [currentQuestionIndex, totalQuestions, resetQuestionState]);
 
-  const handleQuitGame = useCallback(() => {
-    Alert.alert(
-      'Quit Game?',
-      'Are you sure you want to quit? This will count as a loss.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Quit', 
-          style: 'destructive',
-          onPress: () => {
-            resetGame();
-            navigation.goBack();
-          }
-        },
-      ]
-    );
-  }, [resetGame, navigation]);
+  useEffect(() => {
+    if (!activeSession) return;
+    if (activeSession.isComplete || activeSession.awaitingOpponent) {
+      navigation.replace('GameResult', {
+        session: activeSession,
+        currentUser: { id: user?.id, name: activeSession.user.name },
+      });
+    }
+  }, [activeSession?.isComplete, activeSession?.awaitingOpponent, activeSession, navigation, user?.id]);
+
+  const exitGuardEnabled =
+    !!activeSession && !activeSession.isComplete && !activeSession.awaitingOpponent;
+
+  useConfirmBeforeExit(exitGuardEnabled, {
+    title: 'Quit Game?',
+    message: 'Are you sure you want to quit? This will count as a loss.',
+    confirmLabel: 'Quit',
+    destructive: true,
+    onConfirm: resetGame,
+  });
 
   const handleOptionSelect = useCallback((optionId: string) => {
-    if (isAnswered) return;
+    if (isQuestionAnswered) return;
     const isMulti = currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE;
     
     if (isMulti) {
@@ -240,18 +246,18 @@ export default function GameScreen() {
       setCurrentSelections([optionId]);
       submitAnswer({ selectedOptionIds: [optionId] });
     }
-  }, [isAnswered, currentQuestion.questionType, submitAnswer]);
+  }, [isQuestionAnswered, currentQuestion.questionType, submitAnswer]);
 
   const handleMatchSelect = useCallback((promptItemId: string, answerItemId: string) => {
-    if (isAnswered) return;
+    if (isQuestionAnswered) return;
     setMatchSelections(prev => ({ ...prev, [promptItemId]: answerItemId }));
     setShowMatchingDropdown(null);
-  }, [isAnswered]);
+  }, [isQuestionAnswered]);
 
   const handleDiagramLabelSelect = useCallback((labelId: string, selectedLabelId: string) => {
-    if (isAnswered) return;
+    if (isQuestionAnswered) return;
     setDiagramSelections(prev => ({ ...prev, [labelId]: selectedLabelId }));
-  }, [isAnswered]);
+  }, [isQuestionAnswered]);
 
   const handleSubmitMultiOrComplex = useCallback(() => {
     if (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) {
@@ -276,7 +282,7 @@ export default function GameScreen() {
   }, [currentQuestion.questionType, currentSelections, fillText, matchSelections, diagramSelections, submitAnswer]);
 
   const canSubmit = useMemo(() => {
-    if (isAnswered) return false;
+    if (isQuestionAnswered) return false;
     switch (currentQuestion.questionType) {
       case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
         return currentSelections.length > 0;
@@ -289,7 +295,7 @@ export default function GameScreen() {
       default:
         return false;
     }
-  }, [isAnswered, currentQuestion, currentSelections, fillText, matchSelections, diagramSelections]);
+  }, [isQuestionAnswered, currentQuestion, currentSelections, fillText, matchSelections, diagramSelections]);
 
   const userProgress = (Object.keys(session.userAnswers).length / totalQuestions) * 100;
   const opponentProgress = (Object.keys(session.opponentAnswers).length / totalQuestions) * 100;
@@ -325,7 +331,7 @@ export default function GameScreen() {
       let iconName: string | null = null;
       let iconColor = '';
 
-      if (isAnswered) {
+      if (isQuestionAnswered) {
         if (isCorrectOption) {
           optionStyle = [...optionStyle, styles.optionCorrect];
           iconName = 'checkmark-circle';
@@ -344,7 +350,7 @@ export default function GameScreen() {
           key={opt.id}
           style={optionStyle}
           onPress={() => handleOptionSelect(opt.id)}
-          disabled={isAnswered}
+          disabled={isQuestionAnswered}
           activeOpacity={0.7}
         >
           {isMulti && (
@@ -369,7 +375,7 @@ export default function GameScreen() {
         onChangeText={setFillText}
         placeholder="Type your answer here..."
         placeholderTextColor={colors.textTertiary}
-        editable={!isAnswered}
+        editable={!isQuestionAnswered}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -383,8 +389,8 @@ export default function GameScreen() {
           <Text style={[styles.matchingPrompt, { color: colors.text }]}>{prompt.text}</Text>
           <TouchableOpacity
             style={[styles.matchingSelect, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
-            onPress={() => !isAnswered && setShowMatchingDropdown(showMatchingDropdown === prompt.id ? null : prompt.id)}
-            disabled={isAnswered}
+            onPress={() => !isQuestionAnswered && setShowMatchingDropdown(showMatchingDropdown === prompt.id ? null : prompt.id)}
+            disabled={isQuestionAnswered}
           >
             <Text style={[styles.matchingSelectText, { color: matchSelections[prompt.id] ? colors.text : colors.textTertiary }]}>
               {matchSelections[prompt.id]
@@ -430,6 +436,16 @@ export default function GameScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Game HUD */}
       <View style={[styles.hudContainer, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <View style={styles.hudTopRow}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.quitButton}
+            accessibilityLabel="Quit game"
+            accessibilityRole="button"
+          >
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
         {/* Players */}
         <View style={styles.playersRow}>
           <View style={styles.playerInfo}>
@@ -486,7 +502,7 @@ export default function GameScreen() {
             Question {currentQuestion.questionNumber}
           </Text>
           <Text style={[styles.questionText, { color: colors.text }]}>
-            {currentQuestion.questionStem}
+            {(currentQuestion as any).questionStem ?? (currentQuestion as any).text ?? (currentQuestion as any).question ?? ''}
           </Text>
 
           {renderQuestionContent()}
@@ -503,7 +519,7 @@ export default function GameScreen() {
           )}
 
           {/* Next button after answering */}
-          {isAnswered && (
+          {isQuestionAnswered && (
             <TouchableOpacity
               style={[styles.nextButton, { backgroundColor: colors.primary }]}
               onPress={handleNextQuestion}
@@ -529,6 +545,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
+  },
+  hudTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quitButton: {
+    padding: 4,
+    marginLeft: -4,
   },
   playersRow: {
     flexDirection: 'row',

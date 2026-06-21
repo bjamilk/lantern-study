@@ -96,7 +96,15 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({ userId, onBac
             )}
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-white truncate">{profile.user.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white truncate">{profile.user.name}</h1>
+              {(profile as any).stats?.isVerified && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-100 text-xs font-semibold ring-1 ring-emerald-300/30">
+                  <CheckBadgeIcon className="w-3.5 h-3.5" />
+                  Verified Seller
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-1">
               <div className="flex items-center gap-0.5">{renderStars(profile.stats.avgRating)}</div>
               <span className="text-sm text-indigo-100">
@@ -143,6 +151,15 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({ userId, onBac
             </div>
           ))}
         </div>
+
+        {(profile as any).stats?.isVerified && (
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+            <CheckBadgeIcon className="w-5 h-5" />
+            <p className="text-sm font-medium">
+              This seller is verified based on consistent sales activity, strong review quality, and listing history.
+            </p>
+          </div>
+        )}
 
         {/* Badges */}
         {profile.badges.length > 0 && (

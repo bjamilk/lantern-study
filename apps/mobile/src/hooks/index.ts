@@ -32,3 +32,7 @@ export type {
 } from './useRealtimeSubscriptions';
 
 export { useAIHandlers } from './useAIHandlers';
+export { useGroupHandlers } from './useGroupHandlers';
+export { useLowDataMode } from './useLowDataMode';
+export { useConfirmBeforeExit } from './useConfirmBeforeExit';
+export type { ConfirmBeforeExitOptions } from './useConfirmBeforeExit';

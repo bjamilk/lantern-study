@@ -1,7 +1,7 @@
 import winston from 'winston';
 import path from 'path';
+import { redactForLog } from './safeError';
 
-// Define log levels
 const levels = {
   error: 0,
   warn: 1,
@@ -10,7 +10,6 @@ const levels = {
   debug: 4,
 };
 
-// Define colors for each level
 const colors = {
   error: 'red',
   warn: 'yellow',
@@ -19,119 +18,103 @@ const colors = {
   debug: 'white',
 };
 
-// Add colors to winston
 winston.addColors(colors);
 
-// Define the format for logs
-const format = winston.format.combine(
+const redactMeta = winston.format((info) => {
+  const { message, level, timestamp, stack, ...rest } = info;
+  const redactedRest = redactForLog(rest);
+  return {
+    message,
+    level,
+    timestamp,
+    stack,
+    ...(typeof redactedRest === 'object' && redactedRest !== null && !Array.isArray(redactedRest)
+      ? (redactedRest as Record<string, unknown>)
+      : {}),
+  } as winston.Logform.TransformableInfo;
+});
+
+const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
-  winston.format.colorize({ all: true }),
-  winston.format.printf(
-    (info) => `${info.timestamp} ${info.level}: ${info.message}`
-  )
+  redactMeta(),
+  winston.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`)
 );
 
-// Define transports
-const transports = [
-  // Console transport for development
-  new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    ),
-  }),
+const fileFormat = winston.format.combine(
+  winston.format.timestamp(),
+  redactMeta(),
+  winston.format.errors({ stack: true }),
+  winston.format.json()
+);
 
-  // File transport for errors
+const transports = [
+  new winston.transports.Console({
+    format: consoleFormat,
+  }),
   new winston.transports.File({
     filename: path.join(process.cwd(), 'logs', 'error.log'),
     level: 'error',
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.errors({ stack: true }),
-      winston.format.json()
-    ),
+    format: fileFormat,
   }),
-
-  // File transport for all logs
   new winston.transports.File({
     filename: path.join(process.cwd(), 'logs', 'all.log'),
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.json()
-    ),
+    format: fileFormat,
   }),
 ];
 
-// Create the logger
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   levels,
-  format,
   transports,
 });
 
-// If we're not in production, log to the console with colors
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      ),
-    })
-  );
-}
-
-// Create logs directory if it doesn't exist
 import fs from 'fs';
 const logsDir = path.join(process.cwd(), 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Export a stream for morgan (HTTP request logging)
 export const stream = {
   write: (message: string) => {
     logger.http(message.trim());
   },
 };
 
-// Helper functions for different log levels
-export const logError = (message: string, meta?: any) => {
-  logger.error(message, meta);
+function sanitizeMeta(meta?: unknown) {
+  return meta ? redactForLog(meta) : undefined;
+}
+
+export const logError = (message: string, meta?: unknown) => {
+  logger.error(message, sanitizeMeta(meta));
 };
 
-export const logWarn = (message: string, meta?: any) => {
-  logger.warn(message, meta);
+export const logWarn = (message: string, meta?: unknown) => {
+  logger.warn(message, sanitizeMeta(meta));
 };
 
-export const logInfo = (message: string, meta?: any) => {
-  logger.info(message, meta);
+export const logInfo = (message: string, meta?: unknown) => {
+  logger.info(message, sanitizeMeta(meta));
 };
 
-export const logDebug = (message: string, meta?: any) => {
-  logger.debug(message, meta);
+export const logDebug = (message: string, meta?: unknown) => {
+  logger.debug(message, sanitizeMeta(meta));
 };
 
-// Performance logging
-export const logPerformance = (operation: string, startTime: number, meta?: any) => {
+export const logPerformance = (operation: string, startTime: number, meta?: unknown) => {
   const duration = Date.now() - startTime;
   logger.info(`Performance: ${operation} took ${duration}ms`, {
     operation,
     duration,
-    ...meta,
+    ...(typeof sanitizeMeta(meta) === 'object' ? (sanitizeMeta(meta) as object) : {}),
   });
 };
 
-// Request logging middleware helper
 export const logRequest = (req: any, res: any, next: any) => {
   const start = Date.now();
   const { method, url, ip } = req;
 
-  // Log when request starts
   logger.http(`Started ${method} ${url} from ${ip}`);
 
-  // Log when request finishes
   res.on('finish', () => {
     const duration = Date.now() - start;
     const { statusCode } = res;

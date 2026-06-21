@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fetchMyInquiries, updateInquiryStatus, fetchOffers, respondToOffer } from '../services/supabase';
-import { MarketplaceInquiry, MarketplaceOffer, TransactionType } from '../types';
-import { useBudgetStore } from '../stores/budgetStore';
+import { normalizeStorageUrl } from '../utils/storageUrl';
+import { MarketplaceInquiry, MarketplaceOffer } from '../types';
+import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
   ChatBubbleLeftIcon,
   ArrowLeftIcon,
@@ -32,7 +33,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [counterAmounts, setCounterAmounts] = useState<Record<string, string>>({});
   const [respondingTo, setRespondingTo] = useState<string | null>(null);
-  const { addTransaction } = useBudgetStore();
+  const { refreshBudgetTransactions } = useBudgetHandlers();
 
   useEffect(() => {
     if (activeTab === 'offers') {
@@ -67,22 +68,8 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
         return;
       }
       await respondToOffer(offerId, action, counterAmount);
-      // Auto-log marketplace transaction to budget
       if (action === 'accept') {
-        const offer = offers.find(o => o.id === offerId);
-        if (offer) {
-          const isSeller = offer.seller_id === userId;
-          addTransaction({
-            id: crypto.randomUUID(),
-            userId,
-            type: isSeller ? TransactionType.INCOME : TransactionType.EXPENSE,
-            amount: offer.counter_amount || offer.amount,
-            category: isSeller ? 'marketplace_sale' : 'marketplace_purchase',
-            description: `${isSeller ? 'Sold' : 'Purchased'}: ${offer.listing?.title || 'Marketplace item'}`,
-            date: new Date().toISOString().split('T')[0],
-            linkedListingId: offer.listing_id,
-          });
-        }
+        await refreshBudgetTransactions(userId);
       }
       await loadOffers();
     } catch (error: any) {
@@ -282,7 +269,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                       >
                         {offer.listing?.images && (offer.listing.images as any[]).length > 0 ? (
                           <img
-                            src={(offer.listing.images as any[])[0]}
+                            src={normalizeStorageUrl((offer.listing.images as any[])[0])}
                             alt={offer.listing?.title}
                             className="w-full h-full object-cover"
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -304,6 +291,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                               offer.status === 'accepted' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' :
                               offer.status === 'declined' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
                               offer.status === 'countered' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' :
+                              offer.status === 'expired' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' :
                               offer.status === 'withdrawn' ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
                               'bg-slate-100 text-slate-700'
                             }`}>
@@ -334,6 +322,12 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                             {/* Message */}
                             {offer.message && (
                               <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 italic">"{offer.message}"</p>
+                            )}
+
+                            {offer.parent_offer_id && (
+                              <p className="text-xs text-purple-600 dark:text-purple-300 mt-1">
+                                Counter-offer thread: {offer.parent_offer_id.slice(0, 8)}...
+                              </p>
                             )}
 
                             {/* Expires */}
@@ -440,7 +434,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                   >
                     {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                       <img
-                        src={inquiry.listing.images[0]}
+                        src={normalizeStorageUrl(inquiry.listing.images[0])}
                         alt={inquiry.listing?.title}
                         className="w-full h-full object-cover"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}

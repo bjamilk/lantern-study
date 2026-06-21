@@ -4,16 +4,29 @@
 
 import React, { useEffect, useRef } from 'react';
 import { TestResult } from '../types';
-import { XCircleIcon, ChartPieIcon, ClockIcon, TagIcon } from '@heroicons/react/24/outline';
+import { XCircleIcon, ChartPieIcon, ClockIcon, TagIcon, SparklesIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Chart, registerables } from 'chart.js';
 import type { Chart as ChartType } from 'chart.js';
+import { computeWeakTopicsFromTestResult } from '../utils/buildFlashcardSource';
+import { isUserAnswerAttempted } from '@lantern/shared/utils';
+
+Chart.register(...registerables);
 
 interface TestAnalysisModalProps {
   isOpen: boolean;
   onClose: () => void;
   results: TestResult;
+  onGenerateWeakTopicFlashcards?: (results: TestResult, weakTopics: string[]) => void | Promise<void>;
+  isGeneratingFlashcards?: boolean;
 }
 
-const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, results }) => {
+const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
+  isOpen,
+  onClose,
+  results,
+  onGenerateWeakTopicFlashcards,
+  isGeneratingFlashcards = false,
+}) => {
     const pieChartRef = useRef<HTMLCanvasElement>(null);
     const timePerQuestionChartRef = useRef<HTMLCanvasElement>(null);
     const timePerTagChartRef = useRef<HTMLCanvasElement>(null);
@@ -27,21 +40,23 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
 
         // Data for Pie Chart
         const unattemptedCount = session.questions.filter(q => {
-            const answer = session.userAnswers[q.id];
-            if (!answer) return true;
-            return !(
-                (answer.selectedOptionIds && answer.selectedOptionIds.length > 0) ||
-                (answer.fillText && answer.fillText.trim() !== '') ||
-                (answer.matchingAnswers && answer.matchingAnswers.length > 0) ||
-                (answer.diagramAnswers && answer.diagramAnswers.length > 0)
-            );
+            return !isUserAnswerAttempted(session.userAnswers[q.id]);
         }).length;
         const incorrectCount = totalQuestions - correctAnswersCount - unattemptedCount;
 
         // Data for Time per Question Chart
+        const isAttempted = (answer: typeof session.userAnswers[string] | undefined) =>
+            isUserAnswerAttempted(answer);
+
         const timePerQuestionData = session.questions.map(q => ({
+            status: !isAttempted(session.userAnswers[q.id])
+                ? 'unattempted'
+                : session.userAnswers[q.id]?.isCorrect
+                    ? 'correct'
+                    : 'incorrect',
             label: `Q${q.questionNumber}`,
             time: session.userAnswers[q.id]?.timeSpentSeconds ?? 0,
+            stem: q.questionStem || q.text || '',
         })).sort((a,b) => parseInt(a.label.substring(1)) - parseInt(b.label.substring(1)));
 
         // Data for Time per Tag Chart
@@ -62,7 +77,6 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
             avgTime: count > 0 ? totalTime / count : 0,
         }));
         
-        let active = true;
         let localPieChart: ChartType | undefined;
         let localTimePerQChart: ChartType | undefined;
         let localTimePerTagChart: ChartType | undefined;
@@ -71,9 +85,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
         Object.values(chartInstances.current).forEach((chart: ChartType | undefined) => chart?.destroy());
         chartInstances.current = {};
 
-        import('chart.js').then(({ Chart, registerables }) => {
-            if (!active) return;
-            Chart.register(...registerables);
+        {
 
             // Create Pie Chart
             if (pieChartRef.current) {
@@ -106,13 +118,57 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
                             datasets: [{
                                 label: 'Time Spent (s)',
                                 data: timePerQuestionData.map(d => d.time),
-                                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                                backgroundColor: timePerQuestionData.map(d => {
+                                    if (d.status === 'correct') return 'rgba(34, 197, 94, 0.75)';
+                                    if (d.status === 'incorrect') return 'rgba(239, 68, 68, 0.75)';
+                                    return 'rgba(245, 158, 11, 0.75)';
+                                }),
+                                borderColor: timePerQuestionData.map(d => {
+                                    if (d.status === 'correct') return 'rgb(22, 163, 74)';
+                                    if (d.status === 'incorrect') return 'rgb(220, 38, 38)';
+                                    return 'rgb(217, 119, 6)';
+                                }),
+                                borderWidth: 1,
                             }]
                         },
                         options: {
                             responsive: true,
                             scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
-                            plugins: { legend: { display: false } }
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        title: (items) => {
+                                            const idx = items[0]?.dataIndex ?? -1;
+                                            const d = timePerQuestionData[idx];
+                                            return d ? `${d.label}  •  ${d.time}s  •  ${d.status}` : '';
+                                        },
+                                        label: (item) => {
+                                            const d = timePerQuestionData[item.dataIndex];
+                                            if (!d?.stem) return '';
+                                            // Wrap long text across multiple tooltip lines (~60 chars each)
+                                            const words = d.stem.split(' ');
+                                            const lines: string[] = [];
+                                            let line = '';
+                                            for (const word of words) {
+                                                if ((line + ' ' + word).trim().length > 60) {
+                                                    if (line) lines.push(line);
+                                                    line = word;
+                                                } else {
+                                                    line = line ? line + ' ' + word : word;
+                                                }
+                                            }
+                                            if (line) lines.push(line);
+                                            return lines;
+                                        },
+                                    },
+                                    displayColors: false,
+                                    bodyFont: { size: 12 },
+                                    titleFont: { size: 13, weight: 'bold' },
+                                    padding: 10,
+                                    maxWidth: 280,
+                                },
+                            }
                         }
                     });
                     chartInstances.current.timePerQ = localTimePerQChart;
@@ -142,13 +198,10 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
                     chartInstances.current.timePerTag = localTimePerTagChart;
                 }
             }
-        }).catch(err => {
-            console.error('Failed to load chart.js dynamically:', err);
-        });
+        }
 
         // Cleanup function
         return () => {
-            active = false;
             if (localPieChart) localPieChart.destroy();
             if (localTimePerQChart) localTimePerQChart.destroy();
             if (localTimePerTagChart) localTimePerTagChart.destroy();
@@ -163,14 +216,40 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
     // Check if there are any tags to determine if the third chart should be shown
     const hasTags = results.session.questions.some(q => q.tags && q.tags.length > 0);
 
+    const weakTopics = computeWeakTopicsFromTestResult(results);
+
+    const handleGenerateFlashcards = () => {
+        if (!onGenerateWeakTopicFlashcards || isGeneratingFlashcards) return;
+        void onGenerateWeakTopicFlashcards(results, weakTopics);
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="analysis-modal-title">
             <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-xl w-full max-w-4xl transform h-[90vh] flex flex-col">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h2 id="analysis-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Detailed Test Analysis</h2>
-                    <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close modal">
-                        <XCircleIcon className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleGenerateFlashcards}
+                            disabled={!onGenerateWeakTopicFlashcards || isGeneratingFlashcards}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg shadow-sm transition-colors"
+                            title={weakTopics.length ? `Generate flashcards for: ${weakTopics.join(', ')}` : 'Generate flashcards from questions you missed'}
+                        >
+                            {isGeneratingFlashcards ? (
+                                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <SparklesIcon className="w-4 h-4" />
+                            )}
+                            {isGeneratingFlashcards
+                                ? 'Generating...'
+                                : weakTopics.length
+                                    ? 'Generate Flashcards for Weak Topics'
+                                    : 'Generate Flashcards'}
+                        </button>
+                        <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close modal">
+                            <XCircleIcon className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
                 <div className="flex-grow overflow-y-auto pr-2 -mr-4 space-y-8">
                     {/* Pie Chart */}
@@ -189,6 +268,20 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({ isOpen, onClose, 
                             <ClockIcon className="w-5 h-5 mr-2 text-blue-500"/>
                             Time Spent per Question
                         </h3>
+                        <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-300">
+                            <div className="inline-flex items-center gap-1.5">
+                                <span className="inline-block w-3 h-3 rounded-sm bg-green-500"></span>
+                                Correct
+                            </div>
+                            <div className="inline-flex items-center gap-1.5">
+                                <span className="inline-block w-3 h-3 rounded-sm bg-red-500"></span>
+                                Incorrect
+                            </div>
+                            <div className="inline-flex items-center gap-1.5">
+                                <span className="inline-block w-3 h-3 rounded-sm bg-amber-500"></span>
+                                Unattempted
+                            </div>
+                        </div>
                         <div className="relative h-72">
                             <canvas ref={timePerQuestionChartRef}></canvas>
                         </div>

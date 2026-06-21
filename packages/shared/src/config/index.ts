@@ -9,8 +9,14 @@
 export type Platform = 'web' | 'mobile';
 export type Environment = 'development' | 'production';
 
-// Detect if running in React Native
+// Detect if running in React Native (Hermes may not set navigator.product)
 const isReactNative = (): boolean => {
+  try {
+    const { Platform } = require('react-native');
+    if (Platform?.OS) return true;
+  } catch {
+    // not in React Native
+  }
   return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
 };
 
@@ -53,14 +59,14 @@ interface Config {
 
 // Default development values
 const DEV_CONFIG: Config = {
-  supabaseUrl: 'http://localhost:54321',
+  supabaseUrl: 'http://localhost:55421',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
   apiBaseUrl: 'http://localhost:3001',
 };
 
 // Mobile development needs LAN IP for device access
 const MOBILE_DEV_CONFIG: Config = {
-  supabaseUrl: 'http://192.168.4.38:54321',
+  supabaseUrl: 'http://192.168.4.38:55421',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
   apiBaseUrl: 'http://192.168.4.38:3001',
 };
@@ -118,8 +124,7 @@ export const getConfig = (): Config => {
     if (!apiBaseUrl) missing.push('API_URL');
     
     if (missing.length > 0) {
-      console.error(`Missing required production environment variables: ${missing.join(', ')}`);
-      // Return empty config but don't crash - allows build to complete
+      throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
     }
     
     return {

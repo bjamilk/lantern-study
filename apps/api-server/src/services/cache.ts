@@ -147,9 +147,20 @@ export class CacheService {
 
     if (this.client && this.isConnected) {
       try {
-        const keys = await this.client.keys(cachePattern);
-        if (keys.length > 0) {
-          await this.client.del(keys);
+        const keysToDelete: string[] = [];
+        for await (const key of this.client.scanIterator({
+          MATCH: cachePattern,
+          COUNT: 100,
+        })) {
+          const normalized = Array.isArray(key) ? key : [key];
+          keysToDelete.push(...normalized.filter((k): k is string => typeof k === 'string'));
+          if (keysToDelete.length >= 500) {
+            await this.client.del(keysToDelete as [string, ...string[]]);
+            keysToDelete.length = 0;
+          }
+        }
+        if (keysToDelete.length > 0) {
+          await this.client.del(keysToDelete as [string, ...string[]]);
         }
       } catch (error) {
         console.error('Redis delete pattern error:', error);

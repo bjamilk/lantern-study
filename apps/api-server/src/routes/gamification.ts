@@ -5,6 +5,8 @@ import { handleValidationErrors, validateUserId, validatePagination } from '../m
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import { requireAuthUserId } from '../utils/requestAuth';
+import { canViewStudyActivity } from '@lantern/shared/settings';
 
 const router = Router();
 
@@ -21,13 +23,16 @@ export const initializeGamificationRoutes = (supabase: SupabaseService, cache: C
 // GET /api/v1/gamification/leaderboard - Get leaderboard
 router.get(
   '/leaderboard',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { page = 1, limit = 50, timeframe = 'all', metric = 'points' } = req.query;
 
-    logger.debug('Fetching leaderboard', { page, limit, timeframe, metric });
+    logger.debug('Fetching leaderboard', { page, limit, timeframe, metric, userId });
 
     const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}`;
     let leaderboard = await cacheService.get(cacheKey) as any[];
@@ -59,13 +64,16 @@ router.get(
 // GET /api/v1/gamification/achievements - Get available achievements
 router.get(
   '/achievements',
-  // authMiddleware,
+  authMiddleware,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { page = 1, limit = 20, category } = req.query;
 
-    logger.debug('Fetching achievements', { page, limit, category });
+    logger.debug('Fetching achievements', { page, limit, category, userId });
 
     const cacheKey = `gamification:achievements:${page}:${limit}:${category || ''}`;
     let achievements = await cacheService.get(cacheKey) as any[];
@@ -96,32 +104,32 @@ router.get(
 // GET /api/v1/gamification/user/:userId/achievements - Get user's achievements
 router.get(
   '/user/:userId/achievements',
-  // authMiddleware,
+  authMiddleware,
   validateUserId,
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const { page = 1, limit = 20, providedUserId } = req.query;
-    const requestingUserId = req.user?.id;
+    const { page = 1, limit = 20 } = req.query;
 
-    logger.debug('Fetching user achievements', { userId: userId || providedUserId, page, limit, requestingUserId });
-
-    const finalUserId = providedUserId as string || userId;
+    logger.debug('Fetching user achievements', { userId, page, limit, requestingUserId });
 
     // Check permissions (users can view their own achievements, admins can view anyone's)
-    if (requestingUserId && requestingUserId !== finalUserId && !req.user?.isAdmin) {
+    if (requestingUserId !== userId && !req.user?.isAdmin) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
       });
     }
 
-    const cacheKey = `gamification:user:achievements:${finalUserId}:${page}:${limit}`;
+    const cacheKey = `gamification:user:achievements:${userId}:${page}:${limit}`;
     let achievements = await cacheService.get(cacheKey) as any[];
 
     if (!achievements) {
-      achievements = await supabaseService.getUserAchievements(finalUserId, {
+      achievements = await supabaseService.getUserAchievements(userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
       });
@@ -148,9 +156,11 @@ router.post(
   authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { points, reason, source } = req.body;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Awarding points', { userId, points, reason, source, requestingUserId });
 
@@ -196,9 +206,11 @@ router.post(
   authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { achievementId } = req.body;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Awarding achievement', { userId, achievementId, requestingUserId });
 
@@ -236,8 +248,10 @@ router.get(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user progress', { userId, requestingUserId });
 
@@ -272,7 +286,10 @@ router.get(
   authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    logger.debug('Fetching gamification stats');
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    logger.debug('Fetching gamification stats', { userId });
 
     const cacheKey = 'gamification:stats';
     let stats = await cacheService.get(cacheKey);
@@ -298,9 +315,12 @@ router.get(
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
     const { page = 1, limit = 20, category } = req.query;
 
-    logger.debug('Fetching badges', { page, limit, category });
+    logger.debug('Fetching badges', { page, limit, category, userId });
 
     const cacheKey = `gamification:badges:${page}:${limit}:${category || ''}`;
     let badges = await cacheService.get(cacheKey) as any[];
@@ -336,9 +356,11 @@ router.get(
   validatePagination,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { page = 1, limit = 20 } = req.query;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user badges', { userId, page, limit, requestingUserId });
 
@@ -381,9 +403,11 @@ router.post(
   authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
     const { badgeId } = req.body;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Awarding badge', { userId, badgeId, requestingUserId });
 
@@ -420,7 +444,10 @@ router.get(
   authMiddleware,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    logger.debug('Fetching levels');
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    logger.debug('Fetching levels', { userId });
 
     const cacheKey = 'gamification:levels';
     let levels = await cacheService.get(cacheKey);
@@ -446,8 +473,10 @@ router.get(
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
     const { userId } = req.params;
-    const requestingUserId = req.user?.id;
 
     logger.debug('Fetching user level', { userId, requestingUserId });
 
@@ -473,6 +502,299 @@ router.get(
       success: true,
       data: level,
     });
+  })
+);
+
+// POST /api/v1/gamification/streak/record - Record daily login streak
+router.post(
+  '/streak/record',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data: existing } = await supabaseService.getClient()
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    let currentStreak = 1;
+    let longestStreak = 1;
+    let streakFreezes = 0;
+
+    if (existing) {
+      streakFreezes = existing.streak_freezes ?? 0;
+      const lastDate = existing.last_login_date;
+      if (lastDate === today) {
+        return res.json({ success: true, data: existing });
+      }
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      if (lastDate === yesterdayStr) {
+        currentStreak = (existing.current_streak ?? 0) + 1;
+      } else {
+        currentStreak = 1;
+      }
+      longestStreak = Math.max(existing.longest_streak ?? 0, currentStreak);
+    }
+
+    const { data, error } = await supabaseService.getClient()
+      .from('user_streaks')
+      .upsert({
+        user_id: userId,
+        current_streak: currentStreak,
+        longest_streak: longestStreak,
+        last_login_date: today,
+        streak_freezes: streakFreezes,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data });
+  })
+);
+
+const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
+
+// POST /api/v1/gamification/activity/record - Record study activity for today
+router.post(
+  '/activity/record',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { type, amount = 1 } = req.body ?? {};
+    if (!type || !VALID_ACTIVITY_TYPES.has(type)) {
+      return res.status(400).json({ success: false, error: 'Invalid activity type' });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 1 || parsedAmount > 500) {
+      return res.status(400).json({ success: false, error: 'Invalid activity amount' });
+    }
+
+    const data = await supabaseService.recordStudyActivity(userId, type, Math.floor(parsedAmount));
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/gamification/activity - Fetch recent daily study activity
+router.get(
+  '/activity',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const viewerId = requireAuthUserId(req, res);
+    if (!viewerId) return;
+
+    const days = Math.min(365, Math.max(7, Number(req.query.days) || 112));
+    const targetUserId =
+      typeof req.query.userId === 'string' && req.query.userId.trim()
+        ? req.query.userId.trim()
+        : viewerId;
+
+    if (targetUserId !== viewerId) {
+      const targetUser = await supabaseService.getUserById(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+      if (!canViewStudyActivity(targetUser.settings)) {
+        return res.json({ success: true, data: [] });
+      }
+    }
+
+    const data = await supabaseService.getStudyActivity(targetUserId, days);
+    res.json({ success: true, data });
+  })
+);
+
+// GET /api/v1/gamification/streak - Get user streak
+router.get(
+  '/streak',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { data } = await supabaseService.getClient()
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    res.json({
+      success: true,
+      data: data || { current_streak: 0, longest_streak: 0, streak_freezes: 0 },
+    });
+  })
+);
+
+// POST /api/v1/gamification/streak/freeze - Use a streak freeze (costs wallet coins)
+router.post(
+  '/streak/freeze',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { data: streak } = await supabaseService.getClient()
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!streak || (streak.streak_freezes ?? 0) <= 0) {
+      return res.status(400).json({ success: false, error: 'No streak freezes available' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await supabaseService.getClient()
+      .from('user_streaks')
+      .update({
+        streak_freezes: streak.streak_freezes - 1,
+        last_login_date: today,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data });
+  })
+);
+
+// POST /api/v1/gamification/streak/freeze/purchase - Buy a streak freeze with wallet coins (50)
+router.post(
+  '/streak/freeze/purchase',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const STREAK_FREEZE_COST = 50;
+    const { data: streak, error: fetchErr } = await supabaseService.getClient()
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    const { data, error } = await supabaseService.getClient()
+      .from('user_streaks')
+      .upsert({
+        user_id: userId,
+        current_streak: streak?.current_streak ?? 0,
+        longest_streak: streak?.longest_streak ?? 0,
+        last_login_date: streak?.last_login_date ?? null,
+        streak_freezes: (streak?.streak_freezes ?? 0) + 1,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data, cost: STREAK_FREEZE_COST });
+  })
+);
+
+// GET /api/v1/gamification/quests/daily - Get today's quests
+router.get(
+  '/quests/daily',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const client = supabaseService.getClient();
+
+    const { data: existing, error: fetchError } = await client
+      .from('daily_quests')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quest_date', today);
+
+    if (fetchError) throw fetchError;
+    if (existing && existing.length > 0) {
+      return res.json({ success: true, data: existing });
+    }
+
+    const templates = [
+      { quest_type: 'review_cards', target_count: 10, reward_xp: 15 },
+      { quest_type: 'answer_questions', target_count: 3, reward_xp: 20 },
+      { quest_type: 'create_note', target_count: 1, reward_xp: 10 },
+    ];
+
+    const { error: insertError } = await client
+      .from('daily_quests')
+      .upsert(
+        templates.map((t) => ({ ...t, user_id: userId, quest_date: today })),
+        { onConflict: 'user_id,quest_date,quest_type', ignoreDuplicates: true }
+      );
+
+    if (insertError && insertError.code !== '23505') throw insertError;
+
+    const { data: quests, error: reloadError } = await client
+      .from('daily_quests')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quest_date', today);
+
+    if (reloadError) throw reloadError;
+    res.json({ success: true, data: quests ?? [] });
+  })
+);
+
+// POST /api/v1/gamification/quests/progress - Increment quest progress
+router.post(
+  '/quests/progress',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { questType, increment = 1 } = req.body;
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data: quest } = await supabaseService.getClient()
+      .from('daily_quests')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quest_date', today)
+      .eq('quest_type', questType)
+      .maybeSingle();
+
+    if (!quest) {
+      return res.status(404).json({ success: false, error: 'Quest not found for today' });
+    }
+
+    const newProgress = Math.min(quest.target_count, (quest.progress_count ?? 0) + increment);
+    const completed = newProgress >= quest.target_count;
+
+    const { data, error } = await supabaseService.getClient()
+      .from('daily_quests')
+      .update({ progress_count: newProgress, completed })
+      .eq('id', quest.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, data });
   })
 );
 

@@ -86,6 +86,10 @@
 REDIS_ENABLED=true
 REDIS_URL=redis://your-redis-host:6379
 REDIS_PASSWORD=your-password
+ENABLE_DATA_RETENTION_JOBS=true
+ENABLE_MARKETPLACE_JOBS=true
+AI_LOG_RETENTION_DAYS=90
+OPERATIONAL_ACCESS_TOKEN=generate-a-long-random-token
 ```
 
 #### Load Balancer
@@ -248,6 +252,44 @@ apps/api-server/src/
 supabase/migrations/
 └── 20260118000000_add_production_indexes.sql  # Database indexes
 ```
+
+---
+
+## Compliance (Operational Readiness)
+
+Governance and product artifacts for GDPR / EU AI Act / SOC2 readiness (not formal certification):
+
+| Artifact | Location |
+|----------|----------|
+| Privacy Policy, Terms, Cookies | Web: `/privacy`, `/terms`, `/cookies` — source: `packages/shared/src/legal/` |
+| RoPA | [docs/compliance/ropa.md](docs/compliance/ropa.md) |
+| Subprocessors & data flow | [docs/compliance/subprocessors.md](docs/compliance/subprocessors.md) |
+| Account deletion runbook | [docs/compliance/account-deletion-runbook.md](docs/compliance/account-deletion-runbook.md) |
+| AI System Card | [docs/compliance/ai-system-card.md](docs/compliance/ai-system-card.md) |
+| Incident response | [docs/compliance/incident-response.md](docs/compliance/incident-response.md) |
+| BCP summary | [docs/compliance/bcp.md](docs/compliance/bcp.md) |
+| Control matrix | [docs/compliance/control-matrix.md](docs/compliance/control-matrix.md) |
+| Retention schedule | [docs/compliance/retention-schedule.md](docs/compliance/retention-schedule.md) |
+
+**Product controls:**
+
+- [x] Full account deletion — `apps/api-server/src/services/userDataLifecycle.ts`
+- [x] Data export — `GET /api/v1/users/:userId/export`
+- [x] AI disclaimers — `components/AIDisclaimer.tsx`, mobile counterpart
+- [x] AI inference logging — migration `20260613140100_ai_inference_log.sql`
+- [x] Profile visibility RLS — migration `20260613140000_compliance_privacy.sql`
+- [x] CI `npm audit` — `.github/workflows/ci.yml`
+- [x] Retention jobs — set `ENABLE_DATA_RETENTION_JOBS=true` on API server
+- [x] Marketplace saved-search alerts & review reminders — set `ENABLE_MARKETPLACE_JOBS=true` on API server; apply migrations `20260615140000_marketplace_orders.sql`, `20260615150000_marketplace_promotions.sql`, `20260615160000_marketplace_search_promotions.sql`
+
+**Before marketing as compliant:** external legal review of policies; collect vendor DPAs.
+
+### Notes — PDF & PowerPoint uploads
+- [x] Signed URL refresh for `note-files` attachments (`GET /api/v1/notes/:noteId/attachments/:attachmentId/url`)
+- [x] Server-side PDF upload + text extraction (`POST /api/v1/notes/upload-pdf`)
+- [x] PowerPoint upload with text extraction (`POST /api/v1/notes/upload-presentation`)
+- [ ] **Gotenberg for PPTX → PDF preview** — set `GOTENBERG_URL` on the API server (e.g. `http://gotenberg:3000`). Without it, slides import but in-app PDF preview requires LibreOffice locally via `libreoffice-convert`.
+- [ ] Apply migration `20260615120000_note_presentation_attachments.sql` (`npx supabase db push`)
 
 ---
 

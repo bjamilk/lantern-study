@@ -3,7 +3,7 @@
 // ===========================================
 // Allows adding members by username search or share invite link
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../theme';
-import { supabase } from '../services/supabase';
+import * as api from '../services/api';
 
 interface SearchResult {
   id: string;
@@ -60,6 +60,8 @@ export default function AddMembersModal({
   const [isSearching, setIsSearching] = useState(false);
   const [copied, setCopied] = useState(false);
   const { colors } = useTheme();
+  const searchRequestRef = useRef(0);
+  const memberIdSet = useMemo(() => new Set(groupMemberIds), [groupMemberIds]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -76,42 +78,42 @@ export default function AddMembersModal({
   useEffect(() => {
     if (view !== 'search' || !searchTerm.trim() || searchTerm.trim().length < 2) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
+    const requestId = ++searchRequestRef.current;
+    const query = searchTerm.trim();
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('search_users', {
-          search_term: searchTerm.trim(),
-          max_results: 20,
-        });
+        const data = await api.searchUsers(query, 20);
+        if (requestId !== searchRequestRef.current) return;
 
-        if (!error && data) {
-          // Filter out current user and existing group members
-          const memberSet = new Set(groupMemberIds);
-          const filtered = data
-            .filter((user: any) => user.id !== currentUserId && !memberSet.has(user.id))
-            .map((user: any) => ({
-              id: user.id,
-              name: user.name,
-              username: user.username,
-              displayUsername: user.username ? `@${user.username}` : undefined,
-              firstName: user.first_name,
-              lastName: user.last_name,
-              avatarUrl: user.avatar_url,
-            }));
-          setSearchResults(filtered);
-        }
-      } catch (err) {
-        console.error('Search failed:', err);
+        const filtered = (data || [])
+          .filter(u => u.id !== currentUserId && !memberIdSet.has(u.id))
+          .map(
+            (u): SearchResult => ({
+              id: u.id,
+              name: u.name,
+              username: u.username,
+              displayUsername: u.username ? `@${u.username}` : undefined,
+              avatarUrl: u.avatar_url,
+            })
+          );
+        setSearchResults(filtered);
+      } catch {
+        if (requestId !== searchRequestRef.current) return;
+        setSearchResults([]);
       } finally {
-        setIsSearching(false);
+        if (requestId === searchRequestRef.current) {
+          setIsSearching(false);
+        }
       }
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, view, groupMemberIds, currentUserId]);
+  }, [searchTerm, view, memberIdSet, currentUserId]);
 
   const handleCopyLink = async () => {
     await Clipboard.setStringAsync(inviteLink);
@@ -182,6 +184,15 @@ export default function AddMembersModal({
         </View>
         <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
       </TouchableOpacity>
+
+      <View style={[styles.footerActions, { borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.doneButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+          onPress={onClose}
+        >
+          <Text style={[styles.doneButtonText, { color: colors.text }]}>Done</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -267,18 +278,26 @@ export default function AddMembersModal({
         />
       )}
 
-      {selectedUserIds.length > 0 && (
-        <View style={[styles.addButtonContainer, { borderTopColor: colors.border }]}>
+      <View style={[styles.footerActions, { borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.doneButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+          onPress={onClose}
+        >
+          <Text style={[styles.doneButtonText, { color: colors.text }]}>
+            {selectedUserIds.length > 0 ? 'Cancel' : 'Done'}
+          </Text>
+        </TouchableOpacity>
+        {selectedUserIds.length > 0 && (
           <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: colors.primary }]}
+            style={[styles.addButton, { backgroundColor: colors.primary, flex: 1 }]}
             onPress={handleAddSelected}
           >
             <Text style={styles.addButtonText}>
               Add {selectedUserIds.length} Member{selectedUserIds.length > 1 ? 's' : ''}
             </Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+      </View>
     </View>
   );
 
@@ -528,6 +547,25 @@ const styles = StyleSheet.create({
   addButtonContainer: {
     padding: 16,
     borderTopWidth: 1,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderTopWidth: 1,
+    marginTop: 'auto',
+  },
+  doneButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  doneButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   addButton: {
     paddingVertical: 14,

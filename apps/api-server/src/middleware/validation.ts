@@ -138,3 +138,20 @@ export const validateFileUpload = [
     return true;
   }),
 ];
+
+export const validateChallengeId = [
+  param('challengeId').isUUID().withMessage('Challenge ID must be a valid UUID'),
+];
+
+export const validateCreateChallenge = [
+  body('groupId').isUUID().withMessage('Group ID must be a valid UUID'),
+  body('opponentId').isUUID().withMessage('Opponent ID must be a valid UUID'),
+  body('config').isObject().withMessage('Config must be an object'),
+  body('config.numberOfQuestions').isInt({ min: 1, max: 50 }).withMessage('Number of questions must be 1-50'),
+  body('config.allowedQuestionTypes').optional().isArray(),
+  body('config.selectedTags').optional().isArray(),
+];
+
+export const validateSubmitChallenge = [
+  body('answers').isObject().withMessage('Answers must be an object'),
+];

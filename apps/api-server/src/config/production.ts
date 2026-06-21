@@ -177,7 +177,7 @@ export const productionConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
   
   // Database
-  supabaseUrl: process.env.SUPABASE_URL || 'http://127.0.0.1:54321',
+  supabaseUrl: process.env.SUPABASE_URL || 'http://127.0.0.1:55421',
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   

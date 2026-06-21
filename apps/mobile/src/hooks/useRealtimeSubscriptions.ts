@@ -11,8 +11,9 @@ import { useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../stores/authStore';
-import { useGroupStore, Message } from '../stores/groupStore';
+import { useGroupStore, Message, type DirectMessage } from '../stores/groupStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 // ============================================
@@ -22,13 +23,23 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 export interface RealtimeSubscriptionStatus {
   notifications: 'connecting' | 'connected' | 'disconnected' | 'error';
   groupMessages: 'connecting' | 'connected' | 'disconnected' | 'error';
+  dmMessages: 'connecting' | 'connected' | 'disconnected' | 'error';
   settings: 'connecting' | 'connected' | 'disconnected' | 'error';
+}
+
+interface RawDmMessage {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  text: string;
+  timestamp: string;
 }
 
 export interface Notification {
   id: string;
   userId: string;
-  type: 'group_invite' | 'message' | 'badge_unlock' | 'study_reminder' | 'test_result' | 'system';
+  type: 'group_invite' | 'message' | 'badge_unlock' | 'study_reminder' | 'test_result' | 'system'
+    | 'challenge_invite' | 'challenge_accepted' | 'challenge_declined' | 'challenge_result' | 'challenge_opponent_finished';
   title: string;
   body: string;
   data?: Record<string, unknown>;
@@ -39,6 +50,7 @@ export interface Notification {
 // Callback types for subscription events
 type NotificationCallback = (notification: Notification) => void;
 type MessageCallback = (message: Message) => void;
+type DirectMessageCallback = (message: DirectMessage) => void;
 type SettingsCallback = (settings: Record<string, unknown>) => void;
 
 // ============================================
@@ -49,38 +61,48 @@ class RealtimeSubscriptionManager {
   private channels: Map<string, RealtimeChannel> = new Map();
   private notificationCallbacks: Set<NotificationCallback> = new Set();
   private messageCallbacks: Set<MessageCallback> = new Set();
+  private dmMessageCallbacks: Set<DirectMessageCallback> = new Set();
   private settingsCallbacks: Set<SettingsCallback> = new Set();
   private isSubscribed = false;
   private userId: string | null = null;
   private groupIds: string[] = [];
+  private dmThreadIds: string[] = [];
 
   /**
    * Subscribe to all realtime channels for a user
    */
-  async subscribe(userId: string, groupIds: string[] = []): Promise<void> {
+  async subscribe(userId: string, groupIds: string[] = [], dmThreadIds: string[] = []): Promise<void> {
+    if (this.isSubscribed && this.userId !== userId) {
+      await this.unsubscribe();
+    }
+
     if (this.isSubscribed && this.userId === userId) {
-      // Update group subscriptions if groups changed
       if (JSON.stringify(this.groupIds) !== JSON.stringify(groupIds)) {
         await this.updateGroupSubscriptions(groupIds);
+      }
+      if (JSON.stringify(this.dmThreadIds) !== JSON.stringify(dmThreadIds)) {
+        await this.updateDmSubscriptions(dmThreadIds);
       }
       return;
     }
 
     this.userId = userId;
     this.groupIds = groupIds;
+    this.dmThreadIds = dmThreadIds;
     this.isSubscribed = true;
 
     console.log('[Realtime] Starting subscriptions for user:', userId);
 
-    // Subscribe to notifications
     this.subscribeToNotifications(userId);
 
-    // Subscribe to group messages
     for (const groupId of groupIds) {
       this.subscribeToGroupMessages(groupId);
     }
 
-    // Subscribe to user settings
+    for (const threadId of dmThreadIds) {
+      this.subscribeToDmMessages(threadId);
+    }
+
     this.subscribeToSettings(userId);
   }
 
@@ -99,6 +121,31 @@ class RealtimeSubscriptionManager {
     this.isSubscribed = false;
     this.userId = null;
     this.groupIds = [];
+    this.dmThreadIds = [];
+  }
+
+  private async updateDmSubscriptions(newThreadIds: string[]): Promise<void> {
+    const current = new Set(this.dmThreadIds);
+    const next = new Set(newThreadIds);
+
+    for (const threadId of current) {
+      if (!next.has(threadId)) {
+        const channelName = `dm:${threadId}`;
+        const channel = this.channels.get(channelName);
+        if (channel) {
+          await supabase.removeChannel(channel);
+          this.channels.delete(channelName);
+        }
+      }
+    }
+
+    for (const threadId of next) {
+      if (!current.has(threadId)) {
+        this.subscribeToDmMessages(threadId);
+      }
+    }
+
+    this.dmThreadIds = newThreadIds;
   }
 
   /**
@@ -151,10 +198,22 @@ class RealtimeSubscriptionManager {
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        (payload: RealtimePostgresChangesPayload<Notification>) => {
-          console.log('[Realtime] New notification:', payload);
-          const notification = payload.new as Notification;
-          this.notificationCallbacks.forEach(cb => cb(notification));
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          console.log('[Realtime] New notification');
+          const row = payload.new as Record<string, unknown>;
+          const notification = {
+            id: String(row.id ?? ''),
+            userId: String(row.user_id ?? ''),
+            type: (row.type as Notification['type']) || 'system',
+            title: String(row.message ?? ''),
+            body: String(row.message ?? ''),
+            message: String(row.message ?? ''),
+            link: row.link as string | undefined,
+            data: (row.data as Record<string, unknown>) ?? {},
+            isRead: Boolean(row.read),
+            createdAt: String(row.date ?? new Date().toISOString()),
+          } as Notification & { message?: string; link?: string };
+          this.notificationCallbacks.forEach(cb => cb(notification as Notification));
         }
       )
       .on(
@@ -166,7 +225,7 @@ class RealtimeSubscriptionManager {
           filter: `user_id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<Notification>) => {
-          console.log('[Realtime] Notification updated:', payload);
+          console.log('[Realtime] Notification updated');
           const notification = payload.new as Notification;
           this.notificationCallbacks.forEach(cb => cb(notification));
         }
@@ -199,7 +258,7 @@ class RealtimeSubscriptionManager {
           filter: `group_id=eq.${groupId}`,
         },
         (payload: RealtimePostgresChangesPayload<Message>) => {
-          console.log('[Realtime] New message in group:', groupId, payload);
+          console.log('[Realtime] New message in group:', groupId);
           const message = payload.new as Message;
           this.messageCallbacks.forEach(cb => cb(message));
         }
@@ -213,13 +272,49 @@ class RealtimeSubscriptionManager {
           filter: `group_id=eq.${groupId}`,
         },
         (payload: RealtimePostgresChangesPayload<Message>) => {
-          console.log('[Realtime] Message updated in group:', groupId, payload);
+          console.log('[Realtime] Message updated in group:', groupId);
           const message = payload.new as Message;
           this.messageCallbacks.forEach(cb => cb(message));
         }
       )
       .subscribe((status) => {
         console.log(`[Realtime] Messages channel (${groupId}) status: ${status}`);
+      });
+
+    this.channels.set(channelName, channel);
+  }
+
+  private subscribeToDmMessages(threadId: string): void {
+    const channelName = `dm:${threadId}`;
+
+    if (this.channels.has(channelName)) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'dm_messages',
+          filter: `thread_id=eq.${threadId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<RawDmMessage>) => {
+          const raw = payload.new as RawDmMessage;
+          const message: DirectMessage = {
+            id: raw.id,
+            threadId: raw.thread_id,
+            senderId: raw.sender_id,
+            text: raw.text,
+            timestamp: raw.timestamp,
+          };
+          this.dmMessageCallbacks.forEach(cb => cb(message));
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[Realtime] DM channel (${threadId}) status: ${status}`);
       });
 
     this.channels.set(channelName, channel);
@@ -240,13 +335,13 @@ class RealtimeSubscriptionManager {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
-          table: 'user_settings',
-          filter: `user_id=eq.${userId}`,
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<{ settings: Record<string, unknown> }>) => {
-          console.log('[Realtime] Settings updated:', payload);
+          console.log('[Realtime] Profile settings updated');
           const settings = (payload.new as { settings: Record<string, unknown> })?.settings;
           if (settings) {
             this.settingsCallbacks.forEach(cb => cb(settings));
@@ -274,6 +369,11 @@ class RealtimeSubscriptionManager {
   onMessage(callback: MessageCallback): () => void {
     this.messageCallbacks.add(callback);
     return () => this.messageCallbacks.delete(callback);
+  }
+
+  onDirectMessage(callback: DirectMessageCallback): () => void {
+    this.dmMessageCallbacks.add(callback);
+    return () => this.dmMessageCallbacks.delete(callback);
   }
 
   /**
@@ -307,6 +407,8 @@ export interface UseRealtimeSubscriptionsOptions {
   onNotification?: NotificationCallback;
   /** Called when a new group message is received */
   onMessage?: MessageCallback;
+  /** Called when a new DM is received */
+  onDirectMessage?: DirectMessageCallback;
   /** Called when settings are updated from another device */
   onSettingsUpdate?: SettingsCallback;
   /** Whether to automatically subscribe when authenticated */
@@ -327,28 +429,35 @@ export interface UseRealtimeSubscriptionsResult {
 export function useRealtimeSubscriptions(
   options: UseRealtimeSubscriptionsOptions = {}
 ): UseRealtimeSubscriptionsResult {
-  const { 
-    onNotification, 
-    onMessage, 
+  const {
+    onNotification,
+    onMessage,
+    onDirectMessage,
     onSettingsUpdate,
-    autoSubscribe = true 
+    autoSubscribe = true,
   } = options;
 
   const { user } = useAuthStore();
-  const { groups } = useGroupStore();
+  const { groups, dmThreads, addDirectMessage } = useGroupStore();
   const { loadSettings } = useSettingsStore();
   
   const isSubscribedRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
-  // Get group IDs the user belongs to
   const groupIds = groups.map(g => g.id);
+  const dmThreadIds = dmThreads.map(t => t.id);
 
   // Handle notification received
   const handleNotification = useCallback((notification: Notification) => {
     console.log('[useRealtimeSubscriptions] Notification received:', notification.title);
+    const { increment, loadUnreadCount } = useNotificationStore.getState();
+    if (!notification.isRead) {
+      increment();
+    } else if (user?.id) {
+      void loadUnreadCount(user.id);
+    }
     onNotification?.(notification);
-  }, [onNotification]);
+  }, [onNotification, user?.id]);
 
   // Handle message received
   const handleMessage = useCallback((message: Message) => {
@@ -358,6 +467,14 @@ export function useRealtimeSubscriptions(
     // The groupStore should handle updating its state
     // This could trigger a refresh of the messages list
   }, [onMessage]);
+
+  const handleDirectMessage = useCallback((message: DirectMessage) => {
+    console.log('[useRealtimeSubscriptions] DM received in thread:', message.threadId);
+    if (message.senderId !== user?.id) {
+      addDirectMessage(message.threadId, message);
+    }
+    onDirectMessage?.(message);
+  }, [onDirectMessage, addDirectMessage, user?.id]);
 
   // Handle settings update
   const handleSettingsUpdate = useCallback(async (settings: Record<string, unknown>) => {
@@ -381,9 +498,9 @@ export function useRealtimeSubscriptions(
       return;
     }
 
-    await subscriptionManager.subscribe(user.id, groupIds);
+    await subscriptionManager.subscribe(user.id, groupIds, dmThreadIds);
     isSubscribedRef.current = true;
-  }, [user?.id, groupIds]);
+  }, [user?.id, groupIds, dmThreadIds]);
 
   // Unsubscribe from realtime updates
   const unsubscribe = useCallback(async () => {
@@ -395,14 +512,16 @@ export function useRealtimeSubscriptions(
   useEffect(() => {
     const unsubNotification = subscriptionManager.onNotification(handleNotification);
     const unsubMessage = subscriptionManager.onMessage(handleMessage);
+    const unsubDm = subscriptionManager.onDirectMessage(handleDirectMessage);
     const unsubSettings = subscriptionManager.onSettings(handleSettingsUpdate);
 
     return () => {
       unsubNotification();
       unsubMessage();
+      unsubDm();
       unsubSettings();
     };
-  }, [handleNotification, handleMessage, handleSettingsUpdate]);
+  }, [handleNotification, handleMessage, handleDirectMessage, handleSettingsUpdate]);
 
   // Auto-subscribe when authenticated
   useEffect(() => {
@@ -418,9 +537,9 @@ export function useRealtimeSubscriptions(
   // Update group subscriptions when groups change
   useEffect(() => {
     if (user?.id && isSubscribedRef.current) {
-      subscriptionManager.subscribe(user.id, groupIds);
+      subscriptionManager.subscribe(user.id, groupIds, dmThreadIds);
     }
-  }, [user?.id, groupIds]);
+  }, [user?.id, groupIds, dmThreadIds]);
 
   // Handle app state changes (background/foreground)
   useEffect(() => {

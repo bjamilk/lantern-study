@@ -20,7 +20,9 @@ export type SyncEntityType =
   | 'budget' 
   | 'transaction'
   | 'settings'
-  | 'notification';
+  | 'notification'
+  | 'listing'
+  | 'note';
 
 export interface SyncOperation {
   id: string;

@@ -1,682 +1,270 @@
-// ===========================================
-// Lantern Study Mobile - Flashcard Review Screen
-// ===========================================
-
-import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  Animated,
-  PanResponder,
-  Alert,
-} from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { useFlashcardStore, type Flashcard } from '../../stores/flashcardStore';
+import * as Haptics from 'expo-haptics';
+import { FlashcardType } from '@lantern/shared';
+import {
+  calculateSrsWithFsrs,
+  type PerformanceRating,
+} from '@lantern/shared/utils';
+import {
+  buildFlashcardReviewQueue,
+  getTodayStudyCounts,
+  getSrsMaxInterval,
+  isNewFlashcard,
+} from '@lantern/shared/settings';
+import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
+import { Button } from '../../components/ui';
+import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
+import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
+import { trackStudyActivity } from '../../services/gamification';
+import { getCardDisplayText } from '../../utils/flashcardHelpers';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useStatsStore } from '../../stores/statsStore';
 import { useTheme } from '../../theme';
 
-type SRSGrade = 'again' | 'hard' | 'good' | 'easy';
+function withHaptic(action: () => Promise<void>) {
+  if (useSettingsStore.getState().settings.accessibility.hapticFeedback) {
+    void action();
+  }
+}
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const CARD_WIDTH = SCREEN_WIDTH - 40;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.55;
-const SWIPE_THRESHOLD = 120;
-
-type FlashcardReviewRouteParams = {
-  FlashcardReview: {
-    deckId: string;
-    deckName: string;
-    mode: 'review' | 'cram';
-  };
+type NavigationProp = {
+  goBack: () => void;
 };
 
-const SRS_BUTTONS: { grade: SRSGrade; label: string; color: string; icon: string }[] = [
-  { grade: 'again', label: 'Again', color: '#ef4444', icon: 'close-circle' },
-  { grade: 'hard', label: 'Hard', color: '#f97316', icon: 'warning' },
-  { grade: 'good', label: 'Good', color: '#10b981', icon: 'checkmark-circle' },
-  { grade: 'easy', label: 'Easy', color: '#6366f1', icon: 'star' },
+interface Props {
+  navigation: NavigationProp;
+  route: { params?: { deckId?: string; deckName?: string } };
+}
+
+const GRADE_BUTTONS: {
+  rating: PerformanceRating;
+  label: string;
+  variant: 'danger' | 'secondary' | 'primary' | 'accent';
+  accessibilityLabel: string;
+}[] = [
+  { rating: 'again', label: 'Again', variant: 'danger', accessibilityLabel: 'Rate again, needs more review' },
+  { rating: 'hard', label: 'Hard', variant: 'secondary', accessibilityLabel: 'Rate hard' },
+  { rating: 'good', label: 'Good', variant: 'primary', accessibilityLabel: 'Rate good' },
+  { rating: 'easy', label: 'Easy', variant: 'accent', accessibilityLabel: 'Rate easy' },
 ];
 
-export default function FlashcardReviewScreen() {
-  const route = useRoute<RouteProp<FlashcardReviewRouteParams, 'FlashcardReview'>>();
-  const navigation = useNavigation<any>();
-  const { deckId, deckName, mode } = route.params;
-  const { colors } = useTheme();
+const EMPTY_CARDS: Flashcard[] = [];
 
-  // Get flashcards from store
-  const { flashcards: allFlashcards, fetchFlashcards } = useFlashcardStore();
-  const deckFlashcards = allFlashcards[deckId] || [];
-  
-  // Fetch flashcards if not loaded
+function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
+  if (!cards.length) return [];
+  const settings = useSettingsStore.getState().settings;
+  const activityDays = useStatsStore.getState().stats?.activityDays ?? [];
+  const today = getTodayStudyCounts(activityDays);
+  return buildFlashcardReviewQueue(cards, {
+    srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
+    dailyCardGoal: settings.study.dailyCardGoal,
+    cardsReviewedToday: today.flashcards,
+    newCardsIntroducedToday: today.newFlashcards,
+  });
+}
+
+export function FlashcardReviewScreen({ navigation, route }: Props) {
+  const { reduceMotion } = useTheme();
+  const deckId = route.params?.deckId ?? '';
+  const deckName = route.params?.deckName ?? 'Review';
+  const user = useAuthStore(s => s.user);
+  const deckCards = useFlashcardStore(s => s.flashcards[deckId] ?? EMPTY_CARDS);
+  const isLoading = useFlashcardStore(s => s.isLoading);
+  const updateFlashcard = useFlashcardStore(s => s.updateFlashcard);
+
+  const queueSnapshotRef = useRef<Flashcard[] | null>(null);
+  if (!queueSnapshotRef.current && deckCards.length > 0) {
+    queueSnapshotRef.current = buildSessionQueue(deckCards);
+  }
+  const queue = queueSnapshotRef.current ?? EMPTY_CARDS;
+  const sessionTotal = queue.length;
+
+  const [index, setIndex] = useState(0);
+  const [showBack, setShowBack] = useState(false);
+  const [grading, setGrading] = useState(false);
+
+  const currentCard = queue[index];
+  const isComplete = sessionTotal > 0 && index >= sessionTotal;
+  const progress = sessionTotal ? Math.min(index + 1, sessionTotal) : 0;
+  const nextCard = queue[index + 1];
+
+  useConfirmBeforeExit(sessionTotal > 0 && !isComplete, {
+    title: 'Exit Review?',
+    message: 'Cards you have already graded are saved. Exit this session anyway?',
+    confirmLabel: 'Exit',
+    destructive: true,
+  });
+
   useEffect(() => {
-    if (deckFlashcards.length === 0) {
-      fetchFlashcards(deckId);
-    }
-  }, [deckId, deckFlashcards.length, fetchFlashcards]);
+    setShowBack(false);
+    setGrading(false);
+  }, [index]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [reviewResults, setReviewResults] = useState<{ grade: SRSGrade; cardId: string }[]>([]);
-  const [isComplete, setIsComplete] = useState(false);
+  const handleToggleBack = useCallback(() => {
+    withHaptic(() => Haptics.selectionAsync());
+    setShowBack(prev => !prev);
+  }, []);
 
-  // Animation values
-  const flipAnimation = useRef(new Animated.Value(0)).current;
-  const cardPosition = useRef(new Animated.ValueXY()).current;
+  const handleRate = useCallback(
+    (rating: PerformanceRating) => {
+      if (!currentCard || !user?.id || grading) return;
 
-  const cards = deckFlashcards;
-  const currentCard = useMemo(() => cards[currentIndex], [cards, currentIndex]);
-  const progress = useMemo(() => cards.length > 0 ? (currentIndex + 1) / cards.length : 0, [currentIndex, cards.length]);
-
-  // Front and back interpolations for flip animation
-  const frontInterpolate = flipAnimation.interpolate({
-    inputRange: [0, 180],
-    outputRange: ['0deg', '180deg'],
-  });
-
-  const backInterpolate = flipAnimation.interpolate({
-    inputRange: [0, 180],
-    outputRange: ['180deg', '360deg'],
-  });
-
-  const frontAnimatedStyle = {
-    transform: [{ rotateY: frontInterpolate }],
-  };
-
-  const backAnimatedStyle = {
-    transform: [{ rotateY: backInterpolate }],
-  };
-
-  // Pan responder for swipe gestures - only capture when actually swiping
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false, // Don't capture on start - allow taps to pass through
-      onMoveShouldSetPanResponder: (_, gesture) => {
-        // Only capture when there's significant horizontal movement (swiping)
-        return Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10;
-      },
-      onPanResponderMove: (_, gesture) => {
-        cardPosition.setValue({ x: gesture.dx, y: gesture.dy });
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          // Swiped right - Good
-          handleSwipeComplete('right');
-        } else if (gesture.dx < -SWIPE_THRESHOLD) {
-          // Swiped left - Again
-          handleSwipeComplete('left');
-        } else {
-          // Return to center
-          Animated.spring(cardPosition, {
-            toValue: { x: 0, y: 0 },
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-    })
-  ).current;
-
-  const handleGradeCard = useCallback((grade: SRSGrade) => {
-    if (!currentCard) return;
-
-    // Record the result
-    setReviewResults(prev => [...prev, { grade, cardId: currentCard.id }]);
-
-    // Animate card out
-    const direction = (grade === 'good' || grade === 'easy') ? 1 : -1;
-    Animated.timing(cardPosition, {
-      toValue: { x: direction * SCREEN_WIDTH * 1.5, y: 0 },
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      // Move to next card
-      if (currentIndex < cards.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-        setIsFlipped(false);
-        flipAnimation.setValue(0);
-        cardPosition.setValue({ x: 0, y: 0 });
+      setGrading(true);
+      if (rating === 'again' || rating === 'hard') {
+        withHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
       } else {
-        // Review complete
-        setIsComplete(true);
+        withHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
       }
-    });
-  }, [currentCard, currentIndex, cards.length, cardPosition, flipAnimation]);
 
-  const handleSwipeComplete = useCallback((direction: 'left' | 'right') => {
-    const grade: SRSGrade = direction === 'right' ? 'good' : 'again';
-    handleGradeCard(grade);
-  }, [handleGradeCard]);
+      const studySettings = useSettingsStore.getState().settings.study;
+      const wasNew = isNewFlashcard(currentCard);
+      const newSrs = calculateSrsWithFsrs(currentCard.srsData, rating, true, {
+        maxInterval: getSrsMaxInterval(studySettings),
+      });
+      void updateFlashcard(currentCard.id, deckId, { srsData: newSrs }, user.id);
+      trackStudyActivity('flashcard', 1);
+      if (wasNew) {
+        trackStudyActivity('flashcard_new', 1);
+      }
+      setIndex(prev => prev + 1);
+    },
+    [currentCard, user?.id, grading, updateFlashcard, deckId]
+  );
 
-  const flipCard = useCallback(() => {
-    const toValue = isFlipped ? 0 : 180;
-    Animated.spring(flipAnimation, {
-      toValue,
-      friction: 8,
-      tension: 10,
-      useNativeDriver: true,
-    }).start();
-    setIsFlipped(!isFlipped);
-  }, [isFlipped, flipAnimation]);
-
-  const handleExit = useCallback(() => {
-    Alert.alert(
-      'Exit Review',
-      'Are you sure you want to exit? Your progress will be saved.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Exit', style: 'destructive', onPress: () => navigation.goBack() },
-      ]
-    );
-  }, [navigation]);
-
-  // Calculate session stats
-  const sessionStats = useMemo(() => {
-    const totalCards = reviewResults.length;
-    const correctCards = reviewResults.filter(r => r.grade === 'good' || r.grade === 'easy').length;
-    const accuracy = totalCards > 0 ? Math.round((correctCards / totalCards) * 100) : 0;
-    
-    const gradeBreakdown = {
-      again: reviewResults.filter(r => r.grade === 'again').length,
-      hard: reviewResults.filter(r => r.grade === 'hard').length,
-      good: reviewResults.filter(r => r.grade === 'good').length,
-      easy: reviewResults.filter(r => r.grade === 'easy').length,
-    };
-
-    return { totalCards, correctCards, accuracy, gradeBreakdown };
-  }, [reviewResults]);
-
-  if (isComplete) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-        <View style={styles.completeContainer}>
-          <View style={styles.completeIcon}>
-            <Ionicons name="trophy" size={64} color="#fbbf24" />
-          </View>
-          <Text style={styles.completeTitle}>Session Complete!</Text>
-          <Text style={styles.completeSubtitle}>
-            You reviewed {sessionStats.totalCards} cards
+  if (!sessionTotal && deckCards.length === 0) {
+    if (isLoading) {
+      return (
+        <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+          <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Loading cards…</Text>
+          <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+            Preparing your review session.
           </Text>
+          <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
+        </SafeAreaView>
+      );
+    }
 
-          {/* Stats */}
-          <View style={styles.completeStats}>
-            <View style={styles.completeStat}>
-              <Text style={styles.completeStatValue}>{sessionStats.accuracy}%</Text>
-              <Text style={styles.completeStatLabel}>Accuracy</Text>
-            </View>
-            <View style={styles.completeStat}>
-              <Text style={[styles.completeStatValue, { color: '#10b981' }]}>
-                {sessionStats.correctCards}
-              </Text>
-              <Text style={styles.completeStatLabel}>Correct</Text>
-            </View>
-            <View style={styles.completeStat}>
-              <Text style={[styles.completeStatValue, { color: '#ef4444' }]}>
-                {sessionStats.totalCards - sessionStats.correctCards}
-              </Text>
-              <Text style={styles.completeStatLabel}>To Review</Text>
-            </View>
-          </View>
-
-          {/* Grade Breakdown */}
-          <View style={styles.gradeBreakdown}>
-            {Object.entries(sessionStats.gradeBreakdown).map(([grade, count]) => (
-              <View key={grade} style={styles.gradeItem}>
-                <View
-                  style={[
-                    styles.gradeDot,
-                    {
-                      backgroundColor:
-                        grade === 'again' ? '#ef4444' :
-                        grade === 'hard' ? '#f97316' :
-                        grade === 'good' ? '#10b981' : '#6366f1',
-                    },
-                  ]}
-                />
-                <Text style={styles.gradeLabel}>
-                  {grade.charAt(0).toUpperCase() + grade.slice(1)}
-                </Text>
-                <Text style={styles.gradeCount}>{count}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Actions */}
-          <View style={styles.completeActions}>
-            <TouchableOpacity
-              style={styles.completeButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.completeButtonText}>Back to Deck</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+    return (
+      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Nothing to review</Text>
+        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+          Add cards to this deck or come back when cards are due.
+        </Text>
+        <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
       </SafeAreaView>
     );
   }
 
+  if (isComplete) {
+    return (
+      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+        <Text className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-2">Session complete</Text>
+        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+          You reviewed {sessionTotal} card{sessionTotal !== 1 ? 's' : ''} in {deckName}.
+        </Text>
+        <Button onPress={() => navigation.goBack()}>Done</Button>
+      </SafeAreaView>
+    );
+  }
+
+  const { front, back } = getCardDisplayText(currentCard);
+  const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
-          <Ionicons name="close" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>{deckName}</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-            {currentIndex + 1} / {cards.length}
-          </Text>
-        </View>
-        <View style={styles.modeIndicator}>
-          <Ionicons
-            name={mode === 'cram' ? 'flash' : 'time'}
-            size={20}
-            color={mode === 'cram' ? '#f97316' : '#6366f1'}
-          />
-        </View>
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+      <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
+        <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
+          Exit
+        </Button>
+        <Text className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          {progress} / {sessionTotal}
+        </Text>
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressBar}>
-          <Animated.View
-            style={[
-              styles.progressFill,
-              { width: `${progress * 100}%` },
-            ]}
-          />
-        </View>
+      <View className="h-1 mx-4 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden mb-2">
+        <View
+          className="h-full bg-indigo-500 rounded-full"
+          style={{ width: `${(progress / sessionTotal) * 100}%` }}
+        />
       </View>
 
-      {/* Card Container */}
-      <View style={styles.cardContainer}>
-        <Animated.View
-          style={[
-            styles.cardWrapper,
-            {
-              transform: [
-                { translateX: cardPosition.x },
-                { translateY: cardPosition.y },
-                {
-                  rotate: cardPosition.x.interpolate({
-                    inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
-                    outputRange: ['-15deg', '0deg', '15deg'],
-                  }),
-                },
-              ],
-            },
-          ]}
-          {...panResponder.panHandlers}
-        >
-          {/* Swipe Indicators */}
-          <Animated.View
-            style={[
-              styles.swipeIndicator,
-              styles.leftIndicator,
-              {
-                opacity: cardPosition.x.interpolate({
-                  inputRange: [-SWIPE_THRESHOLD, 0],
-                  outputRange: [1, 0],
-                  extrapolate: 'clamp',
-                }),
-              },
-            ]}
-          >
-            <Text style={styles.swipeIndicatorText}>Again</Text>
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.swipeIndicator,
-              styles.rightIndicator,
-              {
-                opacity: cardPosition.x.interpolate({
-                  inputRange: [0, SWIPE_THRESHOLD],
-                  outputRange: [0, 1],
-                  extrapolate: 'clamp',
-                }),
-              },
-            ]}
-          >
-            <Text style={styles.swipeIndicatorText}>Good</Text>
-          </Animated.View>
+      {index === 0 && !showBack ? (
+        <Text className="text-xs text-center text-slate-500 dark:text-slate-400 px-6 mb-3">
+          Tap to flip · Swipe to grade (left Again, right Good, up Easy, down Hard)
+        </Text>
+      ) : null}
 
-          {/* Front of Card */}
-          <Animated.View style={[styles.card, styles.cardFront, frontAnimatedStyle]}>
-            <TouchableOpacity
-              style={styles.cardTouchable}
-              onPress={flipCard}
-              activeOpacity={0.95}
-            >
-              <Text style={styles.cardLabel}>Question</Text>
-              <Text style={styles.cardText}>{currentCard?.front || currentCard?.cloze_text || ''}</Text>
-              <View style={styles.tapHint}>
-                <Ionicons name="sync-outline" size={16} color="#9ca3af" />
-                <Text style={styles.tapHintText}>Tap to reveal answer</Text>
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
+      <View className="flex-1 px-4 justify-center">
+        {nextCard ? (
+          <View className="absolute left-4 right-4 top-1/2 -mt-32 opacity-30 scale-95">
+            <View className="min-h-[260px] rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+          </View>
+        ) : null}
 
-          {/* Back of Card */}
-          <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle]}>
-            <TouchableOpacity
-              style={styles.cardTouchable}
-              onPress={flipCard}
-              activeOpacity={0.95}
-            >
-              <Text style={styles.cardLabel}>Answer</Text>
-              <Text style={styles.cardText}>{currentCard?.back || ''}</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
+        <SwipeableFlashcard
+          card={currentCard}
+          cardKey={currentCard.id}
+          front={front}
+          back={back}
+          isImageOcclusion={isImageOcclusion}
+          showBack={showBack}
+          reduceMotion={reduceMotion}
+          onToggleBack={handleToggleBack}
+          onGrade={handleRate}
+        />
       </View>
 
-      {/* SRS Grade Buttons */}
-      {isFlipped && (
-        <View style={styles.gradeButtons}>
-          {SRS_BUTTONS.map((button) => (
-            <TouchableOpacity
-              key={button.grade}
-              style={[styles.gradeButton, { backgroundColor: button.color + '20' }]}
-              onPress={() => handleGradeCard(button.grade)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={button.icon as any} size={24} color={button.color} />
-              <Text style={[styles.gradeButtonText, { color: button.color }]}>
-                {button.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Tap to flip hint */}
-      {!isFlipped && (
-        <View style={styles.bottomHint}>
-          <TouchableOpacity 
-            style={styles.flipButton}
-            onPress={flipCard}
-            activeOpacity={0.8}
+      <View className="px-4 pb-6 gap-3">
+        {!showBack ? (
+          <Button
+            fullWidth
+            size="lg"
+            onPress={() => {
+              withHaptic(() => Haptics.selectionAsync());
+              setShowBack(true);
+            }}
           >
-            <Ionicons name="sync" size={24} color="#ffffff" />
-            <Text style={styles.flipButtonText}>Flip Card</Text>
-          </TouchableOpacity>
-          <Text style={styles.bottomHintText}>
-            or swipe to grade • tap card to flip
-          </Text>
-        </View>
-      )}
+            Show Answer
+          </Button>
+        ) : (
+          <>
+            <View className="flex-row gap-2">
+              {GRADE_BUTTONS.slice(0, 2).map(({ rating, label, variant, accessibilityLabel }) => (
+                <Button
+                  key={rating}
+                  variant={variant}
+                  size="lg"
+                  className="flex-1"
+                  disabled={grading}
+                  accessibilityLabel={accessibilityLabel}
+                  onPress={() => handleRate(rating)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </View>
+            <View className="flex-row gap-2">
+              {GRADE_BUTTONS.slice(2).map(({ rating, label, variant, accessibilityLabel }) => (
+                <Button
+                  key={rating}
+                  variant={variant}
+                  size="lg"
+                  className="flex-1"
+                  disabled={grading}
+                  accessibilityLabel={accessibilityLabel}
+                  onPress={() => handleRate(rating)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </View>
+          </>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  exitButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 2,
-  },
-  modeIndicator: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#1e293b',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#6366f1',
-    borderRadius: 2,
-  },
-  cardContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  cardWrapper: {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
-    position: 'relative',
-  },
-  swipeIndicator: {
-    position: 'absolute',
-    top: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  leftIndicator: {
-    left: 20,
-    backgroundColor: '#ef4444',
-  },
-  rightIndicator: {
-    right: 20,
-    backgroundColor: '#10b981',
-  },
-  swipeIndicatorText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  card: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1e293b',
-    borderRadius: 24,
-    backfaceVisibility: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  cardFront: {
-    zIndex: 1,
-  },
-  cardBack: {
-    transform: [{ rotateY: '180deg' }],
-  },
-  cardTouchable: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  cardLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6366f1',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  cardText: {
-    fontSize: 20,
-    color: '#ffffff',
-    lineHeight: 32,
-    textAlign: 'center',
-  },
-  tapHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'absolute',
-    bottom: 24,
-    left: 0,
-    right: 0,
-    gap: 8,
-  },
-  tapHintText: {
-    fontSize: 14,
-    color: '#9ca3af',
-  },
-  gradeButtons: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingBottom: 20,
-    gap: 8,
-  },
-  gradeButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 4,
-  },
-  gradeButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bottomHint: {
-    alignItems: 'center',
-    paddingBottom: 30,
-    gap: 12,
-  },
-  flipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  flipButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  bottomHintText: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  // Complete screen styles
-  completeContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  completeIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#fbbf2420',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  completeTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  completeSubtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
-    marginBottom: 32,
-  },
-  completeStats: {
-    flexDirection: 'row',
-    gap: 24,
-    marginBottom: 32,
-  },
-  completeStat: {
-    alignItems: 'center',
-  },
-  completeStatValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  completeStatLabel: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 4,
-  },
-  gradeBreakdown: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    marginBottom: 40,
-  },
-  gradeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  gradeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  gradeLabel: {
-    fontSize: 14,
-    color: '#e2e8f0',
-  },
-  gradeCount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  completeActions: {
-    width: '100%',
-    gap: 12,
-  },
-  completeButton: {
-    backgroundColor: '#6366f1',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  completeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-});
+export default FlashcardReviewScreen;

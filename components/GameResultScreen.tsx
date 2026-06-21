@@ -98,6 +98,8 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
   }, [isWinner, isDraw]);
 
   const getResultText = () => {
+    if (session.isSoloPractice) return 'Practice Complete!';
+    if (session.awaitingOpponent) return 'Answers Submitted';
     if (isDraw) return "It's a Draw!";
     if (isWinner) return "Victory!";
     return "Defeat!";
@@ -110,6 +112,8 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
   };
 
   const getResultSubtitle = () => {
+    if (session.isSoloPractice) return 'Solo practice — no win recorded.';
+    if (session.awaitingOpponent) return `Waiting for ${opponent.name} to finish. You'll be notified when results are ready.`;
     if (isDraw) return "A legendary duel ends in a perfect tie!";
     if (isWinner) return `Outstanding! You defeated ${opponent.name}.`;
     return `A valiant effort! Next time you'll be faster.`;

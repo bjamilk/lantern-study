@@ -17,7 +17,33 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['var(--font-sans)'],
+      },
+      colors: {
+        lantern: {
+          background: 'var(--color-background)',
+          'background-secondary': 'var(--color-background-secondary)',
+          surface: 'var(--color-surface)',
+          'surface-secondary': 'var(--color-surface-secondary)',
+          text: 'var(--color-text)',
+          'text-secondary': 'var(--color-text-secondary)',
+          'text-tertiary': 'var(--color-text-tertiary)',
+          'text-muted': 'var(--color-text-secondary)',
+          primary: 'var(--color-primary)',
+          'primary-light': 'var(--color-primary-light)',
+          'primary-dark': 'var(--color-primary-dark)',
+          'primary-background': 'var(--color-primary-background)',
+          accent: 'var(--color-accent)',
+          'accent-background': 'var(--color-accent-background)',
+          success: 'var(--color-success)',
+          warning: 'var(--color-warning)',
+          error: 'var(--color-error)',
+          border: 'var(--color-border)',
+        },
+      },
+      borderRadius: {
+        lantern: 'var(--radius-lg)',
+        'lantern-xl': 'var(--radius-xl)',
       },
     },
   },

@@ -1,6 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 import { UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
+import { normalizeTestResultSession } from '@lantern/shared/utils'
+import {
+  type UserSettings,
+  normalizeUserSettings,
+} from '@lantern/shared/settings'
+import {
+  normalizeListingRecord,
+  normalizeInquiryRecord,
+  normalizeFavoriteRecord,
+  normalizeOfferRecord,
+  normalizeStorageUrl,
+} from '../utils/storageUrl'
 
 // Use shared config for URLs
 const supabaseUrl = getSupabaseUrl()
@@ -59,7 +71,7 @@ export const setCachedAuthToken = (token: string | null, userId?: string | null)
 };
 
 /** Read the token from localStorage (Supabase SDK keys). */
-const getTokenFromLocalStorage = (): string | null => {
+export const getTokenFromLocalStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
   
   // Read from Supabase SDK storage keys
@@ -81,7 +93,7 @@ const getTokenFromLocalStorage = (): string | null => {
 };
 
 /** Read the user ID from localStorage (Supabase SDK storage). */
-const getUserIdFromLocalStorage = (): string | null => {
+export const getUserIdFromLocalStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
   const keys = Object.keys(localStorage);
   for (const key of keys) {
@@ -96,6 +108,56 @@ const getUserIdFromLocalStorage = (): string | null => {
     }
   }
   return null;
+};
+
+/** Unix expiry (seconds) from persisted Supabase session, if present. */
+export const getStoredSessionExpiresAt = (): number | null => {
+  if (typeof window === 'undefined') return null;
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      try {
+        const stored = localStorage.getItem(key);
+        if (!stored) continue;
+        const parsed = JSON.parse(stored);
+        if (typeof parsed?.expires_at === 'number') return parsed.expires_at;
+      } catch {
+        // skip invalid entries
+      }
+    }
+  }
+  return null;
+};
+
+/** True when the stored access token expires within `bufferSeconds` (default 5 min). */
+export const shouldRefreshStoredSession = (bufferSeconds = 300): boolean => {
+  const expiresAt = getStoredSessionExpiresAt();
+  if (!expiresAt) return false;
+  return expiresAt - Date.now() / 1000 < bufferSeconds;
+};
+
+/** Read cached user from zustand persist (sync, no store rehydration wait). */
+export const readPersistedAuthUser = (): Record<string, unknown> | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('auth-storage-v2');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.currentUser ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Synchronous cold-start auth bootstrap from localStorage.
+ * Warms the in-memory token cache so API calls work immediately.
+ */
+export const bootstrapAuthFromStorage = (): { token: string; userId: string } | null => {
+  const token = getTokenFromLocalStorage();
+  const userId = getUserIdFromLocalStorage();
+  if (!token || !userId) return null;
+  setCachedAuthToken(token, userId);
+  return { token, userId };
 };
 
 const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
@@ -133,7 +195,7 @@ const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
 // Helper function to get authenticated headers
 // Uses cached token for instant resolution (~0ms) on the hot path.
 // Only calls getSession() on the very first cold call when no cache/localStorage token exists.
-const getAuthHeaders = async (): Promise<Record<string, string>> => {
+export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   // 1. FAST PATH: Check in-memory cache (instant, no async)
   let token: string | null = _cachedAccessToken;
   
@@ -185,14 +247,28 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
     };
   }
   
-  console.warn('No session token found, proceeding without auth header');
+  console.warn('No session token found for authenticated request');
   return {
     'Content-Type': 'application/json',
   };
 };
 
+/** Returns true when a bearer token is available for API calls. */
+export async function ensureAuthTokenReady(): Promise<boolean> {
+  const headers = await getAuthHeaders();
+  return Boolean(headers.Authorization);
+};
+
+const getRequiredAuthHeaders = async (): Promise<Record<string, string>> => {
+  const headers = await getAuthHeaders();
+  if (!headers.Authorization || !(await hasValidSession())) {
+    throw new Error('Authentication required');
+  }
+  return headers;
+};
+
 // Helper to check if user has a valid session before making auth-required calls
-const hasValidSession = async (): Promise<boolean> => {
+export const hasValidSession = async (): Promise<boolean> => {
   // Fast path: check cache and localStorage first
   if (_cachedAccessToken) return true;
   if (getTokenFromLocalStorage()) return true;
@@ -244,11 +320,23 @@ export const createGroup = async (groupData: { name: string; description: string
 
 export const fetchGroups = async (userId: string) => {
   console.log('Fetching groups for user:', userId);
+
+  if (!(await hasValidSession())) {
+    return [];
+  }
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups?userId=${userId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/v1/groups`, {
     method: 'GET',
     headers: await getAuthHeaders(),
   });
+
+  if (response.status === 401 || response.status === 403) {
+    const { handleApiAuthFailure } = await import('./sessionHandler');
+    if (await handleApiAuthFailure(response.status)) {
+      return fetchGroups(userId);
+    }
+    return [];
+  }
 
   if (!response.ok) {
     const error = await response.json();
@@ -410,7 +498,7 @@ export const voteQuestion = async (messageId: string, userId: string, voteType: 
 export const removeVote = async (messageId: string, userId: string) => {
   console.log('Removing vote on message:', messageId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/vote?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/vote`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -457,7 +545,7 @@ export const fetchMessages = async (groupId: string, page?: number, limit?: numb
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {
   console.log('Fetching user votes for group:', groupId, 'userId:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}/user-votes?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}/user-votes`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -558,6 +646,10 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
   const includeShared = options?.includeShared ?? false;
   console.log('Fetching decks for user:', userId, 'includeShared:', includeShared);
   try {
+    if (!(await hasValidSession())) {
+      return [];
+    }
+
     const params = new URLSearchParams();
     params.set('userId', userId);
     if (includeShared) params.set('includeShared', 'true');
@@ -566,6 +658,10 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return [];
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -711,137 +807,6 @@ export const removeDeckCollaborator = async (deckId: string, userId: string) => 
   }
 };
 
-export const fetchStudySessions = async (deckId: string) => {
-  console.log('Fetching study sessions for deck:', deckId);
-  try {
-    const params = new URLSearchParams();
-    params.set('deckId', deckId);
-
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions?${params.toString()}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch study sessions');
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error fetching study sessions:', error);
-    throw error;
-  }
-};
-
-export const createStudySession = async (deckId: string, userId: string, endsAt?: string, metadata?: any) => {
-  console.log('Creating study session for deck:', deckId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({ deckId, userId, endsAt, metadata }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create study session');
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error creating study session:', error);
-    throw error;
-  }
-};
-
-export const joinStudySession = async (sessionId: string, userId: string) => {
-  console.log('Joining study session:', sessionId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions/${sessionId}/join`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({ userId }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to join study session');
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error joining study session:', error);
-    throw error;
-  }
-};
-
-export const leaveStudySession = async (sessionId: string, userId: string) => {
-  console.log('Leaving study session:', sessionId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions/${sessionId}/leave`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({ userId }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to leave study session');
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error leaving study session:', error);
-    throw error;
-  }
-};
-
-export const endStudySession = async (sessionId: string) => {
-  console.log('Ending study session:', sessionId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions/${sessionId}/end`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to end study session');
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error ending study session:', error);
-    throw error;
-  }
-};
-
-export const getStudySession = async (sessionId: string) => {
-  console.log('Getting study session:', sessionId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/study-sessions/${sessionId}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch study session');
-    }
-
-    const result = await response.json();
-    return result.data;
-  } catch (error) {
-    console.error('Error fetching study session:', error);
-    throw error;
-  }
-};
-
 export const deleteDeck = async (deckId: string) => {
   console.log('Deleting deck:', deckId);
   try {
@@ -872,6 +837,7 @@ export const createFlashcard = async (flashcardData: {
   occlusionData?: any;
   srsData?: any;
   tags?: string[];
+  userId?: string;
 }) => {
   console.log('Creating flashcard for deck:', flashcardData.deckId);
   try {
@@ -887,7 +853,7 @@ export const createFlashcard = async (flashcardData: {
         imageUrl: flashcardData.imageUrl,
         occlusionData: flashcardData.occlusionData,
         tags: flashcardData.tags,
-        userId: 'test-user', // This should be passed in or retrieved from context
+        userId: flashcardData.userId || await getAuthenticatedUserId() || undefined,
       }),
     });
 
@@ -955,6 +921,10 @@ export const fetchFlashcards = async (
 ) => {
   console.log('Fetching flashcards', deckId ? `for deck: ${deckId}` : 'for all decks', userId ? `for user: ${userId}` : '');
   try {
+    if (!(await hasValidSession())) {
+      return [];
+    }
+
     const params = new URLSearchParams();
 
     if (deckId) {
@@ -976,6 +946,10 @@ export const fetchFlashcards = async (
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return [];
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -1103,8 +1077,6 @@ export const exportDeck = async (deckId: string) => {
 };
 
 // Import deck from export data
-// Returns an object containing the new deck and an array of the flashcards
-// that were inserted (so the client can update state without an extra fetch).
 export const importDeck = async (importData: any, userId: string): Promise<{deck: any; flashcards: any[]}> => {
   console.log('Importing deck for user:', userId);
   try {
@@ -1135,6 +1107,43 @@ export const importDeck = async (importData: any, userId: string): Promise<{deck
     console.error('Error importing deck:', error);
     throw error;
   }
+};
+
+export const exportDeckCsv = async (deckId: string): Promise<string> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/export/csv`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error('Failed to export deck as CSV');
+  return response.text();
+};
+
+export const importDeckCsv = async (csv: string, userId: string, deckName?: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/decks/import/csv`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ csv, userId, deckName }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || error.error || 'Failed to import CSV');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const importDeckApkg = async (apkgBase64: string, userId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/decks/import/apkg`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ apkgBase64, userId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || error.error || 'Failed to import APKG');
+  }
+  const result = await response.json();
+  return result.data;
 };
 
 // --- Test Sessions and Results ---
@@ -1230,15 +1239,22 @@ export const createTestResult = async (resultData: {
   }
 };
 
-export const fetchTestResults = async (userId: string) => {
+export const fetchTestResults = async (userId: string, options?: { limit?: number }) => {
   console.log('Fetching test results for user:', userId);
   try {
-    // This might need to be adjusted based on what the API returns
-    // For now, assuming we get test sessions with results
-    const response = await fetch(`${API_BASE_URL}/api/v1/tests?userId=${encodeURIComponent(userId)}&status=completed`, {
+    if (!(await hasValidSession())) {
+      return [];
+    }
+
+    const limit = options?.limit ?? 50;
+    const response = await fetch(`${API_BASE_URL}/api/v1/tests?status=completed&limit=${limit}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return [];
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -1246,7 +1262,18 @@ export const fetchTestResults = async (userId: string) => {
 
     const result = await response.json();
     console.log('Fetched test results count:', result.data.length);
-    return result.data;
+    return (result.data || []).map((item: any) => {
+      if (!item?.session) return item;
+      const normalized = normalizeTestResultSession(item.session);
+      return {
+        ...item,
+        session: {
+          ...item.session,
+          questions: normalized.questions,
+          userAnswers: normalized.userAnswers,
+        },
+      };
+    });
   } catch (error) {
     console.error('Error fetching test results:', error);
     throw error;
@@ -1290,9 +1317,13 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
 
 export const fetchUserQuestionStats = async (userId: string) => {
   try {
+    if (!(await hasValidSession())) {
+      return {} as UserQuestionStats;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
     });
 
     if (response.status === 401 || response.status === 403) {
@@ -1362,9 +1393,10 @@ export const updateUserProfile = async (userId: string, updates: {
 }) => {
   console.log('Updating user profile for user:', userId, 'updates:', updates);
   try {
+    const headers = await getRequiredAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
       method: 'PUT',
-      headers: await getAuthHeaders(),
+      headers,
       body: JSON.stringify(updates),
     });
 
@@ -1418,9 +1450,10 @@ export const createUserProfile = async (profileData: {
 
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   try {
+    const headers = await getRequiredAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
       method: 'DELETE',
-      headers: await getAuthHeaders(),
+      headers,
     });
     if (!response.ok) {
       console.error('Error deleting user account:', response.status);
@@ -1430,6 +1463,22 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   } catch (error) {
     console.error('Error deleting user account:', error);
     return false;
+  }
+};
+
+export const exportUserAccountData = async (userId: string): Promise<Record<string, unknown> | null> => {
+  try {
+    const headers = await getRequiredAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/export`, { headers });
+    if (!response.ok) {
+      console.error('Error exporting user data:', response.status);
+      return null;
+    }
+    const json = await response.json();
+    return json?.data ?? json;
+  } catch (error) {
+    console.error('Error exporting user data:', error);
+    return null;
   }
 };
 
@@ -1451,9 +1500,10 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
 
 export const updateUsername = async (userId: string, username: string, firstName: string, lastName: string): Promise<any> => {
   try {
+    const headers = await getRequiredAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/username`, {
       method: 'PUT',
-      headers: await getAuthHeaders(),
+      headers,
       body: JSON.stringify({ username, firstName, lastName }),
     });
     if (!response.ok) {
@@ -1503,7 +1553,11 @@ export const createNotification = async (notificationData: {
 
 export const fetchNotifications = async (userId: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications?userId=${encodeURIComponent(userId)}`, {
+    if (!(await hasValidSession())) {
+      return [];
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1539,9 +1593,9 @@ export const fetchNotifications = async (userId: string) => {
 export const markNotificationAsRead = async (notificationId: string, userId: string) => {
   console.log('Marking notification as read:', notificationId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}/read?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}/read`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -1560,7 +1614,7 @@ export const markNotificationAsRead = async (notificationId: string, userId: str
 export const markAllNotificationsAsRead = async (userId: string) => {
   console.log('Marking all notifications as read for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/read-all?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/read-all`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
     });
@@ -1578,10 +1632,12 @@ export const markAllNotificationsAsRead = async (userId: string) => {
   }
 };
 
-export const deleteNotification = async (notificationId: string) => {
+export const deleteNotification = async (notificationId: string, userId?: string) => {
   console.log('Deleting notification:', notificationId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}?userId=test-user`, {
+    const resolvedUserId = userId || await getAuthenticatedUserId();
+    const userParam = '';
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}${userParam}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -1600,7 +1656,7 @@ export const deleteNotification = async (notificationId: string) => {
 export const deleteAllNotifications = async (userId: string) => {
   console.log('Deleting all notifications for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -1667,6 +1723,32 @@ export const updateGroup = async (groupId: string, updates: { name?: string; des
   }
 };
 
+export const promoteGroupAdmin = async (groupId: string, memberId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/admins/${memberId}`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || error.message || 'Failed to promote admin');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const demoteGroupAdmin = async (groupId: string, memberId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/admins/${memberId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || error.message || 'Failed to demote admin');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
 // --- Marketplace Functions ---
 
 export const createMarketplaceListing = async (listingData: {
@@ -1674,6 +1756,10 @@ export const createMarketplaceListing = async (listingData: {
   title: string;
   description?: string;
   price?: number;
+  sale_price?: number;
+  sale_ends_at?: string;
+  promo_label?: string;
+  quantity?: number | null;
   location?: string;
   images?: string[];
   categorySpecificFields?: any;
@@ -1720,6 +1806,21 @@ export const fetchMarketplaceListings = async (filters: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 } = {}) => {
+  const result = await fetchMarketplaceListingsPage(filters);
+  return result.data;
+};
+
+export const fetchMarketplaceListingsPage = async (filters: {
+  page?: number;
+  limit?: number;
+  category?: string;
+  search?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  location?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+} = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {
   console.log('Fetching marketplace listings', filters);
   try {
     const queryParams = new URLSearchParams();
@@ -1741,10 +1842,24 @@ export const fetchMarketplaceListings = async (filters: {
 
     const result = await response.json();
     console.log('Fetched listings count:', result.data.length);
-    return result.data;
+    return {
+      data: (result.data || []).map(normalizeListingRecord),
+      pagination: result.pagination || {
+        page: Number(filters.page || 1),
+        limit: Number(filters.limit || 20),
+        total: (result.data || []).length,
+      },
+    };
   } catch (error) {
     console.error('Error fetching listings:', error);
-    return []; // Return empty array on error instead of throwing
+    return {
+      data: [],
+      pagination: {
+        page: Number(filters.page || 1),
+        limit: Number(filters.limit || 20),
+        total: 0,
+      },
+    };
   }
 };
 
@@ -1768,7 +1883,7 @@ export const fetchMarketplaceListing = async (listingId: string) => {
 
     const result = await response.json();
     console.log('Fetched listing:', result.data);
-    return result.data;
+    return normalizeListingRecord(result.data);
   } catch (error) {
     console.error('Error fetching listing:', error);
     throw error;
@@ -1889,16 +2004,15 @@ export const initiateMarketplaceTransaction = async (listingId: string, amount: 
 
 // ============ SELLER DASHBOARD FUNCTIONS ============
 
-export const fetchMyListings = async (status?: string, userId?: string) => {
-  console.log('Fetching my listings', { status, userId });
+export const fetchMyListings = async (status?: string) => {
+  console.log('Fetching my listings', { status });
   try {
     const queryParams = new URLSearchParams();
     if (status) queryParams.append('status', status);
-    if (userId) queryParams.append('userId', userId);
     
     const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/my-listings?${queryParams}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
     }, 5000);
 
     if (!response.ok) {
@@ -1908,22 +2022,19 @@ export const fetchMyListings = async (status?: string, userId?: string) => {
 
     const result = await response.json();
     console.log('Fetched my listings:', result.data.length);
-    return result.data;
+    return (result.data || []).map(normalizeListingRecord);
   } catch (error) {
     console.error('Error fetching my listings:', error);
     return []; // Return empty array on error
   }
 };
 
-export const fetchSellerStats = async (userId?: string) => {
-  console.log('Fetching seller stats', { userId });
+export const fetchSellerStats = async () => {
+  console.log('Fetching seller stats');
   try {
-    const queryParams = new URLSearchParams();
-    if (userId) queryParams.append('userId', userId);
-    
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/stats?${queryParams}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/stats`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
     }, 5000);
 
     if (!response.ok) {
@@ -1979,7 +2090,7 @@ export const fetchMyFavorites = async () => {
     }
 
     const result = await response.json();
-    return result.data;
+    return (result.data || []).map(normalizeFavoriteRecord);
   } catch (error) {
     console.error('Error fetching favorites:', error);
     return []; // Return empty array on error
@@ -2066,7 +2177,7 @@ export const fetchMyInquiries = async (role: 'seller' | 'buyer' = 'seller', stat
 
     const result = await response.json();
     console.log('Fetched inquiries:', result.data.length);
-    return result.data;
+    return (result.data || []).map(normalizeInquiryRecord);
   } catch (error) {
     console.error('Error fetching inquiries:', error);
     throw error;
@@ -2129,7 +2240,7 @@ export const getInquiryByThread = async (threadId: string) => {
     if (!response.ok) return null;
 
     const result = await response.json();
-    return result.data;
+    return result.data ? normalizeInquiryRecord(result.data) : null;
   } catch (error) {
     console.error('Error fetching inquiry by thread:', error);
     return null;
@@ -2184,7 +2295,7 @@ export const fetchOffers = async (role: 'buyer' | 'seller') => {
     });
     if (!response.ok) return [];
     const result = await response.json();
-    return result.data || [];
+    return (result.data || []).map(normalizeOfferRecord);
   } catch (error) {
     console.error('Error fetching offers:', error);
     return [];
@@ -2202,6 +2313,337 @@ export const fetchOffersForListing = async (listingId: string) => {
     return result.data || [];
   } catch (error) {
     console.error('Error fetching offers for listing:', error);
+    return [];
+  }
+};
+
+export const fetchNegotiationHistory = async (listingId: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/offers-history`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) return [];
+    const result = await response.json();
+    return result.data || [];
+  } catch (error) {
+    console.error('Error fetching negotiation history:', error);
+    return [];
+  }
+};
+
+export const fetchMarketplaceOrders = async (role: 'buyer' | 'seller' = 'buyer') => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/orders?role=${role}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch orders');
+  }
+  const result = await response.json();
+  return result.data || [];
+};
+
+export const fetchMarketplaceOrder = async (orderId: string) => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/orders/${orderId}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to fetch order');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchOrderForInquiry = async (inquiryId: string) => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/orders/inquiry/${inquiryId}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return null;
+  const result = await response.json();
+  return result.data;
+};
+
+export const updateMarketplaceOrder = async (
+  orderId: string,
+  payload: { action: string; meetingLocation?: string; sellerNote?: string; fulfillmentMode?: string }
+) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/orders/${orderId}`, {
+    method: 'PATCH',
+    headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update order');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const requestOrderPayment = async (orderId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/orders/${orderId}/payment-link`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to request payment');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchSellerAnalytics = async () => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/analytics/seller`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return null;
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchSellerBuyers = async (segment?: string) => {
+  const qs = segment ? `?segment=${encodeURIComponent(segment)}` : '';
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/seller/buyers${qs}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return [];
+  const result = await response.json();
+  return result.data || [];
+};
+
+export const fetchSellerCoupons = async () => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/coupons`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return [];
+  const result = await response.json();
+  return result.data || [];
+};
+
+export const createSellerCoupon = async (data: {
+  code: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  maxUses?: number;
+  endsAt?: string;
+}) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/coupons`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to create coupon');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const validateMarketplaceCoupon = async (code: string, listingId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/coupons/validate`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ code, listingId }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Invalid coupon');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchSellerPreferences = async () => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/seller/preferences`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return null;
+  const result = await response.json();
+  return result.data;
+};
+
+export const updateSellerPreferences = async (data: {
+  hallDropoffEnabled?: boolean;
+  hallDropoffMinAmount?: number | null;
+  requirePaymentConfirmation?: boolean;
+  favoriteAlertThreshold?: number;
+}) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/preferences`, {
+    method: 'PUT',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update preferences');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchPickupNudge = async (sellerId: string) => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/sellers/${sellerId}/pickup-nudge`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return null;
+  const result = await response.json();
+  return result.data;
+};
+
+export const sendSellerCampaign = async (data: {
+  message: string;
+  segment?: string;
+  buyerIds?: string[];
+}) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/campaigns`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Campaign failed');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const createMarketplaceBundle = async (data: {
+  title: string;
+  description?: string;
+  price: number;
+  listingIds: string[];
+  location?: string;
+}) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/bundles`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to create bundle');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchSellerOnboarding = async () => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/seller/onboarding`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return null;
+  const result = await response.json();
+  return result.data;
+};
+
+export const completeSellerOnboarding = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/onboarding/complete`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to complete onboarding');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const submitOrderPaymentProof = async (orderId: string, proofUrl: string) => {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/marketplace/orders/${orderId}/payment-proof`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ proofUrl }),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to submit payment proof');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const checkSavedSearchMatches = async (searchId: string) => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/saved-searches/${searchId}/matches`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) return { count: 0, listings: [] };
+  const result = await response.json();
+  return result.data || { count: 0, listings: [] };
+};
+
+export const boostMarketplaceListing = async (listingId: string, durationHours: number = 72) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/boost`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ durationHours }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to boost listing');
+  }
+
+  const result = await response.json();
+  return result.data;
+};
+
+export const buyMarketplaceListingNow = async (listingId: string, couponCode?: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/buy-now`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(couponCode ? { couponCode } : {}),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to complete purchase');
+  }
+
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceCategoryAnalytics = async () => {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/analytics/categories`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    }, 5000);
+
+    if (!response.ok) return [];
+    const result = await response.json();
+    return result.data || [];
+  } catch (error) {
+    console.error('Error fetching category analytics:', error);
     return [];
   }
 };
@@ -2253,21 +2695,6 @@ export const deleteSavedSearch = async (id: string) => {
   } catch (error) {
     console.error('Error deleting saved search:', error);
     throw error;
-  }
-};
-
-export const checkSavedSearchMatches = async (id: string) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/saved-searches/${id}/matches`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
-    if (!response.ok) return { count: 0, listings: [] };
-    const result = await response.json();
-    return result.data || { count: 0, listings: [] };
-  } catch (error) {
-    console.error('Error checking saved search matches:', error);
-    return { count: 0, listings: [] };
   }
 };
 
@@ -2329,7 +2756,7 @@ export const fetchMarketplaceListingFull = async (
   listingId: string,
   userId?: string
 ): Promise<{ listing: any; isFavorited: boolean; similarListings: any[] }> => {
-  const params = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+  const params = userId ? `` : '';
   const response = await fetchWithTimeout(
     `${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/full${params}`,
     { method: 'GET', headers: await getAuthHeaders() },
@@ -2409,10 +2836,11 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
 // --- File Upload Functions ---
 
 export const uploadFlashcardImage = async (file: File) => {
-  // Upload directly to Supabase Storage — no base64 roundtrip through Node.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('Must be signed in to upload images');
   const fileExt = file.name.split('.').pop();
   const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-  const filePath = `cards/${fileName}`;
+  const filePath = `${user.id}/cards/${fileName}`;
 
   const { error } = await supabase.storage
     .from('flashcard-images')
@@ -2433,9 +2861,13 @@ export const uploadFlashcardImage = async (file: File) => {
 export const uploadMarketplaceImage = async (file: File, listingId?: string) => {
   console.log('Uploading marketplace image:', file.name);
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error('Must be signed in to upload images');
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = listingId ? `listings/${listingId}/${fileName}` : `temp/${fileName}`;
+    const filePath = listingId
+      ? `${user.id}/listings/${listingId}/${fileName}`
+      : `${user.id}/temp/${fileName}`;
 
     const { data, error } = await supabase.storage
       .from('marketplace-images')
@@ -2493,7 +2925,7 @@ export const fetchDirectMessages = async (userId: string, otherUserId: string, o
     
     const response = await fetch(`${API_BASE_URL}/api/v1/messages/user/${userId}?${queryParams}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -2512,10 +2944,26 @@ export const fetchDirectMessages = async (userId: string, otherUserId: string, o
 
 export const fetchDmThreads = async (userId: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/threads?userId=${encodeURIComponent(userId)}`, {
+    const isAuthenticated = await hasValidSession();
+    if (!isAuthenticated) {
+      // Auth can still be initializing during startup; treat as empty until token is ready.
+      return [];
+    }
+
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      // Avoid unauthenticated requests during auth bootstrap races.
+      return [];
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/threads`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders,
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return [];
+    }
 
     if (!response.ok) {
       const error = await response.json();
@@ -2535,7 +2983,7 @@ export const sendDirectMessage = async (senderId: string, recipientId: string, c
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/messages/user/${senderId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
       body: JSON.stringify({
         content,
         recipientId,
@@ -2543,8 +2991,8 @@ export const sendDirectMessage = async (senderId: string, recipientId: string, c
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to send direct message');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || error.message || 'Failed to send direct message');
     }
 
     const result = await response.json();
@@ -2559,10 +3007,18 @@ export const sendDirectMessage = async (senderId: string, recipientId: string, c
 // Fetch unread counts for all groups
 export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<string, number>> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/groups/unread/all?userId=${userId}`, {
+    if (!(await hasValidSession())) {
+      return {};
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/groups/unread/all`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return {};
+    }
 
     if (!response.ok) {
       console.error('Failed to fetch group unread counts');
@@ -2601,10 +3057,18 @@ export const markGroupAsRead = async (groupId: string, userId: string): Promise<
 // Fetch unread counts for all DM threads
 export const fetchDMUnreadCounts = async (userId: string): Promise<Record<string, number>> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/unread/all?userId=${userId}`, {
+    if (!(await hasValidSession())) {
+      return {};
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/unread/all`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return {};
+    }
 
     if (!response.ok) {
       console.error('Failed to fetch DM unread counts');
@@ -2643,7 +3107,7 @@ export const markDMAsRead = async (threadId: string, userId: string): Promise<bo
 // Delete a DM thread
 export const deleteDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}?userId=${userId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -2663,7 +3127,7 @@ export const deleteDmThread = async (threadId: string, userId: string): Promise<
 // Archive a DM thread
 export const archiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/archive?userId=${userId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/archive`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -2681,7 +3145,7 @@ export const archiveDmThread = async (threadId: string, userId: string): Promise
 // Unarchive a DM thread
 export const unarchiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/unarchive?userId=${userId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/unarchive`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -2703,6 +3167,7 @@ export interface OfflineBundleData {
   config: any;
   questions: any[];
   groupName: string;
+  displayName?: string;
   downloadedAt: Date;
 }
 
@@ -2710,10 +3175,15 @@ export interface OfflineBundleData {
 
 export const fetchOfflineBundles = async (userId: string): Promise<OfflineBundleData[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles?userId=${encodeURIComponent(userId)}`, {
+    if (!(await hasValidSession())) {
+      return [];
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+    if (response.status === 401 || response.status === 403) return [];
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const result = await response.json();
     return (result.data || []).map((item: any) => ({
@@ -2721,6 +3191,7 @@ export const fetchOfflineBundles = async (userId: string): Promise<OfflineBundle
       config: item.config,
       questions: item.questions,
       groupName: item.group_name,
+      displayName: item.display_name ?? undefined,
       downloadedAt: new Date(item.downloaded_at),
     }));
   } catch (error) {
@@ -2753,7 +3224,7 @@ export const saveOfflineBundle = async (userId: string, bundle: OfflineBundleDat
 
 export const deleteOfflineBundle = async (userId: string, bundleId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles?userId=${encodeURIComponent(userId)}&bundleId=${encodeURIComponent(bundleId)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2809,21 +3280,80 @@ export const syncOfflineBundles = async (
 };
 
 // ============================================
+// USER SETTINGS (nested schema — web + mobile)
+// ============================================
+
+export const fetchUserSettings = async (userId: string): Promise<UserSettings | null> => {
+  try {
+    if (!(await hasValidSession())) return null;
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch settings: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return normalizeUserSettings(result.data?.settings);
+  } catch (error) {
+    console.error('Error fetching user settings:', error);
+    return null;
+  }
+};
+
+export const saveUserSettings = async (userId: string, settings: UserSettings): Promise<boolean> => {
+  try {
+    const headers = await getRequiredAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/settings`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ settings }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to save user settings');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error saving user settings:', error);
+    return false;
+  }
+};
+
+// ============================================
 // USER PREFERENCES SYNC (Theme, Settings)
 // ============================================
 
 export interface UserPreferences {
   theme: 'light' | 'dark';
+  lowDataMode?: boolean;
   preferences?: Record<string, any>;
 }
 
 export const fetchUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
   console.log('Fetching user preferences for user:', userId);
   try {
+    if (!(await hasValidSession())) {
+      return null;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/v1/preferences/${encodeURIComponent(userId)}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
+
+    if (response.status === 401 || response.status === 403) {
+      return null;
+    }
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -2838,6 +3368,7 @@ export const fetchUserPreferences = async (userId: string): Promise<UserPreferen
 
     return data ? {
       theme: data.theme || 'light',
+      lowDataMode: data.preferences?.lowDataMode === true,
       preferences: data.preferences || {}
     } : null;
   } catch (error) {
@@ -2849,13 +3380,17 @@ export const fetchUserPreferences = async (userId: string): Promise<UserPreferen
 export const saveUserPreferences = async (userId: string, prefs: UserPreferences): Promise<boolean> => {
   console.log('Saving user preferences for user:', userId, 'prefs:', prefs);
   try {
+    const headers = await getRequiredAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/api/v1/preferences`, {
       method: 'POST',
-      headers: await getAuthHeaders(),
+      headers,
       body: JSON.stringify({
         userId,
         theme: prefs.theme,
-        preferences: prefs.preferences || {},
+        preferences: {
+          ...(prefs.preferences || {}),
+          ...(prefs.lowDataMode !== undefined ? { lowDataMode: prefs.lowDataMode } : {}),
+        },
       }),
     });
 
@@ -3235,4 +3770,60 @@ export const syncPendingResultsToCloud = async (
     console.error('Error syncing pending results:', error);
     return localResults;
   }
+};
+
+export const sendPresenceHeartbeat = async (): Promise<void> => {
+  try {
+    const headers = await getAuthHeaders();
+    await fetch(`${API_BASE_URL}/api/v1/users/presence/heartbeat`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  } catch {
+    // Non-fatal presence update
+  }
+};
+
+// --- Email verification & password reset ---
+
+export function getWebAuthRedirectOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost:5173';
+}
+
+export const resendSignupConfirmation = async (email: string, redirectTo?: string) => {
+  const { data, error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: redirectTo ?? getWebAuthRedirectOrigin() },
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const sendPasswordResetEmail = async (email: string, redirectTo?: string) => {
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: redirectTo ?? `${getWebAuthRedirectOrigin()}/reset-password`,
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const verifySignupOtp = async (email: string, token: string) => {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email,
+    token: token.replace(/\D/g, '').slice(0, 6),
+    type: 'signup',
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const updateAuthPassword = async (newPassword: string) => {
+  const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+  return data;
 };

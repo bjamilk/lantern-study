@@ -310,7 +310,7 @@ export const ModalContainer: React.FC<ModalContainerProps> = ({
 // ===========================================
 interface SectionHeaderProps {
   title: string;
-  style?: ViewStyle;
+  style?: TextStyle;
 }
 
 export const SectionHeader: React.FC<SectionHeaderProps> = ({ 

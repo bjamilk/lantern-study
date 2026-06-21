@@ -1,12 +1,14 @@
 import { useEffect, useCallback, useState } from 'react';
-import { AppMode, OfflineSessionBundle, TransactionType, Transaction } from '../types';
+import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useUIStore } from '../stores/uiStore';
+import { useNotesStore } from '../stores/notesStore';
 import { initialUserStats } from '../utils/helpers';
+import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import {
     supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
@@ -14,22 +16,35 @@ import {
     fetchTestResults, fetchUserQuestionStats,
     fetchNotifications,
     fetchGroupUnreadCounts, fetchDMUnreadCounts, fetchDmThreads,
-    fetchOfflineBundles, saveOfflineBundle, deleteOfflineBundle,
+    fetchOfflineBundles,
     fetchUserPreferences, saveUserPreferences,
     fetchUserBudget, saveUserBudget,
     syncBudgetTransactionsToCloud,
     fetchPendingSyncResults, savePendingSyncResult,
     markAllNotificationsAsRead, deleteAllNotifications,
     fetchUserProfile, createUserProfile,
+    fetchUserSettings,
+    ensureAuthTokenReady,
+    bootstrapAuthFromStorage,
+    readPersistedAuthUser,
+    shouldRefreshStoredSession,
+    sendPresenceHeartbeat,
 } from '../services/supabase';
+import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
+import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
+import { fetchStudyActivity } from '../services/gamificationStreak';
+import { saveBudgetExtras } from '../services/budgetExtrasSync';
+import { useDailyStudyReminder } from './useDailyStudyReminder';
 
 interface UseAppEffectsParams {
     dataLoaded: boolean;
     setDataLoaded: (v: boolean) => void;
+    onChallengeNotification?: (type: string, challengeId: string) => void;
 }
 
-export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams) {
-    const { currentUser, setCurrentUser, setAuthLoading } = useAuthStore();
+export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotification }: UseAppEffectsParams) {
+    const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, setPasswordRecovery } = useAuthStore();
+    const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
     const {
         groups, setGroups, updateGroups,
         setAllMessages, setDmThreads, updateDmThreads,
@@ -37,116 +52,176 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         setNotifications, updateNotifications, notifications
     } = useGroupStore();
     const {
-        offlineBundles, updateOfflineBundles,
+        offlineBundles, setOfflineBundles,
         pendingSyncResults, setPendingSyncResults,
         setTestResults, setUserQuestionStats,
+        setStudyActivityDays,
     } = useTestStore();
     const {
         decks, setDecks,
         flashcards, setFlashcards,
         dueCardsCount, setDueCardsCount
     } = useFlashcardStore();
-    const { transactions, setTransactions, budget, setBudget } = useBudgetStore();
+    const { transactions, setTransactions, budget, setBudget, savingsGoals, expenseSplits, walletBalance, setSavingsGoals, setExpenseSplits, setWalletBalance } = useBudgetStore();
     const {
         theme, setTheme, setAppMode,
-        openModal, lowDataMode
+        openModal, lowDataMode, setLowDataMode
     } = useUIStore();
 
-    // --- One-time session cleanup ---
+    useDailyStudyReminder(currentUser);
+
+    // --- Presence heartbeat for online status ---
     useEffect(() => {
-        const lastCleanup = localStorage.getItem('session-cleanup-v2');
-        if (!lastCleanup) {
-            console.log('Performing one-time session cleanup...');
-            Object.keys(localStorage).forEach(key => {
-                if (key.startsWith('sb-') || key.includes('supabase')) {
-                    console.log('Clearing:', key);
-                    localStorage.removeItem(key);
-                }
-            });
-            localStorage.setItem('session-cleanup-v2', Date.now().toString());
+        if (!currentUser?.id || !normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus) {
+            return;
         }
-    }, []);
+        void sendPresenceHeartbeat();
+        const interval = setInterval(() => void sendPresenceHeartbeat(), 2 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [currentUser?.id, currentUser?.settings]);
 
     // --- Restore session on app load ---
     useEffect(() => {
         let isMounted = true;
-        
-        const restoreSession = async () => {
-            try {
-                // Wrap getSession with a timeout, but do NOT wipe the session if it times out
-                // or fails due to a transient connection error.
-                const getSessionPromise = supabase.auth.getSession();
-                const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {
-                    setTimeout(() => resolve({ timeout: true }), 15000);
-                });
-                
-                const result = await Promise.race([
-                    getSessionPromise.then(res => ({ ...res, timeout: false })),
-                    timeoutPromise
-                ]);
-                
-                if (!isMounted) return;
-                
-                if ('timeout' in result && result.timeout) {
-                    console.warn('[Auth] Session retrieval timed out. Retaining cached session.');
-                    setAuthLoading(false);
-                    return;
+
+        const userFromProfile = (
+            profile: Record<string, unknown>,
+            email: string,
+            authUser?: { app_metadata?: Record<string, unknown>; email?: string | null }
+        ): User => ({
+            id: profile.id as string,
+            name: profile.name as string,
+            avatarUrl: (profile.avatar_url as string) || '',
+            email,
+            password: '',
+            phoneNumber: (profile.phone as string) || '',
+            points: (profile.points as number) || 0,
+            badges: (profile.badges as User['badges']) || [],
+            stats: (profile.stats as User['stats']) || {},
+            settings: normalizeUserSettings(profile.settings),
+            username: (profile.username as string) || undefined,
+            firstName: (profile.first_name as string) || undefined,
+            lastName: (profile.last_name as string) || undefined,
+            isAdmin: resolvePlatformAdmin(authUser, profile.settings as Record<string, unknown>),
+        });
+
+        const applyFastBoot = (): boolean => {
+            const boot = bootstrapAuthFromStorage();
+            if (!boot) return false;
+
+            let user = useAuthStore.getState().currentUser;
+            if (!user) {
+                const persisted = readPersistedAuthUser();
+                if (persisted?.id === boot.userId) {
+                    user = persisted as unknown as User;
+                    setCurrentUser(user);
                 }
-                
-                const { data: { session }, error: sessionError } = result as any;
-                
+            }
+            if (!user || user.id !== boot.userId) return false;
+
+            setAuthTokenReady(true);
+            setAuthLoading(false);
+            return true;
+        };
+
+        const syncSessionInBackground = async (hadFastBoot: boolean) => {
+            try {
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                if (!isMounted) return;
+
                 if (sessionError) {
                     console.error('[Auth] getSession error:', sessionError);
                 }
-                
+
                 if (!session?.user) {
-                    console.log('[Auth] No active session found.');
-                    if (isMounted) {
+                    if (hadFastBoot || useAuthStore.getState().currentUser) {
+                        console.warn('[Auth] No active session — clearing stale cached user');
+                        await supabase.auth.signOut();
                         setCurrentUser(null);
-                        setAuthLoading(false);
+                        setAuthTokenReady(false);
                     }
+                    setAuthLoading(false);
                     return;
                 }
-                
-                if (session?.access_token) {
-                    // Populate the in-memory token cache so all subsequent API calls are instant
-                    setCachedAuthToken(session.access_token, session.user?.id);
-                    console.log('[App] Restored and cached access token');
+
+                if (session.access_token) {
+                    setCachedAuthToken(session.access_token, session.user.id);
+                    setAuthTokenReady(true);
                 }
-                
-                // Fetch profile with fallback to local cached user state if offline
+
+                let authUser = session.user;
+                if (shouldRefreshStoredSession()) {
+                    try {
+                        const { data: refreshData } = await supabase.auth.refreshSession();
+                        if (refreshData?.session?.user) {
+                            setCachedAuthToken(refreshData.session.access_token, refreshData.session.user.id);
+                            authUser = refreshData.session.user;
+                        }
+                    } catch (refreshErr) {
+                        console.warn('[Auth] refreshSession failed, using existing session');
+                    }
+                }
+
+                const cached =
+                    useAuthStore.getState().currentUser ??
+                    (readPersistedAuthUser() as unknown as User | null);
+
+                if (!hadFastBoot) {
+                    if (cached && cached.id === session.user.id) {
+                        setCurrentUser({
+                            ...cached,
+                            email: authUser.email || cached.email,
+                            isAdmin: resolvePlatformAdmin(
+                                authUser,
+                                cached.settings as Record<string, unknown>
+                            ),
+                        });
+                        setAuthLoading(false);
+                    }
+                } else if (cached && cached.id === session.user.id) {
+                    setCurrentUser({
+                        ...cached,
+                        email: authUser.email || cached.email,
+                        isAdmin: resolvePlatformAdmin(
+                            authUser,
+                            cached.settings as Record<string, unknown>
+                        ),
+                    });
+                }
+
                 try {
                     const profile = await fetchUserProfile(session.user.id);
-                    
-                    if (!isMounted) return;
-                    
-                    if (!profile) {
-                        throw new Error('Profile not found');
+                    if (!isMounted || !profile) {
+                        if (!hadFastBoot && !useAuthStore.getState().currentUser) {
+                            setAuthLoading(false);
+                        }
+                        return;
                     }
-                    
-                    setCurrentUser({
-                        id: profile.id,
-                        name: profile.name,
-                        avatarUrl: profile.avatar_url || '',
-                        email: session.user.email!,
-                        password: '',
-                        phoneNumber: profile.phone || '',
-                        points: profile.points || 0,
-                        badges: (profile.badges as any[]) || [],
-                        stats: profile.stats || {},
-                        settings: profile.settings,
-                        username: profile.username || undefined,
-                        firstName: profile.first_name || undefined,
-                        lastName: profile.last_name || undefined,
-                    });
+
+                    const isBanned =
+                        profile.settings?.is_banned === true ||
+                        profile.settings?.account_status === 'banned';
+                    if (isBanned) {
+                        await supabase.auth.signOut();
+                        if (isMounted) {
+                            setCurrentUser(null);
+                            setAuthTokenReady(false);
+                            setAuthLoading(false);
+                        }
+                        return;
+                    }
+
+                    setCurrentUser(userFromProfile(profile, authUser.email!, authUser));
                 } catch (profileErr: any) {
-                    if (!isMounted) return;
-                    
-                    // If 404 (not found), try to create it via the API
-                    if (profileErr.message?.includes('404') || profileErr.message?.includes('status: 404')) {
-                        console.log('Creating profile for session user...');
-                        const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User';
-                        
+                    const existingUser = useAuthStore.getState().currentUser;
+                    if (
+                        profileErr.message?.includes('404') ||
+                        profileErr.message?.includes('status: 404')
+                    ) {
+                        const userName =
+                            authUser.user_metadata?.name ||
+                            authUser.email?.split('@')[0] ||
+                            'User';
                         try {
                             const newProfile = await createUserProfile({
                                 id: session.user.id,
@@ -155,104 +230,112 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                                 points: 0,
                                 stats: {},
                                 settings: {},
-                                badges: []
+                                badges: [],
                             });
-                            
-                            setCurrentUser({
-                                id: newProfile.id,
-                                name: newProfile.name,
-                                avatarUrl: newProfile.avatar_url || '',
-                                email: session.user.email!,
-                                password: '',
-                                phoneNumber: newProfile.phone || '',
-                                points: newProfile.points || 0,
-                                badges: (newProfile.badges as any[]) || [],
-                                stats: newProfile.stats || {},
-                                settings: newProfile.settings,
-                                username: newProfile.username || undefined,
-                                firstName: newProfile.first_name || undefined,
-                                lastName: newProfile.last_name || undefined,
-                            });
+                            if (isMounted) {
+                                setCurrentUser(userFromProfile(newProfile, authUser.email!, authUser));
+                            }
                         } catch (createError) {
                             console.error('Failed to create profile via API:', createError);
-                            throw new Error('Profile creation failed');
                         }
-                    } else {
-                        console.warn('[Auth] Profile fetch failed, retaining cached profile:', profileErr.message);
-                        const existingUser = useAuthStore.getState().currentUser;
-                        if (existingUser && existingUser.id === session.user.id) {
-                            setAuthLoading(false);
-                            return;
-                        } else {
-                            throw profileErr;
-                        }
+                    } else if (existingUser && existingUser.id === session.user.id) {
+                        setCurrentUser({
+                            ...existingUser,
+                            isAdmin: resolvePlatformAdmin(
+                                authUser,
+                                existingUser.settings as Record<string, unknown>
+                            ),
+                        });
+                    } else if (!hadFastBoot) {
+                        console.warn('[Auth] Profile fetch failed:', profileErr.message);
                     }
                 }
-                
-                setAuthLoading(false);
-                
+
+                if (!hadFastBoot) {
+                    const hasToken = await ensureAuthTokenReady();
+                    if (!hasToken && useAuthStore.getState().currentUser) {
+                        await supabase.auth.signOut();
+                        if (isMounted) {
+                            setCurrentUser(null);
+                            setAuthTokenReady(false);
+                        }
+                    }
+                    if (isMounted) setAuthLoading(false);
+                }
             } catch (error: any) {
-                console.log('Session validation failed completely:', error.message);
-                
-                // Only wipe if it is an explicit auth failure (not connection/timeout issues)
-                const isConnectionError = error.message.includes('timeout') || error.message.includes('Fetch') || error.message.includes('Network');
-                if (!isConnectionError) {
-                    console.log('Clearing stale session data from localStorage...');
-                    Object.keys(localStorage).forEach(key => {
-                        if (key.startsWith('sb-') || key.includes('supabase') || key === 'auth-storage') {
-                            console.log('Removing:', key);
+                console.log('Session validation failed:', error.message);
+                const isConnectionError =
+                    error.message?.includes('timeout') ||
+                    error.message?.includes('Fetch') ||
+                    error.message?.includes('Network');
+                if (!isConnectionError && !hadFastBoot) {
+                    Object.keys(localStorage).forEach((key) => {
+                        if (
+                            key.startsWith('sb-') ||
+                            key.includes('supabase') ||
+                            key === 'auth-storage' ||
+                            key === 'auth-storage-v2'
+                        ) {
                             localStorage.removeItem(key);
                         }
                     });
-                    
                     try {
                         await supabase.auth.signOut();
-                    } catch (e) {
-                        // Ignore
+                    } catch {
+                        // ignore
                     }
-                    
                     if (isMounted) {
                         setCurrentUser(null);
-                        setAuthLoading(false);
+                        setAuthTokenReady(false);
                     }
-                } else {
-                    console.warn('[Auth] Connection error during restore. Retaining cached session.');
-                    setAuthLoading(false);
                 }
+                if (isMounted) setAuthLoading(false);
             }
         };
-        
-        restoreSession();
-        
+
+        const hadFastBoot = applyFastBoot();
+        if (!hadFastBoot) setAuthTokenReady(false);
+        void syncSessionInBackground(hadFastBoot);
+
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
+                setAuthTokenReady(false);
+                setPasswordRecovery(false);
                 const store = useAuthStore.getState();
                 if (!store.isAuthLoading) {
                     setCurrentUser(null);
                     setDataLoaded(false);
                 }
-            } else if (event === 'SIGNED_IN' && session?.user) {
+            } else if (event === 'PASSWORD_RECOVERY') {
                 if (session?.access_token) {
                     setCachedAuthToken(session.access_token, session.user?.id);
+                    setAuthTokenReady(true);
+                }
+                setPasswordRecovery(true);
+            } else if (event === 'SIGNED_IN' && session?.user) {
+                if (useAuthStore.getState().isPasswordRecovery) {
+                    if (session.access_token) {
+                        setCachedAuthToken(session.access_token, session.user?.id);
+                        setAuthTokenReady(true);
+                    }
+                    return;
+                }
+                if (session.access_token) {
+                    setCachedAuthToken(session.access_token, session.user?.id);
+                    setAuthTokenReady(true);
                 }
                 try {
                     const profile = await fetchUserProfile(session.user.id);
                     if (profile) {
-                        setCurrentUser({
-                            id: profile.id,
-                            name: profile.name,
-                            avatarUrl: profile.avatar_url || '',
-                            email: session.user.email!,
-                            password: '',
-                            phoneNumber: profile.phone || '',
-                            points: profile.points || 0,
-                            badges: (profile.badges as any[]) || [],
-                            stats: profile.stats || {},
-                            settings: profile.settings,
-                            username: profile.username || undefined,
-                            firstName: profile.first_name || undefined,
-                            lastName: profile.last_name || undefined,
-                        });
+                        const isBanned =
+                            profile.settings?.is_banned === true ||
+                            profile.settings?.account_status === 'banned';
+                        if (isBanned) {
+                            await supabase.auth.signOut();
+                            setCurrentUser(null);
+                            return;
+                        }
+                        setCurrentUser(userFromProfile(profile, session.user.email!, session.user));
                     }
                 } catch (err) {
                     console.error('Failed to fetch profile on SIGNED_IN event:', err);
@@ -266,8 +349,24 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         };
     }, []);
 
+    // Promote token-ready after login when AuthScreen cached the token before SIGNED_IN fires
+    useEffect(() => {
+        if (!currentUser || isAuthLoading || authTokenReady) return;
+        void ensureAuthTokenReady().then((ready) => {
+            if (ready) setAuthTokenReady(true);
+        });
+    }, [currentUser?.id, isAuthLoading, authTokenReady]);
+
     // --- Theme initialization ---
     useEffect(() => {
+        if (currentUser?.settings) {
+            applyUserSettingsToDom(normalizeUserSettings(currentUser.settings), {
+                setTheme,
+                setLowDataMode,
+            });
+            return;
+        }
+
         const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
         if (storedTheme) {
             setTheme(storedTheme);
@@ -281,7 +380,36 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
             document.documentElement.classList.add('dark');
             localStorage.setItem('theme', 'dark');
         }
-    }, []);
+    }, [currentUser?.id, currentUser?.settings, setTheme, setLowDataMode]);
+
+    // --- Sync canonical settings from API (cross-device) ---
+    useEffect(() => {
+        if (!currentUser?.id || !authTokenReady) return;
+
+        let cancelled = false;
+
+        void (async () => {
+            const remote = await fetchUserSettings(currentUser.id);
+            if (cancelled || !remote) return;
+
+            const user = useAuthStore.getState().currentUser;
+            if (!user || user.id !== currentUser.id) return;
+
+            const local = normalizeUserSettings(user.settings);
+            const localTime = Date.parse(local.updatedAt || '') || 0;
+            const remoteTime = Date.parse(remote.updatedAt || '') || 0;
+            const merged = remoteTime >= localTime ? remote : local;
+
+            if (JSON.stringify(merged) !== JSON.stringify(local)) {
+                setCurrentUser({ ...user, settings: merged });
+            }
+            applyUserSettingsToDom(merged, { setTheme, setLowDataMode });
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser?.id, authTokenReady]);
 
     // --- Username check ---
     useEffect(() => {
@@ -292,43 +420,58 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
 
     // --- Data loading ---
     useEffect(() => {
-        if (currentUser && !dataLoaded) {
+        if (!currentUser || dataLoaded || isAuthLoading || !authTokenReady) return;
+
+        let cancelled = false;
+
+        (async () => {
+            const tokenReady = await ensureAuthTokenReady();
+            if (!tokenReady) {
+                console.warn('[Data Loading] Deferred — auth token not ready');
+                return;
+            }
+            if (cancelled) return;
+
             console.log('[Data Loading] Starting PARALLEL data fetch for user:', currentUser.id);
             const userId = currentUser.id;
             const currentMonthYear = new Date().toISOString().slice(0, 7);
 
-            // Fire ALL data-loading calls in parallel using Promise.allSettled.
-            // Previously these were sequential (waterfall), each independently calling
-            // getSession() with a 10s timeout. Now they all fire at once.
-            Promise.allSettled([
-                // [0] Groups
+            // Phase 1: critical path for first paint (groups, DMs, notifications, prefs)
+            const criticalResults = await Promise.allSettled([
                 fetchGroups(userId),
-                // [1] Group unread counts
                 fetchGroupUnreadCounts(userId),
-                // [2] DM threads
                 fetchDmThreads(userId),
-                // [3] DM unread counts
                 fetchDMUnreadCounts(userId),
-                // [4] Decks
-                fetchDecks(userId),
-                // [5] Flashcards
-                fetchFlashcards(undefined, userId),
-                // [6] Test results
-                fetchTestResults(userId),
-                // [7] User question stats
-                fetchUserQuestionStats(userId),
-                // [8] Notifications
                 fetchNotifications(userId),
-                // [9] Offline bundles
-                fetchOfflineBundles(userId),
-                // [10] User preferences
                 fetchUserPreferences(userId),
-                // [11] User budget
+            ]);
+
+            // Phase 2: deferred heavy loads (paginated / background)
+            const deferredResults = await Promise.allSettled([
+                fetchDecks(userId),
+                fetchFlashcards(undefined, userId, { page: 1, limit: 50 }),
+                fetchTestResults(userId, { limit: 50 }),
+                fetchUserQuestionStats(userId),
+                fetchStudyActivity().catch(() => []),
+                fetchOfflineBundles(userId),
                 fetchUserBudget(userId, currentMonthYear),
-                // [12] Transactions sync
                 syncBudgetTransactionsToCloud(userId, transactions),
-            ]).then((results) => {
-                console.log('[Data Loading] All parallel fetches settled');
+            ]);
+
+            const results = [
+                criticalResults[0], criticalResults[1], criticalResults[2], criticalResults[3],
+                deferredResults[0], deferredResults[1], deferredResults[2], deferredResults[3],
+                deferredResults[4],
+                criticalResults[4],
+                deferredResults[5],
+                criticalResults[5],
+                deferredResults[6],
+                deferredResults[7],
+            ];
+
+            if (cancelled) return;
+
+            console.log('[Data Loading] All parallel fetches settled');
 
                 // --- [0] Groups + [1] Unread counts ---
                 const groupsResult = results[0];
@@ -386,6 +529,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                         createdAt: d.created_at
                     })));
                 }
+                void useNotesStore.getState().loadFolders();
+                void useNotesStore.getState().loadNotes();
+
                 if (flashcardsResult.status === 'fulfilled') {
                     setFlashcards(flashcardsResult.value.map((fc: any) => ({
                         id: fc.id,
@@ -402,7 +548,19 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
 
                 // --- [6] Test results ---
                 if (results[6].status === 'fulfilled') {
-                    setTestResults(results[6].value);
+                    const cloudResults = results[6].value;
+                    // Re-read pendingSyncResults from the store at merge time (localStorage-backed)
+                    const currentPending = useTestStore.getState().pendingSyncResults;
+                    if (currentPending.length > 0) {
+                        const cloudIds = new Set(cloudResults.map((r: any) => r.id).filter(Boolean));
+                        const cloudStartTimes = new Set(cloudResults.map((r: any) => new Date(r.session?.startTime).getTime()));
+                        const pendingNotYetSynced = currentPending.filter(r =>
+                            !cloudIds.has(r.id) && !cloudStartTimes.has(new Date(r.session?.startTime).getTime())
+                        );
+                        setTestResults([...pendingNotYetSynced, ...cloudResults]);
+                    } else {
+                        setTestResults(cloudResults);
+                    }
                 }
 
                 // --- [7] User question stats ---
@@ -413,48 +571,59 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                     }
                 }
 
-                // --- [8] Notifications ---
+                // --- [8] Study activity ---
                 if (results[8].status === 'fulfilled') {
-                    const fetchedNotifications = results[8].value;
+                    setStudyActivityDays(Array.isArray(results[8].value) ? results[8].value : []);
+                }
+
+                // --- [9] Notifications ---
+                if (results[9].status === 'fulfilled') {
+                    const fetchedNotifications = results[9].value;
                     if (fetchedNotifications && fetchedNotifications.length > 0) {
                         setNotifications(fetchedNotifications);
                     }
                 }
 
-                // --- [9] Offline bundles ---
-                if (results[9].status === 'fulfilled') {
-                    const cloudBundles = results[9].value;
-                    updateOfflineBundles(prev => {
-                        const localBundleIds = new Set(prev.map(b => b.bundleId));
-                        const cloudBundleIds = new Set(cloudBundles.map((b: OfflineSessionBundle) => b.bundleId));
-                        const localOnlyBundles = prev.filter(b => !cloudBundleIds.has(b.bundleId));
-                        if (currentUser) {
-                            localOnlyBundles.forEach(bundle => {
-                                saveOfflineBundle(currentUser.id, bundle).catch(err =>
-                                    console.error('[Offline Sync] Failed to sync bundle to cloud:', err)
-                                );
-                            });
-                        }
-                        const cloudOnlyBundles = cloudBundles.filter((b: OfflineSessionBundle) => !localBundleIds.has(b.bundleId));
-                        return [...prev, ...cloudOnlyBundles];
-                    });
+                // --- [10] Offline bundles ---
+                if (results[10].status === 'fulfilled') {
+                    const cloudBundles: OfflineSessionBundle[] = results[10].value;
+                    // Cloud is the authoritative source filtered by user_id.
+                    // Replace the store entirely to prevent cross-user contamination
+                    // from the shared localStorage key and to eliminate duplicates.
+                    setOfflineBundles(cloudBundles);
                 }
 
-                // --- [10] User preferences ---
-                if (results[10].status === 'fulfilled') {
-                    const cloudPrefs = results[10].value;
+                // --- [11] User preferences ---
+                if (results[11].status === 'fulfilled') {
+                    const cloudPrefs = results[11].value;
                     if (cloudPrefs) {
                         setTheme(cloudPrefs.theme);
                         localStorage.setItem('theme', cloudPrefs.theme);
+                        setLowDataMode(cloudPrefs.lowDataMode === true);
+                        const extras = cloudPrefs.preferences?.budgetExtras;
+                        if (extras && typeof extras === 'object') {
+                            if (Array.isArray(extras.savingsGoals)) setSavingsGoals(extras.savingsGoals);
+                            if (Array.isArray(extras.expenseSplits)) setExpenseSplits(extras.expenseSplits);
+                            if (typeof extras.walletBalance === 'number') setWalletBalance(extras.walletBalance);
+                            if (extras.categoryBudgets && typeof extras.categoryBudgets === 'object') {
+                                const currentBudget = useBudgetStore.getState().budget;
+                                if (currentBudget) {
+                                    setBudget({ ...currentBudget, categoryBudgets: extras.categoryBudgets });
+                                }
+                            }
+                        }
                     } else {
                         const localTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'light';
-                        saveUserPreferences(userId, { theme: localTheme }).catch(console.error);
+                        saveUserPreferences(userId, {
+                            theme: localTheme,
+                            lowDataMode,
+                        }).catch(console.error);
                     }
                 }
 
-                // --- [11] User budget ---
-                if (results[11].status === 'fulfilled') {
-                    const cloudBudget = results[11].value;
+                // --- [12] User budget ---
+                if (results[12].status === 'fulfilled') {
+                    const cloudBudget = results[12].value;
                     if (cloudBudget) {
                         const updatedBudget = budget ? {
                             ...budget,
@@ -476,9 +645,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                     }
                 }
 
-                // --- [12] Transactions sync ---
-                if (results[12].status === 'fulfilled') {
-                    const mergedTransactions = results[12].value;
+                // --- [13] Transactions sync ---
+                if (results[13].status === 'fulfilled') {
+                    const mergedTransactions = results[13].value;
                     const transactionsWithUserId: Transaction[] = mergedTransactions.map((t: any) => ({
                         ...t,
                         userId: userId,
@@ -490,23 +659,41 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                 }
 
                 // Mark data as loaded regardless of individual failures
-                setDataLoaded(true);
-            });
+                if (!cancelled) setDataLoaded(true);
 
             // Sync pending results (non-critical, fire-and-forget)
-            if (pendingSyncResults.length > 0) {
+            if (!cancelled && pendingSyncResults.length > 0) {
                 fetchPendingSyncResults(currentUser.id).then(() => {
                     console.log('[Pending Results Sync] Synced');
                 }).catch(error => {
                     console.error('[Pending Results Sync] Error:', error);
                 });
             }
-        }
-    }, [currentUser?.id, dataLoaded]);
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady]);
+
+    // Sync budget extras (savings, splits, wallet) to cloud when they change
+    useEffect(() => {
+        if (!currentUser?.id || !dataLoaded) return;
+        const timer = setTimeout(() => {
+            saveBudgetExtras(currentUser.id, {
+                savingsGoals,
+                expenseSplits,
+                walletBalance,
+                categoryBudgets: budget?.categoryBudgets,
+            }).catch(console.error);
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [currentUser?.id, dataLoaded, savingsGoals, expenseSplits, walletBalance, budget?.categoryBudgets]);
 
     // --- Real-time notifications subscription ---
+    // Always on — duel/challenge alerts must work even in low-data mode.
     useEffect(() => {
-        if (!currentUser || lowDataMode) return;
+        if (!currentUser) return;
 
         const notificationsSubscription = supabase
             .channel('notifications')
@@ -519,15 +706,28 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                     filter: `user_id=eq.${currentUser.id}`
                 },
                 (payload) => {
-                    console.log('Real-time notification received:', payload);
+                    if (import.meta.env.DEV) {
+                      console.log('Real-time notification received');
+                    }
+                    const notifType = payload.new.type as string | undefined;
                     const newNotification = {
                         id: payload.new.id,
                         message: payload.new.message,
                         date: payload.new.date,
                         read: payload.new.read,
-                        link: payload.new.link
+                        link: payload.new.link,
+                        type: notifType,
+                        data: payload.new.data ?? {},
                     };
                     updateNotifications(prev => [newNotification, ...prev]);
+                    if (notifType?.startsWith('challenge')) {
+                        const challengeId = (payload.new.data as { challengeId?: string } | null)?.challengeId;
+                        if (challengeId && onChallengeNotification) {
+                            onChallengeNotification(notifType, challengeId);
+                        } else {
+                            openModal('challenges');
+                        }
+                    }
                 }
             )
             .subscribe();
@@ -535,7 +735,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
         return () => {
             notificationsSubscription.unsubscribe();
         };
-    }, [currentUser?.id, lowDataMode]);
+    }, [currentUser?.id, updateNotifications, openModal, onChallengeNotification]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {
@@ -552,7 +752,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
                     filter: `id=eq.${currentUser.id}`
                 },
                 (payload) => {
-                    console.log('Real-time profile update received:', payload);
+                    if (import.meta.env.DEV) {
+                      console.log('Real-time profile update received');
+                    }
                     const updatedProfile = payload.new;
                     if (currentUser) {
                         setCurrentUser({
@@ -659,7 +861,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded }: UseAppEffectsParams
 
     // --- SRS Notifications ---
     const checkForDueCardsAndNotify = useCallback(() => {
-        if (!currentUser || !flashcards.length || !currentUser.settings?.srsReminders) return;
+        if (!currentUser || !flashcards.length || !getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
 
         const today = new Date().toISOString().split('T')[0];
         const dueCards = flashcards.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today);

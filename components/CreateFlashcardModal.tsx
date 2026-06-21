@@ -3,6 +3,12 @@ import { Flashcard, FlashcardType, Deck } from '../types';
 import { uploadFlashcardImage } from '../services/supabase';
 import { XCircleIcon, PlusCircleIcon, InformationCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
+import {
+  formatFreeformPointsForSvg,
+  getBlurRegions,
+  getFreeformPaths,
+  normalizeOcclusionData,
+} from '@lantern/shared/utils';
 
 interface CreateFlashcardModalProps {
   isOpen: boolean;
@@ -25,6 +31,28 @@ type PendingOcclusionShape =
   | { type: 'circle'; x: number; y: number; radius: number }
   | { type: 'freeform'; points: Point[] }
   | { type: 'blur'; x: number; y: number; width: number; height: number; radius: number; opacity: number };
+
+const FreeformMaskSvg: React.FC<{
+  paths: { points: Point[] }[];
+  className?: string;
+  activeIndex?: number | null;
+}> = ({ paths, className = '', activeIndex = null }) => (
+  <svg
+    className={`absolute inset-0 w-full h-full pointer-events-none ${className}`}
+    viewBox="0 0 1 1"
+    preserveAspectRatio="none"
+  >
+    {paths.map((path, idx) => (
+      <polygon
+        key={idx}
+        points={formatFreeformPointsForSvg(path.points)}
+        fill={activeIndex === idx ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.7)'}
+        stroke={activeIndex === idx ? 'rgba(147,197,253,1)' : 'rgba(255,255,255,0.7)'}
+        strokeWidth={0.004}
+      />
+    ))}
+  </svg>
+);
 
 const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onClose, onSubmit, decks, initialDeckId, editingFlashcard, onEnhanceFlashcard }) => {
   const [deckId, setDeckId] = useState<string>(initialDeckId || decks[0]?.id || '');
@@ -133,7 +161,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
       case 'circles':
         return { type, circles: [] };
       case 'freeform':
-        return { type, freeform: { points: [] } };
+        return { type, freeforms: [] };
       case 'blur':
         return { type, blur: [] };
       case 'rectangles':
@@ -142,14 +170,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     }
   };
 
-  const normalizeOcclusionData = (data?: Flashcard['occlusionData']): Flashcard['occlusionData'] | undefined => {
-    if (!data) return undefined;
-    if (data.type === 'blur' && data.blur) {
-      const blurArr = Array.isArray(data.blur) ? data.blur : [data.blur];
-      return { ...data, blur: blurArr.map(b => ({ opacity: 0.4, ...b })) };
-    }
-    return data;
-  };
+  const normalizeCoord = (raw: number) =>
+    occlusionType === 'freeform' ? clampPercent(raw) : snapValue(raw);
 
   useEffect(() => {
     setOcclusionData(prev => {
@@ -175,7 +197,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
         case 'circle':
           return { type: 'circles', circles: [...(base.circles || []), { x: shape.x, y: shape.y, radius: shape.radius }] };
         case 'freeform':
-          return { type: 'freeform', freeform: { points: shape.points } };
+          return {
+            type: 'freeform',
+            freeforms: [...getFreeformPaths(base), { points: shape.points }],
+          };
         case 'blur':
           return { type: 'blur', blur: [...(base.blur || []), { x: shape.x, y: shape.y, width: shape.width, height: shape.height, radius: shape.radius, opacity: shape.opacity }] };
         default:
@@ -216,6 +241,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
       if (prev.type === 'circles' && prev.circles) {
         const next = prev.circles.filter((_, i) => i !== index);
         return { ...prev, circles: next };
+      }
+      if (prev.type === 'freeform') {
+        const next = getFreeformPaths(prev).filter((_, i) => i !== index);
+        return { ...prev, freeforms: next };
       }
       if (prev.type === 'blur' && prev.blur) {
         const next = prev.blur.filter((_, i) => i !== index);
@@ -267,8 +296,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     if (!container) return;
 
     const rect = container.getBoundingClientRect();
-    const startX = snapValue((event.clientX - rect.left) / rect.width);
-    const startY = snapValue((event.clientY - rect.top) / rect.height);
+    const startX = normalizeCoord((event.clientX - rect.left) / rect.width);
+    const startY = normalizeCoord((event.clientY - rect.top) / rect.height);
 
     setIsDrawing(true);
     setActiveShapeIndex(null);
@@ -292,16 +321,17 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     const rawX = (event.clientX - rect.left) / rect.width;
     const rawY = (event.clientY - rect.top) / rect.height;
 
-    const currentX = snapValue(rawX);
-    const currentY = snapValue(rawY);
+    const currentX = normalizeCoord(rawX);
+    const currentY = normalizeCoord(rawY);
 
     if (isDrawing && drawingShape) {
       if (drawingShape.type === 'freeform') {
-        setDrawingShape(prev =>
-          prev && prev.type === 'freeform'
-            ? { ...prev, points: [...prev.points, { x: currentX, y: currentY }] }
-            : prev
-        );
+        setDrawingShape(prev => {
+          if (!prev || prev.type !== 'freeform') return prev;
+          const last = prev.points[prev.points.length - 1];
+          if (last && Math.hypot(currentX - last.x, currentY - last.y) < 0.008) return prev;
+          return { ...prev, points: [...prev.points, { x: currentX, y: currentY }] };
+        });
       } else if (drawingShape.type === 'circle') {
         const radius = snapValue(Math.max(0, Math.hypot(currentX - drawingShape.x, currentY - drawingShape.y)));
         setDrawingShape({ ...drawingShape, radius });
@@ -375,7 +405,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
         addOcclusionShape(drawingShape);
       }
       if (drawingShape.type === 'freeform' && drawingShape.points.length > 2) {
-        addOcclusionShape(drawingShape);
+        const points = [...drawingShape.points];
+        const first = points[0];
+        const last = points[points.length - 1];
+        if (first && last && Math.hypot(first.x - last.x, first.y - last.y) > 0.02) {
+          points.push(first);
+        }
+        addOcclusionShape({ type: 'freeform', points });
       }
       if (drawingShape.type === 'blur' && drawingShape.width > 0.01 && drawingShape.height > 0.01) {
         addOcclusionShape(drawingShape);
@@ -428,8 +464,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
 
     const { clientX, clientY } = getPointerPos(event);
     const rect = container.getBoundingClientRect();
-    const startX = snapValue((clientX - rect.left) / rect.width);
-    const startY = snapValue((clientY - rect.top) / rect.height);
+    const startX = normalizeCoord((clientX - rect.left) / rect.width);
+    const startY = normalizeCoord((clientY - rect.top) / rect.height);
 
     setIsDrawing(true);
     setActiveShapeIndex(null);
@@ -455,16 +491,17 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     const rawX = (clientX - rect.left) / rect.width;
     const rawY = (clientY - rect.top) / rect.height;
 
-    const currentX = snapValue(rawX);
-    const currentY = snapValue(rawY);
+    const currentX = normalizeCoord(rawX);
+    const currentY = normalizeCoord(rawY);
 
     if (isDrawing && drawingShape) {
       if (drawingShape.type === 'freeform') {
-        setDrawingShape(prev =>
-          prev && prev.type === 'freeform'
-            ? { ...prev, points: [...prev.points, { x: currentX, y: currentY }] }
-            : prev
-        );
+        setDrawingShape(prev => {
+          if (!prev || prev.type !== 'freeform') return prev;
+          const last = prev.points[prev.points.length - 1];
+          if (last && Math.hypot(currentX - last.x, currentY - last.y) < 0.008) return prev;
+          return { ...prev, points: [...prev.points, { x: currentX, y: currentY }] };
+        });
       } else if (drawingShape.type === 'circle') {
         const radius = snapValue(Math.max(0, Math.hypot(currentX - drawingShape.x, currentY - drawingShape.y)));
         setDrawingShape({ ...drawingShape, radius });
@@ -604,9 +641,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="create-card-modal-title">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform">
-        <div className="flex justify-between items-center mb-4">
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="create-card-modal-title">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg my-auto flex flex-col max-h-[calc(100vh-2rem)]">
+        {/* Sticky header */}
+        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 id="create-card-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
             <PlusCircleIcon className="w-6 h-6 mr-2 text-green-500" />
             {isEditing ? 'Edit Flashcard' : 'Create New Flashcard'}
@@ -615,7 +653,9 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
             <XCircleIcon className="w-6 h-6" />
           </button>
         </div>
-        
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 px-6 py-4">
         {decks.length === 0 ? (
             <div className="text-center p-4 border-2 border-dashed rounded-lg border-gray-300 dark:border-gray-600">
                 <p className="text-gray-600 dark:text-gray-400">You need to create a deck first before adding flashcards.</p>
@@ -667,7 +707,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                 <div className="text-xs text-gray-500 dark:text-gray-400">Preview:</div>
                                 <div
                                   ref={imageContainerRef}
-                                  className="relative mt-1 max-w-full max-h-96 rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair select-none touch-none"
+                                  className="relative mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair select-none touch-none"
                                   onMouseDown={handlePointerDown}
                                   onMouseMove={handlePointerMove}
                                   onMouseUp={handleFinishDrawing}
@@ -675,7 +715,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   onTouchMove={handlePointerMove}
                                   onTouchEnd={handleFinishDrawing}
                                 >
-                                  <img src={imageUrl} alt="Preview" className="w-full h-auto" />
+                                  <img src={imageUrl} alt="Preview" className="w-full h-auto pointer-events-none select-none" draggable={false} />
 
                                   {/* Existing occlusion shapes */}
                                   {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'rectangles' && occlusionData.rectangles?.map((rect, idx) => (
@@ -712,16 +752,11 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                       title="Drag to move, drag edge to resize"
                                     />
                                   ))}
-                                  {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'freeform' && occlusionData.freeform?.points && (
-                                    <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                                      <polyline
-                                        points={occlusionData.freeform.points.map(p => `${p.x * 100},${p.y * 100}`).join(' ')}
-                                        className="fill-black/50 stroke-white/70 stroke-2"
-                                      />
-                                    </svg>
+                                  {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'freeform' && (
+                                    <FreeformMaskSvg paths={getFreeformPaths(occlusionData)} />
                                   )}
                                   {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'blur' &&
-                                    (Array.isArray(occlusionData.blur) ? occlusionData.blur : [occlusionData.blur]).map((blur, idx) => (
+                                    getBlurRegions(occlusionData).map((blur, idx) => (
                                       <div
                                         key={idx}
                                         className={`absolute border border-white/40 ${activeShapeIndex === idx ? 'ring-2 ring-blue-300' : ''}`}
@@ -963,13 +998,15 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                             <div className="text-xs text-gray-500 dark:text-gray-400">Preview:</div>
                             <div
                               ref={imageContainerRef}
-                              className="relative mt-1 max-w-full max-h-40 rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair"
-                              onMouseDown={handleStartDrawing}
-                              onMouseMove={handleMouseMove}
+                              className="relative mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair select-none touch-none"
+                              onMouseDown={handlePointerDown}
+                              onMouseMove={handlePointerMove}
                               onMouseUp={handleFinishDrawing}
-                              onMouseLeave={handleFinishDrawing}
+                              onTouchStart={handlePointerDown}
+                              onTouchMove={handlePointerMove}
+                              onTouchEnd={handleFinishDrawing}
                             >
-                              <img src={imageUrl} alt="Preview" className="w-full h-auto" />
+                              <img src={imageUrl} alt="Preview" className="w-full h-auto pointer-events-none select-none" draggable={false} />
 
                               {/* Existing occlusion shapes */}
                               {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'rectangles' && occlusionData.rectangles?.map((rect, idx) => (
@@ -1002,16 +1039,11 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   title="Drag to move, drag edge to resize"
                                 />
                               ))}
-                              {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'freeform' && occlusionData.freeform?.points && (
-                                <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                                  <polyline
-                                    points={occlusionData.freeform.points.map(p => `${p.x * 100},${p.y * 100}`).join(' ')}
-                                    className="fill-black/50 stroke-white/70 stroke-2"
-                                  />
-                                </svg>
+                              {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'freeform' && (
+                                <FreeformMaskSvg paths={getFreeformPaths(occlusionData)} />
                               )}
                               {type === FlashcardType.IMAGE_OCCLUSION && occlusionData?.type === 'blur' &&
-                                (Array.isArray(occlusionData.blur) ? occlusionData.blur : [occlusionData.blur]).map((blur, idx) => (
+                                getBlurRegions(occlusionData).map((blur, idx) => (
                                   <div
                                     key={idx}
                                     className={`absolute border border-white/40 ${activeShapeIndex === idx ? 'ring-2 ring-blue-300' : ''}`}
@@ -1023,7 +1055,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                       backdropFilter: `blur(${blur.radius * 40}px)`,
                                       backgroundColor: `rgba(255,255,255,${blur.opacity ?? 0.4})`,
                                     }}
-                                    onMouseDown={e => handleShapeMouseDown(idx, e, blur)}
+                                    onMouseDown={e => handleShapePointerDown(idx, e, blur)}
+                                    onTouchStart={e => handleShapePointerDown(idx, e, blur)}
                                     title="Drag to move, drag edge to resize"
                                   />
                                 ))}
@@ -1050,6 +1083,9 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                     height: `${drawingShape.radius * 2 * 100}%`,
                                   }}
                                 />
+                              )}
+                              {drawingShape && drawingShape.type === 'freeform' && drawingShape.points.length > 1 && (
+                                <FreeformMaskSvg paths={[{ points: drawingShape.points }]} className="opacity-80" />
                               )}
                               {drawingShape && drawingShape.type === 'blur' && (
                                 <div
@@ -1082,7 +1118,11 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   </select>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">Click+drag to draw. Drag shape to move, drag near edge to resize.</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {occlusionType === 'freeform'
+                                      ? 'Click+drag to trace each area. Release to save the shape.'
+                                      : 'Click+drag to draw. Drag shape to move, drag near edge to resize.'}
+                                  </span>
                                   <button type="button" onClick={clearOcclusions} className="text-blue-600 dark:text-blue-400 hover:underline">Clear</button>
                                 </div>
                               </div>
@@ -1177,17 +1217,83 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                 </div>
                               ) : null}
 
-                              {occlusionData?.type === 'freeform' && occlusionData.freeform?.points?.length ? (
-                                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 flex justify-between items-center">
-                                  <span>Freeform mask</span>
-                                  <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('freeform'))} className="text-red-600 dark:text-red-400 hover:underline">Clear</button>
+                              {occlusionData?.type === 'freeform' && getFreeformPaths(occlusionData).length ? (
+                                <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                  {getFreeformPaths(occlusionData).map((_, idx) => (
+                                    <div key={idx} className="flex justify-between items-center">
+                                      <span>Freeform {idx + 1}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeOcclusionShape(idx)}
+                                        className="text-red-600 dark:text-red-400 hover:underline"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
                               ) : null}
 
-                              {occlusionData?.type === 'blur' && occlusionData.blur ? (
-                                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 flex justify-between items-center">
-                                  <span>Blur mask</span>
-                                  <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('blur'))} className="text-red-600 dark:text-red-400 hover:underline">Clear</button>
+                              {occlusionData?.type === 'blur' && getBlurRegions(occlusionData).length ? (
+                                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                                  <div className="flex justify-between items-center">
+                                    <span>Blur masks ({getBlurRegions(occlusionData).length})</span>
+                                    <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('blur'))} className="text-red-600 dark:text-red-400 hover:underline">Clear all</button>
+                                  </div>
+                                  <div className="mt-2 space-y-1">
+                                    {getBlurRegions(occlusionData).map((blur, idx) => (
+                                      <div key={idx} className="flex justify-between items-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveShapeIndex(idx)}
+                                          className={`text-left flex-1 text-xs ${activeShapeIndex === idx ? 'font-semibold text-blue-600 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300'}`}
+                                        >
+                                          Blur {idx + 1}
+                                        </button>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.radius * 100)}%</span>
+                                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.opacity * 100)}%</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeOcclusionShape(idx)}
+                                            className="text-red-600 dark:text-red-400 hover:underline"
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {activeShapeIndex !== null && occlusionData.blur?.[activeShapeIndex] && (
+                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium">Radius</span>
+                                        <input
+                                          type="range"
+                                          min={0.01}
+                                          max={0.5}
+                                          step={0.01}
+                                          value={occlusionData.blur[activeShapeIndex].radius}
+                                          onChange={e => updateOcclusionShape(activeShapeIndex, blur => ({ ...blur, radius: parseFloat(e.target.value) }))}
+                                          className="w-full"
+                                        />
+                                        <span>{Math.round(occlusionData.blur[activeShapeIndex].radius * 100)}%</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium">Opacity</span>
+                                        <input
+                                          type="range"
+                                          min={0.1}
+                                          max={1}
+                                          step={0.05}
+                                          value={occlusionData.blur[activeShapeIndex].opacity}
+                                          onChange={e => updateOcclusionShape(activeShapeIndex, blur => ({ ...blur, opacity: parseFloat(e.target.value) }))}
+                                          className="w-full"
+                                        />
+                                        <span>{Math.round(occlusionData.blur[activeShapeIndex].opacity * 100)}%</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               ) : null}
                             </div>
@@ -1213,6 +1319,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                 </div>
             </form>
         )}
+        </div>{/* end scrollable body */}
       </div>
     </div>
   );

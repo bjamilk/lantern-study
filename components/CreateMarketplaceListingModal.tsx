@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
 import { compressImage } from '../utils/imageCompression';
+import { aiGenerateListingDescription } from '../services/ai';
 import {
   XMarkIcon,
   PhotoIcon,
@@ -11,7 +12,8 @@ import {
   AcademicCapIcon,
   BriefcaseIcon,
   PlusIcon,
-  TrashIcon
+  TrashIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 interface CreateMarketplaceListingModalProps {
@@ -39,6 +41,10 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     title: '',
     description: '',
     price: '',
+    salePrice: '',
+    saleEndsAt: '',
+    promoLabel: '',
+    quantity: '',
     location: '',
     subcategory: '',
     images: [] as ImageFile[],
@@ -55,6 +61,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   });
   const [loading, setLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
   const [existingCustomCategories, setExistingCustomCategories] = useState<{id: string; name: string; usage_count: number}[]>([]);
 
@@ -63,6 +70,31 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       fetchCustomCategories().then(setExistingCustomCategories).catch(() => {});
     }
   }, [isOpen]);
+
+  const handleGenerateDescription = async () => {
+    if (!formData.title.trim()) { alert('Please enter a title first.'); return; }
+    setIsGeneratingDesc(true);
+    try {
+      const { description } = await aiGenerateListingDescription({
+        title: formData.title,
+        category,
+        subcategory: formData.subcategory,
+        price: formData.price,
+        condition: formData.condition,
+        courseCode: formData.courseCode,
+        isbn: formData.isbn,
+        edition: formData.edition,
+        bedrooms: formData.bedrooms,
+        furnished: formData.furnished,
+        distanceToCampus: formData.distanceToCampus,
+      });
+      setFormData(prev => ({ ...prev, description }));
+    } catch {
+      alert('Failed to generate description. Please try again.');
+    } finally {
+      setIsGeneratingDesc(false);
+    }
+  };
 
   // Helper to determine which category-specific fields to show
   const getCategoryFields = (subcategory: string) => {
@@ -206,15 +238,23 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
     for (const image of formData.images) {
       if (!image.uploaded) {
-        try {
-          const result = await uploadMarketplaceImage(image.file, listingId);
-          uploadedUrls.push(result.url);
-          image.uploaded = true;
-          image.url = result.url;
-          image.path = result.path;
-        } catch (error) {
-          console.error('Error uploading image:', error);
-          // Continue with other uploads even if one fails
+        let success = false;
+        for (let attempt = 1; attempt <= 2 && !success; attempt++) {
+          try {
+            const result = await uploadMarketplaceImage(image.file, listingId);
+            uploadedUrls.push(result.url);
+            image.uploaded = true;
+            image.url = result.url;
+            image.path = result.path;
+            success = true;
+          } catch (error) {
+            console.error(`Error uploading image (attempt ${attempt}/2):`, error);
+          }
+        }
+
+        if (!success) {
+          // Continue with other uploads even if one image fails.
+          console.warn('Skipping image after retry failures:', image.file.name);
         }
       } else if (image.url) {
         uploadedUrls.push(image.url);
@@ -226,7 +266,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[CreateMarketplaceListingModal] Form submitted with data:', formData);
+    if (import.meta.env.DEV) {
+      console.log('[CreateMarketplaceListingModal] Form submitted');
+    }
     
     if (!formData.subcategory) {
       alert('Please select a category');
@@ -268,15 +310,23 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         title: formData.title,
         description: formData.description || undefined,
         price: formData.price ? parseFloat(formData.price) : undefined,
+        sale_price: formData.salePrice ? parseFloat(formData.salePrice) : undefined,
+        sale_ends_at: formData.saleEndsAt ? new Date(formData.saleEndsAt).toISOString() : undefined,
+        promo_label: formData.promoLabel || undefined,
+        quantity: formData.quantity ? parseInt(formData.quantity, 10) : undefined,
         location: formData.location || undefined,
         images: [],
         categorySpecificFields,
       };
       
-      console.log('[CreateMarketplaceListingModal] Creating listing with data:', listingData);
+      if (import.meta.env.DEV) {
+        console.log('[CreateMarketplaceListingModal] Creating listing');
+      }
 
       const listing = await createMarketplaceListing(listingData);
-      console.log('[CreateMarketplaceListingModal] Listing created:', listing);
+      if (import.meta.env.DEV) {
+        console.log('[CreateMarketplaceListingModal] Listing created');
+      }
 
       // Then upload images if any
       if (formData.images.length > 0) {
@@ -306,6 +356,10 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         title: '',
         description: '',
         price: '',
+        salePrice: '',
+        saleEndsAt: '',
+        promoLabel: '',
+        quantity: '',
         location: '',
         subcategory: '',
         images: [],
@@ -331,7 +385,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
   if (!isOpen) return null;
 
-  console.log('[CreateMarketplaceListingModal] Rendering with category:', category);
+  if (import.meta.env.DEV) {
+    console.log('[CreateMarketplaceListingModal] Rendering with category:', category);
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -579,9 +635,21 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              Description
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Description
+              </label>
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGeneratingDesc || !formData.title.trim()}
+                className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
+                title={formData.title.trim() ? 'Generate description with AI' : 'Enter a title first'}
+              >
+                <SparklesIcon className="w-3.5 h-3.5" />
+                {isGeneratingDesc ? 'Generating…' : 'AI Generate'}
+              </button>
+            </div>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
@@ -592,7 +660,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           </div>
 
           {/* Price and Location */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-1" />
@@ -612,6 +680,21 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Quantity in stock
+              </label>
+              <input
+                type="number"
+                value={formData.quantity}
+                onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
+                placeholder="Unlimited"
+                min="0"
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty for one-of-a-kind items</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-1" />
                 Location
               </label>
@@ -621,6 +704,37 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                 placeholder="City, State or Campus"
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale price (₦)</label>
+              <input
+                type="number"
+                value={formData.salePrice}
+                onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale ends</label>
+              <input
+                type="datetime-local"
+                value={formData.saleEndsAt}
+                onChange={(e) => setFormData(prev => ({ ...prev, saleEndsAt: e.target.value }))}
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Promo label</label>
+              <input
+                type="text"
+                value={formData.promoLabel}
+                onChange={(e) => setFormData(prev => ({ ...prev, promoLabel: e.target.value }))}
+                placeholder="Exam week"
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
               />
             </div>
           </div>

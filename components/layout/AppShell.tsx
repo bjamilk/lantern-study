@@ -3,8 +3,10 @@ import { AppMode } from '../../types';
 import Sidebar from '../Sidebar';
 import BottomNav from './BottomNav';
 import AIUsageBadge from '../AIUsageBadge';
+import { ConnectionBadge } from '../ui/ConnectionBadge';
 import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
+import { useCompanionStore } from '../../stores/companionStore';
 
 interface AppShellProps {
     children: React.ReactNode;
@@ -20,22 +22,23 @@ interface AppShellProps {
  * - Paused session banner shown globally when navigating away from active test/study
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0 }) => {
-    const { appMode, setAppMode, isSidebarExpanded } = useUIStore();
+    const { appMode, setAppMode, isSidebarExpanded, lowDataMode } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
+    const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
 
     const activeSession = activeTestSession || activeStudySession;
     const sessionAppMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
     const isSessionPaused = activeSession && appMode !== sessionAppMode;
 
     return (
-        <div className="flex h-screen bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors">
+        <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
             {/* Desktop sidebar - hidden on mobile */}
             <div className="hidden md:block">
                 <Sidebar {...sidebarProps} />
             </div>
 
             {/* Main content area */}
-            <main className={`flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out pb-16 md:pb-0 ${isSidebarExpanded ? 'md:ml-64' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-x-hidden transition-all duration-300 ease-in-out pb-16 md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && (
@@ -59,6 +62,23 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         </div>
                     </div>
                 )}
+                {/* Connection status strip — single badge; compact on mobile */}
+                <div className="shrink-0 px-3 py-1 md:px-4 md:py-2 border-b border-lantern-border bg-lantern-surface flex items-center justify-between gap-2 min-w-0 max-w-full overflow-x-hidden">
+                    <ConnectionBadge
+                        isOnline={sidebarProps.isOnline}
+                        lowDataMode={lowDataMode}
+                        pendingSyncCount={sidebarProps.pendingSyncCount}
+                        compact
+                        className="md:hidden"
+                    />
+                    <ConnectionBadge
+                        isOnline={sidebarProps.isOnline}
+                        lowDataMode={lowDataMode}
+                        pendingSyncCount={sidebarProps.pendingSyncCount}
+                        compact={false}
+                        className="hidden md:inline-flex"
+                    />
+                </div>
                 {children}
 
                 {/* mobile-only AI usage indicator floating above bottom nav */}
@@ -79,6 +99,11 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 onToggleTheme={sidebarProps.onToggleTheme}
                 theme={sidebarProps.theme}
                 onLogout={sidebarProps.onLogout}
+                onToggleCompanion={toggleCompanion}
+                isCompanionOpen={isCompanionOpen}
+                isOnline={sidebarProps.isOnline}
+                pendingSyncCount={sidebarProps.pendingSyncCount}
+                lowDataMode={lowDataMode}
             />
         </div>
     );

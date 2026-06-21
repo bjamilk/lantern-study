@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppMode } from '../../types';
+import { useLowDataModeToggle } from '../../hooks/useLowDataModeToggle';
 import {
     HomeIcon,
     AcademicCapIcon,
@@ -7,6 +8,8 @@ import {
     ShoppingBagIcon,
     EllipsisHorizontalIcon,
     BellIcon,
+    SparklesIcon,
+    DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import {
     HomeIcon as HomeIconSolid,
@@ -21,6 +24,8 @@ import {
     MoonIcon,
     ArrowLeftOnRectangleIcon,
     BellAlertIcon,
+    SignalIcon,
+    SignalSlashIcon,
 } from '@heroicons/react/24/solid';
 
 interface BottomNavProps {
@@ -34,6 +39,11 @@ interface BottomNavProps {
     onToggleTheme?: () => void;
     theme?: 'light' | 'dark';
     onLogout?: () => void;
+    onToggleCompanion?: () => void;
+    isCompanionOpen?: boolean;
+    isOnline?: boolean;
+    pendingSyncCount?: number;
+    lowDataMode?: boolean;
 }
 
 interface NavTab {
@@ -45,7 +55,9 @@ interface NavTab {
     badge?: number;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadChatCount = 0, dueCardsCount = 0, unreadNotificationCount = 0, onOpenNotifications, onOpenSettings, onToggleTheme, theme, onLogout }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadChatCount = 0, dueCardsCount = 0, unreadNotificationCount = 0, onOpenNotifications, onOpenSettings, onToggleTheme, theme, onLogout, onToggleCompanion, isCompanionOpen, isOnline = true, pendingSyncCount = 0, lowDataMode: lowDataProp }) => {
+    const { lowDataMode: lowDataToggle, toggleLowDataMode } = useLowDataModeToggle();
+    const lowDataMode = lowDataProp ?? lowDataToggle;
     const [isMoreOpen, setIsMoreOpen] = useState(false);
     const moreRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +84,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
         },
         {
             label: 'Study',
-            modes: [AppMode.FLASHCARDS, AppMode.DECK_DETAIL, AppMode.FLASHCARD_REVIEW, AppMode.FLASHCARD_CRAM, AppMode.OFFLINE_MODE],
+            modes: [AppMode.FLASHCARDS, AppMode.DECK_DETAIL, AppMode.FLASHCARD_REVIEW, AppMode.FLASHCARD_CRAM, AppMode.OFFLINE_MODE, AppMode.NOTES, AppMode.NOTE_EDITOR],
             icon: AcademicCapIcon,
             activeIcon: AcademicCapIconSolid,
             targetMode: AppMode.FLASHCARDS,
@@ -95,7 +107,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
         },
     ];
 
-    const moreModes = [AppMode.BUDGET_TRACKER, AppMode.OFFLINE_MODE];
+    const moreModes = [AppMode.BUDGET_TRACKER, AppMode.OFFLINE_MODE, AppMode.NOTES, AppMode.NOTE_EDITOR];
     const isMoreActive = moreModes.includes(currentMode);
 
     const isActive = (tab: NavTab) => tab.modes.includes(currentMode);
@@ -108,7 +120,9 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     if (hiddenModes.includes(currentMode)) return null;
 
     const moreItems = [
+        ...(onToggleCompanion ? [{ label: isCompanionOpen ? 'Close Lantern AI' : 'Lantern AI', icon: SparklesIcon, action: onToggleCompanion, isCompanion: true }] : []),
         ...(onOpenNotifications ? [{ label: 'Notifications', icon: BellAlertIcon, action: onOpenNotifications, badge: unreadNotificationCount }] : []),
+        { label: 'Notes', icon: DocumentTextIcon, mode: AppMode.NOTES },
         { label: 'Budget Tracker', icon: CreditCardIcon, mode: AppMode.BUDGET_TRACKER },
         { label: 'Offline Mode', icon: CloudArrowDownIcon, mode: AppMode.OFFLINE_MODE },
     ];
@@ -116,11 +130,13 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     const actionItems = [
         ...(onOpenSettings ? [{ label: 'Settings', icon: Cog6ToothIcon, action: onOpenSettings }] : []),
         ...(onToggleTheme ? [{ label: theme === 'light' ? 'Dark Mode' : 'Light Mode', icon: theme === 'light' ? MoonIcon : SunIcon, action: onToggleTheme }] : []),
+        { label: lowDataMode ? 'Low-Data Mode: ON' : 'Low-Data Mode: OFF', icon: lowDataMode ? SignalSlashIcon : SignalIcon, action: toggleLowDataMode, isLowData: true },
         ...(onLogout ? [{ label: 'Logout', icon: ArrowLeftOnRectangleIcon, action: onLogout, isDestructive: true }] : []),
     ];
 
     return (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 safe-area-bottom">
+        <>
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-lantern-surface border-t border-lantern-border safe-area-bottom">
             <div className="flex items-center justify-around h-16">
                 {tabs.map((tab) => {
                     const active = isActive(tab);
@@ -131,8 +147,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                             onClick={() => { onNavigate(tab.targetMode); setIsMoreOpen(false); }}
                             className={`flex flex-col items-center justify-center flex-1 h-full relative transition-colors ${
                                 active
-                                    ? 'text-indigo-600 dark:text-indigo-400'
-                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                    ? 'text-lantern-primary'
+                                    : 'text-lantern-text-secondary hover:text-lantern-text'
                             }`}
                         >
                             <div className="relative">
@@ -223,10 +239,14 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                                     {actionItems.map(item => (
                                         <button
                                             key={item.label}
-                                            onClick={() => { item.action(); setIsMoreOpen(false); }}
+                                            onClick={() => { item.action(); if (!('isLowData' in item)) setIsMoreOpen(false); }}
                                             className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
                                                 'isDestructive' in item && item.isDestructive
                                                     ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                                    : 'isCompanion' in item
+                                                    ? `text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 font-medium${isCompanionOpen ? ' bg-indigo-50 dark:bg-indigo-900/30' : ''}`
+                                                    : 'isLowData' in item && lowDataMode
+                                                    ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 font-medium'
                                                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                                             }`}
                                         >
@@ -241,6 +261,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                 </div>
             </div>
         </nav>
+        </>
     );
 };
 

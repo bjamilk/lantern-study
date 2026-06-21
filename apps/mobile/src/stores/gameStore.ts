@@ -1,73 +1,42 @@
 // ===========================================
 // Lantern Study Mobile - Game Store
-// Manages 1v1 quiz battle game sessions
+// Real member-vs-member challenges (no simulation)
 // ===========================================
 
 import { create } from 'zustand';
-// Note: supabase import removed - using mock data for now
-// In production, uncomment and use: import { supabase } from '../services/supabase';
+import type { GroupChallenge, TestQuestion, UserAnswerRecord } from '@lantern/shared/types';
+import { computeDuelQuestionPoints, checkAnswerIsCorrect } from '@lantern/shared/utils';
+import {
+  createChallenge,
+  fetchChallenge,
+  submitChallenge,
+} from '../services/challenges';
+import { trackStudyActivity } from '../services/gamification';
+import { useGroupStore } from './groupStore';
+import { selectGroupQuestions, webQuestionTypesToMobile } from '../utils/questionHelpers';
+import { useAuthStore } from './authStore';
 
-// Types
 export interface GameUser {
   id: string;
   name: string;
   avatarUrl?: string;
 }
 
-export interface QuestionOption {
-  id: string;
-  text: string;
-}
-
-export interface MatchingItem {
-  id: string;
-  text: string;
-}
-
-export interface DiagramLabel {
-  id: string;
-  text: string;
-  x: number;
-  y: number;
-}
-
-export enum QuestionType {
-  MULTIPLE_CHOICE_SINGLE = 'multiple_choice_single',
-  MULTIPLE_CHOICE_MULTIPLE = 'multiple_choice_multiple',
-  TRUE_FALSE = 'true_false',
-  FILL_IN_THE_BLANK = 'fill_in_the_blank',
-  MATCHING = 'matching',
-  DIAGRAM_LABELING = 'diagram_labeling',
-}
-
-export interface GameQuestion {
-  id: string;
-  text: string;
-  questionType: QuestionType;
-  options?: QuestionOption[];
-  correctOptionIds?: string[];
-  correctFillText?: string;
-  matchingPromptItems?: MatchingItem[];
-  matchingAnswerItems?: MatchingItem[];
-  diagramImageUrl?: string;
-  diagramLabels?: DiagramLabel[];
-}
-
-export interface UserAnswerRecord {
-  questionId: string;
-  selectedOptionIds?: string[];
-  fillText?: string;
-  matchingAnswers?: { promptItemId: string; answerItemId: string }[];
-  diagramAnswers?: { labelId: string; selectedLabelId: string }[];
-  isCorrect: boolean;
-  timeSpent: number; // seconds
+export interface GameConfig {
+  questionCount: number;
+  groupId?: string;
+  allowedQuestionTypes?: string[];
+  selectedTags?: string[];
 }
 
 export interface GameSession {
   id: string;
+  challengeId?: string;
+  isSoloPractice?: boolean;
+  awaitingOpponent?: boolean;
   user: GameUser;
   opponent: GameUser;
-  questions: GameQuestion[];
+  questions: TestQuestion[];
   userAnswers: Record<string, UserAnswerRecord>;
   opponentAnswers: Record<string, UserAnswerRecord>;
   userScore: number;
@@ -76,208 +45,175 @@ export interface GameSession {
   opponentTime: number;
   isComplete: boolean;
   winnerId?: string;
-}
-
-export interface GameConfig {
-  questionCount: number;
-  topics?: string[];
-  difficulty?: 'easy' | 'medium' | 'hard' | 'mixed';
-  timeLimit?: number; // seconds per question
-  groupId?: string;
+  userStreak?: number;
+  userCorrectAnswers?: number;
+  opponentCorrectAnswers?: number;
 }
 
 interface GameStore {
-  // Current game session
   activeSession: GameSession | null;
   setActiveSession: (session: GameSession | null) => void;
-  
-  // Challenge state
   challengeOpponent: GameUser | null;
   setChallengeOpponent: (user: GameUser | null) => void;
-  
-  // Loading state
   isLoading: boolean;
-  setIsLoading: (loading: boolean) => void;
-  
-  // Error state
   error: string | null;
-  setError: (error: string | null) => void;
-  
-  // Game actions
-  startGame: (config: GameConfig, currentUser: GameUser, opponent: GameUser) => Promise<GameSession>;
-  updateAnswer: (questionId: string, answer: Partial<Omit<UserAnswerRecord, 'questionId'>>, timeSpent: number) => void;
-  simulateOpponentAnswer: (questionId: string) => void;
-  endGame: () => GameSession | null;
+  sendChallenge: (config: GameConfig, currentUser: GameUser, opponent: GameUser) => Promise<GroupChallenge>;
+  startChallengePlay: (challengeId: string, currentUser: GameUser) => Promise<GameSession>;
+  refreshChallengeSession: (challengeId: string, currentUser: GameUser) => Promise<GameSession | null>;
+  startSoloPractice: (config: GameConfig, currentUser: GameUser) => Promise<GameSession>;
+  updateAnswer: (questionId: string, answer: Partial<UserAnswerRecord>, timeSpent: number) => Promise<void>;
   resetGame: () => void;
-  
-  // Game history
-  recentGames: GameSession[];
-  addToHistory: (session: GameSession) => void;
-  clearHistory: () => void;
+  recentChallenges: GroupChallenge[];
+  setRecentChallenges: (items: GroupChallenge[]) => void;
 }
 
-// Helper to generate a random ID
-const generateId = () => Math.random().toString(36).substring(2, 15);
+function mapChallengeToSession(challenge: GroupChallenge, currentUser: GameUser): GameSession {
+  const isChallenger = challenge.challengerId === currentUser.id;
+  const opponentProfile = isChallenger ? challenge.opponent : challenge.challenger;
+  const opponent: GameUser = {
+    id: opponentProfile?.id || (isChallenger ? challenge.opponentId : challenge.challengerId),
+    name: opponentProfile?.name || 'Opponent',
+    avatarUrl: opponentProfile?.avatarUrl,
+  };
 
-// Helper to shuffle array
-const shuffleArray = <T,>(array: T[]): T[] => {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-};
+  const myPart = challenge.myParticipant;
+  const oppPart = challenge.opponentParticipant;
 
-// Generate mock questions for demonstration
-const generateMockQuestions = (count: number): GameQuestion[] => {
-  const questions: GameQuestion[] = [];
-  
-  const questionTemplates = [
-    {
-      text: 'What is the capital of France?',
-      questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
-      options: [
-        { id: 'a', text: 'London' },
-        { id: 'b', text: 'Paris' },
-        { id: 'c', text: 'Berlin' },
-        { id: 'd', text: 'Madrid' },
-      ],
-      correctOptionIds: ['b'],
-    },
-    {
-      text: 'Which of the following are programming languages?',
-      questionType: QuestionType.MULTIPLE_CHOICE_MULTIPLE,
-      options: [
-        { id: 'a', text: 'Python' },
-        { id: 'b', text: 'HTML' },
-        { id: 'c', text: 'JavaScript' },
-        { id: 'd', text: 'CSS' },
-      ],
-      correctOptionIds: ['a', 'c'],
-    },
-    {
-      text: 'The Earth is flat.',
-      questionType: QuestionType.TRUE_FALSE,
-      options: [
-        { id: 'true', text: 'True' },
-        { id: 'false', text: 'False' },
-      ],
-      correctOptionIds: ['false'],
-    },
-    {
-      text: 'The chemical symbol for water is ___.',
-      questionType: QuestionType.FILL_IN_THE_BLANK,
-      correctFillText: 'H2O',
-    },
-    {
-      text: 'What is 2 + 2?',
-      questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
-      options: [
-        { id: 'a', text: '3' },
-        { id: 'b', text: '4' },
-        { id: 'c', text: '5' },
-        { id: 'd', text: '22' },
-      ],
-      correctOptionIds: ['b'],
-    },
-    {
-      text: 'Which planet is known as the Red Planet?',
-      questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
-      options: [
-        { id: 'a', text: 'Venus' },
-        { id: 'b', text: 'Mars' },
-        { id: 'c', text: 'Jupiter' },
-        { id: 'd', text: 'Saturn' },
-      ],
-      correctOptionIds: ['b'],
-    },
-    {
-      text: 'DNA stands for Deoxyribonucleic Acid.',
-      questionType: QuestionType.TRUE_FALSE,
-      options: [
-        { id: 'true', text: 'True' },
-        { id: 'false', text: 'False' },
-      ],
-      correctOptionIds: ['true'],
-    },
-    {
-      text: 'The speed of light is approximately ___ meters per second.',
-      questionType: QuestionType.FILL_IN_THE_BLANK,
-      correctFillText: '300000000',
-    },
-  ];
-
-  for (let i = 0; i < count; i++) {
-    const template = questionTemplates[i % questionTemplates.length];
-    questions.push({
-      ...template,
-      id: generateId(),
-    });
-  }
-
-  return shuffleArray(questions);
-};
-
-// Helper to check if answer is correct
-const checkAnswer = (question: GameQuestion, answer: Partial<Omit<UserAnswerRecord, 'questionId'>>): boolean => {
-  switch (question.questionType) {
-    case QuestionType.MULTIPLE_CHOICE_SINGLE:
-    case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
-    case QuestionType.TRUE_FALSE:
-      if (!answer.selectedOptionIds || !question.correctOptionIds) return false;
-      const sortedSelected = [...answer.selectedOptionIds].sort();
-      const sortedCorrect = [...question.correctOptionIds].sort();
-      return JSON.stringify(sortedSelected) === JSON.stringify(sortedCorrect);
-    
-    case QuestionType.FILL_IN_THE_BLANK:
-      if (!answer.fillText || !question.correctFillText) return false;
-      return answer.fillText.toLowerCase().trim() === question.correctFillText.toLowerCase().trim();
-    
-    case QuestionType.MATCHING:
-      if (!answer.matchingAnswers || !question.matchingPromptItems) return false;
-      // For matching, each prompt should match its corresponding answer (same index)
-      return answer.matchingAnswers.every(
-        (ma) => ma.promptItemId === ma.answerItemId
-      );
-    
-    case QuestionType.DIAGRAM_LABELING:
-      if (!answer.diagramAnswers || !question.diagramLabels) return false;
-      return answer.diagramAnswers.every(
-        (da) => da.labelId === da.selectedLabelId
-      );
-    
-    default:
-      return false;
-  }
-};
+  return {
+    id: challenge.id,
+    challengeId: challenge.id,
+    user: currentUser,
+    opponent,
+    questions: challenge.questions || [],
+    userAnswers: myPart?.answers || {},
+    opponentAnswers: oppPart?.answers || {},
+    userScore: myPart?.score || 0,
+    opponentScore: oppPart?.score || 0,
+    userTime: myPart?.totalTime || 0,
+    opponentTime: oppPart?.totalTime || 0,
+    isComplete: challenge.status === 'completed',
+    winnerId: challenge.winnerId,
+    userStreak: 0,
+    userCorrectAnswers: myPart?.correctCount || 0,
+    opponentCorrectAnswers: oppPart?.correctCount || 0,
+    awaitingOpponent:
+      challenge.status === 'accepted' &&
+      !!myPart?.finishedAt &&
+      !oppPart?.finishedAt,
+  };
+}
 
 export const useGameStore = create<GameStore>((set, get) => ({
   activeSession: null,
   setActiveSession: (session) => set({ activeSession: session }),
-  
+
   challengeOpponent: null,
   setChallengeOpponent: (user) => set({ challengeOpponent: user }),
-  
+
   isLoading: false,
-  setIsLoading: (loading) => set({ isLoading: loading }),
-  
   error: null,
-  setError: (error) => set({ error }),
-  
-  startGame: async (config, currentUser, opponent) => {
+
+  recentChallenges: [],
+  setRecentChallenges: (items) => set({ recentChallenges: items }),
+
+  sendChallenge: async (config, currentUser, opponent) => {
     set({ isLoading: true, error: null });
-    
     try {
-      // In a real implementation, fetch questions from the database
-      // For now, use mock questions
-      const questions = generateMockQuestions(config.questionCount);
-      
+      if (!config.groupId) throw new Error('Group is required');
+      const challenge = await createChallenge({
+        groupId: config.groupId,
+        opponentId: opponent.id,
+        config: {
+          numberOfQuestions: config.questionCount,
+          allowedQuestionTypes: config.allowedQuestionTypes,
+          selectedTags: config.selectedTags,
+        },
+      });
+      set({ isLoading: false });
+      return challenge;
+    } catch (e: any) {
+      set({ error: e.message || 'Failed to send challenge', isLoading: false });
+      throw e;
+    }
+  },
+
+  startChallengePlay: async (challengeId, currentUser) => {
+    set({ isLoading: true, error: null });
+    try {
+      const challenge = await fetchChallenge(challengeId);
+      if (challenge.status !== 'accepted' && challenge.status !== 'completed') {
+        throw new Error('Challenge is not ready to play');
+      }
+
+      const session = mapChallengeToSession(challenge, currentUser);
+
+      if (challenge.status === 'completed') {
+        const completed = { ...session, isComplete: true, awaitingOpponent: false };
+        set({ activeSession: completed, isLoading: false });
+        return completed;
+      }
+
+      if (challenge.myParticipant?.finishedAt) {
+        const waiting = {
+          ...session,
+          awaitingOpponent: true,
+          isComplete: false,
+        };
+        set({ activeSession: waiting, isLoading: false });
+        return waiting;
+      }
+
+      if (!session.questions.length) {
+        throw new Error('No questions loaded for this challenge');
+      }
+      set({ activeSession: session, isLoading: false });
+      return session;
+    } catch (e: any) {
+      set({ error: e.message, isLoading: false });
+      throw e;
+    }
+  },
+
+  refreshChallengeSession: async (challengeId, currentUser) => {
+    try {
+      const challenge = await fetchChallenge(challengeId);
+      if (challenge.status !== 'completed') return null;
+      const session = mapChallengeToSession(challenge, currentUser);
+      const completed = { ...session, isComplete: true, awaitingOpponent: false };
+      set({ activeSession: completed });
+      return completed;
+    } catch {
+      return null;
+    }
+  },
+
+  startSoloPractice: async (config, currentUser) => {
+    set({ isLoading: true, error: null });
+    try {
+      const groupMessages =
+        useGroupStore.getState().messagesCache[config.groupId || ''] ||
+        useGroupStore.getState().messages;
+
+      const mobileTypes = config.allowedQuestionTypes?.length
+        ? webQuestionTypesToMobile(config.allowedQuestionTypes)
+        : undefined;
+
+      const fromGroup = selectGroupQuestions(groupMessages as any, {
+        numberOfQuestions: config.questionCount,
+        selectedQuestionTypes: mobileTypes,
+        selectedTags: config.selectedTags,
+      });
+
+      if (!fromGroup.length) {
+        throw new Error('No testable questions found in this group');
+      }
+
       const session: GameSession = {
-        id: generateId(),
+        id: `solo-${Date.now()}`,
+        isSoloPractice: true,
         user: currentUser,
-        opponent,
-        questions,
+        opponent: { id: 'solo', name: 'Solo Practice' },
+        questions: fromGroup as TestQuestion[],
         userAnswers: {},
         opponentAnswers: {},
         userScore: 0,
@@ -285,158 +221,101 @@ export const useGameStore = create<GameStore>((set, get) => ({
         userTime: 0,
         opponentTime: 0,
         isComplete: false,
+        userStreak: 0,
+        userCorrectAnswers: 0,
+        opponentCorrectAnswers: 0,
       };
-      
+
       set({ activeSession: session, isLoading: false });
       return session;
-    } catch (error) {
-      set({ error: 'Failed to start game', isLoading: false });
-      throw error;
+    } catch (e: any) {
+      set({ error: e.message, isLoading: false });
+      throw e;
     }
   },
-  
-  updateAnswer: (questionId, answer, timeSpent) => {
+
+  updateAnswer: async (questionId, answer, timeSpent) => {
     const { activeSession } = get();
     if (!activeSession) return;
-    
+
     const question = activeSession.questions.find((q) => q.id === questionId);
     if (!question) return;
-    
-    const isCorrect = checkAnswer(question, answer);
-    
-    const answerRecord: UserAnswerRecord = {
+
+    const record: UserAnswerRecord = {
       questionId,
       ...answer,
-      isCorrect,
-      timeSpent,
+      timeSpentSeconds: timeSpent,
     };
-    
-    const newUserAnswers = {
-      ...activeSession.userAnswers,
-      [questionId]: answerRecord,
-    };
-    
-    const newScore = Object.values(newUserAnswers).filter((a) => a.isCorrect).length;
-    const newTime = Object.values(newUserAnswers).reduce((sum, a) => sum + a.timeSpent, 0);
-    
-    set({
-      activeSession: {
-        ...activeSession,
-        userAnswers: newUserAnswers,
-        userScore: newScore,
-        userTime: newTime,
-      },
-    });
-    
-    // Simulate opponent answering after user answers
-    get().simulateOpponentAnswer(questionId);
-  },
-  
-  simulateOpponentAnswer: (questionId) => {
-    const { activeSession } = get();
-    if (!activeSession) return;
-    
-    const question = activeSession.questions.find((q) => q.id === questionId);
-    if (!question) return;
-    
-    // Simulate opponent with 60-80% accuracy and 3-8 seconds per question
-    const isOpponentCorrect = Math.random() > 0.3;
-    const opponentTime = 3 + Math.floor(Math.random() * 5);
-    
-    // Generate a plausible answer
-    let opponentAnswer: Partial<Omit<UserAnswerRecord, 'questionId'>> = {};
-    
-    if (question.options) {
-      if (isOpponentCorrect && question.correctOptionIds) {
-        opponentAnswer.selectedOptionIds = question.correctOptionIds;
-      } else {
-        // Pick random wrong answers
-        const wrongOptions = question.options
-          .filter((o) => !question.correctOptionIds?.includes(o.id))
-          .map((o) => o.id);
-        opponentAnswer.selectedOptionIds = wrongOptions.length > 0 
-          ? [wrongOptions[Math.floor(Math.random() * wrongOptions.length)]]
-          : [];
-      }
-    } else if (question.questionType === QuestionType.FILL_IN_THE_BLANK) {
-      opponentAnswer.fillText = isOpponentCorrect ? question.correctFillText : 'wrong answer';
-    }
-    
-    const opponentAnswerRecord: UserAnswerRecord = {
-      questionId,
-      ...opponentAnswer,
-      isCorrect: isOpponentCorrect,
-      timeSpent: opponentTime,
-    };
-    
-    const newOpponentAnswers = {
-      ...activeSession.opponentAnswers,
-      [questionId]: opponentAnswerRecord,
-    };
-    
-    const newOpponentScore = Object.values(newOpponentAnswers).filter((a) => a.isCorrect).length;
-    const newOpponentTime = Object.values(newOpponentAnswers).reduce((sum, a) => sum + a.timeSpent, 0);
-    
-    set({
-      activeSession: {
-        ...activeSession,
-        opponentAnswers: newOpponentAnswers,
-        opponentScore: newOpponentScore,
-        opponentTime: newOpponentTime,
-      },
-    });
-  },
-  
-  endGame: () => {
-    const { activeSession, addToHistory } = get();
-    if (!activeSession) return null;
-    
-    let winnerId: string | undefined;
-    
-    if (activeSession.userScore > activeSession.opponentScore) {
-      winnerId = activeSession.user.id;
-    } else if (activeSession.opponentScore > activeSession.userScore) {
-      winnerId = activeSession.opponent.id;
+    record.isCorrect = checkAnswerIsCorrect(question, record);
+
+    let streak = activeSession.userStreak || 0;
+    let points = 0;
+    if (record.isCorrect) {
+      const r = computeDuelQuestionPoints(true, timeSpent, streak);
+      points = r.points;
+      streak = r.newStreak;
     } else {
-      // Tie - winner determined by time
-      if (activeSession.userTime < activeSession.opponentTime) {
-        winnerId = activeSession.user.id;
-      } else if (activeSession.opponentTime < activeSession.userTime) {
-        winnerId = activeSession.opponent.id;
-      }
-      // If still tied, winnerId remains undefined (draw)
+      streak = 0;
     }
-    
-    const completedSession: GameSession = {
+
+    const userAnswers = { ...activeSession.userAnswers, [questionId]: record };
+    const updated: GameSession = {
       ...activeSession,
-      isComplete: true,
-      winnerId,
+      userAnswers,
+      userScore: activeSession.userScore + points,
+      userTime: activeSession.userTime + timeSpent,
+      userStreak: streak,
+      userCorrectAnswers: (activeSession.userCorrectAnswers || 0) + (record.isCorrect ? 1 : 0),
     };
-    
-    set({ activeSession: completedSession });
-    addToHistory(completedSession);
-    
-    return completedSession;
+
+    set({ activeSession: updated });
+
+    const total = updated.questions.length;
+    if (Object.keys(userAnswers).length < total) return;
+
+    if (updated.isSoloPractice) {
+      trackStudyActivity('game', 1);
+      set({
+        activeSession: {
+          ...updated,
+          isComplete: true,
+          winnerId: updated.user.id,
+        },
+      });
+      return;
+    }
+
+    if (updated.challengeId) {
+      try {
+        const result = await submitChallenge(updated.challengeId, userAnswers);
+        trackStudyActivity('game', 1);
+        const completed = mapChallengeToSession(result, updated.user);
+        set({
+          activeSession: {
+            ...completed,
+            userAnswers,
+            userScore: updated.userScore,
+            userTime: updated.userTime,
+            userCorrectAnswers: updated.userCorrectAnswers,
+            awaitingOpponent: result.status === 'accepted' && !!result.myParticipant?.finishedAt && !result.opponentParticipant?.finishedAt,
+            isComplete: result.status === 'completed',
+          },
+        });
+
+        if (result.status === 'completed' && result.winnerId === updated.user.id) {
+          const authUser = useAuthStore.getState().user;
+          if (authUser) {
+            // Profile stats updated server-side; refresh local user if needed
+          }
+        }
+      } catch (e: any) {
+        set({ error: e.message || 'Failed to submit answers' });
+      }
+    }
   },
-  
+
   resetGame: () => {
-    set({
-      activeSession: null,
-      challengeOpponent: null,
-      error: null,
-    });
-  },
-  
-  recentGames: [],
-  
-  addToHistory: (session) => {
-    set((state) => ({
-      recentGames: [session, ...state.recentGames].slice(0, 20), // Keep last 20 games
-    }));
-  },
-  
-  clearHistory: () => {
-    set({ recentGames: [] });
+    set({ activeSession: null, challengeOpponent: null, error: null });
   },
 }));
 

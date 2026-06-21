@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
+import { AIDisclaimer } from './AIDisclaimer';
 import type { AIGeneratedFlashcard } from '../services/ai';
 
 interface AIGenerateFlashcardsModalProps {
@@ -107,6 +108,7 @@ export default function AIGenerateFlashcardsModal({
                 <Text style={[styles.label, { color: colors.textSecondary }]}>
                   Paste your notes or lecture content
                 </Text>
+                <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
                 <TextInput
                   style={[
                     styles.notesInput,

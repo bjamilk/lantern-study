@@ -1,608 +1,119 @@
-// ===========================================
-// Lantern Study Mobile - Login Screen
-// ===========================================
-
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
-  StyleSheet,
+  Pressable,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Alert,
   ScrollView,
-  Modal,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
-import { supabase } from '../../services/supabase';
-import { useTheme } from '../../theme';
-import * as WebBrowser from 'expo-web-browser';
-import * as AuthSession from 'expo-auth-session';
+import { isEmailNotConfirmedError } from '@lantern/shared';
+import { Button } from '../../components/ui';
+import { LanternLogo } from '../../components/LanternLogo';
+import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import type { AuthStackParamList } from '../../navigation/types';
 
-// Type imports will be resolved once navigation is properly set up
-type LoginScreenProps = NativeStackScreenProps<any, 'Login'>;
+type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-// Warm up the browser for faster OAuth
-WebBrowser.maybeCompleteAuthSession();
-
-export default function LoginScreen({ navigation }: LoginScreenProps) {
-  const { colors } = useTheme();
+export function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'facebook' | 'twitter' | null>(null);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  
-  // Forgot Password Modal State
-  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetEmailSent, setResetEmailSent] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetError, setResetError] = useState('');
+  const { signIn, signInAsDemo, isLoading, error, clearError } = useAuthStore();
 
-  const { signIn, isLoading: authLoading, error: authError } = useAuthStore();
-
-  const validateEmail = (emailStr: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr);
-
-  const validateForm = useCallback(() => {
-    const newErrors: { email?: string; password?: string } = {};
-
-    if (!email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [email, password]);
-
-  const handleLogin = useCallback(async () => {
-    if (!validateForm()) return;
-
-    setIsLoading(true);
+  const onSubmit = async () => {
+    clearError();
     try {
-      await signIn(email, password);
-      // Navigation will happen automatically via RootNavigator auth state check
-    } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Something went wrong');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [email, password, validateForm, signIn]);
-
-  const handleSocialLogin = useCallback(async (provider: 'google' | 'facebook' | 'twitter') => {
-    setSocialLoading(provider);
-    try {
-      const redirectUri = AuthSession.makeRedirectUri({
-        scheme: 'lanternstudy',
-        path: 'auth/callback',
-      });
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: provider,
-        options: {
-          redirectTo: redirectUri,
-          skipBrowserRedirect: true,
-        },
-      });
-
-      if (error) {
-        throw error;
+      await signIn(email.trim(), password);
+    } catch (err) {
+      if (isEmailNotConfirmedError(err)) {
+        navigation.navigate('VerifyEmail', { email: email.trim() });
       }
-
-      if (data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(
-          data.url,
-          redirectUri
-        );
-
-        if (result.type === 'success') {
-          const url = result.url;
-          // Extract the tokens from the URL
-          const params = new URLSearchParams(url.split('#')[1] || url.split('?')[1]);
-          const accessToken = params.get('access_token');
-          const refreshToken = params.get('refresh_token');
-
-          if (accessToken && refreshToken) {
-            const { error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-
-            if (sessionError) {
-              throw sessionError;
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error(`${provider} login error:`, error);
-      Alert.alert('Error', error.message || `Failed to sign in with ${provider}`);
-    } finally {
-      setSocialLoading(null);
     }
-  }, []);
-
-  const handleForgotPassword = useCallback(async () => {
-    setResetError('');
-    
-    if (!resetEmail.trim()) {
-      setResetError('Please enter your email address');
-      return;
-    }
-    
-    if (!validateEmail(resetEmail)) {
-      setResetError('Please enter a valid email address');
-      return;
-    }
-
-    setResetLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: 'lanternstudy://reset-password',
-      });
-
-      if (error) {
-        setResetError(error.message);
-        return;
-      }
-
-      setResetEmailSent(true);
-    } catch (error: any) {
-      setResetError(error.message || 'Failed to send reset email');
-    } finally {
-      setResetLoading(false);
-    }
-  }, [resetEmail]);
-
-  const closeForgotPasswordModal = () => {
-    setShowForgotPasswordModal(false);
-    setResetEmail('');
-    setResetEmailSent(false);
-    setResetError('');
   };
 
-  const isAnyLoading = isLoading || socialLoading !== null;
-
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
       >
-        {/* Logo and Title */}
-        <View style={styles.header}>
-          <View style={[styles.logoContainer, { backgroundColor: colors.card }]}>
-            <Ionicons name="book" size={60} color={colors.primary} />
+        <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
+          <View className="items-center mb-8">
+            <LanternLogo size={64} style={{ marginBottom: 16 }} />
+            <Text className="text-3xl font-bold text-slate-900 dark:text-white">Lantern Study</Text>
+            <Text className="text-slate-500 dark:text-slate-400 mt-1">Sign in to continue</Text>
           </View>
-          <Text style={[styles.title, { color: colors.text }]}>Lantern Study</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Welcome back! Sign in to continue your journey.</Text>
-        </View>
 
-        {/* Login Form */}
-        <View style={styles.form}>
-          {/* Email Input */}
-          <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.email && styles.inputError]}>
-              <Ionicons name="at-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
+          {error ? (
+            <View className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-4">
+              <Text className="text-red-600 dark:text-red-300 text-sm">{error}</Text>
+            </View>
+          ) : null}
+
+          <View className="gap-3">
+            <View>
+              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</Text>
               <TextInput
-                style={[styles.input, { color: colors.inputText }]}
-                placeholder="Enter your email"
-                placeholderTextColor={colors.inputPlaceholder}
                 value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
-                }}
+                onChangeText={setEmail}
+                autoCapitalize="none"
                 keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                editable={!isAnyLoading}
+                placeholder="you@university.edu"
+                placeholderTextColor="#94a3b8"
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
               />
             </View>
-            {errors.email && <Text style={[styles.errorText, { color: colors.error }]}>{errors.email}</Text>}
-          </View>
-
-          {/* Password Input */}
-          <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
-            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, errors.password && styles.inputError]}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { color: colors.inputText }]}
-                placeholder="Enter your password"
-                placeholderTextColor={colors.inputPlaceholder}
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
-                }}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoComplete="password"
-                editable={!isAnyLoading}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-                disabled={isAnyLoading}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color={colors.inputPlaceholder}
+            <View>
+              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Password</Text>
+              <View className="relative">
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#94a3b8"
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 pr-12 text-slate-900 dark:text-white"
                 />
-              </TouchableOpacity>
-            </View>
-            {errors.password && <Text style={[styles.errorText, { color: colors.error }]}>{errors.password}</Text>}
-          </View>
-
-          {/* Forgot Password */}
-          <TouchableOpacity
-            style={styles.forgotPassword}
-            onPress={() => setShowForgotPasswordModal(true)}
-            disabled={isAnyLoading}
-          >
-            <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>Forgot your password?</Text>
-          </TouchableOpacity>
-
-          {/* Login Button */}
-          <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.primary }, isAnyLoading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={isAnyLoading}
-            activeOpacity={0.8}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={colors.textInverse} size="small" />
-            ) : (
-              <Text style={[styles.loginButtonText, { color: colors.textInverse }]}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>Or continue with</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
-
-          {/* Social Login Buttons */}
-          <View style={styles.socialButtonsContainer}>
-            {/* Google */}
-            <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }, isAnyLoading && styles.buttonDisabled]}
-              onPress={() => handleSocialLogin('google')}
-              disabled={isAnyLoading}
-              activeOpacity={0.8}
-            >
-              {socialLoading === 'google' ? (
-                <ActivityIndicator color={colors.primary} size="small" />
-              ) : (
-                <Ionicons name="logo-google" size={24} color="#4285f4" />
-              )}
-            </TouchableOpacity>
-
-            {/* Twitter/X */}
-            <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }, isAnyLoading && styles.buttonDisabled]}
-              onPress={() => handleSocialLogin('twitter')}
-              disabled={isAnyLoading}
-              activeOpacity={0.8}
-            >
-              {socialLoading === 'twitter' ? (
-                <ActivityIndicator color={colors.primary} size="small" />
-              ) : (
-                <Ionicons name="logo-twitter" size={24} color="#1da1f2" />
-              )}
-            </TouchableOpacity>
-
-            {/* Facebook */}
-            <TouchableOpacity
-              style={[styles.socialButton, { backgroundColor: colors.card, borderColor: colors.border }, isAnyLoading && styles.buttonDisabled]}
-              onPress={() => handleSocialLogin('facebook')}
-              disabled={isAnyLoading}
-              activeOpacity={0.8}
-            >
-              {socialLoading === 'facebook' ? (
-                <ActivityIndicator color={colors.primary} size="small" />
-              ) : (
-                <Ionicons name="logo-facebook" size={24} color="#1877f2" />
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Sign Up Link */}
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Don't have an account? </Text>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('SignUp')}
-            disabled={isAnyLoading}
-          >
-            <Text style={[styles.signUpText, { color: colors.primary }]}>Create Account</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Forgot Password Modal */}
-      <Modal
-        visible={showForgotPasswordModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closeForgotPasswordModal}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={closeForgotPasswordModal} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Reset Password</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <View style={styles.modalContent}>
-            {!resetEmailSent ? (
-              <>
-                <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
-                  Enter your email address and we'll send you a link to reset your password.
-                </Text>
-
-                <View style={styles.inputContainer}>
-                  <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
-                  <View style={[styles.inputWrapper, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder }, resetError ? styles.inputError : null]}>
-                    <Ionicons name="at-outline" size={20} color={colors.inputPlaceholder} style={styles.inputIcon} />
-                    <TextInput
-                      style={[styles.input, { color: colors.inputText }]}
-                      placeholder="Enter your email"
-                      placeholderTextColor={colors.inputPlaceholder}
-                      value={resetEmail}
-                      onChangeText={(text) => {
-                        setResetEmail(text);
-                        setResetError('');
-                      }}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoComplete="email"
-                      editable={!resetLoading}
-                    />
-                  </View>
-                  {resetError ? <Text style={[styles.errorText, { color: colors.error }]}>{resetError}</Text> : null}
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.loginButton, { backgroundColor: colors.primary }, resetLoading && styles.buttonDisabled]}
-                  onPress={handleForgotPassword}
-                  disabled={resetLoading}
-                  activeOpacity={0.8}
+                <Pressable
+                  onPress={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-3"
                 >
-                  {resetLoading ? (
-                    <ActivityIndicator color={colors.textInverse} size="small" />
-                  ) : (
-                    <Text style={[styles.loginButtonText, { color: colors.textInverse }]}>Send Reset Email</Text>
-                  )}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <View style={styles.successContainer}>
-                <View style={styles.successIcon}>
-                  <Ionicons name="checkmark-circle" size={60} color={colors.success} />
-                </View>
-                <Text style={[styles.successTitle, { color: colors.text }]}>Email Sent!</Text>
-                <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
-                  We've sent a password reset link to {resetEmail}. Check your inbox and follow the instructions.
-                </Text>
-                <TouchableOpacity
-                  style={[styles.loginButton, { backgroundColor: colors.primary }]}
-                  onPress={closeForgotPasswordModal}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.loginButtonText, { color: colors.textInverse }]}>Back to Sign In</Text>
-                </TouchableOpacity>
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#94a3b8" />
+                </Pressable>
               </View>
-            )}
+            </View>
           </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+
+          <View className="mt-6 gap-3">
+            <Button fullWidth loading={isLoading} onPress={onSubmit}>
+              Sign in
+            </Button>
+            <Pressable onPress={() => navigation.navigate('ForgotPassword')} className="py-2">
+              <Text className="text-center text-sm text-indigo-600 dark:text-indigo-400">
+                Forgot your password?
+              </Text>
+            </Pressable>
+            <Button fullWidth variant="secondary" onPress={() => navigation.navigate('SignUp')}>
+              Create account
+            </Button>
+          </View>
+
+          <SocialAuthButtons disabled={isLoading} />
+
+          <View className="mt-4">
+            <Button fullWidth variant="ghost" onPress={signInAsDemo}>
+              Try demo mode
+            </Button>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  form: {
-    marginBottom: 24,
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  inputError: {
-    borderColor: '#ef4444',
-  },
-  inputIcon: {
-    paddingLeft: 16,
-  },
-  input: {
-    flex: 1,
-    height: 52,
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  eyeIcon: {
-    padding: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-    marginLeft: 4,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loginButton: {
-    borderRadius: 12,
-    height: 52,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 14,
-    paddingHorizontal: 16,
-  },
-  socialButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  socialButton: {
-    width: 60,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 14,
-  },
-  signUpText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-  },
-  modalSubtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 24,
-  },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    paddingTop: 40,
-  },
-  successIcon: {
-    marginBottom: 24,
-  },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  successMessage: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-    paddingHorizontal: 16,
-  },
-});

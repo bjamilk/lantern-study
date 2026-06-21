@@ -137,7 +137,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
 
   if (step === 'select_members') {
     return (
-      <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
+      <div key="step-select" className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
         <header className="bg-white dark:bg-slate-800 shadow-sm p-4 flex items-center flex-shrink-0">
           <button onClick={onBack} className="p-2 mr-4 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700">
             <ArrowLeftIcon className="w-6 h-6 text-gray-700 dark:text-gray-300" />
@@ -156,7 +156,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
             </div>
             <input
               type="text"
-              value={searchTerm}
+              value={searchTerm ?? ''}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 p-3 border border-gray-300 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500"
               placeholder="Search by @username or name..."
@@ -272,7 +272,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
 
   // Step 2: Group Details
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
+    <div key="step-details" className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
         <header className="bg-white dark:bg-slate-800 shadow-sm p-4 flex items-center flex-shrink-0">
           <button onClick={() => setStep('select_members')} className="p-2 mr-4 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700">
             <ArrowLeftIcon className="w-6 h-6 text-gray-700 dark:text-gray-300" />
@@ -295,8 +295,8 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
                     </div>
                 </button>
                 <input type="file" ref={avatarFileRef} onChange={handleAvatarChange} accept="image/*" className="hidden"/>
-                <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Group Name (Required)" className="w-full max-w-sm p-2 text-center text-lg font-semibold border-b-2 focus:border-blue-500 focus:outline-none bg-transparent dark:text-gray-100 dark:border-slate-600" required />
-                <textarea value={groupDescription} onChange={e => setGroupDescription(e.target.value)} placeholder="Optional: Add group description" rows={2} className="w-full max-w-sm p-2 text-center text-sm border rounded-md focus:border-blue-500 focus:outline-none bg-white dark:bg-slate-700 dark:text-gray-200 dark:border-slate-600"/>
+                <input type="text" value={groupName ?? ''} onChange={e => setGroupName(e.target.value)} placeholder="Group Name (Required)" className="w-full max-w-sm p-2 text-center text-lg font-semibold border-b-2 focus:border-blue-500 focus:outline-none bg-transparent dark:text-gray-100 dark:border-slate-600" required />
+                <textarea value={groupDescription ?? ''} onChange={e => setGroupDescription(e.target.value)} placeholder="Optional: Add group description" rows={2} className="w-full max-w-sm p-2 text-center text-sm border rounded-md focus:border-blue-500 focus:outline-none bg-white dark:bg-slate-700 dark:text-gray-200 dark:border-slate-600"/>
             </div>
 
             <div className="max-w-sm mx-auto p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
