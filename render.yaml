@@ -25,7 +25,7 @@ services:
       - key: ENABLE_MARKETPLACE_JOBS
         value: "true"
       - key: SUPABASE_URL
-        sync: false
+        value: https://tiizkjhbrnaibaagmurl.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: JWT_SECRET
