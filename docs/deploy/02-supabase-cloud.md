@@ -2,6 +2,16 @@
 
 Connect the Lantern Study codebase to a hosted Supabase project (database, auth, storage, realtime).
 
+## Quick setup (recommended)
+
+When the project status is **Active** in the [Dashboard](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl), run in **your own terminal** (the agent terminal cannot complete interactive `supabase login`):
+
+```powershell
+.\scripts\deploy-supabase-cloud.ps1
+```
+
+That script logs in, links the repo, and runs `supabase db push`.
+
 ## Project (this workspace)
 
 | Setting | Value |
