@@ -30,19 +30,24 @@ gh auth status
 
 ## Create the remote repo and push
 
-Replace `YOUR_GITHUB_USERNAME` if you use a different repo name:
+This project’s remote:
+
+**https://github.com/bjamilk/lantern-study** (private)
+
+If setting up on a new machine:
 
 ```powershell
-# From project root
+git remote add origin https://github.com/bjamilk/lantern-study.git
+git push -u origin main
+```
+
+To create a fresh repo under your account:
+
+```powershell
 gh repo create lantern-study --private --source=. --remote=origin --push
 ```
 
-If the repo already exists on GitHub:
-
-```powershell
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/lantern-study.git
-git push -u origin main
-```
+If push fails with **workflow scope** error, run `gh auth refresh -h github.com -s workflow` and approve in the browser, then push again.
 
 ## What gets pushed (and what does not)
 
