@@ -16,6 +16,7 @@ import {
   updateUserProfile as apiUpdateUserProfile,
 } from '../services/supabase';
 import { resolvePlatformAdmin } from '../utils/platformAdmin';
+import { setSentryUser } from '../services/sentry';
 
 function getInitialAuthState(): {
   currentUser: User | null;
@@ -93,6 +94,7 @@ export const useAuthStore = create<AuthState>()(
 
       // Set current user
       setCurrentUser: (user) => {
+        setSentryUser(user ? { id: user.id, email: user.email } : null);
         set({
           currentUser: user,
           isAuthenticated: !!user,
@@ -262,6 +264,7 @@ export const useAuthStore = create<AuthState>()(
           try {
             localStorage.removeItem('auth-storage-v2');
           } catch {}
+          setSentryUser(null);
           set({ 
             currentUser: null, 
             isAuthenticated: false,

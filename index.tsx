@@ -1,4 +1,8 @@
 import './env-bootstrap';
+import { initSentry } from './services/sentry';
+
+initSentry();
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';

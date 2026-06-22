@@ -13,3 +13,4 @@ export * from './aiUsage';
 export * from './marketplaceBudget';
 export * from './marketplacePromo';
 export * from './storageUrl';
+export * from './sentryScrub';

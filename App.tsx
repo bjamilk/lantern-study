@@ -7,6 +7,7 @@ import { supabase as supabaseClient } from './services/supabase';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
+import { setSentryUser } from './services/sentry';
 import { useGroupStore } from './stores/groupStore';
 import { useFlashcardStore } from './stores/flashcardStore';
 import { useTestStore } from './stores/testStore';
@@ -116,6 +117,20 @@ export const App: React.FC = () => {
             setAuthLoading(false);
         });
     }, [showToast, setCurrentUser, setAuthLoading]);
+
+    useEffect(() => {
+        const sync = (user: User | null) => {
+            setSentryUser(user ? { id: user.id } : null);
+        };
+        sync(useAuthStore.getState().currentUser);
+        return useAuthStore.subscribe((state, prev) => {
+            const nextId = state.currentUser?.id ?? null;
+            const prevId = prev.currentUser?.id ?? null;
+            if (nextId !== prevId) {
+                sync(state.currentUser);
+            }
+        });
+    }, []);
     const { studyGoal, dailyQuiz, dailyQuizProgress, setStudyGoal, setDailyQuiz, answerDailyQuestion, completeDailyQuiz, getDailyQuizForToday, getQuizForNote } = useStudyGoalsStore();
     const { decks, flashcards, dueCardsCount } = useFlashcardStore();
     const { transactions, budget } = useBudgetStore();

@@ -106,6 +106,15 @@ function Build-DeploymentConfigs([hashtable]$RootEnv) {
         VITE_SUPABASE_ANON_KEY  = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_ANON_KEY'])
         VITE_API_URL            = (New-EnvVarEntry -Value $RootEnv['VITE_API_URL'])
     }
+    if ($RootEnv['VITE_SENTRY_DSN']) {
+        $envVars['VITE_SENTRY_DSN'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_DSN'])
+        if ($RootEnv['VITE_SENTRY_RELEASE']) {
+            $envVars['VITE_SENTRY_RELEASE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_RELEASE'])
+        }
+        if ($RootEnv['VITE_SENTRY_TRACES_SAMPLE_RATE']) {
+            $envVars['VITE_SENTRY_TRACES_SAMPLE_RATE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_TRACES_SAMPLE_RATE'])
+        }
+    }
     return @{
         production = @{ env_vars = $envVars }
         preview    = @{ env_vars = $envVars }

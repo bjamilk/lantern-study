@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PieChart, BarChart } from 'react-native-gifted-charts';
 import type { RecentTest } from '../types/dashboardStats';
 import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
+import { useTheme } from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

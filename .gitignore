@@ -21,6 +21,7 @@ dist-ssr
 .env.render
 .env.cloudflare
 .env.resend
+.env.sentry
 .env.*.local
 **/.env
 !.env.example

@@ -26,6 +26,7 @@ import { BootLoadingScreen } from '../components/BootLoadingScreen';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { useAuthStore } from '../stores/authStore';
+import { setSentryUser } from '../services/sentry';
 
 import { useFlashcardStore } from '../stores/flashcardStore';
 
@@ -689,6 +690,10 @@ function RootNavigatorInner() {
   useDeepLinkHandler();
   useDailyStudyReminder();
   usePresenceHeartbeat();
+
+  useEffect(() => {
+    setSentryUser(user ? { id: user.id, email: user.email } : null);
+  }, [user?.id]);
 
 
 

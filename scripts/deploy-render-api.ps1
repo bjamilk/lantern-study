@@ -97,7 +97,7 @@ function New-JwtSecret {
 
 function Build-EnvVars([hashtable]$ApiEnv) {
     $jwt = if ($ApiEnv['JWT_SECRET']) { $ApiEnv['JWT_SECRET'] } else { New-JwtSecret }
-    return @(
+    $vars = @(
         @{ key = 'NODE_ENV'; value = 'production' },
         @{ key = 'PORT'; value = '3001' },
         @{ key = 'FRONTEND_URL'; value = $ProductionFrontendUrl },
@@ -110,6 +110,14 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'GROQ_API_KEY'; value = $ApiEnv['GROQ_API_KEY'] },
         @{ key = 'JWT_SECRET'; value = $jwt }
     )
+    if ($ApiEnv['SENTRY_DSN']) {
+        $vars += @(
+            @{ key = 'SENTRY_DSN'; value = $ApiEnv['SENTRY_DSN'] },
+            @{ key = 'SENTRY_RELEASE'; value = $ApiEnv['SENTRY_RELEASE'] },
+            @{ key = 'SENTRY_TRACES_SAMPLE_RATE'; value = $ApiEnv['SENTRY_TRACES_SAMPLE_RATE'] }
+        )
+    }
+    return $vars
 }
 
 function Ensure-Service([string]$OwnerId, [array]$EnvVars) {
