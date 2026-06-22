@@ -304,6 +304,7 @@ router.post(
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern(`user:groups:${memberId}:*`);
 
@@ -373,6 +374,7 @@ router.post(
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
     for (const memberId of results.added) {
       await cacheService.deletePattern(`user:groups:${memberId}:*`);
@@ -426,6 +428,7 @@ router.post(
 
     // Invalidate caches
     await cacheService.delete(`group:${group.id}`);
+    await cacheService.deletePattern(`group:members:${group.id}:*`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
@@ -472,6 +475,7 @@ router.delete(
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern(`user:groups:${memberId}:*`);
 

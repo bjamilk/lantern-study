@@ -348,13 +348,23 @@ export const fetchGroups = async (userId: string) => {
   return result.data.map((item: any) => item);
 };
 
-export const fetchGroupMembers = async (groupId: string) => {
+export const fetchGroupMembers = async (groupId: string, options?: { bustCache?: boolean }) => {
   console.log('Fetching members for group:', groupId);
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/members`, {
-    method: 'GET',
-    headers: await getAuthHeaders(),
-  });
+  const params = new URLSearchParams();
+  if (options?.bustCache) {
+    params.set('_', String(Date.now()));
+  }
+
+  const query = params.toString();
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/groups/${groupId}/members${query ? `?${query}` : ''}`,
+    {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+      cache: 'no-store',
+    }
+  );
 
   if (!response.ok) {
     const error = await response.json();
@@ -734,10 +744,17 @@ export const searchUsers = async (query: string, limit: number = 20) => {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Failed to search users');
+      throw new Error(error.error || error.message || 'Failed to search users');
     }
     const result = await response.json();
-    return result.data;
+    return (result.data || []).map((user: Record<string, unknown>) => ({
+      id: user.id,
+      username: user.username ?? null,
+      first_name: user.first_name ?? user.firstName ?? null,
+      last_name: user.last_name ?? user.lastName ?? null,
+      name: user.name ?? '',
+      avatar_url: user.avatar_url ?? user.avatarUrl ?? null,
+    }));
   } catch (error) {
     console.error('Error searching users:', error);
     throw error;
@@ -1485,7 +1502,7 @@ export const exportUserAccountData = async (userId: string): Promise<Record<stri
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/users/check-username/${encodeURIComponent(username)}`, {
-      headers: await getAuthHeaders(),
+      headers: { 'Content-Type': 'application/json' },
     });
     if (!response.ok) {
       throw new Error(`Failed to check username availability: ${response.statusText}`);

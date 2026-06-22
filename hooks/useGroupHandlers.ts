@@ -21,6 +21,18 @@ interface UseGroupHandlersParams {
     users: User[];
 }
 
+function mapApiGroupMembers(fetchedMembers: any[]): User[] {
+    return (fetchedMembers || []).map((m: any) => ({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+        avatarUrl: m.avatar_url || m.avatarUrl,
+        points: m.points || 0,
+        badges: m.badges || [],
+        stats: m.stats || {},
+    }));
+}
+
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
@@ -87,16 +99,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 });
             }
             
-            fetchGroupMembers(chat.id).then(fetchedMembers => {
-                const mappedMembers = fetchedMembers.map((m: any) => ({
-                    id: m.id,
-                    name: m.name,
-                    email: m.email,
-                    avatarUrl: m.avatar_url || m.avatarUrl,
-                    points: m.points || 0,
-                    badges: m.badges || [],
-                    stats: m.stats || {},
-                }));
+            fetchGroupMembers(chat.id, { bustCache: true }).then(fetchedMembers => {
+                const mappedMembers = mapApiGroupMembers(fetchedMembers);
                 
                 setSelectedChat(prev => prev && prev.id === chat.id ? { ...prev, members: mappedMembers } : prev);
                 updateGroups(prevGroups => prevGroups.map(g => 
@@ -319,18 +323,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             // Fetch groups and members for the new group in parallel
             const [fetchedGroups, fetchedMembers] = await Promise.all([
                 fetchGroups(currentUser.id),
-                fetchGroupMembers(newGroup.id),
+                fetchGroupMembers(newGroup.id, { bustCache: details.memberIds.length > 0 }),
             ]);
 
-            const mappedMembers = fetchedMembers.map((m: any) => ({
-                id: m.id,
-                name: m.name,
-                email: m.email,
-                avatarUrl: m.avatar_url || m.avatarUrl,
-                points: m.points || 0,
-                badges: m.badges || [],
-                stats: m.stats || {},
-            }));
+            const mappedMembers = mapApiGroupMembers(fetchedMembers);
 
             setGroups(fetchedGroups.map((g: any) => ({
                 id: g.id,
@@ -746,6 +742,25 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [selectedChat, updateGroups, setSelectedChat]);
 
+    const applyGroupMembersToState = useCallback((groupId: string, mappedMembers: User[]) => {
+        updateGroups(prevGroups => prevGroups.map(g =>
+            g.id === groupId ? { ...g, members: mappedMembers } : g
+        ));
+        setSelectedChat(prevSelected => {
+            if (prevSelected && prevSelected.id === groupId && prevSelected.chatType === 'group') {
+                return { ...prevSelected, members: mappedMembers };
+            }
+            return prevSelected;
+        });
+    }, [updateGroups, setSelectedChat]);
+
+    const refreshGroupMembersInState = useCallback(async (groupId: string) => {
+        const fetchedMembers = await fetchGroupMembers(groupId, { bustCache: true });
+        const mappedMembers = mapApiGroupMembers(fetchedMembers);
+        applyGroupMembersToState(groupId, mappedMembers);
+        return mappedMembers;
+    }, [applyGroupMembersToState]);
+
     const handleInviteMembers = useCallback(async (groupId: string, userIdsToAdd: string[]) => {
         if (userIdsToAdd.length === 0) {
             closeModal('addMembers');
@@ -753,41 +768,39 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
         
         const group = groups.find(g => g.id === groupId);
+        const priorCount = group?.members?.length ?? 0;
 
         try {
-            // Use batch endpoint for efficiency
             const result = await addGroupMembersBatch(groupId, userIdsToAdd);
 
-            // Re-fetch the full member list from server to get proper user profiles
-            try {
-                const fetchedMembers = await fetchGroupMembers(groupId);
-                const mappedMembers = fetchedMembers.map((m: any) => ({
-                    id: m.id,
-                    name: m.name,
-                    email: m.email,
-                    avatarUrl: m.avatar_url || m.avatarUrl,
-                    points: m.points || 0,
-                    badges: m.badges || [],
-                    stats: m.stats || {},
-                }));
-
-                updateGroups(prevGroups => prevGroups.map(g =>
-                    g.id === groupId ? { ...g, members: mappedMembers } : g
-                ));
-                setSelectedChat(prevSelected => {
-                    if (prevSelected && prevSelected.id === groupId && prevSelected.chatType === 'group') {
-                        return { ...prevSelected, members: mappedMembers };
-                    }
-                    return prevSelected;
-                });
-            } catch (fetchError) {
-                console.error('Failed to refresh member list after adding:', fetchError);
+            if (!result?.added?.length) {
+                throw new Error(
+                    result?.failed?.length
+                        ? 'Failed to add members. Please try again.'
+                        : 'No new members were added (they may already be in the group).'
+                );
             }
 
-            // Send notifications (don't block on these)
+            let mappedMembers = mapApiGroupMembers(
+                await fetchGroupMembers(groupId, { bustCache: true })
+            );
+
+            if (mappedMembers.length <= priorCount) {
+                const existingIds = new Set(mappedMembers.map(m => m.id));
+                for (const userId of result.added) {
+                    if (existingIds.has(userId)) continue;
+                    const user = users.find(u => u.id === userId);
+                    if (user) {
+                        mappedMembers = [...mappedMembers, user];
+                        existingIds.add(userId);
+                    }
+                }
+            }
+
+            applyGroupMembersToState(groupId, mappedMembers);
+
             if (group && currentUser) {
-                const addedIds = result?.added || userIdsToAdd;
-                for (const userId of addedIds) {
+                for (const userId of result.added) {
                     createNotification({
                         user_id: userId,
                         message: `You've been added to the group "${group.name}" by ${currentUser.name}`,
@@ -797,9 +810,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }
         } catch (error) {
             console.error('Error adding members to group:', error);
-            alert('Failed to add some members. Please try again.');
+            throw error;
         }
-    }, [groups, currentUser, updateGroups, setSelectedChat, closeModal]);
+    }, [groups, users, currentUser, applyGroupMembersToState, closeModal]);
 
     const handleRevokeInvitation = useCallback((groupId: string, email: string) => {
         if (window.confirm(`Are you sure you want to revoke the invitation for ${email}?`)) {
@@ -1025,7 +1038,14 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, [groups, users, currentUser, updateGroups]);
 
     const onOpenQuestionModal = useCallback(() => openModal('question'), [openModal]);
-    const onOpenGroupInfoModal = useCallback(() => openModal('groupInfo'), [openModal]);
+    const onOpenGroupInfoModal = useCallback(() => {
+        if (selectedChat?.chatType === 'group') {
+            refreshGroupMembersInState(selectedChat.id).catch(error => {
+                console.error('Failed to refresh group members:', error);
+            });
+        }
+        openModal('groupInfo');
+    }, [selectedChat, openModal, refreshGroupMembersInState]);
     
     const onOpenTestConfigModal = useCallback(() => {
         setActiveTestConfigMode('test');

@@ -254,8 +254,8 @@ export class CacheService {
   }
 
   async invalidateGroupCache(groupId: string): Promise<void> {
-    // Invalidate both cache key patterns used for group messages
     await this.deletePattern(`group:${groupId}:*`);
+    await this.deletePattern(`group:members:${groupId}:*`);
     await this.deletePattern(`messages:group:${groupId}:*`);
   }
 
