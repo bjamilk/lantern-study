@@ -16,7 +16,7 @@ import { getBreadcrumbs } from './utils/breadcrumbs';
 import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
-import { recordLoginStreak, fetchDailyQuests, purchaseStreakFreeze } from './services/gamificationStreak';
+import { purchaseStreakFreeze } from './services/gamificationStreak';
 import ChatWindow from './components/ChatWindow';
 import QuestionModal from './components/QuestionModal';
 import CreateGroupModal from './components/CreateGroupModal';
@@ -208,16 +208,6 @@ export const App: React.FC = () => {
         if (typeof window === 'undefined') return false;
         return !localStorage.getItem('lantern_onboarding_complete');
     });
-    const [dailyQuests, setDailyQuests] = React.useState<any[]>([]);
-    const [serverStreak, setServerStreak] = React.useState(0);
-    const [streakFreezes, setStreakFreezes] = React.useState(0);
-    const refreshQuests = React.useCallback(() => {
-        fetchDailyQuests().then(setDailyQuests).catch(() => {});
-        recordLoginStreak().then((s) => {
-            setServerStreak(s?.current_streak ?? 0);
-            setStreakFreezes(s?.streak_freezes ?? 0);
-        }).catch(() => {});
-    }, []);
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction } = useBudgetHandlers();
     const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
@@ -243,16 +233,23 @@ export const App: React.FC = () => {
         }
         openModal('challenges');
     }, [handleStartChallengePlay, openModal]);
-    useAppEffects({
+
+    const {
+        refreshDashboardGamification,
+        dailyQuests,
+        serverStreak,
+        streakFreezes,
+        questsLoaded,
+    } = useAppEffects({
         dataLoaded,
         setDataLoaded,
         onChallengeNotification: handleChallengeNotification,
     });
 
     React.useEffect(() => {
-        if (!currentUser?.id) return;
-        refreshQuests();
-    }, [currentUser?.id, refreshQuests]);
+        if (!currentUser?.id || appMode !== AppMode.DASHBOARD) return;
+        void refreshDashboardGamification();
+    }, [currentUser?.id, appMode, refreshDashboardGamification]);
 
     const handlePurchaseStreakFreeze = React.useCallback(async () => {
         const { walletBalance, addWalletCoins } = useBudgetStore.getState();
@@ -263,11 +260,11 @@ export const App: React.FC = () => {
         try {
             await purchaseStreakFreeze();
             addWalletCoins(-50);
-            refreshQuests();
+            void refreshDashboardGamification();
         } catch (e: any) {
             alert(e?.message || 'Could not purchase streak freeze');
         }
-    }, [refreshQuests]);
+    }, [refreshDashboardGamification]);
 
     useFontMode();
     useInviteLink(currentUser?.id);
@@ -644,6 +641,8 @@ export const App: React.FC = () => {
                     onNavigateToNotes={noteHandlers.navigateToNotes}
                     onOpenImportAndStudy={() => setShowImportAndStudy(true)}
                     dailyQuests={dailyQuests}
+                    questsLoaded={questsLoaded}
+                    onRefreshGamification={refreshDashboardGamification}
                     serverStreak={serverStreak}
                     streakFreezes={streakFreezes}
                     onPurchaseStreakFreeze={handlePurchaseStreakFreeze}

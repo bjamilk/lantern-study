@@ -10,6 +10,9 @@ import {
   MARKETPLACE_BUDGET_CATEGORIES,
   MARKETPLACE_BUDGET_TYPES,
 } from '@lantern/shared/utils/server';
+import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
+
+type UserStats = typeof initialUserStats;
 
 export class SupabaseService {
   private supabase;
@@ -3168,6 +3171,7 @@ export class SupabaseService {
     score: number;
     correctAnswersCount: number;
     totalQuestions: number;
+    activityDate?: string;
   }, userId?: string): Promise<any> {
     let score = resultData.score;
     let correctAnswersCount = resultData.correctAnswersCount;
@@ -3196,7 +3200,23 @@ export class SupabaseService {
     // Invalidate caches
     await cacheService.delete(`test:results:${testId}`);
 
-    return data;
+    let gamification:
+      | { points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }
+      | undefined;
+    if (userId) {
+      try {
+        gamification = await this.applyTestCompletionGamification(
+          userId,
+          score,
+          resultData.activityDate
+        );
+        await cacheService.invalidateUserCache(userId);
+      } catch (err) {
+        logger.warn('Test result gamification sync failed', { userId, testId, err });
+      }
+    }
+
+    return gamification ? { ...data, gamification } : data;
   }
 
   async getTestResults(testId: string, userId?: string): Promise<any | null> {
@@ -3855,14 +3875,106 @@ export class SupabaseService {
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 
-  async recordStudyActivity(userId: string, type: string, amount = 1): Promise<any> {
-    const { data, error } = await this.supabase.rpc('record_study_activity', {
+  async recordStudyActivity(
+    userId: string,
+    type: string,
+    amount = 1,
+    activityDate?: string
+  ): Promise<any> {
+    const rpcParams: Record<string, unknown> = {
       p_user_id: userId,
       p_type: type,
       p_amount: amount,
-    });
+    };
+    if (activityDate && /^\d{4}-\d{2}-\d{2}$/.test(activityDate)) {
+      rpcParams.p_activity_date = activityDate;
+    }
+    const { data, error } = await this.supabase.rpc('record_study_activity', rpcParams);
     if (error) throw error;
     return data;
+  }
+
+  private profileToGamificationUser(profile: Record<string, unknown>, statsOverride?: Partial<UserStats>): User {
+    return {
+      id: String(profile.id),
+      name: String(profile.name || ''),
+      email: String(profile.email || ''),
+      password: '',
+      phoneNumber: String(profile.phone || ''),
+      avatarUrl: String(profile.avatar_url || profile.avatarUrl || ''),
+      points: Number(profile.points) || 0,
+      badges: (profile.badges as User['badges']) || [],
+      stats: { ...initialUserStats, ...(profile.stats as UserStats), ...(statsOverride || {}) },
+    } as User;
+  }
+
+  async syncGamificationProgress(
+    userId: string,
+    options: {
+      stats?: Partial<UserStats>;
+      bonusPoints?: number;
+      bonusReason?: string;
+      activityDate?: string;
+    } = {}
+  ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
+    const profile = await this.getUserById(userId);
+    if (!profile) {
+      throw new Error('User not found');
+    }
+
+    let user = this.profileToGamificationUser(profile as unknown as Record<string, unknown>, options.stats);
+
+    if (options.bonusPoints && options.bonusPoints > 0 && options.bonusReason) {
+      await this.awardPoints(userId, options.bonusPoints, options.bonusReason, 'sync_progress');
+      const refreshed = await this.getUserById(userId);
+      if (refreshed) {
+        user = this.profileToGamificationUser(refreshed as unknown as Record<string, unknown>, options.stats);
+      }
+    }
+
+    const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
+
+    await this.updateUser(userId, {
+      points: updatedUser.points,
+      badges: updatedUser.badges,
+      stats: updatedUser.stats,
+    });
+
+    return {
+      points: updatedUser.points,
+      badges: updatedUser.badges,
+      stats: updatedUser.stats,
+      awardedBadges,
+    };
+  }
+
+  async applyTestCompletionGamification(
+    userId: string,
+    score: number,
+    activityDate?: string
+  ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
+    const profile = await this.getUserById(userId);
+    if (!profile) {
+      throw new Error('User not found');
+    }
+
+    const stats = {
+      ...initialUserStats,
+      ...((profile.stats as UserStats) || {}),
+    };
+    stats.testsCompleted = (stats.testsCompleted || 0) + 1;
+    if (score >= 80) {
+      stats.highScoreTests = (stats.highScoreTests || 0) + 1;
+    }
+    if (score === 100) {
+      stats.perfectScoreTests = (stats.perfectScoreTests || 0) + 1;
+    }
+
+    const result = await this.syncGamificationProgress(userId, { stats });
+    await this.recordStudyActivity(userId, 'test', 1, activityDate).catch((err) => {
+      logger.warn('Failed to record study activity after test', { userId, err });
+    });
+    return result;
   }
 
   async touchLastSeen(userId: string): Promise<void> {

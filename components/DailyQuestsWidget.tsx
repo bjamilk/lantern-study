@@ -16,6 +16,8 @@ interface DailyQuestsWidgetProps {
   streakFreezes?: number;
   walletBalance?: number;
   onPurchaseStreakFreeze?: () => void;
+  questsLoaded?: boolean;
+  onRefresh?: () => void;
   theme?: 'light' | 'dark';
 }
 
@@ -32,12 +34,49 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
   streakFreezes = 0,
   walletBalance = 0,
   onPurchaseStreakFreeze,
+  questsLoaded = false,
+  onRefresh,
   theme = 'light',
 }) => {
   const isDark = theme === 'dark';
   const completedCount = quests.filter((q) => q.completed).length;
 
-  if (quests.length === 0) return null;
+  if (!questsLoaded) {
+    return (
+      <div className={`rounded-xl border p-4 animate-pulse ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+        <div className="h-5 w-32 bg-slate-200 dark:bg-slate-700 rounded mb-3" />
+        <div className="space-y-2">
+          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
+          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
+          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (quests.length === 0) {
+    return (
+      <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-semibold text-slate-900 dark:text-slate-100">Daily Quests</h3>
+          <div className="flex items-center gap-2 text-sm">
+            <FireIcon className="w-4 h-4 text-orange-500" />
+            <span className="font-bold text-orange-600">{streak} day streak</span>
+          </div>
+        </div>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Quests unavailable right now.</p>
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+          >
+            Refresh quests
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>

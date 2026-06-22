@@ -8,12 +8,13 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useTestStore } from '../stores/testStore';
 import { useUIStore } from '../stores/uiStore';
-import { shuffleArray, checkAndAwardBadges, isQuestionTestable, createShuffledQuestionSet } from '../utils/helpers';
+import { shuffleArray, isQuestionTestable, createShuffledQuestionSet } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createTestSession, createTestResult, upsertUserQuestionStat,
-    updateUserProfile, saveOfflineBundle, deleteOfflineBundle
+    saveOfflineBundle, deleteOfflineBundle
 } from '../services/supabase';
+import { formatActivityLocalDate } from '@lantern/shared/utils';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UseOfflineHandlersParams {
@@ -254,6 +255,13 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         if (pendingSyncResults.length === 0 || !currentUser) return;
         
         try {
+            let lastGamification: {
+                points: number;
+                badges: typeof currentUser.badges;
+                stats: typeof currentUser.stats;
+                awardedBadges?: typeof currentUser.badges;
+            } | undefined;
+
             for (const result of pendingSyncResults) {
                 const sessionData = {
                     config: result.session.config,
@@ -270,9 +278,15 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                     session_id: savedSession.id,
                     score: result.score,
                     correct_answers_count: result.correctAnswersCount,
-                    total_questions: result.totalQuestions
+                    total_questions: result.totalQuestions,
+                    activityDate: result.session.endTime
+                        ? formatActivityLocalDate(new Date(result.session.endTime))
+                        : formatActivityLocalDate(new Date()),
                 };
-                await createTestResult(resultData);
+                const saved = await createTestResult(resultData);
+                if ((saved as { gamification?: typeof lastGamification })?.gamification) {
+                    lastGamification = (saved as { gamification: typeof lastGamification }).gamification;
+                }
             }
             
             updateTestResults(prev => [...prev, ...pendingSyncResults]);
@@ -280,12 +294,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
             const newUserQuestionStats = { ...userQuestionStats };
             
             if (currentUser) {
-                const updatedStats = { ...currentUser.stats };
                 pendingSyncResults.forEach(result => {
-                    updatedStats.testsCompleted = (updatedStats.testsCompleted || 0) + 1;
-                    if (result.score >= 80) updatedStats.highScoreTests = (updatedStats.highScoreTests || 0) + 1;
-                    if (result.score === 100) updatedStats.perfectScoreTests = (updatedStats.perfectScoreTests || 0) + 1;
-                    
                     Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
                         const questionId = answer.questionId;
                         const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
@@ -300,22 +309,19 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                     });
                 });
 
-                const userWithStats = { ...currentUser, stats: updatedStats };
-                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
-
-                updateUserProfile(currentUser.id, {
-                    points: updatedUser.points,
-                    stats: updatedUser.stats,
-                    badges: updatedUser.badges
-                }).catch(error => console.error('Failed to update user profile during sync:', error));
-
-                awardedBadges.forEach(badge => {
-                    const badgeDef = BADGE_DEFINITIONS[badge.id];
-                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
-                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
-                });
-                
-                setCurrentUser(updatedUser);
+                if (lastGamification) {
+                    setCurrentUser({
+                        ...currentUser,
+                        points: lastGamification.points,
+                        badges: lastGamification.badges,
+                        stats: lastGamification.stats,
+                    });
+                    (lastGamification.awardedBadges || []).forEach(badge => {
+                        const badgeDef = BADGE_DEFINITIONS[badge.id];
+                        const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
+                        addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                    });
+                }
             }
             
             setUserQuestionStats(newUserQuestionStats);

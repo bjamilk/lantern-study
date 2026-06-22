@@ -10,8 +10,10 @@ import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createSh
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createTestSession, createTestResult, upsertUserQuestionStat,
-    updateUserProfile, createNotification
+    createNotification
 } from '../services/supabase';
+import { syncGamificationProgress } from '../services/gamificationStreak';
+import { formatActivityLocalDate } from '@lantern/shared/utils';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { normalizeUserSettings } from '@lantern/shared/settings';
@@ -358,37 +360,44 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 session_id: savedSession.id,
                 score,
                 correct_answers_count: correctAnswersCount,
-                total_questions: finalSessionData.questions.length
+                total_questions: finalSessionData.questions.length,
+                activityDate: formatActivityLocalDate(new Date()),
             };
-            await createTestResult(resultData);
+            const saved = await createTestResult(resultData);
             
             updateTestResults(prev => [result, ...prev]);
-            
-            const updatedStats: UserStats = { ...currentUser.stats };
-            updatedStats.testsCompleted = (updatedStats.testsCompleted || 0) + 1;
-            if (score >= 80) {
-                updatedStats.highScoreTests = (updatedStats.highScoreTests || 0) + 1;
+
+            const gamification = (saved as { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } })?.gamification;
+            if (gamification) {
+                setCurrentUser({
+                    ...currentUser,
+                    points: gamification.points,
+                    badges: gamification.badges,
+                    stats: gamification.stats,
+                });
+                (gamification.awardedBadges || []).forEach(badge => {
+                    const badgeDef = BADGE_DEFINITIONS[badge.id];
+                    const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
+                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                });
+            } else {
+                try {
+                    const synced = await syncGamificationProgress();
+                    setCurrentUser({
+                        ...currentUser,
+                        points: synced.points,
+                        badges: synced.badges,
+                        stats: synced.stats,
+                    });
+                    (synced.awardedBadges || []).forEach(badge => {
+                        const badgeDef = BADGE_DEFINITIONS[badge.id];
+                        const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
+                        addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                    });
+                } catch (error) {
+                    console.error('Failed to sync gamification after test:', error);
+                }
             }
-            if (score === 100) {
-                updatedStats.perfectScoreTests = (updatedStats.perfectScoreTests || 0) + 1;
-            }
-
-            const userWithStats = { ...currentUser, stats: updatedStats };
-            const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
-
-            updateUserProfile(currentUser.id, {
-                points: updatedUser.points,
-                stats: updatedUser.stats,
-                badges: updatedUser.badges
-            }).catch(error => console.error('Failed to update user profile:', error));
-
-            awardedBadges.forEach(badge => {
-                const badgeDef = BADGE_DEFINITIONS[badge.id];
-                const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
-                addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
-            });
-            
-            setCurrentUser(updatedUser);
         
             const newUserQuestionStats: UserQuestionStats = { ...userQuestionStats };
             Object.values(finalUserAnswers).forEach((answer: UserAnswerRecord) => {
@@ -412,7 +421,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 setActiveTestSession(null);
                 setAppMode(AppMode.TEST_REVIEW);
                 trackQuestProgress('complete_test');
-                trackStudyActivity('test', 1);
+                // Study activity recorded server-side with createTestResult
                 // Post-test debrief via Lantern companion
                 const __tagStats: Record<string, { correct: number; total: number }> = {};
                 finalSessionData.questions.forEach(q => {

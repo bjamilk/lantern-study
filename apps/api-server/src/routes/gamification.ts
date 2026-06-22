@@ -561,6 +561,29 @@ router.post(
 );
 
 const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
+const ACTIVITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// POST /api/v1/gamification/me/sync-progress - Persist badges/points from current stats
+router.post(
+  '/me/sync-progress',
+  authMiddleware,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { stats, bonusPoints, bonusReason } = req.body ?? {};
+    const data = await supabaseService.syncGamificationProgress(userId, {
+      stats: stats && typeof stats === 'object' ? stats : undefined,
+      bonusPoints: typeof bonusPoints === 'number' ? bonusPoints : undefined,
+      bonusReason: typeof bonusReason === 'string' ? bonusReason : undefined,
+    });
+
+    await cacheService.delete(`user:${userId}`);
+
+    res.json({ success: true, data });
+  })
+);
 
 // POST /api/v1/gamification/activity/record - Record study activity for today
 router.post(
@@ -571,7 +594,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { type, amount = 1 } = req.body ?? {};
+    const { type, amount = 1, activityDate } = req.body ?? {};
     if (!type || !VALID_ACTIVITY_TYPES.has(type)) {
       return res.status(400).json({ success: false, error: 'Invalid activity type' });
     }
@@ -581,7 +604,17 @@ router.post(
       return res.status(400).json({ success: false, error: 'Invalid activity amount' });
     }
 
-    const data = await supabaseService.recordStudyActivity(userId, type, Math.floor(parsedAmount));
+    const date =
+      typeof activityDate === 'string' && ACTIVITY_DATE_RE.test(activityDate)
+        ? activityDate
+        : undefined;
+
+    const data = await supabaseService.recordStudyActivity(
+      userId,
+      type,
+      Math.floor(parsedAmount),
+      date
+    );
     res.json({ success: true, data });
   })
 );
@@ -785,6 +818,7 @@ router.post(
 
     const newProgress = Math.min(quest.target_count, (quest.progress_count ?? 0) + increment);
     const completed = newProgress >= quest.target_count;
+    const wasCompleted = !!quest.completed;
 
     const { data, error } = await supabaseService.getClient()
       .from('daily_quests')
@@ -794,6 +828,15 @@ router.post(
       .single();
 
     if (error) throw error;
+
+    if (completed && !wasCompleted) {
+      const rewardXp = Number(quest.reward_xp ?? 0);
+      if (rewardXp > 0) {
+        await supabaseService.awardPoints(userId, rewardXp, 'Daily quest completed', 'daily_quest');
+        await cacheService.delete(`user:${userId}`);
+      }
+    }
+
     res.json({ success: true, data });
   })
 );

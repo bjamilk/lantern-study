@@ -10,9 +10,10 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap } from '@lantern/shared/utils';
+import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer } from '@lantern/shared/utils';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
+import { checkAnswerIsCorrect } from '../utils/helpers';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 
@@ -47,6 +48,8 @@ interface DashboardScreenProps {
   onNavigateToNotes?: () => void;
   onOpenImportAndStudy?: () => void;
   dailyQuests?: Array<{ id: string; questType: string; targetCount: number; progressCount: number; completed: boolean; rewardXp: number }>;
+  questsLoaded?: boolean;
+  onRefreshGamification?: () => void;
   serverStreak?: number;
   streakFreezes?: number;
   onPurchaseStreakFreeze?: () => void;
@@ -171,6 +174,8 @@ export default function DashboardScreen({
   onNavigateToNotes,
   onOpenImportAndStudy,
   dailyQuests = [],
+  questsLoaded = false,
+  onRefreshGamification,
   serverStreak = 0,
   streakFreezes = 0,
   onPurchaseStreakFreeze,
@@ -438,12 +443,16 @@ export default function DashboardScreen({
             const answer = result.session.userAnswers?.[question.id] as UserAnswerRecord | undefined;
             if (!answer) continue;
 
+            const normalizedQuestion = normalizeTestQuestionForSession(question as Record<string, unknown>, 0);
+            const normalizedAnswer = normalizeStoredUserAnswer(answer, question.id);
+
             // Topic performance calculation
             if (question.tags) {
                 for (const tag of question.tags) {
                     const stats = tagStats.get(tag) || { correct: 0, total: 0 };
+                    const correct = checkAnswerIsCorrect(normalizedQuestion, normalizedAnswer);
                     stats.total++;
-                    if (answer.isCorrect) {
+                    if (correct) {
                         stats.correct++;
                     }
                     tagStats.set(tag, stats);
@@ -451,11 +460,11 @@ export default function DashboardScreen({
             }
             
             // Speed analysis calculation
-            if (question.questionType && answer.timeSpentSeconds !== undefined) {
-                const stats = speedStats.get(question.questionType) || { totalTime: 0, count: 0 };
-                stats.totalTime += answer.timeSpentSeconds;
+            if (normalizedQuestion.questionType && normalizedAnswer.timeSpentSeconds !== undefined) {
+                const stats = speedStats.get(normalizedQuestion.questionType) || { totalTime: 0, count: 0 };
+                stats.totalTime += normalizedAnswer.timeSpentSeconds;
                 stats.count++;
-                speedStats.set(question.questionType, stats);
+                speedStats.set(normalizedQuestion.questionType, stats);
             }
         }
     }
@@ -466,7 +475,7 @@ export default function DashboardScreen({
             accuracy: total > 0 ? (correct / total) * 100 : 0,
             count: total,
         }))
-        .filter(item => item.count >= 3)
+        .filter(item => item.count >= 2)
         .sort((a, b) => b.accuracy - a.accuracy);
 
     const strongestTopics = [...topicPerformance].slice(0, 3);
@@ -521,10 +530,20 @@ export default function DashboardScreen({
         .slice(0, 5); // Top 5
     }, [filteredTestResults, allMessages, userQuestionStats]);
 
-  const heatmapData = useMemo(
-    () => buildActivityMap(studyActivityDays),
-    [studyActivityDays]
-  );
+  const heatmapData = useMemo(() => {
+    const map = buildActivityMap(studyActivityDays);
+
+    for (const result of filteredTestResults) {
+      const end = result.session?.endTime || result.session?.startTime;
+      if (!end) continue;
+      const dateStr = formatActivityLocalDate(new Date(end));
+      if ((map.get(dateStr) || 0) === 0) {
+        map.set(dateStr, (map.get(dateStr) || 0) + 1);
+      }
+    }
+
+    return map;
+  }, [studyActivityDays, filteredTestResults]);
 
   const simulatedGroupAverages = useMemo(() => {
     const averages = new Map<string, number>();
@@ -804,7 +823,7 @@ export default function DashboardScreen({
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="flex-1 px-4 md:px-8 py-6 max-w-6xl mx-auto w-full space-y-6">
 
-        {dailyQuests.length > 0 && (
+        {(dailyQuests.length > 0 || questsLoaded) && (
           <DailyQuestsWidget
             quests={dailyQuests.map((q) => ({
               id: q.id,
@@ -814,9 +833,11 @@ export default function DashboardScreen({
               completed: q.completed,
               rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
             }))}
-            streak={serverStreak || streakData.currentStreak}
+            streak={serverStreak || streakData.streak}
             streakFreezes={streakFreezes}
             onPurchaseStreakFreeze={onPurchaseStreakFreeze}
+            questsLoaded={questsLoaded}
+            onRefresh={onRefreshGamification}
             theme={theme}
           />
         )}

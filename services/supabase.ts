@@ -1230,6 +1230,7 @@ export const createTestResult = async (resultData: {
   score: number;
   correct_answers_count: number;
   total_questions: number;
+  activityDate?: string;
 }) => {
   console.log('Creating test result for session:', resultData.session_id);
   try {
@@ -1240,6 +1241,7 @@ export const createTestResult = async (resultData: {
         score: resultData.score,
         correctAnswersCount: resultData.correct_answers_count,
         totalQuestions: resultData.total_questions,
+        activityDate: resultData.activityDate,
       }),
     });
 

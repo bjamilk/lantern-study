@@ -9,6 +9,10 @@ import {
   getQuestionVerificationThreshold,
   isQuestionTestable,
   isQuestionVoteBalanceAcceptable,
+  normalizeStoredUserAnswer,
+  normalizeTestQuestionForSession,
+  normalizeTestResultSession,
+  checkAnswerIsCorrect,
   resolveQuestionStatusAfterVote,
 } from './testHelpers';
 
@@ -90,5 +94,49 @@ describe('isQuestionVoteBalanceAcceptable', () => {
 
   it('rejects when downvotes are higher', () => {
     expect(isQuestionVoteBalanceAcceptable({ upvotes: 1, downvotes: 2 })).toBe(false);
+  });
+});
+
+describe('normalizeStoredUserAnswer', () => {
+  it('maps snake_case is_correct to isCorrect', () => {
+    const answer = normalizeStoredUserAnswer({ questionId: 'q1', is_correct: true });
+    expect(answer.isCorrect).toBe(true);
+  });
+});
+
+describe('normalizeTestResultSession', () => {
+  it('recomputes correctness from correct_answer_ids when isCorrect is missing', () => {
+    const { userAnswers } = normalizeTestResultSession({
+      questions: [
+        {
+          id: 'q1',
+          questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
+          questionStem: 'Pick 4',
+          options: [{ id: 'a', text: '4' }],
+          correct_answer_ids: ['a'],
+        },
+      ],
+      userAnswers: {
+        q1: { questionId: 'q1', selectedOptionIds: ['a'] },
+      },
+    });
+    expect(userAnswers.q1?.isCorrect).toBe(true);
+  });
+
+  it('recomputes correctness when stored isCorrect is false but answer matches', () => {
+    const question = {
+      id: 'q1',
+      questionType: QuestionType.MULTIPLE_CHOICE_SINGLE,
+      questionStem: 'Pick 4',
+      options: [{ id: 'a', text: '4' }],
+      correctAnswerIds: ['a'],
+    };
+    const answer = normalizeStoredUserAnswer({
+      questionId: 'q1',
+      selectedOptionIds: ['a'],
+      isCorrect: false,
+    });
+    const normalizedQ = normalizeTestQuestionForSession(question, 0);
+    expect(checkAnswerIsCorrect(normalizedQ, answer)).toBe(true);
   });
 });

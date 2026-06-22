@@ -348,7 +348,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       if (!userId) return;
 
       const { testId } = req.params;
-      const { score, correctAnswersCount, totalQuestions } = req.body;
+      const { score, correctAnswersCount, totalQuestions, activityDate } = req.body;
 
       logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId });
 
@@ -356,6 +356,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         score,
         correctAnswersCount,
         totalQuestions,
+        activityDate: typeof activityDate === 'string' ? activityDate : undefined,
       }, userId);
 
       // Invalidate caches

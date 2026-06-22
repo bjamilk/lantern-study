@@ -263,7 +263,7 @@ function buildMatchingFields(question: Record<string, unknown>): {
 }
 
 function buildCorrectAnswerIds(question: Record<string, unknown>, questionType: QuestionType): string[] | undefined {
-    const existing = question.correctAnswerIds as string[] | undefined;
+    const existing = (question.correctAnswerIds || question.correct_answer_ids) as string[] | undefined;
     if (existing?.length) return existing;
 
     const optionItems = question.optionItems as Array<{ id: string; text: string }> | undefined;
@@ -454,7 +454,7 @@ export function normalizeStoredUserAnswer(raw: unknown, questionId?: string): Us
     const qid = String(record.questionId || questionId || '');
     const normalized: UserAnswerRecord = {
         questionId: qid,
-        isCorrect: record.isCorrect as boolean | undefined,
+        isCorrect: (record.isCorrect ?? record.is_correct) as boolean | undefined,
         timeSpentSeconds: (record.timeSpentSeconds ?? record.time_spent_seconds) as number | undefined,
         isBookmarked: record.isBookmarked as boolean | undefined,
     };

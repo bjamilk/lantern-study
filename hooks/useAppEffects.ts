@@ -32,7 +32,7 @@ import {
 } from '../services/supabase';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
-import { fetchStudyActivity } from '../services/gamificationStreak';
+import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
@@ -81,6 +81,81 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         theme, setTheme, setAppMode,
         openModal, lowDataMode, setLowDataMode
     } = useUIStore();
+
+    const [dailyQuests, setDailyQuests] = useState<any[]>([]);
+    const [serverStreak, setServerStreak] = useState(0);
+    const [streakFreezes, setStreakFreezes] = useState(0);
+    const [questsLoaded, setQuestsLoaded] = useState(false);
+
+    const refreshDashboardGamification = useCallback(async () => {
+        const user = useAuthStore.getState().currentUser;
+        if (!user?.id) return;
+
+        const tokenReady = await ensureAuthTokenReady();
+        if (!tokenReady) {
+            console.warn('[Gamification] Deferred — auth token not ready');
+            return;
+        }
+
+        const userId = user.id;
+        const results = await Promise.allSettled([
+            fetchDailyQuests(),
+            recordLoginStreak(),
+            fetchStudyActivity(),
+            syncGamificationProgress(),
+        ]);
+
+        if (results[0].status === 'fulfilled') {
+            setDailyQuests(Array.isArray(results[0].value) ? results[0].value : []);
+        } else {
+            console.warn('[Gamification] Daily quests fetch failed:', results[0].reason);
+        }
+
+        if (results[1].status === 'fulfilled') {
+            const s = results[1].value;
+            setServerStreak(s?.current_streak ?? s?.currentStreak ?? 0);
+            setStreakFreezes(s?.streak_freezes ?? s?.streakFreezes ?? 0);
+        } else {
+            console.warn('[Gamification] Streak record failed:', results[1].reason);
+        }
+
+        if (results[2].status === 'fulfilled') {
+            setStudyActivityDays(Array.isArray(results[2].value) ? results[2].value : []);
+        } else {
+            console.warn('[Gamification] Study activity fetch failed:', results[2].reason);
+        }
+
+        if (results[3].status === 'fulfilled') {
+            const synced = results[3].value;
+            const current = useAuthStore.getState().currentUser;
+            if (synced && current?.id === userId) {
+                setCurrentUser({
+                    ...current,
+                    points: synced.points ?? current.points,
+                    badges: synced.badges ?? current.badges,
+                    stats: synced.stats ?? current.stats,
+                });
+            }
+        } else {
+            console.warn('[Gamification] Profile sync failed:', results[3].reason);
+            try {
+                const profile = await fetchUserProfile(userId);
+                const current = useAuthStore.getState().currentUser;
+                if (profile && current?.id === userId) {
+                    setCurrentUser({
+                        ...current,
+                        points: (profile.points as number) ?? current.points,
+                        badges: (profile.badges as User['badges']) ?? current.badges,
+                        stats: (profile.stats as User['stats']) ?? current.stats,
+                    });
+                }
+            } catch (profileErr) {
+                console.warn('[Gamification] Profile refresh fallback failed:', profileErr);
+            }
+        }
+
+        setQuestsLoaded(true);
+    }, [setCurrentUser, setStudyActivityDays]);
 
     useDailyStudyReminder(currentUser);
 
@@ -460,6 +535,8 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             const userId = currentUser.id;
             const currentMonthYear = new Date().toISOString().slice(0, 7);
 
+            void refreshDashboardGamification();
+
             // Phase 1: critical path for first paint (groups, DMs, notifications, prefs)
             const criticalResults = await Promise.allSettled([
                 fetchGroups(userId),
@@ -476,7 +553,6 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 fetchFlashcards(undefined, userId, { page: 1, limit: 50 }),
                 fetchTestResults(userId, { limit: 50 }),
                 fetchUserQuestionStats(userId),
-                fetchStudyActivity().catch(() => []),
                 fetchOfflineBundles(userId),
                 fetchUserBudget(userId, currentMonthYear),
                 syncBudgetTransactionsToCloud(userId, transactions),
@@ -485,12 +561,11 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             const results = [
                 criticalResults[0], criticalResults[1], criticalResults[2], criticalResults[3],
                 deferredResults[0], deferredResults[1], deferredResults[2], deferredResults[3],
-                deferredResults[4],
                 criticalResults[4],
-                deferredResults[5],
+                deferredResults[4],
                 criticalResults[5],
+                deferredResults[5],
                 deferredResults[6],
-                deferredResults[7],
             ];
 
             if (cancelled) return;
@@ -586,29 +661,24 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                     }
                 }
 
-                // --- [8] Study activity ---
+                // --- [8] Notifications ---
                 if (results[8].status === 'fulfilled') {
-                    setStudyActivityDays(Array.isArray(results[8].value) ? results[8].value : []);
-                }
-
-                // --- [9] Notifications ---
-                if (results[9].status === 'fulfilled') {
-                    const fetchedNotifications = results[9].value;
+                    const fetchedNotifications = results[8].value;
                     setNotifications(Array.isArray(fetchedNotifications) ? fetchedNotifications : []);
                 }
 
-                // --- [10] Offline bundles ---
-                if (results[10].status === 'fulfilled') {
-                    const cloudBundles: OfflineSessionBundle[] = results[10].value;
+                // --- [9] Offline bundles ---
+                if (results[9].status === 'fulfilled') {
+                    const cloudBundles: OfflineSessionBundle[] = results[9].value;
                     // Cloud is the authoritative source filtered by user_id.
                     // Replace the store entirely to prevent cross-user contamination
                     // from the shared localStorage key and to eliminate duplicates.
                     setOfflineBundles(cloudBundles);
                 }
 
-                // --- [11] User preferences ---
-                if (results[11].status === 'fulfilled') {
-                    const cloudPrefs = results[11].value;
+                // --- [10] User preferences ---
+                if (results[10].status === 'fulfilled') {
+                    const cloudPrefs = results[10].value;
                     if (cloudPrefs) {
                         setTheme(cloudPrefs.theme);
                         localStorage.setItem('theme', cloudPrefs.theme);
@@ -634,9 +704,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                     }
                 }
 
-                // --- [12] User budget ---
-                if (results[12].status === 'fulfilled') {
-                    const cloudBudget = results[12].value;
+                // --- [11] User budget ---
+                if (results[11].status === 'fulfilled') {
+                    const cloudBudget = results[11].value;
                     if (cloudBudget) {
                         const updatedBudget = budget ? {
                             ...budget,
@@ -658,9 +728,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                     }
                 }
 
-                // --- [13] Transactions sync ---
-                if (results[13].status === 'fulfilled') {
-                    const mergedTransactions = results[13].value;
+                // --- [12] Transactions sync ---
+                if (results[12].status === 'fulfilled') {
+                    const mergedTransactions = results[12].value;
                     const transactionsWithUserId: Transaction[] = mergedTransactions.map((t: any) => ({
                         ...t,
                         userId: userId,
@@ -687,7 +757,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         return () => {
             cancelled = true;
         };
-    }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady]);
+    }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady, refreshDashboardGamification]);
 
     // Sync budget extras (savings, splits, wallet) to cloud when they change
     useEffect(() => {
@@ -1009,4 +1079,12 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             return () => clearInterval(interval);
         }
     }, [currentUser, flashcards, checkForDueCardsAndNotify, lowDataMode]);
+
+    return {
+        refreshDashboardGamification,
+        dailyQuests,
+        serverStreak,
+        streakFreezes,
+        questsLoaded,
+    };
 }

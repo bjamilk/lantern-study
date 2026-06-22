@@ -1,6 +1,6 @@
 import { getApiBaseUrl } from '@lantern/shared';
-import type { ActivityType, StudyActivityDay } from '@lantern/shared';
-import { ACTIVITY_DAYS } from '@lantern/shared/utils';
+import type { ActivityType, StudyActivityDay, UserStats } from '@lantern/shared';
+import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
 import { getAuthHeaders } from './supabase';
 
 const API_BASE = getApiBaseUrl();
@@ -15,6 +15,23 @@ async function gamificationRequest<T>(path: string, options: RequestInit = {}): 
   if (!res.ok) throw new Error(data.error || data.message || 'Gamification request failed');
   return data.data;
 }
+
+export interface GamificationSyncResult {
+  points: number;
+  badges: Array<{ id: string; level: number; name: string }>;
+  stats: UserStats;
+  awardedBadges?: Array<{ id: string; level: number; name: string }>;
+}
+
+export const syncGamificationProgress = (options?: {
+  stats?: Partial<UserStats>;
+  bonusPoints?: number;
+  bonusReason?: string;
+}) =>
+  gamificationRequest<GamificationSyncResult>('/me/sync-progress', {
+    method: 'POST',
+    body: JSON.stringify(options ?? {}),
+  });
 
 export const recordLoginStreak = () =>
   gamificationRequest<any>('/streak/record', { method: 'POST', body: '{}' });
@@ -40,7 +57,11 @@ export const incrementQuestProgress = (questType: string, increment = 1) =>
 export const recordStudyActivity = (type: ActivityType, amount = 1) =>
   gamificationRequest<any>('/activity/record', {
     method: 'POST',
-    body: JSON.stringify({ type, amount }),
+    body: JSON.stringify({
+      type,
+      amount,
+      activityDate: formatActivityLocalDate(new Date()),
+    }),
   });
 
 export const fetchStudyActivity = (days = ACTIVITY_DAYS) =>

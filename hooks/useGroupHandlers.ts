@@ -4,7 +4,7 @@ import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMod
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
-import { checkAndAwardBadges, initialUserStats } from '../utils/helpers';
+import { initialUserStats } from '../utils/helpers';
 import { resolveQuestionStatusAfterVote } from '@lantern/shared/utils';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
@@ -16,6 +16,7 @@ import {
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread
 } from '../services/supabase';
+import { syncGamificationProgress } from '../services/gamificationStreak';
 
 interface UseGroupHandlersParams {
     users: User[];
@@ -382,22 +383,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     groupsCreated: (currentUser.stats.groupsCreated || 0) + 1,
                 };
 
-                const userWithStats = { ...currentUser, stats: updatedStats };
-                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
-
-                updateUserProfile(currentUser.id, {
-                    points: updatedUser.points,
-                    stats: updatedUser.stats,
-                    badges: updatedUser.badges
-                }).catch(error => console.error('Failed to update user profile:', error));
-
-                awardedBadges.forEach(badge => {
-                    const badgeDef = BADGE_DEFINITIONS[badge.id];
-                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
-                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
-                });
-                
-                setCurrentUser(updatedUser);
+                void syncGamificationProgress({ stats: updatedStats })
+                    .then((synced) => {
+                        setCurrentUser({
+                            ...currentUser,
+                            points: synced.points,
+                            badges: synced.badges,
+                            stats: synced.stats,
+                        });
+                        (synced.awardedBadges || []).forEach(badge => {
+                            const badgeDef = BADGE_DEFINITIONS[badge.id];
+                            const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
+                            addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                        });
+                    })
+                    .catch(error => console.error('Failed to sync gamification after group create:', error));
             }
             
             setAppMode(AppMode.CHAT);
@@ -483,22 +483,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     questionsCreated: (currentUser.stats.questionsCreated || 0) + 1,
                 };
 
-                const userWithStats = { ...currentUser, stats: updatedStats };
-                const { updatedUser, awardedBadges } = checkAndAwardBadges(userWithStats);
-
-                updateUserProfile(currentUser.id, {
-                    points: updatedUser.points,
-                    stats: updatedUser.stats,
-                    badges: updatedUser.badges
-                }).catch(error => console.error('Failed to update user profile:', error));
-
-                awardedBadges.forEach(badge => {
-                    const badgeDef = BADGE_DEFINITIONS[badge.id];
-                    const levelInfo = badgeDef.levels.find(l => l.level === badge.level);
-                    addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
-                });
-                
-                setCurrentUser(updatedUser);
+                void syncGamificationProgress({ stats: updatedStats })
+                    .then((synced) => {
+                        setCurrentUser({
+                            ...currentUser,
+                            points: synced.points,
+                            badges: synced.badges,
+                            stats: synced.stats,
+                        });
+                        (synced.awardedBadges || []).forEach(badge => {
+                            const badgeDef = BADGE_DEFINITIONS[badge.id];
+                            const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
+                            addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
+                        });
+                    })
+                    .catch(error => console.error('Failed to sync gamification after question submit:', error));
             }
             
             closeModal('question');
@@ -666,9 +665,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
         
         if (currentUser) {
-            const updatedUser: User = { ...currentUser, points: currentUser.points + 5 };
-            updateUserProfile(currentUser.id, { points: updatedUser.points }).catch(error => console.error('Failed to update user points:', error));
-            setCurrentUser(updatedUser);
+            void syncGamificationProgress({
+                bonusPoints: 5,
+                bonusReason: 'Duplicate question help',
+            })
+                .then((synced) => {
+                    setCurrentUser({
+                        ...currentUser,
+                        points: synced.points,
+                        badges: synced.badges,
+                        stats: synced.stats,
+                    });
+                })
+                .catch(error => console.error('Failed to sync duplicate upvote points:', error));
         }
         
         addNotification("Thanks for helping keep things tidy! You've earned 5 points.");
