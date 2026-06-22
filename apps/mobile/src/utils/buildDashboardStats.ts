@@ -9,6 +9,7 @@ import {
   type TopicPerformance,
   type TroublesomeQuestion,
 } from '../types/dashboardStats';
+import { resolveQuestionResultStatus } from '@lantern/shared/utils';
 
 export interface RawTestResult {
   id?: string;
@@ -115,6 +116,10 @@ function isAnswerAttempted(answer: any): boolean {
 
 function resolveAnswerStatus(answer: any): 'correct' | 'incorrect' | 'unattempted' {
   if (!isAnswerAttempted(answer)) return 'unattempted';
+  const question = (answer as any)?.questionSnapshot || (answer as any)?.question;
+  if (question) {
+    return resolveQuestionResultStatus(question, answer);
+  }
   return answer?.isCorrect ? 'correct' : 'incorrect';
 }
 

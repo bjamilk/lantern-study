@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart, BarChart } from 'react-native-gifted-charts';
 import type { RecentTest } from '../types/dashboardStats';
-import { useTheme } from '../theme';
+import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -41,10 +41,10 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
 
   // Bar chart data for time per question
   const timePerQuestionData = useMemo(() => 
-    analysis.timePerQuestion.slice(0, 15).map((item, index) => ({
-      value: item.time,
+    analysis.timePerQuestion.slice(0, 15).map((item) => ({
+      value: item.status === 'unattempted' && item.time <= 0 ? 1 : item.time,
       label: `Q${item.questionNumber}`,
-      frontColor: item.time > 40 ? '#ef4444' : item.time > 30 ? '#f59e0b' : '#6366f1',
+      frontColor: STATUS_BAR_COLORS[item.status],
     })), [analysis.timePerQuestion]);
 
   // Bar chart data for time per tag
@@ -145,9 +145,20 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                 <Ionicons name="time" size={20} color={colors.primary} />
                 <Text style={[styles.chartTitle, { color: colors.text }]}>Time per Question (seconds)</Text>
               </View>
-              <Text style={[styles.chartHint, { color: colors.textSecondary }]}>
-                🔵 &lt;30s  🟠 30-40s  🔴 &gt;40s
-              </Text>
+              <View style={styles.statusLegend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.correct }]} />
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Correct</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.incorrect }]} />
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Incorrect</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.unattempted }]} />
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Unattempted</Text>
+                </View>
+              </View>
               <View style={styles.barChartContainer}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <BarChart
@@ -363,6 +374,13 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     marginBottom: 12,
     textAlign: 'center',
+  },
+  statusLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 12,
   },
   // Pie Chart
   pieChartContainer: {

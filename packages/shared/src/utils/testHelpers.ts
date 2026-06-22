@@ -532,6 +532,27 @@ export function isUserAnswerAttempted(answer: UserAnswerRecord | undefined): boo
     );
 }
 
+export type QuestionResultStatus = 'correct' | 'incorrect' | 'unattempted';
+
+export const QUESTION_RESULT_CHART_COLORS: Record<
+    QuestionResultStatus,
+    { bg: string; border: string }
+> = {
+    correct: { bg: 'rgba(34, 197, 94, 0.75)', border: 'rgb(22, 163, 74)' },
+    incorrect: { bg: 'rgba(239, 68, 68, 0.75)', border: 'rgb(220, 38, 38)' },
+    unattempted: { bg: 'rgba(245, 158, 11, 0.75)', border: 'rgb(217, 119, 6)' },
+};
+
+export function resolveQuestionResultStatus(
+    question: TestQuestion,
+    answer: UserAnswerRecord | undefined
+): QuestionResultStatus {
+    if (!isUserAnswerAttempted(answer)) return 'unattempted';
+    const q = normalizeTestQuestionForSession(question as unknown as Record<string, unknown>, 0);
+    const a = normalizeStoredUserAnswer(answer!, question.id);
+    return checkAnswerIsCorrect(q, a) ? 'correct' : 'incorrect';
+}
+
 export function normalizeTestSessionQuestions(questions: unknown[]): TestQuestion[] {
     if (!Array.isArray(questions)) return [];
     return questions.map((q, index) =>

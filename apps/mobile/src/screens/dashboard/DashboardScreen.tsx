@@ -53,7 +53,7 @@ import TestAnalysisModal from '../../components/TestAnalysisModal';
 import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../services/gamification';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
-import { buildActivityHeatmapGrid } from '@lantern/shared/utils';
+import { buildActivityHeatmapGrid, getActivityHeatLevel, getActivityHeatHexColor, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 
 
@@ -81,70 +81,42 @@ const PERIOD_OPTIONS: { value: TimePeriod; label: string }[] = [
 
 
 
-function heatColor(count: number, max: number): string {
-
-  if (count === 0) return '#e2e8f0';
-
-  const ratio = max > 0 ? count / max : 1;
-
-  if (ratio > 0.75) return '#4f46e5';
-
-  if (ratio > 0.5) return '#6366f1';
-
-  if (ratio > 0.25) return '#818cf8';
-
-  return '#c7d2fe';
-
-}
-
-
-
-function ActivityHeatmap({ days, maxCount }: { days: { date: string; count: number }[]; maxCount: number }) {
-
+function ActivityHeatmap({ days }: { days: { date: string; count: number }[] }) {
+  const legendLevels: ActivityHeatLevel[] = [0, 1, 2, 3, 4];
   const weeks: { date: string; count: number }[][] = [];
 
   for (let i = 0; i < days.length; i += 7) {
-
     weeks.push(days.slice(i, i + 7));
-
   }
 
-
-
   return (
-
-    <View className="overflow-hidden">
-
+    <View className="overflow-hidden items-center gap-2">
       <View className="flex-row flex-wrap gap-1">
-
         {weeks.map((week, wi) => (
-
           <View key={`week-${wi}`} className="gap-1">
-
             {week.map(day => (
-
               <View
-
                 key={day.date}
-
-                style={{ backgroundColor: heatColor(day.count, maxCount) }}
-
+                style={{ backgroundColor: getActivityHeatHexColor(getActivityHeatLevel(day.count)) }}
                 className="w-3 h-3 rounded-sm"
-
               />
-
             ))}
-
           </View>
-
         ))}
-
       </View>
-
+      <View className="flex-row items-center gap-1">
+        <Text className="text-xs text-slate-500">Less</Text>
+        {legendLevels.map(level => (
+          <View
+            key={level}
+            style={{ backgroundColor: getActivityHeatHexColor(level) }}
+            className="w-3 h-3 rounded-sm"
+          />
+        ))}
+        <Text className="text-xs text-slate-500">More</Text>
+      </View>
     </View>
-
   );
-
 }
 
 
@@ -645,7 +617,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             <>
 
-              <ActivityHeatmap days={heatmap.days} maxCount={heatmap.maxCount} />
+              <ActivityHeatmap days={heatmap.days} />
 
               <Text className="text-xs text-slate-400 mt-2">Darker = more study activity</Text>
 

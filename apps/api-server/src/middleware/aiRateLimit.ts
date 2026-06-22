@@ -1,19 +1,27 @@
 /**
  * AI Rate Limiting Middleware
  * Distributed via Redis when REDIS_ENABLED=true; in-memory fallback for dev.
- * Each window is a rolling 24 hours from the first request in that window.
+ * Each window resets at 00:00 UTC (midnight GMT).
  */
 import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
 
-const userAIUsage = new Map<string, { count: number; resetTime: number }>();
+const userAIUsage = new Map<string, { count: number; dateKey: string }>();
 
 const AI_DAILY_LIMIT = parseInt(process.env.AI_DAILY_LIMIT || '20', 10);
-const AI_WINDOW_MS = 24 * 60 * 60 * 1000;
-const AI_WINDOW_SEC = Math.ceil(AI_WINDOW_MS / 1000);
 
-function newWindowEnd(now = Date.now()): number {
-  return now + AI_WINDOW_MS;
+function getUtcDateKey(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+function msUntilNextUtcMidnight(now = Date.now()): number {
+  const next = new Date(now);
+  next.setUTCHours(24, 0, 0, 0);
+  return Math.max(1, next.getTime() - now);
+}
+
+function nextUtcMidnightIso(now = Date.now()): string {
+  return new Date(now + msUntilNextUtcMidnight(now)).toISOString();
 }
 
 function toResetsAt(resetTime: number): string {
@@ -25,41 +33,39 @@ async function incrementUsage(
   limit: number
 ): Promise<{ allowed: boolean; count: number; resetTime: number }> {
   const now = Date.now();
+  const dateKey = getUtcDateKey(new Date(now));
+  const resetTime = new Date(now + msUntilNextUtcMidnight(now)).getTime();
   const redis = await getRedisClient();
 
   if (redis?.isOpen) {
-    const rKey = redisKey(`ai:${key}`);
-    let ttl = await redis.ttl(rKey);
+    const rKey = redisKey(`ai:${dateKey}:${key}`);
+    const raw = await redis.get(rKey);
+    const current = raw ? parseInt(raw, 10) : 0;
 
-    if (ttl <= 0) {
-      await redis.set(rKey, '1', { EX: AI_WINDOW_SEC });
-      const resetTime = newWindowEnd(now);
+    if (current >= limit) {
+      return { allowed: false, count: current, resetTime };
+    }
+
+    const count = current === 0 ? 1 : await redis.incr(rKey);
+    if (current === 0) {
+      const ttlSec = Math.ceil(msUntilNextUtcMidnight(now) / 1000);
+      await redis.set(rKey, '1', { EX: ttlSec });
       return { allowed: 1 <= limit, count: 1, resetTime };
     }
 
-    const raw = await redis.get(rKey);
-    const current = raw ? parseInt(raw, 10) : 0;
-    if (current >= limit) {
-      return { allowed: false, count: current, resetTime: now + ttl * 1000 };
-    }
-
-    const count = await redis.incr(rKey);
-    ttl = await redis.ttl(rKey);
-    const resetTime = ttl > 0 ? now + ttl * 1000 : newWindowEnd(now);
     return { allowed: count <= limit, count, resetTime };
   }
 
   const usage = userAIUsage.get(key);
-  if (usage && usage.resetTime > now) {
+  if (usage && usage.dateKey === dateKey) {
     if (usage.count >= limit) {
-      return { allowed: false, count: usage.count, resetTime: usage.resetTime };
+      return { allowed: false, count: usage.count, resetTime };
     }
     usage.count++;
-    return { allowed: true, count: usage.count, resetTime: usage.resetTime };
+    return { allowed: true, count: usage.count, resetTime };
   }
 
-  const resetTime = newWindowEnd(now);
-  userAIUsage.set(key, { count: 1, resetTime });
+  userAIUsage.set(key, { count: 1, dateKey });
   return { allowed: true, count: 1, resetTime };
 }
 
@@ -68,25 +74,22 @@ async function readUsage(
   limit: number
 ): Promise<{ used: number; limit: number; resetsAt: string }> {
   const now = Date.now();
+  const dateKey = getUtcDateKey(new Date(now));
+  const resetsAt = nextUtcMidnightIso(now);
   const redis = await getRedisClient();
 
   if (redis?.isOpen) {
-    const rKey = redisKey(`ai:${key}`);
+    const rKey = redisKey(`ai:${dateKey}:${key}`);
     const raw = await redis.get(rKey);
     const used = raw ? parseInt(raw, 10) : 0;
-    if (!used) {
-      return { used: 0, limit, resetsAt: '' };
-    }
-    const ttl = await redis.ttl(rKey);
-    const resetsAt = ttl > 0 ? toResetsAt(now + ttl * 1000) : '';
     return { used, limit, resetsAt };
   }
 
   const usage = userAIUsage.get(key);
-  if (!usage || usage.resetTime <= now) {
-    return { used: 0, limit, resetsAt: '' };
+  if (!usage || usage.dateKey !== dateKey) {
+    return { used: 0, limit, resetsAt };
   }
-  return { used: usage.count, limit, resetsAt: toResetsAt(usage.resetTime) };
+  return { used: usage.count, limit, resetsAt };
 }
 
 export async function getAIUsage(
@@ -171,16 +174,17 @@ export function aiRateLimitForFeature(featureKey: string) {
 }
 
 export async function resetAIUsageForUser(userId: string, featureKey?: string): Promise<void> {
+  const dateKey = getUtcDateKey();
   const redis = await getRedisClient();
   if (featureKey) {
     const key = buildUsageKey(userId, featureKey);
     userAIUsage.delete(key);
-    if (redis?.isOpen) await redis.del(redisKey(`ai:${key}`));
+    if (redis?.isOpen) await redis.del(redisKey(`ai:${dateKey}:${key}`));
   } else {
     for (const key of userAIUsage.keys()) {
       if (key === userId || key.startsWith(`${userId}:`)) {
         userAIUsage.delete(key);
-        if (redis?.isOpen) await redis.del(redisKey(`ai:${key}`));
+        if (redis?.isOpen) await redis.del(redisKey(`ai:${dateKey}:${key}`));
       }
     }
   }

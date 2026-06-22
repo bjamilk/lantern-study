@@ -38,7 +38,7 @@ export function getAIResetLabel(
   const countdown = formatAIResetCountdown(resetsAt, nowMs);
   if (countdown) return countdown;
 
-  if (used === 0) return 'Resets 24h after first AI use';
+  if (used === 0) return 'Resets at midnight GMT';
   if (used >= limit) return 'Resets soon';
   return 'Reset time updating...';
 }

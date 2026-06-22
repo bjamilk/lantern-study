@@ -8,7 +8,7 @@ import { XCircleIcon, ChartPieIcon, ClockIcon, TagIcon, SparklesIcon, ArrowPathI
 import { Chart, registerables } from 'chart.js';
 import type { Chart as ChartType } from 'chart.js';
 import { computeWeakTopicsFromTestResult } from '../utils/buildFlashcardSource';
-import { isUserAnswerAttempted } from '@lantern/shared/utils';
+import { isUserAnswerAttempted, resolveQuestionResultStatus, QUESTION_RESULT_CHART_COLORS } from '@lantern/shared/utils';
 
 Chart.register(...registerables);
 
@@ -45,15 +45,8 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
         const incorrectCount = totalQuestions - correctAnswersCount - unattemptedCount;
 
         // Data for Time per Question Chart
-        const isAttempted = (answer: typeof session.userAnswers[string] | undefined) =>
-            isUserAnswerAttempted(answer);
-
         const timePerQuestionData = session.questions.map(q => ({
-            status: !isAttempted(session.userAnswers[q.id])
-                ? 'unattempted'
-                : session.userAnswers[q.id]?.isCorrect
-                    ? 'correct'
-                    : 'incorrect',
+            status: resolveQuestionResultStatus(q, session.userAnswers[q.id]),
             label: `Q${q.questionNumber}`,
             time: session.userAnswers[q.id]?.timeSpentSeconds ?? 0,
             stem: q.questionStem || q.text || '',
@@ -118,21 +111,18 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                             datasets: [{
                                 label: 'Time Spent (s)',
                                 data: timePerQuestionData.map(d => d.time),
-                                backgroundColor: timePerQuestionData.map(d => {
-                                    if (d.status === 'correct') return 'rgba(34, 197, 94, 0.75)';
-                                    if (d.status === 'incorrect') return 'rgba(239, 68, 68, 0.75)';
-                                    return 'rgba(245, 158, 11, 0.75)';
-                                }),
-                                borderColor: timePerQuestionData.map(d => {
-                                    if (d.status === 'correct') return 'rgb(22, 163, 74)';
-                                    if (d.status === 'incorrect') return 'rgb(220, 38, 38)';
-                                    return 'rgb(217, 119, 6)';
-                                }),
+                                backgroundColor: timePerQuestionData.map(d =>
+                                    QUESTION_RESULT_CHART_COLORS[d.status].bg
+                                ),
+                                borderColor: timePerQuestionData.map(d =>
+                                    QUESTION_RESULT_CHART_COLORS[d.status].border
+                                ),
                                 borderWidth: 1,
                             }]
                         },
                         options: {
                             responsive: true,
+                            datasets: { bar: { minBarLength: 6 } },
                             scales: { y: { beginAtZero: true, title: { display: true, text: 'Seconds' } } },
                             plugins: {
                                 legend: { display: false },
@@ -141,7 +131,10 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                                         title: (items) => {
                                             const idx = items[0]?.dataIndex ?? -1;
                                             const d = timePerQuestionData[idx];
-                                            return d ? `${d.label}  •  ${d.time}s  •  ${d.status}` : '';
+                                            const statusLabel = d
+                                                ? d.status.charAt(0).toUpperCase() + d.status.slice(1)
+                                                : '';
+                                            return d ? `${d.label}  •  ${d.time}s  •  ${statusLabel}` : '';
                                         },
                                         label: (item) => {
                                             const d = timePerQuestionData[item.dataIndex];
