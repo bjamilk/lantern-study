@@ -36,6 +36,24 @@ const parseNotificationLink = (link?: string, n?: AppNotification) => {
     const challengeId = (n.data?.challengeId as string) || link?.replace('challenge:', '');
     if (challengeId) return { type: 'challenge', id: challengeId };
   }
+  if (link?.startsWith('dm:')) {
+    const rest = link.slice(3);
+    const lastColon = rest.lastIndexOf(':');
+    if (lastColon > 0) {
+      return {
+        type: 'dm',
+        threadId: rest.slice(0, lastColon),
+        id: rest.slice(lastColon + 1),
+      };
+    }
+  }
+  if (n?.type === 'dm_message' && n.data?.senderId) {
+    return {
+      type: 'dm',
+      threadId: n.data.threadId as string | undefined,
+      id: n.data.senderId as string,
+    };
+  }
   if (!link) return null;
   const parts = link.split(':');
   if (parts[0] !== 'marketplace' || parts.length < 3) return null;
@@ -50,6 +68,7 @@ const getNotificationMeta = (link?: string, n?: AppNotification) => {
     case 'offer': return { icon: CurrencyDollarIcon, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30', label: 'Offer' };
     case 'inquiry': return { icon: ChatBubbleLeftEllipsisIcon, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30', label: 'Inquiry' };
     case 'listing': return { icon: ShoppingBagIcon, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30', label: 'Listing' };
+    case 'dm': return { icon: ChatBubbleLeftEllipsisIcon, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30', label: 'Message' };
     default: return { icon: BellIcon, color: 'text-blue-500 bg-blue-50 dark:bg-blue-900/30', label: null };
   }
 };
@@ -67,7 +86,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ isOpen, onClose, 
       onMarkAsRead(n.id);
     }
     // Navigate if there's a link
-    if (onNavigate && (n.link || n.type?.startsWith('challenge'))) {
+    if (onNavigate && (n.link || n.type?.startsWith('challenge') || n.type === 'dm_message')) {
       const parsed = parseNotificationLink(n.link, n);
       if (parsed) {
         if (parsed.type === 'offer') {
@@ -79,6 +98,8 @@ const NotificationModal: React.FC<NotificationModalProps> = ({ isOpen, onClose, 
         } else if (parsed.type === 'challenge') {
           onNavigate('Challenges');
           onNavigate('PlayChallenge', { challengeId: parsed.id });
+        } else if (parsed.type === 'dm' && parsed.id) {
+          onNavigate('DirectMessages', { userId: parsed.id, threadId: parsed.threadId });
         }
         onClose();
       }

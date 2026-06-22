@@ -2564,18 +2564,39 @@ export class SupabaseService {
         throw new Error(`Failed to send DM: ${error.message}`);
       }
 
-      // Update thread's last message
+      // Un-archive for recipient and update thread's last message
+      const { data: threadRow } = await this.supabase
+        .from('dm_threads')
+        .select('archived_by')
+        .eq('id', threadId)
+        .single();
+
+      const archivedBy: string[] = Array.isArray(threadRow?.archived_by) ? threadRow.archived_by : [];
+      const updatedArchivedBy = archivedBy.filter((id: string) => id !== recipientId);
+
       await this.supabase
         .from('dm_threads')
         .update({
           last_message: content,
           last_message_time: new Date().toISOString(),
+          archived_by: updatedArchivedBy,
         })
         .eq('id', threadId);
 
-      // Extract recipient from thread ID (threadId is "userId1-userId2" sorted)
-      const participantIds = data.thread_id.split('-');
-      const recipientIdValue = participantIds.find((id: string) => id !== senderId) || recipientId;
+      const senderProfile = Array.isArray(data.profiles)
+        ? (data.profiles as unknown as any[])[0]
+        : (data.profiles as unknown as any);
+      const senderName = senderProfile?.name || 'Someone';
+      const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+
+      void this.createNotification(recipientId, {
+        message: `${senderName} sent you a message`,
+        link: `dm:${threadId}:${senderId}`,
+        type: 'dm_message',
+        data: { threadId, senderId, preview },
+      }).catch((err) => {
+        logger.error('Failed to create DM notification', { error: err, recipientId, threadId });
+      });
 
       return {
         id: data.id,
@@ -2588,7 +2609,7 @@ export class SupabaseService {
           stats: {},
         },
         senderId: data.sender_id,
-        recipientId: recipientIdValue,
+        recipientId,
         timestamp: new Date(data.timestamp),
         type: 'TEXT' as const,
         text: data.text,
@@ -2772,6 +2793,7 @@ export class SupabaseService {
 
     // Invalidate caches
     await cacheService.deletePattern(`notifications:${userId}:*`);
+    await cacheService.delete(`notifications:stats:${userId}`);
 
     void this.sendExpoPushForNotification(userId, notificationData);
 
@@ -2794,6 +2816,7 @@ export class SupabaseService {
     // Invalidate caches
     await cacheService.delete(`notification:${notificationId}`);
     await cacheService.deletePattern(`notifications:${data.user_id}:*`);
+    await cacheService.delete(`notifications:stats:${data.user_id}`);
 
     return data;
   }
@@ -2812,6 +2835,7 @@ export class SupabaseService {
 
     // Invalidate caches
     await cacheService.deletePattern(`notifications:${userId}:*`);
+    await cacheService.delete(`notifications:stats:${userId}`);
 
     return updatedCount;
   }
@@ -2839,6 +2863,7 @@ export class SupabaseService {
     // Invalidate caches
     await cacheService.delete(`notification:${notificationId}`);
     await cacheService.deletePattern(`notifications:${notification.user_id}:*`);
+    await cacheService.delete(`notifications:stats:${notification.user_id}`);
 
     return true;
   }
@@ -2863,6 +2888,7 @@ export class SupabaseService {
     // Invalidate caches
     await cacheService.deletePattern(`notifications:${userId}:*`);
     await cacheService.deletePattern(`notification:*`);
+    await cacheService.delete(`notifications:stats:${userId}`);
 
     return count || 0;
   }

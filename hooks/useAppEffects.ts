@@ -35,6 +35,19 @@ import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
+import { DirectMessage } from '../types';
+
+function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
+    return fetched.map((t: any) => ({
+        id: t.id,
+        participantIds: t.participantIds || t.participant_ids || [],
+        participants: t.participants || {},
+        lastMessage: t.lastMessage || t.last_message,
+        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+        unreadCount: dmUnreadCounts[t.id] || 0,
+        isArchived: t.isArchived || false,
+    }));
+}
 
 interface UseAppEffectsParams {
     dataLoaded: boolean;
@@ -47,8 +60,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
     const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
     const {
         groups, setGroups, updateGroups,
-        setAllMessages, setDmThreads, updateDmThreads,
-        setAllDirectMessages,
+        dmThreads, setDmThreads, updateDmThreads,
+        setAllMessages,
+        updateDirectMessages,
         setNotifications, updateNotifications, notifications
     } = useGroupStore();
     const {
@@ -69,6 +83,16 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
     } = useUIStore();
 
     useDailyStudyReminder(currentUser);
+
+    const refreshDmThreadsForUser = useCallback(async (userId: string) => {
+        const [fetchedThreads, dmUnreadCounts] = await Promise.all([
+            fetchDmThreads(userId),
+            fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+        ]);
+        if (Array.isArray(fetchedThreads)) {
+            setDmThreads(mapFetchedDmThreads(fetchedThreads, dmUnreadCounts));
+        }
+    }, [setDmThreads]);
 
     // --- Presence heartbeat for online status ---
     useEffect(() => {
@@ -506,16 +530,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 if (dmResult.status === 'fulfilled') {
                     const fetchedDmThreads = dmResult.value;
                     const dmUnreadCounts = dmUnreadResult.status === 'fulfilled' ? dmUnreadResult.value : {};
-                    const mappedDmThreads = fetchedDmThreads.map((t: any) => ({
-                        id: t.id,
-                        participantIds: t.participantIds || t.participant_ids || [],
-                        participants: t.participants || {},
-                        lastMessage: t.lastMessage || t.last_message,
-                        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-                        unreadCount: dmUnreadCounts[t.id] || 0,
-                        isArchived: t.isArchived || false,
-                    }));
-                    setDmThreads(mappedDmThreads);
+                    setDmThreads(mapFetchedDmThreads(fetchedDmThreads || [], dmUnreadCounts));
                 }
 
                 // --- [4] Decks + [5] Flashcards ---
@@ -579,9 +594,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 // --- [9] Notifications ---
                 if (results[9].status === 'fulfilled') {
                     const fetchedNotifications = results[9].value;
-                    if (fetchedNotifications && fetchedNotifications.length > 0) {
-                        setNotifications(fetchedNotifications);
-                    }
+                    setNotifications(Array.isArray(fetchedNotifications) ? fetchedNotifications : []);
                 }
 
                 // --- [10] Offline bundles ---
@@ -696,7 +709,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         if (!currentUser) return;
 
         const notificationsSubscription = supabase
-            .channel('notifications')
+            .channel(`notifications:${currentUser.id}`)
             .on(
                 'postgres_changes',
                 {
@@ -719,7 +732,10 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                         type: notifType,
                         data: payload.new.data ?? {},
                     };
-                    updateNotifications(prev => [newNotification, ...prev]);
+                    updateNotifications(prev => {
+                        if (prev.some(n => n.id === newNotification.id)) return prev;
+                        return [newNotification, ...prev];
+                    });
                     if (notifType?.startsWith('challenge')) {
                         const challengeId = (payload.new.data as { challengeId?: string } | null)?.challengeId;
                         if (challengeId && onChallengeNotification) {
@@ -727,7 +743,46 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                         } else {
                             openModal('challenges');
                         }
+                    } else if (notifType === 'dm_message' || (payload.new.link as string | undefined)?.startsWith('dm:')) {
+                        void refreshDmThreadsForUser(currentUser.id);
                     }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${currentUser.id}`
+                },
+                (payload) => {
+                    const updated = payload.new;
+                    updateNotifications(prev => prev.map(n =>
+                        n.id === updated.id
+                            ? {
+                                ...n,
+                                read: updated.read,
+                                message: updated.message,
+                                link: updated.link,
+                                type: updated.type,
+                                data: updated.data ?? {},
+                            }
+                            : n
+                    ));
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${currentUser.id}`
+                },
+                (payload) => {
+                    const deletedId = payload.old.id as string;
+                    updateNotifications(prev => prev.filter(n => n.id !== deletedId));
                 }
             )
             .subscribe();
@@ -735,7 +790,63 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         return () => {
             notificationsSubscription.unsubscribe();
         };
-    }, [currentUser?.id, updateNotifications, openModal, onChallengeNotification]);
+    }, [currentUser?.id, updateNotifications, openModal, onChallengeNotification, refreshDmThreadsForUser]);
+
+    // --- Real-time DM message subscription ---
+    useEffect(() => {
+        if (!currentUser || lowDataMode) return;
+
+        const channels = dmThreads.map((thread) => {
+            return supabase
+                .channel(`dm:${thread.id}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'dm_messages',
+                        filter: `thread_id=eq.${thread.id}`,
+                    },
+                    (payload) => {
+                        const raw = payload.new as {
+                            id: string;
+                            thread_id: string;
+                            sender_id: string;
+                            text: string;
+                            timestamp: string;
+                        };
+                        const message: DirectMessage = {
+                            id: raw.id,
+                            threadId: raw.thread_id,
+                            senderId: raw.sender_id,
+                            text: raw.text,
+                            timestamp: new Date(raw.timestamp),
+                        };
+                        updateDirectMessages(prev => {
+                            const existing = prev[thread.id] || [];
+                            if (existing.some(m => m.id === message.id)) return prev;
+                            return { ...prev, [thread.id]: [...existing, message] };
+                        });
+                        updateDmThreads(prev => prev.map(t => {
+                            if (t.id !== thread.id) return t;
+                            const isIncoming = raw.sender_id !== currentUser.id;
+                            return {
+                                ...t,
+                                lastMessage: raw.text,
+                                lastMessageTimestamp: new Date(raw.timestamp),
+                                unreadCount: isIncoming ? (t.unreadCount || 0) + 1 : t.unreadCount,
+                                isArchived: isIncoming ? false : t.isArchived,
+                            };
+                        }));
+                    }
+                )
+                .subscribe();
+        });
+
+        return () => {
+            channels.forEach(ch => ch.unsubscribe());
+        };
+    }, [currentUser?.id, dmThreads, lowDataMode, updateDirectMessages, updateDmThreads]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {

@@ -1574,7 +1574,7 @@ export const fetchNotifications = async (userId: string) => {
       return [];
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications?limit=100`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1594,7 +1594,9 @@ export const fetchNotifications = async (userId: string) => {
       message: notification.message,
       date: notification.date,
       read: notification.read,
-      link: notification.link
+      link: notification.link,
+      type: notification.type,
+      data: notification.data ?? {},
     }));
   } catch (error: any) {
     // Network errors (server not running) - return empty silently

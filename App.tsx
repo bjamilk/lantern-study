@@ -528,9 +528,7 @@ export const App: React.FC = () => {
     useEffect(() => {
         if (modals.notification && currentUser) {
             fetchNotifications(currentUser.id).then(fetched => {
-                if (fetched && fetched.length > 0) {
-                    setNotifications(fetched);
-                }
+                setNotifications(Array.isArray(fetched) ? fetched : []);
             }).catch(() => { /* handled in service layer */ });
         }
     }, [modals.notification, currentUser, setNotifications]);
@@ -1064,6 +1062,8 @@ export const App: React.FC = () => {
                         openModal('challenges');
                     } else if (screen === 'PlayChallenge' && params?.challengeId) {
                         void handleStartChallengePlay(params.challengeId);
+                    } else if (screen === 'DirectMessages' && params?.userId) {
+                        handleInitiateDm(params.userId);
                     }
                 }} />
             <ChallengesInboxModal

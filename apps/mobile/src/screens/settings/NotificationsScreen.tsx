@@ -135,9 +135,7 @@ export default function NotificationsScreen() {
       setUnread(list.filter(n => !((n as AppNotification).read ?? (n as AppNotification).is_read)).length);
 
     } catch {
-
-      setItems([]);
-
+      // Keep existing list on transient errors
     } finally {
 
       setLoading(false);

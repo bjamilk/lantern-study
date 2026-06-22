@@ -20,6 +20,14 @@ export const initializeNotificationRoutes = (supabase: SupabaseService, cache: C
   cacheService = cache;
 };
 
+async function invalidateNotificationCaches(userId: string, notificationId?: string) {
+  if (notificationId) {
+    await cacheService.delete(`notification:${notificationId}`);
+  }
+  await cacheService.deletePattern(`notifications:${userId}:*`);
+  await cacheService.delete(`notifications:stats:${userId}`);
+}
+
 // GET /api/v1/notifications - Get user's notifications
 router.get(
   '/',
@@ -156,7 +164,7 @@ router.post(
     });
 
     // Invalidate user's notification cache
-    await cacheService.deletePattern(`notifications:${finalUserId}:*`);
+    await invalidateNotificationCaches(finalUserId);
 
     res.status(201).json({
       success: true,
@@ -197,8 +205,7 @@ router.put(
     const updatedNotification = await supabaseService.markNotificationAsRead(notificationId);
 
     // Invalidate caches
-    await cacheService.delete(`notification:${notificationId}`);
-    await cacheService.deletePattern(`notifications:${userId}:*`);
+    await invalidateNotificationCaches(userId, notificationId);
 
     res.json({
       success: true,
@@ -221,7 +228,7 @@ router.put(
     const updatedCount = await supabaseService.markAllNotificationsAsRead(userId);
 
     // Invalidate user's notification cache
-    await cacheService.deletePattern(`notifications:${userId}:*`);
+    await invalidateNotificationCaches(userId);
 
     res.json({
       success: true,
@@ -270,8 +277,7 @@ router.delete(
     }
 
     // Invalidate caches
-    await cacheService.delete(`notification:${notificationId}`);
-    await cacheService.deletePattern(`notifications:${userId}:*`);
+    await invalidateNotificationCaches(userId, notificationId);
 
     res.json({
       success: true,
@@ -294,7 +300,7 @@ router.delete(
     const deletedCount = await supabaseService.deleteAllNotifications(userId);
 
     // Invalidate caches
-    await cacheService.deletePattern(`notifications:${userId}:*`);
+    await invalidateNotificationCaches(userId);
 
     res.json({
       success: true,
@@ -344,7 +350,7 @@ router.post(
     // Invalidate notification caches for affected users
     const affectedUserIds = [...new Set(notifications.map(n => n.userId))];
     for (const affectedUserId of affectedUserIds) {
-      await cacheService.deletePattern(`notifications:${affectedUserId}:*`);
+      await invalidateNotificationCaches(affectedUserId);
     }
 
     res.status(201).json({

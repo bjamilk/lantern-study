@@ -43,6 +43,7 @@ const NOTIFICATION_PREF_BY_TYPE: Record<string, keyof NotificationSettings | nul
   challenge_declined: 'groupActivity',
   challenge_result: 'testResults',
   challenge_opponent_finished: 'testResults',
+  dm_message: 'groupActivity',
 };
 
 export function parseUserSettings(raw: unknown): UserSettings {

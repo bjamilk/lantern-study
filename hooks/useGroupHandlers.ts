@@ -12,7 +12,7 @@ import {
     sendMessage, fetchMessages, fetchUserVotesForGroup, voteQuestion,
     removeVote, updateMessage, updateQuestionStatus, createNotification,
     updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
-    sendDirectMessage, markGroupAsRead, markDMAsRead,
+    sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads, fetchDMUnreadCounts,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread
 } from '../services/supabase';
@@ -62,13 +62,6 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             updateNotifications(prev => [...prev, newNotification]);
         } catch (error) {
             console.error('Failed to create notification:', error);
-            const localNotification = {
-                id: uuidv4(),
-                message,
-                date: new Date().toISOString(),
-                read: false
-            };
-            updateNotifications(prev => [...prev, localNotification]);
         }
     }, [currentUser, updateNotifications]);
 
@@ -199,6 +192,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         
         try {
             await sendDirectMessage(currentUser.id, otherUserId, text);
+            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
+                fetchDmThreads(currentUser.id),
+                fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
+            ]);
+            if (Array.isArray(fetchedThreads)) {
+                updateDmThreads(() => fetchedThreads.map((t: any) => ({
+                    id: t.id,
+                    participantIds: t.participantIds || t.participant_ids || [],
+                    participants: t.participants || {},
+                    lastMessage: t.lastMessage || t.last_message,
+                    lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+                    unreadCount: dmUnreadCounts[t.id] || 0,
+                    isArchived: t.isArchived || false,
+                })));
+            }
         } catch (error) {
             console.error('Failed to send DM:', error);
             updateDirectMessages(prev => ({
