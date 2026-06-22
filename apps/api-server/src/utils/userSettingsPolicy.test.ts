@@ -77,4 +77,63 @@ describe('canRecipientReceiveDirectMessage', () => {
     expect(result.allowed).toBe(true);
     expect(supabase.from).not.toHaveBeenCalled();
   });
+
+  it('allows groups policy when users share a confirmed group', async () => {
+    const sharedGroupId = 'group-abc';
+    let callIndex = 0;
+    supabase.from.mockImplementation(() => {
+      callIndex += 1;
+      const isSenderLookup = callIndex === 1;
+      const chain: Record<string, jest.Mock> = {};
+      chain.select = jest.fn().mockReturnValue(chain);
+      chain.eq = jest.fn().mockImplementation((col: string) => {
+        if (isSenderLookup && col === 'pending') {
+          return Promise.resolve({ data: [{ group_id: sharedGroupId }], error: null });
+        }
+        return chain;
+      });
+      chain.in = jest.fn().mockResolvedValue({ count: 1, error: null });
+      return chain;
+    });
+
+    const result = await canRecipientReceiveDirectMessage(
+      supabase as any,
+      'sender-id',
+      'recipient-id',
+      parseUserSettings({
+        privacy: { allowDirectMessages: 'groups' },
+      })
+    );
+    expect(result.allowed).toBe(true);
+    expect(supabase.from).toHaveBeenCalledWith('group_members');
+  });
+
+  it('rejects groups policy when users do not share a confirmed group', async () => {
+    let callIndex = 0;
+    supabase.from.mockImplementation(() => {
+      callIndex += 1;
+      const isSenderLookup = callIndex === 1;
+      const chain: Record<string, jest.Mock> = {};
+      chain.select = jest.fn().mockReturnValue(chain);
+      chain.eq = jest.fn().mockImplementation((col: string) => {
+        if (isSenderLookup && col === 'pending') {
+          return Promise.resolve({ data: [{ group_id: 'group-a' }], error: null });
+        }
+        return chain;
+      });
+      chain.in = jest.fn().mockResolvedValue({ count: 0, error: null });
+      return chain;
+    });
+
+    const result = await canRecipientReceiveDirectMessage(
+      supabase as any,
+      'sender-id',
+      'recipient-id',
+      parseUserSettings({
+        privacy: { allowDirectMessages: 'groups' },
+      })
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe('This user only accepts direct messages from shared group members');
+  });
 });

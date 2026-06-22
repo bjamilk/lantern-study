@@ -104,7 +104,7 @@ export async function usersShareConfirmedGroup(
   const groupIds = data.map((row: { group_id: string }) => row.group_id);
   const { count, error: otherError } = await supabase
     .from('group_members')
-    .select('id', { count: 'exact', head: true })
+    .select('group_id', { count: 'exact', head: true })
     .eq('user_id', userIdB)
     .eq('pending', false)
     .in('group_id', groupIds);
