@@ -64,7 +64,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
         setSearchResults(filtered);
       } catch (err) {
         console.error('Search failed:', err);
-        setSearchError('Failed to search. Please try again.');
+        setSearchError(err instanceof Error ? err.message : 'Failed to search. Please try again.');
         setSearchResults([]);
       } finally {
         setIsSearching(false);
@@ -190,8 +190,9 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 No users found matching "{searchTerm}"
               </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Try a different search term or share the invite link below
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 max-w-xs mx-auto">
+                They may need to set a username in Settings, or their profile may be private.
+                Try the invite link below instead.
               </p>
             </div>
           )}

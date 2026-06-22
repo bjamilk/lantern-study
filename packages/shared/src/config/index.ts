@@ -32,19 +32,12 @@ export const getEnvironment = (): Environment => {
     if (process.env.NODE_ENV === 'production') return 'production';
     if (process.env.EXPO_PUBLIC_ENV === 'production') return 'production';
   }
-  
-  // Check Vite env (only in web context, not React Native)
-  // Note: import.meta is not supported in Hermes/React Native
-  if (!isReactNative()) {
-    try {
-      // Use indirect eval to avoid Hermes parsing import.meta
-      const checkViteEnv = new Function('return typeof import.meta !== "undefined" && import.meta.env?.PROD');
-      if (checkViteEnv()) return 'production';
-    } catch {
-      // Ignore - not in a Vite environment
-    }
+
+  // Web production build: Vite defines __LANTERN_VITE_* on globalThis
+  if (!isReactNative() && getWebViteEnv('SUPABASE_URL')) {
+    return 'production';
   }
-  
+
   return 'development';
 };
 
@@ -78,6 +71,24 @@ const PROD_CONFIG: Config = {
   apiBaseUrl: '', // Set via VITE_API_URL or EXPO_PUBLIC_API_URL
 };
 
+type GlobalWithLanternVite = typeof globalThis & {
+  __LANTERN_VITE_SUPABASE_URL__?: string;
+  __LANTERN_VITE_SUPABASE_ANON_KEY__?: string;
+  __LANTERN_VITE_API_URL__?: string;
+};
+
+/** Vite injects these at web build time (see apps/web/vite.config.ts). */
+const getWebViteEnv = (name: string): string | undefined => {
+  const g = globalThis as GlobalWithLanternVite;
+  const map: Record<string, string | undefined> = {
+    SUPABASE_URL: g.__LANTERN_VITE_SUPABASE_URL__,
+    SUPABASE_ANON_KEY: g.__LANTERN_VITE_SUPABASE_ANON_KEY__,
+    API_URL: g.__LANTERN_VITE_API_URL__,
+  };
+  const value = map[name];
+  return value || undefined;
+};
+
 /**
  * Get environment variable by name
  * Handles both Vite (web) and Expo (mobile) env patterns
@@ -88,19 +99,12 @@ const getEnvVar = (name: string): string | undefined => {
     const expoKey = `EXPO_PUBLIC_${name}`;
     if (process.env[expoKey]) return process.env[expoKey];
   }
-  
-  // Try Vite env vars (web only - import.meta not supported in Hermes/React Native)
+
   if (!isReactNative()) {
-    try {
-      const viteKey = `VITE_${name}`;
-      const getViteVar = new Function('key', 'return typeof import.meta !== "undefined" && import.meta.env ? import.meta.env[key] : undefined');
-      const value = getViteVar(viteKey);
-      if (value) return value;
-    } catch {
-      // Not in Vite environment
-    }
+    const webValue = getWebViteEnv(name);
+    if (webValue) return webValue;
   }
-  
+
   return undefined;
 };
 

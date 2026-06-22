@@ -1,3 +1,5 @@
+import { isQuestionTestable } from '@lantern/shared/utils/testHelpers';
+
 export function shuffleArray<T>(array: T[]): T[] {
   const newArray = [...array];
   for (let i = newArray.length - 1; i > 0; i--) {
@@ -83,29 +85,7 @@ export function scoreDuelAnswers(
   return { score, totalTime, correctCount, maxStreak };
 }
 
-export function isQuestionTestable(msg: any): boolean {
-  if (msg.type !== 'QUESTION' && msg.type !== 'question') return false;
-  if (msg.questionStatus === 'PENDING' || msg.isArchived) return false;
-  const qType = String(msg.questionType || '').toUpperCase();
-  switch (qType) {
-    case 'MULTIPLE_CHOICE_SINGLE':
-    case 'MULTIPLE_CHOICE_MULTIPLE':
-    case 'TRUE_FALSE':
-      return !!(msg.questionStem && msg.options?.length && msg.correctAnswerIds?.length);
-    case 'FILL_IN_THE_BLANK':
-      return !!(msg.questionStem && msg.acceptableAnswers?.length);
-    case 'MATCHING':
-      return !!(
-        msg.matchingPromptItems?.length &&
-        msg.matchingAnswerItems?.length &&
-        msg.correctMatches?.length === msg.matchingPromptItems.length
-      );
-    case 'DIAGRAM_LABELING':
-      return !!(msg.imageUrl && msg.diagramLabels?.length);
-    default:
-      return false;
-  }
-}
+export { isQuestionTestable };
 
 const DUELIST_LEVELS = [
   { level: 1, threshold: 3, points: 75 },

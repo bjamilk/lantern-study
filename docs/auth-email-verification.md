@@ -10,8 +10,8 @@ Lantern Study uses Supabase Auth email confirmations (6-digit OTP + magic link) 
    <p>Your verification code: {{ .Token }}</p>
    ```
    Keep the default confirmation link as well so users can verify by clicking the email link.
-3. **Authentication → URL Configuration** — add redirect URLs:
-   - Web: `https://your-domain.com/reset-password` (and your local dev origin, e.g. `http://localhost:5173/reset-password`)
+3. **Authentication → URL Configuration** — Site URL: `https://lanternstudy.com`. Redirect URLs include:
+   - Web: `https://lanternstudy.com/reset-password` (and your local dev origin, e.g. `http://localhost:5173/reset-password`)
    - Mobile: `lanternstudy://reset-password`, `lanternstudy://verify-email`
    - Add any Expo dev redirect URIs you use during development (from `makeRedirectUri`).
 

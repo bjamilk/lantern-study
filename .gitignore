@@ -18,6 +18,9 @@ dist-ssr
 # Environment variables
 .env
 .env.local
+.env.render
+.env.cloudflare
+.env.resend
 .env.*.local
 **/.env
 !.env.example

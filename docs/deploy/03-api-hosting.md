@@ -13,7 +13,28 @@ Host the Lantern Study API (`apps/api-server`) on Render using the repo Dockerfi
 
 ---
 
-## Option A — Render Blueprint (recommended)
+## Automated deploy (no dashboard clicks)
+
+From repo root, after creating a Render API key:
+
+```powershell
+# One-time: copy .env.render.example to .env.render and paste your key, OR:
+$env:RENDER_API_KEY = 'rnd_your_key_here'
+.\scripts\deploy-render-api.ps1
+```
+
+The script will:
+
+1. Create or find the `lantern-study-api` web service
+2. Set env vars from `apps/api-server/.env` (Supabase, Groq, JWT)
+3. Trigger a deploy and wait for it to finish
+4. Hit `/health` and update root `.env` → `VITE_API_URL`
+
+Create API key: https://dashboard.render.com/u/settings#api-keys
+
+---
+
+## Option A — Render Blueprint (manual)
 
 1. Push this repo to GitHub (`bjamilk/lantern-study`) — **required before Render can build**.
 2. Open [Render Dashboard → Blueprints](https://dashboard.render.com/blueprints).

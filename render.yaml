@@ -17,7 +17,9 @@ services:
       - key: PORT
         value: "3001"
       - key: FRONTEND_URL
-        value: http://localhost:5173
+        value: https://lanternstudy.com
+      - key: WEB_APP_URL
+        value: https://lantern-study.pages.dev
       - key: REDIS_ENABLED
         value: "false"
       - key: ALLOW_DEV_AUTH_BYPASS

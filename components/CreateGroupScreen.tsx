@@ -60,6 +60,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
 
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
@@ -67,15 +68,16 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
   useEffect(() => {
     if (!searchTerm.trim() || searchTerm.trim().length < 2) {
       setSearchResults([]);
+      setSearchError('');
       return;
     }
 
     setIsSearching(true);
+    setSearchError('');
 
     const timeoutId = setTimeout(async () => {
       try {
         const data = await searchUsers(searchTerm.trim(), 20);
-        // Filter out already selected users
         const filtered = (data || []).filter((user: SearchResult) => 
           !selectedUserIds.includes(user.id)
         );
@@ -83,6 +85,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
       } catch (err) {
         console.error('Search failed:', err);
         setSearchResults([]);
+        setSearchError(err instanceof Error ? err.message : 'Failed to search. Please try again.');
       } finally {
         setIsSearching(false);
       }
@@ -174,11 +177,20 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({ currentUser, allU
             </div>
           )}
 
-          {!isSearching && searchTerm.length >= 2 && searchResults.length === 0 && (
+          {!isSearching && searchError && (
+            <div className="p-4 text-center text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg">
+              {searchError}
+            </div>
+          )}
+
+          {!isSearching && !searchError && searchTerm.length >= 2 && searchResults.length === 0 && (
             <div className="text-center py-8">
               <UsersIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
               <p className="text-sm text-gray-500 dark:text-gray-400">No users found matching "{searchTerm}"</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Share your invite link after creating the group</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 max-w-xs mx-auto">
+                They may need to set a username in Settings, or their profile may be private.
+                You can share an invite link after creating the group.
+              </p>
             </div>
           )}
 

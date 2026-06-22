@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react';
 // Root directory where actual web app source lives
 const rootDir = path.resolve(__dirname, '../..');
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
     return {
       root: rootDir,
       server: {

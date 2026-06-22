@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { isQuestionTestable } from '../utils/helpers';
 
 interface TestConfigModalProps {
   isOpen: boolean;
@@ -77,47 +78,40 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     return getSubgroupsWithLevel(group.id, allGroups);
   }, [group.id, allGroups, getSubgroupsWithLevel]);
 
+  const scopedGroupMessages = useMemo(() => {
+    const groupIdsForFilter = [group.id, ...selectedSubgroupIDs];
+    return [...new Set(groupIdsForFilter)].flatMap(id => allMessages[id] || []);
+  }, [allMessages, group.id, selectedSubgroupIDs]);
+
+  const questionStatusBreakdown = useMemo(() => {
+    let verified = 0;
+    let pending = 0;
+    let rejected = 0;
+    for (const msg of scopedGroupMessages) {
+      if (msg.type !== MessageType.QUESTION || msg.isArchived) continue;
+      if (isQuestionTestable(msg)) {
+        verified += 1;
+      } else if (msg.questionStatus === QuestionStatus.REJECTED) {
+        rejected += 1;
+      } else {
+        pending += 1;
+      }
+    }
+    return { verified, pending, rejected };
+  }, [scopedGroupMessages]);
+
   const uniqueTagsFromGroup = useMemo(() => {
     const tagsSet = new Set<string>();
-    (Object.values(allMessages) as Message[][]).flat().forEach((msg: Message) => {
-      if (
-        msg.type === MessageType.QUESTION &&
-        TESTABLE_QUESTION_TYPES.includes(msg.questionType!) &&
-        msg.questionStatus !== QuestionStatus.PENDING &&
-        !msg.isArchived &&
-        msg.tags && msg.tags.length > 0
-      ) {
+    scopedGroupMessages.forEach((msg: Message) => {
+      if (isQuestionTestable(msg) && msg.tags?.length) {
         msg.tags.forEach(tag => tagsSet.add(tag));
       }
     });
     return Array.from(tagsSet).sort();
-  }, [allMessages]);
+  }, [scopedGroupMessages]);
   
   const { normalModeQuestions, spacedRepetitionQuestions, focusOnNewQuestions } = useMemo(() => {
-    const validateQuestion = (msg: Message) => {
-        if (msg.type !== MessageType.QUESTION || !msg.questionType || msg.questionStatus === QuestionStatus.PENDING || msg.isArchived) return false;
-        switch(msg.questionType) {
-            case QuestionType.MULTIPLE_CHOICE_SINGLE:
-            case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
-            case QuestionType.TRUE_FALSE:
-                return !!(msg.questionStem && msg.options && msg.options.length > 0 && msg.correctAnswerIds && msg.correctAnswerIds.length > 0);
-            case QuestionType.FILL_IN_THE_BLANK:
-                return !!(msg.questionStem && msg.acceptableAnswers && msg.acceptableAnswers.length > 0);
-            case QuestionType.MATCHING:
-                 return !!(msg.matchingPromptItems && msg.matchingPromptItems.length > 0 &&
-                       msg.matchingAnswerItems && msg.matchingAnswerItems.length > 0 &&
-                       msg.correctMatches && msg.correctMatches.length > 0 &&
-                       msg.correctMatches.length === msg.matchingPromptItems.length);
-            case QuestionType.DIAGRAM_LABELING:
-                 return !!(msg.imageUrl && msg.diagramLabels && msg.diagramLabels.length > 0);
-            default:
-                return false;
-        }
-    };
-
-    const groupIdsForFilter = [group.id, ...selectedSubgroupIDs];
-    const messagesForFilter = [...new Set(groupIdsForFilter)].flatMap(id => allMessages[id] || []);
-    const validQuestionsForFilter = messagesForFilter.filter(validateQuestion);
+    const validQuestionsForFilter = scopedGroupMessages.filter(isQuestionTestable);
     
     const applyBaseFilters = (questions: Message[]) => {
       return questions.filter(msg => {
@@ -146,7 +140,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     const focusSet = new Set([...recentQuestions, ...unattemptedQuestions]);
 
     return { normalModeQuestions: normal, spacedRepetitionQuestions: spaced, focusOnNewQuestions: Array.from(focusSet) };
-  }, [allMessages, group.id, selectedSubgroupIDs, selectedQuestionTypes, selectedTagsInModal, userQuestionStats]);
+  }, [scopedGroupMessages, selectedQuestionTypes, selectedTagsInModal, userQuestionStats]);
 
   const availableQuestions = useSpacedRepetition ? spacedRepetitionQuestions : (focusOnNew ? focusOnNewQuestions : normalModeQuestions);
   const maxQuestions = availableQuestions.length;
@@ -301,6 +295,19 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   
   const Icon = mode === 'test' ? QuestionMarkCircleIcon : AcademicCapIcon;
 
+  const questionAvailabilityHint = (
+    <>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Only group-verified questions are included. Pending and rejected questions stay in chat but are not used in tests.
+      </p>
+      {(questionStatusBreakdown.verified + questionStatusBreakdown.pending + questionStatusBreakdown.rejected) > 0 && (
+        <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+          {questionStatusBreakdown.verified} verified · {questionStatusBreakdown.pending} pending · {questionStatusBreakdown.rejected} rejected
+        </p>
+      )}
+    </>
+  );
+
   // For study mode, show a completely distinct blue-themed interface
   if (mode === 'study') {
     return (
@@ -375,6 +382,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 Number of Questions 
                 <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">{`(${maxQuestions} available)`}</span>
               </label>
+              {questionAvailabilityHint}
               <div className="flex items-center gap-4 mt-2">
                 <input
                   type="range"
@@ -592,6 +600,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 Number of Questions 
                 <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">{`(${maxQuestions} available)`}</span>
               </label>
+              {questionAvailabilityHint}
               <input
                 type="range"
                 id="numberOfQuestions"

@@ -5,7 +5,7 @@ import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
 import { LanternIcon } from './ui/LanternIcon';
-import { LEGAL_PATHS, isEmailNotConfirmedError, isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
+import { LEGAL_PATHS, isEmailNotConfirmedError, isAuthRateLimitError, getAuthRateLimitMessage, isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -178,6 +178,18 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendLoading, setResendLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const [authSubmitLoading, setAuthSubmitLoading] = useState(false);
+
+  const formatAuthError = (err: unknown, context: 'signup' | 'resend' | 'reset' | 'login' = 'login'): string => {
+    if (isAuthRateLimitError(err)) {
+      return getAuthRateLimitMessage(context === 'login' ? 'signup' : context);
+    }
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'object' && err !== null && 'message' in err) {
+      return String((err as { message: unknown }).message);
+    }
+    return 'An error occurred.';
+  };
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -527,8 +539,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authSubmitLoading) return;
     setError('');
 
+    setAuthSubmitLoading(true);
     try {
       if (isVerifyEmailView) {
         await handleVerifyOtp();
@@ -545,7 +559,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           setError('');
           startResendCooldown();
         } catch (err) {
-          setError(err instanceof Error ? err.message : 'Could not send reset email.');
+          setError(formatAuthError(err, 'reset'));
         }
       } else if (isLoginView) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -554,7 +568,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
             goToVerifyEmail(email);
             return;
           }
-          setError(error.message);
+          setError(isAuthRateLimitError(error) ? formatAuthError(error, 'signup') : error.message);
           return;
         }
 
@@ -573,9 +587,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) {
-          // Handle common signup errors
           if (error.message.includes('already registered') || error.status === 422) {
             setError('This email is already registered. Please log in instead.');
+          } else if (isAuthRateLimitError(error)) {
+            setError(formatAuthError(error, 'signup'));
           } else {
             setError(error.message);
           }
@@ -607,7 +622,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred.');
+      setError(formatAuthError(err));
+    } finally {
+      setAuthSubmitLoading(false);
     }
   };
 
@@ -647,7 +664,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       setVerifyMessage('Confirmation email sent. Check your inbox or enter the new code.');
       startResendCooldown();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend email.');
+      setError(formatAuthError(err, 'resend'));
     } finally {
       setResendLoading(false);
     }
@@ -662,7 +679,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       setResetEmailSent(true);
       startResendCooldown();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend reset email.');
+      setError(formatAuthError(err, 'reset'));
     } finally {
       setResendLoading(false);
     }
@@ -923,16 +940,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     <div>
                         <button
                             type="submit"
-                            disabled={verifyLoading || resendLoading}
+                            disabled={verifyLoading || resendLoading || authSubmitLoading}
                             className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-indigo-500 transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                         >
                             {isVerifyEmailView
                               ? verifyLoading ? 'Verifying…' : 'Verify email'
                               : isForgotPasswordView
-                                ? resetEmailSent ? 'Send again' : 'Send Reset Email'
+                                ? authSubmitLoading ? 'Sending…' : resetEmailSent ? 'Send again' : 'Send Reset Email'
                                 : isLoginView
-                                  ? 'Sign In'
-                                  : 'Create Account'}
+                                  ? authSubmitLoading ? 'Signing in…' : 'Sign In'
+                                  : authSubmitLoading ? 'Creating account…' : 'Create Account'}
                         </button>
                     </div>
 

@@ -54,6 +54,36 @@ npx supabase db push
 
 Verify in Dashboard → **Table Editor** that tables like `profiles`, `decks`, `groups` exist.
 
+### Migration history mismatch (MCP vs CLI)
+
+If `db push` fails with **remote migration versions not found** or **history mismatch**, the schema may already be on cloud (e.g. applied via Supabase MCP with different version timestamps) while local filenames use different prefixes.
+
+**Do not** re-run all migrations blindly — objects may already exist.
+
+Reconcile history without re-applying SQL:
+
+```powershell
+.\scripts\repair-supabase-migration-history.ps1
+# or
+.\scripts\deploy-supabase-cloud.ps1 -RepairHistory
+```
+
+Then verify:
+
+```powershell
+npx supabase migration list --linked   # Local and Remote columns should match
+npx supabase db push                     # "Remote database is up to date"
+```
+
+Spot-check schema + history:
+
+```powershell
+.\scripts\deploy-supabase-cloud.ps1      # REST table probe + history check
+.\scripts\deploy-supabase-cloud.ps1 -FullCli
+```
+
+**Note:** Migration files must use **14-digit** version prefixes (e.g. `20251129000000_*`, not `20251129_*`).
+
 ---
 
 ## 3. Auth configuration (Dashboard)
@@ -70,10 +100,19 @@ Verify in Dashboard → **Table Editor** that tables like `profiles`, `decks`, `
 
 **Authentication → URL Configuration**
 
-| Setting | Value (production testing) |
+Or run (requires [access token](https://supabase.com/dashboard/account/tokens)):
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN = 'sbp_...'
+.\scripts\configure-supabase-auth-urls.ps1 -PagesUrl 'https://lanternstudy.com'
+```
+
+| Setting | Value (production) |
 |---------|----------------------------|
-| Site URL | `https://YOUR-WEB-DOMAIN` (or temporary Pages URL) |
+| Site URL | `https://lanternstudy.com` |
 | Redirect URLs | See list below |
+
+**Important:** Accounts created on **local Supabase** (`127.0.0.1:55421`) are **not** on cloud. Users must **sign up again** on the production web app.
 
 Add these redirect URLs (keep localhost for local dev):
 
@@ -82,8 +121,12 @@ http://localhost:5173
 http://localhost:5173/reset-password
 http://127.0.0.1:5173
 http://127.0.0.1:5173/reset-password
-https://YOUR-WEB-DOMAIN
-https://YOUR-WEB-DOMAIN/reset-password
+https://lanternstudy.com
+https://lanternstudy.com/reset-password
+https://www.lanternstudy.com
+https://www.lanternstudy.com/reset-password
+https://lantern-study.pages.dev
+https://lantern-study.pages.dev/reset-password
 lanternstudy://reset-password
 lanternstudy://verify-email
 lanternstudy://
@@ -95,6 +138,86 @@ lanternstudy://
 - **Apple** — Services ID + secret JWT; bundle IDs `com.lanternstudy.app`, `com.lanternstudy.app.dev`.
 
 See also `docs/compliance/oauth-setup.md` and `docs/auth-email-verification.md`.
+
+### Custom SMTP (Resend)
+
+Supabase’s built-in email quota is very low and causes signup **429** errors during testing. **Resend** replaces built-in SMTP and raises the hourly send limit.
+
+**1. Resend account**
+
+- Sign up at [resend.com](https://resend.com) (GitHub login works).
+- Create an API key at [API Keys](https://resend.com/api-keys) (permission: **Sending access** is enough for SMTP).
+
+**2. From address**
+
+| Stage | `RESEND_FROM_EMAIL` | Notes |
+|-------|---------------------|-------|
+| Quick test | `onboarding@resend.dev` | Only delivers to the email on your Resend account |
+| Production | `noreply@lanternstudy.com` | Verify `lanternstudy.com` at [Resend → Domains](https://resend.com/domains) |
+
+**3. Local secrets (never commit)**
+
+```powershell
+Copy-Item .env.resend.example .env.resend
+# Edit .env.resend: RESEND_API_KEY, RESEND_FROM_EMAIL, SUPABASE_ACCESS_TOKEN
+```
+
+Get `SUPABASE_ACCESS_TOKEN` from [Dashboard → Account → Access Tokens](https://supabase.com/dashboard/account/tokens) (starts with `sbp_`).
+
+**4. Apply to Supabase Cloud**
+
+```powershell
+.\scripts\configure-supabase-resend-smtp.ps1
+```
+
+This script:
+
+- Enables custom SMTP: `smtp.resend.com:465`, user `resend`, password = your Resend API key
+- Sets Auth Site URL + redirect URLs for `https://lanternstudy.com`
+- Raises email rate limits (default 100/hour after custom SMTP)
+
+Verify in Dashboard: [Auth → SMTP](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl/auth/smtp) and [Rate Limits](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl/auth/rate-limits).
+
+**Manual alternative (Dashboard):** [Authentication → SMTP](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl/auth/smtp) — enable custom SMTP, host `smtp.resend.com`, port `465`, user `resend`, password = API key, sender = your verified address.
+
+**Security:** Rotate the Resend API key if it was ever pasted in chat or committed by mistake.
+
+### Rate limits and signup 429
+
+Cloud signup sends a confirmation email on each attempt. Supabase enforces:
+
+| Limit | Effect |
+|-------|--------|
+| **Project email quota** (built-in SMTP) | Very low; testing can hit **429** for ~1 hour project-wide |
+| **Per-email signup cooldown** | Default 60s between attempts for the same address (customizable) |
+
+**Unblock testing without waiting:**
+
+1. [Authentication → Users](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl/auth/users) → **Add user** → enable **Auto Confirm User** → log in on production (no signup email).
+2. Or run (service role in `apps/api-server/.env`):
+   ```powershell
+   .\scripts\create-cloud-auth-user.ps1 -Email 'you@example.com' -Password 'YourPassword123!'
+   ```
+3. Remove stuck unconfirmed users:
+   ```powershell
+   .\scripts\create-cloud-auth-user.ps1 -ListUnconfirmed
+   .\scripts\create-cloud-auth-user.ps1 -RemoveUnconfirmed -Email 'stuck@example.com'
+   ```
+
+**Relax cooldowns (Management API):**
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN = 'sbp_...'
+.\scripts\configure-supabase-auth-urls.ps1 -SkipUrls -SignupConfirmationSeconds 10
+```
+
+**Raise email quota:** use [custom SMTP (Resend)](#custom-smtp-resend) above, then increase **emails sent per hour** under [Rate Limits](https://supabase.com/dashboard/project/tiizkjhbrnaibaagmurl/auth/rate-limits) or:
+
+```powershell
+.\scripts\configure-supabase-resend-smtp.ps1
+# or, if SMTP is already set manually:
+.\scripts\configure-supabase-auth-urls.ps1 -SkipUrls -EmailSentPerHour 100
+```
 
 ---
 
