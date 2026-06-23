@@ -3,12 +3,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lantern Study</title>
-  <meta name="description" content="Collaborative study platform with flashcards, groups, and AI tools">
+  <title>Lantern Study — Flashcards, tests, groups &amp; AI study tools</title>
+  <meta name="description" content="Lantern Study is a collaborative learning app with flashcards, practice tests, study groups, marketplace decks, and AI tools. Built for slow connections and offline study.">
+  <meta name="keywords" content="Lantern Study, flashcards, study app, spaced repetition, practice tests, study groups, offline learning">
+  <meta name="author" content="Lantern Study">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lanternstudy.com/">
   <meta name="theme-color" content="#020617">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Lantern Study">
+  <meta property="og:title" content="Lantern Study — Flashcards, tests, groups &amp; AI study tools">
+  <meta property="og:description" content="Collaborative study platform with flashcards, practice tests, study groups, and AI tools. Works on slow connections and offline.">
+  <meta property="og:url" content="https://lanternstudy.com/">
+  <meta property="og:image" content="https://lanternstudy.com/lantern-icon.png">
+  <meta property="og:image:alt" content="Lantern Study app icon">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Lantern Study — Flashcards, tests, groups &amp; AI study tools">
+  <meta name="twitter:description" content="Collaborative study platform with flashcards, practice tests, study groups, and AI tools.">
+  <meta name="twitter:image" content="https://lanternstudy.com/lantern-icon.png">
+  <meta name="twitter:image:alt" content="Lantern Study app icon">
+
   <link rel="icon" href="/lantern-icon.png" type="image/png">
   <link rel="apple-touch-icon" href="/lantern-icon.png">
   <link rel="manifest" href="/manifest.json">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Lantern Study",
+    "url": "https://lanternstudy.com/",
+    "description": "Collaborative study platform with flashcards, practice tests, study groups, marketplace decks, and AI study tools. Optimized for slow connections and offline learning.",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web, Android, iOS",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "image": "https://lanternstudy.com/lantern-icon.png"
+  }
+  </script>
+
   <script>
     // Apply dark mode immediately based on localStorage or system preference
     if (localStorage.getItem('theme') === 'dark' || 
@@ -25,7 +66,39 @@
   </script>
 </head>
 <body class="bg-lantern-background text-lantern-text transition-colors duration-300 antialiased">
+  <main id="seo-content" class="seo-fallback">
+    <h1>Lantern Study</h1>
+    <p>
+      Study smarter with flashcards, timed practice tests, collaborative study groups,
+      a deck marketplace, notes, gamification, and AI-powered study tools.
+      Lantern Study is designed for slow connections and offline learning.
+    </p>
+    <ul>
+      <li>Flashcards with spaced repetition and cram sessions</li>
+      <li>Practice tests with review and performance analytics</li>
+      <li>Study groups, messaging, and group challenges</li>
+      <li>Marketplace for buying and selling study decks</li>
+      <li>AI companion for generating questions and study help</li>
+    </ul>
+    <p>Sign in or create a free account at <a href="https://lanternstudy.com/">lanternstudy.com</a>.</p>
+  </main>
+  <noscript>
+    <p>Lantern Study requires JavaScript. Enable JavaScript to sign in and use flashcards, tests, and study groups.</p>
+  </noscript>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
+  <style>
+    .seo-fallback {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
 </body>
 </html>

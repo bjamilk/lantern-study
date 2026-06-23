@@ -157,3 +157,24 @@ Set **`FRONTEND_URL`** on the Render service to your Pages URL (the deploy scrip
 - [ ] `.\scripts\deploy-cloudflare-pages.ps1` succeeds
 - [ ] Supabase Site URL + redirect URLs updated
 - [ ] Sign up / login smoke test on live URL
+
+---
+
+## Search engine indexing (SEO)
+
+After deploy, confirm these URLs respond (copied from `public/`):
+
+| URL | Purpose |
+|-----|---------|
+| `https://lanternstudy.com/robots.txt` | Allows crawlers; points to sitemap |
+| `https://lanternstudy.com/sitemap.xml` | Lists public pages for Google/Bing |
+
+**Google Search Console (one-time):**
+
+1. Open [Google Search Console](https://search.google.com/search-console)
+2. Add property **URL prefix** → `https://lanternstudy.com`
+3. Verify via DNS TXT record in Cloudflare (recommended) or HTML file upload
+4. Submit sitemap: `https://lanternstudy.com/sitemap.xml`
+5. Use **URL Inspection** → **Request indexing** on the homepage
+
+Indexing can take days to weeks. The app is login-first, so ranking improves further with backlinks (GitHub README, app stores, social profiles).

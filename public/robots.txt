@@ -1,0 +1,5 @@
+# https://lanternstudy.com/robots.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://lanternstudy.com/sitemap.xml

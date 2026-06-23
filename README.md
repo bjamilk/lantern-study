@@ -1,3 +1,9 @@
+# Lantern Study
+
+Collaborative study platform with flashcards, practice tests, study groups, marketplace decks, and AI tools.
+
+**Production web app:** [https://lanternstudy.com](https://lanternstudy.com)
+
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
