@@ -508,6 +508,39 @@ router.get(
 const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
 const ACTIVITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+const DAILY_QUEST_TEMPLATES = [
+  { quest_type: 'review_cards', target_count: 10, reward_xp: 15 },
+  { quest_type: 'answer_questions', target_count: 3, reward_xp: 20 },
+  { quest_type: 'create_note', target_count: 1, reward_xp: 10 },
+  { quest_type: 'complete_test', target_count: 1, reward_xp: 25 },
+];
+
+function resolveQuestDate(input?: unknown): string {
+  if (typeof input === 'string' && ACTIVITY_DATE_RE.test(input)) return input;
+  return new Date().toISOString().split('T')[0];
+}
+
+async function ensureDailyQuests(userId: string, questDate: string) {
+  const client = supabaseService.getClient();
+  const { error: insertError } = await client
+    .from('daily_quests')
+    .upsert(
+      DAILY_QUEST_TEMPLATES.map((t) => ({ ...t, user_id: userId, quest_date: questDate })),
+      { onConflict: 'user_id,quest_date,quest_type', ignoreDuplicates: true }
+    );
+
+  if (insertError && insertError.code !== '23505') throw insertError;
+
+  const { data, error } = await client
+    .from('daily_quests')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('quest_date', questDate);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
 // POST /api/v1/gamification/streak/record - Reconcile study streak from activity heatmap
 router.post(
   '/streak/record',
@@ -715,43 +748,9 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const client = supabaseService.getClient();
-
-    const { data: existing, error: fetchError } = await client
-      .from('daily_quests')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('quest_date', today);
-
-    if (fetchError) throw fetchError;
-    if (existing && existing.length > 0) {
-      return res.json({ success: true, data: existing });
-    }
-
-    const templates = [
-      { quest_type: 'review_cards', target_count: 10, reward_xp: 15 },
-      { quest_type: 'answer_questions', target_count: 3, reward_xp: 20 },
-      { quest_type: 'create_note', target_count: 1, reward_xp: 10 },
-    ];
-
-    const { error: insertError } = await client
-      .from('daily_quests')
-      .upsert(
-        templates.map((t) => ({ ...t, user_id: userId, quest_date: today })),
-        { onConflict: 'user_id,quest_date,quest_type', ignoreDuplicates: true }
-      );
-
-    if (insertError && insertError.code !== '23505') throw insertError;
-
-    const { data: quests, error: reloadError } = await client
-      .from('daily_quests')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('quest_date', today);
-
-    if (reloadError) throw reloadError;
-    res.json({ success: true, data: quests ?? [] });
+    const questDate = resolveQuestDate(req.query.activityDate);
+    const quests = await ensureDailyQuests(userId, questDate);
+    res.json({ success: true, data: quests });
   })
 );
 
@@ -764,19 +763,24 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { questType, increment = 1 } = req.body;
-    const today = new Date().toISOString().split('T')[0];
+    const { questType, increment = 1, activityDate } = req.body ?? {};
+    if (!questType || typeof questType !== 'string') {
+      return res.status(400).json({ success: false, error: 'questType is required' });
+    }
+
+    const questDate = resolveQuestDate(activityDate);
+    await ensureDailyQuests(userId, questDate);
 
     const { data: quest } = await supabaseService.getClient()
       .from('daily_quests')
       .select('*')
       .eq('user_id', userId)
-      .eq('quest_date', today)
+      .eq('quest_date', questDate)
       .eq('quest_type', questType)
       .maybeSingle();
 
     if (!quest) {
-      return res.status(404).json({ success: false, error: 'Quest not found for today' });
+      return res.json({ success: true, data: null, skipped: true });
     }
 
     const newProgress = Math.min(quest.target_count, (quest.progress_count ?? 0) + increment);

@@ -48,13 +48,19 @@ export const useStreakFreeze = () =>
 export const purchaseStreakFreeze = () =>
   gamificationRequest<any>('/streak/freeze/purchase', { method: 'POST', body: '{}' });
 
-export const fetchDailyQuests = () =>
-  gamificationRequest<any[]>('/quests/daily');
+export const fetchDailyQuests = () => {
+  const activityDate = formatActivityLocalDate(new Date());
+  return gamificationRequest<any[]>(`/quests/daily?activityDate=${encodeURIComponent(activityDate)}`);
+};
 
 export const incrementQuestProgress = (questType: string, increment = 1) =>
   gamificationRequest<any>('/quests/progress', {
     method: 'POST',
-    body: JSON.stringify({ questType, increment }),
+    body: JSON.stringify({
+      questType,
+      increment,
+      activityDate: formatActivityLocalDate(new Date()),
+    }),
   });
 
 export const recordStudyActivity = (type: ActivityType, amount = 1) =>

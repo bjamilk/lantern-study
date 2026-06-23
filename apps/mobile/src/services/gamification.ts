@@ -28,13 +28,19 @@ export const recordLoginStreak = () =>
     body: JSON.stringify({ activityDate: formatActivityLocalDate(new Date()) }),
   });
 
-export const fetchDailyQuests = () =>
-  gamificationRequest<DailyQuest[]>('/quests/daily');
+export const fetchDailyQuests = () => {
+  const activityDate = formatActivityLocalDate(new Date());
+  return gamificationRequest<DailyQuest[]>(`/quests/daily?activityDate=${encodeURIComponent(activityDate)}`);
+};
 
 export const incrementQuestProgress = (questType: string, increment = 1) =>
   gamificationRequest<any>('/quests/progress', {
     method: 'POST',
-    body: JSON.stringify({ questType, increment }),
+    body: JSON.stringify({
+      questType,
+      increment,
+      activityDate: formatActivityLocalDate(new Date()),
+    }),
   });
 
 export function trackQuestProgress(questType: string, increment = 1): void {
