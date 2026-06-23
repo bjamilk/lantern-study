@@ -34,7 +34,10 @@ export const syncGamificationProgress = (options?: {
   });
 
 export const recordLoginStreak = () =>
-  gamificationRequest<any>('/streak/record', { method: 'POST', body: '{}' });
+  gamificationRequest<any>('/streak/record', {
+    method: 'POST',
+    body: JSON.stringify({ activityDate: formatActivityLocalDate(new Date()) }),
+  });
 
 export const fetchLoginStreak = () =>
   gamificationRequest<any>('/streak');

@@ -748,7 +748,7 @@ export default function DashboardScreen({
               </p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <StatPill label="Streak" value={`${streakData.streak}d`} accent="accent" icon={<FireIcon className="w-4 h-4" />} />
+              <StatPill label="Streak" value={`${serverStreak || streakData.streak}d`} accent="accent" icon={<FireIcon className="w-4 h-4" />} />
               <StatPill label="Points" value={currentUser.points.toLocaleString()} accent="primary" icon={<SparklesIcon className="w-4 h-4" />} />
             </div>
           </div>

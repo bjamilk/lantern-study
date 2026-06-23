@@ -228,7 +228,9 @@ export function DashboardScreen({ navigation }: Props) {
 
       const streakRes = await recordLoginStreak();
 
-      setServerStreak(streakRes?.currentStreak ?? streakRes?.current ?? stats?.currentStreak ?? 0);
+      setServerStreak(
+        streakRes?.current_streak ?? streakRes?.currentStreak ?? streakRes?.current ?? stats?.currentStreak ?? 0
+      );
 
     } catch {
 

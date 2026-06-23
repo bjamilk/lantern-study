@@ -3,6 +3,7 @@ import {
   getActivityHeatTailwindClass,
   getActivityHeatHexColor,
   getActivityHeatColorForCount,
+  computeStudyStreak,
 } from './activity';
 
 describe('getActivityHeatLevel', () => {
@@ -51,5 +52,64 @@ describe('getActivityHeatColorForCount', () => {
   it('uses absolute tiers so one activity is always the lightest green', () => {
     expect(getActivityHeatColorForCount(1, 'light')).toBe('bg-green-200');
     expect(getActivityHeatColorForCount(1, 'dark')).toBe('bg-green-900');
+  });
+});
+
+describe('computeStudyStreak', () => {
+  const ref = new Date(2026, 5, 15); // 2026-06-15 local
+
+  it('returns zero when there is no activity', () => {
+    expect(computeStudyStreak([], ref)).toEqual({
+      current: 0,
+      longest: 0,
+      lastActiveDate: null,
+    });
+  });
+
+  it('counts consecutive days ending today', () => {
+    const result = computeStudyStreak(
+      [
+        { date: '2026-06-15', count: 2 },
+        { date: '2026-06-14', count: 1 },
+        { date: '2026-06-13', count: 3 },
+      ],
+      ref
+    );
+    expect(result.current).toBe(3);
+    expect(result.longest).toBe(3);
+    expect(result.lastActiveDate).toBe('2026-06-15');
+  });
+
+  it('counts from yesterday when today has no activity yet', () => {
+    const result = computeStudyStreak(
+      [
+        { date: '2026-06-14', count: 1 },
+        { date: '2026-06-13', count: 1 },
+      ],
+      ref
+    );
+    expect(result.current).toBe(2);
+    expect(result.longest).toBe(2);
+  });
+
+  it('returns zero current streak when last activity was before yesterday', () => {
+    const result = computeStudyStreak([{ date: '2026-06-12', count: 5 }], ref);
+    expect(result.current).toBe(0);
+    expect(result.longest).toBe(1);
+  });
+
+  it('tracks longest streak across gaps in history', () => {
+    const result = computeStudyStreak(
+      [
+        { date: '2026-06-15', count: 1 },
+        { date: '2026-06-10', count: 1 },
+        { date: '2026-06-09', count: 1 },
+        { date: '2026-06-08', count: 1 },
+        { date: '2026-06-07', count: 1 },
+      ],
+      ref
+    );
+    expect(result.current).toBe(1);
+    expect(result.longest).toBe(4);
   });
 });

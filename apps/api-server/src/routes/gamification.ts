@@ -505,7 +505,10 @@ router.get(
   })
 );
 
-// POST /api/v1/gamification/streak/record - Record daily login streak
+const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
+const ACTIVITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// POST /api/v1/gamification/streak/record - Reconcile study streak from activity heatmap
 router.post(
   '/streak/record',
   authMiddleware,
@@ -514,54 +517,16 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const { data: existing } = await supabaseService.getClient()
-      .from('user_streaks')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { activityDate } = req.body ?? {};
+    const referenceDate =
+      typeof activityDate === 'string' && ACTIVITY_DATE_RE.test(activityDate)
+        ? activityDate
+        : undefined;
 
-    let currentStreak = 1;
-    let longestStreak = 1;
-    let streakFreezes = 0;
-
-    if (existing) {
-      streakFreezes = existing.streak_freezes ?? 0;
-      const lastDate = existing.last_login_date;
-      if (lastDate === today) {
-        return res.json({ success: true, data: existing });
-      }
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-      if (lastDate === yesterdayStr) {
-        currentStreak = (existing.current_streak ?? 0) + 1;
-      } else {
-        currentStreak = 1;
-      }
-      longestStreak = Math.max(existing.longest_streak ?? 0, currentStreak);
-    }
-
-    const { data, error } = await supabaseService.getClient()
-      .from('user_streaks')
-      .upsert({
-        user_id: userId,
-        current_streak: currentStreak,
-        longest_streak: longestStreak,
-        last_login_date: today,
-        streak_freezes: streakFreezes,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
-      .select()
-      .single();
-
-    if (error) throw error;
+    const data = await supabaseService.recomputeUserStreak(userId, referenceDate);
     res.json({ success: true, data });
   })
 );
-
-const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
-const ACTIVITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // POST /api/v1/gamification/me/sync-progress - Persist badges/points from current stats
 router.post(
@@ -615,6 +580,7 @@ router.post(
       Math.floor(parsedAmount),
       date
     );
+    await supabaseService.recomputeUserStreak(userId, date);
     res.json({ success: true, data });
   })
 );
@@ -649,7 +615,7 @@ router.get(
   })
 );
 
-// GET /api/v1/gamification/streak - Get user streak
+// GET /api/v1/gamification/streak - Get user study streak (recomputed from activity)
 router.get(
   '/streak',
   authMiddleware,
@@ -658,16 +624,13 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { data } = await supabaseService.getClient()
-      .from('user_streaks')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const activityDate =
+      typeof req.query.activityDate === 'string' && ACTIVITY_DATE_RE.test(req.query.activityDate)
+        ? req.query.activityDate
+        : undefined;
 
-    res.json({
-      success: true,
-      data: data || { current_streak: 0, longest_streak: 0, streak_freezes: 0 },
-    });
+    const data = await supabaseService.recomputeUserStreak(userId, activityDate);
+    res.json({ success: true, data });
   })
 );
 

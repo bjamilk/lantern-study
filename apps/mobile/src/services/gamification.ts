@@ -1,5 +1,5 @@
 import type { ActivityType, StudyActivityDay } from '@lantern/shared';
-import { ACTIVITY_DAYS } from '@lantern/shared/utils';
+import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
 import { getAuthHeaders, API_BASE_URL } from './supabase';
 
 async function gamificationRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -23,7 +23,10 @@ export interface DailyQuest {
 }
 
 export const recordLoginStreak = () =>
-  gamificationRequest<any>('/streak/record', { method: 'POST', body: '{}' });
+  gamificationRequest<any>('/streak/record', {
+    method: 'POST',
+    body: JSON.stringify({ activityDate: formatActivityLocalDate(new Date()) }),
+  });
 
 export const fetchDailyQuests = () =>
   gamificationRequest<DailyQuest[]>('/quests/daily');
@@ -41,7 +44,11 @@ export function trackQuestProgress(questType: string, increment = 1): void {
 export const recordStudyActivity = (type: ActivityType, amount = 1) =>
   gamificationRequest<any>('/activity/record', {
     method: 'POST',
-    body: JSON.stringify({ type, amount }),
+    body: JSON.stringify({
+      type,
+      amount,
+      activityDate: formatActivityLocalDate(new Date()),
+    }),
   });
 
 export const fetchStudyActivity = (days = ACTIVITY_DAYS) =>

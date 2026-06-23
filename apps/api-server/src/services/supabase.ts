@@ -11,6 +11,7 @@ import {
   MARKETPLACE_BUDGET_TYPES,
 } from '@lantern/shared/utils/server';
 import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
+import { computeStudyStreak } from '@lantern/shared/utils/activity';
 
 type UserStats = typeof initialUserStats;
 
@@ -3974,6 +3975,9 @@ export class SupabaseService {
     await this.recordStudyActivity(userId, 'test', 1, activityDate).catch((err) => {
       logger.warn('Failed to record study activity after test', { userId, err });
     });
+    await this.recomputeUserStreak(userId, activityDate).catch((err) => {
+      logger.warn('Failed to recompute streak after test', { userId, err });
+    });
     return result;
   }
 
@@ -4015,6 +4019,54 @@ export class SupabaseService {
         daily_quiz: row.daily_quiz_count ?? 0,
       },
     }));
+  }
+
+  private parseStreakReferenceDate(referenceDate?: string): Date {
+    if (referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+      const [y, m, d] = referenceDate.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  }
+
+  /** Recompute streak from study_activity (heatmap-aligned, client-local dates). */
+  async recomputeUserStreak(userId: string, referenceDate?: string): Promise<{
+    user_id: string;
+    current_streak: number;
+    longest_streak: number;
+    last_login_date: string | null;
+    streak_freezes: number;
+    updated_at: string;
+  }> {
+    const STREAK_LOOKBACK_DAYS = 400;
+    const activityDays = await this.getStudyActivity(userId, STREAK_LOOKBACK_DAYS);
+    const ref = this.parseStreakReferenceDate(referenceDate);
+    const { current, longest, lastActiveDate } = computeStudyStreak(activityDays, ref);
+
+    const { data: existing } = await this.supabase
+      .from('user_streaks')
+      .select('streak_freezes, longest_streak')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const streakFreezes = existing?.streak_freezes ?? 0;
+    const longestStreak = Math.max(existing?.longest_streak ?? 0, longest);
+
+    const { data, error } = await this.supabase
+      .from('user_streaks')
+      .upsert({
+        user_id: userId,
+        current_streak: current,
+        longest_streak: longestStreak,
+        last_login_date: lastActiveDate,
+        streak_freezes: streakFreezes,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   }
 
   // Helper methods
