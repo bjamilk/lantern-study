@@ -63,7 +63,10 @@ export function formatActivityLocalDate(d: Date): string {
 }
 
 function parseActivityDate(dateStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number);
+  const parts = dateStr.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
   return new Date(y, m - 1, d);
 }
 
@@ -99,7 +102,9 @@ function computeLongestStreak(activeDates: Set<string>): number {
   let longest = 1;
   let run = 1;
   for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] === addDaysToDateStr(sorted[i - 1], 1)) {
+    const prev = sorted[i - 1]!;
+    const curr = sorted[i]!;
+    if (curr === addDaysToDateStr(prev, 1)) {
       run++;
       longest = Math.max(longest, run);
     } else {
