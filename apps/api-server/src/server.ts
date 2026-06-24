@@ -82,17 +82,17 @@ async function initializeServices() {
       logger.info('Using LRU memory cache (Redis disabled)');
     }
 
-    // Initialize API key service
-    apiKeyService = new (await import('./services/apiKey')).ApiKeyService();
-    const { initializeApiKeyService } = await import('./services/apiKey');
-    initializeApiKeyService(supabaseService);
-
     // Initialize Supabase service
     const dbConfig = {
       url: process.env.SUPABASE_URL || 'http://127.0.0.1:55421',
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     };
     supabaseService = new SupabaseService(dbConfig);
+
+    // Initialize API key service (requires Supabase service role client)
+    apiKeyService = new (await import('./services/apiKey')).ApiKeyService();
+    const { initializeApiKeyService } = await import('./services/apiKey');
+    initializeApiKeyService(supabaseService);
 
     // Initialize auth middleware with supabase service
     const { initializeAuthMiddleware } = await import('./middleware/auth');
