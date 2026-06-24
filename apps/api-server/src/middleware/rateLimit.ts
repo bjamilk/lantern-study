@@ -54,10 +54,14 @@ export const createRateLimit = (
     keyGenerator: (req: Request) => {
       const authReq = req as AuthenticatedRequest;
       if (authReq.user?.id) return authReq.user.id;
-      // Use express-rate-limit helper to ensure IPv6-safe normalization.
-      // Cast to any because the type definitions in this version declare the
-      // helper as accepting a string, but at runtime it accepts the request.
-      return (ipKeyGenerator as any)(req);
+      const ip =
+        req.ip ||
+        (req.socket && req.socket.remoteAddress) ||
+        (Array.isArray(req.headers['x-forwarded-for'])
+          ? req.headers['x-forwarded-for'][0]
+          : (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()) ||
+        'anonymous';
+      return ipKeyGenerator(ip);
     },
     // Skip rate limiting for health checks and admin (admin has its own limiter after auth)
     skip: (req: Request) => {

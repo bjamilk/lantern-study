@@ -67,13 +67,17 @@ for ($i = 1; $i -le 70; $i++) {
 Write-Host "marketplace rate limit 429: $hit429 (expect True)"
 
 # 3) API key create + auth
-$adminHeaders = @{ Authorization = "Bearer $serviceKey"; apikey = $serviceKey }
+$adminHeaders = @{
+  Authorization = "Bearer $serviceKey"
+  apikey        = $serviceKey
+  'User-Agent'  = 'lantern-security-verify/1.0'
+}
 $createUser = Invoke-RestMethod -Method POST -Uri "$supabaseUrl/auth/v1/admin/users" -Headers $adminHeaders -ContentType 'application/json' -Body (@{
   email = $email; password = $password; email_confirm = $true; user_metadata = @{ name = 'Security Verify' }
 } | ConvertTo-Json)
 $userId = $createUser.id
 
-$login = Invoke-RestMethod -Method POST -Uri "$supabaseUrl/auth/v1/token?grant_type=password" -Headers @{ apikey = $anonKey } -ContentType 'application/json' -Body (@{ email = $email; password = $password } | ConvertTo-Json)
+$login = Invoke-RestMethod -Method POST -Uri "$supabaseUrl/auth/v1/token?grant_type=password" -Headers @{ apikey = $anonKey; 'User-Agent' = 'lantern-security-verify/1.0' } -ContentType 'application/json' -Body (@{ email = $email; password = $password } | ConvertTo-Json)
 $jwt = $login.access_token
 
 $createKey = Invoke-Status -Method POST -Url "$ApiBaseUrl/api/v1/api-keys" -Headers @{ Authorization = "Bearer $jwt" } -Body @{ name = "verify-$ts"; permissions = @('read') }

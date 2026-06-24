@@ -59,6 +59,11 @@ import { logger, stream, logRequest } from './utils/logger';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Render / reverse proxies set X-Forwarded-For; required for stable per-IP rate limits.
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Initialize services
 let cacheService: CacheService;
 let apiKeyService: ApiKeyService;
