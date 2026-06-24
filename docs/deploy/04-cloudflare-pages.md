@@ -172,8 +172,8 @@ After deploy, confirm these URLs respond (copied from `public/`):
 **Google Search Console (one-time):**
 
 1. Open [Google Search Console](https://search.google.com/search-console)
-2. Add property **URL prefix** → `https://lanternstudy.com`
-3. Verify via DNS TXT record in Cloudflare (recommended) or HTML file upload
+2. Add property **URL prefix** → `https://lanternstudy.com` (not `/sitemap.xml`)
+3. Verify with the HTML file at `public/google251095c8c1cce4a1.html` (served at site root after deploy)
 4. Submit sitemap: `https://lanternstudy.com/sitemap.xml`
 5. Use **URL Inspection** → **Request indexing** on the homepage
 
