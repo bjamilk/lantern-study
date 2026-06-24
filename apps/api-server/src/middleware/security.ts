@@ -212,15 +212,30 @@ export const sanitizeObject = (obj: any, depth = 0): any => {
   return obj;
 };
 
+/** Mutate query/params in place — Express 5 exposes them as read-only getters. */
+function sanitizeMutableObject(obj: Record<string, unknown>, depth = 0): void {
+  if (!obj || typeof obj !== 'object' || depth > 8) return;
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
+    if (typeof value === 'string') {
+      obj[key] = sanitizeInput(value);
+    } else if (Array.isArray(value)) {
+      obj[key] = sanitizeObject(value, depth + 1);
+    } else if (value && typeof value === 'object') {
+      sanitizeMutableObject(value as Record<string, unknown>, depth + 1);
+    }
+  }
+}
+
 export const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction) => {
   if (req.body) {
     req.body = sanitizeObject(req.body);
   }
-  if (req.query) {
-    req.query = sanitizeObject(req.query) as typeof req.query;
+  if (req.query && typeof req.query === 'object') {
+    sanitizeMutableObject(req.query as Record<string, unknown>);
   }
-  if (req.params) {
-    req.params = sanitizeObject(req.params) as typeof req.params;
+  if (req.params && typeof req.params === 'object') {
+    sanitizeMutableObject(req.params as Record<string, unknown>);
   }
   next();
 };
