@@ -155,3 +155,112 @@ export const validateCreateChallenge = [
 export const validateSubmitChallenge = [
   body('answers').isObject().withMessage('Answers must be an object'),
 ];
+
+// Shared primitives
+export const validateUuidParam = (name: string) => [
+  param(name).isUUID().withMessage(`${name} must be a valid UUID`),
+];
+
+export const validateListingId = validateUuidParam('id');
+export const validateNoteId = validateUuidParam('noteId');
+export const validateFolderId = validateUuidParam('folderId');
+export const validateKeyId = validateUuidParam('keyId');
+export const validateDeckId = validateUuidParam('deckId');
+
+export const validateUserStatsUpsert = [
+  body('userId').isUUID().withMessage('userId must be a valid UUID'),
+  body('questionId').isUUID().withMessage('questionId must be a valid UUID'),
+  body('correctAttempts').optional().isInt({ min: 0 }).withMessage('correctAttempts must be non-negative'),
+  body('incorrectAttempts').optional().isInt({ min: 0 }).withMessage('incorrectAttempts must be non-negative'),
+  body('lastAttempted').optional().isISO8601().withMessage('lastAttempted must be a valid ISO date'),
+];
+
+export const validateNoteCreate = [
+  body('title').optional().trim().isLength({ max: 500 }).withMessage('Title must be at most 500 characters'),
+  body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
+  body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
+  body('groupId').optional().isUUID().withMessage('groupId must be a valid UUID'),
+  body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation']).withMessage('Invalid sourceType'),
+];
+
+export const validateNoteUpdate = [
+  body('title').optional().trim().isLength({ max: 500 }).withMessage('Title must be at most 500 characters'),
+  body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
+  body('summary').optional().isString().isLength({ max: 10000 }).withMessage('Summary is too large'),
+  body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
+];
+
+export const validateFolderCreate = [
+  body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Folder name must be 1-200 characters'),
+  body('color').optional().isString().isLength({ max: 32 }),
+  body('groupId').optional().isUUID(),
+  body('parentId').optional().isUUID(),
+];
+
+export const validateAdminUserStatus = [
+  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  body('status').isIn(['active', 'banned', 'suspended']).withMessage('Invalid status'),
+  body('reason').optional().trim().isLength({ max: 500 }),
+];
+
+export const validateAdminUserRole = [
+  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  body('isPlatformAdmin').isBoolean().withMessage('isPlatformAdmin must be a boolean'),
+];
+
+export const validateAdminPointsAdjust = [
+  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  body('delta').isInt().withMessage('delta must be an integer'),
+  body('reason').optional().trim().isLength({ max: 500 }),
+];
+
+export const validateAdminNotification = [
+  body('message').trim().isLength({ min: 1, max: 500 }).withMessage('Message must be 1-500 characters'),
+  body('userId').optional().isUUID(),
+  body('link').optional().isString().isLength({ max: 500 }),
+];
+
+export const validateMarketplaceListingWrite = [
+  body('title').trim().isLength({ min: 1, max: 200 }).withMessage('Title must be 1-200 characters'),
+  body('category').isIn(['academic', 'student-life', 'textbooks', 'electronics', 'furniture', 'services', 'other']).withMessage('Invalid category'),
+  body('price').isFloat({ min: 0, max: 10000000 }).withMessage('Price must be between 0 and 10,000,000'),
+  body('description').optional().isString().isLength({ max: 10000 }),
+  body('location').optional().isString().isLength({ max: 200 }),
+];
+
+export const validateMarketplaceListingUpdate = [
+  body('title').optional().trim().isLength({ min: 1, max: 200 }),
+  body('price').optional().isFloat({ min: 0, max: 10000000 }),
+  body('description').optional().isString().isLength({ max: 10000 }),
+  body('status').optional().isIn(['active', 'sold', 'archived', 'draft']),
+];
+
+export const validateDeckCreate = [
+  body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Deck name must be 1-200 characters'),
+  body('description').optional().isString().isLength({ max: 2000 }),
+];
+
+export const validateDeckUpdate = [
+  body('name').optional().trim().isLength({ min: 1, max: 200 }),
+  body('description').optional().isString().isLength({ max: 2000 }),
+];
+
+export const validateFlashcardCreate = [
+  body('deckId').isUUID().withMessage('deckId must be a valid UUID'),
+  body('front').trim().isLength({ min: 1, max: 10000 }),
+  body('back').optional().isString().isLength({ max: 10000 }),
+  body('type').optional().isIn(['BASIC', 'CLOZE', 'IMAGE_OCCLUSION']),
+];
+
+export const validateAIMessage = [
+  body('message').optional().trim().isLength({ max: 20000 }),
+  body('context').optional().isObject(),
+  body('notes').optional().isArray({ max: 50 }),
+  body('notes.*').optional().isString().isLength({ max: 50000 }),
+];
+
+export const validateAICompanionMessage = [
+  body('message').trim().isLength({ min: 1, max: 10000 }).withMessage('message must be 1-10000 characters'),
+  body('context').optional().isObject(),
+  body('rating').optional().isInt({ min: 1, max: 5 }),
+];

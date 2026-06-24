@@ -29,9 +29,9 @@ export const initializeGroupRoutes = (supabase: SupabaseService, cache: CacheSer
 router.get(
   '/',
   authMiddleware,
-  // validatePagination,
-  // validateSearch,
-  // handleValidationErrors,
+  validatePagination,
+  validateSearch,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     try {
       const userId = requireAuthUserId(req, res);
@@ -489,7 +489,7 @@ router.delete(
 // GET /api/v1/groups/:groupId/members - Get group members
 router.get(
   '/:groupId/members',
-  optionalAuthMiddleware,
+  process.env.NODE_ENV === 'production' ? authMiddleware : optionalAuthMiddleware,
   validateGroupId,
   validatePagination,
   handleValidationErrors,

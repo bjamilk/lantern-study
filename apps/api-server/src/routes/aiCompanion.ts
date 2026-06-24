@@ -8,6 +8,7 @@ import { companionChat, summarizeGroupChat, CompanionContext } from '../services
 import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
 import { clientErrorMessage } from '../utils/safeError';
+import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
 
 let supabaseService: SupabaseService;
 
@@ -82,7 +83,7 @@ router.post('/summarize-group', aiRateLimit, async (req: Request, res: Response)
 
 router.use(aiRateLimitForFeature('companion'));
 
-router.post('/message', async (req: Request, res: Response) => {
+router.post('/message', validateAICompanionMessage, handleValidationErrors, async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   const { message, context } = req.body as {
     message: string;
@@ -127,7 +128,7 @@ router.post('/message', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/message/stream', async (req: Request, res: Response) => {
+router.post('/message/stream', validateAICompanionMessage, handleValidationErrors, async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   const { message, context } = req.body as {
     message: string;

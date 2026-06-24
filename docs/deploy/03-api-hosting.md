@@ -135,6 +135,31 @@ Then: `curl http://localhost:3001/health`
 - Never put `SUPABASE_SERVICE_ROLE_KEY` in web/mobile env — API server only.
 - Rotate keys if a secret was ever pasted into a client env var.
 
+### Authentication
+
+The API accepts two credential types:
+
+| Type | Header | Notes |
+|------|--------|--------|
+| Supabase JWT | `Authorization: Bearer <access_token>` | Standard user sessions from Supabase Auth |
+| API key | `Authorization: Bearer lsk_...` **or** `X-API-Key: lsk_...` | DB-backed keys; plaintext shown once at creation |
+
+**API key management** (JWT only — API keys cannot mint sibling keys):
+
+- `POST /api/v1/api-keys` — create key (returns `lsk_...` secret once)
+- `GET /api/v1/api-keys` — list metadata for your keys
+- `DELETE /api/v1/api-keys/:keyId` — revoke
+- `POST /api/v1/api-keys/:keyId/rotate` — revoke old key and issue a new one
+
+Apply the `user_api_keys` Supabase migration before deploying API key auth.
+
+Env vars (see `apps/api-server/.env.example`):
+
+- `API_KEY_SALT_ROUNDS` (default 12)
+- `API_KEY_MAX_PER_USER` (default 10)
+- `API_KEY_DEFAULT_TTL_DAYS` (0 = no expiry)
+- `PUBLIC_READ_RATE_LIMIT_MAX`, `PUBLIC_WRITE_RATE_LIMIT_MAX`, `AUTHENTICATED_RATE_LIMIT_MAX`
+
 ---
 
 ## Next step

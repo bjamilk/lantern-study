@@ -108,7 +108,14 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },
         @{ key = 'SUPABASE_SERVICE_ROLE_KEY'; value = $ApiEnv['SUPABASE_SERVICE_ROLE_KEY'] },
         @{ key = 'GROQ_API_KEY'; value = $ApiEnv['GROQ_API_KEY'] },
-        @{ key = 'JWT_SECRET'; value = $jwt }
+        @{ key = 'JWT_SECRET'; value = $jwt },
+        @{ key = 'API_KEY_SALT_ROUNDS'; value = '12' },
+        @{ key = 'API_KEY_MAX_PER_USER'; value = '10' },
+        @{ key = 'API_KEY_DEFAULT_TTL_DAYS'; value = '0' },
+        @{ key = 'PUBLIC_READ_RATE_LIMIT_MAX'; value = '60' },
+        @{ key = 'PUBLIC_WRITE_RATE_LIMIT_MAX'; value = '10' },
+        @{ key = 'API_KEY_AUTH_RATE_LIMIT_MAX'; value = '20' },
+        @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {
         $vars += @(

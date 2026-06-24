@@ -140,9 +140,55 @@ export const dataExportRateLimit = createRateLimit(
   'You can export your data once every 24 hours. Please try again later.'
 );
 
+const publicReadMax =
+  process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.PUBLIC_READ_RATE_LIMIT_MAX || '60', 10)
+    : parseInt(process.env.PUBLIC_READ_RATE_LIMIT_MAX || '1000', 10);
+
+const publicWriteMax =
+  process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.PUBLIC_WRITE_RATE_LIMIT_MAX || '10', 10)
+    : parseInt(process.env.PUBLIC_WRITE_RATE_LIMIT_MAX || '500', 10);
+
+const apiKeyAuthMax =
+  process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.API_KEY_AUTH_RATE_LIMIT_MAX || '20', 10)
+    : parseInt(process.env.API_KEY_AUTH_RATE_LIMIT_MAX || '500', 10);
+
+const authenticatedMax =
+  process.env.NODE_ENV === 'production'
+    ? parseInt(process.env.AUTHENTICATED_RATE_LIMIT_MAX || '300', 10)
+    : parseInt(process.env.AUTHENTICATED_RATE_LIMIT_MAX || '10000', 10);
+
+/** Stricter IP limit for anonymous public GET browse endpoints. */
+export const publicReadRateLimit = createRateLimit(
+  defaultWindowMs,
+  publicReadMax,
+  'Public read rate limit exceeded. Please try again later.'
+);
+
+/** Stricter IP limit for unauthenticated write endpoints. */
+export const publicWriteRateLimit = createRateLimit(
+  defaultWindowMs,
+  publicWriteMax,
+  'Public write rate limit exceeded. Please try again later.'
+);
+
+/** Rate limit failed API key authentication attempts by IP. */
+export const apiKeyAuthRateLimit = createRateLimit(
+  15 * 60 * 1000,
+  apiKeyAuthMax,
+  'Too many API key authentication attempts. Please try again later.'
+);
+
+/** Per-user limit applied after successful JWT/API-key auth (see authMiddleware). */
+export const authenticatedRateLimit = createRateLimit(
+  defaultWindowMs,
+  authenticatedMax,
+  'Authenticated API rate limit exceeded. Please slow down your requests.'
+);
+
 // Middleware to check if user is premium (placeholder)
 export const checkPremiumAccess = (req: AuthenticatedRequest, res: Response, next: any) => {
-  // In a real app, you'd check user's subscription tier
-  // For now, just pass through
   next();
 };

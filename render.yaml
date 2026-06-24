@@ -34,3 +34,17 @@ services:
         generateValue: true
       - key: GROQ_API_KEY
         sync: false
+      - key: API_KEY_SALT_ROUNDS
+        value: "12"
+      - key: API_KEY_MAX_PER_USER
+        value: "10"
+      - key: API_KEY_DEFAULT_TTL_DAYS
+        value: "0"
+      - key: PUBLIC_READ_RATE_LIMIT_MAX
+        value: "60"
+      - key: PUBLIC_WRITE_RATE_LIMIT_MAX
+        value: "10"
+      - key: API_KEY_AUTH_RATE_LIMIT_MAX
+        value: "20"
+      - key: AUTHENTICATED_RATE_LIMIT_MAX
+        value: "300"

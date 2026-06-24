@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination } from '../middleware/validation';
+import { handleValidationErrors, validatePagination, validateDeckId, validateDeckCreate, validateDeckUpdate } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -63,6 +63,7 @@ router.get(
 router.get(
   '/:deckId',
   authMiddleware,
+  validateDeckId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -82,6 +83,7 @@ router.get(
 router.post(
   '/',
   authMiddleware,
+  validateDeckCreate,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -100,6 +102,8 @@ router.post(
 router.put(
   '/:deckId',
   authMiddleware,
+  validateDeckId,
+  validateDeckUpdate,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -124,6 +128,7 @@ router.put(
 router.delete(
   '/:deckId',
   authMiddleware,
+  validateDeckId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);

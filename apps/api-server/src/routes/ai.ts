@@ -18,6 +18,7 @@ import {
   enhanceFlashcard,
   getProviderStatus,
 } from '../services/aiService';
+import { handleValidationErrors, validateAIMessage } from '../middleware/validation';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -64,6 +65,7 @@ router.get('/usage', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 // All other routes require auth + AI rate limit
 router.use(authMiddleware);
 router.use(aiRateLimit);
+router.use(validateAIMessage, handleValidationErrors);
 
 // Generate questions from notes
 router.post('/generate-questions', async (req: AuthenticatedRequest, res: Response) => {

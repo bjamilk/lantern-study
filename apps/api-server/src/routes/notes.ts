@@ -3,6 +3,14 @@ import { authMiddleware } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/aiRateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
+import {
+  handleValidationErrors,
+  validateNoteId,
+  validateFolderId,
+  validateNoteCreate,
+  validateNoteUpdate,
+  validateFolderCreate,
+} from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
@@ -52,7 +60,7 @@ router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: folders });
 }));
 
-router.post('/folders', asyncHandler(async (req: Request, res: Response) => {
+router.post('/folders', validateFolderCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { name, color, groupId, parentId } = req.body;
@@ -64,14 +72,14 @@ router.post('/folders', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: folder });
 }));
 
-router.patch('/folders/:folderId', asyncHandler(async (req: Request, res: Response) => {
+router.patch('/folders/:folderId', validateFolderId, validateFolderCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, req.body);
   res.json({ success: true, data: folder });
 }));
 
-router.delete('/folders/:folderId', asyncHandler(async (req: Request, res: Response) => {
+router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   await supabaseService.deleteNoteFolder(userId, req.params.folderId);
@@ -299,7 +307,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: notes });
 }));
 
-router.get('/:noteId', asyncHandler(async (req: Request, res: Response) => {
+router.get('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -307,14 +315,14 @@ router.get('/:noteId', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: { ...note, attachments } });
 }));
 
-router.post('/', asyncHandler(async (req: Request, res: Response) => {
+router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.createNote(userId, req.body);
   res.json({ success: true, data: note });
 }));
 
-router.patch('/:noteId', asyncHandler(async (req: Request, res: Response) => {
+router.patch('/:noteId', validateNoteId, validateNoteUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.updateNote(userId, req.params.noteId, req.body);
@@ -322,7 +330,7 @@ router.patch('/:noteId', asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true, data: note });
 }));
 
-router.delete('/:noteId', asyncHandler(async (req: Request, res: Response) => {
+router.delete('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   await supabaseService.deleteNote(userId, req.params.noteId);

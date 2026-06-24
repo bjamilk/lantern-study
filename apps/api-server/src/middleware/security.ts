@@ -194,17 +194,18 @@ export const sanitizeInput = (input: string): string => {
     .substring(0, 50000);
 };
 
-export const sanitizeObject = (obj: any): any => {
+export const sanitizeObject = (obj: any, depth = 0): any => {
+  if (depth > 8) return obj;
   if (typeof obj === 'string') {
     return sanitizeInput(obj);
   }
   if (Array.isArray(obj)) {
-    return obj.map(sanitizeObject);
+    return obj.map((item) => sanitizeObject(item, depth + 1));
   }
   if (obj && typeof obj === 'object') {
     const sanitized: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      sanitized[sanitizeInput(key)] = sanitizeObject(value);
+      sanitized[sanitizeInput(key)] = sanitizeObject(value, depth + 1);
     }
     return sanitized;
   }
@@ -214,6 +215,12 @@ export const sanitizeObject = (obj: any): any => {
 export const sanitizationMiddleware = (req: Request, res: Response, next: NextFunction) => {
   if (req.body) {
     req.body = sanitizeObject(req.body);
+  }
+  if (req.query) {
+    req.query = sanitizeObject(req.query) as typeof req.query;
+  }
+  if (req.params) {
+    req.params = sanitizeObject(req.params) as typeof req.params;
   }
   next();
 };

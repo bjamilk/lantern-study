@@ -30,6 +30,7 @@ export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheS
 router.get(
   '/group/:groupId/user-votes',
   authMiddleware,
+  validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);

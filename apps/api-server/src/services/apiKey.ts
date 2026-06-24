@@ -1,110 +1,248 @@
+import { randomBytes, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { ApiKey } from '../types';
+import { SupabaseService } from './supabase';
+import { logger } from '../utils/logger';
+
+export const API_KEY_PREFIX = 'lsk_';
+const KEY_PREFIX_LENGTH = 12;
+const DEFAULT_MAX_KEYS_PER_USER = parseInt(process.env.API_KEY_MAX_PER_USER || '10', 10);
+const DEFAULT_TTL_DAYS = parseInt(process.env.API_KEY_DEFAULT_TTL_DAYS || '0', 10);
+
+export interface ApiKeyRecord {
+  id: string;
+  userId: string;
+  name: string;
+  keyPrefix: string;
+  permissions: string[];
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ApiKeyCreateResult extends ApiKeyRecord {
+  secret: string;
+}
+
+export interface ApiKeyValidationResult {
+  isValid: boolean;
+  userId?: string;
+  permissions?: string[];
+  keyId?: string;
+}
+
+let supabaseService: SupabaseService | null = null;
+const lastUsedDebounce = new Map<string, number>();
+
+export function initializeApiKeyService(supabase: SupabaseService): void {
+  supabaseService = supabase;
+}
+
+function requireSupabase(): SupabaseService {
+  if (!supabaseService) {
+    throw new Error('ApiKeyService not initialized');
+  }
+  return supabaseService;
+}
+
+function generateSecret(): string {
+  return `${API_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
+}
+
+function getKeyPrefix(secret: string): string {
+  return secret.slice(0, KEY_PREFIX_LENGTH);
+}
+
+function hashForLookup(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex').slice(0, 16);
+}
+
+function mapRow(row: any): ApiKeyRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    keyPrefix: row.key_prefix,
+    permissions: row.permissions || ['read'],
+    lastUsedAt: row.last_used_at,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+  };
+}
 
 export class ApiKeyService {
-  private jwtSecret: string;
   private saltRounds: number;
 
   constructor() {
-    const secret = process.env.JWT_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
-      throw new Error('JWT_SECRET must be set in production');
-    }
-    this.jwtSecret = secret || 'dev-only-secret-not-for-production';
-    this.saltRounds = parseInt(process.env.API_KEY_SALT_ROUNDS || '12');
+    this.saltRounds = parseInt(process.env.API_KEY_SALT_ROUNDS || '12', 10);
   }
 
-  // Generate a new API key
-  async generateApiKey(userId: string, name: string, permissions: string[] = ['read', 'write']): Promise<ApiKey> {
-    const keyId = this.generateId();
-    const rawKey = this.generateRandomKey();
-    const hashedKey = await bcrypt.hash(rawKey, this.saltRounds);
+  isApiKeyFormat(value: string): boolean {
+    return typeof value === 'string' && value.startsWith(API_KEY_PREFIX) && value.length >= 20;
+  }
 
-    const apiKey: ApiKey = {
-      id: keyId,
-      key: hashedKey,
-      userId,
-      name,
-      permissions,
-      createdAt: new Date().toISOString(),
-      isActive: true,
-    };
+  async countActiveKeys(userId: string): Promise<number> {
+    const client = requireSupabase().getClient();
+    const { count, error } = await client
+      .from('user_api_keys')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('revoked_at', null);
+    if (error) throw error;
+    return count || 0;
+  }
 
-    // In a real implementation, you'd store this in a database
-    // For now, we'll return the raw key to the user (only time they see it)
+  async createKey(
+    userId: string,
+    name: string,
+    permissions: string[] = ['read'],
+    expiresAt?: string | null
+  ): Promise<ApiKeyCreateResult> {
+    const active = await this.countActiveKeys(userId);
+    if (active >= DEFAULT_MAX_KEYS_PER_USER) {
+      throw new Error(`Maximum of ${DEFAULT_MAX_KEYS_PER_USER} active API keys allowed`);
+    }
+
+    const normalizedPermissions = permissions.length ? permissions : ['read'];
+    const secret = generateSecret();
+    const keyHash = await bcrypt.hash(secret, this.saltRounds);
+    const keyPrefix = getKeyPrefix(secret);
+
+    let resolvedExpiresAt = expiresAt;
+    if (!resolvedExpiresAt && DEFAULT_TTL_DAYS > 0) {
+      resolvedExpiresAt = new Date(Date.now() + DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const client = requireSupabase().getClient();
+    const { data, error } = await client
+      .from('user_api_keys')
+      .insert({
+        user_id: userId,
+        name: name.trim(),
+        key_prefix: keyPrefix,
+        key_hash: keyHash,
+        permissions: normalizedPermissions,
+        expires_at: resolvedExpiresAt || null,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
     return {
-      ...apiKey,
-      key: rawKey, // Return the unhashed key to the user
+      ...mapRow(data),
+      secret,
     };
   }
 
-  // Validate an API key
-  async validateApiKey(apiKey: string): Promise<{ isValid: boolean; userId?: string; permissions?: string[] }> {
-    try {
-      // In a real implementation, you'd look up the hashed key in the database
-      // For demo purposes, we'll decode the JWT token
-      const decoded = jwt.verify(apiKey, this.jwtSecret) as any;
+  async listKeys(userId: string): Promise<ApiKeyRecord[]> {
+    const client = requireSupabase().getClient();
+    const { data, error } = await client
+      .from('user_api_keys')
+      .select('id, user_id, name, key_prefix, permissions, last_used_at, expires_at, revoked_at, created_at')
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .order('created_at', { ascending: false });
 
-      return {
-        isValid: true,
-        userId: decoded.userId,
-        permissions: decoded.permissions,
-      };
-    } catch (error) {
-      return { isValid: false };
-    }
+    if (error) throw error;
+    return (data || []).map(mapRow);
   }
 
-  // Create a JWT token for authenticated requests
-  createToken(userId: string, permissions: string[]): string {
-    return jwt.sign(
-      {
-        userId,
-        permissions,
-        iat: Math.floor(Date.now() / 1000),
-      },
-      this.jwtSecret,
-      { expiresIn: '24h' }
+  async revokeKey(userId: string, keyId: string): Promise<void> {
+    const client = requireSupabase().getClient();
+    const { error } = await client
+      .from('user_api_keys')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', keyId)
+      .eq('user_id', userId)
+      .is('revoked_at', null);
+
+    if (error) throw error;
+  }
+
+  async rotateKey(userId: string, keyId: string, name?: string): Promise<ApiKeyCreateResult> {
+    const client = requireSupabase().getClient();
+    const { data: existing, error: fetchError } = await client
+      .from('user_api_keys')
+      .select('*')
+      .eq('id', keyId)
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .single();
+
+    if (fetchError || !existing) {
+      throw new Error('API key not found');
+    }
+
+    await this.revokeKey(userId, keyId);
+    return this.createKey(
+      userId,
+      name || existing.name,
+      existing.permissions || ['read'],
+      existing.expires_at
     );
   }
 
-  // Verify a JWT token
-  verifyToken(token: string): { userId: string; permissions: string[] } | null {
-    try {
-      const decoded = jwt.verify(token, this.jwtSecret) as any;
+  async validateKey(secret: string): Promise<ApiKeyValidationResult> {
+    if (!this.isApiKeyFormat(secret)) {
+      return { isValid: false };
+    }
+
+    const client = requireSupabase().getClient();
+    const keyPrefix = getKeyPrefix(secret);
+    const { data: rows, error } = await client
+      .from('user_api_keys')
+      .select('*')
+      .eq('key_prefix', keyPrefix)
+      .is('revoked_at', null)
+      .limit(20);
+
+    if (error) {
+      logger.warn('API key lookup failed', { error: error.message });
+      return { isValid: false };
+    }
+
+    const now = Date.now();
+    for (const row of rows || []) {
+      if (row.expires_at && new Date(row.expires_at).getTime() < now) {
+        continue;
+      }
+      const match = await bcrypt.compare(secret, row.key_hash);
+      if (!match) continue;
+
+      void this.touchLastUsed(row.id, hashForLookup(secret));
       return {
-        userId: decoded.userId,
-        permissions: decoded.permissions,
+        isValid: true,
+        userId: row.user_id,
+        permissions: row.permissions || ['read'],
+        keyId: row.id,
       };
-    } catch (error) {
-      return null;
+    }
+
+    return { isValid: false };
+  }
+
+  private async touchLastUsed(keyId: string, debounceKey: string): Promise<void> {
+    const now = Date.now();
+    const last = lastUsedDebounce.get(debounceKey) || 0;
+    if (now - last < 60_000) return;
+    lastUsedDebounce.set(debounceKey, now);
+
+    try {
+      const client = requireSupabase().getClient();
+      await client
+        .from('user_api_keys')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', keyId);
+    } catch {
+      // non-fatal
     }
   }
 
-  private generateId(): string {
-    return `key_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private generateRandomKey(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < 32; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  }
-
-  // Check if user has permission
   hasPermission(userPermissions: string[], requiredPermission: string): boolean {
     return userPermissions.includes(requiredPermission) || userPermissions.includes('admin');
   }
-
-  // Rate limiting key for user
-  getRateLimitKey(userId: string): string {
-    return `ratelimit:${userId}`;
-  }
 }
 
-// Singleton instance
 export const apiKeyService = new ApiKeyService();

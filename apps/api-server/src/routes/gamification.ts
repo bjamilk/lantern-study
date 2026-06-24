@@ -154,6 +154,7 @@ router.get(
 router.post(
   '/user/:userId/points',
   authMiddleware,
+  validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const requestingUserId = requireAuthUserId(req, res);
@@ -204,6 +205,7 @@ router.post(
 router.post(
   '/user/:userId/achievement',
   authMiddleware,
+  validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const requestingUserId = requireAuthUserId(req, res);
@@ -401,6 +403,7 @@ router.get(
 router.post(
   '/user/:userId/badge',
   authMiddleware,
+  validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const requestingUserId = requireAuthUserId(req, res);

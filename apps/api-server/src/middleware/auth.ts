@@ -4,26 +4,43 @@ import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
 import { isUserBanned } from '../services/adminAudit';
+import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { AuthenticatedRequest } from '../types';
 
-// Will be set by initializeAuthMiddleware
 let supabaseService: SupabaseService | null = null;
 
-// ---------------------------------------------------------------------------
-// Token verification cache
-// Avoids a round-trip to Supabase Auth on every authenticated request.
-// Keyed by SHA-256(token) so the raw JWT is never stored in memory.
-// TTL: 60 s — tokens are short-lived (1 h) so a 60 s window is safe.
-// ---------------------------------------------------------------------------
 interface CachedUser { id: string; [key: string]: any }
 const tokenCache = new LRUCache<string, CachedUser>({
-  max: 20_000,          // ~20k simultaneous active users
-  ttl: 60_000,          // 60 second TTL
+  max: 20_000,
+  ttl: 60_000,
   updateAgeOnGet: true,
 });
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function extractAuthCredential(req: Request): string | null {
+  const apiKeyHeader = req.headers['x-api-key'];
+  if (typeof apiKeyHeader === 'string' && apiKeyHeader.trim()) {
+    return apiKeyHeader.trim();
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim();
+  }
+  return null;
+}
+
+function attachUser(
+  req: AuthenticatedRequest,
+  user: { id: string; permissions: string[]; isAdmin?: boolean; credentialType: 'jwt' | 'api_key' }
+): void {
+  req.user = user;
+}
+
+function proceedWithAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  authenticatedRateLimit(req, res, next);
 }
 
 async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
@@ -44,113 +61,119 @@ export const initializeAuthMiddleware = (supabase: SupabaseService) => {
   supabaseService = supabase;
 };
 
-export const authenticateApiKey = async (
+/** JWT-only auth for API key management routes (keys cannot mint sibling keys). */
+export const jwtOnlyAuthMiddleware = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  try {
-    const authHeader = (req.headers as any).authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'API key required. Use Authorization: Bearer <api-key>',
-      });
-      return;
-    }
-
-    const apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
-
-    // Validate the API key
-    const validation = await apiKeyService.validateApiKey(apiKey);
-
-    if (!validation.isValid || !validation.userId) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Invalid API key',
-      });
-      return;
-    }
-
-    // Attach user info to request
-    req.user = {
-      id: validation.userId,
-      apiKey,
-      permissions: validation.permissions || [],
-    };
-
-    next();
-  } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'Authentication failed',
+  const credential = extractAuthCredential(req);
+  if (!credential || apiKeyService.isApiKeyFormat(credential)) {
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'JWT required. API keys cannot access this endpoint.',
     });
+    return;
   }
+
+  const tokenKey = hashToken(credential);
+  const cached = tokenCache.get(tokenKey);
+  if (cached) {
+    if (await rejectIfBanned(cached.id, res)) return;
+    attachUser(req, {
+      id: cached.id,
+      permissions: ['read', 'write'],
+      isAdmin: cached.app_metadata?.is_platform_admin === true,
+      credentialType: 'jwt',
+    });
+    proceedWithAuth(req, res, next);
+    return;
+  }
+
+  if (supabaseService) {
+    const supabaseResult = await supabaseService.verifySupabaseToken(credential);
+    if (supabaseResult.isValid && supabaseResult.user) {
+      if (await rejectIfBanned(supabaseResult.user.id, res)) return;
+      tokenCache.set(tokenKey, supabaseResult.user);
+      attachUser(req, {
+        id: supabaseResult.user.id,
+        permissions: ['read', 'write'],
+        isAdmin: supabaseResult.user.app_metadata?.is_platform_admin === true,
+        credentialType: 'jwt',
+      });
+      proceedWithAuth(req, res, next);
+      return;
+    }
+  }
+
+  res.status(401).json({
+    error: 'Unauthorized',
+    message: 'Invalid or expired token',
+  });
 };
 
-// Main authentication middleware that can handle both Supabase tokens and API keys
 export const authMiddleware = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const authHeader = (req.headers as any).authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const credential = extractAuthCredential(req);
+    if (!credential) {
       res.status(401).json({
         error: 'Unauthorized',
-        message: 'Authorization header required. Use Authorization: Bearer <token>',
+        message: 'Authorization required. Use Authorization: Bearer <token> or X-API-Key: <key>',
       });
       return;
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    const tokenKey = hashToken(token);
-
-    // Fast path: return cached user (avoids Supabase Auth DB call)
-    const cached = tokenCache.get(tokenKey);
-    if (cached) {
-      if (await rejectIfBanned(cached.id, res)) return;
-        req.user = {
-          id: cached.id,
-          apiKey: token,
-          permissions: ['read', 'write'],
-          isAdmin: cached.app_metadata?.is_platform_admin === true,
-        };
-      next();
+    if (apiKeyService.isApiKeyFormat(credential)) {
+      const validation = await apiKeyService.validateKey(credential);
+      if (!validation.isValid || !validation.userId) {
+        apiKeyAuthRateLimit(req, res, () => {
+          res.status(401).json({
+            error: 'Unauthorized',
+            message: 'Invalid API key',
+          });
+        });
+        return;
+      }
+      if (await rejectIfBanned(validation.userId, res)) return;
+      attachUser(req, {
+        id: validation.userId,
+        permissions: validation.permissions || ['read'],
+        credentialType: 'api_key',
+      });
+      proceedWithAuth(req, res, next);
       return;
     }
 
-    // Slow path: verify with Supabase Auth (once per minute per token)
+    const tokenKey = hashToken(credential);
+    const cached = tokenCache.get(tokenKey);
+    if (cached) {
+      if (await rejectIfBanned(cached.id, res)) return;
+      attachUser(req, {
+        id: cached.id,
+        permissions: ['read', 'write'],
+        isAdmin: cached.app_metadata?.is_platform_admin === true,
+        credentialType: 'jwt',
+      });
+      proceedWithAuth(req, res, next);
+      return;
+    }
+
     if (supabaseService) {
-      const supabaseResult = await supabaseService.verifySupabaseToken(token);
+      const supabaseResult = await supabaseService.verifySupabaseToken(credential);
       if (supabaseResult.isValid && supabaseResult.user) {
         if (await rejectIfBanned(supabaseResult.user.id, res)) return;
         tokenCache.set(tokenKey, supabaseResult.user);
-        req.user = {
+        attachUser(req, {
           id: supabaseResult.user.id,
-          apiKey: token,
           permissions: ['read', 'write'],
-            isAdmin: supabaseResult.user.app_metadata?.is_platform_admin === true,
-        };
-        next();
-        return;
-      }
-    }
-
-    // API-key JWT fallback — disabled in production (impersonation risk)
-    if (process.env.ENABLE_API_KEY_AUTH === 'true' && process.env.NODE_ENV !== 'production') {
-      const validation = await apiKeyService.validateApiKey(token);
-      if (validation.isValid && validation.userId) {
-        req.user = {
-          id: validation.userId,
-          apiKey: token,
-          permissions: validation.permissions || [],
-        };
-        next();
+          isAdmin: supabaseResult.user.app_metadata?.is_platform_admin === true,
+          credentialType: 'jwt',
+        });
+        proceedWithAuth(req, res, next);
         return;
       }
     }
@@ -159,7 +182,6 @@ export const authMiddleware = async (
       error: 'Unauthorized',
       message: 'Invalid token',
     });
-    return;
   } catch (error) {
     console.error('Authentication error:', error);
     res.status(500).json({
@@ -191,106 +213,47 @@ export const requirePermission = (requiredPermission: string) => {
   };
 };
 
-// Optional auth middleware - extracts user info if token present, but doesn't block
-// Use this for routes that should work for both authenticated and unauthenticated users
 export const optionalAuthMiddleware = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const authHeader = (req.headers as any).authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      // No auth header, continue without user info
+    const credential = extractAuthCredential(req);
+    if (!credential) {
       next();
       return;
     }
 
-    const token = authHeader.substring(7);
-
-    // Try to verify as Supabase token
-    if (supabaseService) {
-      const supabaseResult = await supabaseService.verifySupabaseToken(token);
-      if (supabaseResult.isValid && supabaseResult.user) {
-        req.user = {
-          id: supabaseResult.user.id,
-          apiKey: token,
-          permissions: ['read', 'write'],
-        };
-        next();
-        return;
+    if (apiKeyService.isApiKeyFormat(credential)) {
+      const validation = await apiKeyService.validateKey(credential);
+      if (validation.isValid && validation.userId) {
+        attachUser(req, {
+          id: validation.userId,
+          permissions: validation.permissions || ['read'],
+          credentialType: 'api_key',
+        });
       }
+      next();
+      return;
     }
 
-    // API-key fallback only in non-production when explicitly enabled
-    if (process.env.ENABLE_API_KEY_AUTH === 'true' && process.env.NODE_ENV !== 'production') {
-      const validation = await apiKeyService.validateApiKey(token);
-      if (validation.isValid && validation.userId) {
-        req.user = {
-          id: validation.userId,
-          apiKey: token,
-          permissions: validation.permissions || [],
-        };
+    if (supabaseService) {
+      const supabaseResult = await supabaseService.verifySupabaseToken(credential);
+      if (supabaseResult.isValid && supabaseResult.user) {
+        attachUser(req, {
+          id: supabaseResult.user.id,
+          permissions: ['read', 'write'],
+          credentialType: 'jwt',
+        });
       }
     }
 
     next();
   } catch (error) {
-    // On error, just continue without auth
     console.warn('Optional auth error:', error);
     next();
   }
-};
-
-export const errorHandler = (
-  error: any,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  console.error('API Error:', error);
-
-  // Handle different types of errors
-  if (error.code === 'PGRST116') {
-    // Supabase error for ambiguous relationships
-    res.status(400).json({
-      error: 'Bad Request',
-      message: 'Database relationship error. Please check your query.',
-    });
-    return;
-  }
-
-  if (error.message?.includes('JWT')) {
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Invalid or expired token',
-    });
-    return;
-  }
-
-  // Default error response
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
-  });
-};
-
-export const requestLogger = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  const start = Date.now();
-
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(
-      `${new Date().toISOString()} - ${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`
-    );
-  });
-
-  next();
 };
 
 export const requirePlatformAdmin = async (
@@ -315,6 +278,56 @@ export const requirePlatformAdmin = async (
       return;
     }
   }
+
+  next();
+};
+
+// Legacy export kept for compatibility
+export const authenticateApiKey = authMiddleware;
+
+export const errorHandler = (
+  error: any,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  console.error('API Error:', error);
+
+  if (error.code === 'PGRST116') {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'Database relationship error. Please check your query.',
+    });
+    return;
+  }
+
+  if (error.message?.includes('JWT')) {
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Invalid or expired token',
+    });
+    return;
+  }
+
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+  });
+};
+
+export const requestLogger = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  const start = Date.now();
+
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(
+      `${new Date().toISOString()} - ${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`
+    );
+  });
 
   next();
 };

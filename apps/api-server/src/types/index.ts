@@ -3,21 +3,22 @@ import { Request } from 'express';
 
 export interface ApiKey {
   id: string;
-  key: string;
   userId: string;
   name: string;
+  keyPrefix: string;
   permissions: string[];
   createdAt: string;
-  lastUsed?: string;
-  isActive: boolean;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
 }
 
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
-    apiKey: string;
     permissions: string[];
     isAdmin?: boolean;
+    credentialType: 'jwt' | 'api_key';
   };
 }
 

@@ -7,6 +7,14 @@ import { Router } from 'express';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logAdminAction, countPlatformAdmins, invalidateBanCache } from '../services/adminAudit';
+import {
+  handleValidationErrors,
+  validateUuidParam,
+  validateAdminUserStatus,
+  validateAdminUserRole,
+  validateAdminPointsAdjust,
+  validateAdminNotification,
+} from '../middleware/validation';
 import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
@@ -242,7 +250,7 @@ router.get('/users', async (req: any, res: any) => {
   }
 });
 
-router.patch('/users/:id/status', async (req: any, res: any) => {
+router.patch('/users/:id/status', validateAdminUserStatus, handleValidationErrors, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { status, reason } = req.body as { status: 'active' | 'banned'; reason?: string };
@@ -284,7 +292,7 @@ router.patch('/users/:id/status', async (req: any, res: any) => {
   }
 });
 
-router.patch('/users/:id/role', async (req: any, res: any) => {
+router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, async (req: any, res: any) => {
   try {
     if (!ENABLE_ADMIN_ROLE_MANAGEMENT) {
       return res.status(403).json({
@@ -862,7 +870,7 @@ router.get('/users/:id', async (req: any, res: any) => {
 });
 
 // POST /api/v1/admin/notifications
-router.post('/notifications', async (req: any, res: any) => {
+router.post('/notifications', validateAdminNotification, handleValidationErrors, async (req: any, res: any) => {
   try {
     const { userId, message, link, type = 'info' } = req.body;
     if (!userId || !message) {
@@ -911,7 +919,7 @@ router.post('/notifications/bulk', async (req: any, res: any) => {
 });
 
 // POST /api/v1/admin/users/:id/points
-router.post('/users/:id/points', async (req: any, res: any) => {
+router.post('/users/:id/points', validateAdminPointsAdjust, handleValidationErrors, async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const { points, reason, source = 'admin' } = req.body;

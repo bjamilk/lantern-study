@@ -7,6 +7,8 @@ const SENSITIVE_KEYS = new Set([
   'secret',
   'apiKey',
   'api_key',
+  'groq_api_key',
+  'gemini_api_key',
   'base64Data',
   'audioBase64',
   'service_role_key',

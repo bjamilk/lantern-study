@@ -25,6 +25,8 @@ import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandl
 import { handleValidationErrors } from './middleware/validation';
 import { defaultTimeout } from './middleware/timeout';
 import { sanitizationMiddleware } from './middleware/security';
+import { validateBodyShape } from './middleware/validateBody';
+import { applyPublicRateLimits } from './middleware/publicRateLimitMiddleware';
 import { getAllowedCorsOrigins } from './utils/corsOrigins';
 import healthRoutes from './routes/health';
 import { setupGracefulShutdown } from './config/production';
@@ -48,6 +50,7 @@ import adminRoutes, { initializeAdminRoutes } from './routes/admin';
 import aiCompanionRoutes, { initializeAICompanionRoutes } from './routes/aiCompanion';
 import notesRoutes, { initializeNotesRoutes } from './routes/notes';
 import challengeRoutes, { initializeChallengeRoutes } from './routes/challenges';
+import apiKeysRoutes from './routes/apiKeys';
 
 // Import utilities
 import { logger, stream, logRequest } from './utils/logger';
@@ -76,6 +79,8 @@ async function initializeServices() {
 
     // Initialize API key service
     apiKeyService = new (await import('./services/apiKey')).ApiKeyService();
+    const { initializeApiKeyService } = await import('./services/apiKey');
+    initializeApiKeyService(supabaseService);
 
     // Initialize Supabase service
     const dbConfig = {
@@ -186,6 +191,7 @@ app.use(
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(sanitizationMiddleware);
+app.use(validateBodyShape());
 
 // Request logging (morgan only — avoid double HTTP logs in production)
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'combined', { stream }));
@@ -235,7 +241,7 @@ async function startServer() {
 
     // API routes (mount after services initialization)
     app.use('/api/v1/users', userRoutes);
-    app.use('/api/v1/groups', groupRoutes);
+    app.use('/api/v1/groups', applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);
     app.use('/api/v1/tests', testRoutes);
@@ -244,7 +250,8 @@ async function startServer() {
     app.use('/api/v1/flashcards', flashcardRoutes);
     app.use('/api/v1/user-stats', userStatsRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
-    app.use('/api/v1/marketplace', marketplaceRoutes);
+    app.use('/api/v1/marketplace', applyPublicRateLimits, marketplaceRoutes);
+    app.use('/api/v1/api-keys', apiKeysRoutes);
     app.use('/api/v1/ai', burstRateLimit, aiRoutes);
     app.use('/api/v1/ai/companion', burstRateLimit, aiCompanionRoutes);
     app.use('/api/v1/notes', notesRoutes);
@@ -264,7 +271,7 @@ async function startServer() {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       logger.info(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-      logger.info(`🔑 API Key Auth: ${process.env.ENABLE_API_KEY_AUTH === 'true' ? 'enabled' : 'disabled'}`);
+      logger.info(`🔑 API Keys: DB-backed (lsk_ prefix)`);
       logger.info(`📈 Rate Limiting: enabled`);
       logger.info(`💾 Caching: ${process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory'}`);
       if (typeof process.send === 'function') process.send('ready');

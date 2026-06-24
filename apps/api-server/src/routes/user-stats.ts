@@ -1,29 +1,34 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { handleValidationErrors, validateUserId } from '../middleware/validation';
+import { authMiddleware } from '../middleware/auth';
+import {
+  handleValidationErrors,
+  validateUserId,
+  validateUserStatsUpsert,
+} from '../middleware/validation';
+import { rejectMismatchedUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-// Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
 let cacheService: CacheService;
 
-// Initialize function to be called from main server
 export const initializeUserStatsRoutes = (supabase: SupabaseService, cache: CacheService) => {
   supabaseService = supabase;
   cacheService = cache;
 };
 
-// GET /api/v1/user-stats/:userId - Get user question stats
 router.get(
   '/:userId',
+  authMiddleware,
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
+    if (rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Fetching user question stats', { userId });
 
@@ -32,8 +37,6 @@ router.get(
 
     if (!stats) {
       stats = await supabaseService.getUserQuestionStats(userId);
-
-      // Cache for 10 minutes
       await cacheService.set(cacheKey, stats, 600);
     }
 
@@ -44,12 +47,14 @@ router.get(
   })
 );
 
-// POST /api/v1/user-stats - Upsert user question stat
 router.post(
   '/',
+  authMiddleware,
+  validateUserStatsUpsert,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId, questionId, correctAttempts, incorrectAttempts, lastAttempted } = req.body;
+    if (rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Upserting user question stat', { userId, questionId });
 
@@ -59,7 +64,6 @@ router.post(
       lastAttempted,
     });
 
-    // Invalidate user's question stats cache
     await cacheService.delete(`user:question-stats:${userId}`);
 
     res.status(201).json({

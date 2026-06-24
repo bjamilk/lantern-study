@@ -34,7 +34,6 @@ export function validateProductionSecrets(): void {
   if (process.env.NODE_ENV !== 'production') return;
 
   const missing: string[] = [];
-  if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
   if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
 

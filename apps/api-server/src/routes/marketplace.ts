@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination } from '../middleware/validation';
+import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -97,6 +97,7 @@ router.get(
 // GET /api/v1/marketplace/listings/:id - Get listing by ID
 router.get(
   '/listings/:id',
+  validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
@@ -132,6 +133,7 @@ router.get(
 router.post(
   '/listings',
   authMiddleware,
+  validateMarketplaceListingWrite,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const listingData = req.body;
@@ -185,6 +187,8 @@ router.post(
 router.put(
   '/listings/:id',
   authMiddleware,
+  validateListingId,
+  validateMarketplaceListingUpdate,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
@@ -245,6 +249,7 @@ router.put(
 router.delete(
   '/listings/:id',
   authMiddleware,
+  validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
@@ -283,6 +288,8 @@ router.delete(
 // GET /api/v1/marketplace/listings/:id/reviews - List reviews for a listing
 router.get(
   '/listings/:id/reviews',
+  validateListingId,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
     const reviews = await supabaseService.getMarketplaceReviews(id);
@@ -1179,6 +1186,8 @@ router.post(
 // GET /api/v1/marketplace/listings/:id/similar - Get similar listings
 router.get(
   '/listings/:id/similar',
+  validateListingId,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
 
@@ -1223,6 +1232,8 @@ router.get(
 // Returns listing + isFavorited + similarListings in a single round trip.
 router.get(
   '/listings/:id/full',
+  validateListingId,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
     const { userId } = req.query;
@@ -1283,6 +1294,8 @@ router.get(
 // GET /api/v1/marketplace/sellers/:userId/profile - Get seller profile
 router.get(
   '/sellers/:userId/profile',
+  validateUserId,
+  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
 

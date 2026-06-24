@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination } from '../middleware/validation';
+import { handleValidationErrors, validatePagination, validateFlashcardCreate } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -161,6 +161,7 @@ router.post(
 router.post(
   '/',
   authMiddleware,
+  validateFlashcardCreate,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
