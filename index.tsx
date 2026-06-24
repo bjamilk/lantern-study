@@ -7,11 +7,12 @@ clearChunkReloadFlag();
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import { bootstrapAuthFromStorage } from './services/supabase';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import LegalPage, { getLegalDocFromPathname } from './components/LegalPage';
+import LegalPage from './components/LegalPage';
 
 bootstrapAuthFromStorage();
 
@@ -20,13 +21,18 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-const legalDoc = getLegalDocFromPathname(window.location.pathname);
-
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ErrorBoundary>
-      {legalDoc ? <LegalPage document={legalDoc} /> : <App />}
+      <BrowserRouter>
+        <Routes>
+          <Route path="/privacy" element={<LegalPage document="privacy" />} />
+          <Route path="/terms" element={<LegalPage document="terms" />} />
+          <Route path="/cookies" element={<LegalPage document="cookies" />} />
+          <Route path="/*" element={<App />} />
+        </Routes>
+      </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>
 );

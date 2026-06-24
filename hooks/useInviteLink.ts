@@ -1,62 +1,65 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { joinGroupByInvite, fetchGroups } from '../services/supabase';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { AppMode } from '../types';
+import { parseAppRoute } from '../utils/appRoutes';
+import { navigateToPath } from '../utils/appNavigation';
 
 const INVITE_STORAGE_KEY = 'pendingInviteId';
 
 /**
- * Hook that processes invite links (?inviteId=xxx) from the URL.
- * - If user is authenticated, joins the group immediately and navigates to chat.
- * - If user is not authenticated, stores the inviteId in localStorage for processing after login.
+ * Processes invite links (`/invite/:id` or legacy `?inviteId=`).
+ * - Authenticated users join immediately and land on group chat.
+ * - Unauthenticated users store the invite for processing after login.
  */
 export function useInviteLink(userId: string | undefined) {
   const processedRef = useRef(false);
-  const setAppMode = useUIStore(s => s.setAppMode);
-  const setGroups = useGroupStore(s => s.setGroups);
-  const setSelectedChat = useUIStore(s => s.setSelectedChat);
+  const setAppModeDirect = useUIStore((s) => s.setAppModeDirect);
+  const setGroups = useGroupStore((s) => s.setGroups);
+  const setSelectedChat = useUIStore((s) => s.setSelectedChat);
+  const location = useLocation();
 
   useEffect(() => {
     if (processedRef.current) return;
 
-    // Check URL for inviteId param
-    const params = new URLSearchParams(window.location.search);
-    const inviteId = params.get('inviteId');
+    const parsed = parseAppRoute(location.pathname);
+    const params = new URLSearchParams(location.search);
+    const inviteId = parsed.inviteId || params.get('inviteId');
 
     if (inviteId) {
-      // Clean the URL immediately (remove ?inviteId=xxx)
-      const url = new URL(window.location.href);
-      url.searchParams.delete('inviteId');
-      window.history.replaceState({}, '', url.pathname);
+      if (parsed.inviteId) {
+        navigateToPath('/', { replace: true });
+      } else {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('inviteId');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
 
       if (userId) {
-        // User is logged in — process immediately
         processedRef.current = true;
-        processInvite(inviteId);
+        void processInvite(inviteId);
       } else {
-        // User is not logged in — store for later
         localStorage.setItem(INVITE_STORAGE_KEY, inviteId);
       }
       return;
     }
 
-    // Check localStorage for a stored invite (user just logged in)
     if (userId) {
       const storedInviteId = localStorage.getItem(INVITE_STORAGE_KEY);
       if (storedInviteId) {
         localStorage.removeItem(INVITE_STORAGE_KEY);
         processedRef.current = true;
-        processInvite(storedInviteId);
+        void processInvite(storedInviteId);
       }
     }
-  }, [userId]);
+  }, [userId, location.pathname, location.search]);
 
   async function processInvite(inviteId: string) {
     try {
       const group = await joinGroupByInvite(inviteId);
       if (group && userId) {
-        // Refresh groups list to include the newly joined group
         try {
           const updatedGroups = await fetchGroups(userId);
           if (updatedGroups) {
@@ -65,9 +68,14 @@ export function useInviteLink(userId: string | undefined) {
         } catch (err) {
           console.error('Failed to refresh groups after joining:', err);
         }
-        // Select the joined group and navigate to chat
-        setSelectedChat({ ...group, chatType: 'group' as const, members: group.members || [], unreadCount: 0 });
-        setAppMode(AppMode.CHAT);
+        setSelectedChat({
+          ...group,
+          chatType: 'group' as const,
+          members: group.members || [],
+          unreadCount: 0,
+        });
+        navigateToPath(`/chat/group/${encodeURIComponent(group.id)}`, { replace: true });
+        setAppModeDirect(AppMode.CHAT);
         alert(`You've joined "${group.name}"!`);
       }
     } catch (error: any) {

@@ -4,6 +4,7 @@ import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoal
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
+import { useAppNavigation } from './useAppNavigation';
 import { AppMode, FlashcardType, type NoteAttachment } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
@@ -40,19 +41,19 @@ export function useNoteHandlers(currentUserId?: string) {
   } = useNotesStore();
   const { setStudyGoal, setDailyQuiz, studyGoal } = useStudyGoalsStore();
   const { openWithMessage } = useCompanionStore();
-  const { setAppMode } = useUIStore();
+  const { navigateTo } = useAppNavigation();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const navigateToNotes = useCallback(() => {
-    setAppMode(AppMode.NOTES);
+    navigateTo(AppMode.NOTES);
     void loadFolders();
     void loadNotes();
-  }, [setAppMode, loadFolders, loadNotes]);
+  }, [navigateTo, loadFolders, loadNotes]);
 
   const openNote = useCallback(
     async (noteId: string) => {
       await loadNote(noteId);
-      setAppMode(AppMode.NOTE_EDITOR);
+      navigateTo(AppMode.NOTE_EDITOR, { noteId });
       void loadComments(noteId);
       try {
         const session = await notesApi.getNoteQuiz(noteId);
@@ -61,16 +62,16 @@ export function useNoteHandlers(currentUserId?: string) {
         // Quiz fetch is optional; editor still works without it
       }
     },
-    [loadNote, setAppMode, loadComments, setDailyQuiz]
+    [loadNote, navigateTo, loadComments, setDailyQuiz]
   );
 
   const handleCreateNote = useCallback(async () => {
     const note = await createNote({ title: 'Untitled Note', body: '' });
     setSelectedNote(note);
-    setAppMode(AppMode.NOTE_EDITOR);
+    navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
     trackQuestProgress('create_note');
     return note;
-  }, [createNote, setSelectedNote, setAppMode]);
+  }, [createNote, setSelectedNote, navigateTo]);
 
   const handleAutoSave = useCallback(
     (noteId: string, updates: { title?: string; body?: string }) => {

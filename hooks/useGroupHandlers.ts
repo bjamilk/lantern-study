@@ -17,6 +17,7 @@ import {
     deleteDmThread, archiveDmThread, unarchiveDmThread
 } from '../services/supabase';
 import { syncGamificationProgress } from '../services/gamificationStreak';
+import { navigateForAppMode } from '../utils/appNavigation';
 
 interface UseGroupHandlersParams {
     users: User[];
@@ -68,7 +69,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
     const handleSelectChat = useCallback((chat: ChatItem) => {
         setSelectedChat(chat);
-        setAppMode(AppMode.CHAT);
+        if (chat.chatType === 'group') {
+            navigateForAppMode(AppMode.CHAT, { groupId: chat.id });
+        } else {
+            navigateForAppMode(AppMode.CHAT, { threadId: chat.id });
+        }
         if (chat.chatType === 'group') {
             const limit = lowDataMode ? 20 : 50;
             fetchMessages(chat.id, undefined, limit).then(fetchedMessages => {
@@ -128,7 +133,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 });
             }
         }
-    }, [currentUser, setSelectedChat, setAppMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages, lowDataMode]);
+    }, [currentUser, setSelectedChat, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages, lowDataMode]);
 
     const handleInitiateDm = useCallback((otherUserId: string) => {
         if (!currentUser || otherUserId === currentUser.id) return;

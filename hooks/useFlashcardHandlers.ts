@@ -23,6 +23,7 @@ import {
 import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
+import { navigateForAppMode } from '../utils/appNavigation';
 
 export function useFlashcardHandlers() {
     const { currentUser } = useAuthStore();
@@ -68,9 +69,9 @@ export function useFlashcardHandlers() {
 
     const handleSelectDeck = useCallback((deck: Deck) => {
         setSelectedDeck(deck);
-        setAppMode(AppMode.DECK_DETAIL);
+        navigateForAppMode(AppMode.DECK_DETAIL, { deckId: deck.id });
         loadDeckFlashcards(deck.id);
-    }, [setSelectedDeck, setAppMode, loadDeckFlashcards]);
+    }, [setSelectedDeck, loadDeckFlashcards]);
 
     const handleOpenCreateDeckModal = useCallback(() => {
         setEditingDeck(null);

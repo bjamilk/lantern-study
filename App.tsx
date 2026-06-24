@@ -88,6 +88,8 @@ import { useOfflineHandlers } from './hooks/useOfflineHandlers';
 import { useAppEffects } from './hooks/useAppEffects';
 import { useFontMode } from './hooks/useFontMode';
 import { useInviteLink } from './hooks/useInviteLink';
+import { useAppNavigation } from './hooks/useAppNavigation';
+import { useRouteSync } from './hooks/useRouteSync';
 import { useAIHandlers } from './hooks/useAIHandlers';
 import AIGenerateQuestionsModal from './components/AIGenerateQuestionsModal';
 import AICompanionPanel from './components/AICompanionPanel';
@@ -101,6 +103,8 @@ import { buildFlashcardSourceContent } from './utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from './utils/flashcardGeneration';
 
 export const App: React.FC = () => {
+    const { navigateTo, navigateToPath } = useAppNavigation();
+    const { routeHydrating } = useRouteSync();
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery } = useAuthStore();
     const isPlatformAdmin = usePlatformAdmin();
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
@@ -281,6 +285,11 @@ export const App: React.FC = () => {
             alert(e?.message || 'Could not purchase streak freeze');
         }
     }, [refreshDashboardGamification]);
+
+    const handleLogoutAndRedirect = React.useCallback(async () => {
+        await handleLogout();
+        navigateToPath('/', { replace: true });
+    }, [handleLogout, navigateToPath]);
 
     useFontMode();
     useInviteLink(currentUser?.id);
@@ -546,7 +555,7 @@ export const App: React.FC = () => {
         }
     }, [modals.notification, currentUser, setNotifications]);
 
-    if (isAuthLoading) return (
+    if (isAuthLoading || (currentUser && routeHydrating)) return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-8">
             <img src="/lantern-icon.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400" />
@@ -578,7 +587,7 @@ export const App: React.FC = () => {
                                 });
                                 bootstrapAuthFromStorage();
                                 setAuthLoading(false);
-                                setAppMode(AppMode.DASHBOARD);
+                                navigateToPath('/dashboard', { replace: true });
                             }
                         } catch {
                             setCurrentUser(null);
@@ -592,13 +601,12 @@ export const App: React.FC = () => {
         bootstrapAuthFromStorage();
         setCurrentUser(user);
         setAuthLoading(false);
-        setAppMode(AppMode.DASHBOARD);
     }} />;
 
     const mainContent = () => {
         switch (appMode) {
             case AppMode.CREATE_GROUP:
-                return <CreateGroupScreen currentUser={currentUser} allUsers={users} onCreateGroup={handleCreateGroup} onBack={() => setAppMode(AppMode.CHAT)} />;
+                return <CreateGroupScreen currentUser={currentUser} allUsers={users} onCreateGroup={handleCreateGroup} onBack={() => navigateTo(AppMode.CHAT)} />;
             case AppMode.CHAT:
                 return <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
                     onSendMessage={onSendMessage} onOpenQuestionModal={onOpenQuestionModal}
@@ -611,8 +619,8 @@ export const App: React.FC = () => {
                     onAIQuery={handleAIAskTutor}
                     dmThreads={dmThreads}
                     onSelectChat={handleSelectChat}
-                    onBack={() => setSelectedChat(null)}
-                    onCreateGroup={() => setAppMode(AppMode.CREATE_GROUP)}
+                    onBack={() => navigateTo(AppMode.CHAT)}
+                    onCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
@@ -649,11 +657,11 @@ export const App: React.FC = () => {
             case AppMode.DASHBOARD:
                 return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
                     studyActivityDays={studyActivityDays}
-                    onNavigateToChat={() => setAppMode(AppMode.CHAT)} allMessages={messages}
+                    onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
-                    onNavigateToFlashcards={() => setAppMode(AppMode.FLASHCARDS)}
-                    onNavigateToMarketplace={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigateToCreateGroup={() => setAppMode(AppMode.CREATE_GROUP)}
+                    onNavigateToFlashcards={() => navigateTo(AppMode.FLASHCARDS)}
+                    onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
+                    onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onNavigateToNotes={noteHandlers.navigateToNotes}
                     onOpenImportAndStudy={() => setShowImportAndStudy(true)}
                     dailyQuests={dailyQuests}
@@ -741,7 +749,7 @@ export const App: React.FC = () => {
                         groups={groups}
                         currentUserId={currentUser.id}
                         isSaving={notesSaving}
-                        onBack={() => setAppMode(AppMode.NOTES)}
+                        onBack={() => navigateTo(AppMode.NOTES)}
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
                         onDelete={async () => {
                             if (confirm('Delete this note?')) {
@@ -980,19 +988,19 @@ export const App: React.FC = () => {
         currentUser, groups, dmThreads,
         selectedChatId: selectedChat?.id,
         onSelectChat: handleSelectChat,
-        onNavigateToCreateGroup: () => setAppMode(AppMode.CREATE_GROUP),
-        onNavigateToDashboard: () => setAppMode(AppMode.DASHBOARD),
-        onNavigateToOfflineMode: () => setAppMode(AppMode.OFFLINE_MODE),
-        onNavigateToFlashcards: () => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); },
+        onNavigateToCreateGroup: () => navigateTo(AppMode.CREATE_GROUP),
+        onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
+        onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
+        onNavigateToFlashcards: () => navigateTo(AppMode.FLASHCARDS),
         onNavigateToNotes: noteHandlers.navigateToNotes,
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
-        onNavigateToMarketplace: () => setAppMode(AppMode.MARKETPLACE),
-        onNavigateToAdmin: () => setAppMode(AppMode.ADMIN),
+        onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
+        onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
         pendingSyncCount: pendingSyncResults.length, isOnline,
         onSyncPendingResults: handleSyncResults,
         onUpdateCurrentUserAvatar: handleUpdateCurrentUserAvatar,
         onOpenSettingsModal: () => openModal('settings'),
-        currentAppMode: appMode, onLogout: handleLogout,
+        currentAppMode: appMode, onLogout: handleLogoutAndRedirect,
         isExpanded: isSidebarExpanded, onToggleExpand: toggleSidebar,
         onOpenNewDmModal: () => openModal('newDm'),
         unreadNotificationCount: notifications.filter(n => !n.read).length,
@@ -1011,8 +1019,9 @@ export const App: React.FC = () => {
             </div>
         }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
-            unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}>
-            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, setAppMode, setSelectedDeck, setActiveTestResult })} />
+            unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}
+            onNavigate={navigateTo}>
+            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
             {mainContent()}
             <CreateGroupModal isOpen={modals.createGroup} onClose={handleCloseCreateGroupModal}
                 onSubmit={handleCreateSubGroup} parentId={subgroupParentId} allGroups={groups} />
@@ -1048,7 +1057,7 @@ export const App: React.FC = () => {
                 onUpdateSettingsCategory={handleUpdateSettingsCategory}
                 onUpdateProfile={handleUpdateProfile}
                 onUpdateAvatar={handleUpdateCurrentUserAvatar}
-                onUpdatePassword={handleUpdatePassword} onLogout={handleLogout}
+                onUpdatePassword={handleUpdatePassword} onLogout={handleLogoutAndRedirect}
                 onDeleteAccount={handleDeleteAccount}
                 onExportAccount={handleExportAccount}
                 onResetSettings={handleResetSettings} />

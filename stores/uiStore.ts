@@ -5,10 +5,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppMode, ChatItem, Deck, Flashcard, FlashcardSession, TestResult, Message, User, TestSessionData, StudySessionData, GameSession } from '../types';
+import { isEphemeralAppMode, isRoutableAppMode } from '../utils/appRoutes';
+import { navigateForAppMode } from '../utils/appNavigation';
 
 interface UIState {
   // App Mode
   appMode: AppMode;
+  /** Sets mode without URL navigation (used by route sync). */
+  setAppModeDirect: (mode: AppMode) => void;
   setAppMode: (mode: AppMode) => void;
   
   // Selected Chat
@@ -155,7 +159,18 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       // App Mode
       appMode: AppMode.CHAT,
-      setAppMode: (mode) => set({ appMode: mode }),
+      setAppModeDirect: (mode) => set({ appMode: mode }),
+      setAppMode: (mode) => {
+        if (isEphemeralAppMode(mode)) {
+          set({ appMode: mode });
+          return;
+        }
+        if (isRoutableAppMode(mode)) {
+          navigateForAppMode(mode);
+          return;
+        }
+        set({ appMode: mode });
+      },
       
       // Selected Chat
       selectedChat: null,
@@ -258,7 +273,6 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
-        appMode: state.appMode,
         lowDataMode: state.lowDataMode,
       }),
     }

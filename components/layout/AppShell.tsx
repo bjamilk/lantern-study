@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppMode } from '../../types';
+import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
 import BottomNav from './BottomNav';
 import AIUsageBadge from '../AIUsageBadge';
@@ -13,6 +14,7 @@ interface AppShellProps {
     sidebarProps: React.ComponentProps<typeof Sidebar>;
     dueCardsCount?: number;
     unreadChatCount?: number;
+    onNavigate: (mode: AppMode, params?: AppRouteParams) => void;
 }
 
 /**
@@ -21,8 +23,8 @@ interface AppShellProps {
  * - Mobile (<md): bottom navigation bar, sidebar hidden
  * - Paused session banner shown globally when navigating away from active test/study
  */
-const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0 }) => {
-    const { appMode, setAppMode, isSidebarExpanded, lowDataMode } = useUIStore();
+const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate }) => {
+    const { appMode, isSidebarExpanded, lowDataMode } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
 
@@ -90,7 +92,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             {/* Mobile bottom nav - hidden on desktop */}
             <BottomNav
                 currentMode={appMode}
-                onNavigate={setAppMode}
+                onNavigate={onNavigate}
                 dueCardsCount={dueCardsCount}
                 unreadChatCount={unreadChatCount}
                 unreadNotificationCount={sidebarProps.unreadNotificationCount}
