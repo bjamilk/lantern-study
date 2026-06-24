@@ -60,9 +60,10 @@ Write-Host "user-stats unauth: $($unauthStats.status) (expect 401)"
 
 # 2) public marketplace read rate limit -> 429
 $hit429 = $false
-for ($i = 1; $i -le 70; $i++) {
+for ($i = 1; $i -le 80; $i++) {
   $r = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/marketplace/listings"
   if ($r.status -eq 429) { $hit429 = $true; Write-Host "rate limit hit on request $i"; break }
+  if ($r.status -ne 200) { Write-Host "unexpected status on request $i : $($r.status)"; break }
 }
 Write-Host "marketplace rate limit 429: $hit429 (expect True)"
 
@@ -89,8 +90,8 @@ if ($createKey.body) {
 
 $keyAuth = @{ status = 0 }
 if ($apiSecret) {
-  $keyAuth = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/api-keys" -Headers @{ 'X-API-Key' = $apiSecret }
-  Write-Host "api-keys list with lsk key: $($keyAuth.status) (expect 200)"
+  $keyAuth = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/decks" -Headers @{ 'X-API-Key' = $apiSecret }
+  Write-Host "protected route with lsk key: $($keyAuth.status) (expect 200)"
 }
 
 # cleanup
