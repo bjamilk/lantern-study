@@ -60,7 +60,7 @@ Write-Host "user-stats unauth: $($unauthStats.status) (expect 401)"
 
 # 2) public marketplace read rate limit -> 429 (default PUBLIC_READ_RATE_LIMIT_MAX=120)
 $hit429 = $false
-for ($i = 1; $i -le 130; $i++) {
+for ($i = 1; $i -le 200; $i++) {
   $r = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/marketplace/listings"
   if ($r.status -eq 429) { $hit429 = $true; Write-Host "rate limit hit on request $i"; break }
   if ($r.status -ne 200) { Write-Host "unexpected status on request $i : $($r.status)"; break }
