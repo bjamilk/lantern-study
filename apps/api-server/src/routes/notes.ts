@@ -29,7 +29,7 @@ import {
   assertPresentationFileName,
   presentationContentType,
 } from '../services/noteFiles';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent } from '@lantern/shared/utils/noteStudyContent';
 
 const router = Router();
 
