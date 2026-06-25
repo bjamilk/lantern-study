@@ -54,12 +54,8 @@ export default function AIUsageBadge({
   const nowMs = useAIUsageTick(usage.limit > 0, detailOpen);
 
   useEffect(() => {
-    const unsub = subscribeToAIUsage(setUsage);
-    if (user?.id) {
-      fetchAIUsage(user.id);
-    }
-    return unsub;
-  }, [user?.id]);
+    return subscribeToAIUsage(setUsage);
+  }, []);
 
   const closeDetail = useCallback(() => setDetailOpen(false), []);
 

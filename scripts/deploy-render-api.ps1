@@ -102,7 +102,8 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'PORT'; value = '3001' },
         @{ key = 'FRONTEND_URL'; value = $ProductionFrontendUrl },
         @{ key = 'WEB_APP_URL'; value = 'https://lantern-study.pages.dev' },
-        @{ key = 'REDIS_ENABLED'; value = 'false' },
+        @{ key = 'REDIS_ENABLED'; value = 'true' },
+        @{ key = 'REDIS_URL'; value = $ApiEnv['REDIS_URL'] },
         @{ key = 'ALLOW_DEV_AUTH_BYPASS'; value = 'false' },
         @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
         @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },
@@ -112,10 +113,14 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'API_KEY_SALT_ROUNDS'; value = '12' },
         @{ key = 'API_KEY_MAX_PER_USER'; value = '10' },
         @{ key = 'API_KEY_DEFAULT_TTL_DAYS'; value = '0' },
-        @{ key = 'PUBLIC_READ_RATE_LIMIT_MAX'; value = '60' },
+        @{ key = 'PUBLIC_READ_RATE_LIMIT_MAX'; value = '120' },
         @{ key = 'PUBLIC_WRITE_RATE_LIMIT_MAX'; value = '10' },
         @{ key = 'API_KEY_AUTH_RATE_LIMIT_MAX'; value = '20' },
-        @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '300' }
+        @{ key = 'ANON_IP_RATE_LIMIT_MAX'; value = '300' },
+        @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '1200' },
+        @{ key = 'AI_POST_BURST_MAX'; value = '15' },
+        @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
+        @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {
         $vars += @(
@@ -244,6 +249,9 @@ if (-not $apiEnv['SUPABASE_SERVICE_ROLE_KEY']) {
 }
 if (-not $apiEnv['GROQ_API_KEY']) {
     Write-Host 'Warning: GROQ_API_KEY missing in apps/api-server/.env (AI routes may fail).' -ForegroundColor DarkYellow
+}
+if (-not $apiEnv['REDIS_URL']) {
+    Write-Host 'Warning: REDIS_URL missing in apps/api-server/.env (production startup requires Redis).' -ForegroundColor DarkYellow
 }
 
 $envVars = Build-EnvVars -ApiEnv $apiEnv

@@ -63,6 +63,11 @@ function parseUsageFromHeaders(
 
 export function createAIClient(config: AIClientConfig) {
   const defaultTimeout = config.defaultTimeoutMs ?? 30000;
+  const USAGE_FETCH_TTL_MS = 60_000;
+  let usageLastFetchAt = 0;
+  let usageInFlight: Promise<AIUsageInfo> | null = null;
+  let usageBackoffUntil = 0;
+  let cachedUsage: AIUsageInfo | null = null;
 
   const aiRequest = async <T>(
     endpoint: string,
@@ -115,18 +120,39 @@ export function createAIClient(config: AIClientConfig) {
 
   return {
     fetchAIUsage: async (_userId?: string): Promise<AIUsageInfo> => {
-      const headers = await config.getAuthHeaders();
-      const res = await fetch(`${config.getBaseUrl()}/api/v1/ai/usage`, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const usage: AIUsageInfo = {
-        used: data.used,
-        limit: data.limit,
-        remaining: data.limit - data.used,
-        resetsAt: data.resetsAt,
-      };
-      config.onUsageUpdate?.(usage);
-      return usage;
+      const now = Date.now();
+      if (now < usageBackoffUntil && cachedUsage) return cachedUsage;
+      if (cachedUsage && now - usageLastFetchAt < USAGE_FETCH_TTL_MS) {
+        return cachedUsage;
+      }
+      if (usageInFlight) return usageInFlight;
+
+      usageInFlight = (async () => {
+        const headers = await config.getAuthHeaders();
+        const res = await fetch(`${config.getBaseUrl()}/api/v1/ai/usage`, { headers });
+        if (res.status === 429) {
+          usageBackoffUntil = Date.now() + 30_000;
+          throw new Error('HTTP 429');
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const usage: AIUsageInfo = {
+          used: data.used,
+          limit: data.limit,
+          remaining: data.limit - data.used,
+          resetsAt: data.resetsAt,
+        };
+        cachedUsage = usage;
+        usageLastFetchAt = Date.now();
+        config.onUsageUpdate?.(usage);
+        return usage;
+      })()
+        .catch(() => cachedUsage || { used: 0, limit: 20, remaining: 20, resetsAt: '' })
+        .finally(() => {
+          usageInFlight = null;
+        });
+
+      return usageInFlight;
     },
 
     aiGenerateQuestions: (

@@ -3,6 +3,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
+import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { authMiddleware } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
 import { SupabaseService } from '../services/supabase';
@@ -54,7 +55,7 @@ router.delete('/history', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/summarize-group', aiRateLimit, async (req: Request, res: Response) => {
+router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: Request, res: Response) => {
   const { messages, groupName } = req.body as {
     messages: string[];
     groupName: string;
@@ -81,6 +82,7 @@ router.post('/summarize-group', aiRateLimit, async (req: Request, res: Response)
   }
 });
 
+router.use(aiPostBurstRateLimit);
 router.use(aiRateLimitForFeature('companion'));
 
 router.post('/message', validateAICompanionMessage, handleValidationErrors, async (req: Request, res: Response) => {

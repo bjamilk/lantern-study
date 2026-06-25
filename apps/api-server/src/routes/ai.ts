@@ -4,6 +4,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { aiRateLimit, getAIUsage } from '../middleware/aiRateLimit';
+import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
@@ -62,8 +63,9 @@ router.get('/usage', authMiddleware, async (req: AuthenticatedRequest, res: Resp
   res.json(usage);
 });
 
-// All other routes require auth + AI rate limit
+// All other routes require auth + per-user AI burst + daily AI quota
 router.use(authMiddleware);
+router.use(aiPostBurstRateLimit);
 router.use(aiRateLimit);
 router.use(validateAIMessage, handleValidationErrors);
 

@@ -37,9 +37,8 @@ export function validateProductionSecrets(): void {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
   if (!process.env.SUPABASE_URL) missing.push('SUPABASE_URL');
 
-  const redisEnabled = process.env.REDIS_ENABLED === 'true';
-  if (redisEnabled && !process.env.REDIS_URL) {
-    missing.push('REDIS_URL (required when REDIS_ENABLED=true)');
+  if (process.env.REDIS_ENABLED !== 'true' || !process.env.REDIS_URL) {
+    missing.push('REDIS_ENABLED=true and REDIS_URL (required in production for distributed rate limits)');
   }
 
   if (process.env.DISABLE_RATE_LIMIT === 'true') {

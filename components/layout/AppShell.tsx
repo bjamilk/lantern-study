@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -8,6 +8,8 @@ import { ConnectionBadge } from '../ui/ConnectionBadge';
 import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
+import { useAuthStore } from '../../stores/authStore';
+import { fetchAIUsage } from '../../services/ai';
 
 interface AppShellProps {
     children: React.ReactNode;
@@ -27,6 +29,13 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
     const { appMode, isSidebarExpanded, lowDataMode } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
+    const currentUser = useAuthStore(s => s.currentUser);
+    const isAuthLoading = useAuthStore(s => s.isAuthLoading);
+
+    useEffect(() => {
+        if (!currentUser?.id || isAuthLoading) return;
+        void fetchAIUsage(currentUser.id);
+    }, [currentUser?.id, isAuthLoading]);
 
     const activeSession = activeTestSession || activeStudySession;
     const sessionAppMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;

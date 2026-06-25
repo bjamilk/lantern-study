@@ -1,198 +1,277 @@
-import rateLimit, { ipKeyGenerator, Store, Options } from 'express-rate-limit';
-import { Request, Response } from 'express';
+import rateLimit, { ipKeyGenerator, Options, RateLimitRequestHandler } from 'express-rate-limit';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { AuthenticatedRequest } from '../types';
+import { getRedisClient, redisKey } from '../services/redisStore';
 
-// ---------------------------------------------------------------------------
-// Rate limiting store selection
-// When Redis is enabled (production) we use a shared Redis store so that all
-// PM2 cluster workers share the same counters. Without it each worker has its
-// own counter, making the effective limit = configured_max × num_workers.
-// ---------------------------------------------------------------------------
-function buildStore(): Partial<Options> {
-  if (process.env.REDIS_ENABLED === 'true' && process.env.REDIS_URL) {
-    try {
-      // rate-limit-redis is a peer dep — only required when Redis is enabled.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { RedisStore } = require('rate-limit-redis');
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { createClient } = require('redis');
-      const redisClient = createClient({ url: process.env.REDIS_URL });
-      redisClient.connect().catch((e: Error) =>
-        console.warn('Rate-limit Redis connect failed, falling back to memory:', e.message)
-      );
-      return { store: new RedisStore({ sendCommand: (...args: string[]) => redisClient.sendCommand(args) }) };
-    } catch {
-      console.warn('rate-limit-redis not available, using in-memory store');
-    }
-  }
-  // In-memory store: fine for single-process and development.
-  // WARNING: in cluster mode each worker tracks its own counter.
-  return {};
+type SendCommand = (...args: string[]) => Promise<unknown>;
+
+let redisSendCommand: SendCommand | null = null;
+
+const defaultWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10);
+
+function isProduction(): boolean {
+  return process.env.NODE_ENV === 'production';
 }
 
-const sharedStoreOptions = buildStore();
+function prodOrDev(prodValue: number, devValue: number): number {
+  return isProduction() ? prodValue : devValue;
+}
 
-// Rate limiting configurations
-export const createRateLimit = (
-  windowMs: number = 15 * 60 * 1000,
-  maxRequests: number = 100,
-  message: string = 'Too many requests from this IP, please try again later.'
-) => {
+export function hasAuthCredential(req: Request): boolean {
+  const apiKey = req.headers['x-api-key'];
+  if (typeof apiKey === 'string' && apiKey.trim()) return true;
+  const auth = req.headers.authorization;
+  return typeof auth === 'string' && auth.trim().length > 0;
+}
+
+export function resolveClientIp(req: Request): string {
+  const ip =
+    req.ip ||
+    (req.socket && req.socket.remoteAddress) ||
+    (Array.isArray(req.headers['x-forwarded-for'])
+      ? req.headers['x-forwarded-for'][0]
+      : (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()) ||
+    'anonymous';
+  return ipKeyGenerator(ip);
+}
+
+function skipHealthPaths(req: Request): boolean {
+  const path = req.path || '';
+  return (
+    path === '/health' ||
+    path === '/ready' ||
+    path === '/metrics' ||
+    path === '/api/health'
+  );
+}
+
+function buildStoreOptions(redisPrefix: string): Partial<Options> {
+  if (!redisSendCommand) return {};
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { RedisStore } = require('rate-limit-redis');
+    return {
+      store: new RedisStore({
+        sendCommand: redisSendCommand,
+        prefix: redisKey(`rl:${redisPrefix}:`),
+      }),
+    };
+  } catch {
+    console.warn('rate-limit-redis not available, using in-memory store');
+    return {};
+  }
+}
+
+interface CreateRateLimitConfig {
+  windowMs: number;
+  max: number;
+  message: string;
+  keyScope: 'ip' | 'user';
+  redisPrefix: string;
+  skip?: (req: Request) => boolean;
+}
+
+function createScopedRateLimit(config: CreateRateLimitConfig): RateLimitRequestHandler {
   return rateLimit({
-    ...sharedStoreOptions,
-    windowMs,
-    max: maxRequests,
+    ...buildStoreOptions(config.redisPrefix),
+    windowMs: config.windowMs,
+    max: config.max,
     message: {
       error: 'Rate Limit Exceeded',
-      message,
-      retryAfter: Math.ceil(windowMs / 1000),
+      message: config.message,
+      retryAfter: Math.ceil(config.windowMs / 1000),
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // Use user ID for authenticated requests, IP for anonymous.
-    // Normalize IPv6-mapped IPv4 addresses (e.g., ::ffff:127.0.0.1).
     keyGenerator: (req: Request) => {
-      const authReq = req as AuthenticatedRequest;
-      if (authReq.user?.id) return authReq.user.id;
-      const ip =
-        req.ip ||
-        (req.socket && req.socket.remoteAddress) ||
-        (Array.isArray(req.headers['x-forwarded-for'])
-          ? req.headers['x-forwarded-for'][0]
-          : (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()) ||
-        'anonymous';
-      return ipKeyGenerator(ip);
+      if (config.keyScope === 'user') {
+        const userId = (req as AuthenticatedRequest).user?.id;
+        if (userId) return userId;
+        return 'unauthenticated';
+      }
+      return resolveClientIp(req);
     },
-    // Skip rate limiting for health checks and admin (admin has its own limiter after auth)
     skip: (req: Request) => {
-      const path = req.path || '';
-      if (
-        path === '/health' ||
-        path === '/ready' ||
-        path === '/metrics' ||
-        path === '/api/health' ||
-        path.startsWith('/api/v1/admin')
-      ) {
+      if (skipHealthPaths(req)) return true;
+      if (config.skip?.(req)) return true;
+      if (config.keyScope === 'user' && !(req as AuthenticatedRequest).user?.id) {
         return true;
       }
       return false;
     },
   });
+}
+
+/** Initialize Redis-backed rate limit stores. Call once at startup before mounting limiters. */
+export async function initializeRateLimitStores(): Promise<void> {
+  const client = await getRedisClient();
+  if (isProduction() && !client) {
+    throw new Error('Redis is required for rate limiting in production (REDIS_ENABLED=true, REDIS_URL set)');
+  }
+  if (client) {
+    redisSendCommand = (...args: string[]) => client.sendCommand(args);
+  }
+}
+
+// --- Middleware (assigned after initializeRateLimitStores in production) ---
+
+let _anonymousIpRateLimit: RateLimitRequestHandler | null = null;
+let _publicReadRateLimit: RateLimitRequestHandler | null = null;
+let _publicWriteRateLimit: RateLimitRequestHandler | null = null;
+let _apiKeyAuthRateLimit: RateLimitRequestHandler | null = null;
+let _authenticatedRateLimit: RateLimitRequestHandler | null = null;
+let _aiPostBurstRateLimit: RateLimitRequestHandler | null = null;
+let _uploadBurstRateLimit: RateLimitRequestHandler | null = null;
+let _adminRateLimit: RateLimitRequestHandler | null = null;
+let _dataExportRateLimit: RateLimitRequestHandler | null = null;
+
+function buildAllLimiters(): void {
+  const anonMax = parseInt(
+    process.env.ANON_IP_RATE_LIMIT_MAX ||
+      process.env.RATE_LIMIT_MAX_REQUESTS ||
+      String(prodOrDev(300, 10000)),
+    10
+  );
+  const publicReadMax = parseInt(
+    process.env.PUBLIC_READ_RATE_LIMIT_MAX || String(prodOrDev(120, 1000)),
+    10
+  );
+  const publicWriteMax = parseInt(
+    process.env.PUBLIC_WRITE_RATE_LIMIT_MAX || String(prodOrDev(10, 500)),
+    10
+  );
+  const apiKeyAuthMax = parseInt(
+    process.env.API_KEY_AUTH_RATE_LIMIT_MAX || String(prodOrDev(20, 500)),
+    10
+  );
+  const authenticatedMax = parseInt(
+    process.env.AUTHENTICATED_RATE_LIMIT_MAX || String(prodOrDev(1200, 10000)),
+    10
+  );
+  const aiPostBurstMax = parseInt(process.env.AI_POST_BURST_MAX || String(prodOrDev(15, 500)), 10);
+  const uploadBurstMax = parseInt(process.env.UPLOAD_BURST_MAX || String(prodOrDev(10, 500)), 10);
+  const adminMax = parseInt(process.env.ADMIN_RATE_LIMIT_MAX || String(prodOrDev(300, 10000)), 10);
+
+  _anonymousIpRateLimit = createScopedRateLimit({
+    windowMs: defaultWindowMs,
+    max: anonMax,
+    message: 'Too many unauthenticated requests from this IP. Please try again later.',
+    keyScope: 'ip',
+    redisPrefix: 'anon',
+    skip: (req) => hasAuthCredential(req),
+  });
+
+  _publicReadRateLimit = createScopedRateLimit({
+    windowMs: defaultWindowMs,
+    max: publicReadMax,
+    message: 'Public read rate limit exceeded. Please try again later.',
+    keyScope: 'ip',
+    redisPrefix: 'pubread',
+  });
+
+  _publicWriteRateLimit = createScopedRateLimit({
+    windowMs: defaultWindowMs,
+    max: publicWriteMax,
+    message: 'Public write rate limit exceeded. Please try again later.',
+    keyScope: 'ip',
+    redisPrefix: 'pubwrite',
+  });
+
+  _apiKeyAuthRateLimit = createScopedRateLimit({
+    windowMs: defaultWindowMs,
+    max: apiKeyAuthMax,
+    message: 'Too many API key authentication attempts. Please try again later.',
+    keyScope: 'ip',
+    redisPrefix: 'apikeyfail',
+  });
+
+  _authenticatedRateLimit = createScopedRateLimit({
+    windowMs: defaultWindowMs,
+    max: authenticatedMax,
+    message: 'Authenticated API rate limit exceeded. Please slow down your requests.',
+    keyScope: 'user',
+    redisPrefix: 'auth',
+  });
+
+  _aiPostBurstRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: aiPostBurstMax,
+    message: 'Too many AI requests. Please wait before trying again.',
+    keyScope: 'user',
+    redisPrefix: 'aipost',
+  });
+
+  _uploadBurstRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: uploadBurstMax,
+    message: 'Too many uploads. Please wait before trying again.',
+    keyScope: 'user',
+    redisPrefix: 'upload',
+  });
+
+  _adminRateLimit = isProduction()
+    ? createScopedRateLimit({
+        windowMs: 60 * 1000,
+        max: adminMax,
+        message: 'Admin API rate limit exceeded. Please wait before trying again.',
+        keyScope: 'user',
+        redisPrefix: 'admin',
+      })
+    : ((_req: Request, _res: Response, next: NextFunction) => next()) as RateLimitRequestHandler;
+
+  _dataExportRateLimit = createScopedRateLimit({
+    windowMs: 24 * 60 * 60 * 1000,
+    max: 1,
+    message: 'You can export your data once every 24 hours. Please try again later.',
+    keyScope: 'user',
+    redisPrefix: 'export',
+  });
+}
+
+buildAllLimiters();
+
+function requireLimiter(
+  limiter: RateLimitRequestHandler | null,
+  name: string
+): RateLimitRequestHandler {
+  if (!limiter) {
+    throw new Error(`Rate limiter ${name} not initialized`);
+  }
+  return limiter;
+}
+
+export const anonymousIpRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_anonymousIpRateLimit, 'anonymousIpRateLimit')(req, res, next);
 };
 
-// Main rate limit middleware
-const defaultWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10);
-const defaultMaxRequests =
-  process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10)
-    : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10000', 10);
+export const publicReadRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_publicReadRateLimit, 'publicReadRateLimit')(req, res, next);
+};
 
-export const rateLimitMiddleware = createRateLimit(
-  defaultWindowMs,
-  defaultMaxRequests,
-  'API rate limit exceeded. Please slow down your requests.'
-);
+export const publicWriteRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_publicWriteRateLimit, 'publicWriteRateLimit')(req, res, next);
+};
 
-// Different rate limits for different endpoints
-export const authRateLimit = createRateLimit(
-  5 * 60 * 1000, // 5 minutes
-  5, // 5 attempts
-  'Too many authentication attempts, please try again later.'
-);
+export const apiKeyAuthRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_apiKeyAuthRateLimit, 'apiKeyAuthRateLimit')(req, res, next);
+};
 
-export const apiRateLimit = createRateLimit(
-  parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes default
-  parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // 100 requests default
-  'API rate limit exceeded. Please slow down your requests.'
-);
+export const authenticatedRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_authenticatedRateLimit, 'authenticatedRateLimit')(req, res, next);
+};
 
-export const strictRateLimit = createRateLimit(
-  60 * 1000, // 1 minute
-  10, // 10 requests
-  'Too many requests. Please wait before trying again.'
-);
+export const aiPostBurstRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_aiPostBurstRateLimit, 'aiPostBurstRateLimit')(req, res, next);
+};
 
-// Burst rate limit for expensive operations
-export const burstRateLimit = createRateLimit(
-  60 * 1000, // 1 minute
-  5, // 5 requests
-  'Too many expensive operations. Please wait before trying again.'
-);
+export const uploadBurstRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_uploadBurstRateLimit, 'uploadBurstRateLimit')(req, res, next);
+};
 
-// Admin console reads many endpoints in parallel (overview, marketplace tabs).
-// In development, skip dedicated admin throttling — the global dev limit is already high.
-export const adminRateLimit =
-  process.env.NODE_ENV === 'production'
-    ? createRateLimit(
-        60 * 1000,
-        parseInt(process.env.ADMIN_RATE_LIMIT_MAX || '120', 10),
-        'Admin API rate limit exceeded. Please wait before trying again.'
-      )
-    : (_req: Request, _res: Response, next: () => void) => next();
+export const adminRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_adminRateLimit, 'adminRateLimit')(req, res, next);
+};
 
-// Custom rate limit for specific user tiers (could be expanded)
-export const premiumRateLimit = createRateLimit(
-  60 * 1000, // 1 minute
-  1000, // 1000 requests for premium users
-  'Premium rate limit exceeded.'
-);
-
-/** GDPR data export: 1 request per user per 24 hours */
-export const dataExportRateLimit = createRateLimit(
-  24 * 60 * 60 * 1000,
-  1,
-  'You can export your data once every 24 hours. Please try again later.'
-);
-
-const publicReadMax =
-  process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.PUBLIC_READ_RATE_LIMIT_MAX || '60', 10)
-    : parseInt(process.env.PUBLIC_READ_RATE_LIMIT_MAX || '1000', 10);
-
-const publicWriteMax =
-  process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.PUBLIC_WRITE_RATE_LIMIT_MAX || '10', 10)
-    : parseInt(process.env.PUBLIC_WRITE_RATE_LIMIT_MAX || '500', 10);
-
-const apiKeyAuthMax =
-  process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.API_KEY_AUTH_RATE_LIMIT_MAX || '20', 10)
-    : parseInt(process.env.API_KEY_AUTH_RATE_LIMIT_MAX || '500', 10);
-
-const authenticatedMax =
-  process.env.NODE_ENV === 'production'
-    ? parseInt(process.env.AUTHENTICATED_RATE_LIMIT_MAX || '300', 10)
-    : parseInt(process.env.AUTHENTICATED_RATE_LIMIT_MAX || '10000', 10);
-
-/** Stricter IP limit for anonymous public GET browse endpoints. */
-export const publicReadRateLimit = createRateLimit(
-  defaultWindowMs,
-  publicReadMax,
-  'Public read rate limit exceeded. Please try again later.'
-);
-
-/** Stricter IP limit for unauthenticated write endpoints. */
-export const publicWriteRateLimit = createRateLimit(
-  defaultWindowMs,
-  publicWriteMax,
-  'Public write rate limit exceeded. Please try again later.'
-);
-
-/** Rate limit failed API key authentication attempts by IP. */
-export const apiKeyAuthRateLimit = createRateLimit(
-  15 * 60 * 1000,
-  apiKeyAuthMax,
-  'Too many API key authentication attempts. Please try again later.'
-);
-
-/** Per-user limit applied after successful JWT/API-key auth (see authMiddleware). */
-export const authenticatedRateLimit = createRateLimit(
-  defaultWindowMs,
-  authenticatedMax,
-  'Authenticated API rate limit exceeded. Please slow down your requests.'
-);
-
-// Middleware to check if user is premium (placeholder)
-export const checkPremiumAccess = (req: AuthenticatedRequest, res: Response, next: any) => {
-  next();
+export const dataExportRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_dataExportRateLimit, 'dataExportRateLimit')(req, res, next);
 };

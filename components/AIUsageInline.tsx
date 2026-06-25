@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAIResetLabel } from '@lantern/shared/utils';
-import { useAuthStore } from '../stores/authStore';
-import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
+import { subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
 
 /**
  * Compact inline AI usage indicator — "✨ 7 left · Resets in 4h 23m"
@@ -9,15 +8,8 @@ import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from 
  * Use next to AI action buttons.
  */
 const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => {
-  const currentUser = useAuthStore(s => s.currentUser);
-  const isAuthLoading = useAuthStore(s => s.isAuthLoading);
   const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
   const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!currentUser?.id || isAuthLoading) return;
-    fetchAIUsage(currentUser.id);
-  }, [currentUser?.id, isAuthLoading]);
 
   useEffect(() => {
     return subscribeToAIUsage(setUsage);

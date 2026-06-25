@@ -19,7 +19,7 @@ import { ApiKeyService } from './services/apiKey';
 import { SupabaseService } from './services/supabase';
 
 // Import middleware
-import { rateLimitMiddleware, burstRateLimit, adminRateLimit } from './middleware/rateLimit';
+import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
 import { authMiddleware, requirePlatformAdmin } from './middleware/auth';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
@@ -81,6 +81,8 @@ async function initializeServices() {
     } else {
       logger.info('Using LRU memory cache (Redis disabled)');
     }
+
+    await initializeRateLimitStores();
 
     // Initialize Supabase service
     const dbConfig = {
@@ -204,10 +206,7 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(logRequest);
 }
 
-// Rate limiting — enabled unless explicitly disabled
-if (process.env.DISABLE_RATE_LIMIT !== 'true') {
-  app.use(rateLimitMiddleware);
-}
+// Rate limiting is mounted in startServer after Redis + limiter init
 
 // Default request timeout (30 seconds)
 app.use(defaultTimeout);
@@ -244,6 +243,10 @@ async function startServer() {
   try {
     await initializeServices();
 
+    if (process.env.DISABLE_RATE_LIMIT !== 'true') {
+      app.use(anonymousIpRateLimit);
+    }
+
     // API routes (mount after services initialization)
     app.use('/api/v1/users', userRoutes);
     app.use('/api/v1/groups', applyPublicRateLimits, groupRoutes);
@@ -257,8 +260,8 @@ async function startServer() {
     app.use('/api/v1/preferences', preferencesRoutes);
     app.use('/api/v1/marketplace', applyPublicRateLimits, marketplaceRoutes);
     app.use('/api/v1/api-keys', apiKeysRoutes);
-    app.use('/api/v1/ai', burstRateLimit, aiRoutes);
-    app.use('/api/v1/ai/companion', burstRateLimit, aiCompanionRoutes);
+    app.use('/api/v1/ai', aiRoutes);
+    app.use('/api/v1/ai/companion', aiCompanionRoutes);
     app.use('/api/v1/notes', notesRoutes);
     app.use('/api/v1/challenges', challengeRoutes);
     app.use('/api/v1/offline-bundles', offlineBundlesRoutes);

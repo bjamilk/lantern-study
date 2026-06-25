@@ -27,6 +27,7 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import { useAuthStore } from '../stores/authStore';
 import { setSentryUser } from '../services/sentry';
+import { fetchAIUsage } from '../services/ai';
 
 import { useFlashcardStore } from '../stores/flashcardStore';
 
@@ -737,6 +738,7 @@ function RootNavigatorInner() {
     void fetchDmThreads(user.id);
 
     void loadUnreadCount(user.id);
+    void fetchAIUsage(user.id);
 
     if (!isRunningInExpoGo() && pushEnabled) {
       void registerForPushNotifications().then(token => {

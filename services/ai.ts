@@ -34,25 +34,46 @@ function updateUsage(usage: AIUsageInfo) {
   _usageListeners.forEach(fn => fn(usage));
 }
 
+const USAGE_FETCH_TTL_MS = 60_000;
+let _usageLastFetchAt = 0;
+let _usageInFlight: Promise<AIUsageInfo> | null = null;
+let _usageBackoffUntil = 0;
+
+async function fetchAIUsageFromApi(): Promise<AIUsageInfo> {
+  const ready = await ensureAuthTokenReady();
+  if (!ready) return _latestUsage;
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage`, { headers });
+  if (res.status === 429) {
+    _usageBackoffUntil = Date.now() + 30_000;
+    throw new Error('HTTP 429');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const usage: AIUsageInfo = {
+    used: data.used,
+    limit: data.limit,
+    remaining: data.limit - data.used,
+    resetsAt: data.resetsAt,
+  };
+  updateUsage(usage);
+  _usageLastFetchAt = Date.now();
+  return usage;
+}
+
 export async function fetchAIUsage(_userId?: string): Promise<AIUsageInfo> {
-  try {
-    const ready = await ensureAuthTokenReady();
-    if (!ready) return _latestUsage;
-    const headers = await getAuthHeaders();
-    const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage`, { headers });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const usage: AIUsageInfo = {
-      used: data.used,
-      limit: data.limit,
-      remaining: data.limit - data.used,
-      resetsAt: data.resetsAt,
-    };
-    updateUsage(usage);
-    return usage;
-  } catch {
+  const now = Date.now();
+  if (now < _usageBackoffUntil) return _latestUsage;
+  if (now - _usageLastFetchAt < USAGE_FETCH_TTL_MS && _latestUsage.limit > 0) {
     return _latestUsage;
   }
+  if (_usageInFlight) return _usageInFlight;
+  _usageInFlight = fetchAIUsageFromApi()
+    .catch(() => _latestUsage)
+    .finally(() => {
+      _usageInFlight = null;
+    });
+  return _usageInFlight;
 }
 
 // ─── Base request helper ────────────────────────────────────

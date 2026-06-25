@@ -6,7 +6,7 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
-import { burstRateLimit } from '../middleware/rateLimit';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { clientErrorMessage } from '../utils/safeError';
 
 const router = Router();
@@ -196,8 +196,8 @@ router.post(
 // POST /api/v1/flashcards/upload-image - Upload an image for a flashcard
 router.post(
   '/upload-image',
-  burstRateLimit,
   authMiddleware,
+  uploadBurstRateLimit,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);

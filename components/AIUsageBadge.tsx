@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAIResetLabel } from '@lantern/shared/utils';
-import { useAuthStore } from '../stores/authStore';
-import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
+import { subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
 
 /**
  * AI Usage Badge — shows remaining AI requests as a progress bar.
@@ -9,18 +8,10 @@ import { fetchAIUsage, subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from 
  * Placed in the Sidebar and anywhere else the user needs visibility.
  */
 const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ className = '', compact = false }) => {
-  const currentUser = useAuthStore(s => s.currentUser);
-  const isAuthLoading = useAuthStore(s => s.isAuthLoading);
   const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  // Fetch usage after auth session is ready
-  useEffect(() => {
-    if (!currentUser?.id || isAuthLoading) return;
-    fetchAIUsage(currentUser.id);
-  }, [currentUser?.id, isAuthLoading]);
-
-  // Subscribe to real-time usage updates (from response headers after each AI call)
+  // Subscribe to shared usage state (fetched once from AppShell per session)
   useEffect(() => {
     return subscribeToAIUsage(setUsage);
   }, []);

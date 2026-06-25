@@ -58,9 +58,9 @@ $unauthStats = Invoke-Status -Method POST -Url "$ApiBaseUrl/api/v1/user-stats" -
 }
 Write-Host "user-stats unauth: $($unauthStats.status) (expect 401)"
 
-# 2) public marketplace read rate limit -> 429
+# 2) public marketplace read rate limit -> 429 (default PUBLIC_READ_RATE_LIMIT_MAX=120)
 $hit429 = $false
-for ($i = 1; $i -le 80; $i++) {
+for ($i = 1; $i -le 130; $i++) {
   $r = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/marketplace/listings"
   if ($r.status -eq 429) { $hit429 = $true; Write-Host "rate limit hit on request $i"; break }
   if ($r.status -ne 200) { Write-Host "unexpected status on request $i : $($r.status)"; break }
@@ -81,6 +81,18 @@ $userId = $createUser.id
 $login = Invoke-RestMethod -Method POST -Uri "$supabaseUrl/auth/v1/token?grant_type=password" -Headers @{ apikey = $anonKey; 'User-Agent' = 'lantern-security-verify/1.0' } -ContentType 'application/json' -Body (@{ email = $email; password = $password } | ConvertTo-Json)
 $jwt = $login.access_token
 
+# 4) authenticated GET /ai/usage should not hit burst limit
+$usageOk = $true
+for ($i = 1; $i -le 20; $i++) {
+  $usage = Invoke-Status -Method GET -Url "$ApiBaseUrl/api/v1/ai/usage" -Headers @{ Authorization = "Bearer $jwt" }
+  if ($usage.status -ne 200) {
+    $usageOk = $false
+    Write-Host "ai/usage failed on request $i : $($usage.status) (expect 200)"
+    break
+  }
+}
+Write-Host "ai/usage burst-safe: $usageOk (expect True)"
+
 $createKey = Invoke-Status -Method POST -Url "$ApiBaseUrl/api/v1/api-keys" -Headers @{ Authorization = "Bearer $jwt" } -Body @{ name = "verify-$ts"; permissions = @('read') }
 Write-Host "api-keys create: $($createKey.status) (expect 201)"
 if ($createKey.body) {
@@ -99,10 +111,11 @@ if ($userId) {
   Invoke-RestMethod -Method DELETE -Uri "$supabaseUrl/auth/v1/admin/users/$userId" -Headers $adminHeaders | Out-Null
 }
 
-$passed = ($unauthStats.status -eq 401) -and $hit429 -and ($createKey.status -eq 201) -and ($keyAuth.status -eq 200)
+$passed = ($unauthStats.status -eq 401) -and $hit429 -and $usageOk -and ($createKey.status -eq 201) -and ($keyAuth.status -eq 200)
 $result = [ordered]@{
   user_stats_unauth = $unauthStats.status
   marketplace_rate_limited = $hit429
+  ai_usage_burst_safe = $usageOk
   api_key_create = $createKey.status
   api_key_auth = $keyAuth.status
   all_passed = $passed

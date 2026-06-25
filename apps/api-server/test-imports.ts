@@ -28,8 +28,8 @@ console.log('ApiKeyService loaded');
 import { SupabaseService } from './src/services/supabase';
 console.log('SupabaseService loaded');
 
-import { rateLimitMiddleware } from './src/middleware/rateLimit';
-console.log('rateLimitMiddleware loaded');
+import { anonymousIpRateLimit } from './src/middleware/rateLimit';
+console.log('anonymousIpRateLimit loaded');
 
 import { authMiddleware } from './src/middleware/auth';
 console.log('authMiddleware loaded');
