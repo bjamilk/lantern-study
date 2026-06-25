@@ -158,4 +158,22 @@ export function assertPdfSize(buffer: Buffer): void {
   assertFileSize(buffer, MAX_PDF_BYTES, 'PDF');
 }
 
+/** PPTX/PPT are ZIP-based; truncated uploads break LibreOffice conversion. */
+export function assertValidOfficeZip(buffer: Buffer, fileName: string): void {
+  if (buffer.length < 4) {
+    throw new Error('Uploaded file is empty or incomplete.');
+  }
+  const magic = buffer.readUInt32LE(0);
+  // PK\x03\x04
+  if (magic !== 0x04034b50) {
+    throw new Error(`${fileName} is not a valid Office file.`);
+  }
+  const endSig = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+  if (!buffer.includes(endSig)) {
+    throw new Error(
+      `${fileName} appears truncated. If the file is large, try again after the latest app update.`
+    );
+  }
+}
+
 export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES };

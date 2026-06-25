@@ -1,5 +1,6 @@
 import {
   assertPresentationFileName,
+  assertValidOfficeZip,
   presentationContentType,
 } from './noteFiles';
 
@@ -18,5 +19,11 @@ describe('noteFiles presentation helpers', () => {
       'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     );
     expect(presentationContentType('deck.ppt')).toBe('application/vnd.ms-powerpoint');
+  });
+
+  it('rejects truncated zip uploads', () => {
+    const truncated = Buffer.alloc(100, 0);
+    truncated.writeUInt32LE(0x04034b50, 0);
+    expect(() => assertValidOfficeZip(truncated, 'deck.pptx')).toThrow(/truncated/i);
   });
 });

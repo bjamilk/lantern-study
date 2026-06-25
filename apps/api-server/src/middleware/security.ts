@@ -182,30 +182,41 @@ export const requestIdMiddleware = (req: AuthenticatedRequest, res: Response, ne
   next();
 };
 
+// Keys that carry raw base64 file payloads — must not be truncated or regex-sanitized.
+const BINARY_PAYLOAD_KEYS = new Set([
+  'base64Data',
+  'audioBase64',
+  'apkgBase64',
+]);
+
 // 6. Input Sanitization
-export const sanitizeInput = (input: string): string => {
+export const sanitizeInput = (input: string, options?: { maxLength?: number }): string => {
   if (typeof input !== 'string') return input;
-  
+
+  const maxLength = options?.maxLength ?? 50000;
   return input
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/javascript:/gi, '')
     .replace(/on\w+=/gi, '')
     .trim()
-    .substring(0, 50000);
+    .substring(0, maxLength);
 };
 
-export const sanitizeObject = (obj: any, depth = 0): any => {
+export const sanitizeObject = (obj: any, depth = 0, parentKey?: string): any => {
   if (depth > 8) return obj;
   if (typeof obj === 'string') {
+    if (parentKey && BINARY_PAYLOAD_KEYS.has(parentKey)) {
+      return obj;
+    }
     return sanitizeInput(obj);
   }
   if (Array.isArray(obj)) {
-    return obj.map((item) => sanitizeObject(item, depth + 1));
+    return obj.map((item) => sanitizeObject(item, depth + 1, parentKey));
   }
   if (obj && typeof obj === 'object') {
     const sanitized: any = {};
     for (const [key, value] of Object.entries(obj)) {
-      sanitized[sanitizeInput(key)] = sanitizeObject(value, depth + 1);
+      sanitized[sanitizeInput(key, { maxLength: 200 })] = sanitizeObject(value, depth + 1, key);
     }
     return sanitized;
   }

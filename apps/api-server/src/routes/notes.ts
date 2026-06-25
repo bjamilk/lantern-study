@@ -27,6 +27,7 @@ import {
   extractPdfTextFromBuffer,
   extractPresentationTextFromBuffer,
   assertPresentationFileName,
+  assertValidOfficeZip,
   presentationContentType,
 } from '../services/noteFiles';
 import { getNoteStudyContent } from '@lantern/shared/utils/noteStudyContent';
@@ -169,6 +170,9 @@ router.post('/upload-presentation', aiRateLimit, asyncHandler(async (req: Reques
 
   const safeName = String(fileName);
   assertPresentationFileName(safeName);
+  if (/\.pptx?$/i.test(safeName)) {
+    assertValidOfficeZip(buffer, safeName);
+  }
   const storagePath = buildNoteStoragePath(userId, safeName);
   const contentType = presentationContentType(safeName);
   await supabaseService.uploadNoteFile({
@@ -331,6 +335,16 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
 
   const fileName = attachment.fileName || 'slides.pptx';
   const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+  if (/\.pptx?$/i.test(fileName)) {
+    try {
+      assertValidOfficeZip(buffer, fileName);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Presentation file is corrupted. Please re-upload.',
+      });
+      return;
+    }
+  }
   const pdfBuffer = await convertPresentationToPdf(buffer, fileName);
   if (!pdfBuffer) {
     res.status(502).json({ error: 'Could not generate slide preview. Try again in a moment.' });
