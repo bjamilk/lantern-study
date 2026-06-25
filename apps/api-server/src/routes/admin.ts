@@ -170,7 +170,7 @@ router.get('/users', async (req: any, res: any) => {
             ...profile,
             email: authMap[profile.id]?.email,
             is_banned: profile?.settings?.is_banned === true || profile?.settings?.account_status === 'banned',
-            is_platform_admin: authMap[profile.id]?.isPlatformAdmin === true || profile?.settings?.is_platform_admin === true,
+            is_platform_admin: authMap[profile.id]?.isPlatformAdmin === true,
           }]
         : [];
       return res.json({
@@ -237,7 +237,7 @@ router.get('/users', async (req: any, res: any) => {
       ...u,
       email: authMap[u.id]?.email,
       is_banned: u?.settings?.is_banned === true || u?.settings?.account_status === 'banned',
-      is_platform_admin: authMap[u.id]?.isPlatformAdmin === true || u?.settings?.is_platform_admin === true,
+      is_platform_admin: authMap[u.id]?.isPlatformAdmin === true,
     }));
 
     res.json({
@@ -854,7 +854,7 @@ router.get('/users/:id', async (req: any, res: any) => {
         ...profile,
         email: authMap[id]?.email,
         is_banned: profile?.settings?.is_banned === true || profile?.settings?.account_status === 'banned',
-        is_platform_admin: authMap[id]?.isPlatformAdmin === true || profile?.settings?.is_platform_admin === true,
+        is_platform_admin: authMap[id]?.isPlatformAdmin === true,
         counts: {
           groups: groupCount ?? 0,
           listings: listingCount ?? 0,
