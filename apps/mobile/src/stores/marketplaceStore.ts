@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { RateLimitError } from '@lantern/shared';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
 import { useBudgetStore } from './budgetStore';
@@ -696,10 +697,19 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         isLoading: false,
       }));
       await get().saveToStorage();
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (requestId !== listingsRequestSeq) return;
       console.error('Failed to fetch listings:', error);
-      set({ error: error.message, isLoading: false });
+      if (error instanceof RateLimitError) {
+        const retrySec = Math.ceil(error.retryAfterMs / 1000);
+        set({
+          error: `Browsing too quickly. Try again in about ${retrySec} seconds.`,
+          isLoading: false,
+        });
+        return;
+      }
+      const message = error instanceof Error ? error.message : 'Failed to load listings';
+      set({ error: message, isLoading: false });
     }
   },
   

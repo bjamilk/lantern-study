@@ -1,4 +1,11 @@
 import type { ApiClient } from './client';
+import {
+  listingsCacheKey,
+  marketplaceCategoryAnalyticsCache,
+  marketplaceListingsCache,
+  parseRetryAfterMs,
+  RateLimitError,
+} from './marketplaceCache';
 
 export function createApiEndpoints(client: ApiClient) {
   const apiRequest = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
@@ -1047,11 +1054,33 @@ export function createApiEndpoints(client: ApiClient) {
         }
       });
       const endpoint = `/marketplace/listings?${params.toString()}`;
+      const cacheKey = listingsCacheKey(filters as Record<string, unknown>);
 
-      if (filters.page || filters.limit) {
-        return apiRequestRaw<{
-          success: boolean;
-          data: Array<{
+      const fetchListings = async () => {
+        if (filters.page || filters.limit) {
+          return apiRequestRaw<{
+            success: boolean;
+            data: Array<{
+              id: string;
+              user_id: string;
+              category: string;
+              title: string;
+              description?: string;
+              price?: number;
+              location?: string;
+              images?: string[];
+              status: 'active' | 'sold' | 'inactive';
+              created_at: string;
+              updated_at: string;
+              seller?: { id: string; name: string; avatar_url?: string };
+              profiles?: { id: string; name: string; avatar_url?: string };
+            }>;
+            pagination?: { page: number; limit: number; total: number };
+          }>(endpoint, {}, 5000);
+        }
+
+        return apiRequest<
+          Array<{
             id: string;
             user_id: string;
             category: string;
@@ -1065,29 +1094,27 @@ export function createApiEndpoints(client: ApiClient) {
             updated_at: string;
             seller?: { id: string; name: string; avatar_url?: string };
             profiles?: { id: string; name: string; avatar_url?: string };
-          }>;
-          pagination?: { page: number; limit: number; total: number };
-        }>(endpoint, {}, 5000);
-      }
+          }>
+        >(endpoint, {}, 5000);
+      };
 
-      return apiRequest<
-        Array<{
-          id: string;
-          user_id: string;
-          category: string;
-          title: string;
-          description?: string;
-          price?: number;
-          location?: string;
-          images?: string[];
-          status: 'active' | 'sold' | 'inactive';
-          created_at: string;
-          updated_at: string;
-          seller?: { id: string; name: string; avatar_url?: string };
-          profiles?: { id: string; name: string; avatar_url?: string };
-        }>
-      >(endpoint, {}, 5000);
+      try {
+        return await marketplaceListingsCache.get(cacheKey, fetchListings);
+      } catch (err) {
+        if (err instanceof RateLimitError) throw err;
+        if (err instanceof Error && err.message.toLowerCase().includes('rate limit')) {
+          throw new RateLimitError(err.message);
+        }
+        throw err;
+      }
     },
+
+    fetchMarketplaceCategoryAnalytics: () =>
+      marketplaceCategoryAnalyticsCache.get('categories', () =>
+        apiRequest<
+          Array<{ category: string; total: number; active: number; sold: number }>
+        >('/marketplace/analytics/categories', {}, 5000)
+      ),
 
     fetchMarketplaceListing: (listingId: string) =>
       apiRequest<{

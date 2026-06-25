@@ -2,6 +2,8 @@
 // Lantern Study - Shared API Client Factory
 // ===========================================
 
+import { parseRetryAfterMs, RateLimitError } from './marketplaceCache';
+
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
 export interface ApiClientConfig {
@@ -72,6 +74,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       const error = await response.json().catch(() => ({ message: 'Request failed' }));
       if (response.status === 401) {
         config.onUnauthorized?.();
+      }
+      if (response.status === 429) {
+        const errBody = error as { message?: string; error?: string };
+        const detail = errBody.message || errBody.error || 'Rate limit exceeded';
+        throw new RateLimitError(detail, parseRetryAfterMs(response));
       }
       const errBody = error as { message?: string; error?: string };
       const genericErrors = new Set(['Error', 'ApiError', 'Request failed']);

@@ -1,4 +1,11 @@
 export { createApiClient, type ApiClient, type ApiClientConfig } from './client';
+export {
+  RateLimitError,
+  parseRetryAfterMs,
+  listingsCacheKey,
+  marketplaceListingsCache,
+  marketplaceCategoryAnalyticsCache,
+} from './marketplaceCache';
 export { createApiEndpoints, type LanternApiEndpoints } from './endpoints';
 export {
   createAIClient,

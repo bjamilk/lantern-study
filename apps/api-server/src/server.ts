@@ -20,7 +20,7 @@ import { SupabaseService } from './services/supabase';
 
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
-import { authMiddleware, requirePlatformAdmin } from './middleware/auth';
+import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
 import { defaultTimeout } from './middleware/timeout';
@@ -249,7 +249,7 @@ async function startServer() {
 
     // API routes (mount after services initialization)
     app.use('/api/v1/users', userRoutes);
-    app.use('/api/v1/groups', applyPublicRateLimits, groupRoutes);
+    app.use('/api/v1/groups', optionalAuthMiddleware, applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);
     app.use('/api/v1/tests', testRoutes);
@@ -258,7 +258,7 @@ async function startServer() {
     app.use('/api/v1/flashcards', flashcardRoutes);
     app.use('/api/v1/user-stats', userStatsRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
-    app.use('/api/v1/marketplace', applyPublicRateLimits, marketplaceRoutes);
+    app.use('/api/v1/marketplace', optionalAuthMiddleware, applyPublicRateLimits, marketplaceRoutes);
     app.use('/api/v1/api-keys', apiKeysRoutes);
     app.use('/api/v1/ai', aiRoutes);
     app.use('/api/v1/ai/companion', aiCompanionRoutes);

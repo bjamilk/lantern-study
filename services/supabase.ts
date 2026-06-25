@@ -1,6 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
+import {
+  listingsCacheKey,
+  marketplaceCategoryAnalyticsCache,
+  marketplaceListingsCache,
+  parseRetryAfterMs,
+  RateLimitError,
+} from '@lantern/shared'
 import { normalizeTestResultSession } from '@lantern/shared/utils'
 import {
   type UserSettings,
@@ -1842,45 +1849,55 @@ export const fetchMarketplaceListingsPage = async (filters: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 } = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {
-  console.log('Fetching marketplace listings', filters);
+  const cacheKey = listingsCacheKey(filters as Record<string, unknown>);
+  const emptyPagination = {
+    page: Number(filters.page || 1),
+    limit: Number(filters.limit || 20),
+    total: 0,
+  };
+
   try {
-    const queryParams = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        queryParams.append(key, value.toString());
+    return await marketplaceListingsCache.get(cacheKey, async () => {
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          queryParams.append(key, value.toString());
+        }
+      });
+
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/v1/marketplace/listings?${queryParams}`,
+        { method: 'GET', headers: await getAuthHeaders() },
+        5000
+      );
+
+      if (response.status === 429) {
+        const error = await response.json().catch(() => ({ message: 'Rate limit exceeded' }));
+        throw new RateLimitError(
+          error.message || 'Public read rate limit exceeded. Please try again later.',
+          parseRetryAfterMs(response)
+        );
       }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to fetch listings');
+      }
+
+      const result = await response.json();
+      return {
+        data: (result.data || []).map(normalizeListingRecord),
+        pagination: result.pagination || {
+          page: Number(filters.page || 1),
+          limit: Number(filters.limit || 20),
+          total: (result.data || []).length,
+        },
+      };
     });
-
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/listings?${queryParams}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    }, 5000);
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch listings');
-    }
-
-    const result = await response.json();
-    console.log('Fetched listings count:', result.data.length);
-    return {
-      data: (result.data || []).map(normalizeListingRecord),
-      pagination: result.pagination || {
-        page: Number(filters.page || 1),
-        limit: Number(filters.limit || 20),
-        total: (result.data || []).length,
-      },
-    };
   } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     console.error('Error fetching listings:', error);
-    return {
-      data: [],
-      pagination: {
-        page: Number(filters.page || 1),
-        limit: Number(filters.limit || 20),
-        total: 0,
-      },
-    };
+    return { data: [], pagination: emptyPagination };
   }
 };
 
@@ -2655,15 +2672,27 @@ export const buyMarketplaceListingNow = async (listingId: string, couponCode?: s
 
 export const fetchMarketplaceCategoryAnalytics = async () => {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/analytics/categories`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    }, 5000);
+    return await marketplaceCategoryAnalyticsCache.get('categories', async () => {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/v1/marketplace/analytics/categories`,
+        { method: 'GET', headers: await getAuthHeaders() },
+        5000
+      );
 
-    if (!response.ok) return [];
-    const result = await response.json();
-    return result.data || [];
+      if (response.status === 429) {
+        const error = await response.json().catch(() => ({ message: 'Rate limit exceeded' }));
+        throw new RateLimitError(
+          error.message || 'Public read rate limit exceeded. Please try again later.',
+          parseRetryAfterMs(response)
+        );
+      }
+
+      if (!response.ok) return [];
+      const result = await response.json();
+      return result.data || [];
+    });
   } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     console.error('Error fetching category analytics:', error);
     return [];
   }

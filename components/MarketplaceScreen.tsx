@@ -5,6 +5,7 @@ import {
   fetchSavedSearches, saveSearch, deleteSavedSearch, checkSavedSearchMatches,
   fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics
 } from '../services/supabase';
+import { RateLimitError } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
 import { MarketplaceListing, SavedSearch } from '../types';
 import {
@@ -63,6 +64,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
   const [showCategoryPanel, setShowCategoryPanel] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+  const [primaryListingsLoaded, setPrimaryListingsLoaded] = useState(false);
 
   const academicCategories = [
     { id: 'textbook_exchange', name: 'Textbooks', icon: AcademicCapIcon },
@@ -86,22 +89,33 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
     setPage(1);
     setListings([]);
     setHasMore(true);
+    setPrimaryListingsLoaded(false);
+    setRateLimitMessage(null);
     loadListings(1, true);
     loadFavorites();
   }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter]);
 
-  // Load recently viewed and saved searches on mount
+  // Load recently viewed and saved searches on mount; defer heavy listing fetches
   useEffect(() => {
-    loadRecentlyViewed();
     loadSavedSearches();
     loadCategoryAnalytics();
   }, []);
+
+  useEffect(() => {
+    if (!primaryListingsLoaded) return;
+    void loadRecentlyViewed();
+  }, [primaryListingsLoaded]);
 
   const loadCategoryAnalytics = async () => {
     try {
       const analytics = await fetchMarketplaceCategoryAnalytics();
       setTopCategories(analytics.slice(0, 6));
     } catch (error) {
+      if (error instanceof RateLimitError) {
+        const retrySec = Math.ceil(error.retryAfterMs / 1000);
+        setRateLimitMessage(`Marketplace is busy. Category stats will refresh in about ${retrySec}s.`);
+        return;
+      }
       console.error('Error loading category analytics:', error);
     }
   };
@@ -265,9 +279,20 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
       
       setHasMore((pageNum * ITEMS_PER_PAGE) < (pagination?.total || 0));
       setPage(pageNum);
+      setRateLimitMessage(null);
+      if (reset) setPrimaryListingsLoaded(true);
     } catch (error) {
-      console.error('Error loading listings:', error);
-      if (reset) setListings([]);
+      if (error instanceof RateLimitError) {
+        const retrySec = Math.ceil(error.retryAfterMs / 1000);
+        setRateLimitMessage(
+          `You're browsing too quickly. Listings will be available again in about ${retrySec} seconds.`
+        );
+        if (reset) setPrimaryListingsLoaded(true);
+      } else {
+        console.error('Error loading listings:', error);
+        if (reset) setListings([]);
+        if (reset) setPrimaryListingsLoaded(true);
+      }
     } finally {
       clearTimeout(timeoutId);
       setLoading(false);
@@ -727,6 +752,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
               ))}
             </div>
             </div>
+          </div>
+        )}
+
+        {rateLimitMessage && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            {rateLimitMessage}
           </div>
         )}
 
