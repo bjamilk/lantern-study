@@ -5883,6 +5883,33 @@ export class SupabaseService {
     };
   }
 
+  async updateNoteAttachment(
+    attachmentId: string,
+    updates: { metadata?: Record<string, unknown>; extractedText?: string }
+  ) {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.metadata !== undefined) dbUpdates.metadata = updates.metadata;
+    if (updates.extractedText !== undefined) dbUpdates.extracted_text = updates.extractedText;
+
+    const { data, error } = await this.supabase
+      .from('note_attachments')
+      .update(dbUpdates)
+      .eq('id', attachmentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return {
+      id: data.id,
+      noteId: data.note_id,
+      type: data.type,
+      fileUrl: data.file_url || undefined,
+      fileName: data.file_name || undefined,
+      extractedText: data.extracted_text || undefined,
+      metadata: data.metadata || {},
+      createdAt: data.created_at,
+    };
+  }
+
   async uploadNoteFile(params: {
     storagePath: string;
     buffer: Buffer;

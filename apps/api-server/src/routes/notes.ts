@@ -301,6 +301,60 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
   res.send(buffer);
 }));
 
+router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const note = await supabaseService.getNote(req.params.noteId, userId);
+  if (note.sourceType !== 'presentation') {
+    res.status(400).json({ error: 'Note is not a presentation.' });
+    return;
+  }
+
+  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const attachment = attachments.find((a) => a.type === 'presentation');
+  if (!attachment) {
+    res.status(404).json({ error: 'No presentation attachment found.' });
+    return;
+  }
+
+  const meta = attachment.metadata || {};
+  const storagePath = typeof meta.storagePath === 'string' ? meta.storagePath : null;
+  if (!storagePath) {
+    res.status(400).json({ error: 'Presentation file path is missing.' });
+    return;
+  }
+
+  if (typeof meta.previewStoragePath === 'string' && meta.previewStoragePath) {
+    res.json({ success: true, data: { attachment, previewAvailable: true } });
+    return;
+  }
+
+  const fileName = attachment.fileName || 'slides.pptx';
+  const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+  const pdfBuffer = await convertPresentationToPdf(buffer, fileName);
+  if (!pdfBuffer) {
+    res.status(502).json({ error: 'Could not generate slide preview. Try again in a moment.' });
+    return;
+  }
+
+  const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
+  await supabaseService.uploadNoteFile({
+    storagePath: previewStoragePath,
+    buffer: pdfBuffer,
+    contentType: 'application/pdf',
+  });
+  const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
+  const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+    metadata: {
+      ...meta,
+      previewStoragePath,
+      previewUrl,
+    },
+  });
+
+  res.json({ success: true, data: { attachment: updated, previewAvailable: true } });
+}));
+
 // Notes CRUD
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);

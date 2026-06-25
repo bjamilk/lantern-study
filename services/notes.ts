@@ -114,6 +114,15 @@ export async function deleteNote(noteId: string): Promise<void> {
   await notesRequest(`/${noteId}`, { method: 'DELETE' });
 }
 
+export async function regeneratePresentationPreview(
+  noteId: string
+): Promise<{ attachment: NoteAttachment; previewAvailable: boolean }> {
+  return notesRequest<{ attachment: NoteAttachment; previewAvailable: boolean }>(
+    `/${noteId}/regenerate-preview`,
+    { method: 'POST', body: JSON.stringify({}) }
+  );
+}
+
 export async function summarizeNote(noteId: string): Promise<{ summary: string; note: StudyNote }> {
   return notesRequest<{ summary: string; note: StudyNote }>(`/${noteId}/summarize`, {
     method: 'POST',

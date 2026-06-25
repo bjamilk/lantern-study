@@ -49,6 +49,10 @@ if (-not $gotenberg) {
     Write-Host "Found gotenberg service $($gotenberg.id)"
 }
 
+# Gotenberg listens on 3000 by default; Render routes traffic on PORT (10000).
+Write-Host 'Ensuring API_PORT_FROM_ENV=PORT on gotenberg...' -ForegroundColor Yellow
+Invoke-RestMethod -Method PUT -Uri "$base/services/$($gotenberg.id)/env-vars/API_PORT_FROM_ENV" -Headers $headers -ContentType 'application/json' -Body (@{ value = 'PORT' } | ConvertTo-Json) | Out-Null
+
 $deadline = (Get-Date).AddMinutes(15)
 do {
     Start-Sleep -Seconds 20
@@ -66,7 +70,8 @@ if ($status -notin @('live', 'deactivated')) {
     throw "Gotenberg deploy failed: $status"
 }
 
-$gotenbergUrl = "http://$($gotenberg.name):10000"
+# Internal hostname + Render PORT (10000 when API_PORT_FROM_ENV=PORT).
+$gotenbergUrl = 'https://lantern-study-gotenberg.onrender.com'
 Write-Host "GOTENBERG_URL=$gotenbergUrl" -ForegroundColor Green
 
 $apiService = $services | ForEach-Object { $_.service } | Where-Object { $_.name -eq 'lantern-study-api' } | Select-Object -First 1

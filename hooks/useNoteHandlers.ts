@@ -40,7 +40,8 @@ export function useNoteHandlers(currentUserId?: string) {
 
   const openNote = useCallback(
     async (noteId: string) => {
-      await loadNote(noteId);
+      const loaded = await loadNote(noteId);
+      if (!loaded || useNotesStore.getState().selectedNote?.id !== noteId) return;
       navigateTo(AppMode.NOTE_EDITOR, { noteId });
       void loadComments(noteId);
       try {
@@ -61,16 +62,31 @@ export function useNoteHandlers(currentUserId?: string) {
     return note;
   }, [createNote, setSelectedNote, navigateTo]);
 
+  const cancelAutoSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+  }, []);
+
   const handleAutoSave = useCallback(
     (noteId: string, updates: { title?: string; body?: string }) => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      cancelAutoSave();
+      const state = useNotesStore.getState();
+      if (state.selectedNote?.id !== noteId && !state.notes.some((n) => n.id === noteId)) {
+        return;
+      }
       saveTimer.current = setTimeout(() => {
+        const latest = useNotesStore.getState();
+        if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
+          return;
+        }
         void saveNote(noteId, updates).catch(() => {
           // Auto-save failures (e.g. note deleted) are non-fatal
         });
       }, 800);
     },
-    [saveNote]
+    [saveNote, cancelAutoSave]
   );
 
   const handleSummarize = useCallback(async (noteId: string) => {
@@ -209,18 +225,22 @@ export function useNoteHandlers(currentUserId?: string) {
     async (file: File, folderId?: string) => {
       const result = await notesApi.uploadNotePdfViaApi(file, folderId);
       await loadNotes();
+      setSelectedNote({ ...result.note, attachments: [result.attachment] });
+      navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
       return result.note;
     },
-    [loadNotes]
+    [loadNotes, setSelectedNote, navigateTo]
   );
 
   const handlePresentationImport = useCallback(
     async (file: File, folderId?: string) => {
       const result = await notesApi.uploadPresentationViaApi(file, folderId);
       await loadNotes();
+      setSelectedNote({ ...result.note, attachments: [result.attachment] });
+      navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
       return result.note;
     },
-    [loadNotes]
+    [loadNotes, setSelectedNote, navigateTo]
   );
 
   const handleShareWithGroup = useCallback(
@@ -237,12 +257,22 @@ export function useNoteHandlers(currentUserId?: string) {
     []
   );
 
+  const handleDeleteNote = useCallback(
+    async (noteId: string) => {
+      cancelAutoSave();
+      setSelectedNote(null);
+      await removeNote(noteId);
+    },
+    [cancelAutoSave, removeNote, setSelectedNote]
+  );
+
   return {
     navigateToNotes,
     openNote,
     handleCreateNote,
     handleCreateFolder: createFolder,
     handleAutoSave,
+    cancelAutoSave,
     handleSummarize,
     handleChatWithNote,
     handleGenerateFlashcards,
@@ -255,7 +285,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleStartDailyQuiz,
     handleShareWithGroup,
     handleAddCollaborator,
-    handleDeleteNote: removeNote,
+    handleDeleteNote,
     handlePostComment: postComment,
     setStudyGoal,
     studyGoal,

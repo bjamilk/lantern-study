@@ -732,7 +732,9 @@ export const App: React.FC = () => {
                         }}
                         onPresentationImport={async (file) => {
                             try {
-                                await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
+                                const note = await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
+                                if (!note) return;
+                                showToast('PowerPoint imported — generating slide preview…', 'success');
                             } catch (e: any) {
                                 showToast(e?.message || 'PowerPoint import failed', 'error');
                             }
@@ -752,9 +754,15 @@ export const App: React.FC = () => {
                         onBack={() => navigateTo(AppMode.NOTES)}
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
                         onDelete={async () => {
-                            if (confirm('Delete this note?')) {
-                                await noteHandlers.handleDeleteNote(selectedNote.id);
-                                setAppMode(AppMode.NOTES);
+                            if (!confirm('Delete this note?')) return;
+                            const noteId = selectedNote.id;
+                            noteHandlers.cancelAutoSave();
+                            useNotesStore.getState().setSelectedNote(null);
+                            navigateTo(AppMode.NOTES);
+                            try {
+                                await noteHandlers.handleDeleteNote(noteId);
+                            } catch (e: any) {
+                                showToast(e?.message || 'Failed to delete note', 'error');
                             }
                         }}
                         onSummarize={() => noteHandlers.handleSummarize(selectedNote.id)}

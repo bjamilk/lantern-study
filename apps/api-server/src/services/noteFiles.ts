@@ -62,6 +62,8 @@ export function presentationContentType(fileName: string): string {
     : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 }
 
+const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
+
 function resolveGotenbergBaseUrl(): string | undefined {
   const raw = process.env.GOTENBERG_URL?.trim();
   if (!raw) return undefined;
@@ -72,26 +74,41 @@ function resolveGotenbergBaseUrl(): string | undefined {
   return `http://${withoutTrailingSlash}`;
 }
 
+function getGotenbergCandidates(): string[] {
+  const urls = [resolveGotenbergBaseUrl(), GOTENBERG_PUBLIC_FALLBACK].filter(Boolean) as string[];
+  return [...new Set(urls)];
+}
+
+async function convertWithGotenberg(
+  gotenbergUrl: string,
+  buffer: Buffer,
+  fileName: string
+): Promise<Buffer> {
+  const form = new FormData();
+  const blob = new Blob([new Uint8Array(buffer)], {
+    type: presentationContentType(fileName),
+  });
+  form.append('files', blob, fileName);
+  const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(
+      `Gotenberg conversion failed (${response.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`
+    );
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
 export async function convertPresentationToPdf(buffer: Buffer, fileName: string): Promise<Buffer | null> {
-  const gotenbergUrl = resolveGotenbergBaseUrl();
-  if (gotenbergUrl) {
+  for (const gotenbergUrl of getGotenbergCandidates()) {
     try {
-      const form = new FormData();
-      const blob = new Blob([new Uint8Array(buffer)], {
-        type: presentationContentType(fileName),
-      });
-      form.append('files', blob, fileName);
-      const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
-        method: 'POST',
-        body: form,
-      });
-      if (!response.ok) {
-        throw new Error(`Gotenberg conversion failed (${response.status})`);
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      return await convertWithGotenberg(gotenbergUrl, buffer, fileName);
     } catch (err) {
-      logger.warn('Gotenberg PPTX conversion failed', { err });
+      logger.warn('Gotenberg PPTX conversion failed', { err, gotenbergUrl });
     }
   }
 

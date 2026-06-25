@@ -16,6 +16,7 @@ import NoteCollaboratorsModal from './NoteCollaboratorsModal';
 import NotePdfViewer from './NotePdfViewer';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
+import { useNotesStore } from '../stores/notesStore';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -78,6 +79,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const chunksRef = useRef<Blob[]>([]);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
+  const saveEnabledRef = useRef(true);
+  const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const isDark = theme === 'dark';
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
@@ -98,10 +102,47 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id, note.title, note.body]);
 
   useEffect(() => {
-    if (!note.id) return;
-    const timer = setTimeout(() => onSave({ title, body }), 800);
-    return () => clearTimeout(timer);
+    saveEnabledRef.current = true;
+    return () => {
+      saveEnabledRef.current = false;
+    };
+  }, [note.id]);
+
+  useEffect(() => {
+    if (!note.id || !saveEnabledRef.current) return;
+    onSave({ title, body });
   }, [note.id, title, body, onSave]);
+
+  useEffect(() => {
+    if (note.sourceType !== 'presentation') return;
+    const attachment = note.attachments?.find((a) => a.type === 'presentation');
+    if (!attachment || attachment.metadata?.previewStoragePath) return;
+
+    let cancelled = false;
+    setGeneratingPreview(true);
+    void notesApi
+      .regeneratePresentationPreview(note.id)
+      .then((result) => {
+        if (cancelled) return;
+        setSelectedNote({
+          ...note,
+          attachments:
+            note.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+      })
+      .catch(() => {
+        // Preview stays unavailable; message below explains it
+      })
+      .finally(() => {
+        if (!cancelled) setGeneratingPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.sourceType, note.attachments, note, setSelectedNote]);
 
   const handleShareGroup = () => {
     const groupId = prompt(
@@ -220,7 +261,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
           )}
 
-          {isDocumentNote && !documentAttachment && (
+          {generatingPreview && (
+            <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+              Generating slide preview...
+            </p>
+          )}
+
+          {isDocumentNote && !documentAttachment && !generatingPreview && (
             <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
               {note.sourceType === 'presentation'
                 ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'

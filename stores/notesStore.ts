@@ -23,7 +23,7 @@ interface NotesState {
 
   loadFolders: () => Promise<void>;
   loadNotes: (options?: { folderId?: string }) => Promise<void>;
-  loadNote: (noteId: string) => Promise<void>;
+  loadNote: (noteId: string) => Promise<boolean>;
   createFolder: (name: string, color?: string) => Promise<NoteFolder>;
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
@@ -76,8 +76,14 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     try {
       const note = await notesApi.fetchNote(noteId);
       set({ selectedNote: note, isLoading: false });
+      return true;
     } catch (e: any) {
-      set({ error: e.message, isLoading: false });
+      set({
+        error: e.message,
+        isLoading: false,
+        selectedNote: get().selectedNote?.id === noteId ? null : get().selectedNote,
+      });
+      return false;
     }
   },
 
@@ -104,6 +110,10 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   },
 
   saveNote: async (noteId, updates) => {
+    const state = get();
+    if (state.selectedNote?.id !== noteId && !state.notes.some((n) => n.id === noteId)) {
+      return null as unknown as StudyNote;
+    }
     set({ isSaving: true });
     try {
       const saved = await notesApi.updateNote(noteId, updates);
@@ -111,7 +121,11 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         notes: get().notes.map(n => (n.id === noteId ? { ...n, ...saved } : n)),
         selectedNote:
           get().selectedNote?.id === noteId
-            ? { ...get().selectedNote!, ...saved }
+            ? {
+                ...get().selectedNote!,
+                ...saved,
+                attachments: get().selectedNote!.attachments,
+              }
             : get().selectedNote,
         isSaving: false,
       });

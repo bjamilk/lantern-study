@@ -11,6 +11,10 @@ services:
     image:
       url: docker.io/gotenberg/gotenberg:8
     healthCheckPath: /health
+    envVars:
+      # Render assigns PORT (10000); Gotenberg defaults to 3000 without this.
+      - key: API_PORT_FROM_ENV
+        value: PORT
 
   - type: web
     name: lantern-study-api
@@ -34,10 +38,7 @@ services:
       - key: REDIS_URL
         sync: false
       - key: GOTENBERG_URL
-        fromService:
-          type: web
-          name: lantern-study-gotenberg
-          property: hostport
+        value: https://lantern-study-gotenberg.onrender.com
       - key: ALLOW_DEV_AUTH_BYPASS
         value: "false"
       - key: ENABLE_MARKETPLACE_JOBS
