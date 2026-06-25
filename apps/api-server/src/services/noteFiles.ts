@@ -99,15 +99,16 @@ async function convertWithGotenberg(
     contentType: presentationContentType(fileName),
   });
 
-  const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
-    method: 'POST',
-    // form-data stream is a valid Node fetch body
-    body: form as unknown as BodyInit,
-    headers: form.getHeaders(),
-    signal: AbortSignal.timeout(GOTENBERG_CONVERT_TIMEOUT_MS),
-    // Required when body is a stream in Node fetch
-    duplex: 'half',
-  } as RequestInit);
+  const response = await fetch(
+    `${gotenbergUrl}/forms/libreoffice/convert`,
+    {
+      method: 'POST',
+      body: form,
+      headers: form.getHeaders(),
+      signal: AbortSignal.timeout(GOTENBERG_CONVERT_TIMEOUT_MS),
+      duplex: 'half',
+    } as any
+  );
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
