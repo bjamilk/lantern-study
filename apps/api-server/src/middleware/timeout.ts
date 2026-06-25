@@ -53,3 +53,8 @@ export const longTimeout = requestTimeout(60000);
  * Extended timeout for AI/generation operations (120 seconds)
  */
 export const extendedTimeout = requestTimeout(120000);
+
+/**
+ * Gotenberg slide conversion can exceed 30s on cold start (wake + large decks).
+ */
+export const presentationTimeout = requestTimeout(180000);

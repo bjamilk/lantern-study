@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/aiRateLimit';
+import { presentationTimeout } from '../middleware/timeout';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
 import {
@@ -157,7 +158,7 @@ router.post('/upload-pdf', aiRateLimit, asyncHandler(async (req: Request, res: R
   res.json({ success: true, data: { note, attachment } });
 }));
 
-router.post('/upload-presentation', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-presentation', aiRateLimit, presentationTimeout, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { fileName, base64Data, folderId } = req.body;
@@ -305,7 +306,7 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
   res.send(buffer);
 }));
 
-router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, presentationTimeout, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
