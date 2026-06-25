@@ -23,7 +23,7 @@ import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from 
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
-import { defaultTimeout } from './middleware/timeout';
+import { skipTimeoutForLongRunningNotes } from './middleware/timeout';
 import { sanitizationMiddleware } from './middleware/security';
 import { validateBodyShape } from './middleware/validateBody';
 import { applyPublicRateLimits } from './middleware/publicRateLimitMiddleware';
@@ -208,8 +208,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Rate limiting is mounted in startServer after Redis + limiter init
 
-// Default request timeout (30 seconds)
-app.use(defaultTimeout);
+// Default request timeout (30 seconds) — skip for long-running note uploads/conversion
+app.use(skipTimeoutForLongRunningNotes);
 
 // Request ID middleware
 app.use((req: any, res: any, next: any) => {

@@ -26,4 +26,9 @@ describe('noteFiles presentation helpers', () => {
     truncated.writeUInt32LE(0x04034b50, 0);
     expect(() => assertValidOfficeZip(truncated, 'deck.pptx')).toThrow(/truncated/i);
   });
+
+  it('skips zip validation for legacy .ppt files', () => {
+    const notZip = Buffer.from('not a zip');
+    expect(() => assertValidOfficeZip(notZip, 'deck.ppt')).not.toThrow();
+  });
 });

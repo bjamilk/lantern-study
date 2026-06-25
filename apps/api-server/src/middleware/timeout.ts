@@ -56,5 +56,22 @@ export const extendedTimeout = requestTimeout(120000);
 
 /**
  * Gotenberg slide conversion can exceed 30s on cold start (wake + large decks).
+ * Render's HTTP proxy times out around 100s — keep under that in noteFiles.ts retries.
  */
 export const presentationTimeout = requestTimeout(180000);
+
+/** Routes that need more than the 30s default (upload, transcribe, PPT preview). */
+export const LONG_RUNNING_NOTE_PATH =
+  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|[^/]+\/regenerate-preview)$/;
+
+export const skipTimeoutForLongRunningNotes = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (LONG_RUNNING_NOTE_PATH.test(req.path)) {
+    next();
+    return;
+  }
+  defaultTimeout(req, res, next);
+};

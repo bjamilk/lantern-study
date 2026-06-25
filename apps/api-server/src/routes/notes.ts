@@ -336,7 +336,7 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
 
   const fileName = attachment.fileName || 'slides.pptx';
   const { buffer } = await supabaseService.downloadNoteFile(storagePath);
-  if (/\.pptx?$/i.test(fileName)) {
+  if (/\.pptx$/i.test(fileName)) {
     try {
       assertValidOfficeZip(buffer, fileName);
     } catch (err) {

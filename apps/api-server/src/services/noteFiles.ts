@@ -1,3 +1,4 @@
+import FormData from 'form-data';
 import { logger } from '../utils/logger';
 
 const NOTE_FILES_BUCKET = 'note-files';
@@ -63,8 +64,9 @@ export function presentationContentType(fileName: string): string {
 }
 
 const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
-const GOTENBERG_FETCH_TIMEOUT_MS = 120_000;
-const GOTENBERG_WAKE_ATTEMPTS = 3;
+/** Per-attempt budget; Render proxy ~100s — two attempts must stay under that. */
+const GOTENBERG_CONVERT_TIMEOUT_MS = 85_000;
+const GOTENBERG_CONVERT_ATTEMPTS = 2;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,28 +83,9 @@ function resolveGotenbergBaseUrl(): string | undefined {
 }
 
 function getGotenbergCandidates(): string[] {
-  const urls = [resolveGotenbergBaseUrl(), GOTENBERG_PUBLIC_FALLBACK].filter(Boolean) as string[];
+  const configured = resolveGotenbergBaseUrl();
+  const urls = [configured, GOTENBERG_PUBLIC_FALLBACK].filter(Boolean) as string[];
   return [...new Set(urls)];
-}
-
-async function wakeGotenberg(gotenbergUrl: string): Promise<void> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= GOTENBERG_WAKE_ATTEMPTS; attempt++) {
-    try {
-      const response = await fetch(`${gotenbergUrl}/health`, {
-        signal: AbortSignal.timeout(GOTENBERG_FETCH_TIMEOUT_MS),
-      });
-      if (response.ok) return;
-      lastError = new Error(`Gotenberg health check failed (${response.status})`);
-    } catch (err) {
-      lastError = err;
-      logger.warn('Gotenberg wake attempt failed', { err, gotenbergUrl, attempt });
-    }
-    if (attempt < GOTENBERG_WAKE_ATTEMPTS) {
-      await sleep(3000 * attempt);
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('Gotenberg unavailable');
 }
 
 async function convertWithGotenberg(
@@ -111,37 +94,61 @@ async function convertWithGotenberg(
   fileName: string
 ): Promise<Buffer> {
   const form = new FormData();
-  const blob = new Blob([new Uint8Array(buffer)], {
-    type: presentationContentType(fileName),
+  form.append('files', buffer, {
+    filename: fileName,
+    contentType: presentationContentType(fileName),
   });
-  form.append('files', blob, fileName);
+
   const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
     method: 'POST',
-    body: form,
-    signal: AbortSignal.timeout(GOTENBERG_FETCH_TIMEOUT_MS),
-  });
+    // form-data stream is a valid Node fetch body
+    body: form as unknown as BodyInit,
+    headers: form.getHeaders(),
+    signal: AbortSignal.timeout(GOTENBERG_CONVERT_TIMEOUT_MS),
+    // Required when body is a stream in Node fetch
+    duplex: 'half',
+  } as RequestInit);
+
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw new Error(
-      `Gotenberg conversion failed (${response.status})${detail ? `: ${detail.slice(0, 200)}` : ''}`
+      `Gotenberg conversion failed (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`
     );
   }
   const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const pdf = Buffer.from(arrayBuffer);
+  if (pdf.length < 100) {
+    throw new Error('Gotenberg returned an empty PDF');
+  }
+  return pdf;
 }
 
 export async function convertPresentationToPdf(buffer: Buffer, fileName: string): Promise<Buffer | null> {
+  let lastError: unknown;
+
   for (const gotenbergUrl of getGotenbergCandidates()) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= GOTENBERG_CONVERT_ATTEMPTS; attempt++) {
       try {
-        await wakeGotenberg(gotenbergUrl);
-        return await convertWithGotenberg(gotenbergUrl, buffer, fileName);
+        const pdf = await convertWithGotenberg(gotenbergUrl, buffer, fileName);
+        logger.info('Presentation converted to PDF via Gotenberg', {
+          gotenbergUrl,
+          attempt,
+          fileName,
+          pptxBytes: buffer.length,
+          pdfBytes: pdf.length,
+        });
+        return pdf;
       } catch (err) {
-        logger.warn('Gotenberg PPTX conversion failed', { err, gotenbergUrl, attempt });
-        if (attempt < 2) await sleep(2000);
+        lastError = err;
+        logger.warn('Gotenberg PPTX conversion failed', { err, gotenbergUrl, attempt, fileName });
+        if (attempt < GOTENBERG_CONVERT_ATTEMPTS) {
+          await sleep(2500);
+        }
       }
     }
   }
+
+  logger.error('All Gotenberg conversion attempts failed', { lastError, fileName, bytes: buffer.length });
 
   try {
     const libre = (await import('libreoffice-convert')) as {
@@ -189,8 +196,11 @@ export function assertPdfSize(buffer: Buffer): void {
   assertFileSize(buffer, MAX_PDF_BYTES, 'PDF');
 }
 
-/** PPTX/PPT are ZIP-based; truncated uploads break LibreOffice conversion. */
+/** PPTX is ZIP-based; truncated uploads break LibreOffice conversion. Legacy .ppt is not ZIP. */
 export function assertValidOfficeZip(buffer: Buffer, fileName: string): void {
+  if (!/\.pptx$/i.test(fileName)) {
+    return;
+  }
   if (buffer.length < 4) {
     throw new Error('Uploaded file is empty or incomplete.');
   }
