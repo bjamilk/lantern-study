@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getNoteStudyContent } from '@lantern/shared';
 import {
   ArrowLeftIcon,
   TrashIcon,
@@ -6,8 +7,6 @@ import {
   ShareIcon,
   MicrophoneIcon,
   StopIcon,
-  DocumentTextIcon,
-  DocumentIcon,
 } from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
@@ -79,20 +78,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const chunksRef = useRef<Blob[]>([]);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
-  const [contentView, setContentView] = useState<'document' | 'text'>('document');
   const isDark = theme === 'dark';
 
-  const pdfAttachment = note.attachments?.find(
+  const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
+  const documentAttachment = note.attachments?.find(
     (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
   );
   const presentationAttachment = note.attachments?.find((a) => a.type === 'presentation');
-  const showDocumentView = Boolean(pdfAttachment) && contentView === 'document';
-
-  useEffect(() => {
-    if (note.sourceType === 'pdf' || note.sourceType === 'presentation') {
-      setContentView('document');
-    }
-  }, [note.id, note.sourceType]);
+  const studyContentLength = getNoteStudyContent({
+    sourceType: note.sourceType,
+    body,
+    summary: note.summary,
+    attachments: note.attachments,
+  }).length;
 
   useEffect(() => {
     setTitle(note.title);
@@ -218,39 +216,34 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <YouTubeEmbed videoId={note.youtubeVideoId} title={title || note.title} />
           )}
 
-          {pdfAttachment && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={contentView === 'document' ? 'primary' : 'secondary'}
-                onClick={() => setContentView('document')}
-              >
-                <DocumentIcon className="w-4 h-4 mr-1" />
-                Document
-              </Button>
-              <Button
-                size="sm"
-                variant={contentView === 'text' ? 'primary' : 'secondary'}
-                onClick={() => setContentView('text')}
-              >
-                <DocumentTextIcon className="w-4 h-4 mr-1" />
-                Extracted text
-              </Button>
-            </div>
+          {documentAttachment && (
+            <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
           )}
 
-          {showDocumentView && pdfAttachment && (
-            <NotePdfViewer noteId={note.id} attachment={pdfAttachment} theme={theme} />
-          )}
-
-          {presentationAttachment && showDocumentView && (
-            <p className="text-xs text-gray-400">
-              Showing converted PDF preview
-              {presentationAttachment.fileName ? ` of ${presentationAttachment.fileName}` : ''}.
+          {isDocumentNote && !documentAttachment && (
+            <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+              {note.sourceType === 'presentation'
+                ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                : 'Document preview is unavailable.'}
+              {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
             </p>
           )}
 
-          {(!pdfAttachment || contentView === 'text') && (
+          {isDocumentNote ? (
+            <div>
+              <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                Your notes
+              </h4>
+              <textarea
+                value={body}
+                onChange={e => setBody(e.target.value)}
+                placeholder="Add your own notes on top of this document..."
+                className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
+                  isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+                }`}
+              />
+            </div>
+          ) : (
           <textarea
             value={body}
             onChange={e => setBody(e.target.value)}
@@ -298,6 +291,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-6 lg:pb-6 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-white'}`}>
           <NoteLearnPanel
             note={{ ...note, title, body }}
+            studyContentLength={studyContentLength}
             theme={theme}
             onSummarize={onSummarize}
             onChatWithNote={onChatWithNote}

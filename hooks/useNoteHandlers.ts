@@ -1,29 +1,17 @@
 import { useCallback, useRef } from 'react';
+import { getNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
 import { useAppNavigation } from './useAppNavigation';
-import { AppMode, FlashcardType, type NoteAttachment } from '../types';
+import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
-
-function getNoteStudyContent(
-  note: { body?: string; summary?: string; attachments?: NoteAttachment[] }
-): string {
-  const body = note.body?.trim();
-  if (body) return body;
-  const extracted = (note.attachments || [])
-    .map((a) => a.extractedText?.trim())
-    .filter(Boolean)
-    .join('\n\n');
-  if (extracted) return extracted;
-  return note.summary?.trim() || '';
-}
 
 export function useNoteHandlers(currentUserId?: string) {
   const {
@@ -219,25 +207,11 @@ export function useNoteHandlers(currentUserId?: string) {
 
   const handlePdfImport = useCallback(
     async (file: File, folderId?: string) => {
-      if (!currentUserId) throw new Error('Not signed in');
-      const { fileUrl, extractedText, storagePath } = await notesApi.uploadNotePdf(currentUserId, file);
-      const note = await createNote({
-        title: file.name.replace(/\.pdf$/i, ''),
-        body: extractedText,
-        folderId,
-        sourceType: 'pdf',
-      });
-      await notesApi.addNoteAttachment(note.id, {
-        type: 'pdf',
-        fileUrl,
-        fileName: file.name,
-        extractedText,
-        metadata: { storagePath },
-      });
+      const result = await notesApi.uploadNotePdfViaApi(file, folderId);
       await loadNotes();
-      return note;
+      return result.note;
     },
-    [currentUserId, createNote, loadNotes]
+    [loadNotes]
   );
 
   const handlePresentationImport = useCallback(

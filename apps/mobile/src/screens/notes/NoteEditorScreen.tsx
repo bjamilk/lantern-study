@@ -28,31 +28,15 @@ import { Ionicons } from '@expo/vector-icons';
 
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { getNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
 import { transcribeAudioForNote, summarizeNote, generateNoteQuiz } from '../../services/notes';
-import type { NoteAttachment } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
-
-function getNoteStudyContent(
-  note: { body?: string; summary?: string; attachments?: NoteAttachment[] }
-): string {
-  const bodyText = note.body?.trim();
-  if (bodyText) return bodyText;
-  const extracted = (note.attachments || [])
-    .map((a) => a.extractedText?.trim())
-    .filter(Boolean)
-    .join('\n\n');
-  if (extracted) return extracted;
-  return note.summary?.trim() || '';
-}
-
-
-
 
 type NavigationProp = {
 
@@ -102,11 +86,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const [generatingCards, setGeneratingCards] = useState(false);
 
-  const [contentView, setContentView] = useState<'document' | 'text'>('document');
-
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const pdfAttachment = useMemo(
+  const isDocumentNote =
+    selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation';
+
+  const documentAttachment = useMemo(
     () =>
       selectedNote?.attachments?.find(
         (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
@@ -114,16 +99,23 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     [selectedNote?.attachments]
   );
 
-  const studyContent = useMemo(
-    () => (selectedNote ? getNoteStudyContent(selectedNote) : body),
-    [selectedNote, body]
+  const presentationAttachment = useMemo(
+    () => selectedNote?.attachments?.find((a) => a.type === 'presentation'),
+    [selectedNote?.attachments]
   );
 
-  useEffect(() => {
-    if (selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation') {
-      setContentView('document');
-    }
-  }, [selectedNote?.id, selectedNote?.sourceType]);
+  const studyContent = useMemo(
+    () =>
+      selectedNote
+        ? getNoteStudyContent({
+            sourceType: selectedNote.sourceType,
+            body,
+            summary: selectedNote.summary,
+            attachments: selectedNote.attachments,
+          })
+        : body,
+    [selectedNote, body]
+  );
 
 
 
@@ -479,32 +471,37 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
-          {pdfAttachment ? (
-            <View className="flex-row gap-2 mb-3">
-              <Button
-                size="sm"
-                variant={contentView === 'document' ? 'primary' : 'secondary'}
-                onPress={() => setContentView('document')}
-              >
-                Document
-              </Button>
-              <Button
-                size="sm"
-                variant={contentView === 'text' ? 'primary' : 'secondary'}
-                onPress={() => setContentView('text')}
-              >
-                Extracted text
-              </Button>
-            </View>
-          ) : null}
-
-          {pdfAttachment && contentView === 'document' ? (
+          {documentAttachment ? (
             <View className="mb-4">
-              <NotePdfViewer noteId={noteId} attachment={pdfAttachment} />
+              <NotePdfViewer noteId={noteId} attachment={documentAttachment} />
             </View>
           ) : null}
 
-          {(!pdfAttachment || contentView === 'text') ? (
+          {isDocumentNote && !documentAttachment ? (
+            <Text className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              {selectedNote?.sourceType === 'presentation'
+                ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                : 'Document preview is unavailable.'}
+              {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
+            </Text>
+          ) : null}
+
+          {isDocumentNote ? (
+            <>
+              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                Your notes
+              </Text>
+              <TextInput
+                value={body}
+                onChangeText={setBody}
+                placeholder="Add your own notes on top of this document..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                textAlignVertical="top"
+                className="w-full min-h-[160px] p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-4"
+              />
+            </>
+          ) : (
           <TextInput
 
             value={body}
@@ -522,7 +519,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             className="w-full min-h-[280px] p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-4"
 
           />
-          ) : null}
+          )}
 
 
 

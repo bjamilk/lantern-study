@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getNoteStudyContent } from '@lantern/shared';
 import {
   SparklesIcon,
   ChatBubbleLeftRightIcon,
@@ -9,7 +10,8 @@ import {
 import type { StudyNote } from '../types';
 
 interface NoteLearnPanelProps {
-  note: StudyNote;
+  note: StudyNote & { attachments?: Array<{ extractedText?: string | null }> };
+  studyContentLength?: number;
   theme: 'light' | 'dark';
   onSummarize: () => Promise<string | void>;
   onChatWithNote: () => void;
@@ -20,6 +22,7 @@ interface NoteLearnPanelProps {
 
 const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   note,
+  studyContentLength,
   theme,
   onSummarize,
   onChatWithNote,
@@ -29,6 +32,14 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
 }) => {
   const [summarizing, setSummarizing] = useState(false);
   const isDark = theme === 'dark';
+  const contentLength =
+    studyContentLength ??
+    getNoteStudyContent({
+      sourceType: note.sourceType,
+      body: note.body,
+      summary: note.summary,
+      attachments: note.attachments,
+    }).length;
 
   const handleSummarize = async () => {
     setSummarizing(true);
@@ -56,7 +67,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          disabled={isBusy || summarizing || (note.body?.length ?? 0) < 30}
+          disabled={isBusy || summarizing || contentLength < 30}
           onClick={handleSummarize}
           className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
         >
@@ -74,7 +85,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || (note.body?.length ?? 0) < 50}
+          disabled={isBusy || contentLength < 50}
           onClick={onGenerateFlashcards}
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >
@@ -83,7 +94,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || (note.body?.length ?? 0) < 50}
+          disabled={isBusy || contentLength < 50}
           onClick={onGenerateQuiz}
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >

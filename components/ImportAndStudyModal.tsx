@@ -2,14 +2,15 @@ import React, { useState, useCallback } from 'react';
 import {
   DocumentArrowUpIcon,
   PlayCircleIcon,
-  MicrophoneIcon,
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { getNoteStudyContent } from '@lantern/shared';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
+import type { NoteAttachment, StudyNote } from '../types';
 
 export interface ImportAndStudyResult {
   noteId: string;
@@ -57,23 +58,21 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     onClose();
   };
 
-  const processContent = useCallback(async (body: string, title: string, sourceType: string, extra?: Partial<{ youtubeUrl: string }>) => {
-    setStep('processing');
-    setError(null);
-    try {
-      const note = await notesApi.createNote({
-        title,
-        body,
-        sourceType: sourceType as any,
-        ...extra,
+  const runStudyGenerators = useCallback(
+    async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
+      const studyText = getNoteStudyContent({
+        sourceType: note.sourceType,
+        body: note.body,
+        summary: note.summary,
+        attachments: note.attachments,
       });
 
       let flashcardCount = 0;
       let quizQuestionCount = 0;
 
-      if (generateCards && body.length >= 50) {
+      if (generateCards && studyText.length >= 50) {
         try {
-          const { flashcards } = await aiGenerateFlashcards(body.slice(0, 8000), {
+          const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
           });
           if (flashcards?.length) flashcardCount = flashcards.length;
@@ -82,9 +81,13 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         }
       }
 
-      if (generateQuiz && body.length >= 50) {
+      if (generateQuiz && studyText.length >= 50) {
         try {
-          const { questions } = await notesApi.generateDailyQuizFromContent(body.slice(0, 8000), 'retention', 5);
+          const { questions } = await notesApi.generateDailyQuizFromContent(
+            studyText.slice(0, 8000),
+            'retention',
+            5
+          );
           quizQuestionCount = questions?.length ?? 0;
         } catch {
           // non-fatal
@@ -100,38 +103,36 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       setResult(res);
       setStep('done');
       onComplete(res);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Import failed');
-      setStep('input');
-    }
-  }, [generateCards, generateQuiz, onComplete]);
+    },
+    [generateCards, generateQuiz, onComplete]
+  );
+
+  const processContent = useCallback(
+    async (body: string, title: string, sourceType: string, extra?: Partial<{ youtubeUrl: string }>) => {
+      setStep('processing');
+      setError(null);
+      try {
+        const note = await notesApi.createNote({
+          title,
+          body,
+          sourceType: sourceType as StudyNote['sourceType'],
+          ...extra,
+        });
+        await runStudyGenerators(note);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Import failed');
+        setStep('input');
+      }
+    },
+    [runStudyGenerators]
+  );
 
   const handleYouTube = async () => {
     if (!youtubeUrl.trim()) return;
     try {
       setStep('processing');
       const note = await notesApi.importYouTubeNote(youtubeUrl.trim());
-      let flashcardCount = 0;
-      let quizQuestionCount = 0;
-      const body = note.body || '';
-      if (generateCards && body.length >= 50) {
-        try {
-          const { flashcards } = await aiGenerateFlashcards(body.slice(0, 8000), {
-            count: normalizeFlashcardCount(),
-          });
-          flashcardCount = flashcards?.length ?? 0;
-        } catch { /* ignore */ }
-      }
-      if (generateQuiz && body.length >= 50) {
-        try {
-          const { questions } = await notesApi.generateDailyQuizFromContent(body.slice(0, 8000), 'retention', 5);
-          quizQuestionCount = questions?.length ?? 0;
-        } catch { /* ignore */ }
-      }
-      const res = { noteId: note.id, noteTitle: note.title, flashcardCount, quizQuestionCount };
-      setResult(res);
-      setStep('done');
-      onComplete(res);
+      await runStudyGenerators(note);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'YouTube import failed');
       setStep('input');
@@ -140,20 +141,24 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   const handlePdf = async (file: File) => {
     setStep('processing');
+    setError(null);
     try {
-      const pdfjs = await import('pdfjs-dist');
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-      let text = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        text += content.items.map((item: any) => item.str).join(' ') + '\n';
-      }
-      await processContent(text.trim() || `[PDF: ${file.name}]`, file.name.replace(/\.pdf$/i, ''), 'pdf');
+      const { note, attachment } = await notesApi.uploadNotePdfViaApi(file);
+      await runStudyGenerators({ ...note, attachments: [attachment] });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'PDF import failed');
+      setStep('input');
+    }
+  };
+
+  const handlePresentation = async (file: File) => {
+    setStep('processing');
+    setError(null);
+    try {
+      const { note, attachment } = await notesApi.uploadPresentationViaApi(file);
+      await runStudyGenerators({ ...note, attachments: [attachment] });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'PowerPoint import failed');
       setStep('input');
     }
   };
@@ -189,7 +194,12 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 <label className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-indigo-400 ${isDark ? 'border-slate-600' : 'border-slate-300'}`}>
                   <DocumentArrowUpIcon className="w-8 h-8 text-indigo-500" />
                   <span className="text-sm font-medium">Upload PDF</span>
-                  <input type="file" accept=".pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
+                  <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
+                </label>
+                <label className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-indigo-400 ${isDark ? 'border-slate-600' : 'border-slate-300'}`}>
+                  <DocumentArrowUpIcon className="w-8 h-8 text-violet-500" />
+                  <span className="text-sm font-medium">PowerPoint</span>
+                  <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
               </div>
 

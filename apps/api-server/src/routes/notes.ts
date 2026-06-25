@@ -26,7 +26,10 @@ import {
   convertPresentationToPdf,
   extractPdfTextFromBuffer,
   extractPresentationTextFromBuffer,
+  assertPresentationFileName,
+  presentationContentType,
 } from '../services/noteFiles';
+import { getNoteStudyContent } from '@lantern/shared';
 
 const router = Router();
 
@@ -38,16 +41,17 @@ export const initializeNotesRoutes = (supabase: SupabaseService, cache: CacheSer
   cacheService = cache;
 };
 
-async function resolveNoteStudyContent(noteId: string, note: { body?: string; summary?: string }): Promise<string> {
-  const body = note.body?.trim();
-  if (body) return body;
+async function resolveNoteStudyContent(
+  noteId: string,
+  note: { body?: string; summary?: string; sourceType?: string }
+): Promise<string> {
   const attachments = await supabaseService.getNoteAttachments(noteId);
-  const extracted = attachments
-    .map((a) => a.extractedText?.trim())
-    .filter(Boolean)
-    .join('\n\n');
-  if (extracted) return extracted;
-  return note.summary?.trim() || '';
+  return getNoteStudyContent({
+    sourceType: note.sourceType,
+    body: note.body,
+    summary: note.summary,
+    attachments,
+  });
 }
 
 router.use(authMiddleware);
@@ -133,12 +137,12 @@ router.post('/upload-pdf', aiRateLimit, asyncHandler(async (req: Request, res: R
   });
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
   const extractedText = await extractPdfTextFromBuffer(buffer);
-  const fallbackText = extractedText || `[PDF uploaded: ${fileName}. Text extraction unavailable.]`;
+  const studyText = extractedText || `[PDF uploaded: ${fileName}. Text extraction unavailable.]`;
   const noteTitle = String(fileName).replace(/\.pdf$/i, '') || 'Imported PDF';
 
   const note = await supabaseService.createNote(userId, {
     title: noteTitle,
-    body: fallbackText,
+    body: '',
     folderId,
     sourceType: 'pdf',
   });
@@ -146,7 +150,7 @@ router.post('/upload-pdf', aiRateLimit, asyncHandler(async (req: Request, res: R
     type: 'pdf',
     fileUrl,
     fileName,
-    extractedText: fallbackText,
+    extractedText: studyText,
     metadata: { storagePath },
   });
   res.json({ success: true, data: { note, attachment } });
@@ -164,11 +168,13 @@ router.post('/upload-presentation', aiRateLimit, asyncHandler(async (req: Reques
   assertPresentationSize(buffer);
 
   const safeName = String(fileName);
+  assertPresentationFileName(safeName);
   const storagePath = buildNoteStoragePath(userId, safeName);
+  const contentType = presentationContentType(safeName);
   await supabaseService.uploadNoteFile({
     storagePath,
     buffer,
-    contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    contentType,
   });
 
   const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
@@ -187,12 +193,12 @@ router.post('/upload-presentation', aiRateLimit, asyncHandler(async (req: Reques
   }
 
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
-  const fallbackText = extractedText || `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
+  const studyText = extractedText || `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
   const note = await supabaseService.createNote(userId, {
     title: noteTitle,
-    body: fallbackText,
+    body: '',
     folderId,
     sourceType: 'presentation',
   });
@@ -200,12 +206,12 @@ router.post('/upload-presentation', aiRateLimit, asyncHandler(async (req: Reques
     type: 'presentation',
     fileUrl,
     fileName: safeName,
-    extractedText: fallbackText,
+    extractedText: studyText,
     metadata: {
       storagePath,
       previewStoragePath,
       previewUrl,
-      originalMime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      originalMime: contentType,
     },
   });
   res.json({ success: true, data: { note, attachment, previewAvailable: Boolean(previewStoragePath) } });

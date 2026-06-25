@@ -4,6 +4,15 @@
 
 services:
   - type: web
+    name: lantern-study-gotenberg
+    runtime: image
+    plan: free
+    region: oregon
+    image:
+      url: docker.io/gotenberg/gotenberg:8
+    healthCheckPath: /health
+
+  - type: web
     name: lantern-study-api
     runtime: docker
     dockerfilePath: ./apps/api-server/Dockerfile
@@ -24,6 +33,11 @@ services:
         value: "true"
       - key: REDIS_URL
         sync: false
+      - key: GOTENBERG_URL
+        fromService:
+          type: web
+          name: lantern-study-gotenberg
+          property: hostport
       - key: ALLOW_DEV_AUTH_BYPASS
         value: "false"
       - key: ENABLE_MARKETPLACE_JOBS

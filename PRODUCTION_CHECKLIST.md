@@ -288,8 +288,8 @@ Governance and product artifacts for GDPR / EU AI Act / SOC2 readiness (not form
 - [x] Signed URL refresh for `note-files` attachments (`GET /api/v1/notes/:noteId/attachments/:attachmentId/url`)
 - [x] Server-side PDF upload + text extraction (`POST /api/v1/notes/upload-pdf`)
 - [x] PowerPoint upload with text extraction (`POST /api/v1/notes/upload-presentation`)
-- [ ] **Gotenberg for PPTX → PDF preview** — set `GOTENBERG_URL` on the API server (e.g. `http://gotenberg:3000`). Without it, slides import but in-app PDF preview requires LibreOffice locally via `libreoffice-convert`.
-- [ ] Apply migration `20260615120000_note_presentation_attachments.sql` (`npx supabase db push`)
+- [x] **Gotenberg for PPTX → PDF preview** — `lantern-study-gotenberg` service in `render.yaml`; API uses `GOTENBERG_URL` (`hostport` from service).
+- [x] Apply migration `20260615120000_note_presentation_attachments.sql` (presentation attachment + source types)
 
 ---
 

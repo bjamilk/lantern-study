@@ -44,13 +44,41 @@ export async function extractPresentationTextFromBuffer(
   }
 }
 
+export function assertPresentationSize(buffer: Buffer): void {
+  assertFileSize(buffer, MAX_PRESENTATION_BYTES, 'Presentation');
+}
+
+const PRESENTATION_EXT = /\.(pptx?|ppt)$/i;
+
+export function assertPresentationFileName(fileName: string): void {
+  if (!PRESENTATION_EXT.test(fileName)) {
+    throw new Error('Presentation must be a .ppt or .pptx file.');
+  }
+}
+
+export function presentationContentType(fileName: string): string {
+  return /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
+    ? 'application/vnd.ms-powerpoint'
+    : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+}
+
+function resolveGotenbergBaseUrl(): string | undefined {
+  const raw = process.env.GOTENBERG_URL?.trim();
+  if (!raw) return undefined;
+  const withoutTrailingSlash = raw.replace(/\/$/, '');
+  if (/^https?:\/\//i.test(withoutTrailingSlash)) {
+    return withoutTrailingSlash;
+  }
+  return `http://${withoutTrailingSlash}`;
+}
+
 export async function convertPresentationToPdf(buffer: Buffer, fileName: string): Promise<Buffer | null> {
-  const gotenbergUrl = process.env.GOTENBERG_URL?.replace(/\/$/, '');
+  const gotenbergUrl = resolveGotenbergBaseUrl();
   if (gotenbergUrl) {
     try {
       const form = new FormData();
       const blob = new Blob([new Uint8Array(buffer)], {
-        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        type: presentationContentType(fileName),
       });
       form.append('files', blob, fileName);
       const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
@@ -111,10 +139,6 @@ export function assertFileSize(buffer: Buffer, maxBytes: number, label: string):
 
 export function assertPdfSize(buffer: Buffer): void {
   assertFileSize(buffer, MAX_PDF_BYTES, 'PDF');
-}
-
-export function assertPresentationSize(buffer: Buffer): void {
-  assertFileSize(buffer, MAX_PRESENTATION_BYTES, 'Presentation');
 }
 
 export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES };

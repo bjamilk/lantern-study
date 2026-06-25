@@ -104,6 +104,7 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'WEB_APP_URL'; value = 'https://lantern-study.pages.dev' },
         @{ key = 'REDIS_ENABLED'; value = 'true' },
         @{ key = 'REDIS_URL'; value = $ApiEnv['REDIS_URL'] },
+        @{ key = 'GOTENBERG_URL'; value = $ApiEnv['GOTENBERG_URL'] },
         @{ key = 'ALLOW_DEV_AUTH_BYPASS'; value = 'false' },
         @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
         @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },

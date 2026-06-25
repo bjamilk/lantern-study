@@ -206,7 +206,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             <Card theme={theme} className="text-center py-10 sm:py-12">
               <DocumentTextIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto text-indigo-400 mb-3" />
               <p className={`text-sm sm:text-base ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-                No notes yet. Create one, import a YouTube lecture, or upload a PDF.
+                No notes yet. Create one, import a YouTube lecture, upload a PDF, or import PowerPoint slides.
               </p>
             </Card>
           ) : (

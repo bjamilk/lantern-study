@@ -52,6 +52,8 @@ Create API key: https://dashboard.render.com/u/settings#api-keys
 
 `render.yaml` sets `REDIS_ENABLED=true`. Without `REDIS_URL`, the API will **fail to start** in production.
 
+**PowerPoint slide preview:** `render.yaml` also provisions `lantern-study-gotenberg` (Gotenberg 8) and wires `GOTENBERG_URL` to the API via Render private networking. This converts uploaded `.pptx` files to PDF for in-app viewing. For local dev, optionally run Gotenberg (`docker run -p 3000:3000 gotenberg/gotenberg:8`) and set `GOTENBERG_URL=http://localhost:3000` in `apps/api-server/.env`.
+
 6. Deploy. When live, copy the service URL (e.g. `https://lantern-study-api.onrender.com`).
 
 ### After deploy — update local env
