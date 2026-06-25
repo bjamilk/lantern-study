@@ -1,4 +1,3 @@
-import FormData from 'form-data';
 import { logger } from '../utils/logger';
 
 const NOTE_FILES_BUCKET = 'note-files';
@@ -30,15 +29,10 @@ export async function extractPresentationTextFromBuffer(
 ): Promise<string> {
   try {
     const { parseOffice } = require('officeparser') as {
-      parseOffice: (file: Buffer, callback: (err: Error | null, data?: string) => void) => void;
+      parseOffice: (file: Buffer) => Promise<{ toText: () => string }>;
     };
-    const text = await new Promise<string>((resolve, reject) => {
-      parseOffice(buffer, (err: Error | null, data?: string) => {
-        if (err) reject(err);
-        else resolve(typeof data === 'string' ? data : '');
-      });
-    });
-    return text.trim();
+    const parsed = await parseOffice(buffer);
+    return parsed.toText().trim();
   } catch (err) {
     logger.warn('Presentation text extraction failed', { err, fileName });
     return '';
@@ -94,21 +88,17 @@ async function convertWithGotenberg(
   fileName: string
 ): Promise<Buffer> {
   const form = new FormData();
-  form.append('files', buffer, {
-    filename: fileName,
-    contentType: presentationContentType(fileName),
-  });
-
-  const response = await fetch(
-    `${gotenbergUrl}/forms/libreoffice/convert`,
-    {
-      method: 'POST',
-      body: form,
-      headers: form.getHeaders(),
-      signal: AbortSignal.timeout(GOTENBERG_CONVERT_TIMEOUT_MS),
-      duplex: 'half',
-    } as any
+  form.append(
+    'files',
+    new Blob([new Uint8Array(buffer)], { type: presentationContentType(fileName) }),
+    fileName
   );
+
+  const response = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.timeout(GOTENBERG_CONVERT_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');

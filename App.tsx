@@ -734,11 +734,12 @@ export const App: React.FC = () => {
                             try {
                                 const note = await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
                                 if (!note) return;
-                                showToast('PowerPoint imported — generating slide preview…', 'success');
+                                showToast('PowerPoint imported', 'success');
                             } catch (e: any) {
                                 showToast(e?.message || 'PowerPoint import failed', 'error');
                             }
                         }}
+                        importProgress={noteHandlers.importProgress}
                     />
                 );
             case AppMode.NOTE_EDITOR:

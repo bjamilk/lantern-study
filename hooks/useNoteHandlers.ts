@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { getNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
@@ -8,6 +8,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAppNavigation } from './useAppNavigation';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
+import type { NoteImportProgress } from '../services/notes';
 import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
@@ -31,6 +32,7 @@ export function useNoteHandlers(currentUserId?: string) {
   const { openWithMessage } = useCompanionStore();
   const { navigateTo } = useAppNavigation();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [importProgress, setImportProgress] = useState<NoteImportProgress | null>(null);
 
   const navigateToNotes = useCallback(() => {
     navigateTo(AppMode.NOTES);
@@ -223,22 +225,30 @@ export function useNoteHandlers(currentUserId?: string) {
 
   const handlePdfImport = useCallback(
     async (file: File, folderId?: string) => {
-      const result = await notesApi.uploadNotePdfViaApi(file, folderId);
-      await loadNotes();
-      setSelectedNote({ ...result.note, attachments: [result.attachment] });
-      navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
-      return result.note;
+      try {
+        const result = await notesApi.uploadNotePdfViaApi(file, folderId, setImportProgress);
+        await loadNotes();
+        setSelectedNote({ ...result.note, attachments: [result.attachment] });
+        navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
+        return result.note;
+      } finally {
+        setImportProgress(null);
+      }
     },
     [loadNotes, setSelectedNote, navigateTo]
   );
 
   const handlePresentationImport = useCallback(
     async (file: File, folderId?: string) => {
-      const result = await notesApi.uploadPresentationViaApi(file, folderId);
-      await loadNotes();
-      setSelectedNote({ ...result.note, attachments: [result.attachment] });
-      navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
-      return result.note;
+      try {
+        const result = await notesApi.uploadPresentationViaApi(file, folderId, setImportProgress);
+        await loadNotes();
+        setSelectedNote({ ...result.note, attachments: [result.attachment] });
+        navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
+        return result.note;
+      } finally {
+        setImportProgress(null);
+      }
     },
     [loadNotes, setSelectedNote, navigateTo]
   );
@@ -289,5 +299,6 @@ export function useNoteHandlers(currentUserId?: string) {
     handlePostComment: postComment,
     setStudyGoal,
     studyGoal,
+    importProgress,
   };
 }

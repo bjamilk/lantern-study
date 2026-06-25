@@ -12,6 +12,89 @@ import { getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
+export type NoteImportProgressStage = 'encoding' | 'uploading' | 'processing';
+
+export type NoteImportProgress = {
+  stage: NoteImportProgressStage;
+  /** 0–100 during encoding/upload; null while server processes */
+  percent: number | null;
+  label: string;
+  fileName?: string;
+};
+
+export type NoteImportProgressCallback = (progress: NoteImportProgress) => void;
+
+async function notesUploadRequest<T>(
+  path: string,
+  body: Record<string, unknown>,
+  options?: {
+    onProgress?: NoteImportProgressCallback;
+    processingLabel?: string;
+  }
+): Promise<T> {
+  const headers = await getAuthHeaders();
+  const json = JSON.stringify(body);
+  const processingLabel = options?.processingLabel ?? 'Processing…';
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/api/v1/notes${path}`);
+    xhr.responseType = 'json';
+
+    for (const [key, value] of Object.entries(headers)) {
+      if (value) xhr.setRequestHeader(key, String(value));
+    }
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    xhr.upload.onprogress = (event) => {
+      if (!options?.onProgress) return;
+      if (event.lengthComputable) {
+        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+        options.onProgress({
+          stage: 'uploading',
+          percent,
+          label: `Uploading… ${percent}%`,
+          fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+        });
+      } else {
+        options.onProgress({
+          stage: 'uploading',
+          percent: null,
+          label: 'Uploading…',
+          fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+        });
+      }
+    };
+
+    xhr.upload.onload = () => {
+      options?.onProgress?.({
+        stage: 'processing',
+        percent: null,
+        label: processingLabel,
+        fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+      });
+    };
+
+    xhr.onerror = () => reject(new Error('Upload failed — check your connection.'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out. Try again.'));
+
+    xhr.onload = () => {
+      const data = xhr.response ?? {};
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((data.data ?? data) as T);
+        return;
+      }
+      const message =
+        data.message ||
+        (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
+        `Notes request failed (${xhr.status})`;
+      reject(new Error(message));
+    };
+
+    xhr.send(json);
+  });
+}
+
 async function notesRequest<T>(
   path: string,
   options: RequestInit = {}
@@ -270,27 +353,46 @@ export async function fetchNoteAttachmentContent(
 
 export async function uploadNotePdfViaApi(
   file: File,
-  folderId?: string
+  folderId?: string,
+  onProgress?: NoteImportProgressCallback
 ): Promise<{ note: StudyNote; attachment: NoteAttachment }> {
-  const base64Data = await fileToBase64(file);
-  return notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/upload-pdf', {
-    method: 'POST',
-    body: JSON.stringify({ fileName: file.name, base64Data, folderId }),
+  onProgress?.({
+    stage: 'encoding',
+    percent: null,
+    label: 'Preparing PDF…',
+    fileName: file.name,
   });
+  const base64Data = await fileToBase64(file);
+  return notesUploadRequest<{ note: StudyNote; attachment: NoteAttachment }>(
+    '/upload-pdf',
+    { fileName: file.name, base64Data, folderId },
+    {
+      onProgress,
+      processingLabel: 'Extracting text from PDF…',
+    }
+  );
 }
 
 export async function uploadPresentationViaApi(
   file: File,
-  folderId?: string
+  folderId?: string,
+  onProgress?: NoteImportProgressCallback
 ): Promise<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }> {
+  onProgress?.({
+    stage: 'encoding',
+    percent: null,
+    label: 'Preparing slides…',
+    fileName: file.name,
+  });
   const base64Data = await fileToBase64(file);
-  return notesRequest<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }>(
-    '/upload-presentation',
-    {
-      method: 'POST',
-      body: JSON.stringify({ fileName: file.name, base64Data, folderId }),
-    }
-  );
+  return notesUploadRequest<{
+    note: StudyNote;
+    attachment: NoteAttachment;
+    previewAvailable: boolean;
+  }>('/upload-presentation', { fileName: file.name, base64Data, folderId }, {
+    onProgress,
+    processingLabel: 'Converting slides to preview…',
+  });
 }
 
 async function fileToBase64(file: File): Promise<string> {

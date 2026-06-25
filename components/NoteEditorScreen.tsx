@@ -81,6 +81,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
   const saveEnabledRef = useRef(true);
+  const previewAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const isDark = theme === 'dark';
 
@@ -89,6 +90,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
   );
   const presentationAttachment = note.attachments?.find((a) => a.type === 'presentation');
+  const presentationPreviewPath =
+    typeof presentationAttachment?.metadata?.previewStoragePath === 'string'
+      ? presentationAttachment.metadata.previewStoragePath
+      : null;
   const studyContentLength = getNoteStudyContent({
     sourceType: note.sourceType,
     body,
@@ -115,19 +120,22 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
   useEffect(() => {
     if (note.sourceType !== 'presentation') return;
-    const attachment = note.attachments?.find((a) => a.type === 'presentation');
-    if (!attachment || attachment.metadata?.previewStoragePath) return;
+    if (!presentationAttachment || presentationPreviewPath) return;
+    if (previewAttemptedRef.current.has(note.id)) return;
 
+    previewAttemptedRef.current.add(note.id);
     let cancelled = false;
     setGeneratingPreview(true);
     void notesApi
       .regeneratePresentationPreview(note.id)
       .then((result) => {
         if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== note.id) return;
         setSelectedNote({
-          ...note,
+          ...prev,
           attachments:
-            note.attachments?.map((a) =>
+            prev.attachments?.map((a) =>
               a.id === result.attachment.id ? result.attachment : a
             ) ?? [result.attachment],
         });
@@ -142,7 +150,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [note.id, note.sourceType, note.attachments, note, setSelectedNote]);
+  }, [note.id, note.sourceType, presentationPreviewPath, presentationAttachment, setSelectedNote]);
 
   const handleShareGroup = () => {
     const groupId = prompt(
