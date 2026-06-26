@@ -12,7 +12,7 @@ import { getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
-export type NoteImportProgressStage = 'encoding' | 'uploading' | 'processing';
+export type NoteImportProgressStage = 'encoding' | 'uploading' | 'processing' | 'complete';
 
 export type NoteImportProgress = {
   stage: NoteImportProgressStage;
@@ -40,6 +40,7 @@ async function notesUploadRequest<T>(
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE_URL}/api/v1/notes${path}`);
     xhr.responseType = 'json';
+    xhr.timeout = 180_000;
 
     for (const [key, value] of Object.entries(headers)) {
       if (value) xhr.setRequestHeader(key, String(value));
@@ -81,6 +82,12 @@ async function notesUploadRequest<T>(
     xhr.onload = () => {
       const data = xhr.response ?? {};
       if (xhr.status >= 200 && xhr.status < 300) {
+        options?.onProgress?.({
+          stage: 'complete',
+          percent: 100,
+          label: 'Upload complete',
+          fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+        });
         resolve((data.data ?? data) as T);
         return;
       }
@@ -391,7 +398,7 @@ export async function uploadPresentationViaApi(
     previewAvailable: boolean;
   }>('/upload-presentation', { fileName: file.name, base64Data, folderId }, {
     onProgress,
-    processingLabel: 'Converting slides to preview…',
+    processingLabel: 'Saving slides…',
   });
 }
 

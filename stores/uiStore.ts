@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppMode, ChatItem, Deck, Flashcard, FlashcardSession, TestResult, Message, User, TestSessionData, StudySessionData, GameSession } from '../types';
+import type { NoteImportProgress } from '../services/notes';
 import { isEphemeralAppMode, isRoutableAppMode } from '../utils/appRoutes';
 import { navigateForAppMode } from '../utils/appNavigation';
 
@@ -123,6 +124,11 @@ interface UIState {
   // Low-Data Mode
   lowDataMode: boolean;
   setLowDataMode: (enabled: boolean) => void;
+
+  // Note file import progress (PDF / PowerPoint)
+  importProgress: NoteImportProgress | null;
+  setImportProgress: (progress: NoteImportProgress | null) => void;
+  clearImportProgress: () => void;
 }
 
 const initialModals = {
@@ -267,6 +273,10 @@ export const useUIStore = create<UIState>()(
       // Low-Data Mode
       lowDataMode: true,
       setLowDataMode: (enabled) => set({ lowDataMode: enabled }),
+
+      importProgress: null,
+      setImportProgress: (progress) => set({ importProgress: progress }),
+      clearImportProgress: () => set({ importProgress: null }),
     }),
     {
       name: 'ui-storage',

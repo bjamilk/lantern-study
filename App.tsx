@@ -739,7 +739,6 @@ export const App: React.FC = () => {
                                 showToast(e?.message || 'PowerPoint import failed', 'error');
                             }
                         }}
-                        importProgress={noteHandlers.importProgress}
                     />
                 );
             case AppMode.NOTE_EDITOR:

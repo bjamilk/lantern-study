@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/aiRateLimit';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { presentationTimeout } from '../middleware/timeout';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -120,7 +121,7 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
   res.json({ success: true, data: note });
 }));
 
-router.post('/upload-pdf', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { fileName, base64Data, folderId } = req.body;
@@ -158,7 +159,7 @@ router.post('/upload-pdf', aiRateLimit, asyncHandler(async (req: Request, res: R
   res.json({ success: true, data: { note, attachment } });
 }));
 
-router.post('/upload-presentation', aiRateLimit, presentationTimeout, asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { fileName, base64Data, folderId } = req.body;
@@ -171,7 +172,7 @@ router.post('/upload-presentation', aiRateLimit, presentationTimeout, asyncHandl
 
   const safeName = String(fileName);
   assertPresentationFileName(safeName);
-  if (/\.pptx?$/i.test(safeName)) {
+  if (/\.pptx$/i.test(safeName)) {
     assertValidOfficeZip(buffer, safeName);
   }
   const storagePath = buildNoteStoragePath(userId, safeName);
@@ -183,20 +184,6 @@ router.post('/upload-presentation', aiRateLimit, presentationTimeout, asyncHandl
   });
 
   const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
-  const pdfBuffer = await convertPresentationToPdf(buffer, safeName);
-  let previewStoragePath: string | undefined;
-  let previewUrl: string | undefined;
-
-  if (pdfBuffer) {
-    previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
-    await supabaseService.uploadNoteFile({
-      storagePath: previewStoragePath,
-      buffer: pdfBuffer,
-      contentType: 'application/pdf',
-    });
-    previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
-  }
-
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
   const studyText = extractedText || `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
@@ -214,12 +201,10 @@ router.post('/upload-presentation', aiRateLimit, presentationTimeout, asyncHandl
     extractedText: studyText,
     metadata: {
       storagePath,
-      previewStoragePath,
-      previewUrl,
       originalMime: contentType,
     },
   });
-  res.json({ success: true, data: { note, attachment, previewAvailable: Boolean(previewStoragePath) } });
+  res.json({ success: true, data: { note, attachment, previewAvailable: false } });
 }));
 
 router.post('/daily-quiz', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {

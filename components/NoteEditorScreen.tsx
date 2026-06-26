@@ -17,6 +17,7 @@ import NotePdfViewer from './NotePdfViewer';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
+import { useUIStore } from '../stores/uiStore';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -80,9 +81,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const saveEnabledRef = useRef(true);
   const previewAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
+  const setImportProgress = useUIStore((s) => s.setImportProgress);
+  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
   const isDark = theme === 'dark';
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
@@ -119,6 +123,16 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id, title, body, onSave]);
 
   useEffect(() => {
+    setPreviewError(null);
+  }, [note.id]);
+
+  useEffect(() => {
+    if (note.sourceType === 'presentation' && presentationPreviewPath) {
+      clearImportProgress();
+    }
+  }, [note.id, note.sourceType, presentationPreviewPath, clearImportProgress]);
+
+  useEffect(() => {
     if (note.sourceType !== 'presentation') return;
     if (!presentationAttachment || presentationPreviewPath) return;
     if (previewAttemptedRef.current.has(note.id)) return;
@@ -126,6 +140,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     previewAttemptedRef.current.add(note.id);
     let cancelled = false;
     setGeneratingPreview(true);
+    setPreviewError(null);
+    setImportProgress({
+      stage: 'processing',
+      percent: null,
+      label: 'Converting slides to preview…',
+      fileName: presentationAttachment.fileName,
+    });
     void notesApi
       .regeneratePresentationPreview(note.id)
       .then((result) => {
@@ -139,9 +160,16 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               a.id === result.attachment.id ? result.attachment : a
             ) ?? [result.attachment],
         });
+        clearImportProgress();
       })
-      .catch(() => {
-        // Preview stays unavailable; message below explains it
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setPreviewError(
+          err instanceof Error
+            ? err.message
+            : "Preview couldn't be generated. Try reopening the note or re-uploading."
+        );
+        clearImportProgress();
       })
       .finally(() => {
         if (!cancelled) setGeneratingPreview(false);
@@ -150,7 +178,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [note.id, note.sourceType, presentationPreviewPath, presentationAttachment, setSelectedNote]);
+  }, [
+    note.id,
+    note.sourceType,
+    presentationPreviewPath,
+    presentationAttachment,
+    setSelectedNote,
+    setImportProgress,
+    clearImportProgress,
+  ]);
 
   const handleShareGroup = () => {
     const groupId = prompt(
@@ -277,9 +313,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
           {isDocumentNote && !documentAttachment && !generatingPreview && (
             <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-              {note.sourceType === 'presentation'
-                ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
-                : 'Document preview is unavailable.'}
+              {previewError ||
+                (note.sourceType === 'presentation'
+                  ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                  : 'Document preview is unavailable.')}
               {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
             </p>
           )}

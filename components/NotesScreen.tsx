@@ -6,11 +6,10 @@ import {
   DocumentTextIcon,
   PlayCircleIcon,
   DocumentArrowUpIcon,
-  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import type { NoteFolder, StudyNote } from '../types';
-import type { NoteImportProgress } from '../services/notes';
 import { ScreenHeader, Button, Card } from './ui';
+import { useUIStore } from '../stores/uiStore';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -25,7 +24,6 @@ interface NotesScreenProps {
   onYouTubeImport: (url: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
-  importProgress?: NoteImportProgress | null;
   selectedFolderId?: string | null;
   onSelectFolder: (folderId: string | null) => void;
 }
@@ -54,12 +52,12 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onYouTubeImport,
   onPdfImport,
   onPresentationImport,
-  importProgress,
   selectedFolderId,
   onSelectFolder,
 }) => {
   const [search, setSearch] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const importProgress = useUIStore((s) => s.importProgress);
   const isDark = theme === 'dark';
 
   const filteredNotes = useMemo(() => {
@@ -213,42 +211,6 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               </label>
             )}
           </div>
-
-          {importProgress && (
-            <div
-              className={`rounded-lg border px-4 py-3 ${
-                isDark ? 'bg-gray-800 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
-              }`}
-              role="status"
-              aria-live="polite"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
-                    {importProgress.label}
-                  </p>
-                  {importProgress.fileName && (
-                    <p className={`text-xs truncate mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {importProgress.fileName}
-                    </p>
-                  )}
-                  {importProgress.percent != null ? (
-                    <div className={`mt-2 h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-indigo-100'}`}>
-                      <div
-                        className="h-full bg-indigo-500 transition-all duration-300"
-                        style={{ width: `${importProgress.percent}%` }}
-                      />
-                    </div>
-                  ) : (
-                    <div className={`mt-2 h-2 rounded-full overflow-hidden ${isDark ? 'bg-gray-700' : 'bg-indigo-100'}`}>
-                      <div className="h-full w-1/3 bg-indigo-500 animate-pulse" />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {error && (
             <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300" role="alert">

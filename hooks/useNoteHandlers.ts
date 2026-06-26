@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { getNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
+import { useUIStore } from '../stores/uiStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
@@ -8,7 +9,6 @@ import { useUIStore } from '../stores/uiStore';
 import { useAppNavigation } from './useAppNavigation';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
-import type { NoteImportProgress } from '../services/notes';
 import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
@@ -32,7 +32,8 @@ export function useNoteHandlers(currentUserId?: string) {
   const { openWithMessage } = useCompanionStore();
   const { navigateTo } = useAppNavigation();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [importProgress, setImportProgress] = useState<NoteImportProgress | null>(null);
+  const setImportProgress = useUIStore((s) => s.setImportProgress);
+  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
 
   const navigateToNotes = useCallback(() => {
     navigateTo(AppMode.NOTES);
@@ -231,26 +232,36 @@ export function useNoteHandlers(currentUserId?: string) {
         setSelectedNote({ ...result.note, attachments: [result.attachment] });
         navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
         return result.note;
+      } catch (err) {
+        clearImportProgress();
+        throw err;
       } finally {
-        setImportProgress(null);
+        clearImportProgress();
       }
     },
-    [loadNotes, setSelectedNote, navigateTo]
+    [loadNotes, setSelectedNote, navigateTo, setImportProgress, clearImportProgress]
   );
 
   const handlePresentationImport = useCallback(
     async (file: File, folderId?: string) => {
       try {
         const result = await notesApi.uploadPresentationViaApi(file, folderId, setImportProgress);
+        setImportProgress({
+          stage: 'complete',
+          percent: null,
+          label: 'Upload complete — generating preview…',
+          fileName: file.name,
+        });
         await loadNotes();
         setSelectedNote({ ...result.note, attachments: [result.attachment] });
         navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
         return result.note;
-      } finally {
-        setImportProgress(null);
+      } catch (err) {
+        clearImportProgress();
+        throw err;
       }
     },
-    [loadNotes, setSelectedNote, navigateTo]
+    [loadNotes, setSelectedNote, navigateTo, setImportProgress, clearImportProgress]
   );
 
   const handleShareWithGroup = useCallback(
@@ -299,6 +310,5 @@ export function useNoteHandlers(currentUserId?: string) {
     handlePostComment: postComment,
     setStudyGoal,
     studyGoal,
-    importProgress,
   };
 }

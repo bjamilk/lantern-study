@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -26,7 +27,7 @@ interface AppShellProps {
  * - Paused session banner shown globally when navigating away from active test/study
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate }) => {
-    const { appMode, isSidebarExpanded, lowDataMode } = useUIStore();
+    const { appMode, isSidebarExpanded, lowDataMode, importProgress } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
     const currentUser = useAuthStore(s => s.currentUser);
@@ -90,6 +91,39 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         className="hidden md:inline-flex"
                     />
                 </div>
+                {importProgress && (
+                    <div
+                        className="shrink-0 px-3 py-2 md:px-4 border-b border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <div className="flex items-center gap-3 min-w-0 max-w-full">
+                            <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                    {importProgress.label}
+                                </p>
+                                {importProgress.fileName && (
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                        {importProgress.fileName}
+                                    </p>
+                                )}
+                                {importProgress.percent != null ? (
+                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-indigo-100 dark:bg-gray-700">
+                                        <div
+                                            className="h-full bg-indigo-500 transition-all duration-300"
+                                            style={{ width: `${importProgress.percent}%` }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-indigo-100 dark:bg-gray-700">
+                                        <div className="h-full w-1/3 bg-indigo-500 animate-pulse" />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {children}
 
                 {/* mobile-only AI usage indicator floating above bottom nav */}
