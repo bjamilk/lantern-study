@@ -5,7 +5,6 @@ import { useUIStore } from '../stores/uiStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
-import { useUIStore } from '../stores/uiStore';
 import { useAppNavigation } from './useAppNavigation';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
@@ -252,16 +251,21 @@ export function useNoteHandlers(currentUserId?: string) {
           label: 'Upload complete — generating preview…',
           fileName: file.name,
         });
-        await loadNotes();
-        setSelectedNote({ ...result.note, attachments: [result.attachment] });
+        const notesState = useNotesStore.getState();
+        notesState.setNotes([
+          result.note,
+          ...notesState.notes.filter((n) => n.id !== result.note.id),
+        ]);
+        await loadNote(result.note.id);
         navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
+        void loadNotes();
         return result.note;
       } catch (err) {
         clearImportProgress();
         throw err;
       }
     },
-    [loadNotes, setSelectedNote, navigateTo, setImportProgress, clearImportProgress]
+    [loadNotes, loadNote, navigateTo, setImportProgress, clearImportProgress]
   );
 
   const handleShareWithGroup = useCallback(

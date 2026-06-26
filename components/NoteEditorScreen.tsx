@@ -18,6 +18,7 @@ import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
 import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -82,11 +83,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewTrigger, setPreviewTrigger] = useState(0);
   const saveEnabledRef = useRef(true);
   const previewAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const clearImportProgress = useUIStore((s) => s.clearImportProgress);
+  const showToast = useToastStore((s) => s.showToast);
   const isDark = theme === 'dark';
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
@@ -148,7 +151,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       fileName: presentationAttachment.fileName,
     });
     void notesApi
-      .regeneratePresentationPreview(note.id)
+      .regeneratePresentationPreview(note.id, setImportProgress)
       .then((result) => {
         if (cancelled) return;
         const prev = useNotesStore.getState().selectedNote;
@@ -164,11 +167,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setPreviewError(
+        const message =
           err instanceof Error
             ? err.message
-            : "Preview couldn't be generated. Try reopening the note or re-uploading."
-        );
+            : "Preview couldn't be generated. Try reopening the note or re-uploading.";
+        setPreviewError(message);
+        showToast('Slides saved — preview failed', 'error');
         clearImportProgress();
       })
       .finally(() => {
@@ -183,10 +187,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     note.sourceType,
     presentationPreviewPath,
     presentationAttachment,
+    previewTrigger,
     setSelectedNote,
     setImportProgress,
     clearImportProgress,
+    showToast,
   ]);
+
+  const handleRetryPreview = () => {
+    previewAttemptedRef.current.delete(note.id);
+    setPreviewError(null);
+    setPreviewTrigger((t) => t + 1);
+  };
 
   const handleShareGroup = () => {
     const groupId = prompt(
@@ -312,13 +324,20 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           )}
 
           {isDocumentNote && !documentAttachment && !generatingPreview && (
-            <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-              {previewError ||
-                (note.sourceType === 'presentation'
-                  ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
-                  : 'Document preview is unavailable.')}
-              {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
-            </p>
+            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+              <p>
+                {previewError ||
+                  (note.sourceType === 'presentation'
+                    ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
+                    : 'Document preview is unavailable.')}
+                {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
+              </p>
+              {note.sourceType === 'presentation' && previewError && (
+                <Button size="sm" variant="secondary" onClick={handleRetryPreview}>
+                  Retry preview
+                </Button>
+              )}
+            </div>
           )}
 
           {isDocumentNote ? (

@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useRef, useState } from 'react';
+import { XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -20,6 +20,8 @@ interface AppShellProps {
     onNavigate: (mode: AppMode, params?: AppRouteParams) => void;
 }
 
+const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
+
 /**
  * AppShell provides responsive layout:
  * - Desktop (md+): fixed sidebar on the left
@@ -27,7 +29,7 @@ interface AppShellProps {
  * - Paused session banner shown globally when navigating away from active test/study
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate }) => {
-    const { appMode, isSidebarExpanded, lowDataMode, importProgress } = useUIStore();
+    const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
     const currentUser = useAuthStore(s => s.currentUser);
@@ -37,6 +39,14 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
         if (!currentUser?.id || isAuthLoading) return;
         void fetchAIUsage(currentUser.id);
     }, [currentUser?.id, isAuthLoading]);
+
+    useEffect(() => {
+        if (!importProgress) return;
+        const timer = window.setTimeout(() => {
+            clearImportProgress();
+        }, IMPORT_PROGRESS_WATCHDOG_MS);
+        return () => window.clearTimeout(timer);
+    }, [importProgress, clearImportProgress]);
 
     const activeSession = activeTestSession || activeStudySession;
     const sessionAppMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
@@ -121,6 +131,14 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                                     </div>
                                 )}
                             </div>
+                            <button
+                                type="button"
+                                onClick={clearImportProgress}
+                                className="shrink-0 p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-indigo-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-indigo-900/50"
+                                aria-label="Dismiss import progress"
+                            >
+                                <XMarkIcon className="w-5 h-5" />
+                            </button>
                         </div>
                     </div>
                 )}

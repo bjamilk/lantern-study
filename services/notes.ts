@@ -12,6 +12,9 @@ import { getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
+/** Matches server MAX_PRESENTATION_BYTES / MAX_PDF_BYTES (25MB raw). */
+export const MAX_NOTE_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 export type NoteImportProgressStage = 'encoding' | 'uploading' | 'processing' | 'complete';
 
 export type NoteImportProgress = {
@@ -100,6 +103,72 @@ async function notesUploadRequest<T>(
 
     xhr.send(json);
   });
+}
+
+async function notesLongRequest<T>(
+  path: string,
+  options?: {
+    method?: string;
+    body?: Record<string, unknown>;
+    onProgress?: NoteImportProgressCallback;
+    processingLabel?: string;
+    timeoutMs?: number;
+  }
+): Promise<T> {
+  const headers = await getAuthHeaders();
+  const method = options?.method ?? 'POST';
+  const body = options?.body ?? {};
+  const json = JSON.stringify(body);
+  const processingLabel = options?.processingLabel ?? 'Processing…';
+  const timeoutMs = options?.timeoutMs ?? 180_000;
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${API_BASE_URL}/api/v1/notes${path}`);
+    xhr.responseType = 'json';
+    xhr.timeout = timeoutMs;
+
+    for (const [key, value] of Object.entries(headers)) {
+      if (value) xhr.setRequestHeader(key, String(value));
+    }
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    xhr.upload.onload = () => {
+      options?.onProgress?.({
+        stage: 'processing',
+        percent: null,
+        label: processingLabel,
+        fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+      });
+    };
+
+    xhr.onerror = () => reject(new Error('Request failed — check your connection.'));
+    xhr.ontimeout = () => reject(new Error('Request timed out. Try again.'));
+
+    xhr.onload = () => {
+      const data = xhr.response ?? {};
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((data.data ?? data) as T);
+        return;
+      }
+      const message =
+        data.message ||
+        (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
+        `Notes request failed (${xhr.status})`;
+      reject(new Error(message));
+    };
+
+    xhr.send(json);
+  });
+}
+
+function assertUploadFileSize(file: File): void {
+  if (file.size > MAX_NOTE_UPLOAD_BYTES) {
+    const maxMb = Math.round(MAX_NOTE_UPLOAD_BYTES / (1024 * 1024));
+    throw new Error(
+      `File too large for upload (max ${maxMb}MB). Try a smaller deck or split slides.`
+    );
+  }
 }
 
 async function notesRequest<T>(
@@ -205,11 +274,17 @@ export async function deleteNote(noteId: string): Promise<void> {
 }
 
 export async function regeneratePresentationPreview(
-  noteId: string
+  noteId: string,
+  onProgress?: NoteImportProgressCallback
 ): Promise<{ attachment: NoteAttachment; previewAvailable: boolean }> {
-  return notesRequest<{ attachment: NoteAttachment; previewAvailable: boolean }>(
+  return notesLongRequest<{ attachment: NoteAttachment; previewAvailable: boolean }>(
     `/${noteId}/regenerate-preview`,
-    { method: 'POST', body: JSON.stringify({}) }
+    {
+      method: 'POST',
+      body: {},
+      onProgress,
+      processingLabel: 'Converting slides to preview…',
+    }
   );
 }
 
@@ -363,6 +438,7 @@ export async function uploadNotePdfViaApi(
   folderId?: string,
   onProgress?: NoteImportProgressCallback
 ): Promise<{ note: StudyNote; attachment: NoteAttachment }> {
+  assertUploadFileSize(file);
   onProgress?.({
     stage: 'encoding',
     percent: null,
@@ -385,6 +461,7 @@ export async function uploadPresentationViaApi(
   folderId?: string,
   onProgress?: NoteImportProgressCallback
 ): Promise<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }> {
+  assertUploadFileSize(file);
   onProgress?.({
     stage: 'encoding',
     percent: null,
@@ -402,14 +479,21 @@ export async function uploadPresentationViaApi(
   });
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('Could not read file for upload.'));
+        return;
+      }
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read file for upload.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export async function uploadNotePdf(

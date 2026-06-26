@@ -525,7 +525,7 @@ export const App: React.FC = () => {
             setAppMode(AppMode.CHAT);
         } else if (appMode === AppMode.ADMIN && !isAuthLoading && !isPlatformAdmin) {
             setAppMode(AppMode.DASHBOARD);
-        } else if (appMode === AppMode.NOTE_EDITOR && !selectedNote) {
+        } else if (appMode === AppMode.NOTE_EDITOR && !selectedNote && !useUIStore.getState().importProgress) {
             setAppMode(AppMode.NOTES);
         } else if (appMode === AppMode.DECK_DETAIL && !selectedDeck) {
             setAppMode(AppMode.FLASHCARDS);

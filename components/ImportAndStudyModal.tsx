@@ -10,6 +10,8 @@ import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
+import { useUIStore } from '../stores/uiStore';
+import { useNotesStore } from '../stores/notesStore';
 import type { NoteAttachment, StudyNote } from '../types';
 
 export interface ImportAndStudyResult {
@@ -44,6 +46,9 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
   const isDark = theme === 'dark';
+  const setImportProgress = useUIStore((s) => s.setImportProgress);
+  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
+  const loadNote = useNotesStore((s) => s.loadNote);
 
   const reset = () => {
     setStep('input');
@@ -143,9 +148,17 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     setStep('processing');
     setError(null);
     try {
-      const { note, attachment } = await notesApi.uploadNotePdfViaApi(file);
+      const { note, attachment } = await notesApi.uploadNotePdfViaApi(
+        file,
+        undefined,
+        setImportProgress
+      );
+      clearImportProgress();
+      const notesState = useNotesStore.getState();
+      notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
       await runStudyGenerators({ ...note, attachments: [attachment] });
     } catch (e: unknown) {
+      clearImportProgress();
       setError(e instanceof Error ? e.message : 'PDF import failed');
       setStep('input');
     }
@@ -155,9 +168,27 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     setStep('processing');
     setError(null);
     try {
-      const { note, attachment } = await notesApi.uploadPresentationViaApi(file);
-      await runStudyGenerators({ ...note, attachments: [attachment] });
+      const { note, attachment } = await notesApi.uploadPresentationViaApi(
+        file,
+        undefined,
+        setImportProgress
+      );
+      setImportProgress({
+        stage: 'complete',
+        percent: null,
+        label: 'Upload complete',
+        fileName: file.name,
+      });
+      const notesState = useNotesStore.getState();
+      notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      await loadNote(note.id);
+      clearImportProgress();
+      await runStudyGenerators({
+        ...useNotesStore.getState().selectedNote!,
+        attachments: [attachment],
+      });
     } catch (e: unknown) {
+      clearImportProgress();
       setError(e instanceof Error ? e.message : 'PowerPoint import failed');
       setStep('input');
     }

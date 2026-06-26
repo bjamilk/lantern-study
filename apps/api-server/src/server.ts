@@ -192,7 +192,7 @@ app.use(
 
 app.use(
   /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|[^/]+\/regenerate-preview)$/,
-  express.json({ limit: '25mb' })
+  express.json({ limit: '35mb' })
 );
 
 app.use(express.json({ limit: '1mb' }));
