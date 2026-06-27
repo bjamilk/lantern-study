@@ -1,4 +1,4 @@
-import { getApiBaseUrl, getSupabaseAnonKey, getSupabaseUrl } from '@lantern/shared';
+import { getApiBaseUrl } from '@lantern/shared';
 import type {
   DailyQuizQuestion,
   DailyQuizSession,
@@ -542,72 +542,22 @@ async function uploadFileToNoteStorage(
   onProgress?: NoteImportProgressCallback
 ): Promise<void> {
   const { supabase } = await import('./supabase');
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('Must be signed in to upload slides.');
-  }
-
-  const supabaseUrl = getSupabaseUrl().replace(/\/$/, '');
-  const encodedPath = storagePath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/note-files/${encodedPath}`;
-
-  await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', uploadUrl);
-    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    xhr.setRequestHeader('apikey', getSupabaseAnonKey());
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.setRequestHeader('x-upsert', 'false');
-
-    xhr.upload.onprogress = (event) => {
-      if (!onProgress) return;
-      if (event.lengthComputable) {
-        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
-        onProgress({
-          stage: 'uploading',
-          percent,
-          label: `Uploading… ${percent}%`,
-          fileName: file.name,
-        });
-      } else {
-        onProgress({
-          stage: 'uploading',
-          percent: null,
-          label: 'Uploading…',
-          fileName: file.name,
-        });
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('Storage upload failed — check your connection.'));
-    xhr.ontimeout = () => reject(new Error('Storage upload timed out. Try again.'));
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-        return;
-      }
-      let message = `Storage upload failed (${xhr.status})`;
-      try {
-        const body = JSON.parse(xhr.responseText);
-        message =
-          (typeof body.message === 'string' && body.message) ||
-          (typeof body.error === 'string' && body.error) ||
-          message;
-      } catch {
-        // non-JSON error body
-      }
-      reject(new Error(message));
-    };
-
-    xhr.send(file);
+  onProgress?.({
+    stage: 'uploading',
+    percent: null,
+    label: 'Uploading…',
+    fileName: file.name,
   });
+
+  const { error } = await supabase.storage.from('note-files').upload(storagePath, file, {
+    contentType,
+    cacheControl: '3600',
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Storage upload failed.');
+  }
 }
 
 function fileToBase64(file: File): Promise<string> {
