@@ -5952,6 +5952,13 @@ export class SupabaseService {
     return data.signedUrl;
   }
 
+  async deleteNoteFile(storagePath: string): Promise<void> {
+    const { error } = await this.supabase.storage.from('note-files').remove([storagePath]);
+    if (error) {
+      logger.warn('Failed to delete note file from storage', { error, storagePath });
+    }
+  }
+
   async downloadNoteFile(storagePath: string): Promise<{ buffer: Buffer; contentType: string }> {
     const { data, error } = await this.supabase.storage.from('note-files').download(storagePath);
     if (error || !data) {

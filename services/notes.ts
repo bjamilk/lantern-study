@@ -1,4 +1,4 @@
-import { getApiBaseUrl } from '@lantern/shared';
+import { getApiBaseUrl, getSupabaseAnonKey, getSupabaseUrl } from '@lantern/shared';
 import type {
   DailyQuizQuestion,
   DailyQuizSession,
@@ -468,14 +468,145 @@ export async function uploadPresentationViaApi(
     label: 'Preparing slides…',
     fileName: file.name,
   });
-  const base64Data = await fileToBase64(file);
-  return notesUploadRequest<{
-    note: StudyNote;
-    attachment: NoteAttachment;
-    previewAvailable: boolean;
-  }>('/upload-presentation', { fileName: file.name, base64Data, folderId }, {
-    onProgress,
-    processingLabel: 'Saving slides…',
+
+  const { supabase } = await import('./supabase');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) {
+    throw new Error('Must be signed in to upload slides.');
+  }
+
+  const storagePath = buildNoteStoragePath(user.id, file.name);
+  const contentType = presentationContentType(file.name);
+
+  try {
+    await uploadFileToNoteStorage(file, storagePath, contentType, onProgress);
+  } catch (err) {
+    throw new Error(
+      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
+    );
+  }
+
+  onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Saving slides…',
+    fileName: file.name,
+  });
+
+  try {
+    const result = await notesRequest<{
+      note: StudyNote;
+      attachment: NoteAttachment;
+      previewAvailable: boolean;
+    }>('/finalize-presentation', {
+      method: 'POST',
+      body: JSON.stringify({ storagePath, fileName: file.name, folderId }),
+    });
+    onProgress?.({
+      stage: 'complete',
+      percent: 100,
+      label: 'Upload complete',
+      fileName: file.name,
+    });
+    return result;
+  } catch (err) {
+    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : 'Could not save your slides. Try again in a moment.'
+    );
+  }
+}
+
+function sanitizeNoteFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function buildNoteStoragePath(userId: string, fileName: string): string {
+  return `${userId}/${Date.now()}-${sanitizeNoteFileName(fileName)}`;
+}
+
+function presentationContentType(fileName: string): string {
+  return /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
+    ? 'application/vnd.ms-powerpoint'
+    : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+}
+
+async function uploadFileToNoteStorage(
+  file: File,
+  storagePath: string,
+  contentType: string,
+  onProgress?: NoteImportProgressCallback
+): Promise<void> {
+  const { supabase } = await import('./supabase');
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Must be signed in to upload slides.');
+  }
+
+  const supabaseUrl = getSupabaseUrl().replace(/\/$/, '');
+  const encodedPath = storagePath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/note-files/${encodedPath}`;
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', uploadUrl);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('apikey', getSupabaseAnonKey());
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.setRequestHeader('x-upsert', 'false');
+
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress) return;
+      if (event.lengthComputable) {
+        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+        onProgress({
+          stage: 'uploading',
+          percent,
+          label: `Uploading… ${percent}%`,
+          fileName: file.name,
+        });
+      } else {
+        onProgress({
+          stage: 'uploading',
+          percent: null,
+          label: 'Uploading…',
+          fileName: file.name,
+        });
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Storage upload failed — check your connection.'));
+    xhr.ontimeout = () => reject(new Error('Storage upload timed out. Try again.'));
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      let message = `Storage upload failed (${xhr.status})`;
+      try {
+        const body = JSON.parse(xhr.responseText);
+        message =
+          (typeof body.message === 'string' && body.message) ||
+          (typeof body.error === 'string' && body.error) ||
+          message;
+      } catch {
+        // non-JSON error body
+      }
+      reject(new Error(message));
+    };
+
+    xhr.send(file);
   });
 }
 

@@ -1,5 +1,6 @@
 import {
   assertPresentationFileName,
+  assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
   presentationContentType,
 } from './noteFiles';
@@ -30,5 +31,18 @@ describe('noteFiles presentation helpers', () => {
   it('skips zip validation for legacy .ppt files', () => {
     const notZip = Buffer.from('not a zip');
     expect(() => assertValidOfficeZip(notZip, 'deck.ppt')).not.toThrow();
+  });
+
+  it('accepts storage paths under the user folder only', () => {
+    const userId = 'user-123';
+    expect(() =>
+      assertUserOwnedNoteStoragePath(`${userId}/123-deck.pptx`, userId)
+    ).not.toThrow();
+    expect(() => assertUserOwnedNoteStoragePath('other-user/deck.pptx', userId)).toThrow(
+      /invalid storage path/i
+    );
+    expect(() => assertUserOwnedNoteStoragePath('../etc/passwd', userId)).toThrow(
+      /invalid storage path/i
+    );
   });
 });

@@ -12,6 +12,20 @@ export function buildNoteStoragePath(userId: string, fileName: string): string {
   return `${userId}/${Date.now()}-${sanitizeNoteFileName(fileName)}`;
 }
 
+/** Reject path traversal and paths outside the authenticated user's folder. */
+export function assertUserOwnedNoteStoragePath(storagePath: string, userId: string): void {
+  if (!storagePath || typeof storagePath !== 'string') {
+    throw new Error('Storage path is required.');
+  }
+  if (storagePath.includes('..') || storagePath.startsWith('/')) {
+    throw new Error('Invalid storage path.');
+  }
+  const prefix = `${userId}/`;
+  if (!storagePath.startsWith(prefix) || storagePath.length <= prefix.length) {
+    throw new Error('Invalid storage path.');
+  }
+}
+
 export async function extractPdfTextFromBuffer(buffer: Buffer): Promise<string> {
   try {
     const pdfParse = require('pdf-parse') as (data: Buffer) => Promise<{ text: string }>;

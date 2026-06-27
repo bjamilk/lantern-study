@@ -198,11 +198,18 @@ export function NotesScreen({ navigation }: Props) {
       setImportingFile(true);
       setError(null);
 
-      const base64Data = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
       const importResult =
         mode === 'pdf'
-          ? await uploadNotePdfViaApi(fileName, base64Data, selectedFolderId || undefined)
-          : await uploadPresentationViaApi(fileName, base64Data, selectedFolderId || undefined);
+          ? await uploadNotePdfViaApi(
+              fileName,
+              await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' }),
+              selectedFolderId || undefined
+            )
+          : await uploadPresentationViaApi(
+              asset.uri,
+              fileName,
+              selectedFolderId || undefined
+            );
 
       await loadNotes(selectedFolderId || undefined);
       navigation.navigate('NoteEditor', { noteId: importResult.note.id });

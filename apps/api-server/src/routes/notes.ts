@@ -29,10 +29,12 @@ import {
   extractPdfTextFromBuffer,
   extractPresentationTextFromBuffer,
   assertPresentationFileName,
+  assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
   presentationContentType,
 } from '../services/noteFiles';
 import { getNoteStudyContent } from '@lantern/shared/utils/noteStudyContent';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -203,6 +205,68 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
       originalMime: contentType,
     },
   });
+  res.json({ success: true, data: { note, attachment, previewAvailable: false } });
+}));
+
+router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const { storagePath, fileName, folderId } = req.body;
+  if (!storagePath || !fileName) {
+    res.status(400).json({ error: 'storagePath and fileName are required.' });
+    return;
+  }
+
+  const safeName = String(fileName);
+  let buffer: Buffer;
+
+  try {
+    assertUserOwnedNoteStoragePath(String(storagePath), userId);
+    assertPresentationFileName(safeName);
+    const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+    buffer = downloaded.buffer;
+    assertPresentationSize(buffer);
+    if (/\.pptx$/i.test(safeName)) {
+      assertValidOfficeZip(buffer, safeName);
+    }
+  } catch (err) {
+    await supabaseService.deleteNoteFile(String(storagePath));
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'Presentation file is invalid. Please re-upload.',
+    });
+    return;
+  }
+
+  const contentType = presentationContentType(safeName);
+  const fileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+  const studyText = '[Extracting text from slides…]';
+  const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
+
+  const note = await supabaseService.createNote(userId, {
+    title: noteTitle,
+    body: '',
+    folderId,
+    sourceType: 'presentation',
+  });
+  const attachment = await supabaseService.addNoteAttachment(note.id, {
+    type: 'presentation',
+    fileUrl,
+    fileName: safeName,
+    extractedText: studyText,
+    metadata: {
+      storagePath: String(storagePath),
+      originalMime: contentType,
+    },
+  });
+
+  logger.info('Presentation upload finalized', {
+    userId,
+    fileName: safeName,
+    bytes: buffer.length,
+    durationMs: Date.now() - startedAt,
+  });
+
   res.json({ success: true, data: { note, attachment, previewAvailable: false } });
 }));
 

@@ -1,5 +1,5 @@
 /** Mobile notes API client */
-import { API_BASE_URL, getAuthHeaders } from './supabase';
+import { API_BASE_URL, getAuthHeaders, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 
 async function notesRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -164,14 +164,47 @@ export const uploadNotePdfViaApi = async (
   });
 
 export const uploadPresentationViaApi = async (
+  fileUri: string,
   fileName: string,
-  base64Data: string,
   folderId?: string
-) =>
-  notesRequest<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }>(
-    '/upload-presentation',
-    {
-      method: 'POST',
-      body: JSON.stringify({ fileName, base64Data, folderId }),
-    }
-  );
+) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.id) {
+    throw new Error('Must be signed in to upload slides.');
+  }
+
+  const storagePath = `${user.id}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const contentType =
+    /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
+      ? 'application/vnd.ms-powerpoint'
+      : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+  const fileResponse = await fetch(fileUri);
+  if (!fileResponse.ok) {
+    throw new Error('Could not read the selected presentation file.');
+  }
+  const blob = await fileResponse.blob();
+
+  const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
+    contentType,
+    upsert: false,
+  });
+  if (uploadError) {
+    throw new Error(uploadError.message || 'Storage upload failed.');
+  }
+
+  try {
+    return notesRequest<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }>(
+      '/finalize-presentation',
+      {
+        method: 'POST',
+        body: JSON.stringify({ storagePath, fileName, folderId }),
+      }
+    );
+  } catch (err) {
+    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw err;
+  }
+};
