@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import { importYouTubeNote, uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
@@ -201,8 +200,8 @@ export function NotesScreen({ navigation }: Props) {
       const importResult =
         mode === 'pdf'
           ? await uploadNotePdfViaApi(
+              asset.uri,
               fileName,
-              await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' }),
               selectedFolderId || undefined
             )
           : await uploadPresentationViaApi(

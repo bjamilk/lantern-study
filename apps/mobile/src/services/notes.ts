@@ -1,5 +1,5 @@
 /** Mobile notes API client */
-import { API_BASE_URL, getAuthHeaders, supabase } from './supabase';
+import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 
 async function notesRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -154,14 +154,41 @@ export const fetchNoteAttachmentContent = async (noteId: string, attachmentId: s
 };
 
 export const uploadNotePdfViaApi = async (
+  fileUri: string,
   fileName: string,
-  base64Data: string,
   folderId?: string
-) =>
-  notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/upload-pdf', {
-    method: 'POST',
-    body: JSON.stringify({ fileName, base64Data, folderId }),
+) => {
+  const session = await getSession();
+  if (!session?.user?.id) {
+    throw new Error('Must be signed in to upload files.');
+  }
+
+  const storagePath = `${session.user.id}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+  const fileResponse = await fetch(fileUri);
+  if (!fileResponse.ok) {
+    throw new Error('Could not read the selected PDF file.');
+  }
+  const blob = await fileResponse.blob();
+
+  const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
+    contentType: 'application/pdf',
+    upsert: false,
   });
+  if (uploadError) {
+    throw new Error(uploadError.message || 'Storage upload failed.');
+  }
+
+  try {
+    return notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/finalize-pdf', {
+      method: 'POST',
+      body: JSON.stringify({ storagePath, fileName, folderId }),
+    });
+  } catch (err) {
+    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw err;
+  }
+};
 
 export const uploadPresentationViaApi = async (
   fileUri: string,

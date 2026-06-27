@@ -131,8 +131,17 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
     res.status(400).json({ error: 'fileName and base64Data are required.' });
     return;
   }
-  const buffer = Buffer.from(base64Data, 'base64');
-  assertPdfSize(buffer);
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(base64Data, 'base64');
+    assertPdfSize(buffer);
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'PDF file is invalid. Please re-upload.',
+    });
+    return;
+  }
 
   const storagePath = buildNoteStoragePath(userId, fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);
   await supabaseService.uploadNoteFile({
@@ -169,14 +178,23 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
     res.status(400).json({ error: 'fileName and base64Data are required.' });
     return;
   }
-  const buffer = Buffer.from(base64Data, 'base64');
-  assertPresentationSize(buffer);
 
   const safeName = String(fileName);
-  assertPresentationFileName(safeName);
-  if (/\.pptx$/i.test(safeName)) {
-    assertValidOfficeZip(buffer, safeName);
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(base64Data, 'base64');
+    assertPresentationSize(buffer);
+    assertPresentationFileName(safeName);
+    if (/\.pptx$/i.test(safeName)) {
+      assertValidOfficeZip(buffer, safeName);
+    }
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'Presentation file is invalid. Please re-upload.',
+    });
+    return;
   }
+
   const storagePath = buildNoteStoragePath(userId, safeName);
   const contentType = presentationContentType(safeName);
   await supabaseService.uploadNoteFile({
@@ -268,6 +286,61 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   });
 
   res.json({ success: true, data: { note, attachment, previewAvailable: false } });
+}));
+
+router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const { storagePath, fileName, folderId } = req.body;
+  if (!storagePath || !fileName) {
+    res.status(400).json({ error: 'storagePath and fileName are required.' });
+    return;
+  }
+
+  const safeName = String(fileName);
+  let buffer: Buffer;
+
+  try {
+    assertUserOwnedNoteStoragePath(String(storagePath), userId);
+    const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+    buffer = downloaded.buffer;
+    assertPdfSize(buffer);
+  } catch (err) {
+    await supabaseService.deleteNoteFile(String(storagePath));
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'PDF file is invalid. Please re-upload.',
+    });
+    return;
+  }
+
+  const fileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+  const extractedText = await extractPdfTextFromBuffer(buffer);
+  const studyText = extractedText || `[PDF uploaded: ${safeName}. Text extraction unavailable.]`;
+  const noteTitle = safeName.replace(/\.pdf$/i, '') || 'Imported PDF';
+
+  const note = await supabaseService.createNote(userId, {
+    title: noteTitle,
+    body: '',
+    folderId,
+    sourceType: 'pdf',
+  });
+  const attachment = await supabaseService.addNoteAttachment(note.id, {
+    type: 'pdf',
+    fileUrl,
+    fileName: safeName,
+    extractedText: studyText,
+    metadata: { storagePath: String(storagePath) },
+  });
+
+  logger.info('PDF upload finalized', {
+    userId,
+    fileName: safeName,
+    bytes: buffer.length,
+    durationMs: Date.now() - startedAt,
+  });
+
+  res.json({ success: true, data: { note, attachment } });
 }));
 
 router.post('/daily-quiz', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {

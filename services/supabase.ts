@@ -287,7 +287,7 @@ export const hasValidSession = async (): Promise<boolean> => {
 };
 
 // Helper to get the current authenticated user id (or null if not authenticated)
-const getAuthenticatedUserId = async (): Promise<string | null> => {
+export const getAuthenticatedUserId = async (): Promise<string | null> => {
   // Fast path: check cache
   if (_cachedUserId) return _cachedUserId;
   
@@ -303,6 +303,16 @@ const getAuthenticatedUserId = async (): Promise<string | null> => {
   if (session?.user?.id) return session.user.id;
   return null;
 };
+
+/** Resolve user id for note file uploads using cached auth (avoids getUser() network call). */
+export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
+  bootstrapAuthFromStorage();
+  const userId = await getAuthenticatedUserId();
+  if (!userId) {
+    throw new Error('Must be signed in to upload files.');
+  }
+  return { userId };
+}
 
 // For local development, the keys are default, but in production, set env vars.
 

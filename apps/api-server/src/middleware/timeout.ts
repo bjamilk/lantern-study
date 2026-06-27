@@ -62,7 +62,7 @@ export const presentationTimeout = requestTimeout(180000);
 
 /** Routes that need more than the 30s default (upload, transcribe, PPT preview). */
 export const LONG_RUNNING_NOTE_PATH =
-  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|[^/]+\/regenerate-preview)$/;
+  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|finalize-pdf|finalize-presentation|[^/]+\/regenerate-preview)$/;
 
 export const skipTimeoutForLongRunningNotes = (
   req: Request,

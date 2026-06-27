@@ -8,7 +8,7 @@ import type {
   StudyGoalMode,
   StudyNote,
 } from '../types';
-import { getAuthHeaders } from './supabase';
+import { ensureNotesUploadSession, getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -445,15 +445,49 @@ export async function uploadNotePdfViaApi(
     label: 'Preparing PDF…',
     fileName: file.name,
   });
-  const base64Data = await fileToBase64(file);
-  return notesUploadRequest<{ note: StudyNote; attachment: NoteAttachment }>(
-    '/upload-pdf',
-    { fileName: file.name, base64Data, folderId },
-    {
-      onProgress,
-      processingLabel: 'Extracting text from PDF…',
-    }
-  );
+
+  const { userId } = await ensureNotesUploadSession();
+  const { supabase } = await import('./supabase');
+  const storagePath = buildNoteStoragePath(userId, file.name);
+
+  try {
+    await uploadFileToNoteStorage(file, storagePath, 'application/pdf', onProgress);
+  } catch (err) {
+    throw new Error(
+      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
+    );
+  }
+
+  onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Extracting text from PDF…',
+    fileName: file.name,
+  });
+
+  try {
+    const result = await notesRequest<{ note: StudyNote; attachment: NoteAttachment }>(
+      '/finalize-pdf',
+      {
+        method: 'POST',
+        body: JSON.stringify({ storagePath, fileName: file.name, folderId }),
+      }
+    );
+    onProgress?.({
+      stage: 'complete',
+      percent: 100,
+      label: 'Upload complete',
+      fileName: file.name,
+    });
+    return result;
+  } catch (err) {
+    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : 'Could not save your PDF. Try again in a moment.'
+    );
+  }
 }
 
 export async function uploadPresentationViaApi(
@@ -469,15 +503,9 @@ export async function uploadPresentationViaApi(
     fileName: file.name,
   });
 
+  const { userId } = await ensureNotesUploadSession();
   const { supabase } = await import('./supabase');
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user?.id) {
-    throw new Error('Must be signed in to upload slides.');
-  }
-
-  const storagePath = buildNoteStoragePath(user.id, file.name);
+  const storagePath = buildNoteStoragePath(userId, file.name);
   const contentType = presentationContentType(file.name);
 
   try {
