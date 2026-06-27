@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { aiRateLimit } from '../middleware/aiRateLimit';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
-import { presentationTimeout } from '../middleware/timeout';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
 import {
@@ -57,6 +56,127 @@ async function resolveNoteStudyContent(
     summary: note.summary,
     attachments,
   });
+}
+
+const previewJobsInFlight = new Set<string>();
+const PREVIEW_PROCESSING_STALE_MS = 5 * 60 * 1000;
+
+function parsePreviewStartedAt(meta: Record<string, unknown>): number | null {
+  const raw = meta.previewStartedAt;
+  if (typeof raw !== 'string') return null;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isPreviewProcessingStale(meta: Record<string, unknown>): boolean {
+  if (meta.previewProcessing !== true) return true;
+  const started = parsePreviewStartedAt(meta);
+  if (!started) return true;
+  return Date.now() - started > PREVIEW_PROCESSING_STALE_MS;
+}
+
+function resolvePreviewStatus(meta: Record<string, unknown>): 'ready' | 'processing' | 'failed' | 'none' {
+  if (typeof meta.previewStoragePath === 'string' && meta.previewStoragePath) {
+    return 'ready';
+  }
+  if (meta.previewProcessing === true && !isPreviewProcessingStale(meta)) {
+    return 'processing';
+  }
+  if (typeof meta.previewError === 'string' && meta.previewError) {
+    return 'failed';
+  }
+  return 'none';
+}
+
+async function runPresentationPreviewJob(params: {
+  noteId: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName: string;
+  meta: Record<string, unknown>;
+}): Promise<void> {
+  const { noteId, attachmentId, storagePath, fileName } = params;
+  let meta = { ...params.meta };
+
+  if (previewJobsInFlight.has(attachmentId)) return;
+  previewJobsInFlight.add(attachmentId);
+
+  try {
+    const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+    if (/\.pptx$/i.test(fileName)) {
+      assertValidOfficeZip(buffer, fileName);
+    }
+
+    const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
+    const studyText =
+      extractedText ||
+      `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+
+    const { pdf: pdfBuffer, error: conversionError, wakeMs, convertMs, totalMs } =
+      await convertPresentationToPdf(buffer, fileName, { noteId });
+
+    if (!pdfBuffer) {
+      await supabaseService.updateNoteAttachment(attachmentId, {
+        extractedText: studyText,
+        metadata: {
+          ...meta,
+          previewProcessing: false,
+          previewError: conversionError || 'Could not generate slide preview.',
+          previewFailedAt: new Date().toISOString(),
+        },
+      });
+      logger.warn('Presentation preview failed', {
+        noteId,
+        fileName,
+        wakeMs,
+        convertMs,
+        totalMs,
+        success: false,
+      });
+      return;
+    }
+
+    const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
+    await supabaseService.uploadNoteFile({
+      storagePath: previewStoragePath,
+      buffer: pdfBuffer,
+      contentType: 'application/pdf',
+    });
+    const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
+    await supabaseService.updateNoteAttachment(attachmentId, {
+      extractedText: studyText,
+      metadata: {
+        ...meta,
+        previewStoragePath,
+        previewUrl,
+        previewProcessing: false,
+        previewError: undefined,
+        previewFailedAt: undefined,
+      },
+    });
+    logger.info('Presentation preview ready', {
+      noteId,
+      fileName,
+      wakeMs,
+      convertMs,
+      totalMs,
+      success: true,
+    });
+  } catch (err) {
+    logger.error('Presentation preview job error', { noteId, attachmentId, err });
+    await supabaseService
+      .updateNoteAttachment(attachmentId, {
+        metadata: {
+          ...meta,
+          previewProcessing: false,
+          previewError: err instanceof Error ? err.message : 'Preview generation failed.',
+          previewFailedAt: new Date().toISOString(),
+        },
+      })
+      .catch(() => {});
+  } finally {
+    previewJobsInFlight.delete(attachmentId);
+  }
 }
 
 router.use(authMiddleware);
@@ -427,7 +547,7 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
   res.send(buffer);
 }));
 
-router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, presentationTimeout, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -443,7 +563,7 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
     return;
   }
 
-  const meta = attachment.metadata || {};
+  const meta = (attachment.metadata || {}) as Record<string, unknown>;
   const storagePath = typeof meta.storagePath === 'string' ? meta.storagePath : null;
   if (!storagePath) {
     res.status(400).json({ error: 'Presentation file path is missing.' });
@@ -451,68 +571,74 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
   }
 
   if (typeof meta.previewStoragePath === 'string' && meta.previewStoragePath) {
-    res.json({ success: true, data: { attachment, previewAvailable: true } });
+    res.json({ success: true, data: { attachment, previewAvailable: true, status: 'ready' } });
+    return;
+  }
+
+  const status = resolvePreviewStatus(meta);
+  if (status === 'processing') {
+    res.status(202).json({
+      success: true,
+      data: { status: 'processing', previewAvailable: false, attachment },
+    });
     return;
   }
 
   const fileName = attachment.fileName || 'slides.pptx';
-  const { buffer } = await supabaseService.downloadNoteFile(storagePath);
-  if (/\.pptx$/i.test(fileName)) {
-    try {
-      assertValidOfficeZip(buffer, fileName);
-    } catch (err) {
-      res.status(400).json({
-        error: err instanceof Error ? err.message : 'Presentation file is corrupted. Please re-upload.',
-      });
-      return;
-    }
-  }
+  const processingMeta = {
+    ...meta,
+    previewProcessing: true,
+    previewStartedAt: new Date().toISOString(),
+    previewError: undefined,
+    previewFailedAt: undefined,
+  };
+  const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+    metadata: processingMeta,
+  });
 
-  const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
-  const studyText =
-    extractedText ||
-    `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+  res.status(202).json({
+    success: true,
+    data: { status: 'processing', previewAvailable: false, attachment: updated },
+  });
 
-  const { pdf: pdfBuffer, error: conversionError } = await convertPresentationToPdf(buffer, fileName);
-  if (!pdfBuffer) {
-    const updated = await supabaseService.updateNoteAttachment(attachment.id, {
-      extractedText: studyText,
-      metadata: {
-        ...meta,
-        previewError: conversionError || 'Could not generate slide preview.',
-        previewFailedAt: new Date().toISOString(),
-      },
-    });
-    res.json({
-      success: true,
-      data: {
-        attachment: updated,
-        previewAvailable: false,
-        previewError: conversionError || 'Could not generate slide preview. Try again in a moment.',
-      },
-    });
+  void runPresentationPreviewJob({
+    noteId: req.params.noteId,
+    attachmentId: attachment.id,
+    storagePath,
+    fileName,
+    meta: processingMeta,
+  });
+}));
+
+router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const note = await supabaseService.getNote(req.params.noteId, userId);
+  if (note.sourceType !== 'presentation') {
+    res.status(400).json({ error: 'Note is not a presentation.' });
     return;
   }
 
-  const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
-  await supabaseService.uploadNoteFile({
-    storagePath: previewStoragePath,
-    buffer: pdfBuffer,
-    contentType: 'application/pdf',
-  });
-  const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
-  const updated = await supabaseService.updateNoteAttachment(attachment.id, {
-    extractedText: studyText,
-    metadata: {
-      ...meta,
-      previewStoragePath,
-      previewUrl,
-      previewError: undefined,
-      previewFailedAt: undefined,
+  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const attachment = attachments.find((a) => a.type === 'presentation');
+  if (!attachment) {
+    res.status(404).json({ error: 'No presentation attachment found.' });
+    return;
+  }
+
+  const meta = (attachment.metadata || {}) as Record<string, unknown>;
+  const status = resolvePreviewStatus(meta);
+  const previewError = typeof meta.previewError === 'string' ? meta.previewError : undefined;
+
+  res.json({
+    success: true,
+    data: {
+      status,
+      previewAvailable: status === 'ready',
+      previewError: status === 'failed' ? previewError : undefined,
+      attachment,
     },
   });
-
-  res.json({ success: true, data: { attachment: updated, previewAvailable: true } });
 }));
 
 // Notes CRUD

@@ -72,11 +72,11 @@ export function presentationContentType(fileName: string): string {
 }
 
 const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
-/** Per-attempt budget; Render HTTP proxy ~100s — leave room for download/upload/text extraction. */
-const GOTENBERG_CONVERT_TIMEOUT_MS = 72_000;
+/** Background jobs are not limited by Render HTTP proxy (~100s). */
+const GOTENBERG_CONVERT_TIMEOUT_MS = 60_000;
 const GOTENBERG_CONVERT_ATTEMPTS = 1;
-const GOTENBERG_WAKE_BUDGET_MS = 45_000;
-const GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS = 15_000;
+const GOTENBERG_WAKE_BUDGET_MS = 20_000;
+const GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS = 6_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -98,9 +98,10 @@ function getGotenbergCandidates(): string[] {
   return [...new Set(urls)];
 }
 
-/** Wake cold Gotenberg instances (Render free tier) before a long conversion. */
-async function warmGotenbergService(gotenbergUrl: string): Promise<void> {
-  const deadline = Date.now() + GOTENBERG_WAKE_BUDGET_MS;
+/** Wake cold Gotenberg instances (Render free tier) before conversion. Returns time spent waking. */
+async function warmGotenbergService(gotenbergUrl: string): Promise<number> {
+  const wakeStartedAt = Date.now();
+  const deadline = wakeStartedAt + GOTENBERG_WAKE_BUDGET_MS;
   let attempt = 0;
 
   while (Date.now() < deadline) {
@@ -110,8 +111,9 @@ async function warmGotenbergService(gotenbergUrl: string): Promise<void> {
         signal: AbortSignal.timeout(GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS),
       });
       if (response.ok) {
-        logger.info('Gotenberg ready', { gotenbergUrl, attempt });
-        return;
+        const wakeMs = Date.now() - wakeStartedAt;
+        logger.info('Gotenberg ready', { gotenbergUrl, attempt, wakeMs });
+        return wakeMs;
       }
       logger.warn('Gotenberg health not ok', { gotenbergUrl, attempt, status: response.status });
     } catch (err) {
@@ -120,12 +122,17 @@ async function warmGotenbergService(gotenbergUrl: string): Promise<void> {
     await sleep(2000);
   }
 
-  logger.warn('Gotenberg wake timed out; attempting conversion anyway', { gotenbergUrl, attempt });
+  const wakeMs = Date.now() - wakeStartedAt;
+  logger.warn('Gotenberg wake timed out; attempting conversion anyway', { gotenbergUrl, attempt, wakeMs });
+  return wakeMs;
 }
 
 export type PresentationPdfConversionResult = {
   pdf: Buffer | null;
   error?: string;
+  wakeMs?: number;
+  convertMs?: number;
+  totalMs?: number;
 };
 
 async function convertWithGotenberg(
@@ -167,26 +174,47 @@ function formatConversionError(err: unknown): string {
 
 export async function convertPresentationToPdf(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
+  context?: { noteId?: string }
 ): Promise<PresentationPdfConversionResult> {
+  const totalStartedAt = Date.now();
   let lastError: unknown;
+  let wakeMs = 0;
+  let convertMs = 0;
 
   for (const gotenbergUrl of getGotenbergCandidates()) {
-    await warmGotenbergService(gotenbergUrl);
+    wakeMs = await warmGotenbergService(gotenbergUrl);
     for (let attempt = 1; attempt <= GOTENBERG_CONVERT_ATTEMPTS; attempt++) {
+      const convertStartedAt = Date.now();
       try {
         const pdf = await convertWithGotenberg(gotenbergUrl, buffer, fileName);
+        convertMs = Date.now() - convertStartedAt;
+        const totalMs = Date.now() - totalStartedAt;
         logger.info('Presentation converted to PDF via Gotenberg', {
+          noteId: context?.noteId,
           gotenbergUrl,
           attempt,
           fileName,
           pptxBytes: buffer.length,
           pdfBytes: pdf.length,
+          wakeMs,
+          convertMs,
+          totalMs,
+          success: true,
         });
-        return { pdf };
+        return { pdf, wakeMs, convertMs, totalMs };
       } catch (err) {
+        convertMs = Date.now() - convertStartedAt;
         lastError = err;
-        logger.warn('Gotenberg PPTX conversion failed', { err, gotenbergUrl, attempt, fileName });
+        logger.warn('Gotenberg PPTX conversion failed', {
+          noteId: context?.noteId,
+          err,
+          gotenbergUrl,
+          attempt,
+          fileName,
+          wakeMs,
+          convertMs,
+        });
         if (attempt < GOTENBERG_CONVERT_ATTEMPTS) {
           await sleep(2500);
         }
@@ -194,7 +222,17 @@ export async function convertPresentationToPdf(
     }
   }
 
-  logger.error('All Gotenberg conversion attempts failed', { lastError, fileName, bytes: buffer.length });
+  const totalMs = Date.now() - totalStartedAt;
+  logger.error('All Gotenberg conversion attempts failed', {
+    noteId: context?.noteId,
+    lastError,
+    fileName,
+    bytes: buffer.length,
+    wakeMs,
+    convertMs,
+    totalMs,
+    success: false,
+  });
 
   try {
     const libre = (await import('libreoffice-convert')) as {
@@ -215,7 +253,7 @@ export async function convertPresentationToPdf(
     };
     const convertFn = libre.default?.convert || libre.convert;
     if (!convertFn) {
-      return { pdf: null, error: formatConversionError(lastError) };
+      return { pdf: null, error: formatConversionError(lastError), wakeMs, convertMs, totalMs };
     }
 
     const localPdf = await new Promise<Buffer | null>((resolve) => {
@@ -229,7 +267,7 @@ export async function convertPresentationToPdf(
       });
     });
     if (localPdf) {
-      return { pdf: localPdf };
+      return { pdf: localPdf, wakeMs, convertMs, totalMs: Date.now() - totalStartedAt };
     }
   } catch (err) {
     logger.warn('LibreOffice convert unavailable', { err });
@@ -239,6 +277,9 @@ export async function convertPresentationToPdf(
   return {
     pdf: null,
     error: formatConversionError(lastError) || 'Could not generate slide preview.',
+    wakeMs,
+    convertMs,
+    totalMs: Date.now() - totalStartedAt,
   };
 }
 

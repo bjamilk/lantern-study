@@ -121,9 +121,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id]);
 
   useEffect(() => {
-    if (!note.id || !saveEnabledRef.current) return;
+    if (!note.id || !saveEnabledRef.current || generatingPreview) return;
     onSave({ title, body });
-  }, [note.id, title, body, onSave]);
+  }, [note.id, title, body, onSave, generatingPreview]);
 
   useEffect(() => {
     setPreviewError(null);
@@ -144,14 +144,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     let cancelled = false;
     setGeneratingPreview(true);
     setPreviewError(null);
-    setImportProgress({
-      stage: 'processing',
-      percent: null,
-      label: 'Converting slides to preview…',
-      fileName: presentationAttachment.fileName,
-    });
     void notesApi
-      .regeneratePresentationPreview(note.id, setImportProgress)
+      .regeneratePresentationPreview(note.id)
       .then((result) => {
         if (cancelled) return;
         const prev = useNotesStore.getState().selectedNote;
@@ -172,17 +166,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         } else {
           setPreviewError(null);
         }
-        clearImportProgress();
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const message =
+        const raw =
           err instanceof Error
             ? err.message
             : "Preview couldn't be generated. Try reopening the note or re-uploading.";
+        const message = /404|missing slide files|no presentation attachment/i.test(raw)
+          ? 'This note is missing slide files. Delete it and re-upload your presentation.'
+          : raw;
         setPreviewError(message);
         showToast('Slides saved — preview failed', 'error');
-        clearImportProgress();
       })
       .finally(() => {
         if (!cancelled) setGeneratingPreview(false);
@@ -198,10 +193,37 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     presentationAttachment,
     previewTrigger,
     setSelectedNote,
-    setImportProgress,
-    clearImportProgress,
     showToast,
   ]);
+
+  const handleDownloadOriginalSlides = async () => {
+    if (!presentationAttachment) return;
+    try {
+      const { url } = await notesApi.refreshNoteAttachmentUrl(note.id, presentationAttachment.id);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      try {
+        const buffer = await notesApi.fetchNoteAttachmentContent(note.id, presentationAttachment.id);
+        const blob = new Blob([buffer], {
+          type: presentationContentType(presentationAttachment.fileName || 'slides.pptx'),
+        });
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = presentationAttachment.fileName || 'slides.pptx';
+        link.click();
+        URL.revokeObjectURL(blobUrl);
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : 'Could not download slides.', 'error');
+      }
+    }
+  };
+
+  function presentationContentType(fileName: string): string {
+    return /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
+      ? 'application/vnd.ms-powerpoint'
+      : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  }
 
   const handleRetryPreview = () => {
     previewAttemptedRef.current.delete(note.id);
@@ -327,9 +349,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           )}
 
           {generatingPreview && (
-            <p className={`text-sm rounded-lg border px-3 py-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-              Generating slide preview...
-            </p>
+            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+              <p>Generating slide preview…</p>
+              {presentationAttachment && (
+                <button
+                  type="button"
+                  className="text-indigo-500 underline text-left"
+                  onClick={() => void handleDownloadOriginalSlides()}
+                >
+                  Download original slides ({presentationAttachment.fileName || 'presentation'})
+                </button>
+              )}
+            </div>
           )}
 
           {isDocumentNote && !documentAttachment && !generatingPreview && (
@@ -341,6 +372,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                     : 'Document preview is unavailable.')}
                 {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
               </p>
+              {note.sourceType === 'presentation' && presentationAttachment && (
+                <button
+                  type="button"
+                  className="text-indigo-500 underline text-left block"
+                  onClick={() => void handleDownloadOriginalSlides()}
+                >
+                  Download original slides
+                </button>
+              )}
               {note.sourceType === 'presentation' && previewError && (
                 <Button size="sm" variant="secondary" onClick={handleRetryPreview}>
                   Retry preview

@@ -245,12 +245,7 @@ export function useNoteHandlers(currentUserId?: string) {
     async (file: File, folderId?: string) => {
       try {
         const result = await notesApi.uploadPresentationViaApi(file, folderId, setImportProgress);
-        setImportProgress({
-          stage: 'complete',
-          percent: null,
-          label: 'Upload complete — generating preview…',
-          fileName: file.name,
-        });
+        clearImportProgress();
         const notesState = useNotesStore.getState();
         notesState.setNotes([
           result.note,
