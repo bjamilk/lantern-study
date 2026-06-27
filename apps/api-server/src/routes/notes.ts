@@ -467,16 +467,32 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
       return;
     }
   }
-  const pdfBuffer = await convertPresentationToPdf(buffer, fileName);
-  if (!pdfBuffer) {
-    res.status(502).json({ error: 'Could not generate slide preview. Try again in a moment.' });
-    return;
-  }
 
   const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
   const studyText =
     extractedText ||
     `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+
+  const { pdf: pdfBuffer, error: conversionError } = await convertPresentationToPdf(buffer, fileName);
+  if (!pdfBuffer) {
+    const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+      extractedText: studyText,
+      metadata: {
+        ...meta,
+        previewError: conversionError || 'Could not generate slide preview.',
+        previewFailedAt: new Date().toISOString(),
+      },
+    });
+    res.json({
+      success: true,
+      data: {
+        attachment: updated,
+        previewAvailable: false,
+        previewError: conversionError || 'Could not generate slide preview. Try again in a moment.',
+      },
+    });
+    return;
+  }
 
   const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
   await supabaseService.uploadNoteFile({
@@ -491,6 +507,8 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
       ...meta,
       previewStoragePath,
       previewUrl,
+      previewError: undefined,
+      previewFailedAt: undefined,
     },
   });
 

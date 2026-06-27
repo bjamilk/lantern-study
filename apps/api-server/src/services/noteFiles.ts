@@ -72,9 +72,11 @@ export function presentationContentType(fileName: string): string {
 }
 
 const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
-/** Per-attempt budget; Render proxy ~100s — two attempts must stay under that. */
-const GOTENBERG_CONVERT_TIMEOUT_MS = 85_000;
-const GOTENBERG_CONVERT_ATTEMPTS = 2;
+/** Per-attempt budget; Render HTTP proxy ~100s — leave room for download/upload/text extraction. */
+const GOTENBERG_CONVERT_TIMEOUT_MS = 72_000;
+const GOTENBERG_CONVERT_ATTEMPTS = 1;
+const GOTENBERG_WAKE_BUDGET_MS = 45_000;
+const GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS = 15_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,6 +97,36 @@ function getGotenbergCandidates(): string[] {
   const urls = [configured, GOTENBERG_PUBLIC_FALLBACK].filter(Boolean) as string[];
   return [...new Set(urls)];
 }
+
+/** Wake cold Gotenberg instances (Render free tier) before a long conversion. */
+async function warmGotenbergService(gotenbergUrl: string): Promise<void> {
+  const deadline = Date.now() + GOTENBERG_WAKE_BUDGET_MS;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    attempt += 1;
+    try {
+      const response = await fetch(`${gotenbergUrl}/health`, {
+        signal: AbortSignal.timeout(GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS),
+      });
+      if (response.ok) {
+        logger.info('Gotenberg ready', { gotenbergUrl, attempt });
+        return;
+      }
+      logger.warn('Gotenberg health not ok', { gotenbergUrl, attempt, status: response.status });
+    } catch (err) {
+      logger.warn('Gotenberg wake attempt failed', { gotenbergUrl, attempt, err });
+    }
+    await sleep(2000);
+  }
+
+  logger.warn('Gotenberg wake timed out; attempting conversion anyway', { gotenbergUrl, attempt });
+}
+
+export type PresentationPdfConversionResult = {
+  pdf: Buffer | null;
+  error?: string;
+};
 
 async function convertWithGotenberg(
   gotenbergUrl: string,
@@ -128,10 +160,19 @@ async function convertWithGotenberg(
   return pdf;
 }
 
-export async function convertPresentationToPdf(buffer: Buffer, fileName: string): Promise<Buffer | null> {
+function formatConversionError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return 'Conversion failed';
+}
+
+export async function convertPresentationToPdf(
+  buffer: Buffer,
+  fileName: string
+): Promise<PresentationPdfConversionResult> {
   let lastError: unknown;
 
   for (const gotenbergUrl of getGotenbergCandidates()) {
+    await warmGotenbergService(gotenbergUrl);
     for (let attempt = 1; attempt <= GOTENBERG_CONVERT_ATTEMPTS; attempt++) {
       try {
         const pdf = await convertWithGotenberg(gotenbergUrl, buffer, fileName);
@@ -142,7 +183,7 @@ export async function convertPresentationToPdf(buffer: Buffer, fileName: string)
           pptxBytes: buffer.length,
           pdfBytes: pdf.length,
         });
-        return pdf;
+        return { pdf };
       } catch (err) {
         lastError = err;
         logger.warn('Gotenberg PPTX conversion failed', { err, gotenbergUrl, attempt, fileName });
@@ -173,9 +214,11 @@ export async function convertPresentationToPdf(buffer: Buffer, fileName: string)
       ) => void;
     };
     const convertFn = libre.default?.convert || libre.convert;
-    if (!convertFn) return null;
+    if (!convertFn) {
+      return { pdf: null, error: formatConversionError(lastError) };
+    }
 
-    return await new Promise<Buffer | null>((resolve) => {
+    const localPdf = await new Promise<Buffer | null>((resolve) => {
       convertFn(buffer, '.pdf', undefined, (err, done) => {
         if (err) {
           logger.warn('LibreOffice PPTX conversion failed', { err });
@@ -185,10 +228,18 @@ export async function convertPresentationToPdf(buffer: Buffer, fileName: string)
         resolve(done);
       });
     });
+    if (localPdf) {
+      return { pdf: localPdf };
+    }
   } catch (err) {
     logger.warn('LibreOffice convert unavailable', { err });
-    return null;
+    lastError = lastError ?? err;
   }
+
+  return {
+    pdf: null,
+    error: formatConversionError(lastError) || 'Could not generate slide preview.',
+  };
 }
 
 export function assertFileSize(buffer: Buffer, maxBytes: number, label: string): void {

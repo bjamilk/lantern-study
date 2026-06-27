@@ -276,8 +276,12 @@ export async function deleteNote(noteId: string): Promise<void> {
 export async function regeneratePresentationPreview(
   noteId: string,
   onProgress?: NoteImportProgressCallback
-): Promise<{ attachment: NoteAttachment; previewAvailable: boolean }> {
-  return notesLongRequest<{ attachment: NoteAttachment; previewAvailable: boolean }>(
+): Promise<{ attachment: NoteAttachment; previewAvailable: boolean; previewError?: string }> {
+  return notesLongRequest<{
+    attachment: NoteAttachment;
+    previewAvailable: boolean;
+    previewError?: string;
+  }>(
     `/${noteId}/regenerate-preview`,
     {
       method: 'POST',

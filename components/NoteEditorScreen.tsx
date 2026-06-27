@@ -163,6 +163,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               a.id === result.attachment.id ? result.attachment : a
             ) ?? [result.attachment],
         });
+        if (!result.previewAvailable) {
+          const message =
+            result.previewError ||
+            'Slide preview is unavailable, but AI can still use extracted text from your deck.';
+          setPreviewError(message);
+          showToast('Slides saved — preview failed', 'error');
+        } else {
+          setPreviewError(null);
+        }
         clearImportProgress();
       })
       .catch((err: unknown) => {
