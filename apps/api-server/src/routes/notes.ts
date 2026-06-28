@@ -231,6 +231,7 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
     return;
   }
 
+  const startedAt = Date.now();
   try {
     const { transcript, title } = await fetchYouTubeTranscript(videoId);
     const noteTitle = title || `YouTube: ${videoId}`;
@@ -247,13 +248,25 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
       extractedText: transcript,
       metadata: { videoId, url },
     });
+    logger.info('YouTube import succeeded', {
+      videoId,
+      durationMs: Date.now() - startedAt,
+      transcriptChars: transcript.length,
+    });
     res.json({ success: true, data: note });
   } catch (err) {
+    const durationMs = Date.now() - startedAt;
     if (err instanceof ApiError) {
+      logger.warn('YouTube import rejected', {
+        videoId,
+        durationMs,
+        statusCode: err.statusCode,
+        message: err.message,
+      });
       res.status(err.statusCode).json({ error: err.message });
       return;
     }
-    logger.error('YouTube import failed', { videoId, err });
+    logger.error('YouTube import failed', { videoId, durationMs, err });
     res.status(502).json({
       error: 'YouTube import failed. Try again or use a video with captions enabled.',
     });

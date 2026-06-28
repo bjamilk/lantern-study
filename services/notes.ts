@@ -187,11 +187,16 @@ async function notesRequest<T>(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const hasBody =
+      (typeof data.error === 'string' && data.error && data.error !== 'Error') ||
+      (typeof data.message === 'string' && data.message);
     let message =
       data.message ||
       (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
       `Notes request failed (${response.status})`;
-    if (response.status === 502 || response.status === 504) {
+    if ((response.status === 502 || response.status === 504) && !hasBody) {
+      message = 'Request timed out. Try again in a moment.';
+    } else if (response.status === 502 || response.status === 504) {
       message =
         typeof data.error === 'string' && data.error
           ? data.error
