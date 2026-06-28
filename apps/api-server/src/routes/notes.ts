@@ -324,7 +324,10 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
   });
 
   const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
-  const studyText = '[Extracting text from slides…]';
+  const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
+  const studyText =
+    extractedText ||
+    `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
   const note = await supabaseService.createNote(userId, {
@@ -378,7 +381,10 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
 
   const contentType = presentationContentType(safeName);
   const fileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
-  const studyText = '[Extracting text from slides…]';
+  const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
+  const studyText =
+    extractedText ||
+    `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
   const note = await supabaseService.createNote(userId, {

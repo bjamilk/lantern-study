@@ -28,7 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import * as FileSystem from 'expo-file-system/legacy';
 
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
 import { transcribeAudioForNote, summarizeNote, generateNoteQuiz } from '../../services/notes';
@@ -114,6 +114,19 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             attachments: selectedNote.attachments,
           })
         : body,
+    [selectedNote, body]
+  );
+
+  const canGenerateStudyMaterials = useMemo(
+    () =>
+      selectedNote
+        ? hasEnoughNoteStudyContent({
+            sourceType: selectedNote.sourceType,
+            body,
+            summary: selectedNote.summary,
+            attachments: selectedNote.attachments,
+          })
+        : body.trim().length >= 50,
     [selectedNote, body]
   );
 
@@ -300,8 +313,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
   const handleGenerateFlashcards = async () => {
-    if (!studyContent.trim()) {
-      Alert.alert('Empty note', 'Add content before generating flashcards.');
+    if (!canGenerateStudyMaterials) {
+      Alert.alert(
+        'Not enough content',
+        'Add at least 50 characters of study content. For presentations, wait for slide text extraction or add your own notes.'
+      );
       return;
     }
     setGeneratingCards(true);
@@ -316,8 +332,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   };
 
   const handleGenerateQuiz = async () => {
-
-    if (!studyContent.trim()) return;
+    if (!canGenerateStudyMaterials) {
+      Alert.alert(
+        'Not enough content',
+        'Add at least 50 characters of study content. For presentations, wait for slide text extraction or add your own notes.'
+      );
+      return;
+    }
 
     setGeneratingQuiz(true);
 
@@ -563,13 +584,19 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 size="sm"
                 variant="secondary"
                 loading={generatingCards}
-                disabled={isAILoading}
+                disabled={isAILoading || !canGenerateStudyMaterials}
                 onPress={() => void handleGenerateFlashcards()}
               >
                 Flashcards
               </Button>
 
-              <Button size="sm" variant="secondary" loading={generatingQuiz} onPress={() => void handleGenerateQuiz()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={generatingQuiz}
+                disabled={!canGenerateStudyMaterials}
+                onPress={() => void handleGenerateQuiz()}
+              >
 
                 Quiz
 

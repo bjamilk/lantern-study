@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
 import {
   SparklesIcon,
   ChatBubbleLeftRightIcon,
@@ -32,14 +32,19 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
 }) => {
   const [summarizing, setSummarizing] = useState(false);
   const isDark = theme === 'dark';
-  const contentLength =
-    studyContentLength ??
-    getNoteStudyContent({
-      sourceType: note.sourceType,
-      body: note.body,
-      summary: note.summary,
-      attachments: note.attachments,
-    }).length;
+  const studyContent = getNoteStudyContent({
+    sourceType: note.sourceType,
+    body: note.body,
+    summary: note.summary,
+    attachments: note.attachments,
+  });
+  const contentLength = studyContentLength ?? studyContent.length;
+  const canGenerateStudyMaterials = hasEnoughNoteStudyContent({
+    sourceType: note.sourceType,
+    body: note.body,
+    summary: note.summary,
+    attachments: note.attachments,
+  });
 
   const handleSummarize = async () => {
     setSummarizing(true);
@@ -85,8 +90,13 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || contentLength < 50}
+          disabled={isBusy || !canGenerateStudyMaterials}
           onClick={onGenerateFlashcards}
+          title={
+            canGenerateStudyMaterials
+              ? undefined
+              : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
+          }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >
           <RectangleStackIcon className="w-4 h-4" />
@@ -94,8 +104,13 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </button>
         <button
           type="button"
-          disabled={isBusy || contentLength < 50}
+          disabled={isBusy || !canGenerateStudyMaterials}
           onClick={onGenerateQuiz}
+          title={
+            canGenerateStudyMaterials
+              ? undefined
+              : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
+          }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >
           <QuestionMarkCircleIcon className="w-4 h-4" />

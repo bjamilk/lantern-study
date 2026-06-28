@@ -1,4 +1,9 @@
-import { getNoteStudyContent } from './noteStudyContent';
+import {
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+  isPlaceholderExtractedText,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+} from './noteStudyContent';
 
 describe('getNoteStudyContent', () => {
   it('prefers body for typed notes', () => {
@@ -41,5 +46,40 @@ describe('getNoteStudyContent', () => {
         summary: 'cached summary',
       })
     ).toBe('cached summary');
+  });
+
+  it('ignores presentation extraction placeholders', () => {
+    expect(
+      getNoteStudyContent({
+        sourceType: 'presentation',
+        body: '',
+        attachments: [{ extractedText: '[Extracting text from slides…]' }],
+        summary: 'cached summary',
+      })
+    ).toBe('cached summary');
+  });
+
+  it('detects placeholder extracted text', () => {
+    expect(isPlaceholderExtractedText('[Extracting text from slides…]')).toBe(true);
+    expect(
+      isPlaceholderExtractedText('[Presentation uploaded: deck.pptx. Text extraction unavailable.]')
+    ).toBe(true);
+    expect(isPlaceholderExtractedText('real slide bullets')).toBe(false);
+  });
+
+  it('requires minimum study content length', () => {
+    expect(MIN_NOTE_STUDY_CONTENT_CHARS).toBe(50);
+    expect(
+      hasEnoughNoteStudyContent({
+        sourceType: 'typed',
+        body: 'x'.repeat(49),
+      })
+    ).toBe(false);
+    expect(
+      hasEnoughNoteStudyContent({
+        sourceType: 'typed',
+        body: 'x'.repeat(50),
+      })
+    ).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useUIStore } from '../stores/uiStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
@@ -12,6 +12,8 @@ import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
+
+const INSUFFICIENT_STUDY_CONTENT_MESSAGE = `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For presentations, wait for slide text extraction or add your own notes.`;
 
 export function useNoteHandlers(currentUserId?: string) {
   const {
@@ -107,6 +109,9 @@ export function useNoteHandlers(currentUserId?: string) {
   const handleGenerateFlashcards = useCallback(
     async (_deckId: string, count: number = 10) => {
       if (!selectedNote) return [];
+      if (!hasEnoughNoteStudyContent(selectedNote)) {
+        throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
+      }
       const content = getNoteStudyContent(selectedNote);
       const cardCount = normalizeFlashcardCount(count);
       const result = await aiGenerateFlashcards(content.slice(0, 8000), { count: cardCount });
@@ -118,10 +123,10 @@ export function useNoteHandlers(currentUserId?: string) {
   const handleCreateFlashcardDeckFromNote = useCallback(
     async (count: number = 10) => {
       if (!selectedNote || !currentUserId) return null;
-      const content = getNoteStudyContent(selectedNote);
-      if (content.trim().length < 50) {
-        throw new Error('Note needs at least 50 characters to generate flashcards.');
+      if (!hasEnoughNoteStudyContent(selectedNote)) {
+        throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
+      const content = getNoteStudyContent(selectedNote);
 
       const cardCount = normalizeFlashcardCount(count);
 
@@ -176,6 +181,9 @@ export function useNoteHandlers(currentUserId?: string) {
   const handleGenerateQuestions = useCallback(
     async (count: number = 10) => {
       if (!selectedNote) return [];
+      if (!hasEnoughNoteStudyContent(selectedNote)) {
+        throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
+      }
       const content = getNoteStudyContent(selectedNote);
       const result = await aiGenerateQuestions(content.slice(0, 8000), { count });
       return result.questions || [];
@@ -203,9 +211,8 @@ export function useNoteHandlers(currentUserId?: string) {
   const handleStartNoteQuiz = useCallback(
     async () => {
       if (!selectedNote) return null;
-      const content = getNoteStudyContent(selectedNote);
-      if (content.trim().length < 50) {
-        throw new Error('Note needs at least 50 characters to generate a quiz.');
+      if (!hasEnoughNoteStudyContent(selectedNote)) {
+        throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
       const session = await notesApi.generateNoteQuiz(selectedNote.id, studyGoal, 5);
       setDailyQuiz(session);

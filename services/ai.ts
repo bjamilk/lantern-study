@@ -103,7 +103,13 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
     if (response.status === 429 && error.used !== undefined && error.limit !== undefined) {
       updateUsage({ used: error.used, limit: error.limit, remaining: 0, resetsAt: error.resetsAt || '' });
     }
-    throw new Error(error.error || `AI request failed (${response.status})`);
+    const message =
+      response.status === 400 &&
+      typeof error.error === 'string' &&
+      /at least 50 characters/i.test(error.error)
+        ? 'Not enough study content yet. Add notes or wait for slide/PDF text extraction to finish.'
+        : error.error || `AI request failed (${response.status})`;
+    throw new Error(message);
   }
 
   return response.json();
