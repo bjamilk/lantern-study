@@ -37,6 +37,17 @@ describe('getNoteStudyContent', () => {
     ).toBe('slide bullets\n\nold summary');
   });
 
+  it('combines youtube transcript attachment with body and summary', () => {
+    expect(
+      getNoteStudyContent({
+        sourceType: 'youtube',
+        body: 'my notes',
+        attachments: [{ extractedText: 'video transcript' }],
+        summary: 'summary',
+      })
+    ).toBe('video transcript\n\nmy notes\n\nsummary');
+  });
+
   it('falls back to summary when document note has no extraction', () => {
     expect(
       getNoteStudyContent({
@@ -59,8 +70,20 @@ describe('getNoteStudyContent', () => {
     ).toBe('cached summary');
   });
 
+  it('ignores ascii presentation extraction placeholders', () => {
+    expect(
+      getNoteStudyContent({
+        sourceType: 'presentation',
+        body: '',
+        attachments: [{ extractedText: '[Extracting text from slides...]' }],
+        summary: 'cached summary',
+      })
+    ).toBe('cached summary');
+  });
+
   it('detects placeholder extracted text', () => {
     expect(isPlaceholderExtractedText('[Extracting text from slides…]')).toBe(true);
+    expect(isPlaceholderExtractedText('[Extracting text from slides...]')).toBe(true);
     expect(
       isPlaceholderExtractedText('[Presentation uploaded: deck.pptx. Text extraction unavailable.]')
     ).toBe(true);

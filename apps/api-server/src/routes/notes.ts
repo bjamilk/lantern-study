@@ -17,6 +17,7 @@ import { CacheService } from '../services/cache';
 import {
   summarizeNoteContent,
   generateDailyQuiz,
+  generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
 import { extractYouTubeVideoId, fetchYouTubeTranscript } from '../utils/youtubeTranscript';
@@ -32,7 +33,11 @@ import {
   assertValidOfficeZip,
   presentationContentType,
 } from '../services/noteFiles';
-import { getNoteStudyContent } from '@lantern/shared/utils/noteStudyContent';
+import {
+  getNoteStudyContent,
+  hasEnoughNoteStudyContent,
+} from '@lantern/shared/utils/noteStudyContent';
+import { ApiError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -225,22 +230,34 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
     res.status(400).json({ error: 'Invalid YouTube URL.' });
     return;
   }
-  const { transcript, title } = await fetchYouTubeTranscript(videoId);
-  const noteTitle = title || `YouTube: ${videoId}`;
-  const note = await supabaseService.createNote(userId, {
-    title: noteTitle,
-    body: transcript,
-    folderId,
-    sourceType: 'youtube',
-    youtubeUrl: url,
-    youtubeVideoId: videoId,
-  });
-  await supabaseService.addNoteAttachment(note.id, {
-    type: 'youtube',
-    extractedText: transcript,
-    metadata: { videoId, url },
-  });
-  res.json({ success: true, data: note });
+
+  try {
+    const { transcript, title } = await fetchYouTubeTranscript(videoId);
+    const noteTitle = title || `YouTube: ${videoId}`;
+    const note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: transcript,
+      folderId,
+      sourceType: 'youtube',
+      youtubeUrl: url,
+      youtubeVideoId: videoId,
+    });
+    await supabaseService.addNoteAttachment(note.id, {
+      type: 'youtube',
+      extractedText: transcript,
+      metadata: { videoId, url },
+    });
+    res.json({ success: true, data: note });
+  } catch (err) {
+    if (err instanceof ApiError) {
+      res.status(err.statusCode).json({ error: err.message });
+      return;
+    }
+    logger.error('YouTube import failed', { videoId, err });
+    res.status(502).json({
+      error: 'YouTube import failed. Try again or use a video with captions enabled.',
+    });
+  }
 }));
 
 router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -756,6 +773,77 @@ router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) =
     completed: typeof completed === 'boolean' ? completed : undefined,
   });
   res.json({ success: true, data: session });
+}));
+
+router.post('/:noteId/generate-flashcards', aiRateLimit, validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const studyInput = {
+    sourceType: note.sourceType,
+    body: note.body,
+    summary: note.summary,
+    attachments,
+  };
+  if (!hasEnoughNoteStudyContent(studyInput)) {
+    res.status(400).json({
+      error: 'Note needs at least 50 characters of study content. Add notes or wait for import/extraction to finish.',
+    });
+    return;
+  }
+  const content = getNoteStudyContent(studyInput);
+  const { count, style } = req.body || {};
+  const result = await generateFlashcardsFromNotes(content.slice(0, 8000), { count, style });
+  res.json({ success: true, data: result });
+}));
+
+router.post('/:noteId/reextract-text', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const note = await supabaseService.getNote(req.params.noteId, userId);
+  if (note.sourceType !== 'presentation') {
+    res.status(400).json({ error: 'Text re-extraction is only available for presentation notes.' });
+    return;
+  }
+
+  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const presentation = attachments.find((a) => a.type === 'presentation');
+  if (!presentation) {
+    res.status(404).json({ error: 'No presentation attachment found for this note.' });
+    return;
+  }
+
+  const storagePath =
+    typeof presentation.metadata?.storagePath === 'string' ? presentation.metadata.storagePath : null;
+  const fileName = presentation.fileName || 'slides.pptx';
+  if (!storagePath) {
+    res.status(404).json({ error: 'Presentation file is missing from storage.' });
+    return;
+  }
+
+  const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+  if (/\.pptx$/i.test(fileName)) {
+    assertValidOfficeZip(buffer, fileName);
+  }
+
+  const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
+  const studyText =
+    extractedText ||
+    `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
+
+  const updatedAttachment = await supabaseService.updateNoteAttachment(presentation.id, {
+    extractedText: studyText,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      attachment: updatedAttachment,
+      extractedText: studyText,
+      contentLength: studyText.trim().length,
+    },
+  });
 }));
 
 // Collaboration

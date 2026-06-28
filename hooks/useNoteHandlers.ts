@@ -8,7 +8,7 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useAppNavigation } from './useAppNavigation';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
-import { aiGenerateFlashcards, aiGenerateQuestions } from '../services/ai';
+import { aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
@@ -109,37 +109,49 @@ export function useNoteHandlers(currentUserId?: string) {
   const handleGenerateFlashcards = useCallback(
     async (_deckId: string, count: number = 10) => {
       if (!selectedNote) return [];
-      if (!hasEnoughNoteStudyContent(selectedNote)) {
+      cancelAutoSave();
+      await saveNote(selectedNote.id, { title: selectedNote.title, body: selectedNote.body });
+      await loadNote(selectedNote.id);
+      const note = useNotesStore.getState().selectedNote;
+      if (!note || !hasEnoughNoteStudyContent(note)) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
-      const content = getNoteStudyContent(selectedNote);
       const cardCount = normalizeFlashcardCount(count);
-      const result = await aiGenerateFlashcards(content.slice(0, 8000), { count: cardCount });
+      const result = await notesApi.generateFlashcardsFromNote(note.id, { count: cardCount });
       return result.flashcards || [];
     },
-    [selectedNote]
+    [selectedNote, cancelAutoSave, saveNote, loadNote]
   );
 
   const handleCreateFlashcardDeckFromNote = useCallback(
-    async (count: number = 10) => {
+    async (
+      count: number = 10,
+      editorState?: { title?: string; body?: string }
+    ) => {
       if (!selectedNote || !currentUserId) return null;
-      if (!hasEnoughNoteStudyContent(selectedNote)) {
+      cancelAutoSave();
+      if (editorState) {
+        await saveNote(selectedNote.id, editorState);
+      }
+      await loadNote(selectedNote.id);
+      const note = useNotesStore.getState().selectedNote;
+      if (!note || !hasEnoughNoteStudyContent(note)) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
-      const content = getNoteStudyContent(selectedNote);
 
       const cardCount = normalizeFlashcardCount(count);
-
-      const { flashcards: generated } = await aiGenerateFlashcards(content.slice(0, 8000), { count: cardCount });
+      const { flashcards: generated } = await notesApi.generateFlashcardsFromNote(note.id, {
+        count: cardCount,
+      });
       if (!generated?.length) {
         throw new Error('Could not generate flashcards from this note.');
       }
 
-      const deckName = `From: ${selectedNote.title || 'Untitled Note'}`.slice(0, 80);
+      const deckName = `From: ${note.title || 'Untitled Note'}`.slice(0, 80);
       const deck = await createDeck(
         {
           name: deckName,
-          description: `Generated from note: ${selectedNote.title || 'Untitled Note'}`,
+          description: `Generated from note: ${note.title || 'Untitled Note'}`,
         },
         currentUserId
       );
@@ -175,7 +187,7 @@ export function useNoteHandlers(currentUserId?: string) {
 
       return { deck, count: generated.length };
     },
-    [selectedNote, currentUserId]
+    [selectedNote, currentUserId, cancelAutoSave, saveNote, loadNote]
   );
 
   const handleGenerateQuestions = useCallback(
@@ -223,11 +235,21 @@ export function useNoteHandlers(currentUserId?: string) {
 
   const handleYouTubeImport = useCallback(
     async (url: string, folderId?: string) => {
-      const note = await notesApi.importYouTubeNote(url, folderId);
-      await loadNotes();
-      return note;
+      try {
+        const note = await notesApi.importYouTubeNote(url, folderId);
+        await loadNotes();
+        await loadNote(note.id);
+        navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
+        return note;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'YouTube import failed.';
+        if (/502|504|timed out|timeout/i.test(message)) {
+          throw new Error('YouTube import timed out — try again or use a video with captions enabled.');
+        }
+        throw err instanceof Error ? err : new Error(message);
+      }
     },
-    [loadNotes]
+    [loadNotes, loadNote, navigateTo]
   );
 
   const handlePdfImport = useCallback(

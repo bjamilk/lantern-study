@@ -3,7 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 /**
  * Request timeout middleware
  * Prevents hanging requests from consuming server resources
- * 
+ *
  * @param timeoutMs - Timeout in milliseconds (default: 30000 = 30 seconds)
  */
 export const requestTimeout = (timeoutMs: number = 30000) => {
@@ -60,9 +60,12 @@ export const extendedTimeout = requestTimeout(120000);
  */
 export const presentationTimeout = requestTimeout(180000);
 
-/** Routes that need more than the 30s default (upload, transcribe, PPT preview). */
+/** Routes that need no default timeout cap (upload, transcribe, PPT preview). */
 export const LONG_RUNNING_NOTE_PATH =
   /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|finalize-pdf|finalize-presentation|[^/]+\/regenerate-preview)$/;
+
+/** Routes that need extended timeout (YouTube transcript fetch). */
+export const EXTENDED_NOTE_PATH = /^\/api\/v1\/notes\/youtube-import$/;
 
 export const skipTimeoutForLongRunningNotes = (
   req: Request,
@@ -71,6 +74,10 @@ export const skipTimeoutForLongRunningNotes = (
 ): void => {
   if (LONG_RUNNING_NOTE_PATH.test(req.path)) {
     next();
+    return;
+  }
+  if (EXTENDED_NOTE_PATH.test(req.path)) {
+    extendedTimeout(req, res, next);
     return;
   }
   defaultTimeout(req, res, next);

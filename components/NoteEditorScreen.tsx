@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent, isPlaceholderExtractedText } from '@lantern/shared';
 import {
   ArrowLeftIcon,
   TrashIcon,
@@ -32,7 +32,7 @@ interface NoteEditorScreenProps {
   onDelete: () => void;
   onSummarize: () => Promise<string | void>;
   onChatWithNote: () => void;
-  onGenerateFlashcards: () => Promise<void>;
+  onGenerateFlashcards: (editorState?: { title?: string; body?: string }) => Promise<void>;
   onGenerateQuiz: () => Promise<void>;
   studyGoal?: StudyGoalMode;
   dailyQuiz?: DailyQuizSession | null;
@@ -86,6 +86,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [previewTrigger, setPreviewTrigger] = useState(0);
   const saveEnabledRef = useRef(true);
   const previewAttemptedRef = useRef<Set<string>>(new Set());
+  const reextractAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const clearImportProgress = useUIStore((s) => s.clearImportProgress);
@@ -134,6 +135,46 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       clearImportProgress();
     }
   }, [note.id, note.sourceType, presentationPreviewPath, clearImportProgress]);
+
+  useEffect(() => {
+    if (note.sourceType !== 'presentation') return;
+    if (!presentationAttachment) return;
+    if (reextractAttemptedRef.current.has(note.id)) return;
+
+    const extracted = presentationAttachment.extractedText;
+    const needsReextract = isPlaceholderExtractedText(extracted);
+    const studyReady = hasEnoughNoteStudyContent({
+      sourceType: note.sourceType,
+      body,
+      summary: note.summary,
+      attachments: note.attachments,
+    });
+    if (!needsReextract || studyReady) return;
+
+    reextractAttemptedRef.current.add(note.id);
+    let cancelled = false;
+    void notesApi
+      .reextractNoteText(note.id)
+      .then((result) => {
+        if (cancelled) return;
+        const prev = useNotesStore.getState().selectedNote;
+        if (!prev || prev.id !== note.id) return;
+        setSelectedNote({
+          ...prev,
+          attachments:
+            prev.attachments?.map((a) =>
+              a.id === result.attachment.id ? result.attachment : a
+            ) ?? [result.attachment],
+        });
+      })
+      .catch(() => {
+        // Non-fatal; user can still add manual notes
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.sourceType, note.summary, note.attachments, presentationAttachment, body, setSelectedNote]);
 
   useEffect(() => {
     if (note.sourceType !== 'presentation') return;
@@ -458,7 +499,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             onGenerateFlashcards={async () => {
               setGeneratingCards(true);
               try {
-                await onGenerateFlashcards();
+                await onGenerateFlashcards({ title, body });
               } finally {
                 setGeneratingCards(false);
               }

@@ -69,6 +69,12 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </div>
       )}
 
+      {!canGenerateStudyMaterials && (
+        <p className={`text-xs mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          Need {MIN_NOTE_STUDY_CONTENT_CHARS}+ characters — add notes or wait for import/extraction.
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"

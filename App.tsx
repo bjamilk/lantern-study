@@ -767,9 +767,9 @@ export const App: React.FC = () => {
                         }}
                         onSummarize={() => noteHandlers.handleSummarize(selectedNote.id)}
                         onChatWithNote={noteHandlers.handleChatWithNote}
-                        onGenerateFlashcards={async () => {
+                        onGenerateFlashcards={async (editorState) => {
                             try {
-                                const result = await noteHandlers.handleCreateFlashcardDeckFromNote(10);
+                                const result = await noteHandlers.handleCreateFlashcardDeckFromNote(10, editorState);
                                 if (result?.deck) {
                                     setSelectedDeck(result.deck);
                                     setAppMode(AppMode.DECK_DETAIL);

@@ -187,10 +187,16 @@ async function notesRequest<T>(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message =
+    let message =
       data.message ||
       (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
       `Notes request failed (${response.status})`;
+    if (response.status === 502 || response.status === 504) {
+      message =
+        typeof data.error === 'string' && data.error
+          ? data.error
+          : 'Request timed out. Try again in a moment.';
+    }
     throw new Error(message);
   }
   return data.data ?? data;
@@ -366,9 +372,36 @@ export async function summarizeNote(noteId: string): Promise<{ summary: string; 
 }
 
 export async function importYouTubeNote(url: string, folderId?: string): Promise<StudyNote> {
-  return notesRequest<StudyNote>('/youtube-import', {
+  try {
+    return await notesRequest<StudyNote>('/youtube-import', {
+      method: 'POST',
+      body: JSON.stringify({ url, folderId }),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'YouTube import failed.';
+    if (/502|504|timed out|timeout/i.test(message)) {
+      throw new Error('YouTube import timed out — try again or use a video with captions enabled.');
+    }
+    throw err instanceof Error ? err : new Error(message);
+  }
+}
+
+export async function generateFlashcardsFromNote(
+  noteId: string,
+  options?: { count?: number; style?: 'concise' | 'detailed' }
+): Promise<{ flashcards: Array<{ front: string; back: string; mnemonic?: string; example?: string }>; provider: string }> {
+  return notesRequest(`/${noteId}/generate-flashcards`, {
     method: 'POST',
-    body: JSON.stringify({ url, folderId }),
+    body: JSON.stringify(options || {}),
+  });
+}
+
+export async function reextractNoteText(
+  noteId: string
+): Promise<{ attachment: NoteAttachment; extractedText: string; contentLength: number }> {
+  return notesRequest(`/${noteId}/reextract-text`, {
+    method: 'POST',
+    body: JSON.stringify({}),
   });
 }
 
