@@ -1,7 +1,6 @@
 /**
- * Fetch YouTube captions/transcript without API key (public captions only).
- * Uses the youtube-transcript package first (direct Innertube + web fallback),
- * with oEmbed for video titles.
+ * YouTube transcript orchestration: Redis cache, Supadata in production,
+ * youtube-transcript scrape fallback in development only.
  */
 
 import {
@@ -13,9 +12,25 @@ import {
   YoutubeTranscriptVideoUnavailableError,
 } from 'youtube-transcript';
 import { ApiError } from '../middleware/errorHandler';
+import { cacheService } from '../services/cache';
+import { fetchSupadataTranscript, getSupadataApiKey } from '../services/supadataYoutube';
 
 const YOUTUBE_FETCH_TIMEOUT_MS = 10_000;
 const OEMBED_TIMEOUT_MS = 5_000;
+const TRANSCRIPT_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+export type YouTubeTranscriptProvider = 'cache' | 'supadata' | 'scrape';
+
+export type YouTubeTranscriptResult = {
+  transcript: string;
+  title: string | null;
+  provider: YouTubeTranscriptProvider;
+};
+
+type CachedTranscriptPayload = {
+  transcript: string;
+  title: string | null;
+};
 
 /** Broad URL matching (watch, embed, shorts, live, youtu.be, raw id). */
 const YOUTUBE_ID_PATTERN =
@@ -27,6 +42,10 @@ export function extractYouTubeVideoId(url: string): string | null {
   if (match?.[1]) return match[1];
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
   return null;
+}
+
+function transcriptCacheKey(videoId: string): string {
+  return `youtube:transcript:${videoId}`;
 }
 
 function timedFetch(url: string, init: RequestInit = {}, timeoutMs = YOUTUBE_FETCH_TIMEOUT_MS): Promise<Response> {
@@ -125,7 +144,7 @@ async function fetchVideoTitle(videoId: string): Promise<string | null> {
   }
 }
 
-async function fetchTranscriptViaPackage(
+async function fetchTranscriptViaScrape(
   videoId: string
 ): Promise<{ transcript: string; title: string | null }> {
   try {
@@ -144,8 +163,39 @@ async function fetchTranscriptViaPackage(
   }
 }
 
-export async function fetchYouTubeTranscript(
-  videoId: string
-): Promise<{ transcript: string; title: string | null }> {
-  return fetchTranscriptViaPackage(videoId);
+async function fetchTranscriptUncached(videoId: string): Promise<YouTubeTranscriptResult> {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const hasSupadata = Boolean(getSupadataApiKey());
+
+  if (hasSupadata) {
+    const transcript = await fetchSupadataTranscript(videoId);
+    const title = await fetchVideoTitle(videoId);
+    return { transcript, title, provider: 'supadata' };
+  }
+
+  if (isProduction) {
+    throw new ApiError(
+      'YouTube import is not available right now. Please try again later.',
+      503
+    );
+  }
+
+  const scraped = await fetchTranscriptViaScrape(videoId);
+  return { ...scraped, provider: 'scrape' };
+}
+
+export async function fetchYouTubeTranscript(videoId: string): Promise<YouTubeTranscriptResult> {
+  const cacheKey = transcriptCacheKey(videoId);
+  const cached = await cacheService.get<CachedTranscriptPayload>(cacheKey);
+  if (cached?.transcript) {
+    return { ...cached, provider: 'cache' };
+  }
+
+  const result = await fetchTranscriptUncached(videoId);
+  await cacheService.set(
+    cacheKey,
+    { transcript: result.transcript, title: result.title },
+    TRANSCRIPT_CACHE_TTL_SECONDS
+  );
+  return result;
 }

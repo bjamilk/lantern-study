@@ -233,7 +233,7 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
 
   const startedAt = Date.now();
   try {
-    const { transcript, title } = await fetchYouTubeTranscript(videoId);
+    const { transcript, title, provider } = await fetchYouTubeTranscript(videoId);
     const noteTitle = title || `YouTube: ${videoId}`;
     const note = await supabaseService.createNote(userId, {
       title: noteTitle,
@@ -252,6 +252,7 @@ router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, re
       videoId,
       durationMs: Date.now() - startedAt,
       transcriptChars: transcript.length,
+      provider,
     });
     res.json({ success: true, data: note });
   } catch (err) {

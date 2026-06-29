@@ -194,7 +194,22 @@ async function notesRequest<T>(
       data.message ||
       (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
       `Notes request failed (${response.status})`;
-    if ((response.status === 502 || response.status === 504) && !hasBody) {
+    if (response.status === 402) {
+      message =
+        typeof data.error === 'string' && data.error
+          ? data.error
+          : 'YouTube import credits exhausted. Try again later or contact support.';
+    } else if (response.status === 503) {
+      message =
+        typeof data.error === 'string' && data.error
+          ? data.error
+          : 'YouTube import is not available right now. Please try again later.';
+    } else if (response.status === 429) {
+      message =
+        typeof data.error === 'string' && data.error
+          ? data.error
+          : 'Too many imports right now. Wait a minute and try again.';
+    } else if ((response.status === 502 || response.status === 504) && !hasBody) {
       message = 'Request timed out. Try again in a moment.';
     } else if (response.status === 502 || response.status === 504) {
       message =
