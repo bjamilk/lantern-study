@@ -64,9 +64,6 @@ export const presentationTimeout = requestTimeout(180000);
 export const LONG_RUNNING_NOTE_PATH =
   /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|finalize-pdf|finalize-presentation|[^/]+\/regenerate-preview)$/;
 
-/** Routes that need extended timeout (YouTube transcript fetch). */
-export const EXTENDED_NOTE_PATH = /^\/api\/v1\/notes\/youtube-import$/;
-
 export const skipTimeoutForLongRunningNotes = (
   req: Request,
   res: Response,
@@ -74,10 +71,6 @@ export const skipTimeoutForLongRunningNotes = (
 ): void => {
   if (LONG_RUNNING_NOTE_PATH.test(req.path)) {
     next();
-    return;
-  }
-  if (EXTENDED_NOTE_PATH.test(req.path)) {
-    extendedTimeout(req, res, next);
     return;
   }
   defaultTimeout(req, res, next);

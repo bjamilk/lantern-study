@@ -233,25 +233,6 @@ export function useNoteHandlers(currentUserId?: string) {
     [selectedNote, studyGoal, setDailyQuiz]
   );
 
-  const handleYouTubeImport = useCallback(
-    async (url: string, folderId?: string) => {
-      try {
-        const note = await notesApi.importYouTubeNote(url, folderId);
-        await loadNotes();
-        await loadNote(note.id);
-        navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
-        return note;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'YouTube import failed.';
-        if (/502|504|timed out|timeout/i.test(message)) {
-          throw new Error('YouTube import timed out — try again or use a video with captions enabled.');
-        }
-        throw err instanceof Error ? err : new Error(message);
-      }
-    },
-    [loadNotes, loadNote, navigateTo]
-  );
-
   const handlePdfImport = useCallback(
     async (file: File, folderId?: string) => {
       try {
@@ -328,7 +309,6 @@ export function useNoteHandlers(currentUserId?: string) {
     handleCreateFlashcardDeckFromNote,
     handleGenerateQuestions,
     handleStartNoteQuiz,
-    handleYouTubeImport,
     handlePdfImport,
     handlePresentationImport,
     handleStartDailyQuiz,

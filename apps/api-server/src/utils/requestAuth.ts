@@ -55,10 +55,4 @@ export function validateProductionSecrets(): void {
     console.error(`FATAL: Missing required environment variables in production: ${missing.join(', ')}`);
     process.exit(1);
   }
-
-  if (!process.env.SUPADATA_API_KEY?.trim()) {
-    console.warn(
-      'WARN: SUPADATA_API_KEY is not set — YouTube note import will fail in production until configured.'
-    );
-  }
 }

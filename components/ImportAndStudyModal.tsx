@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
   DocumentArrowUpIcon,
-  PlayCircleIcon,
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -39,7 +38,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   theme = 'light',
 }) => {
   const [step, setStep] = useState<Step>('input');
-  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [textContent, setTextContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
@@ -52,7 +50,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   const reset = () => {
     setStep('input');
-    setYoutubeUrl('');
     setTextContent('');
     setError(null);
     setResult(null);
@@ -113,7 +110,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   );
 
   const processContent = useCallback(
-    async (body: string, title: string, sourceType: string, extra?: Partial<{ youtubeUrl: string }>) => {
+    async (body: string, title: string, sourceType: string) => {
       setStep('processing');
       setError(null);
       try {
@@ -121,7 +118,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           title,
           body,
           sourceType: sourceType as StudyNote['sourceType'],
-          ...extra,
         });
         await runStudyGenerators(note);
       } catch (e: unknown) {
@@ -131,18 +127,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     },
     [runStudyGenerators]
   );
-
-  const handleYouTube = async () => {
-    if (!youtubeUrl.trim()) return;
-    try {
-      setStep('processing');
-      const note = await notesApi.importYouTubeNote(youtubeUrl.trim());
-      await runStudyGenerators(note);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'YouTube import failed');
-      setStep('input');
-    }
-  };
 
   const handlePdf = async (file: File) => {
     setStep('processing');
@@ -232,19 +216,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                   <span className="text-sm font-medium">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  placeholder="Paste YouTube URL..."
-                  value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
-                  className={`flex-1 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}`}
-                />
-                <Button size="sm" onClick={handleYouTube} disabled={!youtubeUrl.trim()}>
-                  <PlayCircleIcon className="w-4 h-4" />
-                </Button>
               </div>
 
               <textarea

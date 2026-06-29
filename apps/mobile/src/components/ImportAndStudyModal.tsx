@@ -37,7 +37,6 @@ export default function ImportAndStudyModal({
   onOpenNote,
 }: ImportAndStudyModalProps) {
   const [step, setStep] = useState<Step>('input');
-  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [textContent, setTextContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
@@ -46,7 +45,6 @@ export default function ImportAndStudyModal({
 
   const reset = () => {
     setStep('input');
-    setYoutubeUrl('');
     setTextContent('');
     setError(null);
     setResult(null);
@@ -113,19 +111,6 @@ export default function ImportAndStudyModal({
     }
   };
 
-  const handleYouTube = async () => {
-    if (!youtubeUrl.trim()) return;
-    setStep('processing');
-    setError(null);
-    try {
-      const note = await notesApi.importYouTubeNote(youtubeUrl.trim());
-      await enrichNote(note);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'YouTube import failed');
-      setStep('input');
-    }
-  };
-
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <View className="flex-1 bg-black/50 justify-center px-4">
@@ -144,22 +129,8 @@ export default function ImportAndStudyModal({
             {step === 'input' ? (
               <>
                 <Text className="text-sm text-slate-500 dark:text-slate-400 mb-3">
-                  Paste a YouTube link or lecture notes to create study materials.
+                  Paste lecture notes to create study materials.
                 </Text>
-
-                <View className="flex-row gap-2 mb-3">
-                  <TextInput
-                    value={youtubeUrl}
-                    onChangeText={setYoutubeUrl}
-                    placeholder="YouTube URL..."
-                    placeholderTextColor="#94a3b8"
-                    autoCapitalize="none"
-                    className="flex-1 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-900"
-                  />
-                  <Button size="sm" disabled={!youtubeUrl.trim()} onPress={() => void handleYouTube()}>
-                    Go
-                  </Button>
-                </View>
 
                 <TextInput
                   value={textContent}

@@ -20,7 +20,6 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { extractYouTubeVideoId, fetchYouTubeTranscript } from '../utils/youtubeTranscript';
 import {
   assertPdfSize,
   assertPresentationSize,
@@ -37,7 +36,6 @@ import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
 } from '@lantern/shared/utils/noteStudyContent';
-import { ApiError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -221,59 +219,6 @@ router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, as
 }));
 
 // Special routes (must be before /:noteId)
-router.post('/youtube-import', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
-  const userId = requireAuthUserId(req, res);
-  if (!userId) return;
-  const { url, folderId } = req.body;
-  const videoId = extractYouTubeVideoId(url || '');
-  if (!videoId) {
-    res.status(400).json({ error: 'Invalid YouTube URL.' });
-    return;
-  }
-
-  const startedAt = Date.now();
-  try {
-    const { transcript, title, provider } = await fetchYouTubeTranscript(videoId);
-    const noteTitle = title || `YouTube: ${videoId}`;
-    const note = await supabaseService.createNote(userId, {
-      title: noteTitle,
-      body: transcript,
-      folderId,
-      sourceType: 'youtube',
-      youtubeUrl: url,
-      youtubeVideoId: videoId,
-    });
-    await supabaseService.addNoteAttachment(note.id, {
-      type: 'youtube',
-      extractedText: transcript,
-      metadata: { videoId, url },
-    });
-    logger.info('YouTube import succeeded', {
-      videoId,
-      durationMs: Date.now() - startedAt,
-      transcriptChars: transcript.length,
-      provider,
-    });
-    res.json({ success: true, data: note });
-  } catch (err) {
-    const durationMs = Date.now() - startedAt;
-    if (err instanceof ApiError) {
-      logger.warn('YouTube import rejected', {
-        videoId,
-        durationMs,
-        statusCode: err.statusCode,
-        message: err.message,
-      });
-      res.status(err.statusCode).json({ error: err.message });
-      return;
-    }
-    logger.error('YouTube import failed', { videoId, durationMs, err });
-    res.status(502).json({
-      error: 'YouTube import failed. Try again or use a video with captions enabled.',
-    });
-  }
-}));
-
 router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;

@@ -194,22 +194,7 @@ async function notesRequest<T>(
       data.message ||
       (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
       `Notes request failed (${response.status})`;
-    if (response.status === 402) {
-      message =
-        typeof data.error === 'string' && data.error
-          ? data.error
-          : 'YouTube import credits exhausted. Try again later or contact support.';
-    } else if (response.status === 503) {
-      message =
-        typeof data.error === 'string' && data.error
-          ? data.error
-          : 'YouTube import is not available right now. Please try again later.';
-    } else if (response.status === 429) {
-      message =
-        typeof data.error === 'string' && data.error
-          ? data.error
-          : 'Too many imports right now. Wait a minute and try again.';
-    } else if ((response.status === 502 || response.status === 504) && !hasBody) {
+    if ((response.status === 502 || response.status === 504) && !hasBody) {
       message = 'Request timed out. Try again in a moment.';
     } else if (response.status === 502 || response.status === 504) {
       message =
@@ -389,21 +374,6 @@ export async function summarizeNote(noteId: string): Promise<{ summary: string; 
     method: 'POST',
     body: JSON.stringify({}),
   });
-}
-
-export async function importYouTubeNote(url: string, folderId?: string): Promise<StudyNote> {
-  try {
-    return await notesRequest<StudyNote>('/youtube-import', {
-      method: 'POST',
-      body: JSON.stringify({ url, folderId }),
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'YouTube import failed.';
-    if (/502|504|timed out|timeout/i.test(message)) {
-      throw new Error('YouTube import timed out — try again or use a video with captions enabled.');
-    }
-    throw err instanceof Error ? err : new Error(message);
-  }
 }
 
 export async function generateFlashcardsFromNote(

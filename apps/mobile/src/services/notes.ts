@@ -69,8 +69,6 @@ export const updateNote = (noteId: string, updates: Partial<StudyNote>) =>
   notesRequest<StudyNote>(`/${noteId}`, { method: 'PATCH', body: JSON.stringify(updates) });
 export const deleteNote = (noteId: string) =>
   notesRequest<void>(`/${noteId}`, { method: 'DELETE' });
-export const importYouTubeNote = (url: string, folderId?: string) =>
-  notesRequest<StudyNote>('/youtube-import', { method: 'POST', body: JSON.stringify({ url, folderId }) });
 export const transcribeAudioForNote = (
   audioBase64: string,
   options?: { mimeType?: string; noteId?: string; fileName?: string }

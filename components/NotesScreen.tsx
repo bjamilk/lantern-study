@@ -4,7 +4,6 @@ import {
   FolderPlusIcon,
   MagnifyingGlassIcon,
   DocumentTextIcon,
-  PlayCircleIcon,
   DocumentArrowUpIcon,
 } from '@heroicons/react/24/outline';
 import type { NoteFolder, StudyNote } from '../types';
@@ -21,7 +20,6 @@ interface NotesScreenProps {
   onCreateNote: () => void;
   onCreateFolder: (name: string) => void;
   onSelectNote: (noteId: string) => void;
-  onYouTubeImport: (url: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
   selectedFolderId?: string | null;
@@ -49,14 +47,12 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onCreateNote,
   onCreateFolder,
   onSelectNote,
-  onYouTubeImport,
   onPdfImport,
   onPresentationImport,
   selectedFolderId,
   onSelectFolder,
 }) => {
   const [search, setSearch] = useState('');
-  const [youtubeUrl, setYoutubeUrl] = useState('');
   const importProgress = useUIStore((s) => s.importProgress);
   const isDark = theme === 'dark';
 
@@ -75,12 +71,6 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const handleFolderCreate = () => {
     const name = prompt('Folder name');
     if (name?.trim()) onCreateFolder(name.trim());
-  };
-
-  const handleYouTube = () => {
-    if (!youtubeUrl.trim()) return;
-    onYouTubeImport(youtubeUrl.trim());
-    setYoutubeUrl('');
   };
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,7 +115,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
         <ScreenHeader
           title="Notes"
-          subtitle="Capture lectures, import videos, and turn notes into study tools"
+          subtitle="Capture lectures and turn notes into study tools"
           className="mb-0 sm:mb-2"
           actions={
             <div className="flex gap-1.5 sm:gap-2">
@@ -170,18 +160,6 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 className={`flex-1 min-w-0 bg-transparent outline-none text-sm ${isDark ? 'text-gray-100' : 'text-gray-800'}`}
               />
             </div>
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border min-w-0 w-full sm:flex-1 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-              <PlayCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
-              <input
-                value={youtubeUrl}
-                onChange={e => setYoutubeUrl(e.target.value)}
-                placeholder="YouTube URL..."
-                className={`flex-1 min-w-0 bg-transparent outline-none text-sm ${isDark ? 'text-gray-100' : 'text-gray-800'}`}
-              />
-              <Button size="sm" onClick={handleYouTube} disabled={!youtubeUrl.trim()} className="shrink-0">
-                Import
-              </Button>
-            </div>
             <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto ${
               importProgress
                 ? isDark
@@ -224,7 +202,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             <Card theme={theme} className="text-center py-10 sm:py-12">
               <DocumentTextIcon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto text-indigo-400 mb-3" />
               <p className={`text-sm sm:text-base ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-                No notes yet. Create one, import a YouTube lecture, upload a PDF, or import PowerPoint slides.
+                No notes yet. Create one, upload a PDF, or import PowerPoint slides.
               </p>
             </Card>
           ) : (

@@ -716,13 +716,6 @@ export const App: React.FC = () => {
                             });
                         }}
                         onSelectNote={(id) => { void noteHandlers.openNote(id); }}
-                        onYouTubeImport={async (url) => {
-                            try {
-                                await noteHandlers.handleYouTubeImport(url, selectedFolderId || undefined);
-                            } catch (e: any) {
-                                showToast(e?.message || 'YouTube import failed', 'error');
-                            }
-                        }}
                         onPdfImport={async (file) => {
                             try {
                                 await noteHandlers.handlePdfImport(file, selectedFolderId || undefined);

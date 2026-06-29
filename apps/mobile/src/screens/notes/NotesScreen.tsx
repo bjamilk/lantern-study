@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
-import { importYouTubeNote, uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
+import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 
 type NavigationProp = {
@@ -110,8 +110,6 @@ export function NotesScreen({ navigation }: Props) {
 
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [youtubeUrl, setYoutubeUrl] = useState('');
-  const [importingYoutube, setImportingYoutube] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -158,23 +156,6 @@ export function NotesScreen({ navigation }: Props) {
   const handleCreateFolder = async () => {
     const name = `Folder ${folders.length + 1}`;
     await createFolder(name);
-  };
-
-  const handleYouTubeImport = async () => {
-    const url = youtubeUrl.trim();
-    if (!url) return;
-    setImportingYoutube(true);
-    setError(null);
-    try {
-      const note = await importYouTubeNote(url, selectedFolderId || undefined);
-      setYoutubeUrl('');
-      await loadNotes(selectedFolderId || undefined);
-      navigation.navigate('NoteEditor', { noteId: note.id });
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'YouTube import failed');
-    } finally {
-      setImportingYoutube(false);
-    }
   };
 
   const handleFileImport = async (mode: 'pdf' | 'presentation') => {
@@ -273,23 +254,6 @@ export function NotesScreen({ navigation }: Props) {
           placeholderTextColor="#94a3b8"
           className="flex-1 text-sm text-slate-800 dark:text-slate-100 py-0.5"
         />
-      </View>
-
-      <View className="mx-4 mb-1.5 flex-row items-center gap-2">
-        <View className="flex-1 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <Ionicons name="logo-youtube" size={16} color="#ef4444" />
-          <TextInput
-            value={youtubeUrl}
-            onChangeText={setYoutubeUrl}
-            placeholder="Paste YouTube URL..."
-            placeholderTextColor="#94a3b8"
-            autoCapitalize="none"
-            className="flex-1 text-sm text-slate-800 dark:text-slate-100 py-0.5"
-          />
-        </View>
-        <Button size="sm" loading={importingYoutube} disabled={!youtubeUrl.trim()} onPress={() => void handleYouTubeImport()}>
-          Import
-        </Button>
       </View>
 
       <View className="mx-4 mb-1.5 flex-row flex-wrap gap-2">
