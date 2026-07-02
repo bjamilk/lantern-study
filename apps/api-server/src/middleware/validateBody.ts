@@ -3,6 +3,17 @@ import { Request, Response, NextFunction } from 'express';
 const DEFAULT_MAX_KEYS = parseInt(process.env.REQUEST_BODY_MAX_KEYS || '100', 10);
 const DEFAULT_MAX_DEPTH = parseInt(process.env.REQUEST_BODY_MAX_DEPTH || '8', 10);
 
+/** Completed test sessions store full question JSON — much larger than typical API writes. */
+const TEST_BODY_MAX_KEYS = parseInt(process.env.REQUEST_BODY_TEST_MAX_KEYS || '20000', 10);
+const TEST_BODY_MAX_DEPTH = parseInt(process.env.REQUEST_BODY_TEST_MAX_DEPTH || '14', 10);
+
+function resolveBodyLimits(path: string): { maxKeys: number; maxDepth: number } {
+  if (/^\/api\/v1\/tests(\/|$)/.test(path)) {
+    return { maxKeys: TEST_BODY_MAX_KEYS, maxDepth: TEST_BODY_MAX_DEPTH };
+  }
+  return { maxKeys: DEFAULT_MAX_KEYS, maxDepth: DEFAULT_MAX_DEPTH };
+}
+
 function objectDepth(value: unknown, depth = 0): number {
   if (value == null || typeof value !== 'object') return depth;
   if (Array.isArray(value)) {
@@ -34,6 +45,8 @@ export function validateBodyShape(options?: { maxKeys?: number; maxDepth?: numbe
       next();
       return;
     }
+    const path = req.path || req.originalUrl?.split('?')[0] || '';
+    const { maxKeys, maxDepth } = resolveBodyLimits(path);
     if (objectDepth(req.body) > maxDepth) {
       res.status(400).json({
         error: 'Validation Error',
