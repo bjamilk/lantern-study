@@ -5,7 +5,7 @@ import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, DocumentTextIcon, RectangleStackIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 
@@ -20,6 +20,8 @@ interface SidebarProps {
   onNavigateToOfflineMode: () => void;
   onNavigateToFlashcards: () => void;
   onNavigateToNotes?: () => void;
+  onNavigateToLibrary?: () => void;
+  onNavigateToStudyHub?: () => void;
   onNavigateToBudgetTracker: () => void;
   onNavigateToMarketplace: () => void;
   onNavigateToAdmin?: () => void;
@@ -57,6 +59,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNavigateToOfflineMode,
   onNavigateToFlashcards,
   onNavigateToNotes,
+  onNavigateToLibrary,
+  onNavigateToStudyHub,
   onNavigateToBudgetTracker,
   onNavigateToMarketplace,
   onNavigateToAdmin,
@@ -275,19 +279,25 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
             </div>
         )}
-        <SectionHeader title="Study" />
+        <SectionHeader title="Library" />
         <div className="px-2 space-y-1">
           <NavButton navFunc={onNavigateToDashboard} icon={Squares2X2Icon} label="Dashboard" appMode={AppMode.DASHBOARD} />
-          <NavButton navFunc={onNavigateToFlashcards} icon={BookOpenIcon} label="Flashcards" appMode={AppMode.FLASHCARDS} badgeCount={dueCardsCount} />
+          {onNavigateToLibrary && (
+            <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} />
+          )}
+          <NavButton navFunc={onNavigateToFlashcards} icon={RectangleStackIcon} label="Flashcards" appMode={AppMode.FLASHCARDS} badgeCount={dueCardsCount} />
           {onNavigateToNotes && (
             <NavButton navFunc={onNavigateToNotes} icon={DocumentTextIcon} label="Notes" appMode={AppMode.NOTES} />
+          )}
+          {onNavigateToStudyHub && (
+            <NavButton navFunc={onNavigateToStudyHub} icon={AcademicCapIcon} label="Study" appMode={AppMode.STUDY_HUB} badgeCount={dueCardsCount} />
           )}
         </div>
 
         <SectionHeader title="Social" />
         <div className="px-2 space-y-1">
           <NavButton navFunc={onOpenNotificationModal} icon={BellAlertIcon} label="Notifications" badgeCount={unreadNotificationCount} />
-          <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Marketplace" appMode={AppMode.MARKETPLACE} />
+          <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} />
         </div>
 
         <SectionHeader title="Tools" />

@@ -10,3 +10,5 @@ export { ScreenHeader } from './ScreenHeader';
 export { StatPill } from './StatPill';
 export { Toggle } from './Toggle';
 export { LanternIcon } from './LanternIcon';
+export { EmptyState } from './EmptyState';
+export { FolderNameModal } from './FolderNameModal';

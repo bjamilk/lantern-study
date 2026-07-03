@@ -120,7 +120,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
         >
           <QuestionMarkCircleIcon className="w-4 h-4" />
-          Quiz
+          Practice test
         </button>
       </div>
     </div>

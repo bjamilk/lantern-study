@@ -1,11 +1,20 @@
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Deck, Flashcard } from '../types';
-import { RectangleStackIcon, PlusCircleIcon, ArrowUpTrayIcon, AcademicCapIcon, CloudArrowDownIcon, CloudArrowUpIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import {
+  RectangleStackIcon,
+  PlusCircleIcon,
+  ArrowUpTrayIcon,
+  AcademicCapIcon,
+  CloudArrowDownIcon,
+  CloudArrowUpIcon,
+  SparklesIcon,
+  EllipsisVerticalIcon,
+} from '@heroicons/react/24/outline';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
-import { SkeletonCard } from './ui';
+import { SkeletonCard, ScreenHeader, Button, EmptyState } from './ui';
 
 interface FlashcardsScreenProps {
   decks: Deck[];
@@ -16,6 +25,9 @@ interface FlashcardsScreenProps {
   onSelectDeck: (deck: Deck) => void;
   onImportDeck: (file: File) => void;
   onStartStudy?: () => void;
+  onStudyDeck?: (deck: Deck) => void;
+  onOfflineToggle?: (deck: Deck, isOffline: boolean) => void;
+  embedded?: boolean;
 }
 
 const ACCENT_GRADIENTS = [
@@ -36,75 +48,121 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   onSelectDeck,
   onImportDeck,
   onStartStudy,
+  onStudyDeck,
+  onOfflineToggle,
+  embedded = false,
 }) => {
   const { isDeckOffline, markDeckOffline, unmarkDeckOffline } = useFlashcardStore();
   const openWithMessage = useCompanionStore(s => s.openWithMessage);
   const { lowDataMode } = useUIStore();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const isLoading = isInitialLoading;
 
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [menuOpen]);
+
   const handleAIGenerate = () => {
+    setMenuOpen(false);
     openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.');
   };
 
   const getDeckStats = (deckId: string) => {
     const today = new Date().toISOString().split('T')[0];
     const cardsInDeck = flashcards.filter(fc => fc.deckId === deckId);
-
     const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
     const dueCards = cardsInDeck.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length;
-
     return { newCards, dueCards, totalCards: cardsInDeck.length };
   };
 
-  return (
-    <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-200 overflow-y-auto">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 py-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center mr-3 shadow-md">
-              <RectangleStackIcon className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-slate-100">Flashcard Decks</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{decks.length} deck{decks.length !== 1 ? 's' : ''} &middot; {flashcards.length} card{flashcards.length !== 1 ? 's' : ''} total</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {onStartStudy && (
-              <button onClick={onStartStudy} className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center text-sm shadow-sm transition-colors">
-                <AcademicCapIcon className="w-4 h-4 mr-1.5" /> Study
-              </button>
-            )}
-            <button onClick={onOpenCreateDeck} className="px-2.5 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg flex items-center text-sm shadow-sm transition-colors">
-              <PlusCircleIcon className="w-4 h-4 mr-1.5" /> New Deck
-            </button>
-            <button onClick={onOpenCreateFlashcard} className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg flex items-center text-sm shadow-sm transition-colors">
-              <PlusCircleIcon className="w-4 h-4 mr-1.5" /> New Card
-            </button>
-            <button onClick={handleAIGenerate} className="px-2.5 py-1.5 bg-violet-500 hover:bg-violet-600 text-white rounded-lg flex items-center text-sm shadow-sm transition-colors" title="Ask Lantern AI to generate flashcards for your weak topics" disabled={lowDataMode}>
-              <SparklesIcon className="w-4 h-4 mr-1.5" /> {lowDataMode ? 'AI (Wi‑Fi)' : 'AI Generate'}
-            </button>
-            <label className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg flex items-center text-sm cursor-pointer transition-colors border border-slate-300 dark:border-slate-700">
-              <ArrowUpTrayIcon className="w-4 h-4 mr-1.5" /> Import
-              <input
-                type="file"
-                accept=".json,.csv,.apkg"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    onImportDeck(file);
-                  }
-                  e.target.value = '';
-                }}
-                className="hidden"
-              />
-            </label>
-          </div>
-        </div>
-      </div>
+  const handleOfflineToggle = (e: React.MouseEvent, deck: Deck) => {
+    e.stopPropagation();
+    const offline = isDeckOffline(deck.id);
+    if (offline) {
+      unmarkDeckOffline(deck.id);
+      onOfflineToggle?.(deck, false);
+    } else {
+      markDeckOffline(deck.id);
+      onOfflineToggle?.(deck, true);
+    }
+  };
 
-      <div className="p-4 md:p-6">
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {onStartStudy && (
+        <Button variant="accent" size="sm" onClick={onStartStudy}>
+          <AcademicCapIcon className="w-4 h-4" />
+          Study due
+        </Button>
+      )}
+      <Button size="sm" onClick={onOpenCreateDeck}>
+        <PlusCircleIcon className="w-4 h-4" />
+        New deck
+      </Button>
+      <div className="relative" ref={menuRef}>
+        <Button variant="secondary" size="sm" onClick={() => setMenuOpen(v => !v)} aria-label="More actions">
+          <EllipsisVerticalIcon className="w-4 h-4" />
+        </Button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-lantern-border bg-lantern-surface shadow-lg z-20 py-1">
+            <button type="button" onClick={() => { setMenuOpen(false); onOpenCreateFlashcard(); }} className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary">
+              New card
+            </button>
+            <button type="button" onClick={handleAIGenerate} disabled={lowDataMode} className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50">
+              {lowDataMode ? 'AI Generate (Wi‑Fi)' : 'AI Generate'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); importInputRef.current?.click(); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary"
+            >
+              Import deck
+            </button>
+          </div>
+        )}
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,.csv,.apkg"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onImportDeck(file);
+            e.target.value = '';
+          }}
+        />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={`flex-1 flex flex-col min-h-0 overflow-y-auto ${embedded ? '' : 'bg-lantern-background text-lantern-text'}`}>
+      {!embedded && (
+        <div className="shrink-0 px-4 md:px-6 py-4 border-b border-lantern-border bg-lantern-surface">
+          <ScreenHeader
+            title="Flashcard Decks"
+            subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''} · ${flashcards.length} card${flashcards.length !== 1 ? 's' : ''} total`}
+            icon={<RectangleStackIcon className="w-6 h-6" />}
+            actions={headerActions}
+          />
+        </div>
+      )}
+
+      <div className="p-4 md:p-6 flex-1">
+        {embedded && (
+          <div className="flex justify-end mb-4">{headerActions}</div>
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
@@ -119,11 +177,12 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
               return (
                 <div
                   key={deck.id}
-                  className="rounded-2xl shadow-md hover:shadow-xl flex flex-col cursor-pointer hover:-translate-y-1 transition-all duration-200 overflow-hidden border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 group"
-                  onClick={() => onSelectDeck(deck)}
+                  className="rounded-2xl shadow-md hover:shadow-xl flex flex-col overflow-hidden border border-lantern-border bg-lantern-surface group"
                 >
-                  {/* Gradient accent band */}
-                  <div className={`relative h-14 bg-gradient-to-r ${gradient} px-4 flex items-center justify-between`}>
+                  <div
+                    className={`relative h-14 bg-gradient-to-r ${gradient} px-4 flex items-center justify-between cursor-pointer`}
+                    onClick={() => onSelectDeck(deck)}
+                  >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <RectangleStackIcon className="w-5 h-5 text-white/90 flex-shrink-0" />
                       <h2 className="text-sm font-bold text-white truncate drop-shadow-sm">{deck.name}</h2>
@@ -140,17 +199,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                         </span>
                       )}
                       <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (isDeckOffline(deck.id)) {
-                            unmarkDeckOffline(deck.id);
-                            alert('Deck removed from offline storage');
-                          } else {
-                            markDeckOffline(deck.id);
-                            alert('Deck downloaded for offline use');
-                          }
-                        }}
-                        className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white/50"
+                        type="button"
+                        onClick={(e) => handleOfflineToggle(e, deck)}
+                        className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
                         title={isDeckOffline(deck.id) ? 'Remove from offline' : 'Save for offline'}
                       >
                         {isDeckOffline(deck.id) ? (
@@ -162,47 +213,68 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                     </div>
                   </div>
 
-                  {/* Card body */}
                   <div className="p-4 flex-grow flex flex-col">
-                    <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 mb-4 flex-grow">
+                    <p
+                      className="text-sm text-lantern-text-secondary line-clamp-2 mb-4 flex-grow cursor-pointer"
+                      onClick={() => onSelectDeck(deck)}
+                    >
                       {deck.description || `${totalCards} card${totalCards !== 1 ? 's' : ''} in this deck`}
                     </p>
-                    <div className="flex gap-2 text-xs">
-                      <div className="flex-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/50 rounded-xl py-2.5 px-2 text-center">
-                        <p className="font-bold text-lg text-indigo-600 dark:text-indigo-400 leading-none">{newCards}</p>
-                        <p className="text-slate-500 dark:text-slate-400 mt-1">New</p>
+                    <div className="flex gap-2 text-xs mb-3">
+                      <div className="flex-1 bg-lantern-primary-background border border-lantern-border rounded-xl py-2.5 px-2 text-center">
+                        <p className="font-bold text-lg text-lantern-primary leading-none">{newCards}</p>
+                        <p className="text-lantern-text-secondary mt-1">New</p>
                       </div>
                       <div className="flex-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900/50 rounded-xl py-2.5 px-2 text-center">
                         <p className="font-bold text-lg text-emerald-600 dark:text-emerald-400 leading-none">{dueCards}</p>
-                        <p className="text-slate-500 dark:text-slate-400 mt-1">Due</p>
+                        <p className="text-lantern-text-secondary mt-1">Due</p>
                       </div>
-                      <div className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-2 text-center">
-                        <p className="font-bold text-lg text-slate-700 dark:text-slate-300 leading-none">{totalCards}</p>
-                        <p className="text-slate-500 dark:text-slate-400 mt-1">Total</p>
+                      <div className="flex-1 bg-lantern-background-secondary border border-lantern-border rounded-xl py-2.5 px-2 text-center">
+                        <p className="font-bold text-lg text-lantern-text leading-none">{totalCards}</p>
+                        <p className="text-lantern-text-secondary mt-1">Total</p>
                       </div>
                     </div>
-                    <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium mt-3 text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      Open deck →
-                    </p>
+                    <div className="flex gap-2">
+                      {(hasDueCards || onStudyDeck) && (
+                        <Button
+                          variant="accent"
+                          size="sm"
+                          fullWidth
+                          className="flex-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onStudyDeck) onStudyDeck(deck);
+                            else onSelectDeck(deck);
+                          }}
+                        >
+                          <AcademicCapIcon className="w-4 h-4" />
+                          {hasDueCards ? 'Study due' : 'Study'}
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => onSelectDeck(deck)}
+                      >
+                        Open
+                      </Button>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="text-center py-16 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
-            <div className="h-2 bg-gradient-to-r from-indigo-500 via-violet-500 to-rose-500" />
-            <div className="px-6 py-12">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center mx-auto mb-4 shadow-lg">
-                <RectangleStackIcon className="w-8 h-8 text-white" />
-              </div>
-              <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-2">No Flashcard Decks Yet</h2>
-              <p className="text-slate-500 dark:text-slate-400 mb-6 max-w-sm mx-auto">Create a deck to start adding flashcards and supercharge your learning.</p>
-              <button onClick={onOpenCreateDeck} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 text-sm font-medium transition-colors shadow-md">
-                Create Your First Deck
-              </button>
-            </div>
-          </div>
+          <EmptyState
+            icon={<RectangleStackIcon className="w-8 h-8" />}
+            title="No flashcard decks yet"
+            description="Create a deck to start adding flashcards and supercharge your learning."
+            actionLabel="Create your first deck"
+            onAction={onOpenCreateDeck}
+            secondaryActionLabel="Import deck"
+            onSecondaryAction={() => importInputRef.current?.click()}
+          />
         )}
       </div>
     </div>

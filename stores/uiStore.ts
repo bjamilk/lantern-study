@@ -129,6 +129,10 @@ interface UIState {
   importProgress: NoteImportProgress | null;
   setImportProgress: (progress: NoteImportProgress | null) => void;
   clearImportProgress: () => void;
+
+  // Library tab (notes | flashcards)
+  libraryTab: 'notes' | 'flashcards';
+  setLibraryTab: (tab: 'notes' | 'flashcards') => void;
 }
 
 const initialModals = {
@@ -277,6 +281,9 @@ export const useUIStore = create<UIState>()(
       importProgress: null,
       setImportProgress: (progress) => set({ importProgress: progress }),
       clearImportProgress: () => set({ importProgress: null }),
+
+      libraryTab: 'notes' as const,
+      setLibraryTab: (tab) => set({ libraryTab: tab }),
     }),
     {
       name: 'ui-storage',
@@ -284,6 +291,7 @@ export const useUIStore = create<UIState>()(
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
         lowDataMode: state.lowDataMode,
+        libraryTab: state.libraryTab,
       }),
     }
   )

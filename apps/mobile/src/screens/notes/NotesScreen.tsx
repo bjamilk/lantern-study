@@ -23,6 +23,7 @@ type NavigationProp = {
 
 interface Props {
   navigation: NavigationProp;
+  embedded?: boolean;
 }
 
 function sourceBadge(note: StudyNote): string {
@@ -93,7 +94,7 @@ function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
   );
 }
 
-export function NotesScreen({ navigation }: Props) {
+export function NotesScreen({ navigation, embedded = false }: Props) {
   const {
     folders,
     notes,
@@ -200,8 +201,12 @@ export function NotesScreen({ navigation }: Props) {
     }
   };
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { className: 'flex-1 bg-slate-50 dark:bg-slate-900' } : { className: 'flex-1 bg-slate-50 dark:bg-slate-900', edges: ['top'] as const };
+
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <Wrapper {...wrapperProps}>
+      {!embedded && (
       <ScreenHeader
         title="Notes"
         subtitle="Capture lectures and turn notes into study tools"
@@ -217,6 +222,7 @@ export function NotesScreen({ navigation }: Props) {
           </View>
         }
       />
+      )}
 
       <View className="px-4 mb-1.5 flex-row items-center gap-1.5">
         <Button
@@ -305,7 +311,7 @@ export function NotesScreen({ navigation }: Props) {
           )}
         />
       )}
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 

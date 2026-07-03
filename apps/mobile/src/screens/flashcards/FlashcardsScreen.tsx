@@ -26,6 +26,7 @@ type NavigationProp = {
 
 interface Props {
   navigation: NavigationProp;
+  embedded?: boolean;
 }
 
 const ACCENT_GRADIENTS: [string, string, ...string[]][] = [
@@ -42,11 +43,13 @@ function DeckCard({
   index,
   onPress,
   onAIGenerate,
+  onStudy,
 }: {
   deck: Deck;
   index: number;
   onPress: () => void;
   onAIGenerate: () => void;
+  onStudy?: () => void;
 }) {
   const cardCount = deck.card_count ?? 0;
   const dueCount = deck.due_count ?? 0;
@@ -95,7 +98,8 @@ function DeckCard({
               {deck.description}
             </Text>
           ) : null}
-          <View className="flex-row gap-4">
+          <View className="flex-row gap-4 items-center justify-between">
+            <View className="flex-row gap-4">
             <View className="flex-row items-center gap-1.5">
               <Text className="text-xs text-slate-500 dark:text-slate-400">Cards</Text>
               <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">{cardCount}</Text>
@@ -108,6 +112,12 @@ function DeckCard({
                 {dueCount}
               </Text>
             </View>
+            </View>
+            {onStudy && dueCount > 0 ? (
+              <Pressable onPress={(e) => { e.stopPropagation?.(); onStudy(); }} className="px-3 py-1.5 rounded-lg bg-amber-500">
+                <Text className="text-xs font-bold text-white">Study</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </View>
@@ -115,7 +125,7 @@ function DeckCard({
   );
 }
 
-export function FlashcardsScreen({ navigation }: Props) {
+export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const user = useAuthStore(s => s.user);
   const { decks, isLoading, error, fetchDecks, createDeck, createFlashcard, clearError } = useFlashcardStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -176,8 +186,12 @@ export function FlashcardsScreen({ navigation }: Props) {
     setAiDeckId(null);
   };
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { className: 'flex-1 bg-slate-50 dark:bg-slate-900' } : { className: 'flex-1 bg-slate-50 dark:bg-slate-900', edges: ['top'] as const };
+
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <Wrapper {...wrapperProps}>
+      {!embedded && (
       <ScreenHeader
         title="Flashcards"
         subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''}`}
@@ -192,7 +206,9 @@ export function FlashcardsScreen({ navigation }: Props) {
           </View>
         }
       />
+      )}
 
+      {!embedded && (
       <View className="flex-row gap-2 px-4 mb-3">
         <Pressable
           onPress={() => navigation.navigate('NotesList')}
@@ -207,6 +223,7 @@ export function FlashcardsScreen({ navigation }: Props) {
           <Text className="text-xs font-medium text-slate-600 dark:text-slate-300">Tests</Text>
         </Pressable>
       </View>
+      )}
 
       {error ? (
         <Pressable onPress={clearError} className="mx-4 mb-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
@@ -239,6 +256,7 @@ export function FlashcardsScreen({ navigation }: Props) {
               index={index}
               onPress={() => navigation.navigate('DeckDetail', { deckId: item.id, deckName: item.name })}
               onAIGenerate={() => openAiForDeck(item.id)}
+              onStudy={() => navigation.navigate('FlashcardReview', { deckId: item.id, deckName: item.name })}
             />
           )}
         />
@@ -286,7 +304,7 @@ export function FlashcardsScreen({ navigation }: Props) {
           onFlashcardsGenerated={handleAIGenerated}
         />
       ) : null}
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 

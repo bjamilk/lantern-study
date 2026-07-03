@@ -357,7 +357,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col-reverse lg:flex-row">
         <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 sm:p-4 space-y-3">
           <div
             className={`sticky top-0 z-10 flex flex-wrap gap-2 py-2 -mt-2 lg:static lg:mt-0 lg:py-0 ${

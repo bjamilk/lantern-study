@@ -1,4 +1,5 @@
 import React, { useEffect, useState, Suspense } from 'react';
+import { useLocation } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
@@ -76,6 +77,10 @@ const SellerProfileScreen = lazyWithRetry(() => import('./components/SellerProfi
 const AdminScreen = lazyWithRetry(() => import('./components/AdminScreen'));
 const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
 const NoteEditorScreen = lazyWithRetry(() => import('./components/NoteEditorScreen'));
+const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
+const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
+const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
+const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers } from './hooks/useAuthHandlers';
@@ -168,7 +173,8 @@ export const App: React.FC = () => {
         selectedMarketplaceOrderId, setSelectedMarketplaceOrderId,
         editingMarketplaceListing, setEditingMarketplaceListing,
         selectedSellerId, setSelectedSellerId,
-        isOnline
+        isOnline,
+        libraryTab, setLibraryTab,
     } = useUIStore();
     const {
         users, dataLoaded, setDataLoaded,
@@ -224,6 +230,8 @@ export const App: React.FC = () => {
     } = useFlashcardHandlers();
 
     const [showImportAndStudy, setShowImportAndStudy] = React.useState(false);
+    const [showAuthFromLanding, setShowAuthFromLanding] = React.useState(false);
+    const location = useLocation();
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
         return !localStorage.getItem('lantern_onboarding_complete');
@@ -506,7 +514,11 @@ export const App: React.FC = () => {
         const today = new Date().toISOString().split('T')[0];
         const best = decks.map(d => ({ deck: d, due: flashcards.filter(fc => fc.deckId === d.id && fc.srsData?.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length })).sort((a, b) => b.due - a.due)[0];
         if (best?.deck) { handleSelectDeck(best.deck); handleStartReview(best.deck); }
-        else alert('No flashcard decks available. Create a deck first.');
+        else showToast('No flashcard decks available. Create a deck first.', 'error');
+    };
+    const handleStudyDeck = (deck: import('./types').Deck) => {
+        handleSelectDeck(deck);
+        handleStartReview(deck);
     };
     // Redirect invalid mode/state combinations
     useEffect(() => {
@@ -597,11 +609,84 @@ export const App: React.FC = () => {
             />
         );
     }
-    if (!currentUser) return <AuthScreen onAuthSuccess={(user) => {
+    if (!currentUser) {
+        const isLandingPath = location.pathname === '/' || location.pathname === '/welcome';
+        if (isLandingPath && !showAuthFromLanding) {
+            return (
+                <Suspense fallback={null}>
+                    <LandingPage
+                        onSignIn={() => setShowAuthFromLanding(true)}
+                        onContinue={() => setShowAuthFromLanding(true)}
+                    />
+                </Suspense>
+            );
+        }
+        return <AuthScreen onAuthSuccess={(user) => {
         bootstrapAuthFromStorage();
         setCurrentUser(user);
         setAuthLoading(false);
     }} />;
+    }
+
+    const renderNotesScreen = (embedded = false) => (
+        <NotesScreen
+            theme={theme}
+            folders={folders}
+            notes={notes}
+            isLoading={notesLoading}
+            error={notesError}
+            selectedFolderId={selectedFolderId}
+            onSelectFolder={setSelectedFolderId}
+            embedded={embedded}
+            onCreateNote={async () => {
+                try {
+                    await noteHandlers.handleCreateNote();
+                } catch (e: any) {
+                    showToast(e?.message || 'Failed to create note', 'error');
+                }
+            }}
+            onCreateFolder={(name) => {
+                void noteHandlers.handleCreateFolder(name).catch((e: any) => {
+                    showToast(e?.message || 'Failed to create folder', 'error');
+                });
+            }}
+            onSelectNote={(id) => { void noteHandlers.openNote(id); }}
+            onPdfImport={async (file) => {
+                try {
+                    await noteHandlers.handlePdfImport(file, selectedFolderId || undefined);
+                } catch (e: any) {
+                    showToast(e?.message || 'PDF import failed', 'error');
+                }
+            }}
+            onPresentationImport={async (file) => {
+                try {
+                    const note = await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
+                    if (!note) return;
+                    showToast('PowerPoint imported', 'success');
+                } catch (e: any) {
+                    showToast(e?.message || 'PowerPoint import failed', 'error');
+                }
+            }}
+        />
+    );
+
+    const renderFlashcardsScreen = (embedded = false) => (
+        <FlashcardsScreen
+            decks={decks}
+            flashcards={flashcards}
+            isInitialLoading={!dataLoaded}
+            embedded={embedded}
+            onOpenCreateDeck={handleOpenCreateDeckModal}
+            onOpenCreateFlashcard={() => handleOpenCreateFlashcardModal()}
+            onSelectDeck={handleSelectDeck}
+            onImportDeck={handleImportDeck}
+            onStartStudy={handleFlashcardStudy}
+            onStudyDeck={handleStudyDeck}
+            onOfflineToggle={(_deck, isOffline) => {
+                showToast(isOffline ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
+            }}
+        />
+    );
 
     const mainContent = () => {
         switch (appMode) {
@@ -659,11 +744,14 @@ export const App: React.FC = () => {
                     studyActivityDays={studyActivityDays}
                     onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
-                    onNavigateToFlashcards={() => navigateTo(AppMode.FLASHCARDS)}
+                    onNavigateToFlashcards={() => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); }}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
-                    onNavigateToNotes={noteHandlers.navigateToNotes}
-                    onOpenImportAndStudy={() => setShowImportAndStudy(true)}
+                    onNavigateToNotes={() => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); }}
+                    onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
+                    onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
+                    onReviewDueCards={handleFlashcardStudy}
+                    onViewTestResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
                     dailyQuests={dailyQuests}
                     questsLoaded={questsLoaded}
                     onRefreshGamification={refreshDashboardGamification}
@@ -693,47 +781,45 @@ export const App: React.FC = () => {
                     activeStudySession={activeStudySession}
                     onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
                 />;
-            case AppMode.NOTES:
+            case AppMode.LIBRARY:
                 return (
-                    <NotesScreen
-                        theme={theme}
-                        folders={folders}
-                        notes={notes}
-                        isLoading={notesLoading}
-                        error={notesError}
-                        selectedFolderId={selectedFolderId}
-                        onSelectFolder={setSelectedFolderId}
-                        onCreateNote={async () => {
-                            try {
-                                await noteHandlers.handleCreateNote();
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to create note', 'error');
-                            }
-                        }}
-                        onCreateFolder={(name) => {
-                            void noteHandlers.handleCreateFolder(name).catch((e: any) => {
-                                showToast(e?.message || 'Failed to create folder', 'error');
-                            });
-                        }}
-                        onSelectNote={(id) => { void noteHandlers.openNote(id); }}
-                        onPdfImport={async (file) => {
-                            try {
-                                await noteHandlers.handlePdfImport(file, selectedFolderId || undefined);
-                            } catch (e: any) {
-                                showToast(e?.message || 'PDF import failed', 'error');
-                            }
-                        }}
-                        onPresentationImport={async (file) => {
-                            try {
-                                const note = await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
-                                if (!note) return;
-                                showToast('PowerPoint imported', 'success');
-                            } catch (e: any) {
-                                showToast(e?.message || 'PowerPoint import failed', 'error');
-                            }
-                        }}
+                    <LibraryScreen
+                        tab={libraryTab}
+                        onTabChange={setLibraryTab}
+                        dueCardsCount={dueCardsCount}
+                        notesContent={renderNotesScreen(true)}
+                        flashcardsContent={renderFlashcardsScreen(true)}
                     />
                 );
+            case AppMode.STUDY_HUB:
+                return (
+                    <StudyHubScreen
+                        dueCardsCount={dueCardsCount}
+                        decks={decks}
+                        onStartDueReview={handleFlashcardStudy}
+                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
+                        onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}
+                        onSelectDeck={handleSelectDeck}
+                        onStartLearn={handleStartLearn}
+                        activeTestSession={activeTestSession}
+                        activeStudySession={activeStudySession}
+                        onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
+                        recentTestCount={testResults.length}
+                        onViewRecentTests={() => navigateTo(AppMode.DASHBOARD)}
+                    />
+                );
+            case AppMode.AI_TOOLS:
+                return (
+                    <AIToolsHub
+                        theme={theme}
+                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+                        onStartLearn={handleFlashcardStudy}
+                        onTakePracticeTest={() => navigateTo(AppMode.DASHBOARD)}
+                        onComplete={() => showToast('Study materials ready!', 'success')}
+                    />
+                );
+            case AppMode.NOTES:
+                return renderNotesScreen(false);
             case AppMode.NOTE_EDITOR:
                 if (!selectedNote) return null;
                 return (
@@ -802,10 +888,7 @@ export const App: React.FC = () => {
                     />
                 );
             case AppMode.FLASHCARDS:
-                return <FlashcardsScreen decks={decks} flashcards={flashcards} isInitialLoading={!dataLoaded}
-                    onOpenCreateDeck={handleOpenCreateDeckModal} onOpenCreateFlashcard={() => handleOpenCreateFlashcardModal()}
-                    onSelectDeck={handleSelectDeck} onImportDeck={handleImportDeck}
-                    onStartStudy={handleFlashcardStudy} />;
+                return renderFlashcardsScreen(false);
             case AppMode.DECK_DETAIL:
                 if (!selectedDeck) return null;
                 return <DeckDetailScreen deck={selectedDeck} flashcards={flashcards}
@@ -992,8 +1075,10 @@ export const App: React.FC = () => {
         onNavigateToCreateGroup: () => navigateTo(AppMode.CREATE_GROUP),
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
         onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
-        onNavigateToFlashcards: () => navigateTo(AppMode.FLASHCARDS),
-        onNavigateToNotes: noteHandlers.navigateToNotes,
+        onNavigateToFlashcards: () => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); },
+        onNavigateToNotes: () => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); },
+        onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
+        onNavigateToStudyHub: () => navigateTo(AppMode.STUDY_HUB),
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
         onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
@@ -1175,6 +1260,14 @@ export const App: React.FC = () => {
                                     await createFlashcard({ deckId: deck.id, type: 'BASIC' as any, front: c.front, back: c.back, userId: currentUser.id });
                                 }
                                 await fetchFlashcards(undefined, currentUser.id);
+                            }
+                        }}
+                        onOpenLearnMode={() => {
+                            if (decks[0]) {
+                                handleSelectDeck(decks[0]);
+                                handleStartLearn(decks[0]);
+                            } else {
+                                navigateTo(AppMode.STUDY_HUB);
                             }
                         }}
                         theme={theme}

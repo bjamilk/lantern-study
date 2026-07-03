@@ -89,6 +89,8 @@ import {
 } from '../screens/flashcards';
 
 import { NotesScreen, NoteEditorScreen } from '../screens/notes';
+import { LibraryScreen } from '../screens/library/LibraryScreen';
+import { StudyHubScreen } from '../screens/study/StudyHubScreen';
 
 import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
 
@@ -230,7 +232,11 @@ function StudyNavigator() {
 
   return (
 
-    <StudyStack.Navigator screenOptions={{ headerShown: false }}>
+    <StudyStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="StudyHub">
+
+      <StudyStack.Screen name="StudyHub" component={StudyHubScreen} />
+
+      <StudyStack.Screen name="Library" component={LibraryScreen} />
 
       <StudyStack.Screen name="FlashcardsList" component={FlashcardsScreen} />
 
@@ -398,6 +404,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     Home: 'HomeTab',
 
+    Library: 'StudyTab',
+
     Study: 'StudyTab',
 
     Chat: 'ChatTab',
@@ -454,10 +462,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     if (currentRoute === 'MarketTab') return 'Marketplace';
 
-    if (currentRoute === 'StudyTab' && focused && (focused === 'NotesList' || focused === 'NoteEditor')) {
-
-      return 'Notes';
-
+    if (currentRoute === 'StudyTab' && focused) {
+      if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor') return 'Library';
+      if (focused === 'StudyHub') return 'Study';
     }
 
     return routeNameToTabKey[currentRoute ?? ''] ?? 'Home';
@@ -510,6 +517,16 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
       return;
 
+    }
+
+    if (tab === 'Library') {
+      navigation.navigate('StudyTab', { screen: 'Library' });
+      return;
+    }
+
+    if (tab === 'Study') {
+      navigation.navigate('StudyTab', { screen: 'StudyHub' });
+      return;
     }
 
     if (tab === 'Notes') {

@@ -264,6 +264,9 @@ export enum AppMode {
   ADMIN = 'ADMIN',
   NOTES = 'NOTES',
   NOTE_EDITOR = 'NOTE_EDITOR',
+  LIBRARY = 'LIBRARY',
+  STUDY_HUB = 'STUDY_HUB',
+  AI_TOOLS = 'AI_TOOLS',
 }
 
 export type StudyNoteSourceType = 'typed' | 'youtube' | 'pdf' | 'audio' | 'import' | 'presentation';

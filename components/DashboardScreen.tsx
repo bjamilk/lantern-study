@@ -16,6 +16,8 @@ import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { checkAnswerIsCorrect } from '../utils/helpers';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
+import { DashboardHero } from './dashboard/DashboardHero';
+import { DashboardProgress } from './dashboard/DashboardProgress';
 
 interface DashboardScreenProps {
   testResults: TestResult[];
@@ -47,6 +49,9 @@ interface DashboardScreenProps {
   }) => Promise<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>;
   onNavigateToNotes?: () => void;
   onOpenImportAndStudy?: () => void;
+  onNavigateToAITools?: () => void;
+  onReviewDueCards?: () => void;
+  onViewTestResult?: (result: TestResult) => void;
   dailyQuests?: Array<{ id: string; questType: string; targetCount: number; progressCount: number; completed: boolean; rewardXp: number }>;
   questsLoaded?: boolean;
   onRefreshGamification?: () => void;
@@ -165,6 +170,9 @@ export default function DashboardScreen({
   onNavigateToCreateGroup,
   onNavigateToNotes,
   onOpenImportAndStudy,
+  onNavigateToAITools,
+  onReviewDueCards,
+  onViewTestResult,
   dailyQuests = [],
   questsLoaded = false,
   onRefreshGamification,
@@ -732,83 +740,61 @@ export default function DashboardScreen({
         </div>
       )}
       
-      {/* ═══════════════ GREETING CARD ═══════════════ */}
-      <div className="px-4 md:px-8 py-6">
+      {/* ═══════════════ HERO ═══════════════ */}
+      <DashboardHero
+        userName={currentUser.name}
+        streak={serverStreak || streakData.streak}
+        points={currentUser.points}
+        xpLevel={xpInfo.level}
+        xpTitle={xpInfo.title}
+        xpProgressPercent={xpInfo.progressPercent}
+        pointsToNextLevel={xpInfo.pointsToNextLevel}
+        dueCardsCount={dueCardsCount}
+        totalTestsTaken={totalTestsTakenOverall}
+        onPrimaryAction={() => {
+          if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
+          else if (onNavigateToAITools) onNavigateToAITools();
+          else if (onOpenImportAndStudy) onOpenImportAndStudy();
+        }}
+        primaryActionLabel={
+          dueCardsCount > 0 ? `Review ${dueCardsCount} due card${dueCardsCount !== 1 ? 's' : ''}` : 'Import & study'
+        }
+        activeTestSession={activeTestSession}
+        activeStudySession={activeStudySession}
+        onResumeSession={onResumeSession}
+        lowDataMode={lowDataMode}
+      />
+
+      {/* Secondary quick links */}
+      <div className="px-4 md:px-8 -mt-2">
         <div className="max-w-6xl mx-auto">
-          <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5'}`} padding="lg">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-lantern-text">
-                {getGreeting()}, {currentUser.name.split(' ')[0]}!
-              </h1>
-              <p className="text-lantern-text-secondary mt-1 text-sm md:text-base">
-                {totalTestsTakenOverall > 0
-                  ? `You've completed ${totalTestsTakenOverall} test${totalTestsTakenOverall !== 1 ? 's' : ''}. Keep up the great work!`
-                  : 'Ready to start studying? Jump into a group or review your flashcards.'}
-              </p>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <StatPill label="Streak" value={`${serverStreak || streakData.streak}d`} accent="accent" icon={<FireIcon className="w-4 h-4" />} />
-              <StatPill label="Points" value={currentUser.points.toLocaleString()} accent="primary" icon={<SparklesIcon className="w-4 h-4" />} />
-            </div>
-          </div>
-
-          {/* XP Level Progress Bar */}
-          <div className="mt-4 pt-4 border-t border-lantern-border">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-lg leading-none">{xpInfo.icon}</span>
-                <span className="text-sm font-bold text-lantern-text">
-                  Level {xpInfo.level} — {xpInfo.title}
-                </span>
-              </div>
-              <span className="text-xs text-lantern-text-secondary">
-                {xpInfo.maxPoints === -1
-                  ? `${currentUser.points.toLocaleString()} XP · Max Level`
-                  : `${xpInfo.pointsToNextLevel.toLocaleString()} XP to Level ${xpInfo.level + 1}`}
-              </span>
-            </div>
-            <div className="w-full bg-lantern-background-secondary rounded-full h-2.5 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-lantern-primary transition-all duration-700"
-                style={{ width: `${xpInfo.progressPercent}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className={`grid gap-3 mt-5 ${onNavigateToNotes || onOpenImportAndStudy ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
-            {onOpenImportAndStudy && (
-              <Button variant="secondary" className="flex-col h-auto py-4" onClick={onOpenImportAndStudy}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {onNavigateToAITools && (
+              <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToAITools}>
                 <SparklesIcon className="w-5 h-5 text-amber-600" />
-                <span>Import & Study</span>
+                <span className="text-xs">AI Tools</span>
               </Button>
             )}
             {onNavigateToNotes && (
-              <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToNotes}>
+              <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToNotes}>
                 <DocumentTextIcon className="w-5 h-5 text-indigo-600" />
-                <span>Notes</span>
+                <span className="text-xs">Notes</span>
               </Button>
             )}
-            <Button variant="secondary" className="flex-col h-auto py-4 relative" onClick={onNavigateToFlashcards}>
+            <Button variant="secondary" className="flex-col h-auto py-3 relative" onClick={onNavigateToFlashcards}>
               <RectangleStackIcon className="w-5 h-5 text-emerald-600" />
-              <span>Flashcards</span>
+              <span className="text-xs">Flashcards</span>
               {dueCardsCount > 0 && (
-                <span className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                <span className="absolute top-1.5 right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                   {dueCardsCount > 99 ? '99+' : dueCardsCount}
                 </span>
               )}
             </Button>
-            <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToMarketplace}>
+            <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToMarketplace}>
               <ShoppingBagIcon className="w-5 h-5 text-purple-600" />
-              <span>Marketplace</span>
-            </Button>
-            <Button variant="secondary" className="flex-col h-auto py-4" onClick={onNavigateToCreateGroup}>
-              <PlusCircleIcon className="w-5 h-5 text-lantern-primary" />
-              <span>New Group</span>
+              <span className="text-xs">Explore</span>
             </Button>
           </div>
-          </Card>
         </div>
       </div>
 
@@ -834,6 +820,36 @@ export default function DashboardScreen({
           />
         )}
 
+        {filteredTestResults.length > 0 && onViewTestResult && (
+          <Card padding="md">
+            <h2 className="text-lg font-semibold text-lantern-text mb-3">Recent tests</h2>
+            <div className="space-y-2">
+              {filteredTestResults.slice(0, 5).map((result) => {
+                const score = result.session.questions.length
+                  ? Math.round((result.correctCount / result.session.questions.length) * 100)
+                  : 0;
+                return (
+                  <button
+                    key={result.session.id}
+                    type="button"
+                    onClick={() => onViewTestResult(result)}
+                    className="w-full flex items-center justify-between p-3 rounded-lg border border-lantern-border hover:border-lantern-primary text-left transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium text-sm text-lantern-text">
+                        {new Date(result.session.startTime).toLocaleDateString()} · {result.session.questions.length} questions
+                      </p>
+                      <p className="text-xs text-lantern-text-secondary">{score}% correct</p>
+                    </div>
+                    <span className="text-sm font-semibold text-lantern-primary">Review</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        )}
+
+        <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
@@ -1181,6 +1197,8 @@ export default function DashboardScreen({
           </div>
           </div>
         </details>
+
+        </DashboardProgress>
 
         {/* ─── Troublesome Questions ─── */}
         {troublesomeQuestions.length > 0 && (

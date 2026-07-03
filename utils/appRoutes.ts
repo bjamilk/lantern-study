@@ -66,6 +66,12 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return '/marketplace/seller/customers';
     case AppMode.NOTES:
       return '/notes';
+    case AppMode.LIBRARY:
+      return '/library';
+    case AppMode.STUDY_HUB:
+      return '/study';
+    case AppMode.AI_TOOLS:
+      return '/ai-tools';
     case AppMode.NOTE_EDITOR:
       return params.noteId ? `/notes/${encodeURIComponent(params.noteId)}` : '/notes';
     case AppMode.BUDGET_TRACKER:
@@ -83,8 +89,9 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   const path = normalizePath(pathname);
 
   if (path === '/') {
-    return { mode: null, params: {}, redirect: '/dashboard' };
+    return { mode: null, params: {} };
   }
+  if (path === '/welcome') return { mode: null, params: {} };
   if (path === '/dashboard') return { mode: AppMode.DASHBOARD, params: {} };
   if (path === '/chat') return { mode: AppMode.CHAT, params: {}, clearChat: true };
   if (path === '/groups/new') return { mode: AppMode.CREATE_GROUP, params: {} };
@@ -96,6 +103,9 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };
   if (path === '/marketplace/seller/customers') return { mode: AppMode.SELLER_CUSTOMERS, params: {} };
   if (path === '/notes') return { mode: AppMode.NOTES, params: {} };
+  if (path === '/library') return { mode: AppMode.LIBRARY, params: {} };
+  if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
+  if (path === '/ai-tools') return { mode: AppMode.AI_TOOLS, params: {} };
   if (path === '/budget') return { mode: AppMode.BUDGET_TRACKER, params: {} };
   if (path === '/offline') return { mode: AppMode.OFFLINE_MODE, params: {} };
   if (path === '/admin') return { mode: AppMode.ADMIN, params: {} };
@@ -172,7 +182,7 @@ export function isRoutableAppMode(mode: AppMode): boolean {
   return buildAppPath(mode) !== null;
 }
 
-export const PUBLIC_PATH_PREFIXES = ['/privacy', '/terms', '/cookies', '/reset-password'];
+export const PUBLIC_PATH_PREFIXES = ['/privacy', '/terms', '/cookies', '/reset-password', '/welcome'];
 
 export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);

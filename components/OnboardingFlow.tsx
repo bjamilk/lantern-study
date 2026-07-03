@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AcademicCapIcon, FireIcon, SparklesIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { Button } from './ui';
 
-export type OnboardingStep = 'welcome' | 'goal' | 'starter' | 'streak' | 'done';
+export type OnboardingStep = 'welcome' | 'goal' | 'demo' | 'starter' | 'streak' | 'done';
 
 interface OnboardingFlowProps {
   isOpen: boolean;
   onComplete: (data: { studyGoal: string; streakTarget: number }) => void;
   onSkip: () => void;
   onGenerateStarter?: (notes: string) => Promise<void>;
+  onOpenLearnMode?: () => void;
   theme?: 'light' | 'dark';
 }
 
@@ -20,11 +21,24 @@ const GOALS = [
 
 const STREAK_TARGETS = [7, 14, 30];
 
+const DEMO_SAMPLE_TEXT = `Photosynthesis converts light energy into chemical energy stored in glucose.
+
+Key terms:
+- Chlorophyll: green pigment that absorbs light
+- Stroma: fluid inside the chloroplast where the Calvin cycle occurs
+- Thylakoid: membrane structures where light-dependent reactions happen
+- ATP and NADPH: energy carriers produced in the light reactions
+
+The overall equation: 6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂`;
+
+const DEMO_STAGES = ['Extracting key concepts…', 'Building flashcards…', 'Creating practice questions…'];
+
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   isOpen,
   onComplete,
   onSkip,
   onGenerateStarter,
+  onOpenLearnMode,
   theme = 'light',
 }) => {
   const [step, setStep] = useState<OnboardingStep>('welcome');
@@ -32,7 +46,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const [starterNotes, setStarterNotes] = useState('');
   const [streakTarget, setStreakTarget] = useState(7);
   const [loading, setLoading] = useState(false);
+  const [demoStage, setDemoStage] = useState(0);
+  const [demoProcessing, setDemoProcessing] = useState(false);
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    if (!demoProcessing) return;
+    if (demoStage >= DEMO_STAGES.length - 1) return;
+    const t = setTimeout(() => setDemoStage((s) => s + 1), 900);
+    return () => clearTimeout(t);
+  }, [demoProcessing, demoStage]);
 
   if (!isOpen) return null;
 
@@ -50,6 +73,21 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         setLoading(false);
       }
     }
+    setStep('streak');
+  };
+
+  const handleTryDemo = async () => {
+    setDemoProcessing(true);
+    setDemoStage(0);
+    if (onGenerateStarter) {
+      try {
+        await onGenerateStarter(DEMO_SAMPLE_TEXT);
+      } catch {
+        // demo is best-effort
+      }
+    }
+    await new Promise((r) => setTimeout(r, 2800));
+    setDemoProcessing(false);
     setStep('streak');
   };
 
@@ -89,7 +127,33 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 </button>
               ))}
             </div>
-            <Button onClick={() => setStep('starter')} className="w-full">Continue</Button>
+            <Button onClick={() => setStep('demo')} className="w-full">Continue</Button>
+          </div>
+        )}
+
+        {step === 'demo' && (
+          <div className="p-6">
+            {demoProcessing ? (
+              <div className="py-8 text-center">
+                <div className="animate-spin w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4" />
+                <p className="font-medium text-slate-800 dark:text-slate-100">{DEMO_STAGES[demoStage]}</p>
+                <p className="text-sm text-slate-500 mt-2">Turning sample notes into study materials…</p>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold mb-2 text-slate-900 dark:text-slate-100">See it in action</h2>
+                <p className="text-sm text-slate-500 mb-4">
+                  Try a sample biology note — we'll generate flashcards and quiz questions instantly.
+                </p>
+                <div className={`text-xs p-3 rounded-lg mb-4 max-h-32 overflow-y-auto ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
+                  {DEMO_SAMPLE_TEXT.slice(0, 200)}…
+                </div>
+                <Button onClick={() => void handleTryDemo()} className="w-full mb-2">
+                  Try sample demo
+                </Button>
+                <button onClick={() => setStep('starter')} className="w-full text-sm text-slate-400">Use my own notes instead</button>
+              </>
+            )}
           </div>
         )}
 
@@ -143,8 +207,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <div className="p-8 text-center">
             <AcademicCapIcon className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">You're all set!</h2>
-            <p className="text-slate-500 mb-4">Your {streakTarget}-day streak starts today. Let's study!</p>
-            <Button onClick={onSkip} className="w-full">Start studying</Button>
+            <p className="text-slate-500 mb-4">Your {streakTarget}-day streak starts today. Open your first deck in Learn mode!</p>
+            {onOpenLearnMode ? (
+              <Button onClick={() => { onOpenLearnMode(); onSkip(); }} className="w-full mb-2">Open Learn mode</Button>
+            ) : null}
+            <Button variant={onOpenLearnMode ? 'secondary' : 'primary'} onClick={onSkip} className="w-full">Start studying</Button>
           </div>
         )}
       </div>

@@ -1,0 +1,97 @@
+import React from 'react';
+import {
+  SparklesIcon,
+  RectangleStackIcon,
+  UserGroupIcon,
+  DocumentTextIcon,
+  AcademicCapIcon,
+  ShoppingBagIcon,
+} from '@heroicons/react/24/outline';
+import { Button, LanternIcon } from '../ui';
+
+interface LandingPageProps {
+  onSignIn: () => void;
+  onContinue: () => void;
+}
+
+const features = [
+  { icon: DocumentTextIcon, title: 'Import PDF & PowerPoint', description: 'Turn lectures and slides into organized notes instantly.' },
+  { icon: SparklesIcon, title: 'AI flashcards & quizzes', description: 'Generate study materials from any note in seconds.' },
+  { icon: AcademicCapIcon, title: 'Learn, Match & Test modes', description: 'Spaced repetition, matching games, and practice tests — free.' },
+  { icon: UserGroupIcon, title: 'Study with friends', description: 'Group chat, shared tests, and collaborative learning.' },
+  { icon: ShoppingBagIcon, title: 'Explore marketplace', description: 'Browse study sets from students like you.' },
+  { icon: RectangleStackIcon, title: 'Offline mode', description: 'Download decks and study anywhere.' },
+];
+
+const faqs = [
+  { q: 'Is Lantern Study free?', a: 'Core study features — notes, flashcards, learn mode, and AI import — are free to use.' },
+  { q: 'How is my data handled?', a: 'Your notes and study data are stored securely. See our Privacy Policy for details.' },
+  { q: 'Can I study offline?', a: 'Yes. Download flashcard decks for offline review in the app.' },
+];
+
+export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => (
+  <div className="min-h-screen bg-lantern-background text-lantern-text overflow-y-auto">
+    <header className="border-b border-lantern-border bg-lantern-surface/80 backdrop-blur sticky top-0 z-10">
+      <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <LanternIcon size={32} />
+          <span className="font-bold text-lg">Lantern Study</span>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={onSignIn}>Sign in</Button>
+          <Button size="sm" onClick={onContinue}>Get started</Button>
+        </div>
+      </div>
+    </header>
+
+    <section className="max-w-6xl mx-auto px-4 py-16 md:py-24 text-center">
+      <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-lantern-text max-w-3xl mx-auto">
+        Every AI study tool you need — notes, flashcards, and tests in one place
+      </h1>
+      <p className="mt-6 text-lg text-lantern-text-secondary max-w-2xl mx-auto">
+        Import your materials, generate flashcards with AI, and study with learn mode, matching games, and practice tests. Built for students who study together.
+      </p>
+      <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+        <Button size="lg" onClick={onContinue}>Continue on the website</Button>
+        <Button size="lg" variant="secondary" onClick={onSignIn}>Sign in</Button>
+      </div>
+    </section>
+
+    <section className="max-w-6xl mx-auto px-4 py-12">
+      <h2 className="text-2xl font-bold text-center mb-10">Study smarter, not harder</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {features.map((f) => (
+          <div key={f.title} className="p-5 rounded-2xl border border-lantern-border bg-lantern-surface">
+            <f.icon className="w-8 h-8 text-lantern-primary mb-3" />
+            <h3 className="font-semibold text-lantern-text">{f.title}</h3>
+            <p className="text-sm text-lantern-text-secondary mt-2">{f.description}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section className="max-w-3xl mx-auto px-4 py-12">
+      <h2 className="text-2xl font-bold text-center mb-8">Frequently asked questions</h2>
+      <div className="space-y-4">
+        {faqs.map((faq) => (
+          <div key={faq.q} className="p-4 rounded-xl border border-lantern-border bg-lantern-surface">
+            <h3 className="font-semibold text-lantern-text">{faq.q}</h3>
+            <p className="text-sm text-lantern-text-secondary mt-2">{faq.a}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section className="max-w-6xl mx-auto px-4 py-16 text-center border-t border-lantern-border">
+      <h2 className="text-2xl font-bold mb-4">Ready to study?</h2>
+      <p className="text-lantern-text-secondary mb-6">Join students using Lantern Study for notes, flashcards, and group tests.</p>
+      <Button size="lg" onClick={onContinue}>Get started free</Button>
+    </section>
+
+    <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-secondary">
+      © {new Date().getFullYear()} Lantern Study
+    </footer>
+  </div>
+);
+
+export default LandingPage;

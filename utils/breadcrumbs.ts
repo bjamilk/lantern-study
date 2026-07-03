@@ -13,6 +13,25 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
   const { appMode, selectedDeck, navigateTo, setActiveTestResult } = ctx;
 
   switch (appMode) {
+    case AppMode.LIBRARY:
+      return [{ label: 'Library' }];
+    case AppMode.STUDY_HUB:
+      return [{ label: 'Study' }];
+    case AppMode.AI_TOOLS:
+      return [
+        { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
+        { label: 'AI Tools' },
+      ];
+    case AppMode.NOTES:
+      return [
+        { label: 'Library', onClick: () => navigateTo(AppMode.LIBRARY) },
+        { label: 'Notes' },
+      ];
+    case AppMode.FLASHCARDS:
+      return [
+        { label: 'Library', onClick: () => navigateTo(AppMode.LIBRARY) },
+        { label: 'Flashcards' },
+      ];
     case AppMode.DECK_DETAIL:
       return [
         { label: 'Flashcards', onClick: () => navigateTo(AppMode.FLASHCARDS) },
@@ -20,6 +39,7 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
       ];
     case AppMode.FLASHCARD_REVIEW:
       return [
+        { label: 'Library', onClick: () => navigateTo(AppMode.LIBRARY) },
         { label: 'Flashcards', onClick: () => navigateTo(AppMode.FLASHCARDS) },
         {
           label: selectedDeck?.name || 'Deck',
@@ -85,6 +105,7 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
       ];
     case AppMode.NOTE_EDITOR:
       return [
+        { label: 'Library', onClick: () => navigateTo(AppMode.LIBRARY) },
         { label: 'Notes', onClick: () => navigateTo(AppMode.NOTES) },
         { label: 'Editor' },
       ];

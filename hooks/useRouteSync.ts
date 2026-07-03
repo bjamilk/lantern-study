@@ -43,6 +43,11 @@ export function useRouteSync() {
 
     const parsed = parseAppRoute(location.pathname);
 
+    if (location.pathname === '/' && currentUser) {
+      navigate('/dashboard', { replace: true });
+      return;
+    }
+
     if (parsed.inviteId) {
       return;
     }

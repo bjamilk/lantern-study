@@ -5,6 +5,7 @@ import { Badge } from '../ui';
 
 export type TabKey =
   | 'Home'
+  | 'Library'
   | 'Study'
   | 'Chat'
   | 'AI'
@@ -80,6 +81,7 @@ export function BottomTabBar({
 }: Props) {
   const scrollTabs: TabDef[] = [
     { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
+    { key: 'Library', label: 'Library', icon: 'library-outline', activeIcon: 'library' },
     {
       key: 'Study',
       label: 'Study',
@@ -94,23 +96,7 @@ export function BottomTabBar({
       activeIcon: 'chatbubbles',
       badge: unreadChatCount,
     },
-    {
-      key: 'Notifications',
-      label: 'Alerts',
-      icon: 'notifications-outline',
-      activeIcon: 'notifications',
-      badge: unreadNotificationCount,
-    },
-    { key: 'Marketplace', label: 'Market', icon: 'bag-outline', activeIcon: 'bag' },
-    { key: 'Notes', label: 'Notes', icon: 'document-text-outline', activeIcon: 'document-text' },
-    { key: 'AI', label: 'AI', icon: 'sparkles-outline', activeIcon: 'sparkles' },
-    { key: 'Offline', label: 'Offline', icon: 'cloud-download-outline', activeIcon: 'cloud-download' },
-    {
-      key: 'Budget',
-      label: 'Budget',
-      icon: 'card-outline',
-      activeIcon: 'card',
-    },
+    { key: 'Marketplace', label: 'Explore', icon: 'bag-outline', activeIcon: 'bag' },
   ];
 
   const moreTab: TabDef = {

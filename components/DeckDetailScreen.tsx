@@ -173,12 +173,68 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5">
+      <div className="mb-6 flex flex-col md:flex-row gap-6">
+        {/* Study modes sidebar */}
+        <aside className="hidden md:block md:w-56 shrink-0 space-y-2">
+          <p className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wide px-1 mb-2">Study modes</p>
+          <DeckActionButton
+            onClick={() => onStartLearn ? onStartLearn(deck) : onStartReview(deck)}
+            icon={<AcademicCapIcon className="w-5 h-5" />}
+            label="Learn"
+            subtitle="Adaptive MCQ mode"
+            colorClass="bg-sky-500 hover:bg-sky-600 ring-1 ring-inset ring-white/20 w-full"
+            className="w-full"
+          />
+          <DeckActionButton
+            onClick={() => onStartReview(deck)}
+            icon={<PlayCircleIcon className="w-5 h-5" />}
+            label="Spaced repetition"
+            subtitle={`${dueCards} due · FSRS`}
+            colorClass="bg-rose-500 hover:bg-rose-600 ring-1 ring-inset ring-white/20 w-full"
+            className="w-full"
+          />
+          {onStartMatch && (
+            <DeckActionButton
+              onClick={() => onStartMatch(deck)}
+              icon={<Squares2X2Icon className="w-5 h-5" />}
+              label="Match"
+              subtitle="Pair terms quickly"
+              colorClass="bg-teal-500 hover:bg-teal-600 w-full"
+              className="w-full"
+            />
+          )}
+          <DeckActionButton
+            onClick={() => onStartCram(deck)}
+            icon={<BoltIcon className="w-5 h-5" />}
+            label="Cram"
+            subtitle="Review every card"
+            colorClass="bg-purple-500 hover:bg-purple-600 w-full"
+            className="w-full"
+          />
+          <div className="mt-4 p-3 rounded-xl bg-lantern-background-secondary border border-lantern-border text-xs space-y-1">
+            <p className="flex justify-between"><span className="text-lantern-text-secondary">New</span><span className="font-bold text-lantern-text">{newCards}</span></p>
+            <p className="flex justify-between"><span className="text-lantern-text-secondary">Due</span><span className="font-bold text-emerald-600">{dueCards}</span></p>
+            <p className="flex justify-between"><span className="text-lantern-text-secondary">Total</span><span className="font-bold text-lantern-text">{cardsInDeck.length}</span></p>
+          </div>
+        </aside>
+
+        <div className="flex-1 min-w-0">
+      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:hidden">
+        {onStartLearn && (
+          <DeckActionButton
+            onClick={() => onStartLearn(deck)}
+            icon={<AcademicCapIcon className="w-5 h-5" />}
+            label="Learn"
+            subtitle="Adaptive MCQ mode"
+            colorClass="bg-sky-500 hover:bg-sky-600 ring-1 ring-inset ring-white/20 col-span-full"
+            className="w-full"
+          />
+        )}
         <DeckActionButton
           onClick={() => onStartReview(deck)}
           icon={<PlayCircleIcon className="w-5 h-5" />}
-          label="Study Now"
-          subtitle="FSRS spaced repetition"
+          label="Spaced repetition"
+          subtitle="FSRS review"
           colorClass="bg-rose-500 hover:bg-rose-600 ring-1 ring-inset ring-white/20"
         />
         {onStartMatch && (
@@ -188,15 +244,6 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             label="Match"
             subtitle="Pair terms quickly"
             colorClass="bg-teal-500 hover:bg-teal-600"
-          />
-        )}
-        {onStartLearn && (
-          <DeckActionButton
-            onClick={() => onStartLearn(deck)}
-            icon={<AcademicCapIcon className="w-5 h-5" />}
-            label="Learn"
-            subtitle="Adaptive MCQ mode"
-            colorClass="bg-sky-500 hover:bg-sky-600"
           />
         )}
         <DeckActionButton
@@ -339,6 +386,8 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Add some cards to start studying!</p>
         </div>
       )}
+      </div>
+        </div>
       </div>
       <GenerateFlashcardsModal
         isOpen={isGenerateModalOpen}

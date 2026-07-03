@@ -22,6 +22,8 @@ export type HomeStackParamList = {
 };
 
 export type StudyStackParamList = {
+  StudyHub: undefined;
+  Library: { tab?: 'notes' | 'flashcards' } | undefined;
   FlashcardsList: undefined;
   DeckDetail: { deckId: string; deckName?: string };
   FlashcardReview: { deckId: string; deckName?: string };
