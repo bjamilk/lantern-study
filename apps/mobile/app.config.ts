@@ -88,14 +88,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   ],
   
-  updates: IS_PRODUCTION_BUILD
-    ? {
-        url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
-        fallbackToCacheTimeout: 30000,
-      }
-    : {
-        enabled: false,
-      },
+  updates: {
+    url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
+    ...(IS_PRODUCTION_BUILD
+      ? { fallbackToCacheTimeout: 30000 }
+      : { enabled: false }),
+  },
 
   runtimeVersion: {
     policy: 'appVersion',
