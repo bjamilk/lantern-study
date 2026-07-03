@@ -1330,27 +1330,41 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
   incorrectAttempts: number;
   lastAttempted: string;
 }) => {
-  console.log('Upserting user question stat for user:', userId, 'question:', questionId);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-stats`, {
+  if (!(await hasValidSession())) {
+    return null;
+  }
+
+  const body = JSON.stringify({
+    userId,
+    questionId,
+    correctAttempts: stat.correctAttempts,
+    incorrectAttempts: stat.incorrectAttempts,
+    lastAttempted: stat.lastAttempted,
+  });
+
+  const doFetch = async () =>
+    fetch(`${API_BASE_URL}/api/v1/user-stats`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        questionId,
-        correctAttempts: stat.correctAttempts,
-        incorrectAttempts: stat.incorrectAttempts,
-        lastAttempted: stat.lastAttempted,
-      }),
+      headers: await getAuthHeaders(),
+      body,
     });
 
+  try {
+    let response = await doFetch();
+
+    if (response.status === 401 || response.status === 403) {
+      const { handleApiAuthFailure } = await import('./sessionHandler');
+      if (await handleApiAuthFailure(response.status)) {
+        response = await doFetch();
+      }
+    }
+
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to upsert user question stat');
+      const error = await response.json().catch(() => ({} as Record<string, string>));
+      throw new Error(error.message || error.error || 'Failed to upsert user question stat');
     }
 
     const result = await response.json();
-    console.log('User question stat upserted:', result.data);
     return result.data;
   } catch (error) {
     console.error('Error upserting user question stat:', error);
@@ -1370,6 +1384,32 @@ export const fetchUserQuestionStats = async (userId: string) => {
     });
 
     if (response.status === 401 || response.status === 403) {
+      const { handleApiAuthFailure } = await import('./sessionHandler');
+      if (await handleApiAuthFailure(response.status)) {
+        const retry = await fetch(`${API_BASE_URL}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
+          method: 'GET',
+          headers: await getAuthHeaders(),
+        });
+        if (retry.status === 401 || retry.status === 403) {
+          console.debug('Auth not ready for user-stats, returning empty');
+          return {} as UserQuestionStats;
+        }
+        if (!retry.ok) {
+          throw new Error(`HTTP error! status: ${retry.status}`);
+        }
+        const retryResult = await retry.json();
+        const retryStats: UserQuestionStats = {};
+        if (retryResult.data && Array.isArray(retryResult.data)) {
+          retryResult.data.forEach((stat: any) => {
+            retryStats[stat.question_id] = {
+              correctAttempts: stat.correct_attempts || 0,
+              incorrectAttempts: stat.incorrect_attempts || 0,
+              lastAttempted: stat.last_attempted || null
+            };
+          });
+        }
+        return retryStats;
+      }
       console.debug('Auth not ready for user-stats, returning empty');
       return {} as UserQuestionStats;
     }
