@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, QuestionStatus, ChatItem, MatchingItem, DiagramLabel } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -134,6 +134,78 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }
         }
     }, [currentUser, setSelectedChat, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages, lowDataMode]);
+
+    /** Sync URL to chat list and clear the open conversation (mobile back). */
+    const handleChatBack = useCallback(() => {
+        navigateForAppMode(AppMode.CHAT, {}, { replace: true });
+    }, []);
+
+    // Load messages when a chat is selected (covers deep links / refresh, not only list taps).
+    useEffect(() => {
+        if (!selectedChat || !currentUser) return;
+
+        if (selectedChat.chatType === 'group') {
+            const chatId = selectedChat.id;
+            const limit = lowDataMode ? 20 : 50;
+
+            fetchMessages(chatId, undefined, limit)
+                .then((fetchedMessages) => {
+                    updateMessages((prev) => ({ ...prev, [chatId]: fetchedMessages }));
+                })
+                .catch((error) => {
+                    console.error('[selectedChat] Error fetching messages:', error);
+                });
+
+            fetchUserVotesForGroup(chatId, currentUser.id)
+                .then((fetchedVotes) => {
+                    updateUserVotes((prev) => ({ ...prev, ...fetchedVotes }));
+                })
+                .catch((error) => {
+                    console.error('[selectedChat] Error fetching user votes:', error);
+                });
+
+            markGroupAsRead(chatId, currentUser.id)
+                .then(() => {
+                    updateGroups((prevGroups) =>
+                        prevGroups.map((g) => (g.id === chatId ? { ...g, unreadCount: 0 } : g))
+                    );
+                })
+                .catch((error) => {
+                    console.error('[selectedChat] Error marking group as read:', error);
+                });
+        } else if (selectedChat.chatType === 'dm') {
+            const threadId = selectedChat.id;
+            markDMAsRead(threadId, currentUser.id)
+                .then(() => {
+                    updateDmThreads((prevThreads) =>
+                        prevThreads.map((t) => (t.id === threadId ? { ...t, unreadCount: 0 } : t))
+                    );
+                })
+                .catch((error) => {
+                    console.error('[selectedChat] Error marking DM as read:', error);
+                });
+
+            const otherUserId = (selectedChat as DMThread).participantIds.find(
+                (id) => id !== currentUser.id
+            );
+            if (otherUserId) {
+                fetchDirectMessages(currentUser.id, otherUserId)
+                    .then((fetchedMessages) => {
+                        const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) => ({
+                            id: m.id,
+                            threadId: m.threadId || threadId,
+                            senderId: m.senderId || m.sender_id,
+                            text: m.text,
+                            timestamp: new Date(m.timestamp),
+                        }));
+                        updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
+                    })
+                    .catch((error) => {
+                        console.error('[selectedChat] Error fetching DM messages:', error);
+                    });
+            }
+        }
+    }, [selectedChat?.id, selectedChat?.chatType, currentUser?.id, lowDataMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
 
     const handleInitiateDm = useCallback((otherUserId: string) => {
         if (!currentUser || otherUserId === currentUser.id) return;
@@ -1149,6 +1221,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     return {
         addNotification,
         handleLoadMoreMessages,
+        handleChatBack,
         handleSelectChat,
         handleInitiateDm,
         handleSendDm,

@@ -96,6 +96,8 @@ const IMMERSIVE_SCREENS = new Set([
   'GameResult',
   'ListingDetail',
   'CreateGroup',
+  'GroupChat',
+  'DirectMessage',
 ]);
 
 export function shouldHideTabBar(routeName: string | undefined): boolean {

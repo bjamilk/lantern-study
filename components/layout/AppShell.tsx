@@ -62,7 +62,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             </div>
 
             {/* Main content area */}
-            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-x-hidden transition-all duration-300 ease-in-out pb-16 md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out pb-16 md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && (
@@ -146,11 +146,11 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 )}
                 {children}
 
-                {/* mobile-only AI usage indicator — hidden during chat compose / companion */}
+                {/* mobile-only AI usage indicator — hidden during chat (composer + send) */}
                 {!hideMobileAiUsageBadge && (
-                <div className="md:hidden fixed bottom-20 left-4 z-40 pointer-events-none">
-                    <div className="pointer-events-auto">
-                        <AIUsageBadge compact className="px-2 py-1 shadow-lg" />
+                <div className="md:hidden fixed top-14 right-3 z-30 max-w-[9rem] pointer-events-none">
+                    <div className="pointer-events-auto scale-90 origin-top-right">
+                        <AIUsageBadge compact className="px-2 py-1 shadow-md" />
                     </div>
                 </div>
                 )}

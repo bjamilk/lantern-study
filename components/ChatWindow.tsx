@@ -98,11 +98,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [isSummarizingChat, setIsSummarizingChat] = useState(false);
+  const [awaitingMessages, setAwaitingMessages] = useState(false);
 
   // Reset loading/hasMore states when the chat changes
   useEffect(() => {
     setHasMore(true);
     setIsLoadingMore(false);
+    if (chat) {
+      setAwaitingMessages(true);
+    }
+  }, [chat?.id]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      setAwaitingMessages(false);
+    }
+  }, [messages.length, chat?.id]);
+
+  useEffect(() => {
+    if (!chat) return;
+    const timer = window.setTimeout(() => setAwaitingMessages(false), 10_000);
+    return () => window.clearTimeout(timer);
   }, [chat?.id]);
 
   const handleSummarizeGroup = async () => {
@@ -492,12 +508,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-900">
       {/* Header — fixed at top */}
-      <div className="flex-shrink-0 z-10">
+      <div className="flex-shrink-0 z-20 relative">
         <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center min-w-0 gap-3">
             {/* Mobile back button */}
             {onBack && (
-              <button onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" aria-label="Back to chats">
+              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 relative z-20" aria-label="Back to chats">
                 <ArrowLeftIcon className="w-5 h-5" />
               </button>
             )}
@@ -909,6 +925,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div ref={messagesEndRef} />
             {visibleMessages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
+                {awaitingMessages ? (
+                  <>
+                    <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Loading messages…</p>
+                  </>
+                ) : (
+                  <>
                 <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
                   <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
                 </div>
@@ -920,6 +943,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     ? 'Unarchive the group to resume the conversation.'
                     : `Be the first to send a message in ${name}!`}
                 </p>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -939,7 +964,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </button>
             </div>
           ) : (
-            <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800">
+            <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
               <MessageInputBar
                 onSendMessage={onSendMessage}
                 onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}

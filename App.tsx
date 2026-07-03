@@ -199,7 +199,7 @@ export const App: React.FC = () => {
         onOpenTestConfigModal, onOpenStudyConfigModal,
         handleChallengeUser, addNotification,
         handleMarkNotificationAsRead, handleMarkAllNotificationsAsRead,
-        handleLoadMoreMessages
+        handleLoadMoreMessages, handleChatBack
     } = useGroupHandlers({ users });
     const {
         handleTestSubmit, handleUpdateAnswer, handleChangeQuestion,
@@ -507,6 +507,16 @@ export const App: React.FC = () => {
                 sender, type: MessageType.TEXT, text: dm.text, upvotes: 0, downvotes: 0,
             };
         });
+
+    const handleShellNavigate = React.useCallback((mode: AppMode) => {
+        // Tapping Chat in bottom nav should return to the list, not stay on the open thread.
+        if (mode === AppMode.CHAT) {
+            navigateTo(AppMode.CHAT, {}, { replace: true });
+            return;
+        }
+        navigateTo(mode);
+    }, [navigateTo]);
+
     const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
     const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
     const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
@@ -707,7 +717,7 @@ export const App: React.FC = () => {
                     onAIQuery={handleAIAskTutor}
                     dmThreads={dmThreads}
                     onSelectChat={handleSelectChat}
-                    onBack={() => setSelectedChat(null)}
+                    onBack={handleChatBack}
                     onCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
@@ -1111,8 +1121,10 @@ export const App: React.FC = () => {
         }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}
-            hideMobileAiUsageBadge={appMode === AppMode.CHAT && !!selectedChat}
-            onNavigate={navigateTo}>
+            hideMobileAiUsageBadge={
+                appMode === AppMode.CHAT && !!selectedChat
+            }
+            onNavigate={handleShellNavigate}>
             <div className={`shrink-0 ${appMode === AppMode.CHAT && selectedChat ? 'hidden md:block' : ''}`}>
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
             </div>

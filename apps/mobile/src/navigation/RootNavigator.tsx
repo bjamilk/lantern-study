@@ -604,7 +604,11 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       ) : null}
 
       {!hideBar ? (
-        <AIUsageFloatingBadge activeTab={activeTab} hidden={moreOpen || companionOpen || activeTab === 'AI'} />
+        <AIUsageFloatingBadge
+          activeTab={activeTab}
+          focusedRoute={focused}
+          hidden={moreOpen || companionOpen || activeTab === 'AI'}
+        />
       ) : null}
 
       <MoreSheet

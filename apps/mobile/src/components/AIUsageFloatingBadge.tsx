@@ -10,17 +10,20 @@ import type { TabKey } from './layout/BottomTabBar';
 
 interface Props {
   activeTab: TabKey;
-  /** Hide while More sheet or other bottom overlays are open */
+  /** Hide while More sheet, companion, or chat screens are open */
   hidden?: boolean;
+  /** Current focused screen inside a tab stack (e.g. GroupChat) */
+  focusedRoute?: string;
 }
 
 /** Tabs where list screens often place primary actions on the bottom-right */
 const RIGHT_ACTION_TABS: TabKey[] = ['Study', 'Home'];
 
-/** Tabs where the floating badge should not appear (overlaps primary actions) */
+/** Tabs or screens where the floating badge should not appear */
 const HIDDEN_TABS: TabKey[] = ['Chat'];
+const HIDDEN_ROUTES = new Set(['GroupChat', 'DirectMessage']);
 
-export function AIUsageFloatingBadge({ activeTab, hidden = false }: Props) {
+export function AIUsageFloatingBadge({ activeTab, hidden = false, focusedRoute }: Props) {
   const position = useMemo(() => {
     if (RIGHT_ACTION_TABS.includes(activeTab)) {
       return styles.anchorLeft;
@@ -28,7 +31,9 @@ export function AIUsageFloatingBadge({ activeTab, hidden = false }: Props) {
     return styles.anchorRight;
   }, [activeTab]);
 
-  if (hidden || HIDDEN_TABS.includes(activeTab)) return null;
+  if (hidden || HIDDEN_TABS.includes(activeTab) || (focusedRoute && HIDDEN_ROUTES.has(focusedRoute))) {
+    return null;
+  }
 
   return (
     <View
