@@ -6,6 +6,7 @@ import {
 } from '@lantern/shared/settings';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { User } from '../types';
+import { showWebNotification } from '../utils/webNotifications';
 
 const CHECK_INTERVAL_MS = 60_000;
 
@@ -32,15 +33,13 @@ export function useDailyStudyReminder(currentUser: User | null): void {
 
       const todayKey = new Date().toISOString().slice(0, 10);
       const message = buildDailyReminderMessage(settings);
-      const notification = new Notification(message.title, {
+      void showWebNotification({
+        title: message.title,
         body: message.body,
         icon: '/favicon.ico',
         tag: 'daily-study-reminder',
+        onClick: () => window.focus(),
       });
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
 
       localStorage.setItem(storageKey, todayKey);
       firedRef.current = todayKey;

@@ -74,3 +74,26 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => {
+        if (clients.length > 0) {
+          const client = clients[0];
+          client.focus();
+          client.postMessage({ type: 'notification-click', ...data });
+          return;
+        }
+        const url = typeof data.url === 'string' ? data.url : '/';
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(url);
+        }
+      })
+      .catch(() => {})
+  );
+});

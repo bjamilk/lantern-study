@@ -36,6 +36,11 @@ import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificati
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
+import {
+  onWebNotificationClick,
+  requestWebNotificationPermission,
+  showWebNotification,
+} from '../utils/webNotifications';
 
 function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
     return fetched.map((t: any) => ({
@@ -1055,24 +1060,33 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         setDueCardsCount(totalDue);
 
         if (totalDue > 0 && Notification.permission === 'granted') {
-            const notification = new Notification('Flashcard Review Due', {
+            void showWebNotification({
+                title: 'Flashcard Review Due',
                 body: `You have ${totalDue} flashcards ready for review.`,
                 icon: '/favicon.ico',
-                tag: 'srs-reminder'
+                tag: 'srs-reminder',
+                data: { navigate: 'flashcards' },
+                onClick: () => {
+                    window.focus();
+                    setAppMode(AppMode.FLASHCARDS);
+                },
             });
+        }
+    }, [currentUser, flashcards, setAppMode]);
 
-            notification.onclick = () => {
+    useEffect(() => {
+        return onWebNotificationClick((data) => {
+            if (data.navigate === 'flashcards') {
                 window.focus();
                 setAppMode(AppMode.FLASHCARDS);
-                notification.close();
-            };
-        }
-    }, [currentUser, flashcards]);
+            }
+        });
+    }, [setAppMode]);
 
     useEffect(() => {
         if (currentUser && flashcards.length > 0) {
             if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
+                void requestWebNotificationPermission();
             }
 
             checkForDueCardsAndNotify();
