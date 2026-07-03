@@ -93,9 +93,14 @@ export function requireNoteAccess(noteIdParam = 'noteId') {
       denyAccess(res);
       return;
     }
-    const note = await requireService().getNote(noteId, userId);
-    if (!note && !req.user?.isAdmin) {
-      denyAccess(res, 'Note not found or access denied');
+    try {
+      const note = await requireService().getNote(noteId, userId);
+      if (!note && !req.user?.isAdmin) {
+        denyAccess(res, 'Note not found or access denied');
+        return;
+      }
+    } catch {
+      res.status(404).json({ success: false, error: 'Note not found or access denied' });
       return;
     }
     next();
