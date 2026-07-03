@@ -6,6 +6,7 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { AuthenticatedRequest } from '../types';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
+import { clientErrorMessage } from '../utils/safeError';
 
 const router = Router();
 
@@ -43,8 +44,15 @@ router.post(
       return res.status(400).json({ success: false, error: 'bundle.bundleId is required' });
     }
 
-    await supabaseService.saveOfflineBundle(userId, bundle);
-    res.json({ success: true });
+    try {
+      await supabaseService.saveOfflineBundle(userId, bundle);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(err.statusCode || 400).json({
+        success: false,
+        error: clientErrorMessage(err, 'Failed to save offline bundle'),
+      });
+    }
   })
 );
 

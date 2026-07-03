@@ -80,4 +80,48 @@ describe('validateBodyShape', () => {
     expect(nextCalled).toBe(true);
     expect(res.statusCode).toBe(200);
   });
+
+  it('allows large offline bundle payloads on /api/v1/offline-bundles', () => {
+    const questions = Array.from({ length: 25 }, (_, i) => ({
+      id: `q-${i}`,
+      questionStem: 'Question text',
+      imageUrl: 'data:image/jpeg;base64,' + 'A'.repeat(5000),
+      options: Array.from({ length: 4 }, (__, j) => ({
+        id: `opt-${i}-${j}`,
+        text: `Option ${j}`,
+      })),
+    }));
+    const req = {
+      method: 'POST',
+      path: '/api/v1/offline-bundles',
+      body: {
+        userId: 'user-1',
+        bundle: {
+          bundleId: 'bundle-1',
+          config: { numberOfQuestions: 25, groupId: 'g1' },
+          questions,
+          groupName: 'Biology',
+          downloadedAt: new Date().toISOString(),
+        },
+      },
+    } as any;
+    const res = {
+      statusCode: 200,
+      body: null as any,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: any) {
+        this.body = payload;
+        return this;
+      },
+    };
+    let nextCalled = false;
+    validateBodyShape()(req, res as any, () => {
+      nextCalled = true;
+    });
+    expect(nextCalled).toBe(true);
+    expect(res.statusCode).toBe(200);
+  });
 });

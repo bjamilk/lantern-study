@@ -7,9 +7,16 @@ const DEFAULT_MAX_DEPTH = parseInt(process.env.REQUEST_BODY_MAX_DEPTH || '8', 10
 const TEST_BODY_MAX_KEYS = parseInt(process.env.REQUEST_BODY_TEST_MAX_KEYS || '20000', 10);
 const TEST_BODY_MAX_DEPTH = parseInt(process.env.REQUEST_BODY_TEST_MAX_DEPTH || '14', 10);
 
+/** Offline bundles include full question payloads and optional base64 images. */
+const OFFLINE_BUNDLE_BODY_MAX_KEYS = parseInt(process.env.REQUEST_BODY_OFFLINE_MAX_KEYS || '50000', 10);
+const OFFLINE_BUNDLE_BODY_MAX_DEPTH = parseInt(process.env.REQUEST_BODY_OFFLINE_MAX_DEPTH || '14', 10);
+
 function resolveBodyLimits(path: string): { maxKeys: number; maxDepth: number } {
   if (/^\/api\/v1\/tests(\/|$)/.test(path)) {
     return { maxKeys: TEST_BODY_MAX_KEYS, maxDepth: TEST_BODY_MAX_DEPTH };
+  }
+  if (/^\/api\/v1\/offline-bundles(\/|$)/.test(path)) {
+    return { maxKeys: OFFLINE_BUNDLE_BODY_MAX_KEYS, maxDepth: OFFLINE_BUNDLE_BODY_MAX_DEPTH };
   }
   return { maxKeys: DEFAULT_MAX_KEYS, maxDepth: DEFAULT_MAX_DEPTH };
 }

@@ -3302,7 +3302,10 @@ export const saveOfflineBundle = async (userId: string, bundle: OfflineBundleDat
         downloadedAt: bundle.downloadedAt instanceof Date ? bundle.downloadedAt.toISOString() : bundle.downloadedAt,
       } }),
     });
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({} as Record<string, string>));
+      throw new Error(result.error || result.message || `HTTP error! status: ${response.status}`);
+    }
     return true;
   } catch (error) {
     console.error('Error saving offline bundle:', error);
