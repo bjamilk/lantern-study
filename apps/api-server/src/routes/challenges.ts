@@ -6,15 +6,18 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { ChallengeService } from '../services/challengeService';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
+import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 
 const router = Router();
 
 let challengeService: ChallengeService;
+let cacheService: CacheService;
 
-export const initializeChallengeRoutes = (supabase: SupabaseService, _cache: CacheService) => {
+export const initializeChallengeRoutes = (supabase: SupabaseService, cache: CacheService) => {
   challengeService = new ChallengeService(supabase);
+  cacheService = cache;
 };
 
 // POST /api/v1/challenges - Send a challenge
@@ -32,6 +35,7 @@ router.post(
 
     try {
       const challenge = await challengeService.createChallenge(userId, { groupId, opponentId, config });
+      await cacheService.deletePattern(`challenges:list:${userId}:*`);
       res.status(201).json({ success: true, data: challenge });
     } catch (err: any) {
       const status = err.statusCode || 500;
@@ -50,7 +54,14 @@ router.get(
     if (!userId) return;
 
     const { status } = req.query;
+    const cacheKey = CacheKeys.challengeList(userId, status as string | undefined);
+    const cached = await cacheService.get<any[]>(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
     const challenges = await challengeService.listChallenges(userId, status as string | undefined);
+    await cacheService.set(cacheKey, challenges, CacheTTL.challengeList);
     res.json({ success: true, data: challenges });
   })
 );

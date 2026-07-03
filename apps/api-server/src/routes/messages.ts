@@ -7,6 +7,8 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
+import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { AuthenticatedRequest, Message } from '../types';
 
 const router = Router();
@@ -277,7 +279,14 @@ router.get(
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
+      const cacheKey = CacheKeys.unreadDm(userId);
+      const cached = await cacheService.get<Record<string, number>>(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: cached });
+      }
+
       const unreadCounts = await supabaseService.getAllDMUnreadCounts(userId);
+      await cacheService.set(cacheKey, unreadCounts, CacheTTL.unreadCounts);
 
       res.json({
         success: true,
@@ -420,7 +429,7 @@ router.get(
 
     logger.debug('Fetching message', { messageId, userId });
 
-    const cacheKey = `message:${messageId}`;
+    const cacheKey = userScopedCacheKey('message', userId, messageId);
     let message = await cacheService.get(cacheKey);
 
     if (!message) {
@@ -435,6 +444,20 @@ router.get(
 
       // Cache for 10 minutes
       await cacheService.set(cacheKey, message, 600);
+    } else {
+      const msg = message as Record<string, unknown>;
+      const senderId = msg.senderId ?? msg.sender_id;
+      if (senderId !== userId) {
+        const groupId = msg.groupId ?? msg.group_id;
+        if (groupId) {
+          const group = await supabaseService.getGroupById(String(groupId), userId);
+          if (!group) {
+            return res.status(403).json({ success: false, error: 'Access denied' });
+          }
+        } else if (!enforceResourceOwner(res, msg, userId)) {
+          return;
+        }
+      }
     }
 
     res.json({

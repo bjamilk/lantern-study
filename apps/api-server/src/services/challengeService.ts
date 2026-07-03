@@ -49,6 +49,44 @@ export class ChallengeService {
     };
   }
 
+  private async fetchProfilesBatch(
+    userIds: string[]
+  ): Promise<Map<string, { id: string; name: string; avatarUrl?: string }>> {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    const map = new Map<string, { id: string; name: string; avatarUrl?: string }>();
+    if (!unique.length) return map;
+
+    const { data, error } = await this.db
+      .from('profiles')
+      .select('id, name, avatar_url')
+      .in('id', unique);
+
+    if (error) {
+      logger.warn('Batch profile fetch failed, falling back to empty names', { error: error.message });
+    }
+
+    for (const row of data || []) {
+      map.set(row.id, {
+        id: row.id,
+        name: row.name || 'Unknown',
+        avatarUrl: row.avatar_url || undefined,
+      });
+    }
+    for (const id of unique) {
+      if (!map.has(id)) {
+        map.set(id, { id, name: 'Unknown', avatarUrl: undefined });
+      }
+    }
+    return map;
+  }
+
+  private profileFromMap(
+    profileMap: Map<string, { id: string; name: string; avatarUrl?: string }>,
+    userId: string
+  ) {
+    return profileMap.get(userId) || { id: userId, name: 'Unknown', avatarUrl: undefined };
+  }
+
   private async resolveQuestions(questionIds: string[]): Promise<any[]> {
     if (!questionIds.length) return [];
     const { data, error } = await this.db
@@ -112,31 +150,51 @@ export class ChallengeService {
     };
   }
 
-  private async mapChallenge(row: any, viewerId: string): Promise<GroupChallenge> {
+  private async mapChallenge(
+    row: any,
+    viewerId: string,
+    options?: {
+      profileMap?: Map<string, { id: string; name: string; avatarUrl?: string }>;
+      participantRows?: any[];
+      skipQuestions?: boolean;
+    }
+  ): Promise<GroupChallenge> {
     const questionIds: string[] = Array.isArray(row.question_ids) ? row.question_ids : [];
-    const [challenger, opponent] = await Promise.all([
-      this.fetchProfileBasics(row.challenger_id),
-      this.fetchProfileBasics(row.opponent_id),
-    ]);
+    const profileMap = options?.profileMap;
+    const challenger = profileMap
+      ? this.profileFromMap(profileMap, row.challenger_id)
+      : await this.fetchProfileBasics(row.challenger_id);
+    const opponent = profileMap
+      ? this.profileFromMap(profileMap, row.opponent_id)
+      : await this.fetchProfileBasics(row.opponent_id);
 
-    const { data: participantRows } = await this.db
-      .from('challenge_participants')
-      .select('*')
-      .eq('challenge_id', row.id);
+    let participantRows = options?.participantRows;
+    if (!participantRows) {
+      const { data } = await this.db
+        .from('challenge_participants')
+        .select('*')
+        .eq('challenge_id', row.id);
+      participantRows = data || [];
+    }
 
-    const participants = await Promise.all(
-      (participantRows || []).map(async (p: any) => {
-        const prof = await this.fetchProfileBasics(p.user_id);
-        return this.mapParticipant(p, prof);
-      })
-    );
+    const participants = profileMap
+      ? (participantRows || []).map((p: any) =>
+          this.mapParticipant(p, this.profileFromMap(profileMap, p.user_id))
+        )
+      : await Promise.all(
+          (participantRows || []).map(async (p: any) => {
+            const prof = await this.fetchProfileBasics(p.user_id);
+            return this.mapParticipant(p, prof);
+          })
+        );
 
     const myParticipant = participants.find((p: ChallengeParticipant) => p.userId === viewerId);
     const opponentParticipant = participants.find((p: ChallengeParticipant) => p.userId !== viewerId);
 
     const canSeeOpponentAnswers = row.status === 'completed' && opponentParticipant?.finishedAt;
     const questions =
-      row.status === 'accepted' || row.status === 'completed'
+      !options?.skipQuestions &&
+      (row.status === 'accepted' || row.status === 'completed')
         ? await this.resolveQuestions(questionIds)
         : undefined;
 
@@ -246,7 +304,37 @@ export class ChallengeService {
     const { data, error } = await query;
     if (error) throw error;
 
-    return Promise.all((data || []).map(row => this.mapChallenge(row, userId)));
+    const rows = data || [];
+    if (!rows.length) return [];
+
+    const challengeIds = rows.map((r: any) => r.id);
+    const { data: allParticipantRows } = await this.db
+      .from('challenge_participants')
+      .select('*')
+      .in('challenge_id', challengeIds);
+
+    const participantsByChallenge = new Map<string, any[]>();
+    for (const p of allParticipantRows || []) {
+      const list = participantsByChallenge.get(p.challenge_id) || [];
+      list.push(p);
+      participantsByChallenge.set(p.challenge_id, list);
+    }
+
+    const profileIds = [
+      ...rows.flatMap((r: any) => [r.challenger_id, r.opponent_id]),
+      ...(allParticipantRows || []).map((p: any) => p.user_id),
+    ];
+    const profileMap = await this.fetchProfilesBatch(profileIds);
+
+    return Promise.all(
+      rows.map((row: any) =>
+        this.mapChallenge(row, userId, {
+          profileMap,
+          participantRows: participantsByChallenge.get(row.id) || [],
+          skipQuestions: true,
+        })
+      )
+    );
   }
 
   async getChallenge(challengeId: string, userId: string): Promise<GroupChallenge | null> {

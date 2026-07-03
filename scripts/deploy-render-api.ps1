@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $ServiceName = 'lantern-study-api'
+$WorkerServiceName = 'lantern-study-worker'
 $GitHubRepo = 'https://github.com/bjamilk/lantern-study'
 $Branch = 'main'
 $HealthPath = '/health'
@@ -121,6 +122,7 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '1200' },
         @{ key = 'AI_POST_BURST_MAX'; value = '15' },
         @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
+        @{ key = 'BULLMQ_ENABLED'; value = 'true' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {
@@ -131,6 +133,58 @@ function Build-EnvVars([hashtable]$ApiEnv) {
         )
     }
     return $vars
+}
+
+function Build-WorkerEnvVars([hashtable]$ApiEnv) {
+    return @(
+        @{ key = 'NODE_ENV'; value = 'production' },
+        @{ key = 'BULLMQ_ENABLED'; value = 'true' },
+        @{ key = 'REDIS_ENABLED'; value = 'true' },
+        @{ key = 'REDIS_URL'; value = $ApiEnv['REDIS_URL'] },
+        @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },
+        @{ key = 'SUPABASE_SERVICE_ROLE_KEY'; value = $ApiEnv['SUPABASE_SERVICE_ROLE_KEY'] },
+        @{ key = 'GROQ_API_KEY'; value = $ApiEnv['GROQ_API_KEY'] },
+        @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
+        @{ key = 'ENABLE_DATA_RETENTION_JOBS'; value = 'true' }
+    )
+}
+
+function Get-ExistingServiceByName([string]$OwnerId, [string]$Name) {
+    $items = Get-RenderItems (Invoke-RenderApi -Method GET -Path "/services?ownerId=$OwnerId&limit=50")
+    return $items | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+}
+
+function Ensure-WorkerService([string]$OwnerId, [array]$EnvVars) {
+    $existing = Get-ExistingServiceByName -OwnerId $OwnerId -Name $WorkerServiceName
+    if ($existing) {
+        Write-Host "Found existing worker: $($existing.name) ($($existing.id))"
+        return $existing
+    }
+
+    Write-Step "Creating Render background worker '$WorkerServiceName'..."
+    $body = @{
+        type           = 'background_worker'
+        name           = $WorkerServiceName
+        ownerId        = $OwnerId
+        repo           = $GitHubRepo
+        branch         = $Branch
+        autoDeploy     = 'yes'
+        envVars        = $EnvVars
+        serviceDetails = @{
+            runtime            = 'docker'
+            plan               = 'free'
+            region             = 'oregon'
+            envSpecificDetails = @{
+                dockerfilePath = './apps/api-server/Dockerfile'
+                dockerContext  = '.'
+                dockerCommand  = 'node apps/api-server/dist/worker.js'
+            }
+        }
+    }
+    $created = Invoke-RenderApi -Method POST -Path '/services' -Body $body
+    $service = if ($created.service) { $created.service } else { $created }
+    Write-Ok "Created worker $($service.name)"
+    return $service
 }
 
 function Ensure-Service([string]$OwnerId, [array]$EnvVars) {
@@ -262,6 +316,13 @@ $service = Ensure-Service -OwnerId $ownerId -EnvVars $envVars
 Update-ServiceEnvVars -ServiceId $service.id -EnvVars $envVars
 $deployId = Start-Deploy -ServiceId $service.id
 Wait-Deploy -ServiceId $service.id -DeployId $deployId | Out-Null
+
+$workerEnvVars = Build-WorkerEnvVars -ApiEnv $apiEnv
+$worker = Ensure-WorkerService -OwnerId $ownerId -EnvVars $workerEnvVars
+Update-ServiceEnvVars -ServiceId $worker.id -EnvVars $workerEnvVars
+$workerDeployId = Start-Deploy -ServiceId $worker.id
+Wait-Deploy -ServiceId $worker.id -DeployId $workerDeployId | Out-Null
+
 $service = Get-ExistingService -OwnerId $ownerId
 $serviceUrl = Get-ServiceUrl -Service $service
 Write-Step "Checking $serviceUrl$HealthPath ..."
@@ -275,3 +336,4 @@ Write-Host ''
 Write-Ok 'Render deploy complete.'
 Write-Host "API URL: $serviceUrl"
 Write-Host "Dashboard: https://dashboard.render.com/web/$($service.id)"
+Write-Host "Worker dashboard: https://dashboard.render.com/worker/$($worker.id)"

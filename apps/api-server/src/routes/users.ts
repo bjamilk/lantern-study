@@ -11,6 +11,8 @@ import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { AuthenticatedRequest, User, Group } from '../types';
 import { dataExportRateLimit } from '../middleware/rateLimit';
+import { runSyncOrEnqueue } from '../queue/enqueue';
+import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import { logAdminAction } from '../services/adminAudit';
 
 const NON_ADMIN_UPDATABLE_FIELDS = new Set([
@@ -167,6 +169,34 @@ router.get(
         error: 'Failed to search users',
       });
     }
+  })
+);
+
+// GET /api/v1/users/me - Current user profile + capability flags for UI RBAC
+router.get(
+  '/me',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const user = await supabaseService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const isPlatformAdmin = !!req.user?.isAdmin ||
+      (await supabaseService.isPlatformAdmin(userId));
+
+    res.json({
+      success: true,
+      data: {
+        ...user,
+        capabilities: {
+          platformAdmin: isPlatformAdmin,
+        },
+      },
+    });
   })
 );
 
@@ -453,7 +483,19 @@ router.get(
 
     logger.info('Exporting user data', { userId, requestingUserId });
 
-    const archive = await supabaseService.exportUserData(userId);
+    const outcome = await runSyncOrEnqueue(
+      'export.userData',
+      { userId },
+      requestingUserId,
+      async () => supabaseService.exportUserData(userId)
+    );
+
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+
+    const archive = outcome.result;
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader(

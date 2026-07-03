@@ -77,6 +77,55 @@ export const setCachedAuthToken = (token: string | null, userId?: string | null)
   }
 };
 
+/** Remove all client-side auth/session footprints (localStorage, sessionStorage, cookies). */
+export function clearAllClientAuthStorage(): void {
+  setCachedAuthToken(null, null);
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.clear();
+  } catch {
+    // ignore
+  }
+  Object.keys(localStorage).forEach((key) => {
+    if (
+      key.startsWith('sb-') ||
+      key.includes('supabase') ||
+      key.startsWith('lantern_') ||
+      key === 'auth-storage-v2'
+    ) {
+      localStorage.removeItem(key);
+    }
+  });
+  try {
+    document.cookie.split(';').forEach((cookie) => {
+      const name = cookie.split('=')[0]?.trim();
+      if (name) {
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/** Server-side session invalidation + Supabase global sign-out + local cleanup. */
+export async function apiLogoutSession(): Promise<void> {
+  try {
+    const headers = await getAuthHeaders();
+    if (headers.Authorization) {
+      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
+    }
+  } catch (e) {
+    console.warn('Server logout failed:', e);
+  }
+  try {
+    await supabase.auth.signOut({ scope: 'global' });
+  } catch (e) {
+    console.warn('Supabase signOut failed:', e);
+  }
+  clearAllClientAuthStorage();
+}
+
 /** Read the token from localStorage (Supabase SDK keys). */
 export const getTokenFromLocalStorage = (): string | null => {
   if (typeof window === 'undefined') return null;

@@ -4,7 +4,7 @@
 import { Router, Request, Response } from 'express';
 import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit } from '../middleware/rateLimit';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
 import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
@@ -20,6 +20,7 @@ export function initializeAICompanionRoutes(svc: SupabaseService) {
 const router = Router();
 
 router.use(authMiddleware as any);
+router.use(requirePermission('ai'));
 
 router.get('/history', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;

@@ -3,6 +3,10 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validatePagination, validateDeckId, validateDeckCreate, validateDeckUpdate } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { runSyncOrEnqueue } from '../queue/enqueue';
+import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { requireDeckAccess } from '../middleware/authorizeResource';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -63,6 +67,7 @@ router.get(
 router.get(
   '/:deckId',
   authMiddleware,
+  requireDeckAccess('deckId', 'read'),
   validateDeckId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
@@ -283,6 +288,7 @@ router.post(
 router.post(
   '/import/apkg',
   authMiddleware,
+  uploadBurstRateLimit,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -294,9 +300,23 @@ router.post(
     }
 
     const buffer = Buffer.from(apkgBase64, 'base64');
-    const { parseApkgBuffer } = await import('../services/apkgImport');
-    const importData = await parseApkgBuffer(buffer);
-    const importedDeck = await supabaseService.importDeck(importData, userId);
+    const outcome = await runSyncOrEnqueue(
+      'deck.importApkg',
+      { apkgBase64, userId },
+      userId,
+      async () => {
+        const { parseApkgBuffer } = await import('../services/apkgImport');
+        const importData = await parseApkgBuffer(buffer);
+        return supabaseService.importDeck(importData, userId);
+      }
+    );
+
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+
+    const importedDeck = outcome.result;
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);

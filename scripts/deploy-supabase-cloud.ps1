@@ -34,9 +34,10 @@ $ProjectRef = "tiizkjhbrnaibaagmurl"
 
 $SupabaseUrl = "https://$ProjectRef.supabase.co"
 
-# Public anon key - safe to embed; same value shown in Dashboard Settings API
-
-$AnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXpramhicm5haWJhYWdtdXJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjMyMjMsImV4cCI6MjA5NjQzOTIyM30.dzI3L5Blbao5DItW3xgMIUzAi9LBijZncFaNBLTMvoE"
+$AnonKey = $env:SUPABASE_ANON_KEY
+if (-not $AnonKey) {
+    throw "Set SUPABASE_ANON_KEY before running deploy-supabase-cloud.ps1"
+}
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 

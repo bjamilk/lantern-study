@@ -852,6 +852,44 @@ export class SupabaseService {
     return await this.getGroupById(groupId);
   }
 
+  /** Bulk add members with a single insert (avoids N sequential round-trips). */
+  async addGroupMembersBatch(
+    groupId: string,
+    userIds: string[]
+  ): Promise<{ added: string[]; alreadyMembers: string[] }> {
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (!uniqueIds.length) {
+      return { added: [], alreadyMembers: [] };
+    }
+
+    const { data: existing, error: checkError } = await this.supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId)
+      .in('user_id', uniqueIds);
+
+    if (checkError) throw checkError;
+
+    const existingSet = new Set((existing || []).map((m: { user_id: string }) => m.user_id));
+    const alreadyMembers = uniqueIds.filter((id) => existingSet.has(id));
+    const toAdd = uniqueIds.filter((id) => !existingSet.has(id));
+
+    if (toAdd.length) {
+      const { error: insertError } = await this.supabase.from('group_members').insert(
+        toAdd.map((user_id) => ({ group_id: groupId, user_id }))
+      );
+      if (insertError) throw insertError;
+
+      await cacheService.invalidateGroupCache(groupId);
+      await cacheService.invalidateGlobalCache('groups:list:*');
+      for (const memberId of toAdd) {
+        await cacheService.invalidateUserCache(memberId);
+      }
+    }
+
+    return { added: toAdd, alreadyMembers };
+  }
+
   async removeGroupMember(groupId: string, userId: string): Promise<Group | null> {
     const { error } = await this.supabase
       .from('group_members')
@@ -4500,6 +4538,30 @@ export class SupabaseService {
 
     const offset = (page - 1) * limit;
 
+    if (search || category || minPrice !== undefined || maxPrice !== undefined || location) {
+      const { data: rpcRows, error: rpcError } = await this.supabase.rpc('marketplace_search_listings', {
+        p_search: search || '',
+        p_page: page,
+        p_limit: limit,
+        p_category: category || null,
+        p_min_price: minPrice ?? null,
+        p_max_price: maxPrice ?? null,
+        p_location: location || null,
+        p_sort_by: sortBy,
+        p_sort_order: sortOrder,
+      });
+
+      if (!rpcError && rpcRows) {
+        return (rpcRows as any[]).map((row) => ({
+          ...row,
+          seller: row.profiles || row.seller,
+        }));
+      }
+      if (rpcError) {
+        console.warn('marketplace_search_listings RPC failed, falling back to ilike query', rpcError.message);
+      }
+    }
+
     const selectClause = profile === 'compact'
       ? `
         id,
@@ -4973,7 +5035,9 @@ export class SupabaseService {
 
       if (error) {
         console.error('Error in batch unread counts:', error);
-        // Fallback to original N+1 method if batch function doesn't exist
+        if (process.env.NODE_ENV === 'production') {
+          return {};
+        }
         return await this.getAllGroupUnreadCountsFallback(userId);
       }
 
@@ -5099,7 +5163,9 @@ export class SupabaseService {
 
       if (error) {
         console.error('Error in batch DM unread counts:', error);
-        // Fallback to original N+1 method if batch function doesn't exist
+        if (process.env.NODE_ENV === 'production') {
+          return {};
+        }
         return await this.getAllDMUnreadCountsFallback(userId);
       }
 

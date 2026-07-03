@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validatePagination, validateFlashcardCreate } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -84,7 +85,7 @@ router.get(
 
     logger.debug('Fetching flashcard', { flashcardId, userId });
 
-    const cacheKey = `flashcard:${flashcardId}`;
+    const cacheKey = userScopedCacheKey('flashcard', userId, flashcardId);
     let flashcard = await cacheService.get(cacheKey);
 
     if (!flashcard) {
@@ -97,7 +98,7 @@ router.get(
         });
       }
 
-      // Cache for 10 minutes
+      // Cache for 10 minutes (user-scoped key prevents cross-user IDOR)
       await cacheService.set(cacheKey, flashcard, 600);
     }
 

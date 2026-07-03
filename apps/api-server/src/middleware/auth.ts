@@ -4,7 +4,9 @@ import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
 import { isUserBanned } from '../services/adminAudit';
+import { isAccessTokenDenied } from '../services/tokenDenylist';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
+import { createRequestContext, type RequestContext } from '../services/dataLoaders';
 import { AuthenticatedRequest } from '../types';
 
 let supabaseService: SupabaseService | null = null;
@@ -40,7 +42,26 @@ function attachUser(
 }
 
 function proceedWithAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+  if (!enforceApiKeyMutationPolicy(req, res)) return;
+  if (req.user?.id) {
+    (req as AuthenticatedRequest & { context?: RequestContext }).context = createRequestContext(req.user.id);
+  }
   authenticatedRateLimit(req, res, next);
+}
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/** API keys with read-only scope cannot mutate resources. */
+function enforceApiKeyMutationPolicy(req: AuthenticatedRequest, res: Response): boolean {
+  if (req.user?.credentialType !== 'api_key') return true;
+  if (!MUTATING_METHODS.has(req.method)) return true;
+  if (apiKeyService.hasPermission(req.user.permissions, 'write')) return true;
+  res.status(403).json({
+    error: 'Forbidden',
+    message: "API key requires 'write' permission for this operation",
+    code: 'API_KEY_WRITE_REQUIRED',
+  });
+  return false;
 }
 
 async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
@@ -61,6 +82,22 @@ export const initializeAuthMiddleware = (supabase: SupabaseService) => {
   supabaseService = supabase;
 };
 
+export function evictAuthTokenCache(token: string): void {
+  tokenCache.delete(hashToken(token));
+}
+
+async function rejectIfTokenDenied(token: string, res: Response): Promise<boolean> {
+  if (await isAccessTokenDenied(token)) {
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Session has been revoked. Please sign in again.',
+      code: 'SESSION_REVOKED',
+    });
+    return true;
+  }
+  return false;
+}
+
 /** JWT-only auth for API key management routes (keys cannot mint sibling keys). */
 export const jwtOnlyAuthMiddleware = async (
   req: AuthenticatedRequest,
@@ -77,6 +114,8 @@ export const jwtOnlyAuthMiddleware = async (
   }
 
   const tokenKey = hashToken(credential);
+  if (await rejectIfTokenDenied(credential, res)) return;
+
   const cached = tokenCache.get(tokenKey);
   if (cached) {
     if (await rejectIfBanned(cached.id, res)) return;
@@ -149,6 +188,8 @@ export const authMiddleware = async (
     }
 
     const tokenKey = hashToken(credential);
+    if (await rejectIfTokenDenied(credential, res)) return;
+
     const cached = tokenCache.get(tokenKey);
     if (cached) {
       if (await rejectIfBanned(cached.id, res)) return;
@@ -201,10 +242,17 @@ export const requirePermission = (requiredPermission: string) => {
       return;
     }
 
+    // JWT session users are not scoped by API key permissions
+    if (req.user.credentialType === 'jwt') {
+      next();
+      return;
+    }
+
     if (!apiKeyService.hasPermission(req.user.permissions, requiredPermission)) {
       res.status(403).json({
         error: 'Forbidden',
         message: `Permission '${requiredPermission}' required`,
+        code: 'API_KEY_PERMISSION_DENIED',
       });
       return;
     }
@@ -212,6 +260,9 @@ export const requirePermission = (requiredPermission: string) => {
     next();
   };
 };
+
+/** Shorthand for mutating routes — enforces write scope on API keys. */
+export const requireWritePermission = requirePermission('write');
 
 export const optionalAuthMiddleware = async (
   req: AuthenticatedRequest,

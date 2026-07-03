@@ -9,6 +9,7 @@ import { User, UserStats } from '../types';
 import {
   supabase,
   setCachedAuthToken,
+  apiLogoutSession,
   bootstrapAuthFromStorage,
   readPersistedAuthUser,
   fetchUserProfile as apiFetchUserProfile,
@@ -259,14 +260,11 @@ export const useAuthStore = create<AuthState>()(
       // Logout
       logout: async () => {
         try {
-          await supabase.auth.signOut();
+          await apiLogoutSession();
         } finally {
-          try {
-            localStorage.removeItem('auth-storage-v2');
-          } catch {}
           setSentryUser(null);
-          set({ 
-            currentUser: null, 
+          set({
+            currentUser: null,
             isAuthenticated: false,
             isAuthLoading: false,
           });

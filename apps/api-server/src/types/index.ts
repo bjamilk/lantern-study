@@ -20,6 +20,7 @@ export interface AuthenticatedRequest extends Request {
     isAdmin?: boolean;
     credentialType: 'jwt' | 'api_key';
   };
+  context?: import('../services/dataLoaders').RequestContext;
 }
 
 export interface RateLimitConfig {

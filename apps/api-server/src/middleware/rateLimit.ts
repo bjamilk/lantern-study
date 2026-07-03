@@ -2,6 +2,7 @@ import rateLimit, { ipKeyGenerator, Options, RateLimitRequestHandler } from 'exp
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { AuthenticatedRequest } from '../types';
 import { getRedisClient, redisKey } from '../services/redisStore';
+import { rateLimitErrorHandler } from './errorHandler';
 
 type SendCommand = (...args: string[]) => Promise<unknown>;
 
@@ -83,6 +84,7 @@ function createScopedRateLimit(config: CreateRateLimitConfig): RateLimitRequestH
     },
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (req, res, _next) => rateLimitErrorHandler(req, res, () => {}),
     keyGenerator: (req: Request) => {
       if (config.keyScope === 'user') {
         const userId = (req as AuthenticatedRequest).user?.id;

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { allowDevAuthBypass, requireGroupMember } from '../middleware/authorizeResource';
 import { handleValidationErrors, validateGroupId, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
+import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
@@ -96,7 +98,14 @@ router.get(
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
+      const cacheKey = CacheKeys.unreadGroups(userId);
+      const cached = await cacheService.get<Record<string, number>>(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: cached });
+      }
+
       const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId);
+      await cacheService.set(cacheKey, unreadCounts, CacheTTL.unreadCounts);
 
       res.json({
         success: true,
@@ -362,22 +371,19 @@ router.post(
 
     const results = { added: [] as string[], alreadyMembers: [] as string[], failed: [] as string[] };
 
-    for (const memberId of userIds) {
-      try {
-        await supabaseService.addGroupMember(groupId, memberId);
-        results.added.push(memberId);
-      } catch (error) {
-        logger.error('Failed to add member', { groupId, memberId, error });
-        results.failed.push(memberId);
-      }
+    try {
+      const batchResult = await supabaseService.addGroupMembersBatch(groupId, userIds);
+      results.added = batchResult.added;
+      results.alreadyMembers = batchResult.alreadyMembers;
+    } catch (error) {
+      logger.error('Batch add members failed', { groupId, error });
+      results.failed = userIds;
     }
 
-    // Invalidate caches
-    await cacheService.delete(`group:${groupId}`);
-    await cacheService.deletePattern(`group:members:${groupId}:*`);
-    await cacheService.deletePattern('groups:list:*');
-    for (const memberId of results.added) {
-      await cacheService.deletePattern(`user:groups:${memberId}:*`);
+    // Invalidate caches (batch method already invalidates on success)
+    if (results.added.length === 0 && results.alreadyMembers.length > 0) {
+      await cacheService.delete(`group:${groupId}`);
+      await cacheService.deletePattern(`group:members:${groupId}:*`);
     }
 
     res.json({
@@ -489,7 +495,8 @@ router.delete(
 // GET /api/v1/groups/:groupId/members - Get group members
 router.get(
   '/:groupId/members',
-  process.env.NODE_ENV === 'production' ? authMiddleware : optionalAuthMiddleware,
+  allowDevAuthBypass() ? optionalAuthMiddleware : authMiddleware,
+  requireGroupMember('groupId'),
   validateGroupId,
   validatePagination,
   handleValidationErrors,

@@ -1,0 +1,224 @@
+import { Worker, type Job } from 'bullmq';
+import { getQueueConnectionOptions } from '../connection';
+import { QUEUE_NAMES } from '../jobs/types';
+import { updateJobStatus } from '../jobStatus';
+import {
+  generateQuestionsFromNotes,
+  generateFlashcardsFromNotes,
+  explainAnswer,
+  getStudyRecommendations,
+  askTutor,
+  enhanceFlashcard,
+  summarizeNoteContent,
+  generateDailyQuiz,
+  transcribeAudioBase64,
+} from '../../services/aiService';
+import { SupabaseService } from '../../services/supabase';
+import { parseApkgBuffer } from '../../services/apkgImport';
+import { purgeExpiredAIAnalytics, purgeExpiredAIInferenceLogs } from '../../services/dataRetention';
+import {
+  processAbandonedCheckoutReminders,
+  processReviewReminders,
+  processSavedSearchAlerts,
+  processStaleOfferReminders,
+} from '../../services/marketplaceAlerts';
+import { logAIInference } from '../../services/aiInferenceLog';
+
+let supabaseService: SupabaseService;
+
+export function initializeWorkerServices(supabase: SupabaseService): void {
+  supabaseService = supabase;
+}
+
+async function recordInference(
+  userId: string | undefined,
+  feature: string,
+  result: { provider?: string; model?: string }
+): Promise<void> {
+  if (!userId || !supabaseService) return;
+  await logAIInference(supabaseService.getClient(), {
+    userId,
+    feature,
+    provider: result.provider,
+    model: result.model,
+  });
+}
+
+async function processAiJob(job: Job): Promise<unknown> {
+  const userId = job.data.userId as string | undefined;
+  const name = job.name;
+
+  switch (name) {
+    case 'ai.generate.questions': {
+      const { notes, count, difficulty, questionTypes, subject } = job.data;
+      const result = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
+      await recordInference(userId, 'generate-questions', result);
+      return result;
+    }
+    case 'ai.generate.flashcards': {
+      const { notes, count, style } = job.data;
+      const result = await generateFlashcardsFromNotes(notes, { count, style });
+      await recordInference(userId, 'generate-flashcards', result);
+      return result;
+    }
+    case 'ai.explain.answer': {
+      const { question, userAnswer, correctAnswer, options } = job.data;
+      const result = await explainAnswer(question, userAnswer || '', correctAnswer, options);
+      await recordInference(userId, 'explain-answer', result);
+      return result;
+    }
+    case 'ai.study.recommendations': {
+      const result = await getStudyRecommendations(job.data.performanceData);
+      await recordInference(userId, 'study-recommendations', result);
+      return result;
+    }
+    case 'ai.ask.tutor': {
+      const { question, context } = job.data;
+      const result = await askTutor(question, context);
+      await recordInference(userId, 'ask-tutor', result);
+      return result;
+    }
+    case 'ai.enhance.flashcard': {
+      const { front, back } = job.data;
+      const result = await enhanceFlashcard(front, back);
+      await recordInference(userId, 'enhance-flashcard', result);
+      return result;
+    }
+    case 'notes.ai.summarize': {
+      const { content, title } = job.data as { content: string; title?: string };
+      const result = await summarizeNoteContent(content, title);
+      await recordInference(userId, 'summarize-note', result);
+      return result;
+    }
+    case 'notes.ai.quiz': {
+      const { content, studyGoal, count } = job.data as {
+        content: string;
+        studyGoal?: string;
+        count?: number;
+      };
+      const result = await generateDailyQuiz(content, { studyGoal, count });
+      await recordInference(userId, 'note-quiz', result);
+      return result;
+    }
+    case 'notes.ai.flashcards': {
+      const { content, count, style } = job.data as {
+        content: string;
+        count?: number;
+        style?: string;
+      };
+      const result = await generateFlashcardsFromNotes(content, {
+        count,
+        style: style as 'concise' | 'detailed' | undefined,
+      });
+      await recordInference(userId, 'note-flashcards', result);
+      return result;
+    }
+    case 'notes.ai.transcribe': {
+      const result = await transcribeAudioBase64(job.data.audioBase64, job.data.mimeType);
+      await recordInference(userId, 'transcribe-audio', result);
+      return result;
+    }
+    default:
+      throw new Error(`Unknown AI job: ${name}`);
+  }
+}
+
+async function processFileJob(job: Job): Promise<unknown> {
+  if (job.name === 'deck.importApkg') {
+    const { apkgBase64, userId } = job.data as { apkgBase64: string; userId: string };
+    const buffer = Buffer.from(apkgBase64, 'base64');
+    const importData = await parseApkgBuffer(buffer);
+    const importedDeck = await supabaseService.importDeck(importData, userId);
+    return { success: true, data: importedDeck };
+  }
+  throw new Error(`Unknown file job: ${job.name}`);
+}
+
+async function processExportJob(job: Job): Promise<unknown> {
+  if (job.name === 'export.userData') {
+    const { userId } = job.data as { userId: string };
+    const archive = await supabaseService.exportUserData(userId);
+    return { success: true, data: archive };
+  }
+  throw new Error(`Unknown export job: ${job.name}`);
+}
+
+async function processCronJob(job: Job): Promise<unknown> {
+  if (job.name === 'cron.dataRetention') {
+    const logs = await purgeExpiredAIInferenceLogs(supabaseService);
+    const analytics = await purgeExpiredAIAnalytics(supabaseService);
+    return { logs, analytics };
+  }
+  if (job.name === 'cron.marketplaceAlerts') {
+    const saved = await processSavedSearchAlerts(supabaseService);
+    const checkout = await processAbandonedCheckoutReminders(supabaseService);
+    const offers = await processStaleOfferReminders(supabaseService);
+    const reviews = await processReviewReminders(supabaseService);
+    return { saved, checkout, offers, reviews };
+  }
+  throw new Error(`Unknown cron job: ${job.name}`);
+}
+
+function wrapProcessor(processor: (job: Job) => Promise<unknown>) {
+  return async (job: Job) => {
+    await updateJobStatus(job.id!, 'active');
+    try {
+      const result = await processor(job);
+      await updateJobStatus(job.id!, 'completed', { result });
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await updateJobStatus(job.id!, 'failed', { error: message });
+      throw err;
+    }
+  };
+}
+
+export function startWorkers(): Worker[] {
+  const connection = getQueueConnectionOptions();
+
+  const aiWorker = new Worker(QUEUE_NAMES.AI_GENERATION, wrapProcessor(processAiJob), {
+    connection,
+    concurrency: 2,
+  });
+
+  const fileWorker = new Worker(QUEUE_NAMES.FILE_PROCESSING, wrapProcessor(processFileJob), {
+    connection,
+    concurrency: 1,
+  });
+
+  const exportWorker = new Worker(QUEUE_NAMES.DATA_EXPORT, wrapProcessor(processExportJob), {
+    connection,
+    concurrency: 1,
+  });
+
+  const cronWorker = new Worker(QUEUE_NAMES.MARKETPLACE_ALERTS, wrapProcessor(processCronJob), {
+    connection,
+    concurrency: 1,
+  });
+
+  for (const worker of [aiWorker, fileWorker, exportWorker, cronWorker]) {
+    worker.on('failed', (job, err) => {
+      console.error(`Job ${job?.id} failed:`, err.message);
+    });
+  }
+
+  return [aiWorker, fileWorker, exportWorker, cronWorker];
+}
+
+export async function scheduleRepeatableCronJobs(): Promise<void> {
+  const { getQueue } = await import('../queues');
+  const alertsQueue = getQueue(QUEUE_NAMES.MARKETPLACE_ALERTS);
+  if (!alertsQueue) return;
+
+  await alertsQueue.add(
+    'cron.dataRetention',
+    {},
+    { repeat: { pattern: '0 3 * * *' }, jobId: 'repeat-data-retention' }
+  );
+  await alertsQueue.add(
+    'cron.marketplaceAlerts',
+    {},
+    { repeat: { every: 15 * 60 * 1000 }, jobId: 'repeat-marketplace-alerts' }
+  );
+}

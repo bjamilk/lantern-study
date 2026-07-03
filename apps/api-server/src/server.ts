@@ -51,6 +51,9 @@ import aiCompanionRoutes, { initializeAICompanionRoutes } from './routes/aiCompa
 import notesRoutes, { initializeNotesRoutes } from './routes/notes';
 import challengeRoutes, { initializeChallengeRoutes } from './routes/challenges';
 import apiKeysRoutes from './routes/apiKeys';
+import authRoutes, { initializeAuthRoutes } from './routes/auth';
+import jobsRoutes from './routes/jobs';
+import { isBullMqEnabled } from './queue/connection';
 
 // Import utilities
 import { logger, stream, logRequest } from './utils/logger';
@@ -100,6 +103,10 @@ async function initializeServices() {
     const { initializeAuthMiddleware } = await import('./middleware/auth');
     initializeAuthMiddleware(supabaseService);
 
+    const { initializeAuthorizeResource, assertProductionAuthStrict } = await import('./middleware/authorizeResource');
+    initializeAuthorizeResource(supabaseService);
+    assertProductionAuthStrict();
+
     // Initialize routes with services
     const { initializeUserRoutes } = await import('./routes/users');
     const { initializeGroupRoutes } = await import('./routes/groups');
@@ -130,12 +137,21 @@ async function initializeServices() {
     initializeAIRoutes(supabaseService);
     initializeNotesRoutes(supabaseService, cacheService);
     initializeChallengeRoutes(supabaseService, cacheService);
+    initializeAuthRoutes(supabaseService, cacheService);
 
     const { startDataRetentionJobs } = await import('./services/dataRetention');
-    startDataRetentionJobs(supabaseService);
+    if (!isBullMqEnabled()) {
+      startDataRetentionJobs(supabaseService);
+    } else {
+      logger.info('Data retention cron delegated to BullMQ worker');
+    }
 
     const { startMarketplaceAlertJobs } = await import('./services/marketplaceAlerts');
-    startMarketplaceAlertJobs(supabaseService);
+    if (!isBullMqEnabled()) {
+      startMarketplaceAlertJobs(supabaseService);
+    } else {
+      logger.info('Marketplace alert cron delegated to BullMQ worker');
+    }
 
     logger.info('All services and routes initialized successfully');
   } catch (error) {
@@ -254,6 +270,8 @@ async function startServer() {
 
     // API routes (mount after services initialization)
     app.use('/api/v1/users', userRoutes);
+    app.use('/api/v1/auth', authRoutes);
+    app.use('/api/v1/jobs', jobsRoutes);
     app.use('/api/v1/groups', optionalAuthMiddleware, applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);

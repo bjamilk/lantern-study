@@ -71,5 +71,35 @@ services:
         value: "15"
       - key: UPLOAD_BURST_MAX
         value: "10"
+      - key: BULLMQ_ENABLED
+        value: "true"
       - key: ADMIN_RATE_LIMIT_MAX
         value: "300"
+
+  - type: worker
+    name: lantern-study-worker
+    runtime: docker
+    dockerfilePath: ./apps/api-server/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    dockerCommand: node apps/api-server/dist/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BULLMQ_ENABLED
+        value: "true"
+      - key: REDIS_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_URL
+        value: https://tiizkjhbrnaibaagmurl.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ENABLE_MARKETPLACE_JOBS
+        value: "true"
+      - key: ENABLE_DATA_RETENTION_JOBS
+        value: "true"

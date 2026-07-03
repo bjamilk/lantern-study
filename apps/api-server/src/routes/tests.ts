@@ -6,6 +6,8 @@ import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { requireTestOwner } from '../middleware/authorizeResource';
+import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 
 console.log('Loading tests.ts');
 
@@ -140,6 +142,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/:testId',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -149,7 +152,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Fetching test', { testId, userId });
 
-      const cacheKey = `test:${testId}`;
+      const cacheKey = userScopedCacheKey('test', userId, testId);
       let test = await cacheService.get(cacheKey);
 
       if (!test) {
@@ -164,6 +167,8 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
         // Cache for 10 minutes
         await cacheService.set(cacheKey, test, 600);
+      } else if (!enforceResourceOwner(res, test as Record<string, unknown>, userId)) {
+        return;
       }
 
       res.json({
@@ -203,6 +208,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.put(
     '/:testId/start',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -231,7 +237,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const startedTest = await supabaseService.startTest(testId, userId);
 
       // Invalidate caches
-      await cacheService.delete(`test:${testId}`);
+      await cacheService.delete(userScopedCacheKey('test', userId, testId));
       await cacheService.deletePattern(`tests:${userId}:*`);
 
       res.json({
@@ -245,6 +251,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.put(
     '/:testId/submit',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -281,7 +288,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const result = await supabaseService.submitTest(testId, userId, answers);
 
       // Invalidate caches
-      await cacheService.delete(`test:${testId}`);
+      await cacheService.delete(userScopedCacheKey('test', userId, testId));
       await cacheService.deletePattern(`tests:${userId}:*`);
       await cacheService.delete(`user:stats:${userId}`);
 
@@ -296,6 +303,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/:testId/results',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -321,7 +329,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const cacheKey = `test:results:${testId}`;
+      const cacheKey = userScopedCacheKey('test:results', userId, testId);
       let results = await cacheService.get(cacheKey);
 
       if (!results) {
@@ -342,6 +350,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.post(
     '/:testId/results',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -360,7 +369,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       }, userId);
 
       // Invalidate caches
-      await cacheService.delete(`test:results:${testId}`);
+      await cacheService.delete(userScopedCacheKey('test:results', userId, testId));
       await cacheService.deletePattern(`tests:${userId}:*`);
 
       res.status(201).json({
@@ -374,6 +383,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/:testId/questions',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -399,7 +409,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const cacheKey = `test:questions:${testId}`;
+      const cacheKey = userScopedCacheKey('test:questions', userId, testId);
       let questions = await cacheService.get(cacheKey);
 
       if (!questions) {
@@ -420,6 +430,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.delete(
     '/:testId',
     authMiddleware,
+    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -455,9 +466,9 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       }
 
       // Invalidate caches
-      await cacheService.delete(`test:${testId}`);
-      await cacheService.delete(`test:results:${testId}`);
-      await cacheService.delete(`test:questions:${testId}`);
+      await cacheService.delete(userScopedCacheKey('test', userId, testId));
+      await cacheService.delete(userScopedCacheKey('test:results', userId, testId));
+      await cacheService.delete(userScopedCacheKey('test:questions', userId, testId));
       await cacheService.deletePattern(`tests:${userId}:*`);
 
       res.json({

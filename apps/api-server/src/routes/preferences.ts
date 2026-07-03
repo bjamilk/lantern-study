@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { allowDevAuthBypass } from '../middleware/authorizeResource';
 import { handleValidationErrors, validateUserId } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -19,9 +20,7 @@ export const initializePreferencesRoutes = (supabase: SupabaseService, cache: Ca
   cacheService = cache;
 };
 
-const isDev = () => process.env.NODE_ENV !== 'production';
-
-const preferencesAuth = isDev() ? optionalAuthMiddleware : authMiddleware;
+const preferencesAuth = allowDevAuthBypass() ? optionalAuthMiddleware : authMiddleware;
 
 // GET /api/v1/preferences/:userId - Get user preferences
 router.get(

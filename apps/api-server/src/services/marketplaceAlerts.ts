@@ -54,17 +54,31 @@ export async function processSavedSearchAlerts(supabaseService: SupabaseService)
     }
 
     const filters = (search.filters || {}) as Record<string, unknown>;
-    const matches = (listings || []).filter((l) => listingMatchesFilters(l, filters));
+    const matches = (listings || []).filter((l) => listingMatchesFilters(l, filters)).slice(0, 5);
 
-    for (const listing of matches.slice(0, 5)) {
-      const { data: existing } = await db
-        .from('notifications')
-        .select('id')
-        .eq('user_id', search.user_id)
-        .contains('data', { saved_search_id: search.id, listing_id: listing.id })
-        .limit(1);
+    if (matches.length === 0) {
+      await db.from('saved_searches').update({ last_checked_at: now }).eq('id', search.id);
+      continue;
+    }
 
-      if (existing && existing.length > 0) continue;
+    const listingIds = matches.map((l) => l.id);
+    const { data: existingNotifications } = await db
+      .from('notifications')
+      .select('data')
+      .eq('user_id', search.user_id)
+      .eq('type', 'saved_search_match');
+
+    const existingListingIds = new Set<string>();
+    for (const n of existingNotifications || []) {
+      const data = (n.data ?? null) as Record<string, unknown> | null;
+      if (!data) continue;
+      if (data.saved_search_id === search.id && typeof data.listing_id === 'string') {
+        existingListingIds.add(data.listing_id);
+      }
+    }
+
+    for (const listing of matches) {
+      if (existingListingIds.has(listing.id)) continue;
 
       const notification = await supabaseService.createNotification(search.user_id, {
         type: 'saved_search_match',

@@ -10,6 +10,7 @@ import {
     saveUserPreferences,
     saveUserSettings,
     supabase,
+    apiLogoutSession,
     deleteUserAccount,
     exportUserAccountData,
     hasValidSession,
@@ -125,21 +126,8 @@ export function useAuthHandlers() {
     }, [getUserSettings, theme, handleUpdateSettingsCategory]);
 
     const handleLogout = useCallback(async () => {
-        localStorage.removeItem('lantern_access_token');
-        localStorage.removeItem('lantern_refresh_token');
-        
-        try {
-            await supabase.auth.signOut();
-        } catch (e) {
-            console.log('Error signing out:', e);
-        }
-        
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('sb-') || key.includes('supabase')) {
-                localStorage.removeItem(key);
-            }
-        });
-        
+        await apiLogoutSession();
+
         setCurrentUser(null);
         setGroups([]);
         setAllMessages({});

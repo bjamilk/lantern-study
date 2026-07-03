@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requirePermission } from '../middleware/auth';
+import { requireNoteAccess } from '../middleware/authorizeResource';
 import { aiRateLimit } from '../middleware/aiRateLimit';
-import { uploadBurstRateLimit } from '../middleware/rateLimit';
+import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
 import {
@@ -20,6 +21,8 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
+import { runSyncOrEnqueue } from '../queue/enqueue';
+import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import {
   assertPdfSize,
   assertPresentationSize,
@@ -183,6 +186,7 @@ async function runPresentationPreviewJob(params: {
 }
 
 router.use(authMiddleware);
+router.use('/:noteId', requireNoteAccess('noteId'));
 
 // Folders
 router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
@@ -445,7 +449,7 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   res.json({ success: true, data: { note, attachment } });
 }));
 
-router.post('/daily-quiz', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { content, studyGoal, count } = req.body;
@@ -453,11 +457,21 @@ router.post('/daily-quiz', aiRateLimit, asyncHandler(async (req: Request, res: R
     res.status(400).json({ error: 'At least 50 characters of study material required.' });
     return;
   }
-  const result = await generateDailyQuiz(content, { studyGoal, count });
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.quiz',
+    { content, studyGoal, count },
+    userId,
+    async () => generateDailyQuiz(content, { studyGoal, count })
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  const result = outcome.result;
   res.json({ success: true, data: result });
 }));
 
-router.post('/transcribe-audio', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { audioBase64, mimeType, noteId, fileName } = req.body;
@@ -465,7 +479,17 @@ router.post('/transcribe-audio', aiRateLimit, asyncHandler(async (req: Request, 
     res.status(400).json({ error: 'audioBase64 is required.' });
     return;
   }
-  const result = await transcribeAudioBase64(audioBase64, mimeType || 'audio/webm');
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.transcribe',
+    { audioBase64, mimeType: mimeType || 'audio/webm' },
+    userId,
+    async () => transcribeAudioBase64(audioBase64, mimeType || 'audio/webm')
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  const result = outcome.result;
 
   const { logAIInference } = await import('../services/aiInferenceLog');
   await logAIInference(supabaseService.getClient(), {
@@ -674,7 +698,7 @@ router.post('/:noteId/attachments', asyncHandler(async (req: Request, res: Respo
 }));
 
 // AI-powered learn actions
-router.post('/:noteId/summarize', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/summarize', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -683,7 +707,17 @@ router.post('/:noteId/summarize', aiRateLimit, asyncHandler(async (req: Request,
     res.status(400).json({ error: 'Note needs at least 30 characters to summarize.' });
     return;
   }
-  const result = await summarizeNoteContent(content, note.title);
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.summarize',
+    { content, title: note.title },
+    userId,
+    async () => summarizeNoteContent(content, note.title)
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  const result = outcome.result;
   const updated = await supabaseService.updateNote(userId, note.id, { summary: result.summary });
   res.json({ success: true, data: { summary: result.summary, provider: result.provider, note: updated } });
 }));
@@ -696,7 +730,7 @@ router.get('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) => 
   res.json({ success: true, data: quiz });
 }));
 
-router.post('/:noteId/quiz', aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -706,7 +740,17 @@ router.post('/:noteId/quiz', aiRateLimit, asyncHandler(async (req: Request, res:
     return;
   }
   const { studyGoal, count } = req.body || {};
-  const result = await generateDailyQuiz(content.slice(0, 8000), { studyGoal, count });
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.quiz',
+    { content: content.slice(0, 8000), studyGoal, count },
+    userId,
+    async () => generateDailyQuiz(content.slice(0, 8000), { studyGoal, count })
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  const result = outcome.result;
   const questions = result.questions.map((q, index) => ({
     id: `nq-${index}`,
     text: q.text,
@@ -734,7 +778,7 @@ router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, data: session });
 }));
 
-router.post('/:noteId/generate-flashcards', aiRateLimit, validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -753,7 +797,17 @@ router.post('/:noteId/generate-flashcards', aiRateLimit, validateNoteId, handleV
   }
   const content = getNoteStudyContent(studyInput);
   const { count, style } = req.body || {};
-  const result = await generateFlashcardsFromNotes(content.slice(0, 8000), { count, style });
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.flashcards',
+    { content: content.slice(0, 8000), count, style },
+    userId,
+    async () => generateFlashcardsFromNotes(content.slice(0, 8000), { count, style })
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  const result = outcome.result;
   res.json({ success: true, data: result });
 }));
 

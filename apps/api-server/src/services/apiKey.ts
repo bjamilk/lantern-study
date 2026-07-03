@@ -4,6 +4,9 @@ import { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
 
 export const API_KEY_PREFIX = 'lsk_';
+/** Allowed permission scopes for user API keys. */
+export const VALID_API_KEY_PERMISSIONS = ['read', 'write', 'ai', 'admin'] as const;
+export type ApiKeyPermission = (typeof VALID_API_KEY_PERMISSIONS)[number];
 const KEY_PREFIX_LENGTH = 12;
 const DEFAULT_MAX_KEYS_PER_USER = parseInt(process.env.API_KEY_MAX_PER_USER || '10', 10);
 const DEFAULT_TTL_DAYS = parseInt(process.env.API_KEY_DEFAULT_TTL_DAYS || '0', 10);
@@ -104,7 +107,7 @@ export class ApiKeyService {
       throw new Error(`Maximum of ${DEFAULT_MAX_KEYS_PER_USER} active API keys allowed`);
     }
 
-    const normalizedPermissions = permissions.length ? permissions : ['read'];
+    const normalizedPermissions = this.normalizePermissions(permissions.length ? permissions : ['read']);
     const secret = generateSecret();
     const keyHash = await bcrypt.hash(secret, this.saltRounds);
     const keyPrefix = getKeyPrefix(secret);
@@ -241,7 +244,23 @@ export class ApiKeyService {
   }
 
   hasPermission(userPermissions: string[], requiredPermission: string): boolean {
-    return userPermissions.includes(requiredPermission) || userPermissions.includes('admin');
+    if (userPermissions.includes('admin')) return true;
+    if (requiredPermission === 'read') {
+      return userPermissions.includes('read') || userPermissions.includes('write');
+    }
+    return userPermissions.includes(requiredPermission);
+  }
+
+  normalizePermissions(permissions: string[]): string[] {
+    const normalized = [...new Set(
+      permissions.filter(p => VALID_API_KEY_PERMISSIONS.includes(p as ApiKeyPermission))
+    )];
+    if (normalized.includes('admin')) return ['admin'];
+    if (normalized.length === 0) return ['read'];
+    if (!normalized.includes('read') && !normalized.includes('write') && !normalized.includes('ai')) {
+      return ['read', ...normalized];
+    }
+    return normalized;
   }
 }
 

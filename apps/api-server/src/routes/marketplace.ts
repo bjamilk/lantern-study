@@ -7,6 +7,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 
 const router = Router();
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
@@ -1299,6 +1300,12 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
 
+    const cacheKey = CacheKeys.sellerProfile(userId);
+    const cached = await cacheService.get<any>(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+
     // Get profile
     const { data: profile, error: profileErr } = await supabaseService.getClient()
       .from('profiles')
@@ -1364,9 +1371,7 @@ router.get(
       listing_title: listings.find(l => l.id === r.listing_id)?.title || 'Unknown listing',
     }));
 
-    res.json({
-      success: true,
-      data: {
+    const responseData = {
         user: profile,
         stats: {
           totalListings: listings.length,
@@ -1390,7 +1395,13 @@ router.get(
         ],
         recentListings: activeListings.slice(0, 6),
         recentReviews: reviewsWithTitle,
-      },
+    };
+
+    await cacheService.set(cacheKey, responseData, CacheTTL.sellerProfile);
+
+    res.json({
+      success: true,
+      data: responseData,
     });
   })
 );

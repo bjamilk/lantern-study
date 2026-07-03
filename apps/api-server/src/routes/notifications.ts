@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateCreateNotification, validatePagination } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -22,6 +23,8 @@ export const initializeNotificationRoutes = (supabase: SupabaseService, cache: C
 
 async function invalidateNotificationCaches(userId: string, notificationId?: string) {
   if (notificationId) {
+    await cacheService.delete(userScopedCacheKey('notification', userId, notificationId));
+    // Legacy key cleanup
     await cacheService.delete(`notification:${notificationId}`);
   }
   await cacheService.deletePattern(`notifications:${userId}:*`);
@@ -110,7 +113,7 @@ router.get(
 
     logger.debug('Fetching notification', { notificationId, userId });
 
-    const cacheKey = `notification:${notificationId}`;
+    const cacheKey = userScopedCacheKey('notification', userId, notificationId);
     let notification = await cacheService.get(cacheKey);
 
     if (!notification) {
@@ -125,6 +128,8 @@ router.get(
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, notification, 300);
+    } else if (!enforceResourceOwner(res, notification as Record<string, unknown>, userId)) {
+      return;
     }
 
     res.json({

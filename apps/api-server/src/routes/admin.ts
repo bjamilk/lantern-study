@@ -56,25 +56,41 @@ async function getAuthUserInfoForUserIds(
   if (!userIds.length) return {};
 
   const client: any = supabaseService.getClient();
-  const entries = await Promise.all(
-    userIds.map(async (userId) => {
-      try {
-        const { data, error } = await client.auth.admin.getUserById(userId);
-        if (error) return [userId, {}] as const;
-        return [
-          userId,
-          {
+  const result: Record<string, { email?: string; isPlatformAdmin?: boolean }> = {};
+  const uncached: string[] = [];
+
+  for (const userId of userIds) {
+    const cached = await cacheService.get(`authMeta:${userId}`) as { email?: string; isPlatformAdmin?: boolean } | null;
+    if (cached) {
+      result[userId] = cached;
+    } else {
+      uncached.push(userId);
+    }
+  }
+
+  if (uncached.length) {
+    const entries = await Promise.all(
+      uncached.map(async (userId) => {
+        try {
+          const { data, error } = await client.auth.admin.getUserById(userId);
+          if (error) return [userId, {}] as const;
+          const info = {
             email: data?.user?.email,
             isPlatformAdmin: data?.user?.app_metadata?.is_platform_admin === true,
-          },
-        ] as const;
-      } catch {
-        return [userId, {}] as const;
-      }
-    })
-  );
+          };
+          await cacheService.set(`authMeta:${userId}`, info, 600);
+          return [userId, info] as const;
+        } catch {
+          return [userId, {}] as const;
+        }
+      })
+    );
+    for (const [userId, info] of entries) {
+      result[userId] = info;
+    }
+  }
 
-  return Object.fromEntries(entries);
+  return result;
 }
 
 // GET /api/v1/admin/stats

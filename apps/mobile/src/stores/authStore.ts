@@ -315,6 +315,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await useMarketplaceStore.getState().reset();
 
       if (!DEMO_MODE) {
+        try {
+          const { API_BASE_URL, getAuthHeaders } = await import('../services/supabase');
+          const headers = await getAuthHeaders();
+          if (headers.Authorization) {
+            await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
+          }
+        } catch {
+          // continue with local sign-out
+        }
         await supabaseSignOut();
       }
 
