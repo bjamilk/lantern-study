@@ -31,3 +31,7 @@ export async function submitChallenge(
 ): Promise<GroupChallenge> {
   return api.submitChallenge(challengeId, answers) as Promise<GroupChallenge>;
 }
+
+export async function forfeitChallenge(challengeId: string): Promise<GroupChallenge> {
+  return api.forfeitChallenge(challengeId) as Promise<GroupChallenge>;
+}

@@ -32,7 +32,7 @@ const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate, hideMobileAiUsageBadge = false }) => {
     const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
-    const { activeTestSession, activeStudySession } = useTestStore();
+    const { activeTestSession, activeStudySession, activeGameSession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
     const currentUser = useAuthStore(s => s.currentUser);
     const isAuthLoading = useAuthStore(s => s.isAuthLoading);
@@ -50,9 +50,26 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
         return () => window.clearTimeout(timer);
     }, [importProgress, clearImportProgress]);
 
-    const activeSession = activeTestSession || activeStudySession;
-    const sessionAppMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
-    const isSessionPaused = activeSession && appMode !== sessionAppMode;
+    const pausedTest = activeTestSession && appMode !== AppMode.TEST_ACTIVE;
+    const pausedStudy = activeStudySession && appMode !== AppMode.STUDY_ACTIVE;
+    const pausedGame = !!(
+        activeGameSession
+        && !activeGameSession.isComplete
+        && !activeGameSession.awaitingOpponent
+        && appMode !== AppMode.GAME_ACTIVE
+    );
+    const isSessionPaused = pausedTest || pausedStudy || pausedGame;
+    const sessionAppMode = pausedTest
+        ? AppMode.TEST_ACTIVE
+        : pausedStudy
+            ? AppMode.STUDY_ACTIVE
+            : AppMode.GAME_ACTIVE;
+    const pausedSessionLabel = pausedTest ? 'Test' : pausedStudy ? 'Study' : 'Game';
+
+    const bottomNavHidden = [
+        AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE,
+        AppMode.GAME_RESULTS, AppMode.TEST_REVIEW,
+    ].includes(appMode);
 
     return (
         <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
@@ -62,13 +79,13 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             </div>
 
             {/* Main content area */}
-            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out pb-16 md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'pb-16'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && (
                     <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white px-4 py-2 flex items-center justify-between">
                         <span className="text-sm font-medium">
-                            {activeTestSession ? 'Test' : 'Study'} session paused
+                            {pausedSessionLabel} session paused
                         </span>
                         <div className="flex items-center gap-2">
                             <button

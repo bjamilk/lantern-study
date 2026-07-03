@@ -93,3 +93,9 @@ export async function submitChallenge(
     body: JSON.stringify({ answers }),
   });
 }
+
+export async function forfeitChallenge(challengeId: string): Promise<GroupChallenge> {
+  return challengeRequest<GroupChallenge>(`/${encodeURIComponent(challengeId)}/forfeit`, {
+    method: 'POST',
+  });
+}

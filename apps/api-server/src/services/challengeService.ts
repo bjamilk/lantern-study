@@ -484,4 +484,50 @@ export class ChallengeService {
     const { data: refreshed } = await this.db.from('group_challenges').select('*').eq('id', challengeId).single();
     return this.mapChallenge(refreshed, userId);
   }
+
+  async forfeitChallenge(challengeId: string, userId: string): Promise<GroupChallenge> {
+    const challenge = await this.getChallenge(challengeId, userId);
+    if (!challenge) throw Object.assign(new Error('Challenge not found'), { statusCode: 404 });
+    if (challenge.challengerId !== userId && challenge.opponentId !== userId) {
+      throw Object.assign(new Error('Not a participant in this challenge'), { statusCode: 403 });
+    }
+    if (challenge.status !== 'accepted') {
+      throw Object.assign(new Error(`Challenge cannot be forfeited while ${challenge.status}`), { statusCode: 400 });
+    }
+
+    const winnerId = userId === challenge.challengerId ? challenge.opponentId : challenge.challengerId;
+    const now = new Date().toISOString();
+
+    const { data, error } = await this.db
+      .from('group_challenges')
+      .update({
+        status: 'cancelled',
+        winner_id: winnerId,
+        completed_at: now,
+      })
+      .eq('id', challengeId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await this.awardWinner(winnerId);
+
+    const [quitterProfile, winnerProfile] = await Promise.all([
+      this.fetchProfileBasics(userId),
+      this.fetchProfileBasics(winnerId),
+    ]);
+
+    await this.supabaseService.createNotification(winnerId, {
+      type: 'challenge_result',
+      message: `${quitterProfile.name} left the duel. You win by default!`,
+      link: `challenge:${challengeId}`,
+      data: { challengeId, winnerId, groupId: challenge.groupId, forfeit: true },
+    });
+
+    logger.info('Challenge forfeited', { challengeId, userId, winnerId });
+
+    await cacheService.deletePattern(`challenges:*`);
+    return this.mapChallenge(data, userId);
+  }
 }

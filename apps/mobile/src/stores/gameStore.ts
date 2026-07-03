@@ -10,6 +10,7 @@ import {
   createChallenge,
   fetchChallenge,
   submitChallenge,
+  forfeitChallenge,
 } from '../services/challenges';
 import { trackStudyActivity } from '../services/gamification';
 import { useGroupStore } from './groupStore';
@@ -63,6 +64,7 @@ interface GameStore {
   startSoloPractice: (config: GameConfig, currentUser: GameUser) => Promise<GameSession>;
   updateAnswer: (questionId: string, answer: Partial<UserAnswerRecord>, timeSpent: number) => Promise<void>;
   resetGame: () => void;
+  quitGame: () => Promise<void>;
   recentChallenges: GroupChallenge[];
   setRecentChallenges: (items: GroupChallenge[]) => void;
 }
@@ -315,6 +317,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
+    set({ activeSession: null, challengeOpponent: null, error: null });
+  },
+
+  quitGame: async () => {
+    const session = get().activeSession;
+    if (session?.challengeId && !session.isSoloPractice) {
+      try {
+        await forfeitChallenge(session.challengeId);
+      } catch (e) {
+        console.error('Failed to forfeit challenge:', e);
+      }
+    }
     set({ activeSession: null, challengeOpponent: null, error: null });
   },
 }));

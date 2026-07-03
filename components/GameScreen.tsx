@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameSession, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel } from '../types';
-import { ChevronRightIcon, UserIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/outline';
+import { ChevronRightIcon, UserIcon, SpeakerWaveIcon, SpeakerXMarkIcon, PauseIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import { gameAudio } from '../utils/audio';
 
 interface GameScreenProps {
   session: GameSession;
-  onUpdateAnswer: (questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>, timeTaken: number) => void; 
+  onUpdateAnswer: (questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>>, timeTaken: number) => void;
+  onPauseSession: () => void;
+  onRequestEndSession: () => void;
 }
 
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -22,6 +24,8 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 export const GameScreen: React.FC<GameScreenProps> = ({ 
   session,
   onUpdateAnswer,
+  onPauseSession,
+  onRequestEndSession,
 }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const currentQuestion = session.questions[currentQuestionIndex];
@@ -218,13 +222,52 @@ export const GameScreen: React.FC<GameScreenProps> = ({
     : (Object.keys(session.opponentAnswers).length / totalQuestions) * 100;
   const showOpponent = !session.isSoloPractice;
 
+  const canSubmit =
+    !isAnswered && (
+      (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE && currentSelections.length > 0) ||
+      (currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK && fillText.trim() !== '') ||
+      (currentQuestion.questionType === QuestionType.MATCHING && currentQuestion.matchingPromptItems?.every(p => matchSelections[p.id])) ||
+      (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && currentQuestion.diagramLabels?.every(l => diagramSelections[l.id]))
+    );
+
+  const handleSubmitComplex = () => {
+    let isCorrect = false;
+    if (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) {
+      const correctSet = new Set(currentQuestion.correctAnswerIds || []);
+      const selectedSet = new Set(currentSelections);
+      isCorrect = correctSet.size === selectedSet.size && [...correctSet].every(id => selectedSet.has(id));
+      submitAnswer({ selectedOptionIds: currentSelections });
+    }
+    if (currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK) {
+      isCorrect = currentQuestion.correctAnswerText?.toLowerCase().trim() === fillText.toLowerCase().trim();
+      submitAnswer({ fillText });
+    }
+    if (currentQuestion.questionType === QuestionType.MATCHING) {
+      isCorrect = currentQuestion.matchingPromptItems?.every(p => {
+        const correctAns = currentQuestion.matchingAnswerItems?.find(a => a.promptItemId === p.id);
+        return correctAns && matchSelections[p.id] === correctAns.id;
+      }) || false;
+      submitAnswer({ matchingAnswers: Object.entries(matchSelections).map(([promptItemId, answerItemId]) => ({ promptItemId, answerItemId })) });
+    }
+    if (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING) {
+      isCorrect = currentQuestion.diagramLabels?.every(l => diagramSelections[l.id] === l.text) || false;
+      submitAnswer({ diagramAnswers: Object.entries(diagramSelections).map(([labelId, selectedLabelId]) => ({ labelId, selectedLabelId })) });
+    }
+
+    if (isCorrect) {
+      gameAudio.playCorrect();
+    } else {
+      gameAudio.playIncorrect();
+    }
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-      <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+    <div className="flex-1 flex flex-col min-h-0 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
         {/* Game HUD */}
         <div className="mb-6 pb-4 border-b border-slate-300 dark:border-slate-700">
-            <div className="flex justify-between items-center text-xl md:text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4">
-                <div className="flex items-center">
+            <div className="flex justify-between items-center gap-2 text-xl md:text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4">
+                <div className="flex items-center min-w-0">
                     {session.user.avatarUrl ? (
                         <img src={session.user.avatarUrl} alt={session.user.name} className="w-10 h-10 rounded-full border-2 border-blue-500" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
                     ) : (
@@ -243,25 +286,42 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     </div>
                 </div>
                 
-                {/* Audio Controls */}
-                <div className="flex items-center space-x-4">
-                  {showOpponent && <span className="text-red-500 text-sm md:text-base font-extrabold">VS</span>}
-                  {!showOpponent && <span className="text-indigo-600 text-sm font-semibold">Solo Practice</span>}
+                {/* Audio + session controls */}
+                <div className="flex items-center shrink-0 space-x-1 sm:space-x-2">
+                  {showOpponent && <span className="text-red-500 text-sm md:text-base font-extrabold hidden sm:inline">VS</span>}
+                  {!showOpponent && <span className="text-indigo-600 text-xs sm:text-sm font-semibold hidden sm:inline">Solo</span>}
+                  <button
+                    onClick={onPauseSession}
+                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    title="Pause & exit"
+                    aria-label="Pause game"
+                  >
+                    <PauseIcon className="w-5 h-5 sm:w-6 sm:h-6 text-slate-600 dark:text-slate-300" />
+                  </button>
+                  <button
+                    onClick={onRequestEndSession}
+                    className="p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                    title="End game"
+                    aria-label="End game"
+                  >
+                    <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
+                  </button>
                   <button 
                     onClick={toggleMute}
                     className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
                     title={isMuted ? "Unmute Audio" : "Mute Audio"}
+                    aria-label={isMuted ? "Unmute audio" : "Mute audio"}
                   >
                     {isMuted ? (
-                      <SpeakerXMarkIcon className="w-6 h-6 text-slate-500" />
+                      <SpeakerXMarkIcon className="w-5 h-5 sm:w-6 sm:h-6 text-slate-500" />
                     ) : (
-                      <SpeakerWaveIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                      <SpeakerWaveIcon className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600 dark:text-indigo-400" />
                     )}
                   </button>
                 </div>
 
                  {showOpponent && (
-                 <div className="flex items-center">
+                 <div className="flex items-center min-w-0">
                     <div className="mr-3 flex flex-col items-end">
                       <span className="leading-tight">{session.opponent.name}</span>
                       {session.opponentStreak && session.opponentStreak > 0 ? (
@@ -308,7 +368,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
         </div>
 
         {/* Question Area */}
-        <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl shadow-lg mb-6 border border-slate-200 dark:border-slate-700">
+        <div className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
             {/* Timer countdown progress bar */}
             {!isAnswered && (
               <div className="mb-4">
@@ -390,72 +450,44 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                 </div>
             )}
 
-            {!isAnswered && (
-                (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE && currentSelections.length > 0) ||
-                (currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK && fillText.trim() !== '') ||
-                (currentQuestion.questionType === QuestionType.MATCHING && currentQuestion.matchingPromptItems?.every(p => matchSelections[p.id])) ||
-                (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && currentQuestion.diagramLabels?.every(l => diagramSelections[l.id]))
-            ) && (
-                <div className="mt-5 text-right">
-                    <button onClick={() => {
-                        let isCorrect = false;
-                        if (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) {
-                          const correctSet = new Set(currentQuestion.correctAnswerIds || []);
-                          const selectedSet = new Set(currentSelections);
-                          isCorrect = correctSet.size === selectedSet.size && [...correctSet].every(id => selectedSet.has(id));
-                          submitAnswer({ selectedOptionIds: currentSelections });
-                        }
-                        if (currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK) {
-                          isCorrect = currentQuestion.correctAnswerText?.toLowerCase().trim() === fillText.toLowerCase().trim();
-                          submitAnswer({ fillText });
-                        }
-                        if (currentQuestion.questionType === QuestionType.MATCHING) {
-                          isCorrect = currentQuestion.matchingPromptItems?.every(p => {
-                            const correctAns = currentQuestion.matchingAnswerItems?.find(a => a.promptItemId === p.id);
-                            return correctAns && matchSelections[p.id] === correctAns.id;
-                          }) || false;
-                          submitAnswer({ matchingAnswers: Object.entries(matchSelections).map(([promptItemId, answerItemId]) => ({ promptItemId, answerItemId })) });
-                        }
-                        if (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING) {
-                          isCorrect = currentQuestion.diagramLabels?.every(l => diagramSelections[l.id] === l.text) || false;
-                          submitAnswer({ diagramAnswers: Object.entries(diagramSelections).map(([labelId, selectedLabelId]) => ({ labelId, selectedLabelId })) });
-                        }
-
-                        if (isCorrect) {
-                          gameAudio.playCorrect();
-                        } else {
-                          gameAudio.playIncorrect();
-                        }
-                    }}
-                        className="px-6 py-3 bg-green-550 hover:bg-green-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
-                    >
-                        Submit Answer
-                    </button>
-                </div>
-            )}
-
-            {isAnswered && (
-                <div className="mt-5 text-right">
-                    {currentQuestionIndex < totalQuestions - 1 ? (
-                        <button 
-                            onClick={handleNextQuestion}
-                            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center font-bold shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150 ml-auto"
-                        >
-                            Next Question <ChevronRightIcon className="w-5 h-5 ml-1" />
-                        </button>
-                    ) : (
-                        <div className="text-right text-sm text-slate-500 dark:text-slate-400 font-medium italic">
-                            {session.isSoloPractice
-                              ? 'Finishing session…'
-                              : session.challengeId
-                                ? 'Submitting your answers…'
-                                : 'All questions answered.'}
-                        </div>
-                    )}
-                </div>
-            )}
-
         </div>
+      </div>
+
+      {/* Sticky action bar — keeps Submit/Next visible on mobile */}
+      <div className="flex-shrink-0 border-t border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 md:px-6 md:py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] safe-area-bottom">
+        {canSubmit && (
+          <button
+            onClick={handleSubmitComplex}
+            className="w-full sm:w-auto sm:ml-auto sm:flex px-6 py-3 bg-green-550 hover:bg-green-600 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all duration-150 flex items-center justify-center"
+          >
+            Submit Answer
+          </button>
+        )}
+
+        {isAnswered && (
+          currentQuestionIndex < totalQuestions - 1 ? (
+            <button
+              onClick={handleNextQuestion}
+              className="w-full sm:w-auto sm:ml-auto sm:flex px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl items-center justify-center font-bold shadow-md hover:shadow-lg transition-all duration-150"
+            >
+              Next Question <ChevronRightIcon className="w-5 h-5 ml-1" />
+            </button>
+          ) : (
+            <p className="text-center text-sm text-slate-500 dark:text-slate-400 font-medium italic">
+              {session.isSoloPractice
+                ? 'Finishing session…'
+                : session.challengeId
+                  ? 'Submitting your answers…'
+                  : 'All questions answered.'}
+            </p>
+          )
+        )}
+
+        {!canSubmit && !isAnswered && (
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+            Select an answer to continue
+          </p>
+        )}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import {
   createChallenge,
   fetchChallenge,
   submitChallenge,
+  forfeitChallenge,
 } from '../services/challenges';
 import { hasValidSession } from '../services/supabase';
 import { trackStudyActivity } from '../services/studyActivity';
@@ -333,11 +334,41 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     handleChallengeUser(opponent);
   }, [setActiveGameSession, handleChallengeUser]);
 
+  const handlePauseGame = useCallback(() => {
+    setAppMode(AppMode.CHAT);
+  }, [setAppMode]);
+
+  const handleEndGame = useCallback(async () => {
+    if (!activeGameSession) return;
+
+    if (!activeGameSession.isSoloPractice && activeGameSession.challengeId) {
+      try {
+        await forfeitChallenge(activeGameSession.challengeId);
+        addNotification('You left the duel. Your opponent wins by default.');
+      } catch (error) {
+        console.error('Failed to forfeit challenge:', error);
+        addNotification('Game ended locally, but the server could not record the forfeit.');
+      }
+    }
+
+    setActiveGameSession(null);
+    setAppMode(AppMode.CHAT);
+  }, [activeGameSession, setActiveGameSession, setAppMode, addNotification]);
+
+  const handleResumeGame = useCallback(() => {
+    if (activeGameSession) {
+      setAppMode(AppMode.GAME_ACTIVE);
+    }
+  }, [activeGameSession, setAppMode]);
+
   return {
     handleSendChallenge,
     handleStartSoloPractice,
     handleStartChallengePlay,
     handleGameAnswer,
     handleRematch,
+    handlePauseGame,
+    handleEndGame,
+    handleResumeGame,
   };
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem } from '../types';
+import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem, GameSession } from '../types';
 import GroupListItem from './GroupListItem';
 import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
@@ -39,6 +39,7 @@ interface SidebarProps {
   onOpenNotificationModal: () => void;
   activeTestSession: TestSessionData | null;
   activeStudySession: StudySessionData | null;
+  activeGameSession?: GameSession | null;
   onResumeSession: (mode: AppMode) => void;
   onCancelSession: () => void;
   theme: 'light' | 'dark';
@@ -78,6 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenNotificationModal,
   activeTestSession,
   activeStudySession,
+  activeGameSession,
   onResumeSession,
   onCancelSession,
   theme,
@@ -92,11 +94,23 @@ const Sidebar: React.FC<SidebarProps> = ({
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
   
-  const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE].includes(currentAppMode);
+  const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE].includes(currentAppMode);
   
-  const activeSession = activeTestSession || activeStudySession;
-  const sessionAppMode = activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE;
-  const isSessionPaused = activeSession && currentAppMode !== sessionAppMode;
+  const pausedTest = activeTestSession && currentAppMode !== AppMode.TEST_ACTIVE;
+  const pausedStudy = activeStudySession && currentAppMode !== AppMode.STUDY_ACTIVE;
+  const pausedGame = !!(
+    activeGameSession
+    && !activeGameSession.isComplete
+    && !activeGameSession.awaitingOpponent
+    && currentAppMode !== AppMode.GAME_ACTIVE
+  );
+  const isSessionPaused = pausedTest || pausedStudy || pausedGame;
+  const sessionAppMode = pausedTest
+    ? AppMode.TEST_ACTIVE
+    : pausedStudy
+      ? AppMode.STUDY_ACTIVE
+      : AppMode.GAME_ACTIVE;
+  const pausedSessionLabel = pausedTest ? 'Test' : pausedStudy ? 'Study' : 'Game';
 
   const { topLevelChats, subGroupsMap, archivedGroups } = useMemo(() => {
     const allChats: ChatItem[] = [
@@ -265,7 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-grow overflow-y-auto">
         {isSessionPaused && (
             <div className="p-2 space-y-1">
-                <button onClick={() => onResumeSession(sessionAppMode)} className={`w-full flex items-center p-3 rounded-md text-white bg-yellow-500 hover:bg-yellow-600 animate-pulse ${!showText && 'justify-center'}`} title={`Resume ${activeTestSession ? 'Test' : 'Study'}`}>
+                <button onClick={() => onResumeSession(sessionAppMode)} className={`w-full flex items-center p-3 rounded-md text-white bg-yellow-500 hover:bg-yellow-600 animate-pulse ${!showText && 'justify-center'}`} title={`Resume ${pausedSessionLabel}`}>
                     <PlayIcon className={`w-6 h-6 ${showText && 'mr-2'}`} />
                     {showText && <span className="font-semibold text-sm">Resume Session</span>}
                 </button>

@@ -112,6 +112,25 @@ router.post(
   })
 );
 
+// POST /api/v1/challenges/:challengeId/forfeit
+router.post(
+  '/:challengeId/forfeit',
+  authMiddleware,
+  validateChallengeId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    try {
+      const challenge = await challengeService.forfeitChallenge(req.params.challengeId, userId);
+      res.json({ success: true, data: challenge });
+    } catch (err: any) {
+      res.status(err.statusCode || 500).json({ success: false, error: clientErrorMessage(err) });
+    }
+  })
+);
+
 // POST /api/v1/challenges/:challengeId/submit
 router.post(
   '/:challengeId/submit',

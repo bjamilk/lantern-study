@@ -4,6 +4,7 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
 import { ToastBanner } from './components/ui/ToastBanner';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient } from './services/supabase';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
@@ -213,6 +214,9 @@ export const App: React.FC = () => {
         handleStartChallengePlay,
         handleGameAnswer,
         handleRematch,
+        handlePauseGame,
+        handleEndGame,
+        handleResumeGame,
     } = useGameHandlers({ addNotification, handleChallengeUser });
     const {
         isGeneratingFlashcards,
@@ -231,6 +235,44 @@ export const App: React.FC = () => {
 
     const [showImportAndStudy, setShowImportAndStudy] = React.useState(false);
     const [showAuthFromLanding, setShowAuthFromLanding] = React.useState(false);
+    const [endGameConfirmOpen, setEndGameConfirmOpen] = React.useState(false);
+    const [endGameLoading, setEndGameLoading] = React.useState(false);
+    const handleResumeAnySession = React.useCallback((mode: AppMode) => {
+        if (mode === AppMode.GAME_ACTIVE) {
+            handleResumeGame();
+        } else {
+            handleResumeSession(mode);
+        }
+    }, [handleResumeGame, handleResumeSession]);
+
+    const handleCancelPausedSession = React.useCallback(() => {
+        const gamePaused = !!(
+            activeGameSession
+            && !activeGameSession.isComplete
+            && !activeGameSession.awaitingOpponent
+            && appMode !== AppMode.GAME_ACTIVE
+        );
+        if (gamePaused) {
+            setEndGameConfirmOpen(true);
+        } else {
+            handleCancelActiveSession();
+        }
+    }, [activeGameSession, appMode, handleCancelActiveSession]);
+
+    const confirmEndGame = React.useCallback(async () => {
+        setEndGameLoading(true);
+        try {
+            await handleEndGame();
+            setEndGameConfirmOpen(false);
+        } finally {
+            setEndGameLoading(false);
+        }
+    }, [handleEndGame]);
+
+    const endGameConfirmMessage = activeGameSession?.isSoloPractice
+        ? 'Are you sure you want to end this practice session? Your progress will not be saved.'
+        : 'Are you sure you want to quit this duel? Your opponent will win by default and your progress will be lost.';
+
     const location = useLocation();
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
@@ -742,7 +784,12 @@ export const App: React.FC = () => {
                     onPauseSession={handlePauseSession} onCancelSession={handleCancelActiveSession} />;
             case AppMode.GAME_ACTIVE:
                 if (!activeGameSession) return null;
-                return <GameScreen session={activeGameSession} onUpdateAnswer={handleGameAnswer} />;
+                return <GameScreen
+                    session={activeGameSession}
+                    onUpdateAnswer={handleGameAnswer}
+                    onPauseSession={handlePauseGame}
+                    onRequestEndSession={() => setEndGameConfirmOpen(true)}
+                />;
             case AppMode.GAME_RESULTS:
                 if (!activeGameSession || (!activeGameSession.isComplete && !activeGameSession.awaitingOpponent)) return null;
                 return <GameResultScreen session={activeGameSession} currentUser={currentUser} onRematch={handleRematch}
@@ -1106,8 +1153,9 @@ export const App: React.FC = () => {
         onOpenNewDmModal: () => openModal('newDm'),
         unreadNotificationCount: notifications.filter(n => !n.read).length,
         onOpenNotificationModal: () => openModal('notification'),
-        activeTestSession, activeStudySession,
-        onResumeSession: handleResumeSession, onCancelSession: handleCancelActiveSession,
+        activeTestSession, activeStudySession, activeGameSession,
+        onResumeSession: handleResumeAnySession,
+        onCancelSession: handleCancelPausedSession,
         theme, onToggleTheme: toggleTheme, dueCardsCount,
         onToggleCompanion: toggleCompanion,
         isCompanionOpen,
@@ -1122,7 +1170,8 @@ export const App: React.FC = () => {
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}
             hideMobileAiUsageBadge={
-                appMode === AppMode.CHAT && !!selectedChat
+                (appMode === AppMode.CHAT && !!selectedChat)
+                || appMode === AppMode.GAME_ACTIVE
             }
             onNavigate={handleShellNavigate}>
             <div className={`shrink-0 ${appMode === AppMode.CHAT && selectedChat ? 'hidden md:block' : ''}`}>
@@ -1296,6 +1345,16 @@ export const App: React.FC = () => {
                     />
                 </Suspense>
             )}
+            <ConfirmDialog
+                open={endGameConfirmOpen}
+                title="End game?"
+                message={endGameConfirmMessage}
+                confirmLabel="End game"
+                danger
+                loading={endGameLoading}
+                onConfirm={() => void confirmEndGame()}
+                onCancel={() => !endGameLoading && setEndGameConfirmOpen(false)}
+            />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
         </AppShell>
         </Suspense>

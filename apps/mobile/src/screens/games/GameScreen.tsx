@@ -118,7 +118,7 @@ export default function GameScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<GameScreenRouteParams, 'GameScreen'>>();
   const { user } = useAuthStore();
-  const { activeSession, updateAnswer, resetGame } = useGameStore();
+  const { activeSession, updateAnswer, quitGame } = useGameStore();
   
   // Prefer live store session (updates after each answer / submit)
   const session = activeSession || route.params?.session;
@@ -228,10 +228,14 @@ export default function GameScreen() {
 
   useConfirmBeforeExit(exitGuardEnabled, {
     title: 'Quit Game?',
-    message: 'Are you sure you want to quit? This will count as a loss.',
+    message: session.isSoloPractice
+      ? 'Are you sure you want to end this practice session? Your progress will not be saved.'
+      : 'Are you sure you want to quit this duel? Your opponent will win by default.',
     confirmLabel: 'Quit',
     destructive: true,
-    onConfirm: resetGame,
+    onConfirm: () => {
+      void quitGame();
+    },
   });
 
   const handleOptionSelect = useCallback((optionId: string) => {

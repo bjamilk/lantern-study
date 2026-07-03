@@ -1761,6 +1761,11 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify({ answers }),
       }),
 
+    forfeitChallenge: (challengeId: string) =>
+      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/forfeit`, {
+        method: 'POST',
+      }),
+
     // ========== PREFERENCES API ==========
 
     fetchUserPreferences: (userId: string) =>
