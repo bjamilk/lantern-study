@@ -10,6 +10,7 @@ import {
   CloudArrowUpIcon,
   SparklesIcon,
   EllipsisVerticalIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
@@ -27,6 +28,7 @@ interface FlashcardsScreenProps {
   onStartStudy?: () => void;
   onStudyDeck?: (deck: Deck) => void;
   onOfflineToggle?: (deck: Deck, isOffline: boolean) => void;
+  onExportDeck?: (deckId: string, format: 'json' | 'csv') => void;
   embedded?: boolean;
 }
 
@@ -50,6 +52,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   onStartStudy,
   onStudyDeck,
   onOfflineToggle,
+  onExportDeck,
   embedded = false,
 }) => {
   const { isDeckOffline, markDeckOffline, unmarkDeckOffline } = useFlashcardStore();
@@ -210,6 +213,20 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           <CloudArrowDownIcon className="w-4 h-4" />
                         )}
                       </button>
+                      {onExportDeck && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onExportDeck(deck.id, 'json');
+                          }}
+                          className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                          title="Export deck (JSON)"
+                          aria-label={`Export ${deck.name}`}
+                        >
+                          <ArrowDownTrayIcon className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
 

@@ -17,6 +17,9 @@ interface Props {
 /** Tabs where list screens often place primary actions on the bottom-right */
 const RIGHT_ACTION_TABS: TabKey[] = ['Study', 'Home'];
 
+/** Tabs where the floating badge should not appear (overlaps primary actions) */
+const HIDDEN_TABS: TabKey[] = ['Chat'];
+
 export function AIUsageFloatingBadge({ activeTab, hidden = false }: Props) {
   const position = useMemo(() => {
     if (RIGHT_ACTION_TABS.includes(activeTab)) {
@@ -25,7 +28,7 @@ export function AIUsageFloatingBadge({ activeTab, hidden = false }: Props) {
     return styles.anchorRight;
   }, [activeTab]);
 
-  if (hidden) return null;
+  if (hidden || HIDDEN_TABS.includes(activeTab)) return null;
 
   return (
     <View

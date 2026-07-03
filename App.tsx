@@ -685,6 +685,7 @@ export const App: React.FC = () => {
             onOfflineToggle={(_deck, isOffline) => {
                 showToast(isOffline ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
             }}
+            onExportDeck={handleExportDeck}
         />
     );
 
@@ -693,7 +694,9 @@ export const App: React.FC = () => {
             case AppMode.CREATE_GROUP:
                 return <CreateGroupScreen currentUser={currentUser} allUsers={users} onCreateGroup={handleCreateGroup} onBack={() => navigateTo(AppMode.CHAT)} />;
             case AppMode.CHAT:
-                return <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
+                return (
+                    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
                     onSendMessage={onSendMessage} onOpenQuestionModal={onOpenQuestionModal}
                     onOpenGroupInfoModal={() => selectedChat && selectedChat.chatType === 'group' && onOpenGroupInfoModal()}
                     onOpenTestConfigModal={onOpenTestConfigModal} onOpenStudyConfigModal={onOpenStudyConfigModal}
@@ -704,13 +707,15 @@ export const App: React.FC = () => {
                     onAIQuery={handleAIAskTutor}
                     dmThreads={dmThreads}
                     onSelectChat={handleSelectChat}
-                    onBack={() => navigateTo(AppMode.CHAT)}
+                    onBack={() => setSelectedChat(null)}
                     onCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onOpenNewDmModal={() => openModal('newDm')}
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
                     onUnarchiveDmThread={handleUnarchiveDmThread}
-                    onLoadMoreMessages={handleLoadMoreMessages} />;
+                    onLoadMoreMessages={handleLoadMoreMessages} />
+                    </div>
+                );
             case AppMode.TEST_ACTIVE:
                 if (!activeTestSession) return null;
                 return <TestTakingScreen mode="test" session={activeTestSession}
@@ -1106,9 +1111,14 @@ export const App: React.FC = () => {
         }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}
+            hideMobileAiUsageBadge={appMode === AppMode.CHAT && !!selectedChat}
             onNavigate={navigateTo}>
+            <div className={`shrink-0 ${appMode === AppMode.CHAT && selectedChat ? 'hidden md:block' : ''}`}>
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
+            </div>
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {mainContent()}
+            </div>
             <CreateGroupModal isOpen={modals.createGroup} onClose={handleCloseCreateGroupModal}
                 onSubmit={handleCreateSubGroup} parentId={subgroupParentId} allGroups={groups} />
             <QuestionModal isOpen={modals.question} onClose={() => closeModal('question')}

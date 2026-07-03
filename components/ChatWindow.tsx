@@ -490,9 +490,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const questionCount = visibleMessages.filter(m => m.questionType).length;
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 max-h-screen">
-      {/* Header */}
-      <div className="flex-shrink-0 sticky top-0 z-10">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-900">
+      {/* Header — fixed at top */}
+      <div className="flex-shrink-0 z-10">
         <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center min-w-0 gap-3">
             {/* Mobile back button */}
@@ -860,9 +860,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       </div>
 
       {activeTab === 'chat' ? (
-        <>
-          {/* Messages area */}
-          <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Messages area — scrolls independently */}
+          <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
             {visibleMessages.map((msg, idx) => {
               // Date separator logic
               const msgDate = new Date(msg.timestamp);
@@ -926,7 +926,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
           {/* Footer */}
           {isArchived ? (
-            <div className="flex items-center justify-center gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
+            <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
               <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               <p className="text-sm text-amber-800 dark:text-amber-300">
                 This group is archived.
@@ -939,7 +939,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </button>
             </div>
           ) : (
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800">
               <MessageInputBar
                 onSendMessage={onSendMessage}
                 onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
@@ -947,7 +947,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               />
             </div>
           )}
-        </>
+        </div>
       ) : (
         /* Offers Tab panel */
         inquiry && (

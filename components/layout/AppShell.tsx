@@ -18,6 +18,8 @@ interface AppShellProps {
     dueCardsCount?: number;
     unreadChatCount?: number;
     onNavigate: (mode: AppMode, params?: AppRouteParams) => void;
+    /** Hide floating AI badge on mobile (e.g. active chat composer) */
+    hideMobileAiUsageBadge?: boolean;
 }
 
 const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
@@ -28,7 +30,7 @@ const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
  * - Mobile (<md): bottom navigation bar, sidebar hidden
  * - Paused session banner shown globally when navigating away from active test/study
  */
-const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate }) => {
+const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate, hideMobileAiUsageBadge = false }) => {
     const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const { activeTestSession, activeStudySession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
@@ -144,10 +146,14 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 )}
                 {children}
 
-                {/* mobile-only AI usage indicator floating above bottom nav */}
-                <div className="md:hidden fixed bottom-20 right-4 z-50">
-                    <AIUsageBadge compact className="px-2 py-1 shadow-lg" />
+                {/* mobile-only AI usage indicator — hidden during chat compose / companion */}
+                {!hideMobileAiUsageBadge && (
+                <div className="md:hidden fixed bottom-20 left-4 z-40 pointer-events-none">
+                    <div className="pointer-events-auto">
+                        <AIUsageBadge compact className="px-2 py-1 shadow-lg" />
+                    </div>
                 </div>
+                )}
             </main>
 
             {/* Mobile bottom nav - hidden on desktop */}

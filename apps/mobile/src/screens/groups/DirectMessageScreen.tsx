@@ -18,6 +18,8 @@ import { DmBubble } from '../../components/chat/DmBubble';
 
 type NavigationProp = {
   goBack: () => void;
+  canGoBack?: () => boolean;
+  navigate: (screen: string) => void;
 };
 
 interface Props {
@@ -84,11 +86,19 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack?.()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('GroupsList');
+    }
+  }, [navigation]);
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top', 'bottom']}>
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
         >
           <Ionicons name="arrow-back" size={22} color="#475569" />
@@ -115,6 +125,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             ref={listRef}
             data={messages}
             keyExtractor={item => item.id}
+            className="flex-1"
             contentContainerClassName="px-4 py-4 flex-grow"
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">

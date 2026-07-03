@@ -34,6 +34,7 @@ import * as api from '../../services/api';
 
 type NavigationProp = {
   goBack: () => void;
+  canGoBack?: () => boolean;
   getParent: () => { navigate: (tab: string, params?: Record<string, unknown>) => void } | undefined;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
   setParams: (params: Partial<{ groupId: string; groupName?: string; openAddMembers?: boolean }>) => void;
@@ -312,6 +313,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
     group?.ownerId === user?.id || group?.adminIds?.includes(user?.id || '') || false;
   const memberCount = group?.memberCount || group?.members?.length || 0;
 
+  const handleBack = useCallback(() => {
+    if (navigation.canGoBack?.()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('GroupsList');
+    }
+  }, [navigation]);
+
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
     const actions: GroupChatHeaderAction[] = [
       {
@@ -367,7 +376,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
         displayName={displayName}
         memberCount={memberCount}
         lowDataMode={lowDataMode}
-        onBack={() => navigation.goBack()}
+        onBack={handleBack}
         onAddQuestion={() => setShowQuestionModal(true)}
         menuActions={headerMenuActions}
       />
@@ -382,6 +391,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             ref={listRef}
             data={messages}
             keyExtractor={item => item.id}
+            className="flex-1"
             contentContainerClassName="px-4 py-4 flex-grow"
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">
