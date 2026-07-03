@@ -3882,15 +3882,74 @@ export class SupabaseService {
     amount = 1,
     activityDate?: string
   ): Promise<any> {
-    const rpcParams: Record<string, unknown> = {
-      p_user_id: userId,
-      p_type: type,
-      p_amount: amount,
+    const vAmount = Math.max(Math.floor(Number(amount) || 1), 0);
+    const activityDateStr =
+      activityDate && /^\d{4}-\d{2}-\d{2}$/.test(activityDate)
+        ? activityDate
+        : new Date().toISOString().slice(0, 10);
+
+    const typeIncrements = {
+      test_count: type === 'test' ? vAmount : 0,
+      flashcard_count: type === 'flashcard' || type === 'flashcard_new' ? vAmount : 0,
+      new_flashcard_count: type === 'flashcard_new' ? vAmount : 0,
+      question_count: type === 'study_question' ? vAmount : 0,
+      game_count: type === 'game' ? vAmount : 0,
+      daily_quiz_count: type === 'daily_quiz' ? vAmount : 0,
     };
-    if (activityDate && /^\d{4}-\d{2}-\d{2}$/.test(activityDate)) {
-      rpcParams.p_activity_date = activityDate;
+
+    if (vAmount === 0) {
+      const { data, error } = await this.supabase
+        .from('study_activity')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('activity_date', activityDateStr)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
     }
-    const { data, error } = await this.supabase.rpc('record_study_activity', rpcParams);
+
+    const { data: existing, error: readError } = await this.supabase
+      .from('study_activity')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('activity_date', activityDateStr)
+      .maybeSingle();
+    if (readError) throw readError;
+
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const { data, error } = await this.supabase
+        .from('study_activity')
+        .update({
+          count: (existing.count ?? 0) + vAmount,
+          test_count: (existing.test_count ?? 0) + typeIncrements.test_count,
+          flashcard_count: (existing.flashcard_count ?? 0) + typeIncrements.flashcard_count,
+          new_flashcard_count: (existing.new_flashcard_count ?? 0) + typeIncrements.new_flashcard_count,
+          question_count: (existing.question_count ?? 0) + typeIncrements.question_count,
+          game_count: (existing.game_count ?? 0) + typeIncrements.game_count,
+          daily_quiz_count: (existing.daily_quiz_count ?? 0) + typeIncrements.daily_quiz_count,
+          updated_at: now,
+        })
+        .eq('user_id', userId)
+        .eq('activity_date', activityDateStr)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    const { data, error } = await this.supabase
+      .from('study_activity')
+      .insert({
+        user_id: userId,
+        activity_date: activityDateStr,
+        count: vAmount,
+        ...typeIncrements,
+        updated_at: now,
+      })
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }

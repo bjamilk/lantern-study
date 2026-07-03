@@ -12,7 +12,13 @@ async function gamificationRequest<T>(path: string, options: RequestInit = {}): 
     headers: { ...headers, 'Content-Type': 'application/json', ...options.headers },
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.message || 'Gamification request failed');
+  if (!res.ok) {
+    throw new Error(
+      (typeof data.message === 'string' && data.message) ||
+        (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
+        'Gamification request failed'
+    );
+  }
   return data.data;
 }
 
