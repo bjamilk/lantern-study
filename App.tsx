@@ -1172,6 +1172,8 @@ export const App: React.FC = () => {
             hideMobileAiUsageBadge={
                 (appMode === AppMode.CHAT && !!selectedChat)
                 || appMode === AppMode.GAME_ACTIVE
+                || appMode === AppMode.TEST_ACTIVE
+                || appMode === AppMode.STUDY_ACTIVE
             }
             onNavigate={handleShellNavigate}>
             <div className={`shrink-0 ${appMode === AppMode.CHAT && selectedChat ? 'hidden md:block' : ''}`}>

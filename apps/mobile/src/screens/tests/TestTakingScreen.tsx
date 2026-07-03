@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
 import { useTheme, type ThemeColors } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { normalizeStorageUrl } from '@lantern/shared/utils';
 import { useStudySettings } from '../../stores/settingsStore';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -422,15 +423,22 @@ const DiagramLabelingComponent = ({
         <Pressable style={styles.pickerOverlay} onPress={() => setPickerLabelId(null)}>
           <Pressable style={styles.pickerSheet} onPress={e => e.stopPropagation?.()}>
             <Text style={styles.pickerTitle}>Select label</Text>
-            {shuffledOptions.map((opt: DiagramLabel) => (
-              <TouchableOpacity
-                key={opt.id}
-                style={styles.pickerOption}
-                onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
-              >
-                <Text style={styles.pickerOptionText}>{opt.label}</Text>
-              </TouchableOpacity>
-            ))}
+            <ScrollView
+              style={styles.pickerScroll}
+              contentContainerStyle={styles.pickerScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {shuffledOptions.map((opt: DiagramLabel) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={styles.pickerOption}
+                  onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
+                >
+                  <Text style={styles.pickerOptionText}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -881,6 +889,16 @@ export default function TestTakingScreen() {
           </View>
           
           <Text style={[styles.questionText, { color: colors.text }]}>{currentQuestion.question}</Text>
+
+          {currentQuestion.imageUrl && currentQuestion.type !== 'diagram_labeling' && (
+            <View style={styles.questionImageWrapper}>
+              <Image
+                source={{ uri: normalizeStorageUrl(currentQuestion.imageUrl) }}
+                style={styles.questionImage}
+                resizeMode="contain"
+              />
+            </View>
+          )}
           
           {currentQuestion.tags && currentQuestion.tags.length > 0 && (
             <View style={styles.tagsContainer}>
@@ -1212,6 +1230,20 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     lineHeight: 28,
   },
+  questionImageWrapper: {
+    marginTop: 16,
+    width: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  questionImage: {
+    width: '100%',
+    minHeight: 120,
+    maxHeight: 320,
+  },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1446,7 +1478,8 @@ const styles = StyleSheet.create({
   },
   diagramImage: {
     width: '100%',
-    height: 220,
+    minHeight: 160,
+    maxHeight: 360,
     borderRadius: 12,
   },
   diagramMarker: {
@@ -1530,8 +1563,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    padding: 16,
-    maxHeight: '50%',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
+    maxHeight: '70%',
+  },
+  pickerScroll: {
+    flexGrow: 0,
+  },
+  pickerScrollContent: {
+    paddingBottom: 8,
   },
   pickerTitle: {
     fontSize: 16,

@@ -456,6 +456,7 @@ export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
       correctAnswers,
       matchingPairs: q.matchingPairs,
       diagramUrl: q.diagramUrl || q.imageUrl,
+      imageUrl: q.imageUrl,
       diagramLabels: q.diagramLabels,
       blanks: q.blanks,
       sampleAnswer: q.sampleAnswer,
@@ -583,6 +584,7 @@ export function offlineQuestionsToTestQuestions(questions: OfflineQuestionInput[
       correctAnswers: correctFromOptions && correctFromOptions.length > 1 ? correctFromOptions : undefined,
       explanation: q.explanation,
       diagramUrl: q.imageUrl,
+      imageUrl: q.imageUrl,
       points: 10,
       tags: q.tags,
     };

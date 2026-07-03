@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
 import { useTheme } from '../theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mobileQuestionTypesToWeb, webQuestionTypesToMobile } from '../utils/questionHelpers';
 
 // Timer presets in seconds
@@ -98,6 +99,7 @@ export default function TestConfigModal({
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const isStudyMode = mode === 'study';
 
@@ -717,7 +719,7 @@ export default function TestConfigModal({
           </ScrollView>
 
           {/* Footer */}
-          <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(32, insets.bottom + 16) }]}>
             {!isValid && validationHint ? (
               <Text style={[styles.validationHint, { color: colors.textSecondary }]}>
                 {validationHint}
@@ -764,8 +766,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: '90%',
-    maxHeight: '90%',
+    height: '92%',
+    maxHeight: '92%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -1130,6 +1133,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#334155',
     backgroundColor: '#1e293b',
+    flexShrink: 0,
   },
   validationHint: {
     fontSize: 13,

@@ -210,12 +210,11 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               <p className="text-slate-700 dark:text-slate-300 mb-3 whitespace-pre-wrap">{question.questionStem}</p>
 
               {question.imageUrl && question.questionType !== QuestionType.DIAGRAM_LABELING && (
-                <div className="my-3 flex justify-center">
+                <div className="my-3 w-full max-w-xl mx-auto">
                     <img 
                         src={question.imageUrl} 
                         alt="Question visual" 
-                        className="max-w-xs h-auto rounded-md border border-slate-300 dark:border-slate-600 shadow"
-                        style={{ maxHeight: '200px' }}
+                        className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-slate-300 dark:border-slate-600 shadow"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                 </div>

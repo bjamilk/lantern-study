@@ -311,21 +311,22 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   // For study mode, show a completely distinct blue-themed interface
   if (mode === 'study') {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl transform max-h-[90vh] flex flex-col border-t-4 border-blue-500">
-          <div className="flex justify-between items-center mb-4 flex-shrink-0">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
-              <span className="text-2xl mr-2">📚</span>
-              <AcademicCapIcon className="w-6 h-6 mr-2 text-blue-500" />
-              Configure Study for "{group.name}"
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain">
+        <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-t-2xl sm:rounded-lg shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4 border-blue-500">
+          <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center min-w-0">
+              <span className="text-2xl mr-2 shrink-0">📚</span>
+              <AcademicCapIcon className="w-6 h-6 mr-2 text-blue-500 shrink-0" />
+              <span className="truncate">Configure Study for "{group.name}"</span>
             </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">
               <XMarkIcon className="w-6 h-6" />
             </button>
           </div>
-          
+
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 -mr-1 space-y-4">
           {/* Study Mode Features - Blue Theme */}
-          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
             <h3 className="font-semibold text-blue-800 dark:text-blue-200 mb-3 text-sm">Study Mode Features</h3>
             <div className="space-y-2">
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
@@ -361,7 +362,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-4 pr-2 -mr-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Load Preset */}
             {testPresets.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
@@ -500,27 +501,28 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               </div>
             )}
           </form>
+          </div>
 
-          <div className="flex justify-between items-center mt-6 pt-4 border-t border-blue-200 dark:border-blue-700 flex-shrink-0">
+          <div className="flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t border-blue-200 dark:border-blue-700 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <button
               type="button"
               onClick={handleDownload}
               disabled={maxQuestions === 0 || numberOfQuestions < 1}
-              className="px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900/70 border border-blue-300 dark:border-blue-700 rounded-md flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900/70 border border-blue-300 dark:border-blue-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
               <CloudArrowDownIcon className="w-5 h-5 mr-2" />
               Download for Offline
             </button>
-            <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">
+            <div className="flex gap-3 w-full sm:w-auto">
+              <button type="button" onClick={onClose} className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={maxQuestions === 0 || numberOfQuestions < 1}
-                className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center shadow-lg"
+                className="flex-1 sm:flex-none px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
               >
                 <span className="text-lg mr-2">📚</span>
                 Start Studying
@@ -533,22 +535,23 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-      <div className={`bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl transform max-h-[90vh] flex flex-col border-t-4 ${mode === 'test' ? 'border-purple-500' : 'border-green-500'}`}>
-        <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
-            {mode === 'test' && <span className="text-2xl mr-2">📝</span>}
-            <Icon className={`w-6 h-6 mr-2 ${mode === 'test' ? 'text-purple-500' : 'text-green-500'}`} />
-            {mode === 'test' ? `Configure Test for "${group.name}"` : getModalTitle()}
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain">
+      <div className={`bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-t-2xl sm:rounded-lg shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4 ${mode === 'test' ? 'border-purple-500' : 'border-green-500'}`}>
+        <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center min-w-0">
+            {mode === 'test' && <span className="text-2xl mr-2 shrink-0">📝</span>}
+            <Icon className={`w-6 h-6 mr-2 shrink-0 ${mode === 'test' ? 'text-purple-500' : 'text-green-500'}`} />
+            <span className="truncate">{mode === 'test' ? `Configure Test for "${group.name}"` : getModalTitle()}</span>
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">
             <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
-        
+
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 -mr-1 space-y-4">
         {/* Test Mode Features - Purple Theme */}
         {mode === 'test' && (
-          <div className="mb-4 p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-700">
+          <div className="p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-700">
             <h3 className="font-semibold text-purple-800 dark:text-purple-200 mb-3 text-sm">Test Mode Features</h3>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
@@ -579,7 +582,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           </div>
         )}
         
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto pr-2 -mr-4 space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {mode !== 'game' && testPresets.length > 0 && (
             <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
               <label htmlFor="preset-select" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
@@ -722,26 +725,27 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             </div>
           )}
         </form>
+        </div>
 
-        <div className={`flex justify-between items-center mt-6 pt-4 border-t flex-shrink-0 ${mode === 'test' ? 'border-purple-200 dark:border-purple-700' : 'border-gray-200 dark:border-gray-700'}`}>
+        <div className={`flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))] ${mode === 'test' ? 'border-purple-200 dark:border-purple-700' : 'border-gray-200 dark:border-gray-700'}`}>
           {mode !== 'game' && (
               <button
                 type="button"
                 onClick={handleDownload}
                 disabled={isSubmitDisabled()}
-                className="px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-purple-300 dark:border-purple-700 rounded-md flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-purple-300 dark:border-purple-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
                 <CloudArrowDownIcon className="w-5 h-5 mr-2" />
                 Download for Offline
               </button>
           )}
-          <div className="flex-grow flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2 w-full sm:w-auto sm:flex-grow">
             {mode === 'game' && onSoloPractice && (
               <button
                 type="button"
                 onClick={() => onSoloPractice(getCurrentConfig())}
-                className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-md disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-md disabled:opacity-50"
                 disabled={isSubmitDisabled()}
               >
                 Solo Practice
@@ -750,7 +754,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             <button
                 type="submit"
                 onClick={handleSubmit}
-                className={`px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center shadow-lg ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                className={`flex-1 sm:flex-none px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                 disabled={isSubmitDisabled()}
             >
                 {mode === 'test' && <span className="text-lg mr-2">📝</span>}

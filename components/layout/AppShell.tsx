@@ -165,8 +165,8 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
 
                 {/* mobile-only AI usage indicator — hidden during chat (composer + send) */}
                 {!hideMobileAiUsageBadge && (
-                <div className="md:hidden fixed top-14 right-3 z-30 max-w-[9rem] pointer-events-none">
-                    <div className="pointer-events-auto scale-90 origin-top-right">
+                <div className="md:hidden fixed top-1/2 -translate-y-1/2 right-3 z-30 max-w-[9rem] pointer-events-none">
+                    <div className="pointer-events-auto scale-90 origin-center">
                         <AIUsageBadge compact className="px-2 py-1 shadow-md" />
                     </div>
                 </div>

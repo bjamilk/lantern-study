@@ -769,12 +769,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
              {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">(Select the correct label for each pin from the dropdown menu)</p>}
 
             {currentQuestion.imageUrl && currentQuestion.questionType !== QuestionType.DIAGRAM_LABELING && (
-                <div className="my-3 flex justify-center">
+                <div className="my-3 w-full max-w-xl mx-auto">
                     <img 
                         src={currentQuestion.imageUrl}
                         alt="Question visual" 
-                        className="max-w-sm h-auto rounded-md border border-slate-300 dark:border-slate-600 shadow"
-                        style={{ maxHeight: '250px' }}
+                        className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-slate-300 dark:border-slate-600 shadow"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                 </div>

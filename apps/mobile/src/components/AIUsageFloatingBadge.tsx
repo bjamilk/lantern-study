@@ -1,9 +1,7 @@
 /**
- * Floating AI usage indicator above the tab bar.
- * Uses pointerEvents so only the badge captures taps; shifts side/height by tab
- * to avoid overlapping common bottom action areas.
+ * Floating AI usage indicator on the right side of the screen (vertically centered).
  */
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import AIUsageBadge from './AIUsageBadge';
 import type { TabKey } from './layout/BottomTabBar';
@@ -16,28 +14,18 @@ interface Props {
   focusedRoute?: string;
 }
 
-/** Tabs where list screens often place primary actions on the bottom-right */
-const RIGHT_ACTION_TABS: TabKey[] = ['Study', 'Home'];
-
 /** Tabs or screens where the floating badge should not appear */
 const HIDDEN_TABS: TabKey[] = ['Chat'];
-const HIDDEN_ROUTES = new Set(['GroupChat', 'DirectMessage']);
+const HIDDEN_ROUTES = new Set(['GroupChat', 'DirectMessage', 'TestTaking']);
 
 export function AIUsageFloatingBadge({ activeTab, hidden = false, focusedRoute }: Props) {
-  const position = useMemo(() => {
-    if (RIGHT_ACTION_TABS.includes(activeTab)) {
-      return styles.anchorLeft;
-    }
-    return styles.anchorRight;
-  }, [activeTab]);
-
   if (hidden || HIDDEN_TABS.includes(activeTab) || (focusedRoute && HIDDEN_ROUTES.has(focusedRoute))) {
     return null;
   }
 
   return (
     <View
-      style={[styles.container, position]}
+      style={styles.container}
       pointerEvents="box-none"
       accessibilityElementsHidden={false}
       importantForAccessibility="yes"
@@ -49,20 +37,12 @@ export function AIUsageFloatingBadge({ activeTab, hidden = false, focusedRoute }
   );
 }
 
-const TAB_BAR_CLEARANCE = 84;
-
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: TAB_BAR_CLEARANCE,
-    zIndex: 40,
-  },
-  anchorLeft: {
-    left: 16,
-    right: undefined,
-  },
-  anchorRight: {
+    top: '50%',
     right: 16,
-    left: undefined,
+    transform: [{ translateY: -24 }],
+    zIndex: 40,
   },
 });

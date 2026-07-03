@@ -139,6 +139,7 @@ export interface TestQuestion {
   matchingPairs?: MatchingPair[];
   // For diagram labeling
   diagramUrl?: string;
+  imageUrl?: string;
   diagramLabels?: DiagramLabel[];
   // For fill in blank - multiple blanks support
   blanks?: { id: string; correctAnswer: string }[];
