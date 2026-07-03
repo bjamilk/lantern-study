@@ -565,8 +565,10 @@ export const fetchMessages = async (groupId: string, page?: number, limit?: numb
   }
 
   const result = await response.json();
-  console.log('Fetched messages count:', result.data.length);
-  return result.data;
+  const data = result?.data;
+  const list = Array.isArray(data) ? data : [];
+  console.log('Fetched messages count:', list.length);
+  return list;
 };
 
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {

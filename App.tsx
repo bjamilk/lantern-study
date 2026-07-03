@@ -494,8 +494,8 @@ export const App: React.FC = () => {
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
     const messagesForChat = !selectedChat ? [] : selectedChat.chatType === 'group'
-        ? messages[selectedChat.id] || []
-        : (directMessages[selectedChat.id] || []).map((dm: DirectMessage): any => {
+        ? (Array.isArray(messages[selectedChat.id]) ? messages[selectedChat.id] : [])
+        : (Array.isArray(directMessages[selectedChat.id]) ? directMessages[selectedChat.id] : []).map((dm: DirectMessage): any => {
             const dmThread = selectedChat as any;
             const participantInfo = dmThread?.participants?.[dm.senderId];
             const sender = users.find(u => u.id === dm.senderId)

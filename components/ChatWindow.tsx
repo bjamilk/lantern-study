@@ -70,7 +70,7 @@ interface ChatWindowProps {
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
-  chat, messages, currentUser, userVotes,
+  chat, messages: messagesProp, currentUser, userVotes,
   onSendMessage, onOpenQuestionModal, onOpenGroupInfoModal,
   onOpenTestConfigModal, onOpenStudyConfigModal, onVoteQuestion,
   onFlagAsSimilar,
@@ -87,6 +87,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onUnarchiveDmThread,
   onLoadMoreMessages,
 }) => {
+  const messages = Array.isArray(messagesProp) ? messagesProp : [];
   const { lowDataMode } = useUIStore();
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -303,7 +304,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     const archivedTop: Group[] = [];
     const map: Record<string, Group[]> = {};
 
-    groups.forEach(g => {
+    (groups ?? []).forEach(g => {
       if (g.parentId) {
         if (!map[g.parentId]) map[g.parentId] = [];
         map[g.parentId].push(g);
@@ -484,15 +485,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const group = isGroup ? chat : null;
 
   const otherParticipant = !isGroup
-    ? chat.participants[chat.participantIds.find(id => id !== currentUser.id)!]
+    ? (() => {
+        const participantIds = (chat as DMThread).participantIds;
+        const otherId = Array.isArray(participantIds)
+          ? participantIds.find((id) => id !== currentUser.id)
+          : undefined;
+        return otherId && chat.participants ? chat.participants[otherId] : null;
+      })()
     : null;
 
   const name = isGroup ? chat.name : otherParticipant?.name || 'Chat';
   const avatarUrl = isGroup ? chat.avatarUrl : otherParticipant?.avatarUrl;
 
-  const memberCountText = group?.members ? `${group.members.length} member${group.members.length === 1 ? '' : 's'}` +
-    (group?.memberEmails && group.memberEmails.length > group.members.length ?
-      ` (+${group.memberEmails.length - group.members.length} invited)` : '') : '';
+  const memberList = Array.isArray(group?.members) ? group!.members : [];
+  const memberEmailList = Array.isArray(group?.memberEmails) ? group!.memberEmails : [];
+  const memberCountText = memberList.length
+    ? `${memberList.length} member${memberList.length === 1 ? '' : 's'}` +
+      (memberEmailList.length > memberList.length
+        ? ` (+${memberEmailList.length - memberList.length} invited)`
+        : '')
+    : '';
 
   const description = isGroup ? group.description || memberCountText : 'Direct Message';
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;

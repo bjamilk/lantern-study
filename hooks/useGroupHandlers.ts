@@ -77,7 +77,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (chat.chatType === 'group') {
             const limit = lowDataMode ? 20 : 50;
             fetchMessages(chat.id, undefined, limit).then(fetchedMessages => {
-                updateMessages(prev => ({ ...prev, [chat.id]: fetchedMessages }));
+                const list = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                updateMessages(prev => ({ ...prev, [chat.id]: list }));
             }).catch(error => {
                 console.error('[handleSelectChat] Error fetching messages:', error);
             });
@@ -150,7 +151,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             fetchMessages(chatId, undefined, limit)
                 .then((fetchedMessages) => {
-                    updateMessages((prev) => ({ ...prev, [chatId]: fetchedMessages }));
+                    const list = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                    updateMessages((prev) => ({ ...prev, [chatId]: list }));
                 })
                 .catch((error) => {
                     console.error('[selectedChat] Error fetching messages:', error);
@@ -185,13 +187,14 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     console.error('[selectedChat] Error marking DM as read:', error);
                 });
 
-            const otherUserId = (selectedChat as DMThread).participantIds.find(
-                (id) => id !== currentUser.id
-            );
+            const otherUserId = Array.isArray((selectedChat as DMThread).participantIds)
+                ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
+                : undefined;
             if (otherUserId) {
                 fetchDirectMessages(currentUser.id, otherUserId)
                     .then((fetchedMessages) => {
-                        const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) => ({
+                        const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                        const mappedMessages: DirectMessage[] = raw.map((m: any) => ({
                             id: m.id,
                             threadId: m.threadId || threadId,
                             senderId: m.senderId || m.sender_id,
