@@ -1029,16 +1029,19 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         }
     }, [pendingSyncResults, currentUser]);
 
-    // --- Theme sync to DOM ---
+    // --- Theme sync to DOM (signed-out visitors always see light — landing & auth) ---
     useEffect(() => {
-        if (theme === 'dark') {
+        const effectiveTheme = currentUser ? theme : 'light';
+        if (effectiveTheme === 'dark') {
             document.documentElement.classList.add('dark');
             localStorage.setItem('theme', 'dark');
         } else {
             document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
+            if (currentUser) {
+                localStorage.setItem('theme', 'light');
+            }
         }
-    }, [theme]);
+    }, [theme, currentUser]);
 
     // --- SRS Notifications ---
     const checkForDueCardsAndNotify = useCallback(() => {

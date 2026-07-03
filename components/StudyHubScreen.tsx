@@ -44,7 +44,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-lantern-background text-lantern-text">
-      <div className="px-4 md:px-8 py-6 max-w-3xl mx-auto w-full space-y-6">
+      <div className="px-4 md:px-6 lg:px-8 py-6 w-full space-y-6">
         <ScreenHeader
           title="Study"
           subtitle="Review due cards, resume sessions, and jump back in"

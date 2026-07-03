@@ -30,7 +30,10 @@ export function StudyHubScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
-      <ScrollView className="flex-1 px-4 py-4" contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView
+        className="flex-1 w-full"
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 }}
+      >
         <ScreenHeader title="Study" subtitle="Review due cards and jump back in" />
 
         <Card className="mb-4 border-l-4 border-l-indigo-500">

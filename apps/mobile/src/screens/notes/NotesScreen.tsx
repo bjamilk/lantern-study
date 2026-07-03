@@ -225,13 +225,23 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       )}
 
       <View className="px-4 mb-1.5 flex-row items-center gap-1.5">
-        <Button
-          size="sm"
-          variant={!selectedFolderId ? 'primary' : 'secondary'}
+        <Pressable
           onPress={() => setSelectedFolderId(null)}
+          className={`shrink-0 px-2.5 py-2 rounded-lg ${
+            !selectedFolderId
+              ? 'bg-indigo-500'
+              : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600'
+          }`}
         >
-          All notes
-        </Button>
+          <Text
+            className={`text-sm font-semibold ${
+              !selectedFolderId ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+            }`}
+            numberOfLines={1}
+          >
+            All notes
+          </Text>
+        </Pressable>
         {folders.length > 0 ? (
           <ScrollView
             horizontal

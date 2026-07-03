@@ -28,8 +28,8 @@ interface NotesScreenProps {
   embedded?: boolean;
 }
 
-const folderButtonClass = (isActive: boolean) =>
-  `shrink-0 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+const folderButtonClass = (isActive: boolean, compact = false) =>
+  `${compact ? 'w-full text-left px-2 py-1.5' : 'shrink-0 px-3 py-1.5'} rounded-lg text-xs sm:text-sm font-medium transition-colors ${
     isActive
       ? 'bg-lantern-primary text-white'
       : 'text-lantern-text-secondary bg-lantern-surface border border-lantern-border hover:bg-lantern-background-secondary'
@@ -87,19 +87,19 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     return 'Note';
   };
 
-  const renderFolderButton = (folder: NoteFolder | null) => {
+  const renderFolderButton = (folder: NoteFolder | null, compact = false) => {
     const isActive = folder ? selectedFolderId === folder.id : !selectedFolderId;
     return (
       <button
         key={folder?.id ?? 'all'}
         type="button"
         onClick={() => onSelectFolder(folder?.id ?? null)}
-        className={`${folderButtonClass(isActive)} flex items-center gap-1.5`}
+        className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5`}
       >
         {folder && (
           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: folder.color }} />
         )}
-        <span className="truncate max-w-[120px] sm:max-w-none">{folder?.name ?? 'All notes'}</span>
+        <span className="truncate max-w-[96px] md:max-w-[120px]">{folder?.name ?? 'All notes'}</span>
       </button>
     );
   };
@@ -135,10 +135,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       )}
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col md:flex-row">
-        <aside className="hidden md:block shrink-0 w-56 border-r border-lantern-border p-3 overflow-y-auto bg-lantern-surface">
-          {renderFolderButton(null)}
+        <aside className="hidden md:block shrink-0 w-44 border-r border-lantern-border p-2 overflow-y-auto bg-lantern-surface">
+          {renderFolderButton(null, true)}
           <div className="mt-1 space-y-1">
-            {folders.map(folder => renderFolderButton(folder))}
+            {folders.map(folder => renderFolderButton(folder, true))}
           </div>
         </aside>
 
