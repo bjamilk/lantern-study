@@ -116,6 +116,17 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     setIsGenerateModalOpen(false);
   };
 
+  const handleTimedCram = () => {
+    const minutes = window.prompt('Enter duration in minutes for timed cram (e.g. 5):');
+    if (!minutes) return;
+    const parsed = parseFloat(minutes);
+    if (isNaN(parsed) || parsed <= 0) {
+      alert('Please enter a valid number of minutes.');
+      return;
+    }
+    onStartCram(deck, Math.round(parsed * 60));
+  };
+
   const handleLoadMore = async () => {
     if (!onLoadMoreCards || isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
@@ -211,6 +222,48 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             colorClass="bg-purple-500 hover:bg-purple-600 w-full"
             className="w-full"
           />
+          <DeckActionButton
+            onClick={handleTimedCram}
+            icon={<ClockIcon className="w-5 h-5" />}
+            label="Timed Cram"
+            subtitle="Beat the clock"
+            colorClass="bg-indigo-500 hover:bg-indigo-600 w-full"
+            className="w-full"
+          />
+          <p className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wide px-1 mt-4 mb-2">Deck actions</p>
+          <DeckActionButton
+            onClick={() => onOpenCreateFlashcard(deck.id)}
+            icon={<PlusCircleIcon className="w-5 h-5" />}
+            label="Add Card"
+            subtitle="Create manually"
+            colorClass="bg-emerald-500 hover:bg-emerald-600 w-full"
+            className="w-full"
+          />
+          <DeckActionButton
+            onClick={() => setIsGenerateModalOpen(true)}
+            disabled={isGenerating}
+            icon={<SparklesIcon className="w-5 h-5" />}
+            label={isGenerating ? 'Generating…' : 'Generate'}
+            subtitle="From your notes"
+            colorClass="bg-amber-500 hover:bg-amber-600 w-full"
+            className="w-full"
+          />
+          <DeckActionButton
+            onClick={() => onExportDeck(deck.id, 'json')}
+            icon={<ArrowDownTrayIcon className="w-5 h-5" />}
+            label="Export JSON"
+            subtitle="Full backup"
+            colorClass="bg-slate-600 hover:bg-slate-700 ring-1 ring-inset ring-white/10 w-full"
+            className="w-full"
+          />
+          <DeckActionButton
+            onClick={() => onExportDeck(deck.id, 'csv')}
+            icon={<ArrowDownTrayIcon className="w-5 h-5" />}
+            label="Export CSV"
+            subtitle="Spreadsheet export"
+            colorClass="bg-slate-500 hover:bg-slate-600 w-full"
+            className="w-full"
+          />
           <div className="mt-4 p-3 rounded-xl bg-lantern-background-secondary border border-lantern-border text-xs space-y-1">
             <p className="flex justify-between"><span className="text-lantern-text-secondary">New</span><span className="font-bold text-lantern-text">{newCards}</span></p>
             <p className="flex justify-between"><span className="text-lantern-text-secondary">Due</span><span className="font-bold text-emerald-600">{dueCards}</span></p>
@@ -254,16 +307,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           colorClass="bg-purple-500 hover:bg-purple-600"
         />
         <DeckActionButton
-          onClick={() => {
-            const minutes = window.prompt('Enter duration in minutes for timed cram (e.g. 5):');
-            if (!minutes) return;
-            const parsed = parseFloat(minutes);
-            if (isNaN(parsed) || parsed <= 0) {
-              alert('Please enter a valid number of minutes.');
-              return;
-            }
-            onStartCram(deck, Math.round(parsed * 60));
-          }}
+          onClick={handleTimedCram}
           icon={<ClockIcon className="w-5 h-5" />}
           label="Timed Cram"
           subtitle="Beat the clock"
