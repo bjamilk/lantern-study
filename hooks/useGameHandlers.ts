@@ -17,6 +17,7 @@ import {
   fetchChallenge,
   submitChallenge,
 } from '../services/challenges';
+import { hasValidSession } from '../services/supabase';
 import { trackStudyActivity } from '../services/studyActivity';
 
 interface UseGameHandlersParams {
@@ -244,6 +245,7 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     let cancelled = false;
 
     const poll = async () => {
+      if (!(await hasValidSession())) return;
       try {
         const challenge = await fetchChallenge(challengeId);
         if (cancelled || challenge.status !== 'completed') return;

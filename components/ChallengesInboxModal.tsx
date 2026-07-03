@@ -28,9 +28,13 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
     if (!opts?.silent) setLoading(true);
     try {
       const data = await fetchChallenges();
-      setChallenges(data);
-    } catch (e) {
-      console.error(e);
+      setChallenges(Array.isArray(data) ? data : []);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : '';
+      if (message !== 'Authentication required') {
+        console.warn('Failed to load challenges:', message || e);
+      }
+      setChallenges([]);
     } finally {
       if (!opts?.silent) setLoading(false);
     }
