@@ -513,9 +513,15 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   res.json({ success: true, data: result });
 }));
 
-// Note-scoped routes — UUID constraint avoids matching static paths like /folders
-const NOTE_ID_PATH = '/:noteId([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})';
-router.use(NOTE_ID_PATH, requireNoteAccess('noteId'));
+// Note-scoped ownership checks (must be after static paths like /folders, /upload-pdf)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+router.use('/:noteId', (req, res, next) => {
+  if (!UUID_RE.test(String(req.params.noteId || ''))) {
+    res.status(404).json({ success: false, error: 'Not found' });
+    return;
+  }
+  return requireNoteAccess('noteId')(req as any, res, next);
+});
 
 // Attachment routes (before /:noteId CRUD)
 router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Request, res: Response) => {
