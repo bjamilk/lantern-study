@@ -2,47 +2,37 @@
 // Lantern Study - Shared AI Companion Client
 // ===========================================
 
-import type { AIUsageInfo, CompanionAction, CompanionUserContext } from '../types';
+import type { CompanionAction, CompanionUserContext } from '../types';
 import type { AIClientConfig } from './ai';
+import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
-function parseUsageFromHeaders(
-  response: Response,
-  onUsageUpdate?: (usage: AIUsageInfo) => void
-): void {
-  const usedHeader = response.headers.get('X-AI-Usage-Used');
-  const limitHeader = response.headers.get('X-AI-Usage-Limit');
-  const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-  if (usedHeader && limitHeader) {
-    const used = parseInt(usedHeader, 10);
-    const limit = parseInt(limitHeader, 10);
-    onUsageUpdate?.({
-      used,
-      limit,
-      remaining: limit - used,
-      resetsAt: resetsHeader || '',
-    });
-  }
-}
+type CompanionRequestOptions = {
+  /** When false, never update the global usage badge from this response. */
+  trackUsage?: boolean;
+};
 
 export function createCompanionClient(config: AIClientConfig) {
   const companionRequest = async <T>(
     endpoint: string,
     method: 'GET' | 'POST' | 'DELETE',
-    body?: Record<string, unknown>
+    body?: Record<string, unknown>,
+    requestOptions?: CompanionRequestOptions
   ): Promise<T> => {
     const headers = await config.getAuthHeaders();
-    const options: RequestInit = { method, headers };
+    const fetchOptions: RequestInit = { method, headers };
 
     if (method === 'POST' || method === 'DELETE') {
-      options.body = JSON.stringify(body || {});
+      fetchOptions.body = JSON.stringify(body || {});
     }
 
     const response = await fetch(
       `${config.getBaseUrl()}/api/v1/ai/companion${endpoint}`,
-      options
+      fetchOptions
     );
 
-    parseUsageFromHeaders(response, config.onUsageUpdate);
+    if (requestOptions?.trackUsage !== false) {
+      parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -57,7 +47,8 @@ export function createCompanionClient(config: AIClientConfig) {
       companionRequest<{ reply: string; actions: CompanionAction[]; provider: string }>(
         '/message',
         'POST',
-        { message, context }
+        { message, context },
+        { trackUsage: false }
       ),
 
     fetchCompanionHistory: () =>
@@ -69,10 +60,10 @@ export function createCompanionClient(config: AIClientConfig) {
           actions?: CompanionAction[];
           created_at: string;
         }>;
-      }>('/history', 'GET'),
+      }>('/history', 'GET', undefined, { trackUsage: false }),
 
     clearCompanionHistory: () =>
-      companionRequest<{ success: boolean }>('/history', 'DELETE'),
+      companionRequest<{ success: boolean }>('/history', 'DELETE', undefined, { trackUsage: false }),
 
     companionSendMessageStream: async (
       message: string,
@@ -95,7 +86,7 @@ export function createCompanionClient(config: AIClientConfig) {
         return;
       }
 
-      parseUsageFromHeaders(response, config.onUsageUpdate);
+      parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
 
       if (!response.ok || !response.body) {
         onError(new Error(`Stream request failed (${response.status})`));

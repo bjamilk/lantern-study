@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { XMarkIcon, TrashIcon, PaperAirplaneIcon, SparklesIcon, HandThumbUpIcon, HandThumbDownIcon } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as ThumbUpSolid, HandThumbDownIcon as ThumbDownSolid } from '@heroicons/react/24/solid';
 import { useCompanionStore } from '../stores/companionStore';
@@ -25,7 +25,7 @@ const QUICK_PROMPTS = [
 
 const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, theme = 'light' }) => {
   const {
-    isOpen, close, messages, isLoading, isStreaming, error,
+    isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
     loadHistory, sendMessageStreaming, clearHistory, clearError,
     pendingMessage, setPendingMessage,
   } = useCompanionStore();
@@ -44,16 +44,23 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     }
   }, [isOpen, currentUser, loadHistory]);
 
-  // Auto-send pending message (e.g. explain-answer pre-population)
+  // Auto-send pending message only after history has loaded (never during history fetch)
   useEffect(() => {
-    if (isOpen && pendingMessage && !isLoading && !isStreaming) {
+    if (
+      isOpen &&
+      pendingMessage &&
+      historyLoaded &&
+      !isLoadingHistory &&
+      !isLoading &&
+      !isStreaming
+    ) {
       const msg = pendingMessage;
       setPendingMessage(null);
       setInput('');
       handleSend(msg);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, pendingMessage]);
+  }, [isOpen, pendingMessage, historyLoaded, isLoadingHistory, isLoading, isStreaming]);
 
   // Scroll to bottom on new messages / streaming tokens
   useEffect(() => {
@@ -67,12 +74,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     }
   }, [isOpen]);
 
-  const enrichedContext: CompanionUserContext = {
+  const enrichedContext: CompanionUserContext = useMemo(() => ({
     userName: currentUser?.firstName || currentUser?.name || 'Student',
     ...context,
-  };
+  }), [currentUser?.firstName, currentUser?.name, context]);
 
-  const isBusy = isLoading || isStreaming;
+  const isBusy = isLoading || isStreaming || isLoadingHistory;
 
   const handleSend = useCallback(async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -166,11 +173,18 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {messages.length === 0 && !isBusy && (
+          {isLoadingHistory && (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500 dark:text-slate-400">
+              <TypingDots />
+              <span>Loading conversation…</span>
+            </div>
+          )}
+
+          {!isLoadingHistory && messages.length === 0 && !isBusy && (
             <EmptyState theme={theme} onQuickPrompt={handleSend} />
           )}
 
-          {messages.map(msg => (
+          {!isLoadingHistory && messages.map(msg => (
             <MessageBubble
               key={msg.id}
               message={msg}

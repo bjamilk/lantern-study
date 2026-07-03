@@ -25,6 +25,8 @@ interface CompanionState {
   // Conversation
   messages: CompanionMessage[];
   isLoading: boolean;
+  isLoadingHistory: boolean;
+  historyLoaded: boolean;
   isStreaming: boolean;
   error: string | null;
 
@@ -40,6 +42,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isOpen: false,
   messages: [],
   isLoading: false,
+  isLoadingHistory: false,
+  historyLoaded: false,
   isStreaming: false,
   error: null,
   pendingMessage: null,
@@ -52,6 +56,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
 
   loadHistory: async () => {
+    set({ isLoadingHistory: true, error: null });
     try {
       const { messages } = await fetchCompanionHistory();
       set({
@@ -62,9 +67,12 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           actions: m.actions,
           created_at: m.created_at,
         })),
+        isLoadingHistory: false,
+        historyLoaded: true,
       });
     } catch {
       // Non-critical — start with empty history if fetch fails
+      set({ isLoadingHistory: false, historyLoaded: true });
     }
   },
 

@@ -211,30 +211,35 @@ export interface CompanionAction {
 async function companionRequest<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'DELETE',
-  body?: Record<string, any>
+  body?: Record<string, any>,
+  options?: { trackUsage?: boolean }
 ): Promise<T> {
   const url = `${API_BASE_URL}/api/v1/ai/companion${endpoint}`;
   const authHeaders = await getAuthHeaders();
 
-  const options: RequestInit = {
+  const fetchOptions: RequestInit = {
     method,
     headers: authHeaders,
   };
 
   if (method === 'POST' || method === 'DELETE') {
-    options.body = JSON.stringify(body || {});
+    fetchOptions.body = JSON.stringify(body || {});
   }
 
-  const response = await fetch(url, options);
+  const response = await fetch(url, fetchOptions);
 
-  // Track AI usage from headers (companion uses the same rate limit)
-  const usedHeader = response.headers.get('X-AI-Usage-Used');
-  const limitHeader = response.headers.get('X-AI-Usage-Limit');
-  const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-  if (usedHeader && limitHeader) {
-    const used = parseInt(usedHeader, 10);
-    const limit = parseInt(limitHeader, 10);
-    updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
+  if (options?.trackUsage !== false) {
+    const featureHeader = response.headers.get('X-AI-Feature');
+    if (!featureHeader) {
+      const usedHeader = response.headers.get('X-AI-Usage-Used');
+      const limitHeader = response.headers.get('X-AI-Usage-Limit');
+      const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
+      if (usedHeader && limitHeader) {
+        const used = parseInt(usedHeader, 10);
+        const limit = parseInt(limitHeader, 10);
+        updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
+      }
+    }
   }
 
   if (!response.ok) {
@@ -249,15 +254,15 @@ export async function companionSendMessage(
   message: string,
   context?: CompanionUserContext
 ): Promise<{ reply: string; actions: CompanionAction[]; provider: string }> {
-  return companionRequest('/message', 'POST', { message, context });
+  return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
 
 export async function fetchCompanionHistory(): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; actions?: CompanionAction[]; created_at: string }> }> {
-  return companionRequest('/history', 'GET');
+  return companionRequest('/history', 'GET', undefined, { trackUsage: false });
 }
 
 export async function clearCompanionHistory(): Promise<{ success: boolean }> {
-  return companionRequest('/history', 'DELETE');
+  return companionRequest('/history', 'DELETE', undefined, { trackUsage: false });
 }
 
 /**
@@ -286,6 +291,18 @@ export async function companionSendMessageStream(
   } catch (e: any) {
     onError(new Error(e.message || 'Network error'));
     return;
+  }
+
+  // Companion messages use feature-scoped quota — do not update the global badge.
+  if (!response.headers.get('X-AI-Feature')) {
+    const usedHeader = response.headers.get('X-AI-Usage-Used');
+    const limitHeader = response.headers.get('X-AI-Usage-Limit');
+    const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
+    if (usedHeader && limitHeader) {
+      const used = parseInt(usedHeader, 10);
+      const limit = parseInt(limitHeader, 10);
+      updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
+    }
   }
 
   if (!response.ok || !response.body) {

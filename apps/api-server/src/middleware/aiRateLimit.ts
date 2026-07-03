@@ -98,6 +98,15 @@ export async function getAIUsage(
   return readUsage(userId, AI_DAILY_LIMIT);
 }
 
+export async function getFeatureAIUsage(
+  userId: string,
+  featureKey: string
+): Promise<{ used: number; limit: number; resetsAt: string }> {
+  const limit = resolveFeatureLimit(featureKey);
+  const key = buildUsageKey(userId, featureKey);
+  return readUsage(key, limit);
+}
+
 export async function aiRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   const userId = (req as any).user?.id;
   if (!userId) {

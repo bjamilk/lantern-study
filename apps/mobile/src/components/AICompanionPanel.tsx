@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,8 @@ export function AICompanionPanel({ context }: Props) {
     close,
     messages,
     isLoading,
+    isLoadingHistory,
+    historyLoaded,
     isStreaming,
     error,
     loadHistory,
@@ -59,10 +61,13 @@ export function AICompanionPanel({ context }: Props) {
     user?.email?.split('@')[0] ||
     'Student';
 
-  const enrichedContext: CompanionUserContext = {
-    userName,
-    ...context,
-  };
+  const enrichedContext: CompanionUserContext = useMemo(
+    () => ({
+      userName,
+      ...context,
+    }),
+    [userName, context]
+  );
 
   useEffect(() => {
     if (isOpen && !hasLoaded.current && user?.id) {
@@ -72,12 +77,29 @@ export function AICompanionPanel({ context }: Props) {
   }, [isOpen, user?.id, loadHistory]);
 
   useEffect(() => {
-    if (isOpen && pendingMessage && !isLoading && !isStreaming) {
+    if (
+      isOpen &&
+      pendingMessage &&
+      historyLoaded &&
+      !isLoadingHistory &&
+      !isLoading &&
+      !isStreaming
+    ) {
       const msg = pendingMessage;
       setPendingMessage(null);
       void sendMessageStreaming(msg, enrichedContext);
     }
-  }, [isOpen, pendingMessage, isLoading, isStreaming, setPendingMessage, sendMessageStreaming, enrichedContext]);
+  }, [
+    isOpen,
+    pendingMessage,
+    historyLoaded,
+    isLoadingHistory,
+    isLoading,
+    isStreaming,
+    setPendingMessage,
+    sendMessageStreaming,
+    enrichedContext,
+  ]);
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -90,7 +112,7 @@ export function AICompanionPanel({ context }: Props) {
     [input, isLoading, isStreaming, sendMessageStreaming, enrichedContext]
   );
 
-  const isBusy = isLoading || isStreaming;
+  const isBusy = isLoading || isStreaming || isLoadingHistory;
 
   if (!isOpen) {
     return null;
@@ -124,6 +146,14 @@ export function AICompanionPanel({ context }: Props) {
           contentContainerStyle={{ paddingVertical: 16, gap: 12 }}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           ListEmptyComponent={
+            isLoadingHistory ? (
+              <View className="py-8 items-center gap-2">
+                <ActivityIndicator color="#6366f1" />
+                <Text className="text-slate-500 dark:text-slate-400 text-center">
+                  Loading conversation…
+                </Text>
+              </View>
+            ) : (
             <View className="py-8">
               <Text className="text-slate-500 dark:text-slate-400 text-center mb-4">
                 Ask anything about your study plan, flashcards, or tests.
@@ -140,6 +170,7 @@ export function AICompanionPanel({ context }: Props) {
                 ))}
               </View>
             </View>
+            )
           }
           renderItem={({ item }) => {
             const isUser = item.role === 'user';

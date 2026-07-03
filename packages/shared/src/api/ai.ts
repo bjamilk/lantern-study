@@ -6,6 +6,7 @@ import type {
   AIUsageInfo,
   CompanionUserContext,
 } from '../types';
+import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
@@ -42,25 +43,6 @@ export interface AIStudyRecommendation {
   estimatedMinutes: number;
 }
 
-function parseUsageFromHeaders(
-  response: Response,
-  onUsageUpdate?: (usage: AIUsageInfo) => void
-): void {
-  const usedHeader = response.headers.get('X-AI-Usage-Used');
-  const limitHeader = response.headers.get('X-AI-Usage-Limit');
-  const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-  if (usedHeader && limitHeader) {
-    const used = parseInt(usedHeader, 10);
-    const limit = parseInt(limitHeader, 10);
-    onUsageUpdate?.({
-      used,
-      limit,
-      remaining: limit - used,
-      resetsAt: resetsHeader || '',
-    });
-  }
-}
-
 export function createAIClient(config: AIClientConfig) {
   const defaultTimeout = config.defaultTimeoutMs ?? 30000;
   const USAGE_FETCH_TTL_MS = 60_000;
@@ -89,7 +71,7 @@ export function createAIClient(config: AIClientConfig) {
       });
       clearTimeout(timeoutId);
 
-      parseUsageFromHeaders(response, config.onUsageUpdate);
+      parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Request failed' }));

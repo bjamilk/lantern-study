@@ -55,6 +55,56 @@ router.delete('/history', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/feedback', async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const { messageId, rating } = req.body as {
+    messageId: string;
+    rating: 'up' | 'down';
+  };
+
+  if (!messageId || !['up', 'down'].includes(rating)) {
+    res.status(400).json({ error: 'messageId and rating (up|down) are required' });
+    return;
+  }
+
+  try {
+    await supabaseService.getClient()
+      .from('ai_companion_messages')
+      .update({ feedback: rating })
+      .eq('id', messageId)
+      .eq('user_id', userId);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Companion feedback error:', err.message);
+    res.status(500).json({ error: 'Failed to save feedback' });
+  }
+});
+
+router.post('/analytics', async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const { event, metadata } = req.body as {
+    event: string;
+    metadata?: Record<string, unknown>;
+  };
+
+  if (!event) {
+    res.status(400).json({ error: 'event is required' });
+    return;
+  }
+
+  try {
+    await supabaseService.getClient()
+      .from('ai_analytics')
+      .insert({ user_id: userId, event, metadata: metadata || {}, created_at: new Date().toISOString() });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.warn('AI analytics insert failed (non-critical):', err.message);
+    res.json({ success: false });
+  }
+});
+
 router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: Request, res: Response) => {
   const { messages, groupName } = req.body as {
     messages: string[];
@@ -184,56 +234,6 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     console.error('Companion stream error:', err.message);
     sendEvent({ error: clientErrorMessage(err, 'AI companion is temporarily unavailable') });
     res.end();
-  }
-});
-
-router.post('/feedback', async (req: Request, res: Response) => {
-  const userId = (req as any).user.id;
-  const { messageId, rating } = req.body as {
-    messageId: string;
-    rating: 'up' | 'down';
-  };
-
-  if (!messageId || !['up', 'down'].includes(rating)) {
-    res.status(400).json({ error: 'messageId and rating (up|down) are required' });
-    return;
-  }
-
-  try {
-    await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .update({ feedback: rating })
-      .eq('id', messageId)
-      .eq('user_id', userId);
-
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error('Companion feedback error:', err.message);
-    res.status(500).json({ error: 'Failed to save feedback' });
-  }
-});
-
-router.post('/analytics', async (req: Request, res: Response) => {
-  const userId = (req as any).user.id;
-  const { event, metadata } = req.body as {
-    event: string;
-    metadata?: Record<string, unknown>;
-  };
-
-  if (!event) {
-    res.status(400).json({ error: 'event is required' });
-    return;
-  }
-
-  try {
-    await supabaseService.getClient()
-      .from('ai_analytics')
-      .insert({ user_id: userId, event, metadata: metadata || {}, created_at: new Date().toISOString() });
-
-    res.json({ success: true });
-  } catch (err: any) {
-    console.warn('AI analytics insert failed (non-critical):', err.message);
-    res.json({ success: false });
   }
 });
 
