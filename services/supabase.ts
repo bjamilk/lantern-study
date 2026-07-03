@@ -2900,8 +2900,6 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
   }
 };
 
-// --- File Upload Functions ---
-
 export const uploadFlashcardImage = async (file: File) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error('Must be signed in to upload images');
@@ -2920,6 +2918,31 @@ export const uploadFlashcardImage = async (file: File) => {
 
   const { data: { publicUrl } } = supabase.storage
     .from('flashcard-images')
+    .getPublicUrl(filePath);
+
+  return { url: publicUrl, path: filePath };
+};
+
+/** Upload a question attachment; path must be scoped under auth uid for storage RLS. */
+export const uploadQuestionImage = async (file: File) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) throw new Error('Must be signed in to upload images');
+
+  const fileExt = file.name.split('.').pop() || 'jpg';
+  const fileName = `question-${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+  const filePath = `${user.id}/questions/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from('question-images')
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+  if (error) {
+    console.error('Error uploading question image:', error);
+    throw new Error(error.message);
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('question-images')
     .getPublicUrl(filePath);
 
   return { url: publicUrl, path: filePath };

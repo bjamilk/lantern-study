@@ -3,7 +3,7 @@ import { QuestionType, QuestionOption, MatchingItem, DiagramLabel } from '../typ
 import { PlusCircleIcon, TrashIcon, PhotoIcon, XCircleIcon, TagIcon, CheckIcon, InformationCircleIcon, MapPinIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import VoiceInputButton from './VoiceInputButton';
 import { v4 as uuidv4 } from 'uuid';
-import { supabase } from '../services/supabase';
+import { uploadQuestionImage } from '../services/supabase';
 
 interface QuestionModalProps {
   isOpen: boolean;
@@ -317,38 +317,16 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
     
     let imageUrl: string | undefined = undefined;
     if (state.selectedImageFile) {
-      // ensure user is authenticated before attempting storage write
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session || !session.user) {
-        // getSession() can return null even when authenticated (e.g. expired token pending refresh).
-        // Fall back to getUser() which makes a network call to verify.
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          alert('You must be signed in to upload an image. Please log in and try again.');
-          return;
-        }
-      }
       try {
-        const fileName = `question-${Date.now()}-${uuidv4()}.${state.selectedImageFile.name.split('.').pop()}`;
-        const { data, error } = await supabase.storage
-          .from('question-images')
-          .upload(fileName, state.selectedImageFile);
-        if (error) {
-          console.error('Error uploading image:', error);
-          alert('Failed to upload image. Please try again. (double-check you are signed in)');
-          return;
-        }
-        const { data: urlData, error: urlErr } = supabase.storage
-          .from('question-images')
-          .getPublicUrl(fileName);
-        if (urlErr) {
-          console.error('Error getting public url:', urlErr);
-        } else {
-          imageUrl = urlData.publicUrl;
-        }
+        const { url } = await uploadQuestionImage(state.selectedImageFile);
+        imageUrl = url;
       } catch (error) {
         console.error('Error uploading image:', error);
-        alert('Failed to upload image. Please try again.');
+        alert(
+          error instanceof Error && error.message.includes('signed in')
+            ? 'You must be signed in to upload an image. Please log in and try again.'
+            : 'Failed to upload image. Please try again.'
+        );
         return;
       }
     }
