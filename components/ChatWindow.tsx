@@ -524,7 +524,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }
 
   const isGroup = chat.chatType === 'group';
-  const group = isGroup ? chat : null;
+  const group = isGroup ? { ...chat, members: chat.members ?? [] } : null;
 
   const otherParticipant = !isGroup
     ? (() => {

@@ -721,7 +721,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         
         if (updatedMessage.type === MessageType.QUESTION) {
             const group = groups.find(g => g.id === selectedChat.id);
-            const memberCount = group?.members.length || 0;
+            const memberCount = group?.members?.length ?? 0;
             const resolvedStatus = resolveQuestionStatusAfterVote({
                 upvotes: newUpvotes,
                 downvotes: newDownvotes,
@@ -821,7 +821,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
         const updatedMessage = { ...message, flaggedAsSimilarUserIds: newFlags };
         
-        const archiveThreshold = Math.ceil(group.members.length * 0.05);
+        const archiveThreshold = Math.ceil((group.members?.length ?? 0) * 0.05);
         if (newFlags.length >= archiveThreshold && !updatedMessage.isArchived) {
             updatedMessage.isArchived = true;
         }

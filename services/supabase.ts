@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { UserQuestionStats } from '../types'
+import { Group, UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
 import {
   listingsCacheKey,
@@ -384,6 +384,29 @@ export const createGroup = async (groupData: { name: string; description: string
   return result.data;
 };
 
+export function mapGroupListFromApi(
+  items: any[],
+  unreadCounts: Record<string, number> = {},
+): Group[] {
+  return (items || []).map((g: any) => ({
+    id: g.id,
+    name: g.name,
+    avatarUrl: g.avatar_url || g.avatarUrl,
+    description: g.description,
+    lastMessage: g.last_message || g.lastMessage,
+    lastMessageTime: g.last_message_time || g.lastMessageTime,
+    adminIds: g.admin_ids || g.adminIds || [],
+    permissions: g.permissions || {},
+    parentId: g.parent_id || g.parentId,
+    isArchived: g.is_archived ?? g.isArchived ?? false,
+    inviteId: g.invite_id || g.inviteId,
+    unreadCount: unreadCounts[g.id] ?? g.unread_count ?? g.unreadCount ?? 0,
+    pendingMembers: [],
+    invitedPhoneNumbers: [],
+    members: Array.isArray(g.members) ? g.members : [],
+  }));
+}
+
 export const fetchGroups = async (userId: string) => {
   console.log('Fetching groups for user:', userId);
 
@@ -411,7 +434,7 @@ export const fetchGroups = async (userId: string) => {
 
   const result = await response.json();
   console.log('Fetched groups count:', result.data.length);
-  return result.data.map((item: any) => item);
+  return mapGroupListFromApi(result.data);
 };
 
 export const fetchGroupMembers = async (groupId: string, options?: { bustCache?: boolean }) => {

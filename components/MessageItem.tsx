@@ -49,7 +49,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
   const isPending = isQuestion && message.questionStatus === QuestionStatus.PENDING;
   const isRejected = isQuestion && message.questionStatus === QuestionStatus.REJECTED;
   const isVerified = isQuestion && message.questionStatus === QuestionStatus.VERIFIED;
-  const memberCount = group?.members.length || 0;
+  const memberCount = group?.members?.length ?? 0;
   const approvalThreshold = getQuestionVerificationThreshold(memberCount);
   const approvalProgress = approvalThreshold > 0
     ? Math.min(100, Math.round((message.upvotes / approvalThreshold) * 100))
