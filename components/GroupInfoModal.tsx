@@ -152,11 +152,16 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   const isCurrentUserAdmin = group.adminIds?.includes(currentUser.id) || false;
   
-  const inviteLink = `${window.location.origin}${window.location.pathname}?inviteId=${group.inviteId}`;
+  const inviteLink = group.inviteId
+    ? `${window.location.origin}/invite/${group.inviteId}`
+    : '';
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const handleCopyLink = () => {
+      if (!inviteLink) return;
       navigator.clipboard.writeText(inviteLink).then(() => {
-          alert('Invite link copied to clipboard!');
+          setLinkCopied(true);
+          window.setTimeout(() => setLinkCopied(false), 2000);
       }).catch(err => {
           console.error('Failed to copy text: ', err);
           alert('Failed to copy link.');
@@ -219,6 +224,25 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         case 'members':
             return (
                 <div className="space-y-6">
+                     {isCurrentUserAdmin && inviteLink && (
+                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg space-y-2">
+                           <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                             <LinkIcon className="w-4 h-4" /> Invite link
+                           </h3>
+                           <div className="flex items-center gap-2">
+                             <code className="flex-1 min-w-0 truncate text-xs font-mono text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 px-2 py-2 rounded-md border border-indigo-100 dark:border-slate-600">
+                               {inviteLink}
+                             </code>
+                             <button
+                               type="button"
+                               onClick={handleCopyLink}
+                               className="shrink-0 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+                             >
+                               {linkCopied ? 'Copied' : 'Copy'}
+                             </button>
+                           </div>
+                        </div>
+                     )}
                      {isCurrentUserAdmin && (
                         <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
                            <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>

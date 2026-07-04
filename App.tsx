@@ -1,5 +1,5 @@
 import React, { useEffect, useState, Suspense } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Navigate } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
@@ -40,6 +40,7 @@ import UsernameRequiredModal from './components/UsernameRequiredModal';
 import NotificationModal from './components/NotificationModal';
 import ChallengesInboxModal from './components/ChallengesInboxModal';
 import CreateGroupScreen from './components/CreateGroupScreen';
+import InviteJoinScreen from './components/InviteJoinScreen';
 import AddExpenseModal from './components/AddExpenseModal';
 import AddIncomeModal from './components/AddIncomeModal';
 import AddInvestmentModal from './components/AddInvestmentModal';
@@ -189,7 +190,7 @@ export const App: React.FC = () => {
     const {
         handleSelectChat, handleInitiateDm, handleSendDm, handleDeleteDmThread,
         handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage,
-        handleCreateSubGroup, handleCreateGroup, handleCloseCreateGroupModal,
+        handleCreateSubGroup, handleCreateGroup, handleEnterCreatedGroup, handleCloseCreateGroupModal,
         handleQuestionSubmit, onVoteQuestion, handleUpvoteDuplicateAndClose,
         onFlagAsSimilar, onOpenCreateSubGroupModal,
         handleUpdateGroupDetails, handleUpdateGroupAvatar,
@@ -234,7 +235,6 @@ export const App: React.FC = () => {
     } = useFlashcardHandlers();
 
     const [showImportAndStudy, setShowImportAndStudy] = React.useState(false);
-    const [showAuthFromLanding, setShowAuthFromLanding] = React.useState(false);
     const [endGameConfirmOpen, setEndGameConfirmOpen] = React.useState(false);
     const [endGameLoading, setEndGameLoading] = React.useState(false);
     const handleResumeAnySession = React.useCallback((mode: AppMode) => {
@@ -340,7 +340,7 @@ export const App: React.FC = () => {
 
     const handleLogoutAndRedirect = React.useCallback(async () => {
         await handleLogout();
-        navigateToPath('/', { replace: true });
+        navigateToPath('/welcome', { replace: true });
     }, [handleLogout, navigateToPath]);
 
     useFontMode();
@@ -664,22 +664,55 @@ export const App: React.FC = () => {
         );
     }
     if (!currentUser) {
-        const isLandingPath = location.pathname === '/' || location.pathname === '/welcome';
-        if (isLandingPath && !showAuthFromLanding) {
+        const path = location.pathname;
+        const isLandingPath = path === '/' || path === '/welcome';
+        const isAuthPath =
+            path === '/login' ||
+            path === '/signup' ||
+            path === '/forgot-password' ||
+            path === '/verify-email';
+
+        if (isLandingPath) {
             return (
                 <Suspense fallback={null}>
                     <LandingPage
-                        onSignIn={() => setShowAuthFromLanding(true)}
-                        onContinue={() => setShowAuthFromLanding(true)}
+                        onSignIn={() => navigateToPath('/login')}
+                        onContinue={() => navigateToPath('/signup')}
                     />
                 </Suspense>
             );
         }
-        return <AuthScreen onAuthSuccess={(user) => {
-        bootstrapAuthFromStorage();
-        setCurrentUser(user);
-        setAuthLoading(false);
-    }} />;
+
+        if (isAuthPath) {
+            return (
+                <AuthScreen
+                    onAuthSuccess={(user) => {
+                        bootstrapAuthFromStorage();
+                        setCurrentUser(user);
+                        setAuthLoading(false);
+                        const next = new URLSearchParams(location.search).get('next');
+                        if (next && next.startsWith('/') && !next.startsWith('//')) {
+                            navigateToPath(next, { replace: true });
+                        } else {
+                            navigateToPath('/dashboard', { replace: true });
+                        }
+                    }}
+                />
+            );
+        }
+
+        const nextTarget = `${path}${location.search || ''}`;
+        return <Navigate to={`/login?next=${encodeURIComponent(nextTarget)}`} replace />;
+    }
+
+    const invitePathMatch = location.pathname.match(/^\/invite\/([^/]+)$/);
+    if (invitePathMatch) {
+        return (
+            <InviteJoinScreen
+                inviteId={decodeURIComponent(invitePathMatch[1])}
+                userId={currentUser.id}
+            />
+        );
     }
 
     const renderNotesScreen = (embedded = false) => (
@@ -746,7 +779,15 @@ export const App: React.FC = () => {
     const mainContent = () => {
         switch (appMode) {
             case AppMode.CREATE_GROUP:
-                return <CreateGroupScreen currentUser={currentUser} allUsers={users} onCreateGroup={handleCreateGroup} onBack={() => navigateTo(AppMode.CHAT)} />;
+                return (
+                    <CreateGroupScreen
+                        currentUser={currentUser}
+                        allUsers={users}
+                        onCreateGroup={handleCreateGroup}
+                        onEnterGroup={handleEnterCreatedGroup}
+                        onBack={() => navigateTo(AppMode.CHAT)}
+                    />
+                );
             case AppMode.CHAT:
                 return (
                     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -1178,7 +1219,13 @@ export const App: React.FC = () => {
                 || appMode === AppMode.STUDY_ACTIVE
             }
             onNavigate={handleShellNavigate}>
-            <div className={`shrink-0 ${appMode === AppMode.CHAT && selectedChat ? 'hidden md:block' : ''}`}>
+            <div className={`shrink-0 ${
+                appMode === AppMode.CREATE_GROUP
+                    ? 'hidden'
+                    : appMode === AppMode.CHAT && selectedChat
+                        ? 'hidden md:block'
+                        : ''
+            }`}>
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">

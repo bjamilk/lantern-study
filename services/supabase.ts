@@ -498,6 +498,26 @@ export const addGroupMembersBatch = async (groupId: string, userIds: string[]) =
   return result.data as { added: string[]; alreadyMembers: string[]; failed: string[] };
 };
 
+export const fetchGroupInvitePreview = async (inviteId: string) => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/groups/invite/${encodeURIComponent(inviteId)}`, {
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to load invite');
+  }
+  const result = await response.json();
+  return result.data as {
+    id: string;
+    name: string;
+    description: string;
+    avatarUrl?: string;
+    memberCount: number;
+    alreadyMember: boolean;
+    pending: boolean;
+  };
+};
+
 export const joinGroupByInvite = async (inviteId: string) => {
   console.log('Joining group via invite:', inviteId);
   

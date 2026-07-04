@@ -182,11 +182,31 @@ export function isRoutableAppMode(mode: AppMode): boolean {
   return buildAppPath(mode) !== null;
 }
 
-export const PUBLIC_PATH_PREFIXES = ['/privacy', '/terms', '/cookies', '/reset-password', '/welcome'];
+export const PUBLIC_PATH_PREFIXES = [
+  '/privacy',
+  '/terms',
+  '/cookies',
+  '/reset-password',
+  '/welcome',
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/verify-email',
+];
 
 export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (PUBLIC_PATH_PREFIXES.includes(path)) return true;
   if (path === '/' || path.startsWith('/invite/')) return true;
   return false;
+}
+
+export function isAuthAppPath(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  return (
+    path === '/login' ||
+    path === '/signup' ||
+    path === '/forgot-password' ||
+    path === '/verify-email'
+  );
 }

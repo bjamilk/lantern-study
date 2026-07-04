@@ -394,6 +394,56 @@ router.post(
   })
 );
 
+// GET /api/v1/groups/invite/:inviteId - Preview group for invite (no join)
+router.get(
+  '/invite/:inviteId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { inviteId } = req.params;
+    if (!inviteId) {
+      return res.status(400).json({ success: false, error: 'inviteId is required' });
+    }
+
+    const group = await supabaseService.getGroupByInviteId(inviteId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
+    }
+    if (group.isArchived) {
+      return res.status(400).json({ success: false, error: 'This group has been archived' });
+    }
+
+    const { count } = await supabaseService.getClient()
+      .from('group_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('group_id', group.id);
+
+    const { data: membership } = await supabaseService.getClient()
+      .from('group_members')
+      .select('user_id, pending')
+      .eq('group_id', group.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const isPending = membership?.pending === true;
+
+    res.json({
+      success: true,
+      data: {
+        id: group.id,
+        name: group.name,
+        description: group.description || '',
+        avatarUrl: group.avatarUrl,
+        memberCount: count ?? 0,
+        alreadyMember: !!membership && !isPending,
+        pending: isPending,
+      },
+    });
+  })
+);
+
 // POST /api/v1/groups/join - Join a group via invite link
 router.post(
   '/join',

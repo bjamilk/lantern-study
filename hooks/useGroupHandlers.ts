@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, QuestionStatus, ChatItem, MatchingItem, DiagramLabel } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -36,6 +36,7 @@ function mapApiGroupMembers(fetchedMembers: any[]): User[] {
 }
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
+    const pendingCreatedGroupRef = useRef<any>(null);
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
         groups, setGroups, updateGroups,
@@ -453,10 +454,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 members: mappedMembers,
                 chatType: 'group' as const
             };
-            
-            handleSelectChat(mappedNewGroup);
+
+            // Defer navigation so CreateGroupScreen can show invite link success step
             updateMessages(prev => ({ ...prev, [newGroup.id]: [] }));
-            
+            pendingCreatedGroupRef.current = mappedNewGroup;
+
             if (currentUser) {
                 const updatedStats = {
                     ...currentUser.stats,
@@ -479,14 +481,39 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     })
                     .catch(error => console.error('Failed to sync gamification after group create:', error));
             }
-            
-            setAppMode(AppMode.CHAT);
-            openModal('addMembers');
+
+            return {
+                id: mappedNewGroup.id,
+                name: mappedNewGroup.name,
+                inviteId: mappedNewGroup.inviteId || groupData.invite_id,
+            };
         } catch (error) {
             console.error('Error creating group:', error);
             alert('Failed to create group. Please try again.');
+            throw error;
         }
-    }, [currentUser, setCurrentUser, setGroups, handleSelectChat, updateMessages, setAppMode, openModal, addNotification]);
+    }, [currentUser, setCurrentUser, setGroups, updateMessages, addNotification]);
+
+    const handleEnterCreatedGroup = useCallback((summary: { id: string; name: string; inviteId: string }) => {
+        const pending = pendingCreatedGroupRef.current;
+        const group =
+            pending && pending.id === summary.id
+                ? pending
+                : {
+                      id: summary.id,
+                      name: summary.name,
+                      inviteId: summary.inviteId,
+                      members: currentUser ? [currentUser] : [],
+                      adminIds: currentUser ? [currentUser.id] : [],
+                      unreadCount: 0,
+                      pendingMembers: [],
+                      invitedPhoneNumbers: [],
+                      chatType: 'group' as const,
+                  };
+        pendingCreatedGroupRef.current = null;
+        handleSelectChat(group);
+        setAppMode(AppMode.CHAT);
+    }, [currentUser, handleSelectChat, setAppMode]);
 
     const handleQuestionSubmit = useCallback(async (
         stem: string, 
@@ -1234,6 +1261,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleCloseCreateGroupModal,
         handleCreateSubGroup,
         handleCreateGroup,
+        handleEnterCreatedGroup,
         handleQuestionSubmit,
         onSendMessage,
         onVoteQuestion,

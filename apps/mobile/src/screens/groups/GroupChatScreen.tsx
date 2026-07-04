@@ -305,7 +305,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   };
 
   const inviteLink = currentGroup?.id
-    ? `https://lanternstudy.app/join?inviteId=${(currentGroup as any).inviteId || currentGroup.id}`
+    ? `https://lanternstudy.com/invite/${(currentGroup as any).inviteId || currentGroup.id}`
     : '';
 
   const group = currentGroup;

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useUIStore } from '../stores/uiStore';
 import {
+  isAuthAppPath,
   isEphemeralAppMode,
   isPublicAppPath,
   parseAppRoute,
@@ -49,6 +50,13 @@ export function useRouteSync() {
     }
 
     if (parsed.inviteId) {
+      return;
+    }
+
+    if (isAuthAppPath(location.pathname)) {
+      if (currentUser) {
+        navigate('/dashboard', { replace: true });
+      }
       return;
     }
 

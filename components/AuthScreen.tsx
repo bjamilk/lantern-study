@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { User } from '../types';
 import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import type MatterType from 'matter-js';
@@ -12,6 +13,26 @@ interface AuthScreenProps {
 }
 
 type AuthView = 'login' | 'signup' | 'forgotPassword' | 'verifyEmail';
+
+function pathToAuthView(pathname: string): AuthView {
+  if (pathname.startsWith('/signup')) return 'signup';
+  if (pathname.startsWith('/forgot-password')) return 'forgotPassword';
+  if (pathname.startsWith('/verify-email')) return 'verifyEmail';
+  return 'login';
+}
+
+function authViewToPath(view: AuthView): string {
+  switch (view) {
+    case 'signup':
+      return '/signup';
+    case 'forgotPassword':
+      return '/forgot-password';
+    case 'verifyEmail':
+      return '/verify-email';
+    default:
+      return '/login';
+  }
+}
 
 const GoogleIcon = () => (
     <svg className="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true">
@@ -154,7 +175,12 @@ const AnimatedBackground = () => {
 
 const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const { lowDataMode } = useUIStore();
-  const [authView, setAuthView] = useState<AuthView>('login');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const authView = pathToAuthView(location.pathname);
+  const setAuthView = (view: AuthView) => {
+    navigate(`${authViewToPath(view)}${location.search}`, { replace: false });
+  };
   const isLoginView = authView === 'login';
   const isForgotPasswordView = authView === 'forgotPassword';
   const isVerifyEmailView = authView === 'verifyEmail';
