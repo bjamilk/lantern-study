@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useReducer, useRef } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { QuestionType, QuestionOption, MatchingItem, DiagramLabel } from '../types';
 import { PlusCircleIcon, TrashIcon, PhotoIcon, XCircleIcon, TagIcon, CheckIcon, InformationCircleIcon, MapPinIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import VoiceInputButton from './VoiceInputButton';
@@ -308,9 +309,9 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
           correctAnswerIdsSelected: state.correctAnswerIdsSelected
         });
         if(state.questionType === QuestionType.FILL_IN_THE_BLANK && !state.stem.includes("___")) {
-            alert("For Fill-in-the-Blank questions, please use '___' (three underscores) to indicate where the blank should appear in the question stem.");
+            useToastStore.getState().showToast("For Fill-in-the-Blank questions, please use '___' (three underscores) to indicate where the blank should appear in the question stem.", 'error');
         } else if (state.questionType === QuestionType.DIAGRAM_LABELING) {
-            alert("For Diagram Labeling questions, please ensure you have uploaded an image, added at least one label pin, and filled in all label texts.");
+            useToastStore.getState().showToast("For Diagram Labeling questions, please ensure you have uploaded an image, added at least one label pin, and filled in all label texts.", 'error');
         }
         return;
     }
@@ -322,10 +323,11 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
         imageUrl = url;
       } catch (error) {
         console.error('Error uploading image:', error);
-        alert(
+        useToastStore.getState().showToast(
           error instanceof Error && error.message.includes('signed in')
             ? 'You must be signed in to upload an image. Please log in and try again.'
-            : 'Failed to upload image. Please try again.'
+            : 'Failed to upload image. Please try again.',
+          'error'
         );
         return;
       }

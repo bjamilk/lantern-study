@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { User, GroupPermissions } from '../types';
 import {
   ArrowLeftIcon,
@@ -142,7 +143,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
 
   const handleCreate = async () => {
     if (!groupName.trim()) {
-      alert('Please enter a group name.');
+      useToastStore.getState().showToast('Please enter a group name.', 'error');
       return;
     }
     setIsCreating(true);
@@ -174,7 +175,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      alert('Failed to copy link.');
+      useToastStore.getState().showToast('Failed to copy link.', 'error');
     }
   };
 

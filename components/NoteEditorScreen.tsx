@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
 import { getNoteStudyContent, hasEnoughNoteStudyContent, isPlaceholderExtractedText } from '@lantern/shared';
 import {
   ArrowLeftIcon,
@@ -272,12 +273,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setPreviewTrigger((t) => t + 1);
   };
 
+  const [shareGroupOpen, setShareGroupOpen] = useState(false);
+
   const handleShareGroup = () => {
-    const groupId = prompt(
-      `Share with group ID (available: ${groups.map(g => g.name).join(', ')})`,
-      groups[0]?.id || ''
-    );
-    if (groupId) onShareWithGroup(groupId);
+    if (groups.length === 0) {
+      useToastStore.getState().showToast('Join a group first to share notes.', 'info');
+      return;
+    }
+    if (groups.length === 1) {
+      onShareWithGroup(groups[0].id);
+      return;
+    }
+    setShareGroupOpen(true);
   };
 
   const startRecording = async () => {
@@ -304,7 +311,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             onTranscriptReady(result.transcript);
             setBody(prev => [prev, result.transcript].filter(Boolean).join('\n\n'));
           } catch (err: any) {
-            alert(err.message || 'Transcription failed');
+            useToastStore.getState().showToast(err.message || 'Transcription failed', 'error');
           } finally {
             setTranscribing(false);
           }
@@ -315,7 +322,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       recorder.start();
       setRecording(true);
     } catch {
-      alert('Microphone access is required to record lectures.');
+      useToastStore.getState().showToast('Microphone access is required to record lectures.', 'error');
     }
   };
 
@@ -541,6 +548,32 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         noteId={note.id}
         currentUserId={currentUserId}
       />
+      {shareGroupOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Share with group</h3>
+            <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+              {groups.map((g) => (
+                <li key={g.id}>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg"
+                    onClick={() => {
+                      setShareGroupOpen(false);
+                      onShareWithGroup(g.id);
+                    }}
+                  >
+                    {g.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => setShareGroupOpen(false)} className="w-full py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-700">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

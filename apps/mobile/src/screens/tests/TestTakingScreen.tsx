@@ -27,6 +27,7 @@ import { normalizeStorageUrl } from '@lantern/shared/utils';
 import { useStudySettings } from '../../stores/settingsStore';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
+import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -675,6 +676,7 @@ export default function TestTakingScreen() {
 
   const handleSubmit = useCallback(async (timeUp = false) => {
     if (!activeTest) return;
+    hapticSuccess();
 
     // Study mode doesn't need submission
     if (activeTest.mode === 'study') {

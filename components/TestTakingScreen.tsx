@@ -53,10 +53,37 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   onCancelSession,
 }) => {
   const [isReviewMode, setIsReviewMode] = useState(false);
-  useEffect(() => {
-    console.log('[TestTakingScreen] mounted/updated', { mode, session });
-  }, [mode, session]);
   const currentQuestion = session.questions[session.currentQuestionIndex];
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
+      if (isReviewMode) return;
+
+      if (event.key === 'ArrowLeft' && session.currentQuestionIndex > 0) {
+        event.preventDefault();
+        onChangeQuestion(session.currentQuestionIndex - 1);
+        return;
+      }
+      if (event.key === 'ArrowRight' && session.currentQuestionIndex < session.questions.length - 1) {
+        event.preventDefault();
+        onChangeQuestion(session.currentQuestionIndex + 1);
+        return;
+      }
+      // Number keys 1-9 jump to question palette (1-based)
+      if (/^[1-9]$/.test(event.key)) {
+        const idx = parseInt(event.key, 10) - 1;
+        if (idx < session.questions.length) {
+          event.preventDefault();
+          onChangeQuestion(idx);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isReviewMode, session.currentQuestionIndex, session.questions.length, onChangeQuestion]);
   const userAnswer = session.userAnswers[currentQuestion.id];
   const totalQuestions = session.questions.length;
   

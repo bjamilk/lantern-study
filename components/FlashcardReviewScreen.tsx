@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { Deck, Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
@@ -48,17 +49,42 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       if (event.key === 'ArrowLeft' && canGoBack) {
         event.preventDefault();
         setCurrentIndex(prev => prev - 1);
+        return;
       }
 
       if (event.key === 'ArrowRight' && canGoForward) {
         event.preventDefault();
         setCurrentIndex(prev => prev + 1);
+        return;
+      }
+
+      // Space / Enter: show answer
+      if ((event.key === ' ' || event.key === 'Enter') && !isAnswerShown) {
+        event.preventDefault();
+        setIsAnswerShown(true);
+        return;
+      }
+
+      // Anki-style ratings when answer is shown
+      if (isAnswerShown && currentCard) {
+        const ratingMap: Record<string, 'again' | 'hard' | 'good' | 'easy'> = {
+          '1': 'again',
+          '2': 'hard',
+          '3': 'good',
+          '4': 'easy',
+        };
+        const rating = ratingMap[event.key];
+        if (rating) {
+          event.preventDefault();
+          onUpdateSrs(currentCard.id, rating);
+          setCurrentIndex(prev => prev + 1);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canGoBack, canGoForward, isSessionComplete]);
+  }, [canGoBack, canGoForward, isSessionComplete, isAnswerShown, currentCard, onUpdateSrs]);
 
   useEffect(() => {
     if (!currentCard?.id) return;
@@ -97,7 +123,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       setNewComment('');
     } catch (err) {
       console.error('Failed to add comment', err);
-      alert('Failed to add comment. Please try again.');
+      useToastStore.getState().showToast('Failed to add comment. Please try again.', 'error');
     } finally {
       setIsSubmittingComment(false);
     }
@@ -254,16 +280,23 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       </div>
 
       <div className="flex-1 flex flex-col justify-center items-center">
-        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border">
+        <div
+          className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border transition-transform duration-300 ease-out"
+          style={{ transform: isAnswerShown ? 'rotateY(0deg)' : 'rotateY(0deg)', transformStyle: 'preserve-3d' }}
+          onClick={() => { if (!isAnswerShown) handleShowAnswer(); }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isAnswerShown) handleShowAnswer(); } }}
+          aria-label={isAnswerShown ? 'Flashcard answer' : 'Flashcard prompt, press to reveal answer'}
+        >
           {/* Card Content */}
-          <div className="text-center flex-grow flex flex-col justify-center items-center">
-            {renderCardContent(currentCard, false)}
-            
-            {isAnswerShown && (
-              <>
-                <hr className="w-1/4 my-4 border-slate-300 dark:border-slate-600" />
-                {renderCardContent(currentCard, true)}
-              </>
+          <div
+            key={`${currentCard.id}-${isAnswerShown ? 'back' : 'front'}`}
+            className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+          >
+            {renderCardContent(currentCard, isAnswerShown)}
+            {!isAnswerShown && (
+              <p className="mt-4 text-xs text-slate-400">Space or click to reveal · 1–4 to rate</p>
             )}
           </div>
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import {
   fetchMyListings,
   fetchSellerStats,
@@ -139,7 +140,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       setActionMenuOpen(null);
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update listing status');
+      useToastStore.getState().showToast('Failed to update listing status', 'error');
     }
   };
 
@@ -152,7 +153,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       setActionMenuOpen(null);
     } catch (error) {
       console.error('Error deleting listing:', error);
-      alert('Failed to delete listing');
+      useToastStore.getState().showToast('Failed to delete listing', 'error');
     }
   };
 

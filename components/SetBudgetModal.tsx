@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { Budget } from '../types';
 import { XCircleIcon } from '@heroicons/react/24/outline';
 
@@ -23,7 +24,7 @@ const SetBudgetModal: React.FC<SetBudgetModalProps> = ({ isOpen, onClose, onSubm
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (amount === '' || amount <= 0) {
-      alert('Please enter a valid positive amount for your budget.');
+      useToastStore.getState().showToast('Please enter a valid positive amount for your budget.', 'error');
       return;
     }
     onSubmit(Number(amount));

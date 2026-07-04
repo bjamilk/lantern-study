@@ -1,6 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { User } from '../types';
 import { 
     XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
@@ -106,7 +107,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         const file = e.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
-            alert('Please select an image file.');
+            useToastStore.getState().showToast('Please select an image file.', 'error');
             return;
         }
         try {
@@ -120,7 +121,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             onUpdateAvatar(base64);
         } catch (error) {
             console.error('Error compressing avatar:', error);
-            alert('Failed to process image.');
+            useToastStore.getState().showToast('Failed to process image.', 'error');
         } finally {
             e.target.value = '';
         }
@@ -140,11 +141,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const handlePasswordChange = (e: React.FormEvent) => {
         e.preventDefault();
         if (passwordData.newPass !== passwordData.confirmPass) {
-            alert("New passwords do not match.");
+            useToastStore.getState().showToast("New passwords do not match.", 'info');
             return;
         }
         if (passwordData.newPass.length < 6) {
-            alert("New password must be at least 6 characters long.");
+            useToastStore.getState().showToast("New password must be at least 6 characters long.", 'error');
             return;
         }
         const success = onUpdatePassword(passwordData.current, passwordData.newPass);

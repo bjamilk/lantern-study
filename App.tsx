@@ -3,6 +3,7 @@ import { useLocation, Navigate } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
+import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { setSessionExpiredHandler } from './services/sessionHandler';
@@ -119,6 +120,7 @@ export const App: React.FC = () => {
             activeTestSession, activeStudySession, activeGameSession, setActiveGameSession } = useTestStore();
     const { folders, notes, selectedNote, comments, isLoading: notesLoading, isSaving: notesSaving, error: notesError, selectedFolderId, setSelectedFolderId } = useNotesStore();
     const { toast, showToast, dismissToast } = useToastStore();
+    const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
 
     useEffect(() => {
@@ -852,6 +854,10 @@ export const App: React.FC = () => {
                     onNavigateToFlashcards={() => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); }}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
+                    onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
+                    onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
+                    deckCount={decks.length}
+                    hasBudgetSet={!!(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
                     onNavigateToNotes={() => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); }}
                     onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
@@ -875,7 +881,7 @@ export const App: React.FC = () => {
                         const source = notes.find(n => (n.body?.length ?? 0) > 50) || notes[0];
                         const content = source?.body || source?.summary || '';
                         if (content.length < 50) {
-                            alert('Add or import a note with at least 50 characters to generate a daily quiz.');
+                            showToast('Add or import a note with at least 50 characters to generate a daily quiz.', 'info');
                             return;
                         }
                         await noteHandlers.handleStartDailyQuiz(content, source?.id);
@@ -1405,6 +1411,16 @@ export const App: React.FC = () => {
                 loading={endGameLoading}
                 onConfirm={() => void confirmEndGame()}
                 onCancel={() => !endGameLoading && setEndGameConfirmOpen(false)}
+            />
+            <ConfirmDialog
+                open={globalConfirm.open}
+                title={globalConfirm.options?.title || 'Confirm'}
+                message={globalConfirm.options?.message || ''}
+                confirmLabel={globalConfirm.options?.confirmLabel}
+                cancelLabel={globalConfirm.options?.cancelLabel}
+                danger={globalConfirm.options?.danger}
+                onConfirm={globalConfirm.handleConfirm}
+                onCancel={globalConfirm.handleCancel}
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
         </AppShell>

@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { XCircleIcon, PlusIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { DeckCollaborator, User } from '../types';
 import { addDeckCollaborator, fetchDeckCollaborators, fetchUsers, removeDeckCollaborator } from '../services/supabase';
@@ -82,20 +84,20 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
       setNewRole('editor');
     } catch (err) {
       console.error('Failed to add collaborator', err);
-      alert('Failed to add collaborator. Make sure the user ID is correct.');
+      useToastStore.getState().showToast('Failed to add collaborator. Make sure the user ID is correct.', 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleRemove = async (userId: string) => {
-    if (!window.confirm('Remove this collaborator?')) return;
+    if (!(await confirmDialog({ title: 'Please confirm', message: "Remove this collaborator?", danger: true }))) return;
     try {
       await removeDeckCollaborator(deckId, userId);
       setCollaborators(prev => prev.filter(c => c.userId !== userId));
     } catch (err) {
       console.error('Failed to remove collaborator', err);
-      alert('Failed to remove collaborator.');
+      useToastStore.getState().showToast('Failed to remove collaborator.', 'error');
     }
   };
 

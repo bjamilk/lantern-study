@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Skeleton } from '../../components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   useMarketplaceStore,
@@ -500,8 +501,18 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       </View>
 
       {isLoading && !displayListings.length ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+        <View className="flex-1 flex-row flex-wrap p-2">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <View key={i} className="w-1/2 p-1">
+              <View className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <Skeleton className="h-28 w-full rounded-none" />
+                <View className="p-2 gap-2">
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-3 w-1/3" />
+                </View>
+              </View>
+            </View>
+          ))}
         </View>
       ) : (
         <FlatList

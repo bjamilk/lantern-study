@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button } from '../../components/ui';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useAppTheme } from '../../theme';
 
 const ONBOARDING_KEY = 'lantern_onboarding_complete';
 
@@ -22,6 +23,8 @@ type Props = {
 
 export function OnboardingScreen({ onComplete }: Props) {
   const updateSettings = useSettingsStore(s => s.updateSettings);
+  const theme = useAppTheme();
+  const isDark = theme === 'dark';
   const [step, setStep] = useState<'welcome' | 'goal' | 'streak' | 'done'>('welcome');
   const [studyGoal, setStudyGoal] = useState('retention');
   const [streakTarget, setStreakTarget] = useState(7);
@@ -45,27 +48,31 @@ export function OnboardingScreen({ onComplete }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-900">
+    <SafeAreaView className={`flex-1 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
       <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
         {step === 'welcome' && (
           <View className="items-center">
             <View className="w-16 h-16 rounded-2xl bg-indigo-500 items-center justify-center mb-4">
               <Ionicons name="sparkles" size={32} color="#fff" />
             </View>
-            <Text className="text-2xl font-bold text-white text-center mb-2">Welcome to Lantern Study</Text>
-            <Text className="text-slate-400 text-center mb-8">
+            <Text className={`text-2xl font-bold text-center mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Welcome to Lantern Study
+            </Text>
+            <Text className={`text-center mb-8 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
               Flashcards, notes, tests, and AI — all in one place. Set up in under a minute.
             </Text>
             <Button fullWidth onPress={() => setStep('goal')}>Get started</Button>
             <Pressable onPress={() => void finish(true)} className="mt-4 py-2">
-              <Text className="text-slate-500">Skip for now</Text>
+              <Text className={isDark ? 'text-slate-500' : 'text-slate-400'}>Skip for now</Text>
             </Pressable>
           </View>
         )}
 
         {step === 'goal' && (
           <View>
-            <Text className="text-xl font-bold text-white mb-4">What's your main goal?</Text>
+            <Text className={`text-xl font-bold mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              What&apos;s your main goal?
+            </Text>
             {GOALS.map(g => (
               <Pressable
                 key={g.id}
@@ -73,11 +80,13 @@ export function OnboardingScreen({ onComplete }: Props) {
                 className={`flex-row items-center gap-3 p-4 rounded-2xl mb-2 border ${
                   studyGoal === g.id
                     ? 'bg-indigo-600/30 border-indigo-500'
-                    : 'bg-slate-800 border-slate-700'
+                    : isDark
+                      ? 'bg-slate-800 border-slate-700'
+                      : 'bg-white border-slate-200'
                 }`}
               >
                 <Text className="text-2xl">{g.icon}</Text>
-                <Text className="text-white font-medium flex-1">{g.label}</Text>
+                <Text className={`font-medium flex-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>{g.label}</Text>
               </Pressable>
             ))}
             <View className="mt-6">
@@ -88,19 +97,29 @@ export function OnboardingScreen({ onComplete }: Props) {
 
         {step === 'streak' && (
           <View>
-            <Text className="text-xl font-bold text-white mb-2">Pick a streak target</Text>
-            <Text className="text-slate-400 mb-4">Stay consistent — we'll help you track it.</Text>
+            <Text className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Pick a streak target
+            </Text>
+            <Text className={`mb-4 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              Stay consistent — we&apos;ll help you track it.
+            </Text>
             <View className="flex-row gap-3 mb-6">
               {STREAK_TARGETS.map(n => (
                 <Pressable
                   key={n}
                   onPress={() => setStreakTarget(n)}
                   className={`flex-1 py-4 rounded-2xl items-center border ${
-                    streakTarget === n ? 'bg-indigo-600 border-indigo-500' : 'bg-slate-800 border-slate-700'
+                    streakTarget === n
+                      ? 'bg-indigo-600 border-indigo-500'
+                      : isDark
+                        ? 'bg-slate-800 border-slate-700'
+                        : 'bg-white border-slate-200'
                   }`}
                 >
-                  <Text className="text-white font-bold text-lg">{n}</Text>
-                  <Text className="text-slate-400 text-xs">days</Text>
+                  <Text className={`font-bold text-lg ${streakTarget === n || isDark ? 'text-white' : 'text-slate-900'}`}>
+                    {n}
+                  </Text>
+                  <Text className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>days</Text>
                 </Pressable>
               ))}
             </View>

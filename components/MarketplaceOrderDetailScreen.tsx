@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import {
   fetchMarketplaceOrder,
   updateMarketplaceOrder,
@@ -65,7 +66,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         onOrderUpdated?.();
       }
     } catch (err: any) {
-      alert(err.message || 'Action failed');
+      useToastStore.getState().showToast(err.message || 'Action failed', 'error');
     } finally {
       setActing(false);
     }
@@ -81,7 +82,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
       });
       setReviewSubmitted(true);
     } catch (err: any) {
-      alert(err.message || 'Failed to submit review');
+      useToastStore.getState().showToast(err.message || 'Failed to submit review', 'error');
     } finally {
       setActing(false);
     }
@@ -96,7 +97,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
       setOrder(updated);
       onOrderUpdated?.();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to upload payment proof');
+      useToastStore.getState().showToast(err instanceof Error ? err.message : 'Failed to upload payment proof', 'error');
     } finally {
       setProofUploading(false);
     }
@@ -235,9 +236,9 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                     setActing(true);
                     try {
                       await requestOrderPayment(orderId);
-                      alert('Payment request sent to buyer');
+                      useToastStore.getState().showToast('Payment request sent to buyer', 'success');
                     } catch (err: any) {
-                      alert(err.message);
+                      useToastStore.getState().showToast(err.message, 'info');
                     } finally {
                       setActing(false);
                     }

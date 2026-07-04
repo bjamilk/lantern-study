@@ -30,8 +30,8 @@ const faqs = [
 ];
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => (
-  <div className="min-h-screen bg-lantern-background text-lantern-text overflow-y-auto">
-    <header className="border-b border-lantern-border bg-lantern-surface/80 backdrop-blur sticky top-0 z-10">
+  <div className="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-y-auto">
+    <header className="border-b border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <LanternIcon size={32} />
@@ -45,10 +45,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
     </header>
 
     <section className="max-w-6xl mx-auto px-4 py-16 md:py-24 text-center">
-      <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-lantern-text max-w-3xl mx-auto">
+      <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white max-w-3xl mx-auto">
         Every AI study tool you need — notes, flashcards, and tests in one place
       </h1>
-      <p className="mt-6 text-lg text-lantern-text-secondary max-w-2xl mx-auto">
+      <p className="mt-6 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
         Import your materials, generate flashcards with AI, and study with learn mode, matching games, and practice tests. Built for students who study together.
       </p>
       <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
@@ -61,10 +61,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
       <h2 className="text-2xl font-bold text-center mb-10">Study smarter, not harder</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {features.map((f) => (
-          <div key={f.title} className="p-5 rounded-2xl border border-lantern-border bg-lantern-surface">
-            <f.icon className="w-8 h-8 text-lantern-primary mb-3" />
-            <h3 className="font-semibold text-lantern-text">{f.title}</h3>
-            <p className="text-sm text-lantern-text-secondary mt-2">{f.description}</p>
+          <div key={f.title} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+            <f.icon className="w-8 h-8 text-indigo-600 dark:text-indigo-400 mb-3" />
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">{f.title}</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{f.description}</p>
           </div>
         ))}
       </div>
@@ -74,21 +74,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
       <h2 className="text-2xl font-bold text-center mb-8">Frequently asked questions</h2>
       <div className="space-y-4">
         {faqs.map((faq) => (
-          <div key={faq.q} className="p-4 rounded-xl border border-lantern-border bg-lantern-surface">
-            <h3 className="font-semibold text-lantern-text">{faq.q}</h3>
-            <p className="text-sm text-lantern-text-secondary mt-2">{faq.a}</p>
+          <div key={faq.q} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">{faq.q}</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{faq.a}</p>
           </div>
         ))}
       </div>
     </section>
 
-    <section className="max-w-6xl mx-auto px-4 py-16 text-center border-t border-lantern-border">
-      <h2 className="text-2xl font-bold mb-4">Ready to study?</h2>
-      <p className="text-lantern-text-secondary mb-6">Join students using Lantern Study for notes, flashcards, and group tests.</p>
+    <section className="max-w-6xl mx-auto px-4 py-16 text-center border-t border-slate-200 dark:border-slate-700">
+      <h2 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Ready to study?</h2>
+      <p className="text-slate-600 dark:text-slate-300 mb-6">Join students using Lantern Study for notes, flashcards, and group tests.</p>
       <Button size="lg" onClick={onContinue}>Get started free</Button>
     </section>
 
-    <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-secondary">
+    <footer className="border-t border-slate-200 dark:border-slate-700 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
       © {new Date().getFullYear()} Lantern Study
     </footer>
   </div>

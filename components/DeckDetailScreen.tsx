@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { Deck, Flashcard, FlashcardType } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIcon, SparklesIcon, BoltIcon, ArrowPathIcon, ClockIcon, UserGroupIcon, Squares2X2Icon, AcademicCapIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
@@ -105,10 +107,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   const avgEaseFactor = reviewedCards.length > 0 ? reviewedCards.reduce((sum, fc) => sum + (fc.srsData?.easeFactor || 0), 0) / reviewedCards.length : 0;
   const leechCards = cardsInDeck.filter(fc => fc.srsData?.isLeech).length;
 
-  const handleDeleteDeckClick = () => {
-    if (window.confirm(`Are you sure you want to delete the deck "${deck.name}"? This will also delete all ${cardsInDeck.length} cards inside it. This action cannot be undone.`)) {
-      onDeleteDeck(deck.id);
-    }
+  const handleDeleteDeckClick = async () => {
+    const ok = await confirmDialog({
+      title: 'Delete deck?',
+      message: `Are you sure you want to delete the deck "${deck.name}"? This will also delete all ${cardsInDeck.length} cards inside it. This action cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (ok) onDeleteDeck(deck.id);
   };
   
   const handleGenerateSubmit = (notes: string, count: number) => {
@@ -116,14 +122,21 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     setIsGenerateModalOpen(false);
   };
 
+  const [cramMinutesOpen, setCramMinutesOpen] = useState(false);
+  const [cramMinutes, setCramMinutes] = useState('5');
+
   const handleTimedCram = () => {
-    const minutes = window.prompt('Enter duration in minutes for timed cram (e.g. 5):');
-    if (!minutes) return;
-    const parsed = parseFloat(minutes);
+    setCramMinutes('5');
+    setCramMinutesOpen(true);
+  };
+
+  const confirmTimedCram = () => {
+    const parsed = parseFloat(cramMinutes);
     if (isNaN(parsed) || parsed <= 0) {
-      alert('Please enter a valid number of minutes.');
+      useToastStore.getState().showToast('Please enter a valid number of minutes.', 'error');
       return;
     }
+    setCramMinutesOpen(false);
     onStartCram(deck, Math.round(parsed * 60));
   };
 
@@ -178,7 +191,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                     <UserGroupIcon className="w-4 h-4 mr-1.5" /> Collaborators
                   </button>
                 )}
-                <button onClick={() => { if(window.confirm('Are you sure you want to reset all SRS statistics for this deck? This will mark all cards as new.')) onResetStatistics(deck.id) }} className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center text-sm shadow"><ArrowPathIcon className="w-4 h-4 mr-1.5" /> Reset Stats</button>
+                <button onClick={() => { void confirmDialog({ title: 'Reset statistics?', message: 'Are you sure you want to reset all SRS statistics for this deck? This will mark all cards as new.', danger: false }).then((ok) => { if (ok) onResetStatistics(deck.id); }); }} className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center text-sm shadow"><ArrowPathIcon className="w-4 h-4 mr-1.5" /> Reset Stats</button>
                 <button onClick={handleDeleteDeckClick} className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md flex items-center text-sm shadow"><TrashIcon className="w-4 h-4 mr-1.5" /> Delete</button>
             </div>
         </div>
@@ -406,7 +419,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                     </button>
                   )}
                   <button onClick={() => onOpenEditFlashcard(card)} className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-md"><PencilIcon className="w-5 h-5"/></button>
-                  <button onClick={() => { if(window.confirm('Are you sure you want to delete this flashcard?')) onDeleteFlashcard(card.id) }} className="p-1.5 text-slate-500 hover:text-red-600 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                  <button onClick={() => { void confirmDialog({ title: 'Delete flashcard?', message: 'Are you sure you want to delete this flashcard?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeleteFlashcard(card.id); }); }} className="p-1.5 text-slate-500 hover:text-red-600 rounded-md"><TrashIcon className="w-5 h-5"/></button>
                 </div>
               </li>
             ))}
@@ -445,6 +458,28 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         deckId={deck.id}
         currentUserId={currentUser?.id}
       />
+      {cramMinutesOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-4">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Timed cram</h3>
+            <label className="block text-sm text-slate-600 dark:text-slate-300">
+              Duration (minutes)
+              <input
+                type="number"
+                min={1}
+                value={cramMinutes}
+                onChange={(e) => setCramMinutes(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2"
+                autoFocus
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setCramMinutesOpen(false)} className="px-3 py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-700">Cancel</button>
+              <button type="button" onClick={confirmTimedCram} className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Start</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

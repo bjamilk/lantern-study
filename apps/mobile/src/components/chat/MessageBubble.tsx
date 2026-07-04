@@ -17,6 +17,7 @@ interface MessageBubbleProps {
   userFlagged?: boolean;
   onFlag?: () => void;
   canFlag?: boolean;
+  isGroupedWithPrevious?: boolean;
 }
 
 export function MessageBubble({
@@ -29,6 +30,7 @@ export function MessageBubble({
   userFlagged,
   onFlag,
   canFlag,
+  isGroupedWithPrevious = false,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const [imageFailed, setImageFailed] = useState(false);
@@ -68,12 +70,14 @@ export function MessageBubble({
 
   return (
     <View
-      className={`mb-3 flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'}`}
+      className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
     >
-      {!isOwn ? <Avatar name={message.senderName} size={28} /> : null}
+      {!isOwn ? (
+        isGroupedWithPrevious ? <View style={{ width: 28 }} /> : <Avatar name={message.senderName} size={28} />
+      ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
-        {!isOwn ? (
+        {!isOwn && !isGroupedWithPrevious ? (
           <Text
             className="text-xs font-semibold mb-1 ml-0.5"
             style={{ color: colors.primary }}
@@ -179,12 +183,32 @@ export function MessageBubble({
               />
             </View>
           ) : (
-            <Text
-              className="text-sm leading-relaxed"
-              style={{ color: isOwn ? colors.textInverse : colors.text }}
-            >
-              {message.text}
-            </Text>
+            (() => {
+              const imageMatch = message.text?.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/);
+              const imageUri = imageMatch?.[1] ? normalizeStorageUrl(imageMatch[1]) : undefined;
+              const textWithoutImage = message.text?.replace(/!\[.*?\]\(https?:\/\/[^)]+\)/, '').trim();
+              return (
+                <View className="gap-2">
+                  {imageUri && !imageFailed ? (
+                    <Image
+                      source={{ uri: imageUri }}
+                      accessibilityLabel="Shared image"
+                      resizeMode="cover"
+                      onError={() => setImageFailed(true)}
+                      style={{ width: 220, height: 180, borderRadius: 10 }}
+                    />
+                  ) : null}
+                  {textWithoutImage ? (
+                    <Text
+                      className="text-sm leading-relaxed"
+                      style={{ color: isOwn ? colors.textInverse : colors.text }}
+                    >
+                      {textWithoutImage}
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })()
           )}
 
           <Text
@@ -198,6 +222,7 @@ export function MessageBubble({
             }}
           >
             {timeLabel}
+            {isOwn ? ' · Sent' : ''}
           </Text>
         </View>
       </View>

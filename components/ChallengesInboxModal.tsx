@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import type { GroupChallenge } from '../types';
 import { XMarkIcon, CheckIcon, XCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
 import {
@@ -58,7 +59,7 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
       await acceptChallenge(id);
       await load();
     } catch (e: any) {
-      alert(e.message || 'Failed to accept');
+      useToastStore.getState().showToast(e.message || 'Failed to accept', 'error');
     } finally {
       setActionId(null);
     }
@@ -70,7 +71,7 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
       await declineChallenge(id);
       await load();
     } catch (e: any) {
-      alert(e.message || 'Failed to decline');
+      useToastStore.getState().showToast(e.message || 'Failed to decline', 'error');
     } finally {
       setActionId(null);
     }

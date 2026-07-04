@@ -5,12 +5,14 @@ interface MessageInputBarProps {
   onSendMessage: (text: string) => void;
   onOpenQuestionModal?: () => void;
   onAIQuery?: (question: string) => Promise<string | null>;
+  onTyping?: () => void;
 }
 
-const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpenQuestionModal, onAIQuery }) => {
+const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpenQuestionModal, onAIQuery, onTyping }) => {
   const [inputText, setInputText] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastTypingRef = useRef(0);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -68,7 +70,14 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
           <textarea
             ref={textareaRef}
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => {
+              setInputText(e.target.value);
+              const now = Date.now();
+              if (onTyping && now - lastTypingRef.current > 1500) {
+                lastTypingRef.current = now;
+                onTyping();
+              }
+            }}
             onKeyDown={handleKeyDown}
             placeholder={isAIThinking ? 'AI is thinking...' : 'Type a message... (prefix @AI or /ask for AI tutor)'}
             rows={1}

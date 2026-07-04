@@ -273,9 +273,16 @@ export function GroupChatScreen({ navigation, route }: Props) {
         .map(m => `${m.senderName}: ${m.questionStem || m.text}`)
         .filter(Boolean);
       const result = await summarizeGroupChat(chatLines, displayName);
-      Alert.alert('Chat summary', result?.summary || 'Summary unavailable.');
+      const summary = result?.summary || 'Summary unavailable.';
+      // Show summary in companion-friendly toast (long text truncated)
+      const { useToastStore } = await import('../../stores/toastStore');
+      useToastStore.getState().showToast(
+        summary.length > 180 ? `${summary.slice(0, 180)}…` : summary,
+        'info'
+      );
     } catch {
-      Alert.alert('Error', 'Failed to summarize chat.');
+      const { useToastStore } = await import('../../stores/toastStore');
+      useToastStore.getState().showToast('Failed to summarize chat.', 'error');
     } finally {
       setSummarizing(false);
     }
@@ -403,6 +410,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
               const showDate =
                 index === 0 ||
                 (previous && isDifferentChatDay(previous.createdAt, item.createdAt));
+              const isGroupedWithPrevious =
+                !!previous &&
+                !showDate &&
+                previous.senderId === item.senderId &&
+                new Date(item.createdAt).getTime() - new Date(previous.createdAt).getTime() < 5 * 60 * 1000;
 
               return (
                 <View>
@@ -414,6 +426,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                     isOwn={item.senderId === user?.id}
                     userVote={userVotes[item.id]}
                     memberCount={memberCount}
+                    isGroupedWithPrevious={isGroupedWithPrevious}
                     onVote={
                       item.type === 'question' && user?.id
                         ? vote => void voteOnMessage(groupId, item.id, user.id!, vote)
@@ -443,6 +456,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onChangeText={setText}
           onSend={() => void handleSend()}
           sending={sending}
+          onAttachImage={async (uri, mimeType) => {
+            if (!user?.id) return;
+            try {
+              const { uploadChatImage } = await import('../../services/chatImageUpload');
+              const { url } = await uploadChatImage(uri, mimeType, groupId);
+              await sendMessage(
+                groupId,
+                `![image](${url})`,
+                user.id,
+                user.user_metadata?.full_name || user.email || 'User'
+              );
+            } catch {
+              const { useToastStore } = await import('../../stores/toastStore');
+              useToastStore.getState().showToast('Failed to send image.', 'error');
+            }
+          }}
         />
       </KeyboardAvoidingView>
 

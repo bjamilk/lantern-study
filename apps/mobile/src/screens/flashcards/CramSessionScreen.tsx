@@ -7,6 +7,7 @@ import { Button, Card } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
+import { hapticSelection, hapticSuccess, hapticWarning } from '../../utils/haptics';
 
 type NavigationProp = {
   goBack: () => void;
@@ -94,8 +95,10 @@ export function CramSessionScreen({ navigation, route }: Props) {
   const advance = (wasCorrect: boolean) => {
     if (!currentCard) return;
     if (wasCorrect) {
+      hapticSuccess();
       setCorrect(c => c + 1);
     } else {
+      hapticWarning();
       setIncorrect(c => c + 1);
       setMissedCards(prev => [...prev, currentCard]);
     }
@@ -161,7 +164,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
       </View>
 
       <View className="flex-1 px-4 justify-center">
-        <Pressable onPress={() => setShowBack(v => !v)} className="active:opacity-95">
+        <Pressable onPress={() => { hapticSelection(); setShowBack(v => !v); }} className="active:opacity-95">
           <Card className="min-h-[220px] items-center justify-center border-amber-100 dark:border-amber-900/40">
             <Text className="text-xs uppercase tracking-wide text-slate-400 mb-3">
               {showBack ? 'Answer' : 'Question'}

@@ -154,6 +154,9 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                     return (
                         <button
                             key={tab.label}
+                            type="button"
+                            aria-label={tab.label}
+                            aria-current={active ? 'page' : undefined}
                             onClick={() => { onNavigate(tab.targetMode); setIsMoreOpen(false); }}
                             className={`flex flex-col items-center justify-center flex-1 h-full relative transition-colors ${
                                 active ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
@@ -179,6 +182,11 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
 
                 <div ref={moreRef} className="relative flex-1 h-full">
                     <button
+                        type="button"
+                        aria-label="More"
+                        aria-expanded={isMoreOpen}
+                        aria-haspopup="menu"
+                        aria-current={isMoreActive ? 'page' : undefined}
                         onClick={() => setIsMoreOpen(prev => !prev)}
                         className={`flex flex-col items-center justify-center w-full h-full relative transition-colors ${
                             isMoreActive || isMoreOpen ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'

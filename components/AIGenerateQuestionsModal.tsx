@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { SparklesIcon, XCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
 import { AIDisclaimer } from './AIDisclaimer';
@@ -43,11 +44,11 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!notes.trim() || count === '' || Number(count) <= 0 || Number(count) > 20) {
-      alert('Please provide notes and a number of questions between 1 and 20.');
+      useToastStore.getState().showToast('Please provide notes and a number of questions between 1 and 20.', 'error');
       return;
     }
     if (selectedTypes.length === 0) {
-      alert('Please select at least one question type.');
+      useToastStore.getState().showToast('Please select at least one question type.', 'error');
       return;
     }
     onSubmit(notes, {

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
@@ -190,7 +192,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
   const handleSaveCurrentAsPreset = () => {
       if (!presetName.trim()) {
-          alert("Please enter a name for the preset.");
+          useToastStore.getState().showToast("Please enter a name for the preset.", 'error');
           return;
       }
       const currentConfig: Omit<TestConfig, 'questionIds' | 'groupId'> = {
@@ -254,7 +256,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitDisabled()) {
-        alert(`Please ensure you have selected question types, set a timer (for tests), there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`);
+        useToastStore.getState().showToast(`Please ensure you have selected question types, set a timer (for tests), there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`, 'error');
         return;
     }
     onSubmit(getCurrentConfig(), mode, useSpacedRepetition, selectedSubgroupIDs);
@@ -262,7 +264,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
   const handleDownload = () => {
     if (isSubmitDisabled()) {
-        alert(`Cannot download. Please ensure you have selected question types, there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`);
+        useToastStore.getState().showToast(`Cannot download. Please ensure you have selected question types, there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`, 'error');
         return;
     }
      const config: Omit<TestConfig, 'questionIds' | 'groupId'> = {
@@ -372,7 +374,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                     <option value="" disabled>Select a preset...</option>
                     {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  <button type="button" onClick={() => { if(window.confirm('Are you sure you want to delete this preset?')) onDeletePreset((document.getElementById('study-preset-select') as HTMLSelectElement)?.value) }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                  <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('study-preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
                 </div>
               </div>
             )}
@@ -591,7 +593,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                   <option value="" disabled>Select a preset...</option>
                   {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <button type="button" onClick={() => { if(window.confirm('Are you sure?')) onDeletePreset((document.getElementById('preset-select') as HTMLSelectElement)?.value) }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
               </div>
             </div>
           )}

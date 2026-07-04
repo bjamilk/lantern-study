@@ -6,6 +6,7 @@ import { Button, Card } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
+import { hapticSuccess, hapticWarning } from '../../utils/haptics';
 
 type NavigationProp = {
   goBack: () => void;
@@ -74,6 +75,8 @@ export function LearnStudyScreen({ navigation, route }: Props) {
     if (!current || feedback) return;
     const { back } = getCardDisplayText(current);
     const correct = choice === back;
+    if (correct) hapticSuccess();
+    else hapticWarning();
     setFeedback(correct ? 'correct' : 'wrong');
 
     setTimeout(() => {

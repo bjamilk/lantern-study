@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder } from '../types';
 import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
@@ -35,6 +37,7 @@ import {
   fetchOrderForInquiry,
   updateMarketplaceOrder,
   requestOrderPayment,
+  supabase,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -97,6 +100,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const prevMessageCountRef = useRef(messages.length);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [typingNames, setTypingNames] = useState<string[]>([]);
+  const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMore, setHasMore] = useState(true);
   const [isSummarizingChat, setIsSummarizingChat] = useState(false);
   const [awaitingMessages, setAwaitingMessages] = useState(false);
@@ -122,6 +127,43 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return () => window.clearTimeout(timer);
   }, [chat?.id]);
 
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Typing indicators via Supabase broadcast
+  useEffect(() => {
+    if (!chat?.id) return;
+    const channel = supabase.channel(`typing:${chat.id}`);
+    typingChannelRef.current = channel;
+    channel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        const userId = payload?.userId as string | undefined;
+        const name = (payload?.name as string) || 'Someone';
+        if (!userId || userId === currentUser.id) return;
+        setTypingNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+        if (typingTimeoutsRef.current[userId]) clearTimeout(typingTimeoutsRef.current[userId]);
+        typingTimeoutsRef.current[userId] = setTimeout(() => {
+          setTypingNames((prev) => prev.filter((n) => n !== name));
+          delete typingTimeoutsRef.current[userId];
+        }, 3000);
+      })
+      .subscribe();
+    return () => {
+      Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
+      typingTimeoutsRef.current = {};
+      setTypingNames([]);
+      typingChannelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [chat?.id, currentUser.id]);
+
+  const broadcastTyping = () => {
+    void typingChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { userId: currentUser.id, name: currentUser.name },
+    });
+  };
+
   const handleSummarizeGroup = async () => {
     if (!chat || chat.chatType !== 'group' || isSummarizingChat) return;
     const groupName = (chat as Group).name || 'Group';
@@ -129,7 +171,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       .filter(m => !m.isArchived && (m.text || m.questionStem))
       .slice(-50)
       .map(m => m.text || m.questionStem || '');
-    if (msgTexts.length === 0) { alert('No messages to summarize.'); return; }
+    if (msgTexts.length === 0) { useToastStore.getState().showToast('No messages to summarize.', 'info'); return; }
     setIsSummarizingChat(true);
     try {
       const { summary } = await summarizeGroupChat(msgTexts, groupName);
@@ -137,7 +179,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       companion.open();
       await companion.sendMessage(`Here's a summary of recent activity in #${groupName}:\n\n${summary}\n\nIs there anything specific from this you'd like help with?`);
     } catch {
-      alert('Failed to summarize group chat. Please try again.');
+      useToastStore.getState().showToast('Failed to summarize group chat. Please try again.', 'error');
     } finally {
       setIsSummarizingChat(false);
     }
@@ -726,9 +768,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     <button
                       onClick={() => {
                         setIsDropdownOpen(false);
-                        if (window.confirm('Delete this conversation? All messages will be permanently removed.')) {
-                          onDeleteDmThread(chat.id);
-                        }
+                        void confirmDialog({
+                          title: 'Delete conversation?',
+                          message: 'Delete this conversation? All messages will be permanently removed.',
+                          danger: true,
+                          confirmLabel: 'Delete',
+                        }).then((ok) => {
+                          if (ok) onDeleteDmThread(chat.id);
+                        });
                       }}
                       className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors duration-150"
                       role="menuitem"
@@ -843,7 +890,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     try {
                       const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
                       setActiveOrder(updated);
-                    } catch (e: any) { alert(e.message); }
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
                     finally { setOrderActionLoading(false); }
                   }}
                 >
@@ -857,8 +904,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     setOrderActionLoading(true);
                     try {
                       await requestOrderPayment(activeOrder.id);
-                      alert('Payment request sent');
-                    } catch (e: any) { alert(e.message); }
+                      useToastStore.getState().showToast('Payment request sent', 'success');
+                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
                     finally { setOrderActionLoading(false); }
                   }}
                 >
@@ -876,7 +923,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   try {
                     const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'confirm_received' });
                     setActiveOrder(updated);
-                  } catch (e: any) { alert(e.message); }
+                  } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
                   finally { setOrderActionLoading(false); }
                 }}
               >
@@ -891,6 +938,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Messages area — scrolls independently */}
           <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+            {isLoadingMore && (
+              <div className="flex justify-center py-2" aria-live="polite">
+                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                <span className="sr-only">Loading older messages</span>
+              </div>
+            )}
             {visibleMessages.map((msg, idx) => {
               // Date separator logic
               const msgDate = new Date(msg.timestamp);
@@ -898,6 +951,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
               const showDateSeparator = !prevDate
                 || msgDate.toDateString() !== prevDate.toDateString();
+              const isGroupedWithPrevious =
+                !!prevMsg &&
+                !showDateSeparator &&
+                prevMsg.sender.id === msg.sender.id &&
+                msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
 
               const formatDateLabel = (d: Date) => {
                 const now = new Date();
@@ -930,6 +988,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
                     group={group}
                     currentUser={currentUser}
+                    isGroupedWithPrevious={isGroupedWithPrevious}
                   />
                 </React.Fragment>
               );
@@ -977,10 +1036,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
           ) : (
             <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
+              {typingNames.length > 0 && (
+                <p className="px-4 py-1 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
+                  {typingNames.length === 1
+                    ? `${typingNames[0]} is typing…`
+                    : `${typingNames.slice(0, 2).join(' and ')} are typing…`}
+                </p>
+              )}
               <MessageInputBar
                 onSendMessage={onSendMessage}
                 onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
                 onAIQuery={isGroup ? onAIQuery : undefined}
+                onTyping={broadcastTyping}
               />
             </div>
           )}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { TransactionType, Transaction, STUDENT_EXPENSE_CATEGORIES } from '../types';
 import { XCircleIcon } from '@heroicons/react/24/outline';
 
@@ -19,7 +20,7 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (amount === '' || amount <= 0) {
-      alert('Please enter a valid positive amount.');
+      useToastStore.getState().showToast('Please enter a valid positive amount.', 'error');
       return;
     }
     onSubmit({

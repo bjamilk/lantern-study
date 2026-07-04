@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { Group, User } from '../types';
 import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, LinkIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
@@ -103,7 +104,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) { 
-        alert("Image is too large. Please select an image under 2MB.");
+        useToastStore.getState().showToast("Image is too large. Please select an image under 2MB.", 'error');
         event.target.value = ""; 
         return;
       }
@@ -138,7 +139,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         if (avatarFileRef.current) avatarFileRef.current.value = "";
       } catch (error) {
         console.error("Error saving group avatar:", error);
-        alert("Error saving avatar. Please try again.");
+        useToastStore.getState().showToast("Error saving avatar. Please try again.", 'error');
       }
     }
   };
@@ -164,7 +165,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
           window.setTimeout(() => setLinkCopied(false), 2000);
       }).catch(err => {
           console.error('Failed to copy text: ', err);
-          alert('Failed to copy link.');
+          useToastStore.getState().showToast('Failed to copy link.', 'error');
       });
   };
 

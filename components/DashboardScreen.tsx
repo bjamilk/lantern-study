@@ -18,6 +18,7 @@ import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { DashboardProgress } from './dashboard/DashboardProgress';
+import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
 
 interface DashboardScreenProps {
   testResults: TestResult[];
@@ -33,6 +34,10 @@ interface DashboardScreenProps {
   onNavigateToFlashcards?: () => void;
   onNavigateToMarketplace?: () => void;
   onNavigateToCreateGroup?: () => void;
+  onNavigateToBudget?: () => void;
+  onNavigateToStudyHub?: () => void;
+  deckCount?: number;
+  hasBudgetSet?: boolean;
   dueCardsCount?: number;
   // Flashcard review activity for heatmap
   flashcards?: import('../types').Flashcard[];
@@ -168,6 +173,10 @@ export default function DashboardScreen({
   onNavigateToFlashcards,
   onNavigateToMarketplace,
   onNavigateToCreateGroup,
+  onNavigateToBudget,
+  onNavigateToStudyHub,
+  deckCount = 0,
+  hasBudgetSet = false,
   onNavigateToNotes,
   onOpenImportAndStudy,
   onNavigateToAITools,
@@ -765,6 +774,27 @@ export default function DashboardScreen({
         lowDataMode={lowDataMode}
       />
 
+      <div className="px-4 md:px-8 mt-4">
+        <div className="max-w-6xl mx-auto">
+          <GettingStartedChecklist
+            hasDecks={deckCount > 0}
+            hasTests={rawTestResults.length > 0}
+            hasGroups={groups.length > 0}
+            hasBudget={hasBudgetSet}
+            onCreateDeck={() => onNavigateToFlashcards?.()}
+            onTakeTest={() => {
+              if (onNavigateToStudyHub) onNavigateToStudyHub();
+              else if (groups[0]?.id && onOpenQuickTest) onOpenQuickTest(groups[0].id);
+            }}
+            onJoinGroup={() => {
+              if (onNavigateToCreateGroup) onNavigateToCreateGroup();
+              else onNavigateToChat?.();
+            }}
+            onSetBudget={() => onNavigateToBudget?.()}
+          />
+        </div>
+      </div>
+
       {/* Secondary quick links */}
       <div className="px-4 md:px-8 -mt-2">
         <div className="max-w-6xl mx-auto">
@@ -800,6 +830,8 @@ export default function DashboardScreen({
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
       <div className="flex-1 px-4 md:px-8 py-6 max-w-6xl mx-auto w-full space-y-6">
+
+        {!questsLoaded && dailyQuests.length === 0 && <SkeletonStatRow />}
 
         {(dailyQuests.length > 0 || questsLoaded) && (
           <DailyQuestsWidget

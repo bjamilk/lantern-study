@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
 import {
   fetchMarketplaceListingFull,
   fetchNegotiationHistory,
@@ -220,9 +221,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     if (!listing || !listing.price || listing.price <= 0) return;
     const pricing = resolveListingDisplayPrice(listing);
     const payAmount = couponPreview?.finalAmount ?? pricing.effective;
-    const confirmed = window.confirm(
-      `Confirm purchase of ${listing.title} for ₦${payAmount.toLocaleString()}?`
-    );
+    const confirmed = await confirmDialog({
+      title: 'Confirm purchase',
+      message: `Confirm purchase of ${listing.title} for ₦${payAmount.toLocaleString()}?`,
+      confirmLabel: 'Buy now',
+    });
     if (!confirmed) return;
 
     setBuyingNow(true);

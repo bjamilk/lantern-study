@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { SparklesIcon, XCircleIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 interface GenerateFlashcardsModalProps {
@@ -17,7 +18,7 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!notes.trim() || count === '' || Number(count) < 10 || Number(count) > 20) {
-      alert("Please provide notes and specify a number of cards between 10 and 20.");
+      useToastStore.getState().showToast("Please provide notes and specify a number of cards between 10 and 20.", 'error');
       return;
     }
     onSubmit(notes, Number(count));

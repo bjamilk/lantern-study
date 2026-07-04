@@ -104,6 +104,7 @@ export function BottomTabBar({
     label: 'More',
     icon: 'ellipsis-horizontal-outline',
     activeIcon: 'ellipsis-horizontal',
+    badge: unreadNotificationCount,
   };
 
   return (

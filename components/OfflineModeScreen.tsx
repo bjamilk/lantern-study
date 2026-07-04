@@ -1,5 +1,6 @@
 
 import React, { useRef, useState } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle } from '../types';
 import { CloudArrowDownIcon, ArrowPathIcon, TrashIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { syncCopy } from '@lantern/shared/design';
@@ -63,7 +64,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
       try {
         const parsed = JSON.parse(event.target?.result as string);
         if (!parsed.questions || !Array.isArray(parsed.questions) || !parsed.config || !parsed.groupName) {
-          alert('Invalid bundle file. Please use a file exported from Lantern Study.');
+          useToastStore.getState().showToast('Invalid bundle file. Please use a file exported from Lantern Study.', 'error');
           return;
         }
         const newBundleId = onImportBundle(parsed as OfflineSessionBundle);
@@ -72,7 +73,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
           setEditNameValue(parsed.groupName);
         }
       } catch {
-        alert('Could not read the file. Make sure it is a valid Lantern bundle (.json).');
+        useToastStore.getState().showToast('Could not read the file. Make sure it is a valid Lantern bundle (.json).', 'error');
       } finally {
         // Reset so the same file can be re-imported if needed
         if (importInputRef.current) importInputRef.current.value = '';

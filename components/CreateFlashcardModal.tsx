@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { Flashcard, FlashcardType, Deck } from '../types';
 import { uploadFlashcardImage } from '../services/supabase';
 import { XCircleIcon, PlusCircleIcon, InformationCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
@@ -139,10 +140,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     try {
       const result = await uploadFlashcardImage(file);
       setImageUrl(result.url);
-      alert('Image uploaded successfully! URL inserted.');
+      useToastStore.getState().showToast('Image uploaded successfully! URL inserted.', 'success');
     } catch (error: any) {
       console.error('Failed to upload image:', error);
-      alert('Failed to upload image. Please try again.');
+      useToastStore.getState().showToast('Failed to upload image. Please try again.', 'error');
     } finally {
       setIsUploadingImage(false);
     }
@@ -586,7 +587,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!deckId) {
-        alert('Please select a deck.');
+        useToastStore.getState().showToast('Please select a deck.', 'error');
         return;
     }
 
@@ -594,7 +595,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
 
     if (type === FlashcardType.BASIC) {
         if (!front.trim() || !back.trim()) {
-            alert('Front and Back fields are required for a basic card.');
+            useToastStore.getState().showToast('Front and Back fields are required for a basic card.', 'error');
             return;
         }
         cardData = {
@@ -608,11 +609,11 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
         };
     } else if (type === FlashcardType.IMAGE_OCCLUSION) {
         if (!imageUrl.trim()) {
-            alert('Please provide an image URL (or upload an image) for image occlusion cards.');
+            useToastStore.getState().showToast('Please provide an image URL (or upload an image) for image occlusion cards.', 'error');
             return;
         }
         if (!front.trim()) {
-            alert('Please provide a prompt or hint for the image occlusion card.');
+            useToastStore.getState().showToast('Please provide a prompt or hint for the image occlusion card.', 'error');
             return;
         }
         cardData = {
@@ -626,7 +627,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
         };
     } else { // CLOZE
         if (!clozeText.trim() || !clozeText.includes('{{c1::')) {
-            alert('Cloze text is required and must contain a cloze deletion, e.g., {{c1::answer}}.');
+            useToastStore.getState().showToast('Cloze text is required and must contain a cloze deletion, e.g., {{c1::answer}}.', 'error');
             return;
         }
         cardData = { deckId, type, clozeText, front: '', back: null, imageUrl: undefined, occlusionData: undefined };

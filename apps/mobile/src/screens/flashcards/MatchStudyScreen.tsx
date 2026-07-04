@@ -5,6 +5,7 @@ import { useFlashcardStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
+import { hapticSelection, hapticSuccess, hapticWarning } from '../../utils/haptics';
 
 type NavigationProp = {
   goBack: () => void;
@@ -89,6 +90,7 @@ export function MatchStudyScreen({ navigation, route }: Props) {
       if (!tile || tile.matched || wrongPair.length > 0) return;
 
       if (!selected) {
+        hapticSelection();
         setSelected(tileId);
         return;
       }
@@ -99,9 +101,11 @@ export function MatchStudyScreen({ navigation, route }: Props) {
 
       const first = tiles.find(t => t.id === selected)!;
       if (first.cardId === tile.cardId && first.side !== tile.side) {
+        hapticSuccess();
         setTiles(prev => prev.map(t => (t.cardId === tile.cardId ? { ...t, matched: true } : t)));
         setSelected(null);
       } else {
+        hapticWarning();
         setWrongPair([selected, tileId]);
         setTimeout(() => {
           setWrongPair([]);

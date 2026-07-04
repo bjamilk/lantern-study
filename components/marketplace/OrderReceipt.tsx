@@ -1,4 +1,5 @@
 import React from 'react';
+import { useToastStore } from '../../stores/toastStore';
 import type { MarketplaceOrder } from '../types';
 
 interface OrderReceiptProps {
@@ -52,7 +53,7 @@ export function printOrderReceipt(order: MarketplaceOrder): void {
   const html = buildOrderReceiptHtml(order);
   const win = window.open('', '_blank', 'width=640,height=720');
   if (!win) {
-    alert('Allow pop-ups to print the receipt.');
+    useToastStore.getState().showToast('Allow pop-ups to print the receipt.', 'info');
     return;
   }
   win.document.write(html);

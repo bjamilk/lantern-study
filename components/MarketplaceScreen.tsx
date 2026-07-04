@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import {
   fetchMarketplaceListings, fetchMyFavorites, addToFavorites, removeFromFavorites,
   getRecentlyViewed, removeRecentlyViewed, fetchMarketplaceListing,
@@ -175,7 +176,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
     if (sortOrder !== 'desc') filters.sortOrder = sortOrder;
 
     if (Object.keys(filters).length === 0) {
-      alert('Set some search criteria or filters first.');
+      useToastStore.getState().showToast('Set some search criteria or filters first.', 'info');
       return;
     }
 
@@ -183,10 +184,10 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
     try {
       await saveSearch(filters);
       await loadSavedSearches();
-      alert('Search saved! You\'ll be notified when new matching listings appear.');
+      useToastStore.getState().showToast('Search saved! You\'ll be notified when new matching listings appear.', 'success');
     } catch (error) {
       console.error('Error saving search:', error);
-      alert('Failed to save search');
+      useToastStore.getState().showToast('Failed to save search', 'error');
     } finally {
       setSavingSearch(false);
     }
@@ -762,9 +763,16 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
         )}
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-200 border-t-indigo-600 mb-3"></div>
-            <span className="text-sm text-slate-500 dark:text-slate-400">Loading listings...</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full py-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="h-40 animate-pulse bg-slate-200 dark:bg-slate-700" />
+                <div className="p-3 space-y-2">
+                  <div className="h-4 w-2/3 animate-pulse bg-slate-200 dark:bg-slate-700 rounded" />
+                  <div className="h-3 w-1/3 animate-pulse bg-slate-200 dark:bg-slate-700 rounded" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : listings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">

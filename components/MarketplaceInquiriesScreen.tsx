@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { fetchMyInquiries, updateInquiryStatus, fetchOffers, respondToOffer } from '../services/supabase';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { MarketplaceInquiry, MarketplaceOffer } from '../types';
@@ -63,7 +64,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
     try {
       const counterAmount = action === 'counter' ? parseFloat(counterAmounts[offerId] || '0') : undefined;
       if (action === 'counter' && (!counterAmount || counterAmount <= 0)) {
-        alert('Please enter a valid counter amount');
+        useToastStore.getState().showToast('Please enter a valid counter amount', 'error');
         setRespondingTo(null);
         return;
       }
@@ -73,7 +74,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       }
       await loadOffers();
     } catch (error: any) {
-      alert(error.message || 'Failed to respond to offer');
+      useToastStore.getState().showToast(error.message || 'Failed to respond to offer', 'error');
     } finally {
       setRespondingTo(null);
     }
@@ -97,7 +98,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       await loadInquiries();
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('Failed to update status');
+      useToastStore.getState().showToast('Failed to update status', 'error');
     }
   };
 

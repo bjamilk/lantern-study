@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { XCircleIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { User } from '../types';
 import { fetchUsers } from '../services/supabase';
@@ -85,20 +87,20 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
       setUserSuggestions([]);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to add collaborator.';
-      alert(message);
+      useToastStore.getState().showToast(message, 'info');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleRemove = async (userId: string) => {
-    if (!window.confirm('Remove this collaborator?')) return;
+    if (!(await confirmDialog({ title: 'Please confirm', message: "Remove this collaborator?", danger: true }))) return;
     try {
       await notesApi.removeNoteCollaborator(noteId, userId);
       setCollaborators(prev => prev.filter(c => c.userId !== userId));
     } catch (err) {
       console.error('Failed to remove collaborator', err);
-      alert('Failed to remove collaborator.');
+      useToastStore.getState().showToast('Failed to remove collaborator.', 'error');
     }
   };
 

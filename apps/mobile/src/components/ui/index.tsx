@@ -1,5 +1,7 @@
-import React from 'react';
-import { Pressable, Text, ActivityIndicator, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { Pressable, Text, ActivityIndicator, View, Modal } from 'react-native';
+import { useToastStore } from '../../stores/toastStore';
+import { useConfirmStore } from '../../stores/confirmStore';
 
 type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -121,5 +123,72 @@ export function Badge({ count }: { count: number }) {
     <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 items-center justify-center">
       <Text className="text-[10px] font-bold text-white">{count > 99 ? '99+' : count}</Text>
     </View>
+  );
+}
+
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <View className={`rounded-xl bg-slate-200 dark:bg-slate-700 animate-pulse ${className}`} />;
+}
+
+export function SkeletonCard() {
+  return (
+    <View className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-3">
+      <Skeleton className="h-4 w-2/3 mb-3" />
+      <Skeleton className="h-3 w-full mb-2" />
+      <Skeleton className="h-3 w-5/6" />
+    </View>
+  );
+}
+
+const toastBg: Record<string, string> = {
+  success: 'bg-emerald-600',
+  error: 'bg-red-600',
+  info: 'bg-indigo-600',
+};
+
+export function ToastHost() {
+  const { message, type, dismissToast } = useToastStore();
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(dismissToast, 4000);
+    return () => clearTimeout(t);
+  }, [message, dismissToast]);
+  if (!message) return null;
+  return (
+    <View className="absolute left-4 right-4 bottom-10 z-50" pointerEvents="box-none">
+      <Pressable
+        onPress={dismissToast}
+        className={`${toastBg[type] || toastBg.info} rounded-2xl px-4 py-3 shadow-lg`}
+        accessibilityRole="alert"
+      >
+        <Text className="text-white text-sm font-medium text-center">{message}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+export function ConfirmSheetHost() {
+  const { open, options, handleConfirm, handleCancel } = useConfirmStore();
+  if (!open || !options) return null;
+  return (
+    <Modal transparent animationType="fade" visible={open} onRequestClose={handleCancel}>
+      <View className="flex-1 bg-black/50 justify-end">
+        <View className="bg-white dark:bg-slate-800 rounded-t-3xl px-5 pt-5 pb-8">
+          <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{options.title}</Text>
+          <Text className="text-sm text-slate-600 dark:text-slate-300 mb-5">{options.message}</Text>
+          <View className="flex-row gap-3">
+            <Pressable onPress={handleCancel} className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-700 items-center">
+              <Text className="font-semibold text-slate-800 dark:text-slate-100">{options.cancelLabel || 'Cancel'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleConfirm}
+              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-indigo-500'}`}
+            >
+              <Text className="font-semibold text-white">{options.confirmLabel || 'Confirm'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }

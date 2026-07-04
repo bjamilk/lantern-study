@@ -212,7 +212,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
               <WalletIcon className="w-7 h-7" /> Campus Pocket
             </h1>
-            <p className="text-white/70 text-sm mt-0.5">{monthName}</p>
+            <p className="text-white/85 text-sm mt-0.5">{monthName}</p>
           </div>
           <div className="flex gap-2">
             {onOpenWallet && (
@@ -228,7 +228,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
         {/* Summary Cards */}
         <div className="grid grid-cols-3 gap-3 mt-4">
           <div className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5">
-            <p className="text-white/60 text-xs">Income</p>
+            <p className="text-white/80 text-xs">Income</p>
             <p className="text-white font-bold text-lg">₦{monthlyIncome.toLocaleString('en-NG')}</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5">

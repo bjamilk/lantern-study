@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { XCircleIcon, RectangleStackIcon } from '@heroicons/react/24/outline';
 import { Deck } from '../types';
 
@@ -34,7 +35,7 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      alert('Deck name cannot be empty.');
+      useToastStore.getState().showToast('Deck name cannot be empty.', 'info');
       return;
     }
     onSubmit({

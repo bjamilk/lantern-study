@@ -16,6 +16,8 @@ import { ThemeProvider, useAppTheme } from '../theme';
 import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
 
 import { MoreSheet } from '../components/layout/MoreSheet';
+import { ToastHost, ConfirmSheetHost } from '../components/ui';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 
 import { AICompanionPanel } from '../components/AICompanionPanel';
 
@@ -626,16 +628,43 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
         onToggleLowData={toggleLowDataMode}
 
         items={[
-
+          {
+            id: 'notifications',
+            label: 'Notifications',
+            icon: 'notifications-outline',
+            badge: unreadNotificationCount,
+            onPress: () => navigateTab('Notifications'),
+          },
+          {
+            id: 'ai',
+            label: 'Lantern AI',
+            icon: 'sparkles-outline',
+            onPress: () => navigateTab('AI'),
+          },
+          {
+            id: 'budget',
+            label: 'Budget',
+            icon: 'wallet-outline',
+            onPress: () => navigateTab('Budget'),
+          },
+          {
+            id: 'offline',
+            label: 'Offline mode',
+            icon: 'cloud-offline-outline',
+            onPress: () => navigateTab('Offline'),
+          },
           { id: 'settings', label: 'Settings', icon: 'settings-outline', onPress: () => navigateRoot('Settings') },
-
           { id: 'logout', label: 'Log out', icon: 'log-out-outline', onPress: () => void signOut(), destructive: true },
-
         ]}
 
       />
 
       <AICompanionPanel />
+      <View className="absolute top-12 right-3 z-40">
+        <SyncStatusIndicator compact />
+      </View>
+      <ToastHost />
+      <ConfirmSheetHost />
 
     </>
 

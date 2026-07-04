@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
 import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
@@ -104,23 +105,23 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     const remainingSlots = MAX_IMAGES - formData.images.length;
     
     if (remainingSlots <= 0) {
-      alert(`Maximum ${MAX_IMAGES} images allowed.`);
+      useToastStore.getState().showToast(`Maximum ${MAX_IMAGES} images allowed.`, 'error');
       e.target.value = '';
       return;
     }
 
     const filesToProcess = files.slice(0, remainingSlots);
     if (files.length > remainingSlots) {
-      alert(`Only ${remainingSlots} more image(s) can be added (max ${MAX_IMAGES}).`);
+      useToastStore.getState().showToast(`Only ${remainingSlots} more image(s) can be added (max ${MAX_IMAGES}).`, 'error');
     }
 
     const validFiles = filesToProcess.filter((file: File) => {
       if (!file.type.startsWith('image/')) {
-        alert(`${file.name} is not a valid image file.`);
+        useToastStore.getState().showToast(`${file.name} is not a valid image file.`, 'error');
         return false;
       }
       if (file.size > 5 * 1024 * 1024) {
-        alert(`${file.name} exceeds 5MB limit.`);
+        useToastStore.getState().showToast(`${file.name} exceeds 5MB limit.`, 'info');
         return false;
       }
       return true;
@@ -243,7 +244,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
       onClose();
     } catch (error) {
       console.error('Error updating listing:', error);
-      alert('Failed to update listing. Please try again.');
+      useToastStore.getState().showToast('Failed to update listing. Please try again.', 'error');
     } finally {
       setLoading(false);
       setUploadingImages(false);

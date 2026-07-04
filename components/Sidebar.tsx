@@ -1,4 +1,5 @@
 import React, { useRef, useState, useMemo } from 'react';
+import { useToastStore } from '../stores/toastStore';
 import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem, GameSession } from '../types';
 import GroupListItem from './GroupListItem';
 import AIUsageBadge from './AIUsageBadge';
@@ -207,7 +208,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (file) {
       try {
         if (file.size > 2 * 1024 * 1024) { 
-          alert("Image is too large. Please select an image under 2MB.");
+          useToastStore.getState().showToast("Image is too large. Please select an image under 2MB.", 'error');
           return;
         }
         const base64 = await compressImage(file, {
@@ -219,7 +220,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         onUpdateCurrentUserAvatar(base64);
       } catch (error) {
         console.error("Error converting file to base64:", error);
-        alert("Error processing image. Please try another one.");
+        useToastStore.getState().showToast("Error processing image. Please try another one.", 'error');
       } finally {
         if (event.target) {
             event.target.value = "";

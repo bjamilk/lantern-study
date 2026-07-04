@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
+import { useToastStore } from '../stores/toastStore';
 import { compressImage } from '../utils/imageCompression';
 import { aiGenerateListingDescription } from '../services/ai';
 import {
@@ -72,7 +73,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   }, [isOpen]);
 
   const handleGenerateDescription = async () => {
-    if (!formData.title.trim()) { alert('Please enter a title first.'); return; }
+    if (!formData.title.trim()) { useToastStore.getState().showToast('Please enter a title first.'); return; }
     setIsGeneratingDesc(true);
     try {
       const { description } = await aiGenerateListingDescription({
@@ -90,7 +91,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       });
       setFormData(prev => ({ ...prev, description }));
     } catch {
-      alert('Failed to generate description. Please try again.');
+      useToastStore.getState().showToast('Failed to generate description. Please try again.');
     } finally {
       setIsGeneratingDesc(false);
     }
@@ -146,25 +147,25 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     const remainingSlots = MAX_IMAGES - formData.images.length;
     
     if (remainingSlots <= 0) {
-      alert(`Maximum ${MAX_IMAGES} images allowed.`);
+      useToastStore.getState().showToast(`Maximum ${MAX_IMAGES} images allowed.`);
       e.target.value = '';
       return;
     }
 
     const filesToProcess = files.slice(0, remainingSlots);
     if (files.length > remainingSlots) {
-      alert(`Only ${remainingSlots} more image(s) can be added (max ${MAX_IMAGES}).`);
+      useToastStore.getState().showToast(`Only ${remainingSlots} more image(s) can be added (max ${MAX_IMAGES}).`);
     }
 
     const validFiles = filesToProcess.filter((file: File) => {
       // Check file type
       if (!file.type.startsWith('image/')) {
-        alert(`${file.name} is not a valid image file.`);
+        useToastStore.getState().showToast(`${file.name} is not a valid image file.`);
         return false;
       }
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert(`${file.name} is too large. Maximum file size is 5MB.`);
+        useToastStore.getState().showToast(`${file.name} is too large. Maximum file size is 5MB.`);
         return false;
       }
       return true;
@@ -271,17 +272,17 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     }
     
     if (!formData.subcategory) {
-      alert('Please select a category');
+      useToastStore.getState().showToast('Please select a category');
       return;
     }
 
     if (formData.subcategory === 'other' && !customCategory.trim()) {
-      alert('Please enter a custom category name');
+      useToastStore.getState().showToast('Please enter a custom category name');
       return;
     }
     
     if (!formData.title.trim()) {
-      alert('Please enter a title');
+      useToastStore.getState().showToast('Please enter a title');
       return;
     }
     
@@ -376,7 +377,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       setCustomCategory('');
     } catch (error) {
       console.error('Error creating listing:', error);
-      alert('Failed to create listing. Please try again.');
+      useToastStore.getState().showToast('Failed to create listing. Please try again.');
     } finally {
       setLoading(false);
       setUploadingImages(false);
