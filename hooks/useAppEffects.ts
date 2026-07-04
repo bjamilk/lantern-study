@@ -772,19 +772,18 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         };
     }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady, refreshDashboardGamification]);
 
-    // Sync budget extras (savings, splits, wallet) to cloud when they change
+    // Sync budget extras (goals, splits, category budgets) — never walletBalance (server-owned)
     useEffect(() => {
         if (!currentUser?.id || !dataLoaded) return;
         const timer = setTimeout(() => {
             saveBudgetExtras(currentUser.id, {
                 savingsGoals,
                 expenseSplits,
-                walletBalance,
                 categoryBudgets: budget?.categoryBudgets,
             }).catch(console.error);
         }, 1500);
         return () => clearTimeout(timer);
-    }, [currentUser?.id, dataLoaded, savingsGoals, expenseSplits, walletBalance, budget?.categoryBudgets]);
+    }, [currentUser?.id, dataLoaded, savingsGoals, expenseSplits, budget?.categoryBudgets]);
 
     // --- Real-time notifications subscription ---
     // Always on — duel/challenge alerts must work even in low-data mode.

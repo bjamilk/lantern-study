@@ -61,5 +61,13 @@ export const fetchStudyActivity = (days = ACTIVITY_DAYS) =>
   gamificationRequest<StudyActivityDay[]>(`/activity?days=${days}`);
 
 export function trackStudyActivity(type: ActivityType, amount = 1): void {
-  recordStudyActivity(type, amount).catch(() => {});
+  recordStudyActivity(type, amount)
+    .then((result) => {
+      if (result && typeof result.walletBalance === 'number') {
+        void import('../stores/budgetStore').then(({ useBudgetStore }) => {
+          useBudgetStore.setState({ walletBalance: result.walletBalance });
+        });
+      }
+    })
+    .catch(() => {});
 }

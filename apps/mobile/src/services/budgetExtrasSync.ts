@@ -1,6 +1,6 @@
 /**
- * Sync budget sub-features (savings goals, expense splits, wallet) via user preferences.
- * Matches web `services/budgetExtrasSync.ts` — stored in user_preferences.preferences.budgetExtras.
+ * Sync budget sub-features (savings goals, expense splits) via user preferences.
+ * Wallet balance is server-authoritative and is never overwritten by the client.
  */
 import { fetchUserPreferences } from './api';
 import { API_BASE_URL, getAuthHeaders } from './supabase';
@@ -9,7 +9,7 @@ import type { ExpenseSplit, SavingsGoal } from '../stores/budgetStore';
 export interface BudgetExtras {
   savingsGoals: SavingsGoal[];
   expenseSplits: ExpenseSplit[];
-  walletBalance: number;
+  walletBalance?: number;
   categoryBudgets?: Record<string, number>;
   walletAwards?: Record<string, number>;
 }
@@ -41,13 +41,6 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
 export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Promise<void> {
   const prefs = (await fetchUserPreferences(userId)) || { theme: 'light', lowDataMode: false };
   const existingExtras = (prefs.preferences?.budgetExtras || {}) as Record<string, unknown>;
-  const preservedAwards =
-    extras.walletAwards ||
-    (existingExtras.walletAwards && typeof existingExtras.walletAwards === 'object'
-      ? (existingExtras.walletAwards as Record<string, number>)
-      : {});
-  const serverBalance =
-    typeof existingExtras.walletBalance === 'number' ? existingExtras.walletBalance : null;
 
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/api/v1/preferences`, {
@@ -60,9 +53,15 @@ export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Pr
         ...(prefs.preferences || {}),
         ...(prefs.lowDataMode !== undefined ? { lowDataMode: prefs.lowDataMode } : {}),
         budgetExtras: {
-          ...extras,
-          walletBalance: serverBalance ?? extras.walletBalance,
-          walletAwards: preservedAwards,
+          savingsGoals: extras.savingsGoals,
+          expenseSplits: extras.expenseSplits,
+          categoryBudgets: extras.categoryBudgets,
+          walletBalance:
+            typeof existingExtras.walletBalance === 'number' ? existingExtras.walletBalance : 0,
+          walletAwards:
+            existingExtras.walletAwards && typeof existingExtras.walletAwards === 'object'
+              ? existingExtras.walletAwards
+              : {},
         },
       },
     }),

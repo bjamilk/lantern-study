@@ -4,7 +4,8 @@ import { fetchUserPreferences, saveUserPreferences } from './supabase';
 export interface BudgetExtras {
   savingsGoals: SavingsGoal[];
   expenseSplits: ExpenseSplit[];
-  walletBalance: number;
+  /** Display-only on client; server preferences POST preserves authoritative balance. */
+  walletBalance?: number;
   categoryBudgets?: Record<string, number>;
   walletAwards?: Record<string, number>;
 }
@@ -26,26 +27,29 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
   };
 }
 
+/**
+ * Persist goals / splits / category budgets only.
+ * Wallet balance and awards are never sent — the API preserves them server-side.
+ */
 export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Promise<void> {
   const prefs = (await fetchUserPreferences(userId)) || { theme: 'light' as const };
   const existingExtras = prefs.preferences?.budgetExtras;
-  const preservedAwards =
-    extras.walletAwards ||
-    (existingExtras?.walletAwards && typeof existingExtras.walletAwards === 'object'
-      ? existingExtras.walletAwards
-      : {});
-  // Prefer server wallet balance when present (authoritative awards/debits).
-  const serverBalance =
-    typeof existingExtras?.walletBalance === 'number' ? existingExtras.walletBalance : null;
   await saveUserPreferences(userId, {
     theme: prefs.theme,
     lowDataMode: prefs.lowDataMode,
     preferences: {
       ...(prefs.preferences || {}),
       budgetExtras: {
-        ...extras,
-        walletBalance: serverBalance ?? extras.walletBalance,
-        walletAwards: preservedAwards,
+        savingsGoals: extras.savingsGoals,
+        expenseSplits: extras.expenseSplits,
+        categoryBudgets: extras.categoryBudgets,
+        // Pass through existing server values so merge has a fallback if needed
+        walletBalance:
+          typeof existingExtras?.walletBalance === 'number' ? existingExtras.walletBalance : 0,
+        walletAwards:
+          existingExtras?.walletAwards && typeof existingExtras.walletAwards === 'object'
+            ? existingExtras.walletAwards
+            : {},
       },
     },
   });

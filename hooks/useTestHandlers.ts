@@ -6,6 +6,7 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { useTestStore } from '../stores/testStore';
+import { useBudgetStore } from '../stores/budgetStore';
 import { checkAndAwardBadges, isQuestionTestable, checkAnswerIsCorrect, createShuffledQuestionSet, shuffleArray } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
@@ -366,6 +367,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             const saved = await createTestResult(resultData);
             
             updateTestResults(prev => [result, ...prev]);
+
+            const walletBalance = (saved as { walletBalance?: number })?.walletBalance;
+            if (typeof walletBalance === 'number') {
+                useBudgetStore.getState().setWalletBalance(walletBalance);
+            }
 
             const gamification = (saved as { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } })?.gamification;
             if (gamification) {

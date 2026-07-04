@@ -2,6 +2,7 @@
  * Server-authoritative wallet balance stored in user_preferences.preferences.budgetExtras.
  */
 import { SupabaseService } from './supabase';
+import { CacheService } from './cache';
 import { logger } from '../utils/logger';
 
 export interface BudgetExtrasState {
@@ -26,12 +27,16 @@ export class WalletInsufficientError extends Error {
 }
 
 export class WalletService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    private cache?: CacheService
+  ) {}
 
   private async loadPrefsRow(userId: string): Promise<{
     theme: string;
     preferences: Record<string, any>;
   }> {
+    // Always read through to DB — never use preferences cache for wallet mutations.
     const row = await this.supabase.getUserPreferences(userId);
     return {
       theme: row?.theme || 'light',
@@ -40,6 +45,12 @@ export class WalletService {
         any
       >,
     };
+  }
+
+  private async invalidatePrefsCache(userId: string): Promise<void> {
+    if (this.cache) {
+      await this.cache.delete(`user:preferences:${userId}`);
+    }
   }
 
   getExtrasFromPreferences(preferences: Record<string, any>): BudgetExtrasState {
@@ -86,6 +97,7 @@ export class WalletService {
       theme,
       preferences: nextPrefs,
     });
+    await this.invalidatePrefsCache(userId);
     return extras;
   }
 
@@ -127,8 +139,11 @@ export class WalletService {
 
 let walletService: WalletService | null = null;
 
-export function initializeWalletService(supabase: SupabaseService): WalletService {
-  walletService = new WalletService(supabase);
+export function initializeWalletService(
+  supabase: SupabaseService,
+  cache?: CacheService
+): WalletService {
+  walletService = new WalletService(supabase, cache);
   return walletService;
 }
 

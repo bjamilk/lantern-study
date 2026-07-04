@@ -141,7 +141,7 @@ async function initializeServices() {
     initializeAuthRoutes(supabaseService, cacheService);
 
     const { initializeWalletService } = await import('./services/walletService');
-    initializeWalletService(supabaseService);
+    initializeWalletService(supabaseService, cacheService);
 
     const { initializeBudgetRoutes } = await import('./routes/budget');
     initializeBudgetRoutes(supabaseService, cacheService);

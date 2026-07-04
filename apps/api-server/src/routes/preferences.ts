@@ -73,9 +73,47 @@ router.post(
     logger.debug('Saving user preferences', { userId, theme, requestingUserId: req.user?.id });
 
     try {
+      // Merge with existing prefs. Wallet balance/awards are server-authoritative —
+      // clients must not overwrite them via preferences POST (race with awards).
+      const existing = await supabaseService.getUserPreferences(userId);
+      const existingPrefs =
+        existing?.preferences && typeof existing.preferences === 'object'
+          ? existing.preferences
+          : {};
+      const existingExtras =
+        existingPrefs.budgetExtras && typeof existingPrefs.budgetExtras === 'object'
+          ? existingPrefs.budgetExtras
+          : {};
+      const incomingPrefs = preferences && typeof preferences === 'object' ? preferences : {};
+      const incomingExtras =
+        incomingPrefs.budgetExtras && typeof incomingPrefs.budgetExtras === 'object'
+          ? incomingPrefs.budgetExtras
+          : {};
+
+      const mergedPreferences = {
+        ...existingPrefs,
+        ...incomingPrefs,
+        budgetExtras: {
+          ...existingExtras,
+          ...incomingExtras,
+          walletBalance:
+            typeof existingExtras.walletBalance === 'number'
+              ? existingExtras.walletBalance
+              : typeof incomingExtras.walletBalance === 'number'
+                ? incomingExtras.walletBalance
+                : 0,
+          walletAwards:
+            existingExtras.walletAwards && typeof existingExtras.walletAwards === 'object'
+              ? existingExtras.walletAwards
+              : incomingExtras.walletAwards && typeof incomingExtras.walletAwards === 'object'
+                ? incomingExtras.walletAwards
+                : {},
+        },
+      };
+
       const result = await supabaseService.upsertUserPreferences(userId, {
-        theme,
-        preferences,
+        theme: theme || existing?.theme || 'light',
+        preferences: mergedPreferences,
       });
 
       await cacheService.delete(`user:preferences:${userId}`);

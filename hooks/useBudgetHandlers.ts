@@ -65,7 +65,6 @@ export function useBudgetHandlers() {
         saveBudgetExtras(currentUser.id, {
             savingsGoals,
             expenseSplits,
-            walletBalance,
             categoryBudgets: newBudget.categoryBudgets,
         }).catch(error => {
             console.error('[Budget Sync] Failed to save category budgets:', error);
@@ -73,7 +72,7 @@ export function useBudgetHandlers() {
 
         closeModal('setBudget');
         closeModal('setMonthlyPlan');
-    }, [currentUser, budget?.categoryBudgets, setBudget, closeModal, savingsGoals, expenseSplits, walletBalance]);
+    }, [currentUser, budget?.categoryBudgets, setBudget, closeModal, savingsGoals, expenseSplits]);
 
     const handleAddTransaction = useCallback((transaction: Omit<Transaction, 'id' | 'userId'>) => {
         if (!currentUser) return;

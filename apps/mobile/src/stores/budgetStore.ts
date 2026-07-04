@@ -247,11 +247,10 @@ const scheduleBudgetExtrasSync = (userId: string, getState: () => BudgetState) =
   if (DEMO_MODE || !userId) return;
   if (budgetExtrasSyncTimer) clearTimeout(budgetExtrasSyncTimer);
   budgetExtrasSyncTimer = setTimeout(() => {
-    const { savingsGoals, expenseSplits, walletBalance, budget } = getState();
+    const { savingsGoals, expenseSplits, budget } = getState();
     saveBudgetExtras(userId, {
       savingsGoals,
       expenseSplits,
-      walletBalance,
       categoryBudgets: budget?.categoryBudgets,
     }).catch(err => {
       console.warn('Failed to sync budget extras:', err);
