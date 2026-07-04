@@ -774,8 +774,8 @@ export default function DashboardScreen({
         lowDataMode={lowDataMode}
       />
 
-      <div className="px-4 md:px-8 mt-4">
-        <div className="max-w-6xl mx-auto">
+      <div className="px-4 md:px-8 mt-4 w-full">
+        <div className="w-full">
           <GettingStartedChecklist
             hasDecks={deckCount > 0}
             hasTests={rawTestResults.length > 0}
@@ -796,8 +796,8 @@ export default function DashboardScreen({
       </div>
 
       {/* Secondary quick links */}
-      <div className="px-4 md:px-8 -mt-2">
-        <div className="max-w-6xl mx-auto">
+      <div className="px-4 md:px-8 -mt-2 w-full">
+        <div className="w-full">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {onNavigateToAITools && (
               <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToAITools}>
@@ -829,7 +829,7 @@ export default function DashboardScreen({
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-      <div className="flex-1 px-4 md:px-8 py-6 max-w-6xl mx-auto w-full space-y-6">
+      <div className="flex-1 px-4 md:px-8 py-6 w-full space-y-6">
 
         {!questsLoaded && dailyQuests.length === 0 && <SkeletonStatRow />}
 

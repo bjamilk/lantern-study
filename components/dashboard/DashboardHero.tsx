@@ -46,8 +46,8 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   })();
 
   return (
-    <div className="px-4 md:px-8 py-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="px-4 md:px-8 py-6 w-full">
+      <div className="w-full">
         <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5'}`} padding="lg">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -69,7 +69,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </div>
 
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
-            <Button size="lg" onClick={onPrimaryAction} className="sm:flex-1 max-w-md">
+            <Button size="lg" onClick={onPrimaryAction} className="sm:flex-1 sm:max-w-sm">
               <AcademicCapIcon className="w-5 h-5" />
               {primaryActionLabel}
             </Button>
