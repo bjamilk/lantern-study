@@ -695,9 +695,12 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                             if (typeof extras.walletBalance === 'number') setWalletBalance(extras.walletBalance);
                             if (extras.categoryBudgets && typeof extras.categoryBudgets === 'object') {
                                 const currentBudget = useBudgetStore.getState().budget;
-                                if (currentBudget) {
-                                    setBudget({ ...currentBudget, categoryBudgets: extras.categoryBudgets });
-                                }
+                                setBudget({
+                                    monthlyLimit: currentBudget?.monthlyLimit ?? 0,
+                                    monthYear: currentBudget?.monthYear ?? currentMonthYear,
+                                    userId,
+                                    categoryBudgets: extras.categoryBudgets,
+                                });
                             }
                         }
                     } else {
@@ -712,19 +715,24 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 // --- [11] User budget ---
                 if (results[11].status === 'fulfilled') {
                     const cloudBudget = results[11].value;
+                    const existing = useBudgetStore.getState().budget;
                     if (cloudBudget) {
-                        const updatedBudget = budget ? {
-                            ...budget,
-                            monthlyLimit: cloudBudget.monthlyLimit
-                        } : {
+                        setBudget({
                             monthlyLimit: cloudBudget.monthlyLimit,
-                            monthYear: currentMonthYear
-                        };
-                        setBudget(updatedBudget);
+                            monthYear: currentMonthYear,
+                            userId,
+                            categoryBudgets: existing?.categoryBudgets,
+                        });
                     } else {
                         const localBudgetStr = localStorage.getItem('monthlyBudget');
                         if (localBudgetStr) {
                             const localBudget = JSON.parse(localBudgetStr);
+                            setBudget({
+                                monthlyLimit: localBudget.monthlyLimit || 0,
+                                monthYear: currentMonthYear,
+                                userId,
+                                categoryBudgets: existing?.categoryBudgets ?? localBudget.categoryBudgets,
+                            });
                             saveUserBudget(userId, {
                                 monthlyLimit: localBudget.monthlyLimit || 0,
                                 monthYear: currentMonthYear

@@ -7,6 +7,14 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { canViewStudyActivity } from '@lantern/shared/settings';
+import {
+  WALLET_COINS,
+  studyAwardKey,
+  flashcardsAwardKey,
+  streak7AwardKey,
+  streakMilestoneFor,
+} from '@lantern/shared/utils/walletCoins';
+import { getWalletService, WalletInsufficientError } from '../services/walletService';
 
 const router = Router();
 
@@ -560,7 +568,22 @@ router.post(
         : undefined;
 
     const data = await supabaseService.recomputeUserStreak(userId, referenceDate);
-    res.json({ success: true, data });
+    let awarded = 0;
+    let walletBalance = await getWalletService().getWalletBalance(userId);
+    const milestone = streakMilestoneFor(data.current_streak);
+    if (milestone) {
+      const dateKey = data.last_login_date || referenceDate || new Date().toISOString().slice(0, 10);
+      const award = await getWalletService().awardWalletOnce(
+        userId,
+        streak7AwardKey(dateKey, milestone),
+        WALLET_COINS.STREAK_7,
+        'streak_milestone'
+      );
+      awarded = award.awarded;
+      walletBalance = award.walletBalance;
+      await cacheService.delete(`user:preferences:${userId}`);
+    }
+    res.json({ success: true, data: { ...data, walletBalance, awarded } });
   })
 );
 
@@ -605,10 +628,10 @@ router.post(
       return res.status(400).json({ success: false, error: 'Invalid activity amount' });
     }
 
-    const date =
+    const date: string =
       typeof activityDate === 'string' && ACTIVITY_DATE_RE.test(activityDate)
         ? activityDate
-        : undefined;
+        : new Date().toISOString().slice(0, 10);
 
     const data = await supabaseService.recordStudyActivity(
       userId,
@@ -616,8 +639,53 @@ router.post(
       Math.floor(parsedAmount),
       date
     );
-    await supabaseService.recomputeUserStreak(userId, date);
-    res.json({ success: true, data });
+    const streak = await supabaseService.recomputeUserStreak(userId, date);
+
+    let awarded = 0;
+    let walletBalance = 0;
+    const wallet = getWalletService();
+    if (Math.floor(parsedAmount) > 0) {
+      const studyAward = await wallet.awardWalletOnce(
+        userId,
+        studyAwardKey(date),
+        WALLET_COINS.STUDY_DAY,
+        'study_day'
+      );
+      awarded += studyAward.awarded;
+      walletBalance = studyAward.walletBalance;
+
+      const flashCount = Number(data?.flashcard_count ?? 0);
+      if (flashCount >= 20) {
+        const fcAward = await wallet.awardWalletOnce(
+          userId,
+          flashcardsAwardKey(date),
+          WALLET_COINS.FLASHCARDS_20,
+          'flashcards_20'
+        );
+        awarded += fcAward.awarded;
+        walletBalance = fcAward.walletBalance;
+      }
+    } else {
+      walletBalance = await wallet.getWalletBalance(userId);
+    }
+
+    const milestone = streakMilestoneFor(streak.current_streak);
+    if (milestone) {
+      const sAward = await wallet.awardWalletOnce(
+        userId,
+        streak7AwardKey(date, milestone),
+        WALLET_COINS.STREAK_7,
+        'streak_milestone'
+      );
+      awarded += sAward.awarded;
+      walletBalance = sAward.walletBalance;
+    }
+
+    if (awarded > 0) {
+      await cacheService.delete(`user:preferences:${userId}`);
+    }
+
+    res.json({ success: true, data: { ...data, walletBalance, awarded } });
   })
 );
 
@@ -715,14 +783,33 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const STREAK_FREEZE_COST = 50;
+    const STREAK_FREEZE_COST = WALLET_COINS.STREAK_FREEZE_COST;
+    const wallet = getWalletService();
+
+    let debitResult;
+    try {
+      debitResult = await wallet.adjustWallet(userId, -STREAK_FREEZE_COST, 'streak_freeze');
+    } catch (err) {
+      if (err instanceof WalletInsufficientError) {
+        return res.status(400).json({
+          success: false,
+          error: `You need ${STREAK_FREEZE_COST} wallet coins to buy a streak freeze.`,
+          walletBalance: err.balance,
+        });
+      }
+      throw err;
+    }
+
     const { data: streak, error: fetchErr } = await supabaseService.getClient()
       .from('user_streaks')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (fetchErr) throw fetchErr;
+    if (fetchErr) {
+      await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
+      throw fetchErr;
+    }
 
     const { data, error } = await supabaseService.getClient()
       .from('user_streaks')
@@ -737,8 +824,20 @@ router.post(
       .select()
       .single();
 
-    if (error) throw error;
-    res.json({ success: true, data, cost: STREAK_FREEZE_COST });
+    if (error) {
+      await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
+      throw error;
+    }
+
+    await cacheService.delete(`user:preferences:${userId}`);
+    res.json({
+      success: true,
+      data: {
+        ...data,
+        cost: STREAK_FREEZE_COST,
+        walletBalance: debitResult.walletBalance,
+      },
+    });
   })
 );
 

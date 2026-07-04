@@ -5,12 +5,27 @@ import { useBudgetStore } from '../stores/budgetStore';
 import { useUIStore } from '../stores/uiStore';
 import { saveUserBudget, saveBudgetTransaction, deleteBudgetTransaction, fetchBudgetTransactions } from '../services/supabase';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
+import {
+  fetchBudgetWalletData,
+  claimUnderBudgetAwardApi,
+} from '../services/budgetApi';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode } from '../types';
 
 export function useBudgetHandlers() {
     const { currentUser } = useAuthStore();
-    const { budget, setBudget, transactions, setTransactions, savingsGoals, expenseSplits, walletBalance } = useBudgetStore();
+    const {
+      budget,
+      setBudget,
+      transactions,
+      setTransactions,
+      savingsGoals,
+      expenseSplits,
+      walletBalance,
+      setWalletBalance,
+      setSavingsGoals,
+      setExpenseSplits,
+    } = useBudgetStore();
     const { setAppMode, setSidebarExpanded, closeModal } = useUIStore();
 
     const handleNavigateToBudgetTracker = useCallback(() => {
@@ -87,10 +102,40 @@ export function useBudgetHandlers() {
         }).catch(error => {
             console.error('[Transactions Sync] Failed to save transaction to cloud:', error);
         });
+
+        if (newTransaction.type === TransactionType.EXPENSE && budget?.categoryBudgets) {
+            const limit = budget.categoryBudgets[newTransaction.category];
+            if (limit && limit > 0) {
+                const month = newTransaction.date.slice(0, 7);
+                const spent = [...transactions, newTransaction]
+                    .filter(
+                        (t) =>
+                            t.type === TransactionType.EXPENSE &&
+                            t.category === newTransaction.category &&
+                            t.date.startsWith(month)
+                    )
+                    .reduce((sum, t) => sum + t.amount, 0);
+                if (spent > limit) {
+                    console.warn('[Budget] Category overspend', {
+                        category: newTransaction.category,
+                        spent,
+                        limit,
+                    });
+                    if (typeof window !== 'undefined') {
+                        window.setTimeout(() => {
+                            window.alert(
+                                `You have exceeded your budget for this category (spent ₦${spent.toLocaleString('en-NG')} of ₦${limit.toLocaleString('en-NG')}).`
+                            );
+                        }, 0);
+                    }
+                }
+            }
+        }
+
         closeModal('addExpense');
         closeModal('addIncome');
         closeModal('addInvestment');
-    }, [currentUser, transactions, setTransactions, closeModal]);
+    }, [currentUser, transactions, setTransactions, closeModal, budget?.categoryBudgets]);
 
     const handleDeleteTransaction = useCallback((transactionId: string) => {
         const updatedTransactions = transactions.filter(t => t.id !== transactionId);
@@ -123,11 +168,48 @@ export function useBudgetHandlers() {
         }
     }, [currentUser?.id, setTransactions]);
 
+    const refreshBudgetWallet = useCallback(async () => {
+        if (!currentUser?.id) return;
+        try {
+            const data = await fetchBudgetWalletData();
+            setWalletBalance(data.walletBalance);
+            if (Array.isArray(data.savingsGoals)) setSavingsGoals(data.savingsGoals);
+            if (Array.isArray(data.expenseSplits)) setExpenseSplits(data.expenseSplits);
+            if (data.categoryBudgets && typeof data.categoryBudgets === 'object') {
+                const current = useBudgetStore.getState().budget;
+                setBudget({
+                    monthlyLimit: current?.monthlyLimit ?? 0,
+                    monthYear: current?.monthYear ?? new Date().toISOString().slice(0, 7),
+                    userId: currentUser.id,
+                    categoryBudgets: data.categoryBudgets,
+                });
+            }
+        } catch (error) {
+            console.error('[Budget Sync] Failed to refresh wallet:', error);
+        }
+    }, [currentUser?.id, setWalletBalance, setSavingsGoals, setExpenseSplits, setBudget]);
+
+    const claimUnderBudgetAward = useCallback(async () => {
+        if (!currentUser?.id) return;
+        try {
+            const result = await claimUnderBudgetAwardApi();
+            if (typeof result.walletBalance === 'number') {
+                setWalletBalance(result.walletBalance);
+            }
+            return result;
+        } catch (error) {
+            console.error('[Budget Sync] Under-budget award failed:', error);
+            return null;
+        }
+    }, [currentUser?.id, setWalletBalance]);
+
     return {
         handleNavigateToBudgetTracker,
         handleSetBudget,
         handleAddTransaction,
         handleDeleteTransaction,
         refreshBudgetTransactions,
+        refreshBudgetWallet,
+        claimUnderBudgetAward,
     };
 }

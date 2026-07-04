@@ -1681,6 +1681,47 @@ export function createApiEndpoints(client: ApiClient) {
     deleteBudgetTransaction: (userId: string, transactionId: string) =>
       apiRequest<void>(`/users/${userId}/transactions/${transactionId}`, { method: 'DELETE' }),
 
+    fetchBudgetWallet: () =>
+      apiRequest<{
+        walletBalance: number;
+        savingsGoals: any[];
+        expenseSplits: any[];
+        categoryBudgets?: Record<string, number>;
+      }>('/budget/wallet'),
+
+    createSavingsGoal: (goal: {
+      name: string;
+      targetAmount: number;
+      icon?: string;
+      deadline?: string;
+    }) =>
+      apiRequest<{ goal: any; walletBalance: number }>('/budget/goals', {
+        method: 'POST',
+        body: JSON.stringify(goal),
+      }),
+
+    deleteSavingsGoal: (goalId: string) =>
+      apiRequest<{ walletBalance: number }>(`/budget/goals/${goalId}`, { method: 'DELETE' }),
+
+    contributeToSavingsGoal: (goalId: string, amount: number) =>
+      apiRequest<{
+        goal: any;
+        transaction: any;
+        walletBalance: number;
+        awarded: number;
+      }>(`/budget/goals/${goalId}/contribute`, {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
+      }),
+
+    claimUnderBudgetAward: () =>
+      apiRequest<{
+        awarded: number;
+        walletBalance: number;
+        alreadyAwarded?: boolean;
+        reason?: string;
+      }>('/budget/awards/under-budget', { method: 'POST', body: '{}' }),
+
     // ========== OFFLINE BUNDLES API ==========
 
     fetchOfflineBundles: (userId: string) =>

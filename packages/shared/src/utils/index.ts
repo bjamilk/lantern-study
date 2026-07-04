@@ -11,6 +11,7 @@ export * from './occlusionHelpers';
 export * from './activity';
 export * from './aiUsage';
 export * from './marketplaceBudget';
+export * from './walletCoins';
 export * from './marketplacePromo';
 export * from './storageUrl';
 export * from './sentryScrub';

@@ -53,6 +53,7 @@ import challengeRoutes, { initializeChallengeRoutes } from './routes/challenges'
 import apiKeysRoutes from './routes/apiKeys';
 import authRoutes, { initializeAuthRoutes } from './routes/auth';
 import jobsRoutes from './routes/jobs';
+import budgetRoutes from './routes/budget';
 import { isBullMqEnabled } from './queue/connection';
 
 // Import utilities
@@ -138,6 +139,12 @@ async function initializeServices() {
     initializeNotesRoutes(supabaseService, cacheService);
     initializeChallengeRoutes(supabaseService, cacheService);
     initializeAuthRoutes(supabaseService, cacheService);
+
+    const { initializeWalletService } = await import('./services/walletService');
+    initializeWalletService(supabaseService);
+
+    const { initializeBudgetRoutes } = await import('./routes/budget');
+    initializeBudgetRoutes(supabaseService, cacheService);
 
     const { startDataRetentionJobs } = await import('./services/dataRetention');
     if (!isBullMqEnabled()) {
@@ -272,6 +279,7 @@ async function startServer() {
     app.use('/api/v1/users', userRoutes);
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
+    app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/groups', optionalAuthMiddleware, applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);

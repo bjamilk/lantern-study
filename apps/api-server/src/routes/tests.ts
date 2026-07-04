@@ -8,6 +8,25 @@ import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { requireTestOwner } from '../middleware/authorizeResource';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
+import { getWalletService } from '../services/walletService';
+import { WALLET_COINS, WALLET_TEST_PASS_THRESHOLD, testAwardKey } from '@lantern/shared/utils/walletCoins';
+
+async function awardTestPassCoins(userId: string, testId: string, score: number) {
+  if (score < WALLET_TEST_PASS_THRESHOLD) {
+    const walletBalance = await getWalletService().getWalletBalance(userId);
+    return { walletBalance, awarded: 0 };
+  }
+  const award = await getWalletService().awardWalletOnce(
+    userId,
+    testAwardKey(testId),
+    WALLET_COINS.TEST_PASS,
+    'test_pass'
+  );
+  if (award.awarded > 0) {
+    await cacheService.delete(`user:preferences:${userId}`);
+  }
+  return { walletBalance: award.walletBalance, awarded: award.awarded };
+}
 
 console.log('Loading tests.ts');
 
@@ -292,9 +311,11 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       await cacheService.deletePattern(`tests:${userId}:*`);
       await cacheService.delete(`user:stats:${userId}`);
 
+      const wallet = await awardTestPassCoins(userId, testId, Number(result.score) || 0);
+
       res.json({
         success: true,
-        data: result,
+        data: { ...result, walletBalance: wallet.walletBalance, awarded: wallet.awarded },
       });
     })
   );
@@ -372,9 +393,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       await cacheService.delete(userScopedCacheKey('test:results', userId, testId));
       await cacheService.deletePattern(`tests:${userId}:*`);
 
+      const finalScore = Number(result?.score ?? score) || 0;
+      const wallet = await awardTestPassCoins(userId, testId, finalScore);
+
       res.status(201).json({
         success: true,
-        data: result,
+        data: { ...result, walletBalance: wallet.walletBalance, awarded: wallet.awarded },
       });
     })
   );

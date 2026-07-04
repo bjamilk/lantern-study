@@ -322,14 +322,16 @@ export const App: React.FC = () => {
     }, [currentUser?.id, appMode, refreshDashboardGamification]);
 
     const handlePurchaseStreakFreeze = React.useCallback(async () => {
-        const { walletBalance, addWalletCoins } = useBudgetStore.getState();
+        const { walletBalance, setWalletBalance } = useBudgetStore.getState();
         if (walletBalance < 50) {
             alert('You need 50 wallet coins to buy a streak freeze.');
             return;
         }
         try {
-            await purchaseStreakFreeze();
-            addWalletCoins(-50);
+            const result = await purchaseStreakFreeze();
+            if (typeof result?.walletBalance === 'number') {
+                setWalletBalance(result.walletBalance);
+            }
             void refreshDashboardGamification();
         } catch (e: any) {
             alert(e?.message || 'Could not purchase streak freeze');

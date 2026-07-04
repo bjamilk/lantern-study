@@ -11,6 +11,7 @@ export interface BudgetExtras {
   expenseSplits: ExpenseSplit[];
   walletBalance: number;
   categoryBudgets?: Record<string, number>;
+  walletAwards?: Record<string, number>;
 }
 
 export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | null> {
@@ -26,6 +27,10 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
         extras.categoryBudgets && typeof extras.categoryBudgets === 'object'
           ? (extras.categoryBudgets as Record<string, number>)
           : undefined,
+      walletAwards:
+        extras.walletAwards && typeof extras.walletAwards === 'object'
+          ? (extras.walletAwards as Record<string, number>)
+          : undefined,
     };
   } catch (error) {
     console.warn('[budgetExtrasSync] Failed to fetch budget extras:', error);
@@ -35,6 +40,15 @@ export async function fetchBudgetExtras(userId: string): Promise<BudgetExtras | 
 
 export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Promise<void> {
   const prefs = (await fetchUserPreferences(userId)) || { theme: 'light', lowDataMode: false };
+  const existingExtras = (prefs.preferences?.budgetExtras || {}) as Record<string, unknown>;
+  const preservedAwards =
+    extras.walletAwards ||
+    (existingExtras.walletAwards && typeof existingExtras.walletAwards === 'object'
+      ? (existingExtras.walletAwards as Record<string, number>)
+      : {});
+  const serverBalance =
+    typeof existingExtras.walletBalance === 'number' ? existingExtras.walletBalance : null;
+
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/api/v1/preferences`, {
     method: 'POST',
@@ -45,7 +59,11 @@ export async function saveBudgetExtras(userId: string, extras: BudgetExtras): Pr
       preferences: {
         ...(prefs.preferences || {}),
         ...(prefs.lowDataMode !== undefined ? { lowDataMode: prefs.lowDataMode } : {}),
-        budgetExtras: extras,
+        budgetExtras: {
+          ...extras,
+          walletBalance: serverBalance ?? extras.walletBalance,
+          walletAwards: preservedAwards,
+        },
       },
     }),
   });

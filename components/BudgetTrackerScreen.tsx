@@ -56,13 +56,32 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<ChartType | null>(null);
   const { savingsGoals, walletBalance, expenseSplits } = useBudgetStore();
-  const { refreshBudgetTransactions } = useBudgetHandlers();
+  const { refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward } = useBudgetHandlers();
+  const [budgetBanner, setBudgetBanner] = useState<string | null>(null);
+  const [awardToast, setAwardToast] = useState<string | null>(null);
 
   useEffect(() => {
-    if (currentUser?.id) {
+    if (!currentUser?.id) return;
+    const refresh = () => {
       void refreshBudgetTransactions(currentUser.id);
-    }
-  }, [currentUser?.id, refreshBudgetTransactions]);
+      void refreshBudgetWallet();
+    };
+    refresh();
+    void claimUnderBudgetAward().then((result) => {
+      if (result && result.awarded > 0) {
+        setAwardToast(`+${result.awarded} coins for staying under last month's budget!`);
+      }
+    });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [currentUser?.id, refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward]);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
   const monthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -76,6 +95,20 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
   const budgetLimit = budget?.monthlyLimit || 0;
   const budgetProgress = budgetLimit > 0 ? (monthlyExpenses / budgetLimit) * 100 : 0;
+
+  useEffect(() => {
+    if (budgetLimit <= 0) {
+      setBudgetBanner(null);
+      return;
+    }
+    if (budgetProgress >= 100) {
+      setBudgetBanner('You have exceeded your monthly budget limit.');
+    } else if (budgetProgress >= 80) {
+      setBudgetBanner('You have used 80% or more of your monthly budget.');
+    } else {
+      setBudgetBanner(null);
+    }
+  }, [budgetProgress, budgetLimit]);
 
   const getProgressColor = () => {
     if (budgetProgress > 100) return 'from-red-500 to-red-600';
@@ -160,6 +193,18 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+      {awardToast && (
+        <div className="shrink-0 bg-emerald-600 text-white text-sm px-4 py-2 flex justify-between items-center">
+          <span>{awardToast}</span>
+          <button type="button" onClick={() => setAwardToast(null)} className="text-white/80 hover:text-white text-xs">Dismiss</button>
+        </div>
+      )}
+      {budgetBanner && (
+        <div className={`shrink-0 text-sm px-4 py-2 flex justify-between items-center ${budgetProgress >= 100 ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+          <span>{budgetBanner}</span>
+          <button type="button" onClick={() => setBudgetBanner(null)} className="text-white/80 hover:text-white text-xs">Dismiss</button>
+        </div>
+      )}
       {/* ─── HEADER ─── */}
       <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 px-5 py-5 md:px-8 shrink-0">
         <div className="flex justify-between items-start">

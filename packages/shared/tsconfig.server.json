@@ -15,6 +15,7 @@
   "include": [
     "src/types/**/*.ts",
     "src/utils/marketplaceBudget.ts",
+    "src/utils/walletCoins.ts",
     "src/utils/marketplacePromo.ts",
     "src/utils/gamification.ts",
     "src/utils/testHelpers.ts",

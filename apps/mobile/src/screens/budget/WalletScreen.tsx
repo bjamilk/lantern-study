@@ -1,30 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
-import { useBudgetStore, formatCurrency } from '../../stores/budgetStore';
-import { ScreenHeader, Button, Card } from '../../components/ui';
+import { useBudgetStore } from '../../stores/budgetStore';
+import { ScreenHeader, Card } from '../../components/ui';
+
+const EARN_WAYS = [
+  { icon: '📝', action: 'Complete a study session', coins: '+5' },
+  { icon: '✅', action: 'Pass a test (80%+)', coins: '+15' },
+  { icon: '🃏', action: 'Review 20 flashcards', coins: '+10' },
+  { icon: '🔥', action: 'Maintain a 7-day streak', coins: '+50' },
+  { icon: '💰', action: 'Stay under budget (monthly)', coins: '+100' },
+  { icon: '🎯', action: 'Complete a savings goal', coins: '+75' },
+];
 
 export default function WalletScreen() {
   const navigation = useNavigation<any>();
   const userId = useAuthStore(s => s.user?.id) || '';
-  const { walletBalance, loadWalletBalance, adjustWalletBalance } = useBudgetStore();
-  const [amount, setAmount] = useState('');
+  const { walletBalance, loadWalletBalance } = useBudgetStore();
 
   useEffect(() => {
-    if (userId) void loadWalletBalance(userId);
+    if (!userId) return;
+    void loadWalletBalance(userId);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void loadWalletBalance(userId);
+    });
+    return () => sub.remove();
   }, [userId, loadWalletBalance]);
-
-  const adjust = async (sign: 1 | -1) => {
-    const n = parseFloat(amount);
-    if (!n || n <= 0) {
-      Alert.alert('Enter a valid amount');
-      return;
-    }
-    await adjustWalletBalance(sign * n, userId);
-    setAmount('');
-  };
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
@@ -33,18 +36,21 @@ export default function WalletScreen() {
         <Card className="p-6 items-center mb-4">
           <Text className="text-sm text-slate-500">Lantern coins</Text>
           <Text className="text-4xl font-bold text-indigo-600 mt-1">{walletBalance}</Text>
-          <Text className="text-xs text-slate-400 mt-2">Use coins for streak freezes and rewards</Text>
+          <Text className="text-xs text-slate-400 mt-2 text-center">
+            Earn coins by studying and saving smart. Spend 50 coins on a streak freeze.
+          </Text>
         </Card>
-        <Card className="p-4 gap-3">
-          <TextInput value={amount} onChangeText={setAmount} placeholder="Amount" keyboardType="number-pad" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
-          <View className="flex-row gap-2">
-            <Button className="flex-1" variant="secondary" onPress={() => void adjust(-1)}>Spend</Button>
-            <Button className="flex-1" onPress={() => void adjust(1)}>Add coins</Button>
-          </View>
+
+        <Text className="text-xs font-semibold uppercase text-slate-400 mb-2 px-1">How to earn</Text>
+        <Card className="p-4 mb-4">
+          {EARN_WAYS.map((row) => (
+            <View key={row.action} className="flex-row items-center py-2 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
+              <Text className="text-lg mr-3">{row.icon}</Text>
+              <Text className="flex-1 text-sm text-slate-700 dark:text-slate-200">{row.action}</Text>
+              <Text className="text-xs font-bold text-emerald-600">{row.coins}</Text>
+            </View>
+          ))}
         </Card>
-        <Text className="text-xs text-slate-500 mt-4 text-center">
-          Balance: {formatCurrency(walletBalance * 0)} (display only — coins are whole numbers)
-        </Text>
       </ScrollView>
     </SafeAreaView>
   );

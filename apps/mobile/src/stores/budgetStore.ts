@@ -395,10 +395,12 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       try {
         const apiBudget = await api.fetchUserBudget(userId);
         if (apiBudget) {
+          const existing = get().budget;
           const budget: Budget = {
             userId: userId,
-            month: apiBudget.month_year,
-            targetAmount: apiBudget.monthly_limit,
+            month: (apiBudget as any).month_year || (apiBudget as any).monthYear || existing?.month || new Date().toISOString().slice(0, 7),
+            targetAmount: Number((apiBudget as any).monthly_limit ?? (apiBudget as any).monthlyLimit ?? 0),
+            categoryBudgets: existing?.categoryBudgets,
           };
           await AsyncStorage.setItem('monthlyBudget', JSON.stringify(budget));
           set({ budget, isLoading: false });
@@ -647,6 +649,26 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
 
   addSavingsGoal: async (goal) => {
     try {
+      if (!DEMO_MODE) {
+        const result = await api.createSavingsGoal({
+          name: goal.name,
+          targetAmount: goal.targetAmount,
+          icon: goal.icon,
+          deadline: goal.deadline,
+        });
+        const newGoal: SavingsGoal = {
+          ...result.goal,
+          userId: goal.userId,
+        };
+        const updated = [...get().savingsGoals, newGoal];
+        set({ savingsGoals: updated, walletBalance: result.walletBalance });
+        await cacheBudgetExtrasLocally(goal.userId, {
+          savingsGoals: updated,
+          expenseSplits: get().expenseSplits,
+          walletBalance: result.walletBalance,
+        });
+        return;
+      }
       const newGoal: SavingsGoal = {
         ...goal,
         id: `goal-${Date.now()}`,
@@ -655,7 +677,6 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       const updated = [...get().savingsGoals, newGoal];
       set({ savingsGoals: updated });
       await AsyncStorage.setItem(`savingsGoals_${goal.userId}`, JSON.stringify(updated));
-      scheduleBudgetExtrasSync(goal.userId, get);
     } catch (e: any) {
       set({ error: e.message });
       throw e;
@@ -664,6 +685,40 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
 
   contributeToGoal: async (goalId: string, amount: number) => {
     try {
+      if (!DEMO_MODE) {
+        const result = await api.contributeToSavingsGoal(goalId, amount);
+        const updated = get().savingsGoals.map(g =>
+          g.id === goalId
+            ? {
+                ...g,
+                currentAmount: result.goal.currentAmount,
+                completedAt: result.goal.completedAt,
+              }
+            : g
+        );
+        set({ savingsGoals: updated, walletBalance: result.walletBalance });
+        const goal = updated.find(g => g.id === goalId);
+        if (goal) {
+          await cacheBudgetExtrasLocally(goal.userId, {
+            savingsGoals: updated,
+            expenseSplits: get().expenseSplits,
+            walletBalance: result.walletBalance,
+          });
+        }
+        if (result.transaction) {
+          const tx: Transaction = {
+            id: result.transaction.id,
+            userId: goal?.userId || '',
+            type: 'INVESTMENT',
+            amount: result.transaction.amount,
+            category: result.transaction.category || 'savings',
+            description: result.transaction.description || '',
+            date: result.transaction.date,
+          };
+          set({ transactions: [tx, ...get().transactions] });
+        }
+        return;
+      }
       const updated = get().savingsGoals.map(g =>
         g.id === goalId
           ? { ...g, currentAmount: Math.min(g.currentAmount + amount, g.targetAmount) }
@@ -673,7 +728,6 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
       const goal = updated.find(g => g.id === goalId);
       if (goal) {
         await AsyncStorage.setItem(`savingsGoals_${goal.userId}`, JSON.stringify(updated));
-        scheduleBudgetExtrasSync(goal.userId, get);
       }
     } catch (e: any) {
       set({ error: e.message });
@@ -684,11 +738,23 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   removeSavingsGoal: async (goalId: string) => {
     try {
       const goal = get().savingsGoals.find(g => g.id === goalId);
+      if (!DEMO_MODE) {
+        const result = await api.deleteSavingsGoal(goalId);
+        const updated = get().savingsGoals.filter(g => g.id !== goalId);
+        set({ savingsGoals: updated, walletBalance: result.walletBalance });
+        if (goal) {
+          await cacheBudgetExtrasLocally(goal.userId, {
+            savingsGoals: updated,
+            expenseSplits: get().expenseSplits,
+            walletBalance: result.walletBalance,
+          });
+        }
+        return;
+      }
       const updated = get().savingsGoals.filter(g => g.id !== goalId);
       set({ savingsGoals: updated });
       if (goal) {
         await AsyncStorage.setItem(`savingsGoals_${goal.userId}`, JSON.stringify(updated));
-        scheduleBudgetExtrasSync(goal.userId, get);
       }
     } catch (e: any) {
       set({ error: e.message });
@@ -781,32 +847,47 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
   // ─── Wallet ─────────────────────────────────────────────────────────────────
   loadWalletBalance: async (userId: string) => {
     try {
+      if (!DEMO_MODE) {
+        const data = await api.fetchBudgetWallet();
+        set({
+          walletBalance: data.walletBalance,
+          savingsGoals: Array.isArray(data.savingsGoals) ? data.savingsGoals : get().savingsGoals,
+          expenseSplits: Array.isArray(data.expenseSplits) ? data.expenseSplits : get().expenseSplits,
+        });
+        if (data.categoryBudgets && get().budget) {
+          set({ budget: { ...get().budget!, categoryBudgets: data.categoryBudgets } });
+        }
+        await cacheBudgetExtrasLocally(userId, {
+          savingsGoals: get().savingsGoals,
+          expenseSplits: get().expenseSplits,
+          walletBalance: data.walletBalance,
+        });
+        try {
+          const award = await api.claimUnderBudgetAward();
+          if (typeof award.walletBalance === 'number') {
+            set({ walletBalance: award.walletBalance });
+          }
+        } catch {
+          // non-critical
+        }
+        return;
+      }
       const stored = await AsyncStorage.getItem(`walletBalance_${userId}`);
       set({ walletBalance: stored ? parseFloat(stored) : 0 });
     } catch (e) {
       console.warn('Failed to load wallet balance:', e);
+      try {
+        const stored = await AsyncStorage.getItem(`walletBalance_${userId}`);
+        set({ walletBalance: stored ? parseFloat(stored) : 0 });
+      } catch {
+        // ignore
+      }
     }
   },
 
-  adjustWalletBalance: async (amount: number, userId?: string) => {
-    try {
-      const newBalance = Math.max(0, get().walletBalance + amount);
-      set({ walletBalance: newBalance });
-      const effectiveUserId =
-        userId ||
-        get().budget?.userId ||
-        get().savingsGoals[0]?.userId ||
-        get().expenseSplits[0]?.userId;
-      if (effectiveUserId) {
-        await AsyncStorage.setItem(`walletBalance_${effectiveUserId}`, newBalance.toString());
-        scheduleBudgetExtrasSync(effectiveUserId, get);
-      } else {
-        await AsyncStorage.setItem('walletBalance', newBalance.toString());
-      }
-    } catch (e: any) {
-      set({ error: e.message });
-      throw e;
-    }
+  adjustWalletBalance: async (_amount: number, _userId?: string) => {
+    // Wallet balance is server-authoritative; clients must not mint coins locally.
+    throw new Error('Wallet balance can only be changed by study rewards or streak freeze purchases');
   },
 }));
 
