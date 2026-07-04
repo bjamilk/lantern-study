@@ -255,8 +255,21 @@ export const validateFlashcardCreate = [
 export const validateAIMessage = [
   body('message').optional().trim().isLength({ max: 20000 }),
   body('context').optional().isObject(),
-  body('notes').optional().isArray({ max: 50 }),
-  body('notes.*').optional().isString().isLength({ max: 50000 }),
+  body('notes').optional().custom((value) => {
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'string') {
+      if (value.length > 50000) throw new Error('notes must be at most 50000 characters');
+      return true;
+    }
+    if (Array.isArray(value)) {
+      if (value.length > 50) throw new Error('notes array must have at most 50 items');
+      if (value.some((entry) => typeof entry !== 'string' || entry.length > 50000)) {
+        throw new Error('each notes entry must be a string of at most 50000 characters');
+      }
+      return true;
+    }
+    throw new Error('notes must be a string or array of strings');
+  }),
 ];
 
 export const validateAICompanionMessage = [

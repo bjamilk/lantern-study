@@ -3633,7 +3633,7 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    // Log the points transaction
+    // Optional audit log — table may not exist on older deployments
     const { error: logError } = await this.supabase
       .from('points_transactions')
       .insert({
@@ -3643,7 +3643,9 @@ export class SupabaseService {
         source: source || 'manual',
       });
 
-    if (logError) throw logError;
+    if (logError) {
+      logger.warn('points_transactions insert skipped', { userId, code: logError.code, message: logError.message });
+    }
 
     // Invalidate caches
     await cacheService.deletePattern(`gamification:leaderboard:*`);

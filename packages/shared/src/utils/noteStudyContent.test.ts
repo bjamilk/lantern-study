@@ -87,6 +87,9 @@ describe('getNoteStudyContent', () => {
     expect(
       isPlaceholderExtractedText('[Presentation uploaded: deck.pptx. Text extraction unavailable.]')
     ).toBe(true);
+    expect(
+      isPlaceholderExtractedText('[PDF uploaded: chapter1.pdf. Text extraction unavailable.]')
+    ).toBe(true);
     expect(isPlaceholderExtractedText('real slide bullets')).toBe(false);
   });
 

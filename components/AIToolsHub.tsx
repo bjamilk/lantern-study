@@ -7,7 +7,7 @@ import {
   RectangleStackIcon,
   AcademicCapIcon,
 } from '@heroicons/react/24/outline';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { ScreenHeader, Button, Card } from './ui';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
@@ -48,18 +48,12 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
 
   const runStudyGenerators = useCallback(
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
-      const studyText = getNoteStudyContent({
-        sourceType: note.sourceType,
-        body: note.body,
-        summary: note.summary,
-        attachments: note.attachments,
-      });
-
       let flashcardCount = 0;
       let quizQuestionCount = 0;
 
-      if (generateCards && studyText.length >= 50) {
+      if (generateCards && hasEnoughNoteStudyContent(note)) {
         try {
+          const studyText = getNoteStudyContent(note);
           const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
           });
@@ -69,8 +63,9 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
         }
       }
 
-      if (generateQuiz && studyText.length >= 50) {
+      if (generateQuiz && hasEnoughNoteStudyContent(note)) {
         try {
+          const studyText = getNoteStudyContent(note);
           const { questions } = await notesApi.generateDailyQuizFromContent(
             studyText.slice(0, 8000),
             'retention',

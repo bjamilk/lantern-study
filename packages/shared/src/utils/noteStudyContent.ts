@@ -15,6 +15,7 @@ export function isPlaceholderExtractedText(text: string | null | undefined): boo
   const trimmed = text.trim();
   if (trimmed === EXTRACTING_SLIDES_PLACEHOLDER) return true;
   if (trimmed === EXTRACTING_SLIDES_PLACEHOLDER_ASCII) return true;
+  if (/^\[PDF uploaded: .+\. Text extraction unavailable\.\]$/.test(trimmed)) return true;
   return /^(\[Presentation uploaded: .+\. Text extraction unavailable\.\])$/.test(trimmed);
 }
 
