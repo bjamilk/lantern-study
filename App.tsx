@@ -7,7 +7,7 @@ import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { setSessionExpiredHandler } from './services/sessionHandler';
-import { supabase as supabaseClient } from './services/supabase';
+import { supabase as supabaseClient, apiLogoutSession } from './services/supabase';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -126,7 +126,7 @@ export const App: React.FC = () => {
     useEffect(() => {
         setSessionExpiredHandler(async (message) => {
             showToast(message || 'Your session has expired. Please sign in again.', 'error');
-            await supabaseClient.auth.signOut();
+            await apiLogoutSession();
             setCurrentUser(null);
             setAuthLoading(false);
         });

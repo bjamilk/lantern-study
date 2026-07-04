@@ -141,7 +141,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
   }
 
   if (!deps) {
-    return <div className={className}>{safeContent}</div>;
+    return (
+      <pre className={className} style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+        {safeContent}
+      </pre>
+    );
   }
 
   const { ReactMarkdown, remarkMath, remarkGfm, rehypeKatex, rehypeSanitize } = deps;

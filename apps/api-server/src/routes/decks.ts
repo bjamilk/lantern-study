@@ -231,7 +231,7 @@ router.post(
       res.json({ success: true, data: result });
     } catch (error: any) {
       if (error.message === 'Deck not found or access denied') {
-        return res.status(404).json({ success: false, error: error.message });
+        return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
       }
       throw error;
     }

@@ -309,6 +309,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   
   signOut: async () => {
     set({ isLoading: true, error: null });
+    const userId = get().user?.id;
 
     try {
       const { useMarketplaceStore, LEGACY_MARKETPLACE_STORAGE_KEYS } = await import('./marketplaceStore');
@@ -327,15 +328,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await supabaseSignOut();
       }
 
-      await AsyncStorage.multiRemove([
+      const keysToRemove = [
         '@lantern_offline_data',
         '@lantern_pending_results',
         'lantern_groups',
+        'lantern_messages',
+        'lantern_sync_queue',
         'lantern_decks',
         'lantern_flashcards',
         'lantern_stats',
+        'lantern_tests',
+        'lantern_test_attempts',
+        'lantern_test_questions',
+        'budgetTransactions',
+        'monthlyBudget',
         ...LEGACY_MARKETPLACE_STORAGE_KEYS,
-      ]).catch(() => {});
+      ];
+
+      if (userId) {
+        keysToRemove.push(
+          `walletBalance_${userId}`,
+          `savingsGoals_${userId}`,
+          `expenseSplits_${userId}`,
+        );
+      }
+
+      await AsyncStorage.multiRemove([...new Set(keysToRemove)]).catch(() => {});
     } catch (error: any) {
       const sessionAlreadyGone =
         error?.name === 'AuthSessionMissingError' ||

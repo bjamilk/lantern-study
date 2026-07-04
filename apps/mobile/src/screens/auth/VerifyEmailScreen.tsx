@@ -14,6 +14,7 @@ import { isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
 import { ResendEmailButton } from '../../components/auth/ResendEmailButton';
+import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
 import {
   establishSessionFromAuthUrl,
   getMobileAuthRedirectUri,
@@ -43,7 +44,7 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const tryMagicLink = async (url: string | null) => {
-      if (!url) return;
+      if (!url || !isAllowedMobileAuthUrl(url)) return;
       try {
         const session = await establishSessionFromAuthUrl(url);
         if (session) {

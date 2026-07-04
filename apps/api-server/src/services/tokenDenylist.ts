@@ -8,6 +8,10 @@ import { getRedisClient, redisKey } from './redisStore';
 const DENY_PREFIX = 'token_denylist:';
 const memoryDenylist = new Map<string, number>();
 
+function isProductionRedisRequired(): boolean {
+  return process.env.NODE_ENV === 'production' && process.env.REDIS_ENABLED === 'true';
+}
+
 export function hashAccessToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -38,6 +42,9 @@ export async function denylistAccessToken(token: string): Promise<void> {
     await client.setEx(denylistKey(hash), ttl, '1');
     return;
   }
+  if (isProductionRedisRequired()) {
+    throw new Error('Redis is required for token denylist in production');
+  }
   memoryDenylist.set(hash, Date.now() + ttl * 1000);
 }
 
@@ -47,6 +54,10 @@ export async function isAccessTokenDenied(token: string): Promise<boolean> {
   if (client) {
     const val = await client.get(denylistKey(hash));
     return val === '1';
+  }
+  if (isProductionRedisRequired()) {
+    // Fail closed: cannot verify revocation without Redis in production.
+    return true;
   }
   const expiresAt = memoryDenylist.get(hash);
   if (!expiresAt) return false;

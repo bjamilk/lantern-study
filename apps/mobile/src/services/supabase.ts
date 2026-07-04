@@ -8,7 +8,7 @@
  * return localhost URLs which are unreachable from a physical device.
  */
 import { createClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ExpoSecureStoreAdapter } from './secureStorage';
 import 'react-native-url-polyfill/auto';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -86,10 +86,10 @@ if (!isDevRuntime && (!supabaseUrl || !supabaseAnonKey || !API_BASE_URL)) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, or EXPO_PUBLIC_API_URL');
 }
 
-// Create Supabase client with React Native AsyncStorage
+// Create Supabase client with SecureStore-backed session persistence
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false, // Not needed in React Native

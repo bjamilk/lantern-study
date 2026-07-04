@@ -173,7 +173,34 @@ try {
   Write-Host "group member delete blocked (non-admin): $memberBlocked (expect True) status=$($memberDeleteAttempt.status)"
   Write-Host "group admin delete allowed: $adminAllowed (expect True) status=$($adminDelete.status)"
 
-  $passed = $escalationBlocked -and $auditBlocked -and $platformBlocked -and $milestoneBlocked -and $memberBlocked -and $adminAllowed
+  # 6) Wallet balance cannot be self-minted via user_preferences
+  $walletPatch = Invoke-Supabase -Method PATCH -Path "/rest/v1/user_preferences?user_id=eq.$($userA.id)" -Headers $headersA `
+    -Body @{ preferences = @{ budgetExtras = @{ walletBalance = 999999; savingsGoals = @() } } }
+  $walletRead = Invoke-RestMethod -Method GET -Uri "$SupabaseUrl/rest/v1/user_preferences?user_id=eq.$($userA.id)&select=preferences" -Headers $script:AdminHeaders
+  $walletBalance = $walletRead[0].preferences.budgetExtras.walletBalance
+  $walletBlocked = ($walletPatch.status -in 200, 204) -and ($walletBalance -ne 999999)
+  Write-Host "wallet balance escalation blocked: $walletBlocked (expect True) balance=$walletBalance"
+
+  # 7) Gamification points cannot be self-awarded
+  $pointsPatch = Invoke-Supabase -Method PATCH -Path "/rest/v1/profiles?id=eq.$($userA.id)" -Headers $headersA `
+    -Body @{ points = 999999 }
+  $pointsRead = Invoke-RestMethod -Method GET -Uri "$SupabaseUrl/rest/v1/profiles?id=eq.$($userA.id)&select=points" -Headers $script:AdminHeaders
+  $pointsBlocked = ($pointsPatch.status -in 200, 204) -and ($pointsRead[0].points -ne 999999)
+  Write-Host "profiles points escalation blocked: $pointsBlocked (expect True) points=$($pointsRead[0].points)"
+
+  # 8) Non-pending group self-join blocked
+  $selfJoin = Invoke-Supabase -Method POST -Path '/rest/v1/group_members' -Headers $headersA `
+    -Body @{ group_id = $groupId; user_id = $userA.id; pending = $false }
+  $selfJoinBlocked = $selfJoin.status -in 401, 403, 409
+  Write-Host "group self-join without pending blocked: $selfJoinBlocked (expect True) status=$($selfJoin.status)"
+
+  # 9) study_activity direct insert blocked
+  $activityInsert = Invoke-Supabase -Method POST -Path '/rest/v1/study_activity' -Headers $headersA `
+    -Body @{ user_id = $userA.id; activity_date = (Get-Date).ToString('yyyy-MM-dd'); count = 999 }
+  $activityBlocked = $activityInsert.status -in 401, 403
+  Write-Host "study_activity direct write blocked: $activityBlocked (expect True) status=$($activityInsert.status)"
+
+  $passed = $escalationBlocked -and $auditBlocked -and $platformBlocked -and $milestoneBlocked -and $memberBlocked -and $adminAllowed -and $walletBlocked -and $pointsBlocked -and $selfJoinBlocked -and $activityBlocked
   $result = [ordered]@{
     profiles_escalation_blocked = $escalationBlocked
     admin_audit_log_blocked = $auditBlocked
@@ -181,6 +208,10 @@ try {
     favorite_milestones_blocked = $milestoneBlocked
     group_member_delete_blocked = $memberBlocked
     group_admin_delete_allowed = $adminAllowed
+    wallet_balance_escalation_blocked = $walletBlocked
+    profiles_points_escalation_blocked = $pointsBlocked
+    group_self_join_blocked = $selfJoinBlocked
+    study_activity_write_blocked = $activityBlocked
     all_passed = $passed
   }
   $result | ConvertTo-Json

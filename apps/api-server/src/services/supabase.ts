@@ -1907,11 +1907,21 @@ export class SupabaseService {
     return data;
   }
 
-  async uploadFlashcardImage(params: { fileName: string; base64Data: string; contentType?: string; folder?: string }): Promise<{ url: string; path: string }> {
+  async uploadFlashcardImage(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+    folder?: string;
+  }): Promise<{ url: string; path: string }> {
     const bucket = 'flashcard-images';
     const timestamp = Date.now();
     const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const filePath = `${params.folder ? `${params.folder}/` : ''}${timestamp}-${safeName}`;
+    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
+    const folderSegment = params.folder
+      ? `${params.folder.replace(/\.\./g, '').replace(/^\/+|\/+$/g, '')}/`
+      : '';
+    const filePath = `${ownerPrefix}${folderSegment}${timestamp}-${safeName}`;
 
     const buffer = Buffer.from(params.base64Data, 'base64');
 
@@ -4705,9 +4715,40 @@ export class SupabaseService {
   }
 
   async updateMarketplaceListing(listingId: string, updates: any): Promise<any | null> {
+    const dbUpdates: Record<string, unknown> = {};
+    const assign = (key: string, ...sources: string[]) => {
+      for (const source of sources) {
+        if (updates?.[source] !== undefined) {
+          dbUpdates[key] = updates[source];
+          return;
+        }
+      }
+    };
+
+    assign('category', 'category');
+    assign('title', 'title');
+    assign('description', 'description');
+    assign('price', 'price');
+    assign('sale_price', 'sale_price', 'salePrice');
+    assign('sale_ends_at', 'sale_ends_at', 'saleEndsAt');
+    assign('promo_label', 'promo_label', 'promoLabel');
+    assign('location', 'location');
+    if (updates?.images !== undefined) dbUpdates.images = updates.images;
+    assign('category_specific_fields', 'categorySpecificFields', 'category_specific_fields');
+    assign('listing_kind', 'listing_kind', 'listingKind');
+    if (updates?.bundle_items !== undefined || updates?.bundleItems !== undefined) {
+      dbUpdates.bundle_items = updates.bundle_items ?? updates.bundleItems;
+    }
+    if (updates?.quantity !== undefined) dbUpdates.quantity = updates.quantity;
+    assign('status', 'status');
+
+    if (Object.keys(dbUpdates).length === 0) {
+      return this.getMarketplaceListingById(listingId);
+    }
+
     const { data, error } = await this.supabase
       .from('marketplace_listings')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', listingId)
       .select()
       .single();

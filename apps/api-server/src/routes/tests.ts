@@ -149,7 +149,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         if (error?.message?.includes('in-progress')) {
           return res.status(400).json({
             success: false,
-            error: error.message,
+            error: 'Cannot delete an in-progress test session',
           });
         }
         throw error;

@@ -14,6 +14,7 @@ import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
+import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
 import { establishSessionFromAuthUrl, updateAuthPassword } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -33,7 +34,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
   useEffect(() => {
     let active = true;
     const establish = async (url: string | null) => {
-      if (!url) return;
+      if (!url || !isAllowedMobileAuthUrl(url)) return;
       try {
         await establishSessionFromAuthUrl(url);
         if (active) {

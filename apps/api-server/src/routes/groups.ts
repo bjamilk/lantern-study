@@ -116,7 +116,6 @@ router.get(
       res.status(500).json({
         success: false,
         error: 'Failed to get unread counts',
-        message: (error as Error).message,
       });
     }
   })
@@ -655,7 +654,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: 'Failed to mark group as read',
-        message: (error as Error).message,
       });
     }
   })

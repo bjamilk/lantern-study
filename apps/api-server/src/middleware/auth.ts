@@ -289,6 +289,11 @@ export const optionalAuthMiddleware = async (
       return;
     }
 
+    if (await isAccessTokenDenied(credential)) {
+      next();
+      return;
+    }
+
     if (supabaseService) {
       const supabaseResult = await supabaseService.verifySupabaseToken(credential);
       if (supabaseResult.isValid && supabaseResult.user) {

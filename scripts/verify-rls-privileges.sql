@@ -1,5 +1,5 @@
 -- RLS privilege verification (run via scripts/verify-rls-privileges.ps1 against cloud or local).
--- Documents expected outcomes after 20260625120000_rls_privilege_hardening.sql.
+-- Documents expected outcomes after security remediation migrations (20260704100000+).
 --
 -- | Test | Role | Operation | Expected |
 -- |------|------|-----------|----------|
@@ -8,7 +8,10 @@
 -- | platform_admins | authenticated | SELECT | Denied |
 -- | favorite milestones | authenticated | INSERT | Denied |
 -- | group boundary | member (non-admin) | DELETE other member | Row remains |
--- | group admin | group admin | DELETE member | Success |
+-- | Wallet escalation | authenticated (self) | UPDATE preferences.budgetExtras.walletBalance | Value preserved from OLD row |
+-- | Gamification escalation | authenticated (self) | UPDATE profiles.points | Value preserved from OLD row |
+-- | Group self-join | authenticated | INSERT group_members pending=false | Denied unless group admin |
+-- | study_activity direct write | authenticated | INSERT study_activity | Denied (SELECT-only policy) |
 
 -- ---------------------------------------------------------------------------
 -- Schema checks (service_role / migration audit)
@@ -29,8 +32,18 @@ SELECT
   EXISTS (
     SELECT 1 FROM pg_trigger t
     JOIN pg_class c ON c.oid = t.tgrelid
-  WHERE c.relname = 'profiles' AND t.tgname = 'profiles_strip_privileged_settings'
-  ) AS has_profiles_settings_trigger;
+    WHERE c.relname = 'profiles' AND t.tgname = 'profiles_strip_privileged_settings'
+  ) AS has_profiles_settings_trigger,
+  EXISTS (
+    SELECT 1 FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE c.relname = 'user_preferences' AND t.tgname = 'user_preferences_preserve_wallet'
+  ) AS has_wallet_preferences_trigger,
+  EXISTS (
+    SELECT 1 FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE c.relname = 'profiles' AND t.tgname = 'profiles_preserve_gamification'
+  ) AS has_profiles_gamification_trigger;
 
 -- marketplace_favorite_milestones policy is service_role only
 SELECT pol.polname, pol.polroles::regrole[]

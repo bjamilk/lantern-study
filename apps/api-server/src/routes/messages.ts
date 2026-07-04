@@ -297,7 +297,6 @@ router.get(
       res.status(500).json({
         success: false,
         error: 'Failed to get DM unread counts',
-        message: (error as Error).message,
       });
     }
   })
@@ -326,7 +325,6 @@ router.post(
       res.status(500).json({
         success: false,
         error: 'Failed to mark DM as read',
-        message: (error as Error).message,
       });
     }
   })
@@ -351,7 +349,7 @@ router.put(
       res.json({ success: true, message: 'DM thread archived' });
     } catch (error) {
       console.error('Error archiving DM thread:', error);
-      res.status(500).json({ success: false, error: 'Failed to archive DM thread', message: (error as Error).message });
+      res.status(500).json({ success: false, error: 'Failed to archive DM thread' });
     }
   })
 );
@@ -375,7 +373,7 @@ router.put(
       res.json({ success: true, message: 'DM thread unarchived' });
     } catch (error) {
       console.error('Error unarchiving DM thread:', error);
-      res.status(500).json({ success: false, error: 'Failed to unarchive DM thread', message: (error as Error).message });
+      res.status(500).json({ success: false, error: 'Failed to unarchive DM thread' });
     }
   })
 );
@@ -409,7 +407,6 @@ router.delete(
       res.status(500).json({
         success: false,
         error: 'Failed to delete DM thread',
-        message: (error as Error).message,
       });
     }
   })
@@ -699,7 +696,9 @@ router.post(
       logger.error('Error sending direct message:', { error: error.message, senderId, recipientId });
       res.status(blocked ? 403 : 500).json({
         success: false,
-        error: blocked ? error.message : clientErrorMessage(error, 'Failed to send direct message'),
+        error: blocked
+          ? 'This user does not accept direct messages from you'
+          : clientErrorMessage(error, 'Failed to send direct message'),
       });
     }
   })

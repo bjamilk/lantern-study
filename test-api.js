@@ -1,12 +1,17 @@
-const API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJ0ZXN0LXVzZXItMTIzIiwicGVybWlzc2lvbnMiOlsicmVhZCIsIndyaXRlIl0sImlhdCI6MTc2MzU2MDIyNSwiZXhwIjoxNzYzNjQ2NjI1fQ._va9wuqWZS8pJHD-vXlqcavFI5E3uLl0GD8UX4dJyYU';
+const API_KEY = process.env.LANTERN_TEST_API_KEY;
 
 async function testAPI() {
+  if (!API_KEY) {
+    console.error('Set LANTERN_TEST_API_KEY to a valid API key or JWT before running this script.');
+    process.exit(1);
+  }
+
   try {
     const response = await fetch('http://localhost:3001/api/v1/groups?userId=test-user-123', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${API_KEY}`,
       },
     });
 

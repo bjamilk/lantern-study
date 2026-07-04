@@ -117,8 +117,18 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
     return;
   }
 
+  if (messages.length > 200) {
+    res.status(400).json({ error: 'messages array exceeds maximum size of 200' });
+    return;
+  }
+
+  const boundedMessages = messages
+    .filter((entry): entry is string => typeof entry === 'string')
+    .slice(0, 200)
+    .map((entry) => entry.slice(0, 4000));
+
   try {
-    const { summary, provider } = await summarizeGroupChat(messages, groupName);
+    const { summary, provider } = await summarizeGroupChat(boundedMessages, groupName);
     const userId = (req as any).user.id;
     await logAIInference(supabaseService.getClient(), {
       userId,

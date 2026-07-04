@@ -10,8 +10,19 @@ interface YouTubeEmbedProps {
  * Lazy YouTube embed — iframe loads only after the user clicks play.
  * Avoids YouTube/doubleclick tracking requests (and console CORS noise) on page load.
  */
+const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
+
 const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoId, title = 'YouTube video' }) => {
   const [playing, setPlaying] = useState(false);
+  const safeVideoId = YOUTUBE_ID_PATTERN.test(videoId) ? videoId : null;
+
+  if (!safeVideoId) {
+    return (
+      <div className="aspect-video w-full rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-sm text-slate-500">
+        Invalid YouTube video
+      </div>
+    );
+  }
 
   if (!playing) {
     return (
@@ -22,7 +33,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoId, title = 'YouTube v
         aria-label={`Play ${title}`}
       >
         <img
-          src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+          src={`https://img.youtube.com/vi/${safeVideoId}/hqdefault.jpg`}
           alt=""
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           loading="lazy"
@@ -41,7 +52,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoId, title = 'YouTube v
       <iframe
         title={title}
         className="h-full w-full"
-        src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`}
+        src={`https://www.youtube-nocookie.com/embed/${safeVideoId}?autoplay=1&rel=0&modestbranding=1`}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
         allowFullScreen
       />

@@ -7,13 +7,28 @@ interface OrderReceiptProps {
   appName?: string;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function buildOrderReceiptHtml(order: MarketplaceOrder, appName = 'Lantern Study'): string {
-  const listingTitle = order.listing?.title || 'Marketplace item';
-  const buyerName = order.buyer?.name || 'Buyer';
-  const sellerName = order.seller?.name || 'Seller';
-  const completedAt = order.completed_at
-    ? new Date(order.completed_at).toLocaleString()
-    : new Date(order.created_at).toLocaleString();
+  const listingTitle = escapeHtml(order.listing?.title || 'Marketplace item');
+  const buyerName = escapeHtml(order.buyer?.name || 'Buyer');
+  const sellerName = escapeHtml(order.seller?.name || 'Seller');
+  const orderId = escapeHtml(order.id);
+  const status = escapeHtml(order.status.replace(/_/g, ' '));
+  const fulfillment = escapeHtml(order.fulfillment_mode?.replace(/_/g, ' ') || 'campus meetup');
+  const safeAppName = escapeHtml(appName);
+  const completedAt = escapeHtml(
+    order.completed_at
+      ? new Date(order.completed_at).toLocaleString()
+      : new Date(order.created_at).toLocaleString()
+  );
 
   return `<!DOCTYPE html>
 <html>
@@ -32,15 +47,15 @@ export function buildOrderReceiptHtml(order: MarketplaceOrder, appName = 'Lanter
   </style>
 </head>
 <body>
-  <h1>${appName} Marketplace Receipt</h1>
-  <p class="muted">Order #${order.id}</p>
+  <h1>${safeAppName} Marketplace Receipt</h1>
+  <p class="muted">Order #${orderId}</p>
   <p class="amount">₦${Number(order.amount).toLocaleString()}</p>
   <table>
     <tr><td>Item</td><td>${listingTitle}</td></tr>
     <tr><td>Buyer</td><td>${buyerName}</td></tr>
     <tr><td>Seller</td><td>${sellerName}</td></tr>
-    <tr><td>Status</td><td>${order.status.replace(/_/g, ' ')}</td></tr>
-    <tr><td>Fulfillment</td><td>${order.fulfillment_mode?.replace(/_/g, ' ') || 'campus meetup'}</td></tr>
+    <tr><td>Status</td><td>${status}</td></tr>
+    <tr><td>Fulfillment</td><td>${fulfillment}</td></tr>
     <tr><td>Date</td><td>${completedAt}</td></tr>
     ${order.discount_amount ? `<tr><td>Discount</td><td>₦${Number(order.discount_amount).toLocaleString()}</td></tr>` : ''}
   </table>

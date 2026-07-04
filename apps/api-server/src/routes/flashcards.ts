@@ -122,6 +122,11 @@ router.get(
 
     logger.debug('Fetching flashcard comments', { flashcardId, userId });
 
+    const flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
+    if (!flashcard) {
+      return res.status(404).json({ success: false, error: 'Flashcard not found or access denied' });
+    }
+
     const comments = await supabaseService.getFlashcardComments(flashcardId);
 
     res.json({
@@ -147,6 +152,11 @@ router.post(
 
     if (!comment || !comment.trim()) {
       return res.status(400).json({ success: false, error: 'Comment text is required' });
+    }
+
+    const flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
+    if (!flashcard) {
+      return res.status(404).json({ success: false, error: 'Flashcard not found or access denied' });
     }
 
     const newComment = await supabaseService.addFlashcardComment(flashcardId, userId, comment.trim());
@@ -210,15 +220,26 @@ router.post(
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
 
-    if (contentType && !ALLOWED_IMAGE_TYPES.includes(contentType)) {
+    if (!contentType || !ALLOWED_IMAGE_TYPES.includes(contentType)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.',
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
       });
     }
 
+    const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+    if (estimatedBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+
     try {
-      const result = await supabaseService.uploadFlashcardImage({ fileName, base64Data, contentType, folder });
+      const result = await supabaseService.uploadFlashcardImage({
+        fileName,
+        base64Data,
+        contentType,
+        userId,
+        folder,
+      });
       res.json({ success: true, data: result });
     } catch (error: any) {
       logger.error('Failed to upload flashcard image', { error, userId });

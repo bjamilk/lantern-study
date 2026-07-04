@@ -289,7 +289,25 @@ router.post(
       return res.status(400).json({ success: false, error: 'amount must be positive' });
     }
 
-    const txId = typeof id === 'string' && id ? id : randomUUID();
+    let txId: string = randomUUID();
+    if (typeof id === 'string' && id.trim()) {
+      const trimmedId = id.trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmedId)) {
+        return res.status(400).json({ success: false, error: 'Invalid transaction id' });
+      }
+
+      const { data: existing, error: existingError } = await supabaseService.getClient()
+        .from('budget_transactions')
+        .select('user_id')
+        .eq('id', trimmedId)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (existing && existing.user_id !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      txId = trimmedId;
+    }
     const txDate = typeof date === 'string' && date ? date.split('T')[0] : new Date().toISOString().split('T')[0];
     const cat = typeof category === 'string' ? category : 'other';
 

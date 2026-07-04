@@ -44,6 +44,9 @@ export function consumePostLoginRedirect(): string | null {
   try {
     const path = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
     if (path) sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+    if (!path || !path.startsWith('/') || path.startsWith('//') || path.includes('://')) {
+      return null;
+    }
     return path;
   } catch {
     return null;

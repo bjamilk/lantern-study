@@ -625,7 +625,6 @@ router.post(
       return res.status(400).json({
         success: false,
         error: 'listingId and message are required',
-        receivedBody: req.body,
       });
     }
 
@@ -735,9 +734,22 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const { threadId } = req.params;
 
-    logger.debug('Fetching inquiry by thread', { threadId });
+    const userId = req.user?.id;
+    logger.debug('Fetching inquiry by thread', { threadId, userId });
 
     const inquiry = await supabaseService.getInquiryByThread(threadId);
+    if (!inquiry) {
+      return res.status(404).json({ success: false, error: 'Inquiry not found' });
+    }
+
+    const listingOwnerId = inquiry.listing?.user_id ?? inquiry.listing?.userId;
+    if (
+      inquiry.buyer_id !== userId
+      && inquiry.seller_id !== userId
+      && listingOwnerId !== userId
+    ) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
 
     res.json({
       success: true,
@@ -1466,6 +1478,11 @@ router.patch(
 
     try {
       const ordersService = getMarketplaceOrdersService(supabaseService);
+      const existingOrder = await ordersService.getOrderById(req.params.id, req.user.id);
+      if (!existingOrder) {
+        return res.status(404).json({ success: false, error: 'Order not found or access denied' });
+      }
+
       if (meetingLocation || sellerNote || fulfillmentMode) {
         await supabaseService.getClient()
           .from('marketplace_orders')
@@ -1474,7 +1491,8 @@ router.patch(
             ...(sellerNote ? { seller_note: sellerNote } : {}),
             ...(fulfillmentMode ? { fulfillment_mode: fulfillmentMode } : {}),
           })
-          .eq('id', req.params.id);
+          .eq('id', req.params.id)
+          .or(`buyer_id.eq.${req.user.id},seller_id.eq.${req.user.id}`);
       }
       const order = await ordersService.updateOrderStatus(
         req.params.id,

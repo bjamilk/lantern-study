@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as Linking from 'expo-linking';
 import { CommonActions } from '@react-navigation/native';
+import { isAllowedMobileDeepLink } from '../utils/deepLinkAllowlist';
 import { parseDeepLink } from '@lantern/shared';
 import { joinGroupByInvite } from '../services/api';
 import { navigationRef } from '../navigation/navigationRef';
@@ -22,6 +23,8 @@ function navigateWhenReady(action: Parameters<typeof CommonActions.navigate>[0])
 }
 
 async function handleIncomingUrl(url: string, userId: string) {
+  if (!isAllowedMobileDeepLink(url)) return;
+
   try {
     const normalized = url.replace('lanternstudy:/', 'https://lanternstudy.app/');
     const urlObj = new URL(normalized.startsWith('http') ? normalized : `https://lanternstudy.app/${normalized}`);
