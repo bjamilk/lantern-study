@@ -1663,7 +1663,7 @@ export function createApiEndpoints(client: ApiClient) {
       >(`/users/${userId}/transactions`),
 
     saveBudgetTransaction: (
-      userId: string,
+      _userId: string,
       transaction: {
         id: string;
         type: string;
@@ -1673,13 +1673,23 @@ export function createApiEndpoints(client: ApiClient) {
         date: string;
       }
     ) =>
-      apiRequest<void>(`/users/${userId}/transactions`, {
+      apiRequest<{
+        transaction: unknown;
+        warning: unknown;
+      }>('/budget/transactions', {
         method: 'POST',
-        body: JSON.stringify(transaction),
+        body: JSON.stringify({
+          id: transaction.id,
+          type: transaction.type.toLowerCase(),
+          amount: transaction.amount,
+          category: transaction.category,
+          description: transaction.description,
+          date: transaction.date,
+        }),
       }),
 
-    deleteBudgetTransaction: (userId: string, transactionId: string) =>
-      apiRequest<void>(`/users/${userId}/transactions/${transactionId}`, { method: 'DELETE' }),
+    deleteBudgetTransaction: (_userId: string, transactionId: string) =>
+      apiRequest<void>(`/budget/transactions/${transactionId}`, { method: 'DELETE' }),
 
     fetchBudgetWallet: () =>
       apiRequest<{

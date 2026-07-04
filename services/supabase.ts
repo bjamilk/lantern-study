@@ -3716,35 +3716,16 @@ export const saveBudgetTransaction = async (userId: string, transaction: Transac
       return false;
     }
 
-    if (authUserId !== userId) {
-      console.warn('Budget transaction save userId does not match authenticated user; using authenticated user id.', {
-        requested: userId,
-        authenticated: authUserId,
-      });
-    }
-
-    // Convert type to lowercase to match database constraint ('income', 'expense', 'investment')
-    const dbType = transaction.type.toLowerCase();
-    
-    const { error } = await supabase
-      .from('budget_transactions')
-      .upsert({
-        id: transaction.id,
-        user_id: authUserId,
-        type: dbType,
-        amount: transaction.amount,
-        category: transaction.category,
-        description: transaction.description,
-        date: transaction.date
-      }, {
-        onConflict: 'id'
-      });
-
-    if (error) {
-      console.error('Error saving budget transaction:', error);
-      return false;
-    }
-
+    // Prefer API (service role) — direct PostgREST upsert hits RLS on conflict path.
+    const { saveBudgetTransactionApi } = await import('./budgetApi');
+    await saveBudgetTransactionApi({
+      id: transaction.id,
+      type: transaction.type,
+      amount: transaction.amount,
+      category: transaction.category,
+      description: transaction.description,
+      date: transaction.date,
+    });
     return true;
   } catch (error) {
     console.error('Error saving budget transaction:', error);
@@ -3754,16 +3735,8 @@ export const saveBudgetTransaction = async (userId: string, transaction: Transac
 
 export const deleteBudgetTransaction = async (transactionId: string): Promise<boolean> => {
   try {
-    const { error } = await supabase
-      .from('budget_transactions')
-      .delete()
-      .eq('id', transactionId);
-
-    if (error) {
-      console.error('Error deleting budget transaction:', error);
-      return false;
-    }
-
+    const { deleteBudgetTransactionApi } = await import('./budgetApi');
+    await deleteBudgetTransactionApi(transactionId);
     return true;
   } catch (error) {
     console.error('Error deleting budget transaction:', error);

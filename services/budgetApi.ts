@@ -66,3 +66,32 @@ export async function claimUnderBudgetAwardApi(): Promise<{
 }> {
   return budgetRequest('/awards/under-budget', { method: 'POST', body: '{}' });
 }
+
+export async function saveBudgetTransactionApi(transaction: {
+  id?: string;
+  type: string;
+  amount: number;
+  category?: string;
+  description?: string;
+  date?: string;
+}): Promise<{
+  transaction: Transaction;
+  warning: { code: string; category: string; spent: number; limit: number } | null;
+}> {
+  const type = transaction.type.toLowerCase();
+  return budgetRequest('/transactions', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: transaction.id,
+      type,
+      amount: transaction.amount,
+      category: transaction.category,
+      description: transaction.description,
+      date: transaction.date,
+    }),
+  });
+}
+
+export async function deleteBudgetTransactionApi(transactionId: string): Promise<void> {
+  await budgetRequest(`/transactions/${transactionId}`, { method: 'DELETE' });
+}

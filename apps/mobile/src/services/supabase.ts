@@ -294,36 +294,32 @@ export const saveBudgetTransaction = async (
   userId: string,
   transaction: BudgetTransactionInput
 ): Promise<boolean> => {
-  const { data: { user } } = await supabase.auth.getUser();
-  const authUserId = user?.id || userId;
-  if (!authUserId) return false;
-
-  const dbType = transaction.type.toLowerCase();
-  const { error } = await supabase.from('budget_transactions').upsert(
-    {
+  try {
+    // Prefer API (service role) — direct PostgREST upsert hits RLS on conflict path.
+    const { saveBudgetTransaction } = await import('./api');
+    await saveBudgetTransaction(userId, {
       id: transaction.id,
-      user_id: authUserId,
-      type: dbType,
+      type: transaction.type.toLowerCase(),
       amount: transaction.amount,
       category: transaction.category,
       description: transaction.description,
       date: transaction.date,
-    },
-    { onConflict: 'id' }
-  );
-
-  if (error) {
+    });
+    return true;
+  } catch (error) {
     console.error('Error saving budget transaction:', error);
     return false;
   }
-  return true;
 };
 
 export const deleteBudgetTransaction = async (transactionId: string): Promise<boolean> => {
-  const { error } = await supabase.from('budget_transactions').delete().eq('id', transactionId);
-  if (error) {
+  try {
+    const { deleteBudgetTransaction: deleteViaApi } = await import('./api');
+    // API requires userId for signature compatibility; ownership enforced server-side.
+    await deleteViaApi('', transactionId);
+    return true;
+  } catch (error) {
     console.error('Error deleting budget transaction:', error);
     return false;
   }
-  return true;
 };

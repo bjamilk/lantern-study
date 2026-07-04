@@ -356,4 +356,29 @@ router.post(
   })
 );
 
+// DELETE /api/v1/budget/transactions/:transactionId
+router.delete(
+  '/transactions/:transactionId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { transactionId } = req.params;
+
+    const { data, error } = await supabaseService.getClient()
+      .from('budget_transactions')
+      .delete()
+      .eq('id', transactionId)
+      .eq('user_id', userId)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ success: false, error: 'Transaction not found' });
+    }
+    res.json({ success: true });
+  })
+);
+
 export default router;
