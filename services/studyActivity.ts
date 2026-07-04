@@ -8,6 +8,9 @@ export function trackStudyActivity(type: ActivityType, amount = 1): void {
     .then((result) => {
       if (result && typeof result.walletBalance === 'number') {
         useBudgetStore.getState().setWalletBalance(result.walletBalance);
+        if (typeof result.awarded === 'number' && result.awarded > 0) {
+          console.info(`[Wallet] +${result.awarded} coins (balance ${result.walletBalance})`);
+        }
       }
       return fetchStudyActivity();
     })

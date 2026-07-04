@@ -34,6 +34,7 @@ import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
+import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
 import {
@@ -692,7 +693,6 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                         if (extras && typeof extras === 'object') {
                             if (Array.isArray(extras.savingsGoals)) setSavingsGoals(extras.savingsGoals);
                             if (Array.isArray(extras.expenseSplits)) setExpenseSplits(extras.expenseSplits);
-                            if (typeof extras.walletBalance === 'number') setWalletBalance(extras.walletBalance);
                             if (extras.categoryBudgets && typeof extras.categoryBudgets === 'object') {
                                 const currentBudget = useBudgetStore.getState().budget;
                                 setBudget({
@@ -752,6 +752,18 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                         description: t.description || ''
                     }));
                     setTransactions(transactionsWithUserId);
+                }
+
+                // Authoritative wallet balance (never from preferences cache / localStorage)
+                if (!cancelled) {
+                    try {
+                        const wallet = await fetchBudgetWalletData();
+                        setWalletBalance(wallet.walletBalance);
+                        if (Array.isArray(wallet.savingsGoals)) setSavingsGoals(wallet.savingsGoals);
+                        if (Array.isArray(wallet.expenseSplits)) setExpenseSplits(wallet.expenseSplits);
+                    } catch (err) {
+                        console.error('[Budget Sync] Failed to load wallet:', err);
+                    }
                 }
 
                 // Mark data as loaded regardless of individual failures

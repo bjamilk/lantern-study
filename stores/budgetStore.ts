@@ -176,13 +176,28 @@ export const useBudgetStore = create<BudgetState>()(
     }),
     {
       name: 'budget-storage',
+      version: 2,
+      // walletBalance is server-authoritative — never persist or rehydrate it.
       partialize: (state) => ({
         transactions: state.transactions,
         budget: state.budget,
         savingsGoals: state.savingsGoals,
         expenseSplits: state.expenseSplits,
-        walletBalance: state.walletBalance,
       }),
+      migrate: (persisted: unknown) => {
+        const state = (persisted || {}) as Record<string, unknown>;
+        delete state.walletBalance;
+        return state as typeof persisted;
+      },
+      merge: (persisted, current) => {
+        const p = (persisted || {}) as Partial<BudgetState>;
+        return {
+          ...current,
+          ...p,
+          // Always keep in-memory/server balance; ignore any legacy localStorage value.
+          walletBalance: current.walletBalance,
+        };
+      },
     }
   )
 );
