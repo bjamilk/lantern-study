@@ -29,7 +29,7 @@ const QUEST_LABELS: Record<string, string> = {
 };
 
 export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
-  quests,
+  quests = [],
   streak,
   streakFreezes = 0,
   walletBalance = 0,
@@ -39,7 +39,6 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
   theme = 'light',
 }) => {
   const isDark = theme === 'dark';
-  const completedCount = quests.filter((q) => q.completed).length;
 
   if (!questsLoaded) {
     return (
@@ -53,6 +52,8 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
       </div>
     );
   }
+
+  const completedCount = quests.filter((q) => q.completed).length;
 
   if (quests.length === 0) {
     return (

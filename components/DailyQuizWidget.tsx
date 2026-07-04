@@ -49,12 +49,14 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
       setAnswered(false);
       return;
     }
-    const firstUnanswered = dailyQuiz.questions.findIndex(q => !dailyQuiz.answers[q.id]);
+    const questions = dailyQuiz.questions ?? [];
+    const answers = dailyQuiz.answers ?? {};
+    const firstUnanswered = questions.findIndex(q => !answers[q.id]);
     setCurrentIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
     setSelected('');
     setFeedback(null);
     setAnswered(false);
-  }, [dailyQuiz?.noteId, dailyQuiz?.questions.length, dailyQuiz?.completed]);
+  }, [dailyQuiz?.noteId, dailyQuiz?.questions?.length, dailyQuiz?.completed]);
 
   if (!dailyQuiz) {
     return (
@@ -104,7 +106,8 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
     );
   }
 
-  const question = dailyQuiz.questions[currentIndex];
+  const questions = dailyQuiz.questions ?? [];
+  const question = questions[currentIndex];
   if (!question) return null;
 
   const submitAnswer = () => {
@@ -124,14 +127,14 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
     setFeedback(null);
     setSelected('');
     setAnswered(false);
-    if (currentIndex < dailyQuiz.questions.length - 1) {
+    if (currentIndex < questions.length - 1) {
       setCurrentIndex(i => i + 1);
     } else {
       onComplete();
     }
   };
 
-  const isLastQuestion = currentIndex >= dailyQuiz.questions.length - 1;
+  const isLastQuestion = currentIndex >= questions.length - 1;
 
   return (
     <div className={`rounded-xl border p-4 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -140,7 +143,7 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
         <span className="text-xs text-indigo-500">{progress}% · {goalLabels[studyGoal]}</span>
       </div>
       <p className={`text-sm mb-3 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-        Q{currentIndex + 1}/{dailyQuiz.questions.length}: {question.text}
+        Q{currentIndex + 1}/{questions.length}: {question.text}
       </p>
       {question.options ? (
         <div className="space-y-2 mb-3">

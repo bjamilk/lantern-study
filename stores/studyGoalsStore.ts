@@ -6,6 +6,15 @@ import { trackStudyActivity } from '../services/studyActivity';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+function normalizeDailyQuiz(session: DailyQuizSession | null): DailyQuizSession | null {
+  if (!session) return null;
+  return {
+    ...session,
+    questions: Array.isArray(session.questions) ? session.questions : [],
+    answers: session.answers && typeof session.answers === 'object' ? session.answers : {},
+  };
+}
+
 interface StudyGoalsState {
   studyGoal: StudyGoalMode;
   dailyQuiz: DailyQuizSession | null;
@@ -29,14 +38,15 @@ export const useStudyGoalsStore = create<StudyGoalsState>()(
       setStudyGoal: (studyGoal) => set({ studyGoal }),
 
       setDailyQuiz: (dailyQuiz) => {
-        const answered = dailyQuiz
-          ? Object.keys(dailyQuiz.answers).length
+        const normalized = normalizeDailyQuiz(dailyQuiz);
+        const answered = normalized
+          ? Object.keys(normalized.answers).length
           : 0;
         set({
-          dailyQuiz,
+          dailyQuiz: normalized,
           dailyQuizProgress:
-            dailyQuiz && dailyQuiz.questions.length > 0
-              ? Math.round((answered / dailyQuiz.questions.length) * 100)
+            normalized && normalized.questions.length > 0
+              ? Math.round((answered / normalized.questions.length) * 100)
               : 0,
         });
       },
@@ -76,14 +86,14 @@ export const useStudyGoalsStore = create<StudyGoalsState>()(
       },
 
       getDailyQuizForToday: () => {
-        const quiz = get().dailyQuiz;
-        if (!quiz || quiz.date !== todayKey()) return null;
+        const quiz = normalizeDailyQuiz(get().dailyQuiz);
+        if (!quiz || quiz.date !== todayKey() || quiz.questions.length === 0) return null;
         return quiz;
       },
 
       getQuizForNote: (noteId: string) => {
-        const quiz = get().dailyQuiz;
-        if (!quiz || quiz.noteId !== noteId) return null;
+        const quiz = normalizeDailyQuiz(get().dailyQuiz);
+        if (!quiz || quiz.noteId !== noteId || quiz.questions.length === 0) return null;
         return quiz;
       },
     }),
