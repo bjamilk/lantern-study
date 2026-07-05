@@ -3,6 +3,8 @@ import { User, TestPreset, TestConfig } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
+import { useBudgetStore } from '../stores/budgetStore';
+import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { MOCK_USERS } from '../utils/helpers';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -135,6 +137,8 @@ export function useAuthHandlers() {
         setDmThreads([]);
         setAllDirectMessages({});
         setDataLoaded(false);
+        useBudgetStore.getState().reset();
+        useStudyGoalsStore.getState().reset();
     }, [setCurrentUser, setGroups, setAllMessages, setSelectedChat, setDmThreads, setAllDirectMessages]);
 
     const handleUpdateProfile = useCallback((name: string, phone: string) => {

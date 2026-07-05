@@ -443,7 +443,10 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                         setCurrentUser(userFromProfile(profile, session.user.email!, session.user));
                     }
                 } catch (err) {
-                    console.error('Failed to fetch profile on SIGNED_IN event:', err);
+                    const msg = err instanceof Error ? err.message : String(err);
+                    if (!msg.includes('404') && !msg.includes('status: 404')) {
+                        console.error('Failed to fetch profile on SIGNED_IN event:', err);
+                    }
                 }
             }
         });
@@ -541,6 +544,9 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             const userId = currentUser.id;
             const currentMonthYear = new Date().toISOString().slice(0, 7);
 
+            useBudgetStore.getState().ensureOwner(userId);
+            const scopedTransactions = useBudgetStore.getState().transactions;
+
             void refreshDashboardGamification();
 
             // Phase 1: critical path for first paint (groups, DMs, notifications, prefs)
@@ -561,7 +567,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 fetchUserQuestionStats(userId),
                 fetchOfflineBundles(userId),
                 fetchUserBudget(userId, currentMonthYear),
-                syncBudgetTransactionsToCloud(userId, transactions),
+                syncBudgetTransactionsToCloud(userId, scopedTransactions),
             ]);
 
             const results = [

@@ -26,6 +26,7 @@ interface StudyGoalsState {
   completeDailyQuiz: () => void;
   getDailyQuizForToday: () => DailyQuizSession | null;
   getQuizForNote: (noteId: string) => DailyQuizSession | null;
+  reset: () => void;
 }
 
 export const useStudyGoalsStore = create<StudyGoalsState>()(
@@ -96,6 +97,12 @@ export const useStudyGoalsStore = create<StudyGoalsState>()(
         if (!quiz || quiz.noteId !== noteId || quiz.questions.length === 0) return null;
         return quiz;
       },
+
+      reset: () => set({
+        studyGoal: 'retention',
+        dailyQuiz: null,
+        dailyQuizProgress: 0,
+      }),
     }),
     { name: 'lantern-study-goals' }
   )

@@ -8,6 +8,7 @@ import { Transaction, Budget, TransactionType, SavingsGoal, ExpenseSplit } from 
 
 interface BudgetState {
   // State
+  ownerUserId: string | null;
   transactions: Transaction[];
   budget: Budget | null;
   savingsGoals: SavingsGoal[];
@@ -53,6 +54,7 @@ interface BudgetState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
+  ensureOwner: (userId: string) => void;
   reset: () => void;
 }
 
@@ -60,6 +62,7 @@ export const useBudgetStore = create<BudgetState>()(
   persist(
     (set, get) => ({
       // Initial State
+      ownerUserId: null,
       transactions: [],
       budget: null,
       savingsGoals: [],
@@ -163,8 +166,24 @@ export const useBudgetStore = create<BudgetState>()(
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
       clearError: () => set({ error: null }),
-      
+
+      ensureOwner: (userId) => {
+        const state = get();
+        if (state.ownerUserId === userId) return;
+        set({
+          ownerUserId: userId,
+          transactions: [],
+          budget: null,
+          savingsGoals: [],
+          expenseSplits: [],
+          walletBalance: 0,
+          isLoading: false,
+          error: null,
+        });
+      },
+
       reset: () => set({
+        ownerUserId: null,
         transactions: [],
         budget: null,
         savingsGoals: [],
@@ -176,17 +195,21 @@ export const useBudgetStore = create<BudgetState>()(
     }),
     {
       name: 'budget-storage',
-      version: 2,
+      version: 3,
       // walletBalance is server-authoritative — never persist or rehydrate it.
       partialize: (state) => ({
+        ownerUserId: state.ownerUserId,
         transactions: state.transactions,
         budget: state.budget,
         savingsGoals: state.savingsGoals,
         expenseSplits: state.expenseSplits,
       }),
-      migrate: (persisted: unknown) => {
+      migrate: (persisted: unknown, version) => {
         const state = (persisted || {}) as Record<string, unknown>;
         delete state.walletBalance;
+        if (version < 3 && state.ownerUserId === undefined) {
+          state.ownerUserId = null;
+        }
         return state as typeof persisted;
       },
       merge: (persisted, current) => {

@@ -1544,14 +1544,21 @@ export const fetchUserProfile = async (userId: string) => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const err = new Error(`HTTP error! status: ${response.status}`);
+      if (response.status !== 404) {
+        console.error('Error fetching user profile:', err);
+      }
+      throw err;
     }
 
     const result = await response.json();
     console.log('Fetched user profile:', result.data);
     return result.data;
   } catch (error) {
-    console.error('Error fetching user profile:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!msg.includes('404') && !msg.includes('status: 404')) {
+      console.error('Error fetching user profile:', error);
+    }
     throw error;
   }
 };
