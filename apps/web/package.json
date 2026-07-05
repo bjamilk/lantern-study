@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/inject-sw-build-id.mjs",
+    "build": "tsc && vite build && node scripts/inject-sw-build-id.mjs && node scripts/inject-csp-headers.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
