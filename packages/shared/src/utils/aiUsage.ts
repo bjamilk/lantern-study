@@ -1,6 +1,10 @@
 /**
  * Format AI quota reset as a relative countdown (e.g. "Resets in 4h 23m").
  */
+
+/** Default daily AI request quota per user (overridable via API `AI_DAILY_LIMIT` env). */
+export const DEFAULT_AI_DAILY_LIMIT = 100;
+
 export function formatAIResetCountdown(resetsAt: string, nowMs = Date.now()): string {
   if (!resetsAt) return '';
   const diffMs = new Date(resetsAt).getTime() - nowMs;

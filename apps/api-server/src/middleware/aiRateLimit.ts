@@ -6,9 +6,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
 
+import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
+
 const userAIUsage = new Map<string, { count: number; dateKey: string }>();
 
-const AI_DAILY_LIMIT = parseInt(process.env.AI_DAILY_LIMIT || '20', 10);
+const AI_DAILY_LIMIT = parseInt(
+  process.env.AI_DAILY_LIMIT || String(DEFAULT_AI_DAILY_LIMIT),
+  10
+);
 
 function getUtcDateKey(now = new Date()): string {
   return now.toISOString().slice(0, 10);

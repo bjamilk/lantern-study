@@ -6,6 +6,7 @@ import type {
   AIUsageInfo,
   CompanionUserContext,
 } from '../types';
+import { DEFAULT_AI_DAILY_LIMIT } from '../utils/aiUsage';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
@@ -129,7 +130,15 @@ export function createAIClient(config: AIClientConfig) {
         config.onUsageUpdate?.(usage);
         return usage;
       })()
-        .catch(() => cachedUsage || { used: 0, limit: 20, remaining: 20, resetsAt: '' })
+        .catch(
+          () =>
+            cachedUsage || {
+              used: 0,
+              limit: DEFAULT_AI_DAILY_LIMIT,
+              remaining: DEFAULT_AI_DAILY_LIMIT,
+              resetsAt: '',
+            }
+        )
         .finally(() => {
           usageInFlight = null;
         });

@@ -75,6 +75,8 @@ services:
         value: "true"
       - key: ADMIN_RATE_LIMIT_MAX
         value: "300"
+      - key: AI_DAILY_LIMIT
+        value: "100"
 
   - type: worker
     name: lantern-study-worker

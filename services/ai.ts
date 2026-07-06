@@ -2,7 +2,7 @@
  * Client-side AI service — calls the backend AI API endpoints.
  * Uses the same auth headers and base URL as the main supabase service.
  */
-import { getApiBaseUrl } from '@lantern/shared';
+import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
 import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
 
@@ -17,7 +17,12 @@ export interface AIUsageInfo {
   resetsAt: string;
 }
 
-let _latestUsage: AIUsageInfo = { used: 0, limit: 20, remaining: 20, resetsAt: '' };
+let _latestUsage: AIUsageInfo = {
+  used: 0,
+  limit: DEFAULT_AI_DAILY_LIMIT,
+  remaining: DEFAULT_AI_DAILY_LIMIT,
+  resetsAt: '',
+};
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
 
 export function getLatestAIUsage(): AIUsageInfo {

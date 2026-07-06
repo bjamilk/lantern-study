@@ -20,6 +20,7 @@
     "src/utils/gamification.ts",
     "src/utils/testHelpers.ts",
     "src/utils/activity.ts",
+    "src/utils/aiUsage.ts",
     "src/utils/noteStudyContent.ts",
     "src/utils/srs.ts",
     "src/utils/fsrs.ts",

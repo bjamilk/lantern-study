@@ -3,6 +3,7 @@
  */
 import { createLanternAI } from '@lantern/shared/api';
 import type { AIUsageInfo } from '@lantern/shared';
+import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
 
 export type {
@@ -18,7 +19,12 @@ export type {
   AIUsageInfo,
 } from '@lantern/shared';
 
-let _latestUsage: AIUsageInfo = { used: 0, limit: 20, remaining: 20, resetsAt: '' };
+let _latestUsage: AIUsageInfo = {
+  used: 0,
+  limit: DEFAULT_AI_DAILY_LIMIT,
+  remaining: DEFAULT_AI_DAILY_LIMIT,
+  resetsAt: '',
+};
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
 
 function updateUsage(usage: AIUsageInfo) {
