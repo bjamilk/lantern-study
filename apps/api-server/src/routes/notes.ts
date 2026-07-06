@@ -34,6 +34,7 @@ import {
   assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
   presentationContentType,
+  warmGotenberg,
 } from '../services/noteFiles';
 import {
   getNoteStudyContent,
@@ -100,6 +101,8 @@ async function runPresentationPreviewJob(params: {
   storagePath: string;
   fileName: string;
   meta: Record<string, unknown>;
+  buffer?: Buffer;
+  extractedText?: string;
 }): Promise<void> {
   const { noteId, attachmentId, storagePath, fileName } = params;
   let meta = { ...params.meta };
@@ -108,12 +111,17 @@ async function runPresentationPreviewJob(params: {
   previewJobsInFlight.add(attachmentId);
 
   try {
-    const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+    let buffer = params.buffer;
+    if (!buffer) {
+      const downloaded = await supabaseService.downloadNoteFile(storagePath);
+      buffer = downloaded.buffer;
+    }
     if (/\.pptx$/i.test(fileName)) {
       assertValidOfficeZip(buffer, fileName);
     }
 
-    const extractedText = await extractPresentationTextFromBuffer(buffer, fileName);
+    const extractedText =
+      params.extractedText ?? (await extractPresentationTextFromBuffer(buffer, fileName));
     const studyText =
       extractedText ||
       `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
@@ -183,6 +191,24 @@ async function runPresentationPreviewJob(params: {
   } finally {
     previewJobsInFlight.delete(attachmentId);
   }
+}
+
+function startPresentationPreviewJob(params: {
+  noteId: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName: string;
+  meta: Record<string, unknown>;
+  buffer?: Buffer;
+  extractedText?: string;
+}): void {
+  void runPresentationPreviewJob(params).catch((err) => {
+    logger.error('Presentation preview job unhandled error', {
+      noteId: params.noteId,
+      attachmentId: params.attachmentId,
+      err,
+    });
+  });
 }
 
 router.use(authMiddleware);
@@ -272,6 +298,7 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
 router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
+  warmGotenberg();
   const { fileName, base64Data, folderId } = req.body;
   if (!fileName || !base64Data) {
     res.status(400).json({ error: 'fileName and base64Data are required.' });
@@ -315,23 +342,41 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
     folderId,
     sourceType: 'presentation',
   });
+  const processingMeta = {
+    storagePath,
+    originalMime: contentType,
+    previewProcessing: true,
+    previewStartedAt: new Date().toISOString(),
+  };
   const attachment = await supabaseService.addNoteAttachment(note.id, {
     type: 'presentation',
     fileUrl,
     fileName: safeName,
     extractedText: studyText,
-    metadata: {
-      storagePath,
-      originalMime: contentType,
-    },
+    metadata: processingMeta,
   });
-  res.json({ success: true, data: { note, attachment, previewAvailable: false } });
+
+  startPresentationPreviewJob({
+    noteId: note.id,
+    attachmentId: attachment.id,
+    storagePath,
+    fileName: safeName,
+    meta: processingMeta,
+    buffer,
+    extractedText: studyText,
+  });
+
+  res.json({
+    success: true,
+    data: { note, attachment, previewAvailable: false, status: 'processing' },
+  });
 }));
 
 router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const startedAt = Date.now();
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
+  warmGotenberg();
   const { storagePath, fileName, folderId } = req.body;
   if (!storagePath || !fileName) {
     res.status(400).json({ error: 'storagePath and fileName are required.' });
@@ -372,15 +417,28 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     folderId,
     sourceType: 'presentation',
   });
+  const processingMeta = {
+    storagePath: String(storagePath),
+    originalMime: contentType,
+    previewProcessing: true,
+    previewStartedAt: new Date().toISOString(),
+  };
   const attachment = await supabaseService.addNoteAttachment(note.id, {
     type: 'presentation',
     fileUrl,
     fileName: safeName,
     extractedText: studyText,
-    metadata: {
-      storagePath: String(storagePath),
-      originalMime: contentType,
-    },
+    metadata: processingMeta,
+  });
+
+  startPresentationPreviewJob({
+    noteId: note.id,
+    attachmentId: attachment.id,
+    storagePath: String(storagePath),
+    fileName: safeName,
+    meta: processingMeta,
+    buffer,
+    extractedText: studyText,
   });
 
   logger.info('Presentation upload finalized', {
@@ -390,7 +448,10 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     durationMs: Date.now() - startedAt,
   });
 
-  res.json({ success: true, data: { note, attachment, previewAvailable: false } });
+  res.json({
+    success: true,
+    data: { note, attachment, previewAvailable: false, status: 'processing' },
+  });
 }));
 
 router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -616,13 +677,20 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
     data: { status: 'processing', previewAvailable: false, attachment: updated },
   });
 
-  void runPresentationPreviewJob({
+  void startPresentationPreviewJob({
     noteId: req.params.noteId,
     attachmentId: attachment.id,
     storagePath,
     fileName,
     meta: processingMeta,
   });
+}));
+
+router.post('/warm-preview', asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  warmGotenberg();
+  res.json({ success: true });
 }));
 
 router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {

@@ -84,6 +84,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewBannerDismissed, setPreviewBannerDismissed] = useState(false);
   const [previewTrigger, setPreviewTrigger] = useState(0);
   const saveEnabledRef = useRef(true);
   const userEditedRef = useRef(false);
@@ -103,6 +104,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     typeof presentationAttachment?.metadata?.previewStoragePath === 'string'
       ? presentationAttachment.metadata.previewStoragePath
       : null;
+  const isPreviewProcessing =
+    presentationAttachment?.metadata?.previewProcessing === true && !presentationPreviewPath;
+  const showPreviewBanner =
+    note.sourceType === 'presentation' &&
+    !presentationPreviewPath &&
+    !previewBannerDismissed &&
+    (generatingPreview || isPreviewProcessing);
   const studyContentLength = getNoteStudyContent({
     sourceType: note.sourceType,
     body,
@@ -124,9 +132,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id]);
 
   useEffect(() => {
-    if (!note.id || !saveEnabledRef.current || !userEditedRef.current || generatingPreview) return;
+    if (!note.id || !saveEnabledRef.current || !userEditedRef.current) return;
     onSave({ title, body });
-  }, [note.id, title, body, onSave, generatingPreview]);
+  }, [note.id, title, body, onSave]);
 
   const handleTitleChange = (value: string) => {
     userEditedRef.current = true;
@@ -140,6 +148,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
   useEffect(() => {
     setPreviewError(null);
+    setPreviewBannerDismissed(false);
   }, [note.id]);
 
   useEffect(() => {
@@ -402,22 +411,38 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
           )}
 
-          {generatingPreview && (
-            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-              <p>Generating slide preview…</p>
-              {presentationAttachment && (
-                <button
-                  type="button"
-                  className="text-indigo-500 underline text-left"
-                  onClick={() => void handleDownloadOriginalSlides()}
-                >
-                  Download original slides ({presentationAttachment.fileName || 'presentation'})
-                </button>
-              )}
+          {showPreviewBanner && (
+            <div
+              className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
+                isDark ? 'border-indigo-800/50 bg-indigo-950/30 text-indigo-200' : 'border-indigo-200 bg-indigo-50 text-indigo-900'
+              }`}
+              role="status"
+            >
+              <div className="space-y-1">
+                <p>
+                  Slide preview is being prepared — your notes and AI tools are ready now.
+                </p>
+                {presentationAttachment && (
+                  <button
+                    type="button"
+                    className="text-indigo-500 underline text-left text-xs"
+                    onClick={() => void handleDownloadOriginalSlides()}
+                  >
+                    Download original slides ({presentationAttachment.fileName || 'presentation'})
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`shrink-0 text-xs underline ${isDark ? 'text-indigo-300' : 'text-indigo-700'}`}
+                onClick={() => setPreviewBannerDismissed(true)}
+              >
+                Dismiss
+              </button>
             </div>
           )}
 
-          {isDocumentNote && !documentAttachment && !generatingPreview && (
+          {isDocumentNote && !documentAttachment && !showPreviewBanner && (
             <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
               <p>
                 {previewError ||

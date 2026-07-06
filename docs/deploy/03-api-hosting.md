@@ -54,6 +54,16 @@ Create API key: https://dashboard.render.com/u/settings#api-keys
 
 **PowerPoint slide preview:** `render.yaml` also provisions `lantern-study-gotenberg` (Gotenberg 8) and wires `GOTENBERG_URL` to the API via Render private networking. This converts uploaded `.pptx` files to PDF for in-app viewing. For local dev, optionally run Gotenberg (`docker run -p 3000:3000 gotenberg/gotenberg:8`) and set `GOTENBERG_URL=http://localhost:3000` in `apps/api-server/.env`.
 
+**Gotenberg cold starts (free tier):** On Render `plan: free`, `lantern-study-gotenberg` sleeps after ~15 minutes of inactivity. The first slide preview after idle can take 30–60s while LibreOffice wakes. The app mitigates this by waking Gotenberg when you select a `.pptx` and starting conversion at upload time, but cold starts still happen occasionally.
+
+| Option | Cost | Effect |
+|--------|------|--------|
+| **Upgrade Gotenberg to Starter** | ~$7/mo | Service stays awake; fastest previews |
+| **External uptime ping** | Free | Ping `https://lantern-study-gotenberg.onrender.com/health` every 10 min (e.g. [UptimeRobot](https://uptimerobot.com)) — reduces cold starts but counts against Render free-tier monthly hours |
+| **Do nothing** | Free | Previews work; first upload after idle is slower |
+
+To upgrade: Render Dashboard → **lantern-study-gotenberg** → Settings → change plan to **Starter**.
+
 6. Deploy. When live, copy the service URL (e.g. `https://lantern-study-api.onrender.com`).
 
 ### After deploy — update local env

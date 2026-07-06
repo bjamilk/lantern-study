@@ -314,6 +314,14 @@ export async function fetchPresentationPreviewStatus(noteId: string): Promise<{
   return notesRequest(`/${noteId}/preview-status`);
 }
 
+/** Wake the slide-preview converter while the client uploads to storage. */
+export async function warmPresentationPreview(): Promise<void> {
+  await notesRequest('/warm-preview', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).catch(() => {});
+}
+
 export async function regeneratePresentationPreview(
   noteId: string
 ): Promise<{ attachment: NoteAttachment; previewAvailable: boolean; previewError?: string }> {
@@ -601,6 +609,8 @@ export async function uploadPresentationViaApi(
   const { supabase } = await import('./supabase');
   const storagePath = buildNoteStoragePath(userId, file.name);
   const contentType = presentationContentType(file.name);
+
+  void warmPresentationPreview();
 
   try {
     await uploadFileToNoteStorage(file, storagePath, contentType, onProgress);

@@ -127,6 +127,15 @@ async function warmGotenbergService(gotenbergUrl: string): Promise<number> {
   return wakeMs;
 }
 
+/** Fire-and-forget wake of Gotenberg (overlaps with client upload / finalize). */
+export function warmGotenberg(): void {
+  for (const gotenbergUrl of getGotenbergCandidates()) {
+    void warmGotenbergService(gotenbergUrl).catch((err) => {
+      logger.warn('Gotenberg background warm failed', { gotenbergUrl, err });
+    });
+  }
+}
+
 export type PresentationPdfConversionResult = {
   pdf: Buffer | null;
   error?: string;
