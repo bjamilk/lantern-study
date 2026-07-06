@@ -3,6 +3,7 @@ import { Request } from 'express';
 /** Public marketplace GET paths (relative to /api/v1/marketplace). */
 export const PUBLIC_MARKETPLACE_READ_PATHS = [
   '/listings',
+  '/campuses',
   '/analytics/categories',
   '/categories/custom',
 ] as const;

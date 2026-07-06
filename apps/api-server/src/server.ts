@@ -44,6 +44,8 @@ import { router as flashcardRoutes } from './routes/flashcards';
 import userStatsRoutes from './routes/user-stats';
 import preferencesRoutes from './routes/preferences';
 import marketplaceRoutes from './routes/marketplace';
+import sitemapRoutes from './routes/sitemap';
+import { marketplaceGeoMiddleware } from './middleware/marketplaceGeo';
 import aiRoutes, { initializeAIRoutes } from './routes/ai';
 import offlineBundlesRoutes, { initializeOfflineBundlesRoutes } from './routes/offlineBundles';
 import adminRoutes, { initializeAdminRoutes } from './routes/admin';
@@ -120,6 +122,7 @@ async function initializeServices() {
     const { initializeUserStatsRoutes } = await import('./routes/user-stats');
     const { initializePreferencesRoutes } = await import('./routes/preferences');
     const { initializeMarketplaceRoutes } = await import('./routes/marketplace');
+    const { initializeSitemapRoutes } = await import('./routes/sitemap');
 
     initializeUserRoutes(supabaseService, cacheService);
     initializeGroupRoutes(supabaseService, cacheService);
@@ -132,6 +135,7 @@ async function initializeServices() {
     initializeUserStatsRoutes(supabaseService, cacheService);
     initializePreferencesRoutes(supabaseService, cacheService);
     initializeMarketplaceRoutes(supabaseService, cacheService);
+    initializeSitemapRoutes(supabaseService, cacheService);
     initializeOfflineBundlesRoutes(supabaseService, cacheService);
     initializeAdminRoutes(supabaseService, cacheService);
     initializeAICompanionRoutes(supabaseService);
@@ -289,7 +293,8 @@ async function startServer() {
     app.use('/api/v1/flashcards', flashcardRoutes);
     app.use('/api/v1/user-stats', userStatsRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
-    app.use('/api/v1/marketplace', optionalAuthMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    app.use('/api/v1/sitemap', sitemapRoutes);
     app.use('/api/v1/api-keys', apiKeysRoutes);
     app.use('/api/v1/ai', aiRoutes);
     app.use('/api/v1/ai/companion', aiCompanionRoutes);

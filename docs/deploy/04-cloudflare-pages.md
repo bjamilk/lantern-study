@@ -168,6 +168,8 @@ After deploy, confirm these URLs respond (copied from `public/`):
 |-----|---------|
 | `https://lanternstudy.com/robots.txt` | Allows crawlers; points to sitemap |
 | `https://lanternstudy.com/sitemap.xml` | Lists public pages for Google/Bing |
+| `https://lantern-study-api.onrender.com/api/v1/sitemap/marketplace.xml` | Dynamic marketplace listing URLs |
+| `https://lanternstudy.com/marketplace` | Public browse (guest mode) |
 
 **Google Search Console (one-time):**
 

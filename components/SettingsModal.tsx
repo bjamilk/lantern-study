@@ -7,13 +7,14 @@ import {
     XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
     EyeIcon, EyeSlashIcon, ArrowRightOnRectangleIcon, TrashIcon,
     CameraIcon, AcademicCapIcon, PaintBrushIcon, LifebuoyIcon,
-    AdjustmentsHorizontalIcon,
+    AdjustmentsHorizontalIcon, ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { Avatar, Button, Toggle } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { LEGAL_PATHS } from '@lantern/shared';
+import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
+import { fetchMarketplaceCampuses } from '../services/supabase';
 import { CloudArrowDownIcon } from '@heroicons/react/24/outline';
 import {
     type UserSettings,
@@ -27,6 +28,7 @@ type SettingsTab =
     | 'study'
     | 'appearance'
     | 'privacy'
+    | 'marketplace'
     | 'dataSync'
     | 'support'
     | 'account';
@@ -71,7 +73,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const study = userSettings.study;
     const appearance = userSettings.appearance;
     const privacy = userSettings.privacy;
+    const marketplace = userSettings.marketplace || { country_code: 'NG', campus_id: null };
     const accessibility = userSettings.accessibility;
+    const [campusOptions, setCampusOptions] = useState<Array<{ id: string; name: string; city: string }>>([]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        void fetchMarketplaceCampuses(marketplace.country_code || 'NG')
+            .then(setCampusOptions)
+            .catch(() => {});
+    }, [isOpen, marketplace.country_code]);
 
     const [profileData, setProfileData] = useState({ name: currentUser.name, phone: currentUser.phoneNumber || '' });
     const [isProfileDirty, setIsProfileDirty] = useState(false);
@@ -166,6 +177,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         { id: 'study', label: 'Study', icon: AcademicCapIcon },
         { id: 'appearance', label: 'Appearance', icon: PaintBrushIcon },
         { id: 'privacy', label: 'Privacy', icon: EyeIcon },
+        { id: 'marketplace', label: 'Marketplace', icon: ShoppingBagIcon },
         { id: 'dataSync', label: 'Data & Sync', icon: CloudArrowDownIcon },
         { id: 'support', label: 'Support', icon: LifebuoyIcon },
         { id: 'account', label: 'Account', icon: ShieldExclamationIcon },
@@ -397,6 +409,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
                  </div>
+            );
+            case 'marketplace': return (
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-semibold text-lantern-text">Marketplace</h3>
+                        <p className="text-sm text-lantern-text-secondary">Set your campus to personalize Explore listings.</p>
+                    </div>
+                    <p className="text-sm text-lantern-text-secondary rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-amber-900 dark:text-amber-100">
+                        {MARKETPLACE_COMPLIANCE_BANNER}
+                    </p>
+                    <div>
+                        <label className="block text-sm font-medium text-lantern-text mb-1">Country</label>
+                        <select
+                            value={marketplace.country_code || 'NG'}
+                            onChange={(e) => onUpdateSettingsCategory('marketplace', { country_code: e.target.value })}
+                            className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text"
+                        >
+                            <option value="NG">Nigeria</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-lantern-text mb-1">Your campus</label>
+                        <select
+                            value={marketplace.campus_id || ''}
+                            onChange={(e) => onUpdateSettingsCategory('marketplace', { campus_id: e.target.value || null })}
+                            className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text"
+                        >
+                            <option value="">All campuses (no default filter)</option>
+                            {campusOptions.map((campus) => (
+                                <option key={campus.id} value={campus.id}>
+                                    {campus.name} ({campus.city})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             );
             case 'dataSync': return (
                  <div className="space-y-6">

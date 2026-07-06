@@ -194,10 +194,20 @@ export const PUBLIC_PATH_PREFIXES = [
   '/verify-email',
 ];
 
+/** Public marketplace browse/detail/seller profile (read-only for guests). */
+export function isPublicMarketplacePath(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  if (path === '/marketplace') return true;
+  if (/^\/marketplace\/listing\/[^/]+$/.test(path)) return true;
+  if (/^\/marketplace\/seller\/[^/]+$/.test(path)) return true;
+  return false;
+}
+
 export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (PUBLIC_PATH_PREFIXES.includes(path)) return true;
   if (path === '/' || path.startsWith('/invite/')) return true;
+  if (isPublicMarketplacePath(path)) return true;
   return false;
 }
 

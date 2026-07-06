@@ -4522,6 +4522,27 @@ export class SupabaseService {
   }
 
   // Marketplace Methods for API Routes
+  async getMarketplaceCampuses(countryCode = 'NG'): Promise<any[]> {
+    const { data, error } = await this.supabase
+      .from('marketplace_campuses')
+      .select('id, name, city, state, country_code, slug')
+      .eq('active', true)
+      .eq('country_code', countryCode)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getMarketplaceCampusById(campusId: string): Promise<any | null> {
+    const { data, error } = await this.supabase
+      .from('marketplace_campuses')
+      .select('id, name, city, state, country_code, slug, active')
+      .eq('id', campusId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async getMarketplaceListings(options: {
     page?: number;
     limit?: number;
@@ -4530,6 +4551,8 @@ export class SupabaseService {
     minPrice?: number;
     maxPrice?: number;
     location?: string;
+    campusId?: string;
+    countryCode?: string;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     responseProfile?: 'compact' | 'full';
@@ -4542,6 +4565,8 @@ export class SupabaseService {
       minPrice,
       maxPrice,
       location,
+      campusId,
+      countryCode,
       sortBy = 'created_at',
       sortOrder = 'desc',
       responseProfile = 'full',
@@ -4605,6 +4630,14 @@ export class SupabaseService {
       .select(selectClause)
       .eq('status', 'active')
       .range(offset, offset + limit - 1);
+
+    if (countryCode) {
+      query = query.eq('country_code', countryCode);
+    }
+
+    if (campusId) {
+      query = query.eq('campus_id', campusId);
+    }
 
     if (category) {
       query = query.eq('category', category);
@@ -4670,6 +4703,14 @@ export class SupabaseService {
           id,
           name,
           avatar_url
+        ),
+        campus:marketplace_campuses!campus_id (
+          id,
+          name,
+          city,
+          state,
+          slug,
+          country_code
         )
       `)
       .eq('id', listingId)
@@ -4695,6 +4736,9 @@ export class SupabaseService {
       sale_ends_at: listingData.sale_ends_at ?? listingData.saleEndsAt,
       promo_label: listingData.promo_label ?? listingData.promoLabel,
       location: listingData.location,
+      campus_id: listingData.campus_id ?? listingData.campusId,
+      country_code: listingData.country_code ?? listingData.countryCode ?? 'NG',
+      currency: listingData.currency ?? 'NGN',
       images: listingData.images || [],
       category_specific_fields: listingData.categorySpecificFields || listingData.category_specific_fields || {},
       listing_kind: listingData.listing_kind || listingData.listingKind || 'single',
@@ -4735,6 +4779,9 @@ export class SupabaseService {
     assign('sale_ends_at', 'sale_ends_at', 'saleEndsAt');
     assign('promo_label', 'promo_label', 'promoLabel');
     assign('location', 'location');
+    assign('campus_id', 'campus_id', 'campusId');
+    assign('country_code', 'country_code', 'countryCode');
+    assign('currency', 'currency');
     if (updates?.images !== undefined) dbUpdates.images = updates.images;
     assign('category_specific_fields', 'categorySpecificFields', 'category_specific_fields');
     assign('listing_kind', 'listing_kind', 'listingKind');

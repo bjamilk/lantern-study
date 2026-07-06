@@ -62,6 +62,11 @@ export interface SyncSettings {
   syncConflictResolution: 'local' | 'remote' | 'ask';
 }
 
+export interface MarketplaceSettings {
+  country_code: string;
+  campus_id?: string | null;
+}
+
 export interface UserSettings {
   notifications: NotificationSettings;
   study: StudySettings;
@@ -69,6 +74,7 @@ export interface UserSettings {
   privacy: PrivacySettings;
   accessibility: AccessibilitySettings;
   sync: SyncSettings;
+  marketplace?: MarketplaceSettings;
   version: number;
   updatedAt: string;
 }
@@ -139,6 +145,10 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     syncOnWifiOnly: false,
     lastSyncTime: null,
     syncConflictResolution: 'remote',
+  },
+  marketplace: {
+    country_code: 'NG',
+    campus_id: null,
   },
   version: 1,
   updatedAt: new Date().toISOString(),

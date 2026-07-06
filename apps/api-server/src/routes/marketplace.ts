@@ -23,6 +23,21 @@ export const initializeMarketplaceRoutes = (supabase: SupabaseService, cache: Ca
   cacheService = cache;
 };
 
+// GET /api/v1/marketplace/campuses - List campuses for location pickers
+router.get(
+  '/campuses',
+  asyncHandler(async (req: any, res: any) => {
+    const country = (req.query.country as string) || 'NG';
+    const cacheKey = `marketplace:campuses:${country}`;
+    let campuses = await cacheService.get(cacheKey);
+    if (!campuses) {
+      campuses = await supabaseService.getMarketplaceCampuses(country);
+      await cacheService.set(cacheKey, campuses, 3600);
+    }
+    res.json({ success: true, data: campuses });
+  })
+);
+
 // GET /api/v1/marketplace/listings - Get listings with search/filters
 router.get(
   '/listings',
@@ -37,15 +52,17 @@ router.get(
       minPrice,
       maxPrice,
       location,
+      campus_id: campusId,
+      country_code: countryCode,
       sortBy = 'created_at',
       sortOrder = 'desc',
       responseProfile,
     } = req.query;
     const profile = resolveResponseProfile(responseProfile);
 
-    logger.debug('Fetching marketplace listings', { page, limit, category, search, profile });
+    logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:${page}:${limit}:${category || ''}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
+    const cacheKey = `marketplace:listings:${page}:${limit}:${category || ''}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
     let listings = await cacheService.get(cacheKey);
 
     if (!listings) {
@@ -57,6 +74,8 @@ router.get(
         minPrice: minPrice ? parseFloat(minPrice) : undefined,
         maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
         location,
+        campusId: campusId as string | undefined,
+        countryCode: (countryCode as string) || undefined,
         sortBy,
         sortOrder: sortOrder === 'asc' ? 'asc' : 'desc',
         responseProfile: profile,
@@ -153,6 +172,26 @@ router.post(
         error: 'Category and title are required',
       });
     }
+
+    const campusId = listingData.campus_id ?? listingData.campusId;
+    if (!campusId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campus is required for marketplace listings',
+      });
+    }
+
+    const campus = await supabaseService.getMarketplaceCampusById(campusId);
+    if (!campus || !campus.active) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or inactive campus',
+      });
+    }
+
+    listingData.campus_id = campusId;
+    listingData.country_code = campus.country_code || 'NG';
+    listingData.currency = listingData.currency || 'NGN';
 
     logger.debug('Creating marketplace listing', { userId, category: listingData.category, title: listingData.title });
 

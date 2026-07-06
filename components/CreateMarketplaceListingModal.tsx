@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
+import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
+import { MARKETPLACE_CREATE_CONFIRMATION } from '@lantern/shared';
+import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
 import { useToastStore } from '../stores/toastStore';
 import { compressImage } from '../utils/imageCompression';
 import { aiGenerateListingDescription } from '../services/ai';
@@ -47,6 +49,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     promoLabel: '',
     quantity: '',
     location: '',
+    campusId: '',
+    complianceConfirmed: false,
     subcategory: '',
     images: [] as ImageFile[],
     // Category-specific fields
@@ -65,10 +69,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
   const [existingCustomCategories, setExistingCustomCategories] = useState<{id: string; name: string; usage_count: number}[]>([]);
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       fetchCustomCategories().then(setExistingCustomCategories).catch(() => {});
+      fetchMarketplaceCampuses('NG').then(setCampuses).catch(() => {});
     }
   }, [isOpen]);
 
@@ -285,6 +291,16 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       useToastStore.getState().showToast('Please enter a title');
       return;
     }
+
+    if (!formData.campusId) {
+      useToastStore.getState().showToast('Please select a campus');
+      return;
+    }
+
+    if (!formData.complianceConfirmed) {
+      useToastStore.getState().showToast('Please confirm on-campus pickup compliance');
+      return;
+    }
     
     setLoading(true);
 
@@ -316,6 +332,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         promo_label: formData.promoLabel || undefined,
         quantity: formData.quantity ? parseInt(formData.quantity, 10) : undefined,
         location: formData.location || undefined,
+        campus_id: formData.campusId,
+        country_code: 'NG',
+        currency: 'NGN',
         images: [],
         categorySpecificFields,
       };
@@ -362,6 +381,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         promoLabel: '',
         quantity: '',
         location: '',
+        campusId: '',
+        complianceConfirmed: false,
         subcategory: '',
         images: [],
         condition: '',
@@ -697,16 +718,45 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             <div>
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-1" />
-                Location
+                Campus <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.campusId}
+                onChange={(e) => setFormData(prev => ({ ...prev, campusId: e.target.value }))}
+                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                required
+              >
+                <option value="">Select campus</option>
+                {campuses.map((campus) => (
+                  <option key={campus.id} value={campus.id}>
+                    {formatCampusLabel(campus)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Meetup detail (optional)
               </label>
               <input
                 type="text"
                 value={formData.location}
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                placeholder="City, State or Campus"
+                placeholder="Faculty gate, hall, landmark…"
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
               />
             </div>
+
+            <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.complianceConfirmed}
+                onChange={(e) => setFormData(prev => ({ ...prev, complianceConfirmed: e.target.checked }))}
+                className="mt-1"
+              />
+              <span>{MARKETPLACE_CREATE_CONFIRMATION}</span>
+            </label>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories } from '../services/supabase';
+import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
+import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
 import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
 import {
@@ -44,6 +45,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     saleEndsAt: '',
     promoLabel: '',
     quantity: '',
+    campusId: '',
     location: '',
     category: '',
     images: [] as ImageFile[]
@@ -52,10 +54,12 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
   const [uploadingImages, setUploadingImages] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
   const [existingCustomCategories, setExistingCustomCategories] = useState<{id: string; name: string; usage_count: number}[]>([]);
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       fetchCustomCategories().then(setExistingCustomCategories).catch(() => {});
+      fetchMarketplaceCampuses('NG').then(setCampuses).catch(() => {});
     }
   }, [isOpen]);
 
@@ -85,6 +89,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         saleEndsAt: listing.sale_ends_at ? listing.sale_ends_at.slice(0, 16) : '',
         promoLabel: listing.promo_label || '',
         quantity: listing.quantity != null ? String(listing.quantity) : '',
+        campusId: listing.campus_id || listing.campus?.id || '',
         location: listing.location || '',
         category: isCustom ? 'other' : (listing.category || ''),
         images: (listing.images || []).map(url => ({
@@ -215,6 +220,10 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.campusId) {
+      useToastStore.getState().showToast('Please select a campus');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -233,6 +242,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         sale_ends_at: formData.saleEndsAt ? new Date(formData.saleEndsAt).toISOString() : null,
         promo_label: formData.promoLabel || null,
         quantity: formData.quantity ? parseInt(formData.quantity, 10) : null,
+        campus_id: formData.campusId,
         location: formData.location || undefined,
         category: resolvedCategory,
         images: imageUrls
@@ -391,16 +401,35 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-2" />
-                Location
+                Campus <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                placeholder="e.g., University of Nigeria, Nsukka"
+              <select
+                value={formData.campusId}
+                onChange={(e) => setFormData(prev => ({ ...prev, campusId: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-              />
+                required
+              >
+                <option value="">Select campus</option>
+                {campuses.map((campus) => (
+                  <option key={campus.id} value={campus.id}>
+                    {formatCampusLabel(campus)}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Meetup detail (optional)
+            </label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+              placeholder="Faculty gate, hall, landmark…"
+              className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -97,7 +97,8 @@ import { useAppEffects } from './hooks/useAppEffects';
 import { useFontMode } from './hooks/useFontMode';
 import { useInviteLink } from './hooks/useInviteLink';
 import { useAppNavigation } from './hooks/useAppNavigation';
-import { useRouteSync } from './hooks/useRouteSync';
+import { isPublicMarketplacePath } from './utils/appRoutes';
+import GuestMarketplaceShell from './components/marketplace/GuestMarketplaceShell';
 import { useAIHandlers } from './hooks/useAIHandlers';
 import AIGenerateQuestionsModal from './components/AIGenerateQuestionsModal';
 import AICompanionPanel from './components/AICompanionPanel';
@@ -699,6 +700,15 @@ export const App: React.FC = () => {
                             navigateToPath('/dashboard', { replace: true });
                         }
                     }}
+                />
+            );
+        }
+
+        if (isPublicMarketplacePath(path)) {
+            return (
+                <GuestMarketplaceShell
+                    onSignIn={() => navigateToPath('/login')}
+                    onSignUp={() => navigateToPath('/signup')}
                 />
             );
         }

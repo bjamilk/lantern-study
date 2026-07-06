@@ -16,6 +16,9 @@ import {
   fetchPickupNudge,
 } from '../services/supabase';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
+import { generateListingLink, formatCampusLabel } from '@lantern/shared';
+import { usePageSeo } from '../hooks/usePageSeo';
+import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import SaleCountdown from './marketplace/SaleCountdown';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -45,12 +48,16 @@ interface MarketplaceListingDetailScreenProps {
   listingId: string;
   onNavigate: (screen: string, params?: any) => void;
   onBack: () => void;
+  guestMode?: boolean;
+  onSignInRequired?: () => void;
 }
 
 const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenProps> = ({
   listingId,
   onNavigate,
-  onBack
+  onBack,
+  guestMode = false,
+  onSignInRequired,
 }) => {
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
   const [reviews, setReviews] = useState<MarketplaceReview[]>([]);
@@ -83,17 +90,63 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const isOwner = listing?.user_id === currentUser?.id || listing?.seller_id === currentUser?.id;
 
+  const seoPricing = listing ? resolveListingDisplayPrice(listing).effective : null;
+  const campusLabel = listing?.campus
+    ? formatCampusLabel(listing.campus as { name: string; city: string })
+    : listing?.location || 'Nigeria campus';
+
+  usePageSeo(
+    listing
+      ? {
+          title: `${listing.title}${seoPricing ? ` — ₦${seoPricing.toLocaleString()}` : ''} — ${campusLabel} | Lantern Study`,
+          description: (listing.description || `Campus marketplace listing: ${listing.title}`).slice(0, 160),
+          canonicalUrl: generateListingLink(listing.id),
+          ogImage: listing.images?.[0] || 'https://lanternstudy.com/lantern-icon.png',
+          ogType: 'product',
+          jsonLd: {
+            '@context': 'https://schema.org',
+            '@type': 'Product',
+            name: listing.title,
+            description: listing.description,
+            image: listing.images?.[0],
+            url: generateListingLink(listing.id),
+            ...(seoPricing
+              ? {
+                  offers: {
+                    '@type': 'Offer',
+                    priceCurrency: 'NGN',
+                    price: seoPricing,
+                    availability: 'https://schema.org/InStock',
+                  },
+                }
+              : {}),
+            areaServed: campusLabel,
+          },
+        }
+      : null
+  );
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ message, type });
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
 
+  const requireAuth = () => {
+    if (guestMode) {
+      onSignInRequired?.();
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     loadListingFull();
-    addRecentlyViewed(listingId);
+    if (!guestMode) {
+      addRecentlyViewed(listingId);
+    }
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
-  }, [listingId]);
+  }, [listingId, guestMode]);
 
   useEffect(() => {
     if (isOwner) {
@@ -178,11 +231,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   const handleContactSeller = () => {
     if (!listing) return;
+    if (requireAuth()) return;
     setShowContactForm(true);
   };
 
   const handleSendInquiry = async () => {
     if (!listing || !contactMessage.trim()) return;
+    if (requireAuth()) return;
 
     setContactLoading(true);
     try {
@@ -203,6 +258,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   };
 
   const toggleFavorite = async () => {
+    if (requireAuth()) return;
     const next = !isFavorited;
     setIsFavorited(next); // optimistic update
     try {
@@ -219,6 +275,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   const handleBuyNow = async () => {
     if (!listing || !listing.price || listing.price <= 0) return;
+    if (requireAuth()) return;
     const pricing = resolveListingDisplayPrice(listing);
     const payAmount = couponPreview?.finalAmount ?? pricing.effective;
     const confirmed = await confirmDialog({
@@ -329,6 +386,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   return (
     <div className="flex-1 bg-slate-50 dark:bg-slate-900 overflow-y-auto">
+      <div className="px-3 sm:px-4 md:px-6 pt-3">
+        <MarketplaceComplianceBanner />
+      </div>
       {/* Header */}
       <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-2.5 sm:py-3">
         <div className="flex items-center justify-between">
@@ -342,6 +402,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           </button>
 
           <div className="flex items-center gap-1">
+            {!guestMode && (
             <button
               onClick={toggleFavorite}
               className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
@@ -353,9 +414,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 <HeartIcon className="w-5 h-5 text-slate-400" />
               )}
             </button>
+            )}
             <button
               onClick={() => {
-                const url = window.location.href;
+                if (!listing) return;
+                const url = generateListingLink(listingId);
                 const text = `Check out "${listing.title}" on Lantern Study Marketplace`;
                 if (navigator.share) {
                   navigator.share({ title: listing.title, text, url }).catch(() => {});
@@ -372,6 +435,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             >
               <ShareIcon className="w-5 h-5" />
             </button>
+            {!guestMode && (
             <button
               onClick={() => setShowReportForm(true)}
               className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
@@ -379,6 +443,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             >
               <FlagIcon className="w-5 h-5" />
             </button>
+            )}
           </div>
         </div>
       </div>
@@ -729,7 +794,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               )}
               {!isOwner && listing.price && listing.price > 0 && (
                 <button
-                  onClick={() => setShowOfferModal(true)}
+                  onClick={() => {
+                    if (requireAuth()) return;
+                    setShowOfferModal(true);
+                  }}
                   className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                 >
                   <CurrencyDollarIcon className="w-4 h-4" />

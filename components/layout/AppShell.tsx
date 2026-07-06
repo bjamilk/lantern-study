@@ -154,7 +154,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                                     </div>
                                 ) : (
                                     <div className="mt-2 h-2 rounded-full overflow-hidden bg-indigo-100 dark:bg-gray-700">
-                                        <div className="h-full w-1/3 bg-indigo-500 animate-pulse" />
+                                        <div className="h-full w-1/3 bg-indigo-500 rounded-full animate-upload-indeterminate" />
                                     </div>
                                 )}
                             </div>

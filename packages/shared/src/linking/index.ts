@@ -4,7 +4,7 @@
 // Cross-platform deep linking for web and mobile
 
 export const DEEP_LINK_SCHEME = 'lanternstudy';
-export const WEB_BASE_URL = 'https://lanternstudy.app';
+export const WEB_BASE_URL = 'https://lanternstudy.com';
 
 export type DeepLinkType = 
     | 'flashcard'
@@ -70,11 +70,15 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
             const [pathPart = '', queryPart = ''] = withoutScheme.split('?');
             path = pathPart;
             searchParams = new URLSearchParams(queryPart);
-        } else if (url.startsWith(WEB_BASE_URL)) {
-            // Web URL: https://lanternstudy.app/flashcard/123
-            const urlObj = new URL(url);
-            path = urlObj.pathname.slice(1); // Remove leading /
+        } else if (url.startsWith(WEB_BASE_URL) || url.startsWith('https://lanternstudy.com')) {
+            // Web URL: https://lanternstudy.com/marketplace/listing/123
+            const urlObj = new URL(url.startsWith('http') ? url : `https://lanternstudy.com${url}`);
+            path = urlObj.pathname.slice(1);
             searchParams = urlObj.searchParams;
+            const listingMatch = path.match(/^marketplace\/listing\/([^/]+)$/);
+            if (listingMatch?.[1]) {
+                return { type: 'listing', id: listingMatch[1] };
+            }
         } else if (url.startsWith('/')) {
             // Relative path: /flashcard/123
             const [pathPart = '', queryPart = ''] = url.slice(1).split('?');
@@ -150,10 +154,7 @@ export const generateGroupLink = (groupId: string, inviteId?: string): string =>
  * Generate a shareable marketplace listing link
  */
 export const generateListingLink = (listingId: string): string => {
-    return generateDeepLink({
-        type: 'listing',
-        id: listingId,
-    });
+    return `${WEB_BASE_URL}/marketplace/listing/${encodeURIComponent(listingId)}`;
 };
 
 /**
@@ -165,6 +166,7 @@ export const getNavigationLinkingConfig = () => ({
         `${DEEP_LINK_SCHEME}://`,
         `${DEEP_LINK_SCHEME}:/`,
         WEB_BASE_URL,
+        'https://lanternstudy.com',
     ],
     config: {
         screens: {

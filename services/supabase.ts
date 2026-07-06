@@ -1994,6 +1994,19 @@ export const fetchMarketplaceListings = async (filters: {
   return result.data;
 };
 
+export const fetchMarketplaceCampuses = async (country = 'NG'): Promise<any[]> => {
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/marketplace/campuses?country=${encodeURIComponent(country)}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch campuses');
+  }
+  const result = await response.json();
+  return result.data || [];
+};
+
 export const fetchMarketplaceListingsPage = async (filters: {
   page?: number;
   limit?: number;
@@ -2002,6 +2015,8 @@ export const fetchMarketplaceListingsPage = async (filters: {
   minPrice?: number;
   maxPrice?: number;
   location?: string;
+  campus_id?: string;
+  country_code?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 } = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {

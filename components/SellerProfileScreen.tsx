@@ -17,9 +17,17 @@ interface SellerProfileScreenProps {
   userId: string;
   onBack: () => void;
   onNavigate: (screen: string, params?: any) => void;
+  guestMode?: boolean;
+  onSignInRequired?: () => void;
 }
 
-const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({ userId, onBack, onNavigate }) => {
+const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
+  userId,
+  onBack,
+  onNavigate,
+  guestMode = false,
+  onSignInRequired,
+}) => {
   const [profile, setProfile] = useState<SellerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

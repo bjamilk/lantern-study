@@ -88,6 +88,12 @@
       "import": "./src/utils/*.ts",
       "require": "./dist/utils/*.js",
       "default": "./src/utils/*.ts"
+    },
+    "./marketplace": {
+      "types": "./src/marketplace/index.ts",
+      "import": "./src/marketplace/index.ts",
+      "require": "./dist/marketplace/index.js",
+      "default": "./src/marketplace/index.ts"
     }
   },
   "scripts": {

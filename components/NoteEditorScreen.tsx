@@ -86,6 +86,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewTrigger, setPreviewTrigger] = useState(0);
   const saveEnabledRef = useRef(true);
+  const userEditedRef = useRef(false);
   const previewAttemptedRef = useRef<Set<string>>(new Set());
   const reextractAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
@@ -110,6 +111,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }).length;
 
   useEffect(() => {
+    userEditedRef.current = false;
     setTitle(note.title);
     setBody(note.body);
   }, [note.id, note.title, note.body]);
@@ -122,9 +124,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id]);
 
   useEffect(() => {
-    if (!note.id || !saveEnabledRef.current || generatingPreview) return;
+    if (!note.id || !saveEnabledRef.current || !userEditedRef.current || generatingPreview) return;
     onSave({ title, body });
   }, [note.id, title, body, onSave, generatingPreview]);
+
+  const handleTitleChange = (value: string) => {
+    userEditedRef.current = true;
+    setTitle(value);
+  };
+
+  const handleBodyChange = (value: string) => {
+    userEditedRef.current = true;
+    setBody(value);
+  };
 
   useEffect(() => {
     setPreviewError(null);
@@ -302,6 +314,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               fileName: `lecture-${Date.now()}.webm`,
             });
             onTranscriptReady(result.transcript);
+            userEditedRef.current = true;
             setBody(prev => [prev, result.transcript].filter(Boolean).join('\n\n'));
           } catch (err: any) {
             useToastStore.getState().showToast(err.message || 'Transcription failed', 'error');
@@ -337,7 +350,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </button>
         <input
           value={title}
-          onChange={e => setTitle(e.target.value)}
+          onChange={e => handleTitleChange(e.target.value)}
           className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-gray-100' : 'text-gray-900'}`}
         />
         {isSaving && <span className="hidden sm:inline text-xs text-gray-400 shrink-0">Saving...</span>}
@@ -437,7 +450,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               </h4>
               <textarea
                 value={body}
-                onChange={e => setBody(e.target.value)}
+                onChange={e => handleBodyChange(e.target.value)}
                 placeholder="Add your own notes on top of this document..."
                 className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
                   isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200 text-gray-800'
@@ -447,7 +460,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           ) : (
           <textarea
             value={body}
-            onChange={e => setBody(e.target.value)}
+            onChange={e => handleBodyChange(e.target.value)}
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
               isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200 text-gray-800'

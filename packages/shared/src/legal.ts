@@ -159,7 +159,11 @@ AI usage is subject to daily rate limits. We may change providers, models, or li
 
 ## 5. Marketplace
 
-Marketplace listings are user-generated. We do not guarantee the quality, safety, or legality of items or services offered. Transactions between users are their responsibility unless we explicitly state otherwise.
+Marketplace listings are user-generated and intended for **Nigerian campus communities** with **on-campus pickup**. Prices are shown in Nigerian Naira (₦). Payments are arranged directly between buyers and sellers unless we explicitly state otherwise.
+
+You must be at least **16 years old** to buy or sell on the marketplace. You are responsible for meeting safely on campus, verifying items, and complying with your institution's rules.
+
+We do not guarantee the quality, safety, or legality of items or services offered. Lantern Study is not a party to peer-to-peer transactions and does not provide payment processing for marketplace sales.
 
 ## 6. Privacy
 

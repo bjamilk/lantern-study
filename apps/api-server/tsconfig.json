@@ -12,7 +12,8 @@
       "@lantern/shared/utils": ["../../packages/shared/dist/utils/index"],
       "@lantern/shared/utils/*": ["../../packages/shared/dist/utils/*"],
       "@lantern/shared/settings": ["../../packages/shared/dist/settings/index"],
-      "@lantern/shared/settings/*": ["../../packages/shared/dist/settings/*"]
+      "@lantern/shared/settings/*": ["../../packages/shared/dist/settings/*"],
+      "@lantern/shared/marketplace": ["../../packages/shared/dist/marketplace/index"]
     },
     "strict": true,
     "esModuleInterop": true,

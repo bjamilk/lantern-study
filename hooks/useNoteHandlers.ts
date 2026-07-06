@@ -71,6 +71,15 @@ export function useNoteHandlers(currentUserId?: string) {
     }
   }, []);
 
+  const noteMatchesUpdates = (
+    note: { title: string; body: string },
+    updates: { title?: string; body?: string }
+  ) => {
+    const nextTitle = updates.title ?? note.title;
+    const nextBody = updates.body ?? note.body;
+    return nextTitle === note.title && nextBody === note.body;
+  };
+
   const handleAutoSave = useCallback(
     (noteId: string, updates: { title?: string; body?: string }) => {
       cancelAutoSave();
@@ -78,9 +87,23 @@ export function useNoteHandlers(currentUserId?: string) {
       if (state.selectedNote?.id !== noteId && !state.notes.some((n) => n.id === noteId)) {
         return;
       }
+      const stored =
+        state.selectedNote?.id === noteId
+          ? state.selectedNote
+          : state.notes.find((n) => n.id === noteId);
+      if (!stored || noteMatchesUpdates(stored, updates)) {
+        return;
+      }
       saveTimer.current = setTimeout(() => {
         const latest = useNotesStore.getState();
         if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
+          return;
+        }
+        const latestStored =
+          latest.selectedNote?.id === noteId
+            ? latest.selectedNote
+            : latest.notes.find((n) => n.id === noteId);
+        if (!latestStored || noteMatchesUpdates(latestStored, updates)) {
           return;
         }
         void saveNote(noteId, updates).catch(() => {

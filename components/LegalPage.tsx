@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   LEGAL_DOCUMENT_TITLES,
   LEGAL_PATHS,
@@ -22,9 +22,19 @@ interface LegalPageProps {
   document: LegalDocumentId;
 }
 
-export const LegalPage: React.FC<LegalPageProps> = ({ document }) => {
-  const title = LEGAL_DOCUMENT_TITLES[document];
-  const content = getLegalDocumentContent(document);
+const DEFAULT_DOCUMENT_TITLE = 'Lantern Study — Flashcards, tests, groups & AI study tools';
+
+export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) => {
+  const title = LEGAL_DOCUMENT_TITLES[documentId];
+  const content = getLegalDocumentContent(documentId);
+
+  useEffect(() => {
+    const previousTitle = window.document.title;
+    window.document.title = `${title} — Lantern Study`;
+    return () => {
+      window.document.title = previousTitle || DEFAULT_DOCUMENT_TITLE;
+    };
+  }, [title]);
 
   return (
     <div className="min-h-screen bg-lantern-background text-lantern-text">
@@ -34,13 +44,13 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document }) => {
             ← Back to Lantern Study
           </a>
           <nav className="flex gap-3 text-xs sm:text-sm">
-            <a href={LEGAL_PATHS.privacy} className={document === 'privacy' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
+            <a href={LEGAL_PATHS.privacy} className={documentId === 'privacy' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
               Privacy
             </a>
-            <a href={LEGAL_PATHS.terms} className={document === 'terms' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
+            <a href={LEGAL_PATHS.terms} className={documentId === 'terms' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
               Terms
             </a>
-            <a href={LEGAL_PATHS.cookies} className={document === 'cookies' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
+            <a href={LEGAL_PATHS.cookies} className={documentId === 'cookies' ? 'font-semibold' : 'opacity-70 hover:opacity-100'}>
               Cookies
             </a>
           </nav>

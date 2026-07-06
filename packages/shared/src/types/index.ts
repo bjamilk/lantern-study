@@ -621,6 +621,10 @@ export interface MarketplaceListing {
   effective_price?: number;
   is_on_sale?: boolean;
   location?: string;
+  campus_id?: string | null;
+  country_code?: string;
+  currency?: string;
+  campus?: { id: string; name: string; city: string; state: string; slug?: string };
   images?: string[];
   status: 'active' | 'sold' | 'inactive' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;

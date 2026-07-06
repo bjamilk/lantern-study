@@ -21,6 +21,9 @@ export * from './storage';
 // Deep linking
 export * from './linking';
 
+// Marketplace (location, compliance)
+export * from './marketplace';
+
 // API client
 export * from './api';
 

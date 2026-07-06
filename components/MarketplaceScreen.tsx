@@ -1,14 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import {
   fetchMarketplaceListings, fetchMyFavorites, addToFavorites, removeFromFavorites,
   getRecentlyViewed, removeRecentlyViewed, fetchMarketplaceListing,
   fetchSavedSearches, saveSearch, deleteSavedSearch, checkSavedSearchMatches,
-  fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics
+  fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics, fetchMarketplaceCampuses
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
+import { normalizeUserSettings } from '@lantern/shared/settings';
+import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
 import { MarketplaceListing, SavedSearch } from '../types';
+import { usePageSeo } from '../hooks/usePageSeo';
+import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
@@ -34,9 +38,15 @@ import { HeartIcon } from '@heroicons/react/24/solid';
 
 interface MarketplaceScreenProps {
   onNavigate: (screen: string, params?: any) => void;
+  guestMode?: boolean;
+  onSignInRequired?: () => void;
 }
 
-const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => {
+const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
+  onNavigate,
+  guestMode = false,
+  onSignInRequired,
+}) => {
   const { currentUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'academic' | 'student-life'>('academic');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
@@ -53,6 +63,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [locationFilter, setLocationFilter] = useState<string>('');
+  const [campusIdFilter, setCampusIdFilter] = useState<string>('');
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
+  const [campusFilterInitialized, setCampusFilterInitialized] = useState(false);
   const ITEMS_PER_PAGE = 20;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [recentlyViewed, setRecentlyViewed] = useState<MarketplaceListing[]>([]);
@@ -86,6 +99,33 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
     { id: 'events_social', name: 'Events & Social', icon: TicketIcon }
   ];
 
+  const userCampusId = useMemo(() => {
+    if (!currentUser?.settings) return null;
+    return normalizeUserSettings(currentUser.settings).marketplace?.campus_id || null;
+  }, [currentUser?.settings]);
+
+  usePageSeo({
+    title: 'Explore Marketplace — Campus deals | Lantern Study',
+    description:
+      'Browse Nigerian campus marketplace listings for textbooks, notes, accommodation, and student essentials. On-campus pickup; sign in to buy or sell.',
+    canonicalUrl: 'https://lanternstudy.com/marketplace',
+    ogType: 'website',
+  });
+
+  useEffect(() => {
+    void fetchMarketplaceCampuses('NG')
+      .then((rows) => setCampuses(rows))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (guestMode || campusFilterInitialized) return;
+    if (userCampusId) {
+      setCampusIdFilter(userCampusId);
+    }
+    setCampusFilterInitialized(true);
+  }, [guestMode, userCampusId, campusFilterInitialized]);
+
   useEffect(() => {
     setPage(1);
     setListings([]);
@@ -93,19 +133,22 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
     setPrimaryListingsLoaded(false);
     setRateLimitMessage(null);
     loadListings(1, true);
-    loadFavorites();
-  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter]);
+    if (!guestMode) {
+      loadFavorites();
+    }
+  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, guestMode]);
 
-  // Load recently viewed and saved searches on mount; defer heavy listing fetches
   useEffect(() => {
-    loadSavedSearches();
+    if (!guestMode) {
+      loadSavedSearches();
+    }
     loadCategoryAnalytics();
-  }, []);
+  }, [guestMode]);
 
   useEffect(() => {
-    if (!primaryListingsLoaded) return;
+    if (guestMode || !primaryListingsLoaded) return;
     void loadRecentlyViewed();
-  }, [primaryListingsLoaded]);
+  }, [primaryListingsLoaded, guestMode]);
 
   const loadCategoryAnalytics = async () => {
     try {
@@ -256,6 +299,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
       if (minPrice) filters.minPrice = parseFloat(minPrice);
       if (maxPrice) filters.maxPrice = parseFloat(maxPrice);
       if (locationFilter) filters.location = locationFilter;
+      if (campusIdFilter) filters.campus_id = campusIdFilter;
+      filters.country_code = 'NG';
 
       const { data, pagination } = await fetchMarketplaceListingsPage(filters);
       setTotalListingsCount(pagination?.total || 0);
@@ -404,6 +449,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-slate-50 dark:bg-slate-900">
+      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2">
+        <MarketplaceComplianceBanner />
+      </div>
       {/* Hero Header — compact on mobile */}
       <div className="shrink-0 max-w-full overflow-x-hidden box-border bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 px-3 sm:px-4 md:px-6 py-2 sm:py-4 md:py-8">
         <div className="flex items-center justify-between gap-2 max-w-full">
@@ -419,6 +467,16 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
             </div>
           </div>
           <div className="flex shrink-0 gap-1 sm:gap-2">
+            {guestMode ? (
+              <button
+                type="button"
+                onClick={() => onSignInRequired?.()}
+                className="h-8 sm:h-9 px-3 sm:px-4 bg-white text-indigo-700 hover:bg-indigo-50 rounded-lg font-semibold flex items-center justify-center transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+              >
+                Sign in to buy or sell
+              </button>
+            ) : (
+              <>
             <button
               onClick={() => onNavigate('MarketplaceOrders')}
               aria-label="Orders"
@@ -451,6 +509,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
               <PlusIcon className="w-4 h-4 sm:mr-1.5 shrink-0" />
               <span className="hidden sm:inline">Create</span>
             </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -520,12 +580,29 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({ onNavigate }) => 
                 </div>
               </div>
 
-              {/* Location */}
+              {/* Campus */}
               <div>
-                <label className="block text-xs font-medium text-indigo-100 mb-1">Location</label>
+                <label className="block text-xs font-medium text-indigo-100 mb-1">Campus</label>
+                <select
+                  value={campusIdFilter}
+                  onChange={(e) => setCampusIdFilter(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                >
+                  <option value="">All campuses</option>
+                  {campuses.map((campus) => (
+                    <option key={campus.id} value={campus.id}>
+                      {formatCampusLabel(campus)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Meetup detail search */}
+              <div>
+                <label className="block text-xs font-medium text-indigo-100 mb-1">Meetup area</label>
                 <input
                   type="text"
-                  placeholder="City or campus"
+                  placeholder="Gate, hall, faculty…"
                   value={locationFilter}
                   onChange={(e) => setLocationFilter(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"

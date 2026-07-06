@@ -25,7 +25,8 @@
     "src/utils/srs.ts",
     "src/utils/fsrs.ts",
     "src/utils/server.ts",
-    "src/settings/**/*.ts"
+    "src/settings/**/*.ts",
+    "src/marketplace/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "__tests__"]
 }
