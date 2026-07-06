@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { requireNoteAccess } from '../middleware/authorizeResource';
-import { aiRateLimit } from '../middleware/aiRateLimit';
+import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -448,7 +448,7 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   res.json({ success: true, data: { note, attachment } });
 }));
 
-router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { content, studyGoal, count } = req.body;
@@ -739,7 +739,7 @@ router.get('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) => 
   res.json({ success: true, data: quiz });
 }));
 
-router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -787,7 +787,7 @@ router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, data: session });
 }));
 
-router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_flashcards'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);

@@ -5,6 +5,19 @@
 /** Default daily AI request quota per user (overridable via API `AI_DAILY_LIMIT` env). */
 export const DEFAULT_AI_DAILY_LIMIT = 100;
 
+/** Default per-feature daily AI quotas (overridable via `AI_LIMIT_<FEATURE>` env vars). */
+export const DEFAULT_AI_FEATURE_LIMITS = {
+  companion: 75,
+  generate_questions: 15,
+  generate_flashcards: 15,
+  explain: 40,
+  study_plan: 10,
+  enhance_flashcard: 25,
+  study_recommendations: 25,
+} as const;
+
+export type AIFeatureLimitKey = keyof typeof DEFAULT_AI_FEATURE_LIMITS;
+
 export function formatAIResetCountdown(resetsAt: string, nowMs = Date.now()): string {
   if (!resetsAt) return '';
   const diffMs = new Date(resetsAt).getTime() - nowMs;

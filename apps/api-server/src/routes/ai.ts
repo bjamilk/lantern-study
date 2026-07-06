@@ -3,7 +3,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
-import { aiRateLimit, getAIUsage } from '../middleware/aiRateLimit';
+import { aiRateLimit, aiRateLimitForFeature, getAIUsage } from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
@@ -69,11 +69,10 @@ router.get('/usage', authMiddleware, async (req: AuthenticatedRequest, res: Resp
 router.use(authMiddleware);
 router.use(requirePermission('ai'));
 router.use(aiPostBurstRateLimit);
-router.use(aiRateLimit);
 router.use(validateAIMessage, handleValidationErrors);
 
 // Generate questions from notes
-router.post('/generate-questions', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { notes, count, difficulty, questionTypes, subject } = req.body;
@@ -102,7 +101,7 @@ router.post('/generate-questions', async (req: AuthenticatedRequest, res: Respon
   }
 });
 
-router.post('/generate-flashcards', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { notes, count, style } = req.body;
@@ -131,7 +130,7 @@ router.post('/generate-flashcards', async (req: AuthenticatedRequest, res: Respo
   }
 });
 
-router.post('/explain-answer', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/explain-answer', aiRateLimitForFeature('explain'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { question, userAnswer, correctAnswer, options } = req.body;
@@ -160,7 +159,7 @@ router.post('/explain-answer', async (req: AuthenticatedRequest, res: Response) 
   }
 });
 
-router.post('/study-recommendations', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/study-recommendations', aiRateLimitForFeature('study_recommendations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { performanceData } = req.body;
@@ -189,7 +188,7 @@ router.post('/study-recommendations', async (req: AuthenticatedRequest, res: Res
   }
 });
 
-router.post('/ask-tutor', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/ask-tutor', aiRateLimitForFeature('study_plan'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { question, context } = req.body;
@@ -218,7 +217,7 @@ router.post('/ask-tutor', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.post('/enhance-flashcard', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/enhance-flashcard', aiRateLimitForFeature('enhance_flashcard'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { front, back } = req.body;

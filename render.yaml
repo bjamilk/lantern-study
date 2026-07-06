@@ -77,6 +77,20 @@ services:
         value: "300"
       - key: AI_DAILY_LIMIT
         value: "100"
+      - key: AI_LIMIT_COMPANION
+        value: "75"
+      - key: AI_LIMIT_GENERATE_QUESTIONS
+        value: "15"
+      - key: AI_LIMIT_GENERATE_FLASHCARDS
+        value: "15"
+      - key: AI_LIMIT_EXPLAIN
+        value: "40"
+      - key: AI_LIMIT_STUDY_PLAN
+        value: "10"
+      - key: AI_LIMIT_ENHANCE_FLASHCARD
+        value: "25"
+      - key: AI_LIMIT_STUDY_RECOMMENDATIONS
+        value: "25"
 
   - type: worker
     name: lantern-study-worker

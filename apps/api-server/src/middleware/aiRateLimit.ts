@@ -6,13 +6,27 @@
 import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
 
-import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
+import { DEFAULT_AI_DAILY_LIMIT, DEFAULT_AI_FEATURE_LIMITS } from '@lantern/shared/utils/aiUsage';
 
 const userAIUsage = new Map<string, { count: number; dateKey: string }>();
 
 const AI_DAILY_LIMIT = parseInt(
   process.env.AI_DAILY_LIMIT || String(DEFAULT_AI_DAILY_LIMIT),
   10
+);
+
+function readFeatureLimitEnv(key: string, fallback: number): number {
+  const raw = process.env[`AI_LIMIT_${key.toUpperCase()}`];
+  if (!raw) return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const FEATURE_LIMITS: Record<string, number> = Object.fromEntries(
+  Object.entries(DEFAULT_AI_FEATURE_LIMITS).map(([key, fallback]) => [
+    key,
+    readFeatureLimitEnv(key, fallback),
+  ])
 );
 
 function getUtcDateKey(now = new Date()): string {
@@ -135,16 +149,6 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
   res.setHeader('X-AI-Usage-Resets-At', toResetsAt(result.resetTime));
   next();
 }
-
-const FEATURE_LIMITS: Record<string, number> = {
-  companion: parseInt(process.env.AI_LIMIT_COMPANION || '15', 10),
-  generate_questions: parseInt(process.env.AI_LIMIT_GENERATE_QUESTIONS || '3', 10),
-  generate_flashcards: parseInt(process.env.AI_LIMIT_GENERATE_FLASHCARDS || '3', 10),
-  explain: parseInt(process.env.AI_LIMIT_EXPLAIN || '8', 10),
-  study_plan: parseInt(process.env.AI_LIMIT_STUDY_PLAN || '2', 10),
-  enhance_flashcard: parseInt(process.env.AI_LIMIT_ENHANCE_FLASHCARD || '5', 10),
-  study_recommendations: parseInt(process.env.AI_LIMIT_STUDY_RECOMMENDATIONS || '5', 10),
-};
 
 function resolveFeatureLimit(featureKey?: string): number {
   if (featureKey && FEATURE_LIMITS[featureKey] !== undefined) {
