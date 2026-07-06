@@ -73,9 +73,9 @@ export function presentationContentType(fileName: string): string {
 
 const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
 /** Background jobs are not limited by Render HTTP proxy (~100s). */
-const GOTENBERG_CONVERT_TIMEOUT_MS = 60_000;
-const GOTENBERG_CONVERT_ATTEMPTS = 1;
-const GOTENBERG_WAKE_BUDGET_MS = 20_000;
+const GOTENBERG_CONVERT_TIMEOUT_MS = 90_000;
+const GOTENBERG_CONVERT_ATTEMPTS = 2;
+const GOTENBERG_WAKE_BUDGET_MS = 45_000;
 const GOTENBERG_WAKE_ATTEMPT_TIMEOUT_MS = 6_000;
 
 function sleep(ms: number): Promise<void> {

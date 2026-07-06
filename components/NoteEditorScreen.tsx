@@ -200,8 +200,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     let cancelled = false;
     setGeneratingPreview(true);
     setPreviewError(null);
-    void notesApi
-      .regeneratePresentationPreview(note.id)
+    const previewPromise = isPreviewProcessing
+      ? notesApi.waitForPresentationPreview(note.id)
+      : notesApi.regeneratePresentationPreview(note.id);
+    void previewPromise
       .then((result) => {
         if (cancelled) return;
         const prev = useNotesStore.getState().selectedNote;
@@ -247,6 +249,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     note.sourceType,
     presentationPreviewPath,
     presentationAttachment,
+    isPreviewProcessing,
     previewTrigger,
     setSelectedNote,
     showToast,

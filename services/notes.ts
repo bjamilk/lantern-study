@@ -316,47 +316,43 @@ export async function fetchPresentationPreviewStatus(noteId: string): Promise<{
   return notesRequest(`/${noteId}/preview-status`);
 }
 
-/** Wake the slide-preview converter while the client uploads to storage. */
-export async function warmPresentationPreview(): Promise<void> {
-  await notesRequest('/warm-preview', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  }).catch(() => {});
+const PREVIEW_POLL_DEADLINE_MS = 180_000;
+
+async function pollPresentationPreviewUntilReady(noteId: string): Promise<{
+  attachment: NoteAttachment;
+  previewAvailable: boolean;
+  previewError?: string;
+}> {
+  const deadline = Date.now() + PREVIEW_POLL_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    const status = await fetchPresentationPreviewStatus(noteId);
+    if (status.status === 'none') {
+      throw new Error(
+        status.previewError ||
+          'This note is missing slide files. Delete it and re-upload your presentation.'
+      );
+    }
+    if (status.status === 'ready' && status.attachment) {
+      return { attachment: status.attachment, previewAvailable: true };
+    }
+    if (status.status === 'failed') {
+      return {
+        attachment: status.attachment!,
+        previewAvailable: false,
+        previewError:
+          status.previewError ||
+          'Slide preview is unavailable, but AI can still use extracted text from your deck.',
+      };
+    }
+    await sleep(3000);
+  }
+  throw new Error('Preview generation timed out. Try Retry preview.');
 }
 
 export async function regeneratePresentationPreview(
   noteId: string
 ): Promise<{ attachment: NoteAttachment; previewAvailable: boolean; previewError?: string }> {
-  const waitForPreview = async (): Promise<{
-    attachment: NoteAttachment;
-    previewAvailable: boolean;
-    previewError?: string;
-  }> => {
-    const deadline = Date.now() + 120_000;
-    while (Date.now() < deadline) {
-      const status = await fetchPresentationPreviewStatus(noteId);
-      if (status.status === 'none') {
-        throw new Error(
-          status.previewError ||
-            'This note is missing slide files. Delete it and re-upload your presentation.'
-        );
-      }
-      if (status.status === 'ready' && status.attachment) {
-        return { attachment: status.attachment, previewAvailable: true };
-      }
-      if (status.status === 'failed') {
-        return {
-          attachment: status.attachment!,
-          previewAvailable: false,
-          previewError:
-            status.previewError ||
-            'Slide preview is unavailable, but AI can still use extracted text from your deck.',
-        };
-      }
-      await sleep(3000);
-    }
-    throw new Error('Preview generation timed out. Try Retry preview.');
-  };
+  const waitForPreview = () => pollPresentationPreviewUntilReady(noteId);
 
   if (previewPollsInFlight.has(noteId)) {
     return waitForPreview();
@@ -407,6 +403,21 @@ export async function regeneratePresentationPreview(
     }
 
     return waitForPreview();
+  } finally {
+    previewPollsInFlight.delete(noteId);
+  }
+}
+
+/** Poll only — use when finalize-presentation already started preview generation. */
+export async function waitForPresentationPreview(
+  noteId: string
+): Promise<{ attachment: NoteAttachment; previewAvailable: boolean; previewError?: string }> {
+  if (previewPollsInFlight.has(noteId)) {
+    return pollPresentationPreviewUntilReady(noteId);
+  }
+  previewPollsInFlight.add(noteId);
+  try {
+    return await pollPresentationPreviewUntilReady(noteId);
   } finally {
     previewPollsInFlight.delete(noteId);
   }
@@ -639,8 +650,6 @@ export async function uploadPresentationViaApi(
   const { supabase } = await import('./supabase');
   const storagePath = buildNoteStoragePath(userId, file.name);
   const contentType = presentationContentType(file.name);
-
-  void warmPresentationPreview();
 
   try {
     await uploadFileToNoteStorage(file, storagePath, contentType, onProgress);

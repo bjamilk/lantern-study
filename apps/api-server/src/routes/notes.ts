@@ -454,6 +454,13 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   });
 }));
 
+router.post('/warm-preview', asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  warmGotenberg();
+  res.json({ success: true });
+}));
+
 router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const startedAt = Date.now();
   const userId = requireAuthUserId(req, res);
@@ -692,13 +699,6 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
     fileName,
     meta: processingMeta,
   });
-}));
-
-router.post('/warm-preview', asyncHandler(async (req: Request, res: Response) => {
-  const userId = requireAuthUserId(req, res);
-  if (!userId) return;
-  warmGotenberg();
-  res.json({ success: true });
 }));
 
 router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
