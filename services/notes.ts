@@ -291,6 +291,8 @@ export async function deleteNote(noteId: string): Promise<void> {
 
 export type PresentationPreviewStatus = 'ready' | 'processing' | 'failed' | 'none';
 
+const previewPollsInFlight = new Set<string>();
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -325,61 +327,89 @@ export async function warmPresentationPreview(): Promise<void> {
 export async function regeneratePresentationPreview(
   noteId: string
 ): Promise<{ attachment: NoteAttachment; previewAvailable: boolean; previewError?: string }> {
-  const headers = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/v1/notes/${noteId}/regenerate-preview`, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({}),
-  });
-
-  const data = (await response.json().catch(() => ({}))) as {
-    data?: {
-      attachment?: NoteAttachment;
-      previewAvailable?: boolean;
-      previewError?: string;
-      status?: PresentationPreviewStatus;
-    };
-    message?: string;
-    error?: string;
+  const waitForPreview = async (): Promise<{
+    attachment: NoteAttachment;
+    previewAvailable: boolean;
+    previewError?: string;
+  }> => {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const status = await fetchPresentationPreviewStatus(noteId);
+      if (status.status === 'none') {
+        throw new Error(
+          status.previewError ||
+            'This note is missing slide files. Delete it and re-upload your presentation.'
+        );
+      }
+      if (status.status === 'ready' && status.attachment) {
+        return { attachment: status.attachment, previewAvailable: true };
+      }
+      if (status.status === 'failed') {
+        return {
+          attachment: status.attachment!,
+          previewAvailable: false,
+          previewError:
+            status.previewError ||
+            'Slide preview is unavailable, but AI can still use extracted text from your deck.',
+        };
+      }
+      await sleep(3000);
+    }
+    throw new Error('Preview generation timed out. Try Retry preview.');
   };
 
-  if (response.status === 404) {
-    throw new Error(formatPreviewRequestError(404, data));
+  if (previewPollsInFlight.has(noteId)) {
+    return waitForPreview();
   }
-  if (!response.ok && response.status !== 202) {
-    throw new Error(formatPreviewRequestError(response.status, data));
-  }
+  previewPollsInFlight.add(noteId);
 
-  const payload = data.data ?? data;
-  if (payload.previewAvailable && payload.attachment) {
-    return {
-      attachment: payload.attachment,
-      previewAvailable: true,
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/notes/${noteId}/regenerate-preview`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      data?: {
+        attachment?: NoteAttachment | null;
+        previewAvailable?: boolean;
+        previewError?: string;
+        status?: PresentationPreviewStatus;
+      };
+      message?: string;
+      error?: string;
     };
-  }
 
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    await sleep(3000);
-    const status = await fetchPresentationPreviewStatus(noteId);
-    if (status.status === 'ready' && status.attachment) {
-      return { attachment: status.attachment, previewAvailable: true };
+    if (response.status === 404) {
+      throw new Error(formatPreviewRequestError(404, data));
     }
-    if (status.status === 'failed') {
+    if (!response.ok && response.status !== 202) {
+      throw new Error(formatPreviewRequestError(response.status, data));
+    }
+
+    const payload = data.data ?? data;
+    if (payload.status === 'none') {
+      throw new Error(
+        payload.previewError ||
+          'This note is missing slide files. Delete it and re-upload your presentation.'
+      );
+    }
+    if (payload.previewAvailable && payload.attachment) {
       return {
-        attachment: status.attachment!,
-        previewAvailable: false,
-        previewError:
-          status.previewError ||
-          'Slide preview is unavailable, but AI can still use extracted text from your deck.',
+        attachment: payload.attachment,
+        previewAvailable: true,
       };
     }
-  }
 
-  throw new Error('Preview generation timed out. Try Retry preview.');
+    return waitForPreview();
+  } finally {
+    previewPollsInFlight.delete(noteId);
+  }
 }
 
 export async function summarizeNote(noteId: string): Promise<{ summary: string; note: StudyNote }> {

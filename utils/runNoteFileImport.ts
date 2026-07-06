@@ -7,6 +7,7 @@ import {
 import { useNoteUploadStore, type NoteUploadKind } from '../stores/noteUploadStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
+import { useNotesStore } from '../stores/notesStore';
 
 function mapProgressToJobStatus(
   stage: NoteImportProgress['stage']
@@ -49,6 +50,10 @@ async function finalizeImport(
   setSelectedNote({ ...result.note, attachments: [result.attachment] });
   navigateToEditor(result.note.id);
   await loadNote(result.note.id);
+  const loaded = useNotesStore.getState().selectedNote;
+  if (loaded?.id === result.note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+    setSelectedNote({ ...loaded, attachments: [result.attachment] });
+  }
   await loadNotes();
   useNoteUploadStore.getState().completeJob(jobId, result.note.id);
   onProgress({

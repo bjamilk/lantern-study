@@ -132,12 +132,15 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       const { note, attachment } = await notesApi.uploadPresentationViaApi(file, undefined, setImportProgress);
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
-      notesState.setSelectedNote({ ...note, attachments: [attachment] });
       await loadNote(note.id);
+      const loaded = useNotesStore.getState().selectedNote;
+      if (loaded?.id === note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+        notesState.setSelectedNote({ ...loaded, attachments: [attachment] });
+      }
       useUIStore.getState().clearImportProgress();
       await runStudyGenerators({
         ...useNotesStore.getState().selectedNote!,
-        attachments: [attachment],
+        attachments: useNotesStore.getState().selectedNote?.attachments ?? [attachment],
       });
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();

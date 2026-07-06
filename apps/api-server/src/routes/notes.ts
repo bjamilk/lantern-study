@@ -635,7 +635,15 @@ router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationError
   const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
   const attachment = attachments.find((a) => a.type === 'presentation');
   if (!attachment) {
-    res.status(404).json({ error: 'No presentation attachment found.' });
+    res.json({
+      success: true,
+      data: {
+        status: 'none' as const,
+        previewAvailable: false,
+        previewError: 'No presentation attachment found.',
+        attachment: null,
+      },
+    });
     return;
   }
 
@@ -705,7 +713,15 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
   const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
   const attachment = attachments.find((a) => a.type === 'presentation');
   if (!attachment) {
-    res.status(404).json({ error: 'No presentation attachment found.' });
+    res.json({
+      success: true,
+      data: {
+        status: 'none' as const,
+        previewAvailable: false,
+        previewError: 'No presentation attachment found.',
+        attachment: null,
+      },
+    });
     return;
   }
 
