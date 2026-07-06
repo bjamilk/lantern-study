@@ -1,13 +1,37 @@
 /**
  * Build the allowed CORS origin list for the API server.
  */
+
+/** Production web origins — always allowed when NODE_ENV=production. */
+export const PRODUCTION_WEB_ORIGINS = [
+  'https://lanternstudy.com',
+  'https://www.lanternstudy.com',
+  'https://lantern-study.pages.dev',
+] as const;
+
+function parseExtraOrigins(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Build the allowed CORS origin list for the API server.
+ */
 export function getAllowedCorsOrigins(): string[] {
   const origins = new Set<string>();
+
+  if (process.env.NODE_ENV === 'production') {
+    for (const o of PRODUCTION_WEB_ORIGINS) origins.add(o);
+  }
 
   const envOrigins = [
     process.env.FRONTEND_URL,
     process.env.WEB_APP_URL,
     process.env.MOBILE_APP_URL,
+    ...parseExtraOrigins(process.env.ALLOWED_ORIGINS),
   ].filter(Boolean) as string[];
 
   for (const o of envOrigins) origins.add(o);

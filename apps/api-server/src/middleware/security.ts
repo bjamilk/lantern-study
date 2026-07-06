@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
+import { getAllowedCorsOrigins } from '../utils/corsOrigins';
 
 // Extended Request type
 interface AuthenticatedRequest extends Request {
@@ -143,20 +144,8 @@ export const securityHeaders = helmet({
 // 4. CORS Configuration
 export const corsConfig = cors({
   origin: (origin, callback) => {
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'http://localhost:5175',
-      'http://localhost:5176',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5174',
-      'http://127.0.0.1:5175',
-      process.env.WEB_APP_URL,
-      process.env.MOBILE_APP_URL,
-    ].filter(Boolean) as string[];
-    
+    const allowedOrigins = getAllowedCorsOrigins();
+
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else if (process.env.NODE_ENV !== 'production') {
@@ -167,8 +156,15 @@ export const corsConfig = cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-User-ID'],
-  exposedHeaders: ['X-Request-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-User-ID'],
+  exposedHeaders: [
+    'X-Request-ID',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-AI-Usage-Used',
+    'X-AI-Usage-Limit',
+    'X-AI-Usage-Resets-At',
+  ],
   maxAge: 86400,
 });
 

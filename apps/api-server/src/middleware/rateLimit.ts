@@ -160,7 +160,7 @@ function buildAllLimiters(): void {
     message: 'Too many unauthenticated requests from this IP. Please try again later.',
     keyScope: 'ip',
     redisPrefix: 'anon',
-    skip: (req) => hasAuthCredential(req),
+    skip: (req) => req.method === 'OPTIONS' || hasAuthCredential(req),
   });
 
   _publicReadRateLimit = createScopedRateLimit({

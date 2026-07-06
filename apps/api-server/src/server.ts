@@ -185,9 +185,9 @@ app.use(helmet({
 }));
 
 // CORS configuration — production uses explicit allowlist only
-const allowedOrigins = getAllowedCorsOrigins();
 app.use(cors({
   origin: function (origin, callback) {
+    const allowedOrigins = getAllowedCorsOrigins();
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     if (process.env.ALLOW_ALL_CORS === 'true' && process.env.NODE_ENV !== 'production') {
