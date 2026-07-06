@@ -31,11 +31,13 @@ function pruneJobs(jobs: NoteUploadJob[]): NoteUploadJob[] {
 
 function reconcileStaleJobs(jobs: NoteUploadJob[]): NoteUploadJob[] {
   const now = Date.now();
-  return jobs.map((j) => {
+  let changed = false;
+  const next = jobs.map((j) => {
     if (
       (j.status === 'uploading' || j.status === 'processing') &&
       now - j.updatedAt > STALE_JOB_MS
     ) {
+      changed = true;
       return {
         ...j,
         status: 'failed' as const,
@@ -46,6 +48,18 @@ function reconcileStaleJobs(jobs: NoteUploadJob[]): NoteUploadJob[] {
     }
     return j;
   });
+  return changed ? next : jobs;
+}
+
+/** Pure selectors — use with `jobs` from the store + useMemo, not inside useNoteUploadStore(). */
+export function getActiveUploadJob(jobs: NoteUploadJob[]): NoteUploadJob | undefined {
+  return jobs.find(
+    (j) => !j.dismissed && (j.status === 'uploading' || j.status === 'processing')
+  );
+}
+
+export function getVisibleUploadJobs(jobs: NoteUploadJob[]): NoteUploadJob[] {
+  return jobs.filter((j) => !j.dismissed).slice(0, 5);
 }
 
 interface NoteUploadState {
@@ -59,8 +73,6 @@ interface NoteUploadState {
   failJob: (id: string, error: string) => void;
   dismissJob: (id: string) => void;
   dismissAllFinished: () => void;
-  getActiveJob: () => NoteUploadJob | undefined;
-  getVisibleJobs: () => NoteUploadJob[];
 }
 
 export const useNoteUploadStore = create<NoteUploadState>()(
@@ -143,15 +155,6 @@ export const useNoteUploadStore = create<NoteUploadState>()(
           ),
         }));
       },
-
-      getActiveJob: () =>
-        get().jobs.find(
-          (j) =>
-            !j.dismissed && (j.status === 'uploading' || j.status === 'processing')
-        ),
-
-      getVisibleJobs: () =>
-        get().jobs.filter((j) => !j.dismissed).slice(0, 5),
     }),
     {
       name: 'lantern-note-upload-jobs',

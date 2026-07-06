@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
@@ -10,7 +10,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useAuthStore } from '../../stores/authStore';
-import { useNoteUploadStore } from '../../stores/noteUploadStore';
+import { useNoteUploadStore, getActiveUploadJob, getVisibleUploadJobs } from '../../stores/noteUploadStore';
 import { fetchAIUsage } from '../../services/ai';
 
 interface AppShellProps {
@@ -33,8 +33,9 @@ const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate, hideMobileAiUsageBadge = false }) => {
     const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
-    const uploadJobs = useNoteUploadStore((s) => s.getVisibleJobs());
-    const activeUploadJob = useNoteUploadStore((s) => s.getActiveJob());
+    const uploadJobList = useNoteUploadStore((s) => s.jobs);
+    const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
+    const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
     const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
     const { activeTestSession, activeStudySession, activeGameSession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();

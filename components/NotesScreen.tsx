@@ -14,7 +14,7 @@ import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import type { NoteFolder, StudyNote } from '../types';
 import { ScreenHeader, Button, EmptyState, FolderNameModal } from './ui';
 import { useUIStore } from '../stores/uiStore';
-import { useNoteUploadStore } from '../stores/noteUploadStore';
+import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -59,7 +59,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [search, setSearch] = useState('');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const importProgress = useUIStore((s) => s.importProgress);
-  const uploadJobs = useNoteUploadStore((s) => s.getVisibleJobs());
+  const uploadJobList = useNoteUploadStore((s) => s.jobs);
+  const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
   const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
 
