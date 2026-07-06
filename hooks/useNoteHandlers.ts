@@ -114,16 +114,41 @@ export function useNoteHandlers(currentUserId?: string) {
     [saveNote, cancelAutoSave]
   );
 
-  const handleSummarize = useCallback(async (noteId: string) => {
-    const result = await notesApi.summarizeNote(noteId);
-    setSelectedNote({ ...selectedNote!, ...result.note, summary: result.summary });
-    return result.summary;
-  }, [selectedNote, setSelectedNote]);
+  const handleSmartNote = useCallback(
+    async (noteId: string, editorState?: { title?: string; body?: string }) => {
+      cancelAutoSave();
+      if (editorState) {
+        await saveNote(noteId, editorState);
+      }
+      await loadNote(noteId);
+      const note = useNotesStore.getState().selectedNote;
+      if (!note) throw new Error('Note not found.');
+      if (!hasEnoughNoteStudyContent(note) && getNoteStudyContent(note).length < 30) {
+        throw new Error(
+          'Need at least 30 characters of study content. Add notes or wait for import/extraction.'
+        );
+      }
+      const result = await notesApi.summarizeNote(noteId);
+      const latest = useNotesStore.getState().selectedNote;
+      if (latest?.id === noteId) {
+        setSelectedNote({
+          ...latest,
+          ...result.note,
+          summary: result.summary,
+        });
+      }
+      return result.summary;
+    },
+    [cancelAutoSave, saveNote, loadNote, setSelectedNote]
+  );
 
   const handleChatWithNote = useCallback(() => {
     if (!selectedNote) return;
+    const studyContent = getNoteStudyContent(selectedNote);
     openWithMessage(
-      `I want to study my note "${selectedNote.title}". Ask me questions about it or help me understand key concepts based on this material.`
+      studyContent.length >= 50
+        ? `Help me study my note "${selectedNote.title}". Ask me questions and explain key concepts from this material:\n\n${studyContent.slice(0, 4000)}`
+        : `I want to study my note "${selectedNote.title}". Ask me questions about it or help me understand key concepts based on this material.`
     );
   }, [selectedNote, openWithMessage]);
 
@@ -242,16 +267,22 @@ export function useNoteHandlers(currentUserId?: string) {
   );
 
   const handleStartNoteQuiz = useCallback(
-    async () => {
+    async (editorState?: { title?: string; body?: string }) => {
       if (!selectedNote) return null;
-      if (!hasEnoughNoteStudyContent(selectedNote)) {
+      cancelAutoSave();
+      if (editorState) {
+        await saveNote(selectedNote.id, editorState);
+      }
+      await loadNote(selectedNote.id);
+      const note = useNotesStore.getState().selectedNote;
+      if (!note || !hasEnoughNoteStudyContent(note)) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
-      const session = await notesApi.generateNoteQuiz(selectedNote.id, studyGoal, 5);
+      const session = await notesApi.generateNoteQuiz(note.id, studyGoal, 5);
       setDailyQuiz(session);
       return session;
     },
-    [selectedNote, studyGoal, setDailyQuiz]
+    [selectedNote, studyGoal, setDailyQuiz, cancelAutoSave, saveNote, loadNote]
   );
 
   const handlePdfImport = useCallback(
@@ -312,7 +343,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleCreateFolder: createFolder,
     handleAutoSave,
     cancelAutoSave,
-    handleSummarize,
+    handleSmartNote,
     handleChatWithNote,
     handleGenerateFlashcards,
     handleCreateFlashcardDeckFromNote,

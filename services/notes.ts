@@ -9,6 +9,7 @@ import type {
   StudyNote,
 } from '../types';
 import { ensureNotesUploadSession, getAuthHeaders } from './supabase';
+import { pollApiJob } from './jobPoll';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -191,6 +192,9 @@ async function notesRequest<T>(
   });
 
   const data = await response.json().catch(() => ({}));
+  if (response.status === 202 && typeof data.jobId === 'string') {
+    return pollApiJob<T>(data.jobId);
+  }
   if (!response.ok) {
     const hasBody =
       (typeof data.error === 'string' && data.error && data.error !== 'Error') ||

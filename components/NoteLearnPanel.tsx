@@ -13,7 +13,7 @@ interface NoteLearnPanelProps {
   note: StudyNote & { attachments?: Array<{ extractedText?: string | null }> };
   studyContentLength?: number;
   theme: 'light' | 'dark';
-  onSummarize: () => Promise<string | void>;
+  onSmartNote: (editorState?: { title?: string; body?: string }) => Promise<string | void>;
   onChatWithNote: () => void;
   onGenerateFlashcards: () => void;
   onGenerateQuiz: () => void;
@@ -24,13 +24,13 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   note,
   studyContentLength,
   theme,
-  onSummarize,
+  onSmartNote,
   onChatWithNote,
   onGenerateFlashcards,
   onGenerateQuiz,
   isBusy = false,
 }) => {
-  const [summarizing, setSummarizing] = useState(false);
+  const [smartNoting, setSmartNoting] = useState(false);
   const isDark = theme === 'dark';
   const studyContent = getNoteStudyContent({
     sourceType: note.sourceType,
@@ -46,12 +46,12 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
     attachments: note.attachments,
   });
 
-  const handleSummarize = async () => {
-    setSummarizing(true);
+  const handleSmartNote = async () => {
+    setSmartNoting(true);
     try {
-      await onSummarize();
+      await onSmartNote({ title: note.title, body: note.body });
     } finally {
-      setSummarizing(false);
+      setSmartNoting(false);
     }
   };
 
@@ -64,7 +64,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
 
       {note.summary && (
         <div className={`mb-5 p-4 rounded-lg text-sm leading-relaxed ${isDark ? 'bg-gray-900 text-gray-300' : 'bg-white text-gray-700'}`}>
-          <p className="font-medium mb-1 text-indigo-500">Summary</p>
+          <p className="font-medium mb-1 text-indigo-500">Smart Notes</p>
           <p className="whitespace-pre-wrap">{note.summary}</p>
         </div>
       )}
@@ -78,12 +78,12 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          disabled={isBusy || summarizing || contentLength < 30}
-          onClick={handleSummarize}
+          disabled={isBusy || smartNoting || contentLength < 30}
+          onClick={handleSmartNote}
           className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
         >
-          {summarizing ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
-          Summarize
+          {smartNoting ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
+          Smart Note
         </button>
         <button
           type="button"

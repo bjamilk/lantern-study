@@ -3,6 +3,27 @@ import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize, wrapNoteFinalizeError } from '@lantern/shared/utils/noteUpload';
 
+async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/jobs/${jobId}`, { headers });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || `Job status check failed (${response.status})`);
+    }
+    const job = payload.data ?? payload;
+    if (job.status === 'completed' && job.result !== undefined) {
+      return job.result as T;
+    }
+    if (job.status === 'failed') {
+      throw new Error(typeof job.error === 'string' ? job.error : 'AI job failed.');
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error('AI request timed out. Try again.');
+}
+
 async function notesRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/api/v1/notes${path}`, {
@@ -14,6 +35,9 @@ async function notesRequest<T>(path: string, options: RequestInit = {}): Promise
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 202 && typeof data.jobId === 'string') {
+    return pollApiJob<T>(data.jobId);
+  }
   if (!response.ok) {
     throw new Error(data.message || data.error || `Notes request failed (${response.status})`);
   }

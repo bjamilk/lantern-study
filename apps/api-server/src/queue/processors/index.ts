@@ -85,19 +85,44 @@ async function processAiJob(job: Job): Promise<unknown> {
       return result;
     }
     case 'notes.ai.summarize': {
-      const { content, title } = job.data as { content: string; title?: string };
+      const { content, title, noteId } = job.data as {
+        content: string;
+        title?: string;
+        noteId?: string;
+      };
       const result = await summarizeNoteContent(content, title);
       await recordInference(userId, 'summarize-note', result);
+      if (noteId && userId && supabaseService) {
+        const note = await supabaseService.updateNote(userId, noteId, { summary: result.summary });
+        return { ...result, note };
+      }
       return result;
     }
     case 'notes.ai.quiz': {
-      const { content, studyGoal, count } = job.data as {
+      const { content, studyGoal, count, noteId } = job.data as {
         content: string;
         studyGoal?: string;
         count?: number;
+        noteId?: string;
       };
       const result = await generateDailyQuiz(content, { studyGoal, count });
       await recordInference(userId, 'note-quiz', result);
+      if (noteId && userId && supabaseService) {
+        const questions = result.questions.map((q, index) => ({
+          id: `nq-${index}`,
+          text: q.text,
+          type: q.type,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          topic: q.topic,
+        }));
+        const session = await supabaseService.upsertNoteQuiz(userId, noteId, {
+          studyGoal: studyGoal || 'retention',
+          questions,
+        });
+        return session;
+      }
       return result;
     }
     case 'notes.ai.flashcards': {

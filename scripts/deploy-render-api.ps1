@@ -241,8 +241,8 @@ function Start-Deploy([string]$ServiceId) {
 }
 
 function Wait-Deploy([string]$ServiceId, [string]$DeployId) {
-    Write-Step 'Waiting for deploy to finish (up to 20 min)...'
-    $deadline = (Get-Date).AddMinutes(20)
+    Write-Step 'Waiting for deploy to finish (up to 35 min)...'
+    $deadline = (Get-Date).AddMinutes(35)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 20
         $items = Get-RenderItems (Invoke-RenderApi -Method GET -Path "/services/$ServiceId/deploys?limit=5")
@@ -257,7 +257,7 @@ function Wait-Deploy([string]$ServiceId, [string]$DeployId) {
             throw "Deploy failed with status: $status"
         }
     }
-    throw 'Deploy timed out after 20 minutes.'
+    throw 'Deploy timed out after 35 minutes.'
 }
 
 function Get-ServiceUrl([object]$Service) {

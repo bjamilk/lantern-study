@@ -576,7 +576,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
               <Button size="sm" variant="secondary" loading={summarizing} onPress={() => void handleSummarize()}>
 
-                Summarize
+                Smart Note
 
               </Button>
 

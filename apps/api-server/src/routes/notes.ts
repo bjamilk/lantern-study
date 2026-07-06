@@ -802,7 +802,7 @@ router.post('/:noteId/summarize', requirePermission('ai'), aiPostBurstRateLimit,
   }
   const outcome = await runSyncOrEnqueue(
     'notes.ai.summarize',
-    { content, title: note.title },
+    { content, title: note.title, noteId: note.id },
     userId,
     async () => summarizeNoteContent(content, note.title)
   );
@@ -835,7 +835,7 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
   const { studyGoal, count } = req.body || {};
   const outcome = await runSyncOrEnqueue(
     'notes.ai.quiz',
-    { content: content.slice(0, 8000), studyGoal, count },
+    { content: content.slice(0, 8000), studyGoal, count, noteId: note.id },
     userId,
     async () => generateDailyQuiz(content.slice(0, 8000), { studyGoal, count })
   );
@@ -892,7 +892,7 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   const { count, style } = req.body || {};
   const outcome = await runSyncOrEnqueue(
     'notes.ai.flashcards',
-    { content: content.slice(0, 8000), count, style },
+    { content: content.slice(0, 8000), count, style, noteId: note.id },
     userId,
     async () => generateFlashcardsFromNotes(content.slice(0, 8000), { count, style })
   );

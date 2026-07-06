@@ -813,12 +813,45 @@ export async function summarizeNoteContent(
   content: string,
   title?: string
 ): Promise<{ summary: string; provider: string }> {
-  const systemPrompt = `You are an expert study assistant. Summarize the following study material.
-Use clear headings and bullet points. Highlight key concepts, definitions, and relationships.
-Keep under 400 words.`;
+  return generateSmartNoteContent(content, title);
+}
+
+/** Structured study notes optimized for learning (replaces plain summarize). */
+export async function generateSmartNoteContent(
+  content: string,
+  title?: string
+): Promise<{ summary: string; provider: string }> {
+  const systemPrompt = `You are an expert study coach. Transform raw study material into "Smart Notes" optimized for learning and retention.
+
+Use this structure (markdown):
+
+## Core Idea
+2–3 sentences capturing the big picture.
+
+## Key Topics
+For each major topic use:
+### [Topic name]
+- **Concept:** clear explanation
+- **Why it matters:** one line
+- **Remember:** mnemonic or hook when helpful
+
+## Terms to Know
+Bullet list: **Term** — definition
+
+## Quick Checks
+3–5 short self-test questions with brief answer hints.
+
+Rules:
+- Be accurate to the source; do not invent facts
+- Prefer scannable bullets over long paragraphs
+- Highlight exam-relevant details and common pitfalls
+- Stay under 700 words unless the material is very dense`;
 
   const userPrompt = `${title ? `Title: ${title}\n\n` : ''}${content.substring(0, 8000)}`;
-  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, { temperature: 0.4, maxTokens: 600 });
+  const { text, provider } = await chatCompletion(systemPrompt, userPrompt, {
+    temperature: 0.35,
+    maxTokens: 1200,
+  });
   return { summary: text.trim(), provider };
 }
 

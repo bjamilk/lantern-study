@@ -31,10 +31,10 @@ interface NoteEditorScreenProps {
   onBack: () => void;
   onSave: (updates: { title?: string; body?: string }) => void;
   onDelete: () => void;
-  onSummarize: () => Promise<string | void>;
+  onSmartNote: (editorState?: { title?: string; body?: string }) => Promise<string | void>;
   onChatWithNote: () => void;
   onGenerateFlashcards: (editorState?: { title?: string; body?: string }) => Promise<void>;
-  onGenerateQuiz: () => Promise<void>;
+  onGenerateQuiz: (editorState?: { title?: string; body?: string }) => Promise<void>;
   studyGoal?: StudyGoalMode;
   dailyQuiz?: DailyQuizSession | null;
   dailyQuizProgress?: number;
@@ -57,7 +57,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   onBack,
   onSave,
   onDelete,
-  onSummarize,
+  onSmartNote,
   onChatWithNote,
   onGenerateFlashcards,
   onGenerateQuiz,
@@ -535,7 +535,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             note={{ ...note, title, body }}
             studyContentLength={studyContentLength}
             theme={theme}
-            onSummarize={onSummarize}
+            onSmartNote={onSmartNote}
             onChatWithNote={onChatWithNote}
             onGenerateFlashcards={async () => {
               setGeneratingCards(true);
@@ -548,7 +548,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             onGenerateQuiz={async () => {
               setGeneratingQuiz(true);
               try {
-                await onGenerateQuiz();
+                await onGenerateQuiz({ title, body });
               } finally {
                 setGeneratingQuiz(false);
               }

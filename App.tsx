@@ -8,6 +8,7 @@ import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient, apiLogoutSession } from './services/supabase';
+import { getNoteStudyContent } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -405,7 +406,12 @@ export const App: React.FC = () => {
                 }
             })(),
             noteContext: appMode === AppMode.NOTE_EDITOR && selectedNote
-                ? [selectedNote.summary, selectedNote.body].filter(Boolean).join('\n\n').substring(0, 6000)
+                ? getNoteStudyContent({
+                    sourceType: selectedNote.sourceType,
+                    body: selectedNote.body,
+                    summary: selectedNote.summary,
+                    attachments: selectedNote.attachments,
+                  }).substring(0, 6000) || undefined
                 : undefined,
             noteTitle: appMode === AppMode.NOTE_EDITOR ? selectedNote?.title : undefined,
             studyGoal,
@@ -964,7 +970,14 @@ export const App: React.FC = () => {
                                 showToast(e?.message || 'Failed to delete note', 'error');
                             }
                         }}
-                        onSummarize={() => noteHandlers.handleSummarize(selectedNote.id)}
+                        onSmartNote={async (editorState) => {
+                            try {
+                                await noteHandlers.handleSmartNote(selectedNote.id, editorState);
+                                showToast('Smart notes ready!', 'success');
+                            } catch (e: any) {
+                                showToast(e?.message || 'Smart note failed', 'error');
+                            }
+                        }}
                         onChatWithNote={noteHandlers.handleChatWithNote}
                         onGenerateFlashcards={async (editorState) => {
                             try {
@@ -978,9 +991,9 @@ export const App: React.FC = () => {
                                 showToast(e?.message || 'Failed to generate flashcards', 'error');
                             }
                         }}
-                        onGenerateQuiz={async () => {
+                        onGenerateQuiz={async (editorState) => {
                             try {
-                                const session = await noteHandlers.handleStartNoteQuiz();
+                                const session = await noteHandlers.handleStartNoteQuiz(editorState);
                                 if (session?.questions?.length) {
                                     showToast(`Quiz ready — ${session.questions.length} questions below`, 'success');
                                 }
@@ -996,7 +1009,10 @@ export const App: React.FC = () => {
                         onCompleteDailyQuiz={completeDailyQuiz}
                         onRegenerateQuiz={async () => {
                             try {
-                                await noteHandlers.handleStartNoteQuiz();
+                                await noteHandlers.handleStartNoteQuiz({
+                                    title: selectedNote.title,
+                                    body: selectedNote.body,
+                                });
                                 showToast('New quiz ready!', 'success');
                             } catch (e: any) {
                                 showToast(e?.message || 'Failed to generate quiz', 'error');
