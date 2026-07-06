@@ -3,4 +3,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://lanternstudy.com/sitemap.xml
-Sitemap: https://lantern-study-api.onrender.com/api/v1/sitemap/marketplace.xml
+Sitemap: https://lanternstudy.com/sitemap/marketplace.xml

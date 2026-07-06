@@ -168,7 +168,7 @@ After deploy, confirm these URLs respond (copied from `public/`):
 |-----|---------|
 | `https://lanternstudy.com/robots.txt` | Allows crawlers; points to sitemap |
 | `https://lanternstudy.com/sitemap.xml` | Lists public pages for Google/Bing |
-| `https://lantern-study-api.onrender.com/api/v1/sitemap/marketplace.xml` | Dynamic marketplace listing URLs |
+| `https://lanternstudy.com/sitemap/marketplace.xml` | Dynamic marketplace listing URLs (proxied from API) |
 | `https://lanternstudy.com/marketplace` | Public browse (guest mode) |
 
 **Google Search Console (one-time):**
@@ -176,7 +176,9 @@ After deploy, confirm these URLs respond (copied from `public/`):
 1. Open [Google Search Console](https://search.google.com/search-console)
 2. Add property **URL prefix** → `https://lanternstudy.com` (not `/sitemap.xml`)
 3. Verify with the HTML file at `public/google251095c8c1cce4a1.html` (served at site root after deploy)
-4. Submit sitemap: `https://lanternstudy.com/sitemap.xml`
+4. Submit sitemaps (full URLs on your domain — not file paths):
+   - `https://lanternstudy.com/sitemap.xml`
+   - `https://lanternstudy.com/sitemap/marketplace.xml`
 5. Use **URL Inspection** → **Request indexing** on the homepage
 
 Indexing can take days to weeks. The app is login-first, so ranking improves further with backlinks (GitHub README, app stores, social profiles).
