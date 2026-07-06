@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -10,6 +10,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useNoteUploadStore } from '../../stores/noteUploadStore';
 import { fetchAIUsage } from '../../services/ai';
 
 interface AppShellProps {
@@ -32,6 +33,9 @@ const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
  */
 const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate, hideMobileAiUsageBadge = false }) => {
     const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
+    const uploadJobs = useNoteUploadStore((s) => s.getVisibleJobs());
+    const activeUploadJob = useNoteUploadStore((s) => s.getActiveJob());
+    const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
     const { activeTestSession, activeStudySession, activeGameSession } = useTestStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
     const currentUser = useAuthStore(s => s.currentUser);
@@ -66,6 +70,9 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             : AppMode.GAME_ACTIVE;
     const pausedSessionLabel = pausedTest ? 'Test' : pausedStudy ? 'Study' : 'Game';
 
+    const finishedUploadJobs = uploadJobs.filter(
+        (j) => j.status === 'complete' || j.status === 'failed'
+    );
     const bottomNavHidden = [
         AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE,
         AppMode.GAME_RESULTS, AppMode.TEST_REVIEW,
@@ -120,7 +127,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         className="hidden md:inline-flex"
                     />
                 </div>
-                {importProgress && (
+                {importProgress ? (
                     <div
                         className="shrink-0 px-3 py-2 md:px-4 border-b border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40"
                         role="status"
@@ -150,17 +157,62 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                                     </div>
                                 )}
                             </div>
-                            <button
-                                type="button"
-                                onClick={clearImportProgress}
-                                className="shrink-0 p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-indigo-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-indigo-900/50"
-                                aria-label="Dismiss import progress"
-                            >
-                                <XMarkIcon className="w-5 h-5" />
-                            </button>
                         </div>
                     </div>
-                )}
+                ) : activeUploadJob ? (
+                    <div
+                        className="shrink-0 px-3 py-2 md:px-4 border-b border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <div className="flex items-center gap-3 min-w-0 max-w-full">
+                            <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                    {activeUploadJob.label}
+                                </p>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                    {activeUploadJob.fileName}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+                {finishedUploadJobs.map((job) => (
+                    <div
+                        key={job.id}
+                        className={`shrink-0 px-3 py-2 md:px-4 border-b flex items-center gap-3 min-w-0 ${
+                            job.status === 'failed'
+                                ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
+                                : 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
+                        }`}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {job.status === 'failed' ? (
+                            <ExclamationCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
+                        ) : (
+                            <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {job.status === 'failed' ? 'Upload failed' : 'Upload complete'}
+                            </p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                {job.fileName}
+                                {job.error ? ` — ${job.error}` : ''}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => dismissUploadJob(job.id)}
+                            className="shrink-0 p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-white/60 dark:text-gray-400 dark:hover:text-gray-100"
+                            aria-label="Dismiss upload notification"
+                        >
+                            <XMarkIcon className="w-5 h-5" />
+                        </button>
+                    </div>
+                ))}
                 {children}
 
                 {/* mobile-only AI usage indicator — hidden during chat (composer + send) */}

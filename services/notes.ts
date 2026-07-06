@@ -12,8 +12,18 @@ import { ensureNotesUploadSession, getAuthHeaders } from './supabase';
 
 const API_BASE_URL = getApiBaseUrl();
 
-/** Matches server MAX_PRESENTATION_BYTES / MAX_PDF_BYTES (25MB raw). */
-export const MAX_NOTE_UPLOAD_BYTES = 25 * 1024 * 1024;
+import {
+  MAX_NOTE_UPLOAD_BYTES,
+  assertNoteUploadSize,
+  wrapNoteFinalizeError,
+} from '@lantern/shared/utils/noteUpload';
+
+export {
+  MAX_NOTE_UPLOAD_BYTES,
+  formatMaxNoteUploadLabel,
+  formatFileSize,
+  NOTE_UPLOAD_MAX_MB,
+} from '@lantern/shared/utils/noteUpload';
 
 export type NoteImportProgressStage = 'encoding' | 'uploading' | 'processing' | 'complete';
 
@@ -163,12 +173,7 @@ async function notesLongRequest<T>(
 }
 
 function assertUploadFileSize(file: File): void {
-  if (file.size > MAX_NOTE_UPLOAD_BYTES) {
-    const maxMb = Math.round(MAX_NOTE_UPLOAD_BYTES / (1024 * 1024));
-    throw new Error(
-      `File too large for upload (max ${maxMb}MB). Try a smaller deck or split slides.`
-    );
-  }
+  assertNoteUploadSize(file.size, file.name);
 }
 
 async function notesRequest<T>(
@@ -575,11 +580,7 @@ export async function uploadNotePdfViaApi(
     return result;
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw new Error(
-      err instanceof Error
-        ? err.message
-        : 'Could not save your PDF. Try again in a moment.'
-    );
+    throw wrapNoteFinalizeError(err);
   }
 }
 
@@ -634,11 +635,7 @@ export async function uploadPresentationViaApi(
     return result;
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw new Error(
-      err instanceof Error
-        ? err.message
-        : 'Could not save your slides. Try again in a moment.'
-    );
+    throw wrapNoteFinalizeError(err);
   }
 }
 

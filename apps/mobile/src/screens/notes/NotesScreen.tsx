@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,6 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import {
+  assertNoteUploadSize,
+  formatFileSize,
+  formatMaxNoteUploadLabel,
+} from '@lantern/shared/utils/noteUpload';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
@@ -25,6 +30,13 @@ interface Props {
   navigation: NavigationProp;
   embedded?: boolean;
 }
+
+type PendingImport = {
+  uri: string;
+  name: string;
+  size: number;
+  mode: 'pdf' | 'presentation';
+};
 
 function sourceBadge(note: StudyNote): string {
   if (note.sourceType === 'youtube') return 'YouTube';
@@ -112,6 +124,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
 
   const loadData = useCallback(async () => {
     await Promise.all([loadFolders(), loadNotes(selectedFolderId || undefined)]);
@@ -159,7 +172,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     await createFolder(name);
   };
 
-  const handleFileImport = async (mode: 'pdf' | 'presentation') => {
+  const handlePickFile = async (mode: 'pdf' | 'presentation') => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
@@ -176,22 +189,42 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
 
       const asset = result.assets[0];
       const fileName = asset.name || (mode === 'pdf' ? 'document.pdf' : 'slides.pptx');
+      const size = asset.size ?? 0;
+
+      try {
+        assertNoteUploadSize(size, fileName);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'File is too large');
+        return;
+      }
+
+      setPendingImport({ uri: asset.uri, name: fileName, size, mode });
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not open file picker');
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingImport) return;
+    try {
       setImportingFile(true);
       setError(null);
 
       const importResult =
-        mode === 'pdf'
+        pendingImport.mode === 'pdf'
           ? await uploadNotePdfViaApi(
-              asset.uri,
-              fileName,
+              pendingImport.uri,
+              pendingImport.name,
               selectedFolderId || undefined
             )
           : await uploadPresentationViaApi(
-              asset.uri,
-              fileName,
+              pendingImport.uri,
+              pendingImport.name,
               selectedFolderId || undefined
             );
 
+      setPendingImport(null);
       await loadNotes(selectedFolderId || undefined);
       navigation.navigate('NoteEditor', { noteId: importResult.note.id });
     } catch (e: unknown) {
@@ -272,13 +305,48 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         />
       </View>
 
-      <View className="mx-4 mb-1.5 flex-row flex-wrap gap-2">
-        <Button size="sm" variant="secondary" loading={importingFile} onPress={() => void handleFileImport('pdf')}>
-          Import PDF
-        </Button>
-        <Button size="sm" variant="secondary" loading={importingFile} onPress={() => void handleFileImport('presentation')}>
-          Import PowerPoint
-        </Button>
+      <View className="mx-4 mb-1.5">
+        <Text className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+          {formatMaxNoteUploadLabel()}
+        </Text>
+        {pendingImport ? (
+          <Card className="border-indigo-200 dark:border-indigo-800 mb-2">
+            <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+              {pendingImport.name}
+            </Text>
+            <Text className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {formatFileSize(pendingImport.size)} · {formatMaxNoteUploadLabel()}
+            </Text>
+            <View className="flex-row gap-2 mt-3">
+              <Button
+                size="sm"
+                loading={importingFile}
+                onPress={() => void handleConfirmImport()}
+                className="flex-1"
+              >
+                Upload
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={importingFile}
+                onPress={() => setPendingImport(null)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </View>
+          </Card>
+        ) : (
+          <View className="flex-row flex-wrap gap-2">
+            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('pdf')}>
+              Import PDF
+            </Button>
+            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('presentation')}>
+              Import PowerPoint
+            </Button>
+          </View>
+        )}
       </View>
 
       {error ? (

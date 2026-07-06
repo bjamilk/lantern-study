@@ -5,6 +5,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { getNoteStudyContent } from '@lantern/shared';
+import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
@@ -45,7 +46,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [generateQuiz, setGenerateQuiz] = useState(true);
   const isDark = theme === 'dark';
   const setImportProgress = useUIStore((s) => s.setImportProgress);
-  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
 
   const reset = () => {
@@ -137,12 +137,13 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         undefined,
         setImportProgress
       );
-      clearImportProgress();
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      await loadNote(note.id);
+      useUIStore.getState().clearImportProgress();
       await runStudyGenerators({ ...note, attachments: [attachment] });
     } catch (e: unknown) {
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'PDF import failed');
       setStep('input');
     }
@@ -157,22 +158,17 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         undefined,
         setImportProgress
       );
-      setImportProgress({
-        stage: 'complete',
-        percent: null,
-        label: 'Upload complete',
-        fileName: file.name,
-      });
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      notesState.setSelectedNote({ ...note, attachments: [attachment] });
       await loadNote(note.id);
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       await runStudyGenerators({
         ...useNotesStore.getState().selectedNote!,
         attachments: [attachment],
       });
     } catch (e: unknown) {
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'PowerPoint import failed');
       setStep('input');
     }
@@ -203,6 +199,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             <>
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Drop content in once — get a note plus optional flashcards and quiz.
+              </p>
+
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {formatMaxNoteUploadLabel()}
               </p>
 
               <div className="flex gap-3">

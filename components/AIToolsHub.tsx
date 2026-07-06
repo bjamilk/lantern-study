@@ -41,7 +41,6 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
-  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
   const openWithMessage = useCompanionStore((s) => s.openWithMessage);
   const { lowDataMode } = useUIStore();
@@ -114,12 +113,13 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
     setError(null);
     try {
       const { note, attachment } = await notesApi.uploadNotePdfViaApi(file, undefined, setImportProgress);
-      clearImportProgress();
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      await loadNote(note.id);
+      useUIStore.getState().clearImportProgress();
       await runStudyGenerators({ ...note, attachments: [attachment] });
     } catch (e: unknown) {
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'PDF import failed');
       setStep('hub');
     }
@@ -130,17 +130,17 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
     setError(null);
     try {
       const { note, attachment } = await notesApi.uploadPresentationViaApi(file, undefined, setImportProgress);
-      setImportProgress({ stage: 'complete', percent: null, label: 'Upload complete', fileName: file.name });
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      notesState.setSelectedNote({ ...note, attachments: [attachment] });
       await loadNote(note.id);
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       await runStudyGenerators({
         ...useNotesStore.getState().selectedNote!,
         attachments: [attachment],
       });
     } catch (e: unknown) {
-      clearImportProgress();
+      useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'PowerPoint import failed');
       setStep('hub');
     }

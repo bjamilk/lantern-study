@@ -7,6 +7,8 @@ export interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
+  /** When true, toast stays until dismissed and survives navigation/tab changes. */
+  sticky?: boolean;
 }
 
 interface ToastBannerProps {
@@ -21,9 +23,13 @@ const typeStyles: Record<ToastType, string> = {
   info: 'bg-indigo-600 text-white',
 };
 
-export const ToastBanner: React.FC<ToastBannerProps> = ({ toast, onDismiss, autoHideMs = 5000 }) => {
+export const ToastBanner: React.FC<ToastBannerProps> = ({
+  toast,
+  onDismiss,
+  autoHideMs = 5000,
+}) => {
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || toast.sticky) return;
     const timer = setTimeout(onDismiss, autoHideMs);
     return () => clearTimeout(timer);
   }, [toast, onDismiss, autoHideMs]);

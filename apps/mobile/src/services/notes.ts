@@ -1,6 +1,7 @@
 /** Mobile notes API client */
 import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
+import { assertNoteUploadSize, wrapNoteFinalizeError } from '@lantern/shared/utils/noteUpload';
 
 async function notesRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
@@ -168,6 +169,7 @@ export const uploadNotePdfViaApi = async (
     throw new Error('Could not read the selected PDF file.');
   }
   const blob = await fileResponse.blob();
+  assertNoteUploadSize(blob.size, fileName);
 
   const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
     contentType: 'application/pdf',
@@ -184,7 +186,7 @@ export const uploadNotePdfViaApi = async (
     });
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw err;
+    throw wrapNoteFinalizeError(err);
   }
 };
 
@@ -211,6 +213,7 @@ export const uploadPresentationViaApi = async (
     throw new Error('Could not read the selected presentation file.');
   }
   const blob = await fileResponse.blob();
+  assertNoteUploadSize(blob.size, fileName);
 
   const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
     contentType,
@@ -230,6 +233,6 @@ export const uploadPresentationViaApi = async (
     );
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw err;
+    throw wrapNoteFinalizeError(err);
   }
 };

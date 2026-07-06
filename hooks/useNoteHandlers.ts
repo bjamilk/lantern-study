@@ -1,11 +1,11 @@
 import { useCallback, useRef } from 'react';
 import { getNoteStudyContent, hasEnoughNoteStudyContent, MIN_NOTE_STUDY_CONTENT_CHARS } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
-import { useUIStore } from '../stores/uiStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useAppNavigation } from './useAppNavigation';
+import { runNoteFileImport } from '../utils/runNoteFileImport';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateQuestions } from '../services/ai';
@@ -33,8 +33,6 @@ export function useNoteHandlers(currentUserId?: string) {
   const { openWithMessage } = useCompanionStore();
   const { navigateTo } = useAppNavigation();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const setImportProgress = useUIStore((s) => s.setImportProgress);
-  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
 
   const navigateToNotes = useCallback(() => {
     navigateTo(AppMode.NOTES);
@@ -234,43 +232,31 @@ export function useNoteHandlers(currentUserId?: string) {
   );
 
   const handlePdfImport = useCallback(
-    async (file: File, folderId?: string) => {
-      try {
-        const result = await notesApi.uploadNotePdfViaApi(file, folderId, setImportProgress);
-        await loadNotes();
-        setSelectedNote({ ...result.note, attachments: [result.attachment] });
-        navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
-        return result.note;
-      } catch (err) {
-        clearImportProgress();
-        throw err;
-      } finally {
-        clearImportProgress();
-      }
-    },
-    [loadNotes, setSelectedNote, navigateTo, setImportProgress, clearImportProgress]
+    async (file: File, folderId?: string) =>
+      runNoteFileImport({
+        file,
+        kind: 'pdf',
+        folderId,
+        setSelectedNote,
+        loadNote,
+        loadNotes,
+        navigateToEditor: (noteId) => navigateTo(AppMode.NOTE_EDITOR, { noteId }),
+      }),
+    [setSelectedNote, loadNote, loadNotes, navigateTo]
   );
 
   const handlePresentationImport = useCallback(
-    async (file: File, folderId?: string) => {
-      try {
-        const result = await notesApi.uploadPresentationViaApi(file, folderId, setImportProgress);
-        clearImportProgress();
-        const notesState = useNotesStore.getState();
-        notesState.setNotes([
-          result.note,
-          ...notesState.notes.filter((n) => n.id !== result.note.id),
-        ]);
-        await loadNote(result.note.id);
-        navigateTo(AppMode.NOTE_EDITOR, { noteId: result.note.id });
-        void loadNotes();
-        return result.note;
-      } catch (err) {
-        clearImportProgress();
-        throw err;
-      }
-    },
-    [loadNotes, loadNote, navigateTo, setImportProgress, clearImportProgress]
+    async (file: File, folderId?: string) =>
+      runNoteFileImport({
+        file,
+        kind: 'presentation',
+        folderId,
+        setSelectedNote,
+        loadNote,
+        loadNotes,
+        navigateToEditor: (noteId) => navigateTo(AppMode.NOTE_EDITOR, { noteId }),
+      }),
+    [setSelectedNote, loadNote, loadNotes, navigateTo]
   );
 
   const handleShareWithGroup = useCallback(

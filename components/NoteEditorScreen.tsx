@@ -90,7 +90,6 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const reextractAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
-  const clearImportProgress = useUIStore((s) => s.clearImportProgress);
   const showToast = useToastStore((s) => s.showToast);
   const isDark = theme === 'dark';
 
@@ -130,12 +129,6 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   useEffect(() => {
     setPreviewError(null);
   }, [note.id]);
-
-  useEffect(() => {
-    if (note.sourceType === 'presentation' && presentationPreviewPath) {
-      clearImportProgress();
-    }
-  }, [note.id, note.sourceType, presentationPreviewPath, clearImportProgress]);
 
   useEffect(() => {
     if (note.sourceType !== 'presentation') return;

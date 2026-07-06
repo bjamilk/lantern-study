@@ -5,10 +5,16 @@ import {
   MagnifyingGlassIcon,
   DocumentTextIcon,
   DocumentArrowUpIcon,
+  ArrowPathIcon,
+  ExclamationCircleIcon,
+  CheckCircleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import type { NoteFolder, StudyNote } from '../types';
 import { ScreenHeader, Button, EmptyState, FolderNameModal } from './ui';
 import { useUIStore } from '../stores/uiStore';
+import { useNoteUploadStore } from '../stores/noteUploadStore';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -53,6 +59,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [search, setSearch] = useState('');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const importProgress = useUIStore((s) => s.importProgress);
+  const uploadJobs = useNoteUploadStore((s) => s.getVisibleJobs());
+  const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
 
   const filteredNotes = useMemo(() => {
@@ -173,6 +181,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 className="flex-1 min-w-0 bg-transparent outline-none text-sm text-lantern-text"
               />
             </div>
+            <p className="text-xs text-lantern-text-secondary w-full sm:w-auto sm:self-center">
+              {formatMaxNoteUploadLabel()}
+            </p>
             <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
               importProgress
                 ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
@@ -194,6 +205,48 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               </label>
             )}
           </div>
+
+          {uploadJobs.length > 0 && (
+            <div className="space-y-2" role="status" aria-live="polite">
+              {uploadJobs.map((job) => (
+                <div
+                  key={job.id}
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                    job.status === 'failed'
+                      ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
+                      : job.status === 'complete'
+                        ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
+                        : 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40'
+                  }`}
+                >
+                  {job.status === 'failed' ? (
+                    <ExclamationCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
+                  ) : job.status === 'complete' ? (
+                    <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
+                  ) : (
+                    <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate text-lantern-text">{job.label}</p>
+                    <p className="text-xs truncate text-lantern-text-secondary">
+                      {job.fileName}
+                      {job.error ? ` — ${job.error}` : ''}
+                    </p>
+                  </div>
+                  {(job.status === 'complete' || job.status === 'failed') && (
+                    <button
+                      type="button"
+                      onClick={() => dismissUploadJob(job.id)}
+                      className="shrink-0 p-1 rounded text-lantern-text-secondary hover:text-lantern-text"
+                      aria-label="Dismiss"
+                    >
+                      <XMarkIcon className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300" role="alert">

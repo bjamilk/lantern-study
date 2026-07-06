@@ -743,17 +743,15 @@ export const App: React.FC = () => {
             onPdfImport={async (file) => {
                 try {
                     await noteHandlers.handlePdfImport(file, selectedFolderId || undefined);
-                } catch (e: any) {
-                    showToast(e?.message || 'PDF import failed', 'error');
+                } catch {
+                    // Sticky toast shown by runNoteFileImport
                 }
             }}
             onPresentationImport={async (file) => {
                 try {
-                    const note = await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
-                    if (!note) return;
-                    showToast('PowerPoint imported', 'success');
-                } catch (e: any) {
-                    showToast(e?.message || 'PowerPoint import failed', 'error');
+                    await noteHandlers.handlePresentationImport(file, selectedFolderId || undefined);
+                } catch {
+                    // Sticky toast shown by runNoteFileImport
                 }
             }}
         />
