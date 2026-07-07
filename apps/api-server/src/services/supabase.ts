@@ -15,6 +15,56 @@ import { computeStudyStreak } from '@lantern/shared/utils/activity';
 
 type UserStats = typeof initialUserStats;
 
+type ProfileSenderRow = {
+  id?: string;
+  name?: string;
+  username?: string;
+  avatar_url?: string;
+};
+
+function mapProfileSender(profile: ProfileSenderRow | null | undefined, senderId: string) {
+  return {
+    id: profile?.id || senderId,
+    name: profile?.name || 'Unknown',
+    username: profile?.username || undefined,
+    avatarUrl: profile?.avatar_url,
+    points: 0,
+    badges: [],
+    stats: {},
+  };
+}
+
+function resolveNestedProfile(profiles: unknown): ProfileSenderRow | null {
+  if (Array.isArray(profiles)) return (profiles[0] as ProfileSenderRow) ?? null;
+  return (profiles as ProfileSenderRow) ?? null;
+}
+
+function buildProfileUpsertRow(profile: Partial<User> & {
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  phone?: string;
+  avatar_url?: string;
+}): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    id: profile.id,
+    name: profile.name,
+    avatar_url: profile.avatarUrl ?? profile.avatar_url,
+    phone: profile.phoneNumber ?? profile.phone,
+    points: profile.points ?? 0,
+    stats: profile.stats ?? {},
+    badges: profile.badges ?? [],
+    settings: profile.settings ?? {},
+    username: profile.username ?? undefined,
+    first_name: profile.firstName ?? profile.first_name ?? undefined,
+    last_name: profile.lastName ?? profile.last_name ?? undefined,
+  };
+  if (profile.email) {
+    row.email = profile.email;
+  }
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined));
+}
+
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
@@ -135,6 +185,9 @@ export class SupabaseService {
         stats: updates.stats,
         badges: updates.badges,
         settings: updates.settings,
+        username: updates.username,
+        first_name: updates.firstName,
+        last_name: updates.lastName,
       })
       .eq('id', userId)
       .select()
@@ -228,19 +281,17 @@ export class SupabaseService {
     }
   }
 
-  async createUserProfile(profile: Partial<User>): Promise<User> {
+  async createUserProfile(profile: Partial<User> & {
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    phone?: string;
+    avatar_url?: string;
+  }): Promise<User> {
+    const row = buildProfileUpsertRow(profile);
     const { data, error } = await this.supabase
       .from('profiles')
-      .insert({
-        id: profile.id,
-        name: profile.name,
-        avatar_url: profile.avatarUrl,
-        phone: profile.phoneNumber,
-        points: profile.points || 0,
-        stats: profile.stats || {},
-        badges: profile.badges || [],
-        settings: profile.settings || {},
-      })
+      .upsert(row, { onConflict: 'id' })
       .select()
       .single();
 
@@ -344,25 +395,17 @@ export class SupabaseService {
     throw new Error('No user found. Try @username or their email address.');
   }
 
-  async createUser(userData: Partial<User>): Promise<User> {
-    const insertData: Record<string, unknown> = {
-      id: userData.id,
-      name: userData.name,
-      avatar_url: userData.avatarUrl,
-      phone: userData.phoneNumber,
-      points: userData.points || 0,
-      stats: userData.stats || {},
-      badges: userData.badges || [],
-      settings: userData.settings || {},
-    };
-
-    if (userData.email) {
-      insertData.email = userData.email;
-    }
-
+  async createUser(userData: Partial<User> & {
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    phone?: string;
+    avatar_url?: string;
+  }): Promise<User> {
+    const row = buildProfileUpsertRow(userData);
     const { data, error } = await this.supabase
       .from('profiles')
-      .insert(insertData)
+      .upsert(row, { onConflict: 'id' })
       .select()
       .single();
 
@@ -370,7 +413,7 @@ export class SupabaseService {
     return data;
   }
 
-  async updateUser(userId: string, updates: Partial<User> & { avatar_url?: string; phone?: string; test_presets?: any[] }): Promise<User | null> {
+  async updateUser(userId: string, updates: Partial<User> & { avatar_url?: string; phone?: string; first_name?: string; last_name?: string; test_presets?: any[] }): Promise<User | null> {
     // Build update object, handling both camelCase and snake_case keys
     const updateData: any = {};
     
@@ -380,6 +423,11 @@ export class SupabaseService {
     if (updates.avatar_url !== undefined) updateData.avatar_url = updates.avatar_url;
     if (updates.phoneNumber !== undefined) updateData.phone = updates.phoneNumber;
     if (updates.phone !== undefined) updateData.phone = updates.phone;
+    if (updates.username !== undefined) updateData.username = updates.username;
+    if (updates.firstName !== undefined) updateData.first_name = updates.firstName;
+    if (updates.first_name !== undefined) updateData.first_name = updates.first_name;
+    if (updates.lastName !== undefined) updateData.last_name = updates.lastName;
+    if (updates.last_name !== undefined) updateData.last_name = updates.last_name;
     if (updates.points !== undefined) updateData.points = updates.points;
     if (updates.stats !== undefined) updateData.stats = updates.stats;
     if (updates.badges !== undefined) updateData.badges = updates.badges;
@@ -1060,6 +1108,7 @@ export class SupabaseService {
           profiles!sender_id (
             id,
             name,
+            username,
             avatar_url
           )
         `
@@ -1079,6 +1128,7 @@ export class SupabaseService {
           profiles!sender_id (
             id,
             name,
+            username,
             avatar_url
           )
         `;
@@ -1113,14 +1163,7 @@ export class SupabaseService {
       return (data || []).reverse().map((msg: any) => ({
         id: msg.id,
         groupId: msg.group_id,
-        sender: {
-          id: msg.profiles?.id || msg.sender_id,
-          name: msg.profiles?.name || 'Unknown',
-          avatarUrl: msg.profiles?.avatar_url,
-          points: 0,
-          badges: [],
-          stats: {},
-        },
+        sender: mapProfileSender(msg.profiles, msg.sender_id),
         timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
         flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
         upvotes: msg.upvotes || 0,
@@ -1151,6 +1194,7 @@ export class SupabaseService {
           profiles!sender_id (
             id,
             name,
+            username,
             avatar_url
           )
         `)
@@ -1178,14 +1222,7 @@ export class SupabaseService {
       return {
         id: data.id,
         groupId: data.group_id,
-        sender: {
-          id: Array.isArray((data as any).profiles) ? (data as any).profiles[0]?.id || data.sender_id : (data as any).profiles?.id || data.sender_id,
-          name: Array.isArray((data as any).profiles) ? (data as any).profiles[0]?.name || 'Unknown' : (data as any).profiles?.name || 'Unknown',
-          avatarUrl: Array.isArray((data as any).profiles) ? (data as any).profiles[0]?.avatar_url : (data as any).profiles?.avatar_url,
-          points: 0,
-          badges: [],
-          stats: {},
-        },
+        sender: mapProfileSender(resolveNestedProfile((data as any).profiles), data.sender_id),
         senderId: data.sender_id,
         timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
         flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
@@ -1216,6 +1253,7 @@ export class SupabaseService {
         profiles!sender_id (
           id,
           name,
+          username,
           avatar_url
         )
       `)
@@ -1234,14 +1272,7 @@ export class SupabaseService {
     return {
       id: data.id,
       groupId: data.group_id,
-      sender: {
-        id: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.id || data.sender_id : (data.profiles as unknown as any)?.id || data.sender_id,
-        name: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.name || 'Unknown' : (data.profiles as unknown as any)?.name || 'Unknown',
-        avatarUrl: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.avatar_url : (data.profiles as unknown as any)?.avatar_url,
-        points: 0,
-        badges: [],
-        stats: {},
-      },
+      sender: mapProfileSender(resolveNestedProfile(data.profiles), data.sender_id),
       senderId: data.sender_id,
       timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
       flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
@@ -1481,6 +1512,7 @@ export class SupabaseService {
         profiles!sender_id (
           id,
           name,
+          username,
           avatar_url
         )
       `)
@@ -1499,14 +1531,7 @@ export class SupabaseService {
     return {
       id: data.id,
       groupId: data.group_id,
-      sender: {
-        id: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.id || data.sender_id : (data.profiles as unknown as any)?.id || data.sender_id,
-        name: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.name || 'Unknown' : (data.profiles as unknown as any)?.name || 'Unknown',
-        avatarUrl: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.avatar_url : (data.profiles as unknown as any)?.avatar_url,
-        points: 0,
-        badges: [],
-        stats: {},
-      },
+      sender: mapProfileSender(resolveNestedProfile(data.profiles), data.sender_id),
       senderId: data.sender_id,
       timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
       flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
@@ -2517,14 +2542,7 @@ export class SupabaseService {
       return (data || []).reverse().map((msg: any) => ({
         id: msg.id,
         threadId: msg.thread_id,
-        sender: {
-          id: Array.isArray(msg.profiles) ? msg.profiles[0]?.id || msg.sender_id : msg.profiles?.id || msg.sender_id,
-          name: Array.isArray(msg.profiles) ? msg.profiles[0]?.name || 'Unknown' : msg.profiles?.name || 'Unknown',
-          avatarUrl: Array.isArray(msg.profiles) ? msg.profiles[0]?.avatar_url : msg.profiles?.avatar_url,
-          points: 0,
-          badges: [],
-          stats: {},
-        },
+        sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
         senderId: msg.sender_id,
         timestamp: new Date(msg.timestamp),
         type: 'TEXT' as const,
@@ -2652,14 +2670,7 @@ export class SupabaseService {
 
       return {
         id: data.id,
-        sender: {
-          id: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.id || data.sender_id : (data.profiles as unknown as any)?.id || data.sender_id,
-          name: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.name || 'Unknown' : (data.profiles as unknown as any)?.name || 'Unknown',
-          avatarUrl: Array.isArray(data.profiles) ? (data.profiles as unknown as any[])[0]?.avatar_url : (data.profiles as unknown as any)?.avatar_url,
-          points: 0,
-          badges: [],
-          stats: {},
-        },
+        sender: mapProfileSender(resolveNestedProfile(data.profiles), data.sender_id),
         senderId: data.sender_id,
         recipientId,
         timestamp: new Date(data.timestamp),
@@ -2698,6 +2709,7 @@ export class SupabaseService {
         profiles!sender_id (
           id,
           name,
+          username,
           avatar_url
         )
       `)
@@ -2734,14 +2746,7 @@ export class SupabaseService {
     return (data || []).map((msg: any) => ({
       id: msg.id,
       groupId: msg.group_id,
-      sender: {
-        id: msg.profiles?.id || msg.sender_id,
-        name: msg.profiles?.name || 'Unknown',
-        avatarUrl: msg.profiles?.avatar_url,
-        points: 0,
-        badges: [],
-        stats: {},
-      },
+      sender: mapProfileSender(msg.profiles, msg.sender_id),
       senderId: msg.sender_id,
       timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
       flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
@@ -4395,6 +4400,7 @@ export class SupabaseService {
           profiles!sender_id (
             id,
             name,
+            username,
             avatar_url
           )
         `)
@@ -4406,14 +4412,7 @@ export class SupabaseService {
       return data.map((msg: any) => ({
         id: msg.id,
         groupId: msg.group_id,
-        sender: {
-          id: Array.isArray(msg.profiles) ? (msg.profiles as unknown as any[])[0]?.id || msg.sender_id : (msg.profiles as unknown as any)?.id || msg.sender_id,
-          name: Array.isArray(msg.profiles) ? (msg.profiles as unknown as any[])[0]?.name || 'Unknown' : (msg.profiles as unknown as any)?.name || 'Unknown',
-          avatarUrl: Array.isArray(msg.profiles) ? (msg.profiles as unknown as any[])[0]?.avatar_url : (msg.profiles as unknown as any)?.avatar_url,
-          points: 0,
-          badges: [],
-          stats: {},
-        },
+        sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
         timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
         flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
         upvotes: msg.upvotes || 0,

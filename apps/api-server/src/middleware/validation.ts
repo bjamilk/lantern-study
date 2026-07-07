@@ -28,7 +28,13 @@ export const validateCreateUser = [
   body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Name must be 1-100 characters'),
   body('email').optional().isEmail().normalizeEmail().withMessage('Invalid email format'),
   body('phoneNumber').optional().isMobilePhone('any').withMessage('Invalid phone number'),
+  body('phone').optional().isString().withMessage('Invalid phone'),
   body('avatarUrl').optional().isURL().withMessage('Invalid avatar URL'),
+  body('username').optional().isLength({ min: 3, max: 20 }).withMessage('Username must be 3-20 characters'),
+  body('first_name').optional().isString().withMessage('Invalid first name'),
+  body('last_name').optional().isString().withMessage('Invalid last name'),
+  body('firstName').optional().isString().withMessage('Invalid first name'),
+  body('lastName').optional().isString().withMessage('Invalid last name'),
 ];
 
 export const validateUpdateUser = [

@@ -27,6 +27,7 @@ function mapApiGroupMembers(fetchedMembers: any[]): User[] {
     return (fetchedMembers || []).map((m: any) => ({
         id: m.id,
         name: m.name,
+        username: m.username,
         email: m.email,
         avatarUrl: m.avatar_url || m.avatarUrl,
         points: m.points || 0,

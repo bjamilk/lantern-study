@@ -104,7 +104,7 @@ router.get(
   })
 );
 
-// GET /api/v1/users/search - Search users by username or name
+// GET /api/v1/users/search - Search users by username
 router.get(
   '/search',
   authMiddleware,
@@ -264,10 +264,30 @@ router.post(
     }
 
     const existingById = userData.id ? await supabaseService.getUserById(userData.id) : null;
+
+    const profilePayload = {
+      id: userData.id || requestingUserId,
+      name: userData.name,
+      avatarUrl: userData.avatarUrl || userData.avatar_url,
+      phoneNumber: userData.phoneNumber || userData.phone,
+      points: userData.points,
+      stats: userData.stats,
+      badges: userData.badges,
+      settings: userData.settings,
+      username: userData.username,
+      first_name: userData.first_name ?? userData.firstName,
+      last_name: userData.last_name ?? userData.lastName,
+      email: userData.email,
+    };
+
     if (existingById) {
-      return res.status(409).json({
-        success: false,
-        error: 'User profile already exists',
+      const updated = userData.email
+        ? await supabaseService.createUser(profilePayload)
+        : await supabaseService.createUserProfile(profilePayload);
+      await cacheService.deletePattern('users:list:*');
+      return res.status(200).json({
+        success: true,
+        data: updated,
       });
     }
 
@@ -282,17 +302,8 @@ router.post(
     }
 
     const newUser = userData.email
-      ? await supabaseService.createUser(userData)
-      : await supabaseService.createUserProfile({
-          id: userData.id || requestingUserId,
-          name: userData.name,
-          avatarUrl: userData.avatarUrl || userData.avatar_url,
-          phoneNumber: userData.phoneNumber || userData.phone,
-          points: userData.points,
-          stats: userData.stats,
-          badges: userData.badges,
-          settings: userData.settings,
-        });
+      ? await supabaseService.createUser(profilePayload)
+      : await supabaseService.createUserProfile(profilePayload);
 
     // Invalidate users list cache
     await cacheService.deletePattern('users:list:*');

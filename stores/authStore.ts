@@ -135,11 +135,17 @@ export const useAuthStore = create<AuthState>()(
             }
             
             if (!profile) {
-              // Create profile if it doesn't exist
+              const meta = data.user.user_metadata || {};
               try {
                 profile = await apiCreateUserProfile({
                   id: data.user.id,
-                  name: data.user.user_metadata?.name || email.split('@')[0],
+                  name:
+                    (typeof meta.name === 'string' && meta.name.trim()) ||
+                    email.split('@')[0],
+                  username: typeof meta.username === 'string' ? meta.username : undefined,
+                  first_name: typeof meta.first_name === 'string' ? meta.first_name : undefined,
+                  last_name: typeof meta.last_name === 'string' ? meta.last_name : undefined,
+                  phone: typeof meta.phone === 'string' ? meta.phone : undefined,
                   points: 0,
                   badges: [],
                   stats: initialUserStats,

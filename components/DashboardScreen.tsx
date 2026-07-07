@@ -751,7 +751,7 @@ export default function DashboardScreen({
       
       {/* ═══════════════ HERO ═══════════════ */}
       <DashboardHero
-        userName={currentUser.name}
+        userName={currentUser.firstName || currentUser.name}
         streak={serverStreak || streakData.streak}
         points={currentUser.points}
         xpLevel={xpInfo.level}

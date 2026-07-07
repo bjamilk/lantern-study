@@ -8,6 +8,11 @@ import { getQuestionVerificationThreshold } from '@lantern/shared/utils';
 import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HandThumbUpSolidIcon, HandThumbDownIcon as HandThumbDownSolidIcon } from '@heroicons/react/24/solid';
 
+function formatSenderLabel(sender: { username?: string | null; name?: string | null }): string {
+  if (sender.username) return `@${sender.username}`;
+  return sender.name || 'Unknown';
+}
+
 interface MessageItemProps {
   message: Message;
   isCurrentUserMessage: boolean;
@@ -124,7 +129,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 ${bubbleClasses}`}>
         {/* Sender name for other users */}
         {!isCurrentUserMessage && !isGroupedWithPrevious && (
-          <p className="text-xs font-semibold mb-0.5 text-indigo-600 dark:text-indigo-400">{message.sender.name}</p>
+          <p className="text-xs font-semibold mb-0.5 text-indigo-600 dark:text-indigo-400">{formatSenderLabel(message.sender)}</p>
         )}
 
         {/* Text message */}

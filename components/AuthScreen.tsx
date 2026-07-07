@@ -233,20 +233,30 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
       setCachedAuthToken(session.access_token, authUser.id);
     }
 
+    const meta = authUser.user_metadata || {};
+    const metaFirstName = typeof meta.first_name === 'string' ? meta.first_name.trim() : '';
+    const metaLastName = typeof meta.last_name === 'string' ? meta.last_name.trim() : '';
+    const metaUsername = typeof meta.username === 'string' ? meta.username.toLowerCase().trim() : '';
+    const metaPhone = typeof meta.phone === 'string' ? meta.phone.trim() : undefined;
+    const metaName =
+      (typeof meta.name === 'string' && meta.name.trim()) ||
+      [metaFirstName, metaLastName].filter(Boolean).join(' ') ||
+      authUser.email?.split('@')[0] ||
+      'User';
+
     let profile: Awaited<ReturnType<typeof fetchUserProfile>> | null = null;
     try {
       profile = await fetchUserProfile(authUser.id);
     } catch (profileError: unknown) {
       const msg = profileError instanceof Error ? profileError.message : String(profileError);
       if (msg.includes('404') || msg.includes('status: 404')) {
-        const userName =
-          (typeof authUser.user_metadata?.name === 'string' && authUser.user_metadata.name) ||
-          authUser.email?.split('@')[0] ||
-          'User';
         profile = await createUserProfile({
           id: authUser.id,
-          name: userName,
-          phone: undefined,
+          name: metaName,
+          username: metaUsername || undefined,
+          first_name: metaFirstName || undefined,
+          last_name: metaLastName || undefined,
+          phone: metaPhone,
           points: 0,
           stats: {},
           settings: {},
@@ -610,8 +620,22 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         if (!validateEmail(email)) { setError('Please enter a valid email address.'); return; }
         if (password.length < 6) { setError('Password must be at least 6 characters long.'); return; }
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+
+        const signupName = `${firstName.trim()} ${lastName.trim()}`;
+        const signupPhone = phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : undefined;
+        const signupMetadata = {
+          name: signupName,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          username: normalizedUsername,
+          ...(signupPhone ? { phone: signupPhone } : {}),
+        };
         
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: signupMetadata },
+        });
         if (error) {
           if (error.message.includes('already registered') || error.status === 422) {
             setError('This email is already registered. Please log in instead.');
@@ -626,11 +650,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           try {
             await createUserProfile({
               id: data.user.id,
-              name: `${firstName.trim()} ${lastName.trim()}`,
-              username: username.toLowerCase().trim(),
+              name: signupName,
+              username: normalizedUsername,
               first_name: firstName.trim(),
               last_name: lastName.trim(),
-              phone: phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : undefined,
+              phone: signupPhone,
               points: 0,
               stats: {},
               settings: {},
