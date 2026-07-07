@@ -21,7 +21,7 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { runSyncOrEnqueue } from '../queue/enqueue';
+import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import {
   assertPdfSize,
@@ -524,17 +524,7 @@ router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRate
     res.status(400).json({ error: 'At least 50 characters of study material required.' });
     return;
   }
-  const outcome = await runSyncOrEnqueue(
-    'notes.ai.quiz',
-    { content, studyGoal, count },
-    userId,
-    async () => generateDailyQuiz(content, { studyGoal, count })
-  );
-  if (outcome.mode === 'async') {
-    sendAsyncJobAccepted(res, outcome.jobId);
-    return;
-  }
-  const result = outcome.result;
+  const result = await runNoteAiSync(() => generateDailyQuiz(content, { studyGoal, count }));
   res.json({ success: true, data: result });
 }));
 
@@ -800,17 +790,7 @@ router.post('/:noteId/summarize', requirePermission('ai'), aiPostBurstRateLimit,
     res.status(400).json({ error: 'Note needs at least 30 characters to summarize.' });
     return;
   }
-  const outcome = await runSyncOrEnqueue(
-    'notes.ai.summarize',
-    { content, title: note.title, noteId: note.id },
-    userId,
-    async () => summarizeNoteContent(content, note.title)
-  );
-  if (outcome.mode === 'async') {
-    sendAsyncJobAccepted(res, outcome.jobId);
-    return;
-  }
-  const result = outcome.result;
+  const result = await runNoteAiSync(() => summarizeNoteContent(content, note.title));
   const updated = await supabaseService.updateNote(userId, note.id, { summary: result.summary });
   res.json({ success: true, data: { summary: result.summary, provider: result.provider, note: updated } });
 }));
@@ -833,17 +813,9 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
     return;
   }
   const { studyGoal, count } = req.body || {};
-  const outcome = await runSyncOrEnqueue(
-    'notes.ai.quiz',
-    { content: content.slice(0, 8000), studyGoal, count, noteId: note.id },
-    userId,
-    async () => generateDailyQuiz(content.slice(0, 8000), { studyGoal, count })
+  const result = await runNoteAiSync(() =>
+    generateDailyQuiz(content.slice(0, 8000), { studyGoal, count })
   );
-  if (outcome.mode === 'async') {
-    sendAsyncJobAccepted(res, outcome.jobId);
-    return;
-  }
-  const result = outcome.result;
   const questions = result.questions.map((q, index) => ({
     id: `nq-${index}`,
     text: q.text,
@@ -890,17 +862,9 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   }
   const content = getNoteStudyContent(studyInput);
   const { count, style } = req.body || {};
-  const outcome = await runSyncOrEnqueue(
-    'notes.ai.flashcards',
-    { content: content.slice(0, 8000), count, style, noteId: note.id },
-    userId,
-    async () => generateFlashcardsFromNotes(content.slice(0, 8000), { count, style })
+  const result = await runNoteAiSync(() =>
+    generateFlashcardsFromNotes(content.slice(0, 8000), { count, style })
   );
-  if (outcome.mode === 'async') {
-    sendAsyncJobAccepted(res, outcome.jobId);
-    return;
-  }
-  const result = outcome.result;
   res.json({ success: true, data: result });
 }));
 

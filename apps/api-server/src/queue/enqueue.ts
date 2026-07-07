@@ -63,3 +63,8 @@ export async function runSyncOrEnqueue<T>(
   const result = await syncFn();
   return { mode: 'sync', result };
 }
+
+/** Note learn tools (Smart Note, quiz, flashcards) must finish in the request — no background queue. */
+export async function runNoteAiSync<T>(syncFn: () => Promise<T>): Promise<T> {
+  return syncFn();
+}

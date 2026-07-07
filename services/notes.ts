@@ -158,14 +158,23 @@ async function notesLongRequest<T>(
 
     xhr.onload = () => {
       const data = xhr.response ?? {};
+      if (xhr.status === 202 && typeof data.jobId === 'string') {
+        void pollApiJob<T>(data.jobId)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve((data.data ?? data) as T);
         return;
       }
-      const message =
+      let message =
         data.message ||
         (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
         `Notes request failed (${xhr.status})`;
+      if (xhr.status === 408 || xhr.status === 504) {
+        message = 'AI request timed out. Try again in a moment.';
+      }
       reject(new Error(message));
     };
 
@@ -214,6 +223,18 @@ async function notesRequest<T>(
     throw new Error(message);
   }
   return data.data ?? data;
+}
+
+async function notesAiRequest<T>(
+  path: string,
+  body: Record<string, unknown> = {}
+): Promise<T> {
+  return notesLongRequest<T>(path, {
+    method: 'POST',
+    body,
+    processingLabel: 'Generating with AI…',
+    timeoutMs: 120_000,
+  });
 }
 
 export async function fetchNoteFolders(): Promise<NoteFolder[]> {
@@ -428,20 +449,22 @@ export async function waitForPresentationPreview(
 }
 
 export async function summarizeNote(noteId: string): Promise<{ summary: string; note: StudyNote }> {
-  return notesRequest<{ summary: string; note: StudyNote }>(`/${noteId}/summarize`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+  const result = await notesAiRequest<{ summary: string; note?: StudyNote; provider?: string }>(
+    `/${noteId}/summarize`,
+    {}
+  );
+  if (result.note) {
+    return { summary: result.summary, note: result.note };
+  }
+  const note = await fetchNote(noteId);
+  return { summary: result.summary, note };
 }
 
 export async function generateFlashcardsFromNote(
   noteId: string,
   options?: { count?: number; style?: 'concise' | 'detailed' }
 ): Promise<{ flashcards: Array<{ front: string; back: string; mnemonic?: string; example?: string }>; provider: string }> {
-  return notesRequest(`/${noteId}/generate-flashcards`, {
-    method: 'POST',
-    body: JSON.stringify(options || {}),
-  });
+  return notesAiRequest(`/${noteId}/generate-flashcards`, options || {});
 }
 
 export async function reextractNoteText(
@@ -458,9 +481,10 @@ export async function generateDailyQuizFromContent(
   studyGoal?: StudyGoalMode,
   count?: number
 ): Promise<{ questions: DailyQuizQuestion[] }> {
-  return notesRequest<{ questions: DailyQuizQuestion[] }>('/daily-quiz', {
-    method: 'POST',
-    body: JSON.stringify({ content, studyGoal, count }),
+  return notesAiRequest<{ questions: DailyQuizQuestion[] }>('/daily-quiz', {
+    content,
+    studyGoal,
+    count,
   });
 }
 
@@ -473,10 +497,7 @@ export async function generateNoteQuiz(
   studyGoal?: StudyGoalMode,
   count?: number
 ): Promise<DailyQuizSession> {
-  return notesRequest<DailyQuizSession>(`/${noteId}/quiz`, {
-    method: 'POST',
-    body: JSON.stringify({ studyGoal, count }),
-  });
+  return notesAiRequest<DailyQuizSession>(`/${noteId}/quiz`, { studyGoal, count });
 }
 
 export async function updateNoteQuiz(
