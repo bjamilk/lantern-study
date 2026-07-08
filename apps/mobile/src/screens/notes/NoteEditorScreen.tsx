@@ -77,8 +77,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     getURI: () => string | null;
   } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const [transcribing, setTranscribing] = useState(false);
+  const discardRecordingRef = useRef(false);
+  const transcribeAbortRef = useRef<AbortController | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [summarizing, setSummarizing] = useState(false);
 
@@ -156,6 +160,36 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
+  useEffect(() => {
+    if (!isRecording) {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      return;
+    }
+
+    setRecordingSeconds(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [isRecording]);
+
+  const formatRecordingDuration = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+
+
   const scheduleSave = useCallback(
 
     (updates: { title?: string; body?: string; summary?: string }) => {
@@ -196,6 +230,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const startRecording = async () => {
     try {
+      discardRecordingRef.current = false;
       const { Audio } = await import('expo-av');
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
@@ -215,11 +250,38 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
+  const discardRecording = async () => {
+    if (!recording) return;
+    discardRecordingRef.current = true;
+    setIsRecording(false);
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // ignore unload errors when discarding
+    }
+    setRecording(null);
+  };
+
+
+
   const stopRecording = async () => {
     if (!recording) return;
 
     setIsRecording(false);
+    if (discardRecordingRef.current) {
+      discardRecordingRef.current = false;
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {
+        // ignore
+      }
+      setRecording(null);
+      return;
+    }
+
     setTranscribing(true);
+    const abortController = new AbortController();
+    transcribeAbortRef.current = abortController;
 
     try {
       await recording.stopAndUnloadAsync();
@@ -227,40 +289,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       setRecording(null);
       if (!uri) throw new Error('No recording file');
 
-
-
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
 
-
-
-      const { transcript } = await transcribeAudioForNote(base64, {
-
+      await transcribeAudioForNote(base64, {
         mimeType: 'audio/m4a',
-
         noteId,
-
         fileName: `lecture-${Date.now()}.m4a`,
-
+        signal: abortController.signal,
       });
 
-
-
-      const newBody = body ? `${body}\n\n${transcript}` : transcript;
-
-      setBody(newBody);
-
-      await saveNote(noteId, { body: newBody });
-
+      await loadNote(noteId);
     } catch (e: unknown) {
-
+      if (e instanceof Error && e.name === 'AbortError') return;
       Alert.alert('Transcription failed', e instanceof Error ? e.message : 'Could not transcribe audio');
-
     } finally {
-
+      transcribeAbortRef.current = null;
       setTranscribing(false);
-
     }
+  };
 
+
+
+  const cancelTranscription = () => {
+    transcribeAbortRef.current?.abort();
+    transcribeAbortRef.current = null;
+    setTranscribing(false);
   };
 
 
@@ -472,20 +525,28 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             >
 
-              {transcribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Record lecture'}
+              {transcribing ? 'Transcribing...' : isRecording ? 'Stop & transcribe' : 'Record lecture'}
 
             </Button>
 
             {isRecording ? (
+              <>
+                <Button size="sm" variant="ghost" onPress={() => void discardRecording()}>
+                  Cancel
+                </Button>
+                <View className="flex-row items-center gap-2 self-center">
+                  <View className="w-2 h-2 rounded-full bg-red-500" />
+                  <Text className="text-xs text-red-500">
+                    Recording {formatRecordingDuration(recordingSeconds)}
+                  </Text>
+                </View>
+              </>
+            ) : null}
 
-              <View className="flex-row items-center gap-1 self-center">
-
-                <View className="w-2 h-2 rounded-full bg-red-500" />
-
-                <Text className="text-xs text-red-500">Recording</Text>
-
-              </View>
-
+            {transcribing ? (
+              <Button size="sm" variant="ghost" onPress={cancelTranscription}>
+                Cancel
+              </Button>
             ) : null}
 
           </View>

@@ -919,7 +919,7 @@ export async function transcribeAudioBase64(
       ? 'wav'
       : 'webm';
   form.append('file', blob, `lecture.${extension}`);
-  form.append('model', 'whisper-large-v3');
+  form.append('model', 'whisper-large-v3-turbo');
   form.append('response_format', 'text');
 
   const response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -935,5 +935,5 @@ export async function transcribeAudioBase64(
 
   const transcript = (await response.text()).trim();
   if (!transcript) throw new ApiError('Empty transcription result.', 502);
-  return { transcript, provider: 'groq-whisper' };
+  return { transcript, provider: 'groq-whisper-turbo' };
 }

@@ -96,7 +96,7 @@ export const deleteNote = (noteId: string) =>
   notesRequest<void>(`/${noteId}`, { method: 'DELETE' });
 export const transcribeAudioForNote = (
   audioBase64: string,
-  options?: { mimeType?: string; noteId?: string; fileName?: string }
+  options?: { mimeType?: string; noteId?: string; fileName?: string; signal?: AbortSignal }
 ) =>
   notesRequest<{ transcript: string }>('/transcribe-audio', {
     method: 'POST',
@@ -106,7 +106,9 @@ export const transcribeAudioForNote = (
       noteId: options?.noteId,
       fileName: options?.fileName,
     }),
+    signal: options?.signal,
   });
+
 export const summarizeNote = (noteId: string) =>
   notesRequest<{ summary: string; note: StudyNote }>(`/${noteId}/summarize`, {
     method: 'POST',

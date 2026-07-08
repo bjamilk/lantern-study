@@ -124,6 +124,7 @@ async function notesLongRequest<T>(
     onProgress?: NoteImportProgressCallback;
     processingLabel?: string;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }
 ): Promise<T> {
   const headers = await getAuthHeaders();
@@ -132,12 +133,25 @@ async function notesLongRequest<T>(
   const json = JSON.stringify(body);
   const processingLabel = options?.processingLabel ?? 'Processing…';
   const timeoutMs = options?.timeoutMs ?? 180_000;
+  const signal = options?.signal;
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_BASE_URL}/api/v1/notes${path}`);
     xhr.responseType = 'json';
     xhr.timeout = timeoutMs;
+
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException('Transcription cancelled.', 'AbortError'));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     for (const [key, value] of Object.entries(headers)) {
       if (value) xhr.setRequestHeader(key, String(value));
@@ -155,8 +169,10 @@ async function notesLongRequest<T>(
 
     xhr.onerror = () => reject(new Error('Request failed — check your connection.'));
     xhr.ontimeout = () => reject(new Error('Request timed out. Try again.'));
+    xhr.onabort = () => reject(new DOMException('Transcription cancelled.', 'AbortError'));
 
     xhr.onload = () => {
+      if (signal) signal.removeEventListener('abort', onAbort);
       const data = xhr.response ?? {};
       if (xhr.status === 202 && typeof data.jobId === 'string') {
         void pollApiJob<T>(data.jobId)
@@ -512,16 +528,18 @@ export async function updateNoteQuiz(
 
 export async function transcribeAudioForNote(
   audioBase64: string,
-  options?: { mimeType?: string; noteId?: string; fileName?: string }
+  options?: { mimeType?: string; noteId?: string; fileName?: string; signal?: AbortSignal }
 ): Promise<{ transcript: string }> {
-  return notesRequest<{ transcript: string }>('/transcribe-audio', {
-    method: 'POST',
-    body: JSON.stringify({
+  return notesLongRequest<{ transcript: string }>('/transcribe-audio', {
+    body: {
       audioBase64,
       mimeType: options?.mimeType,
       noteId: options?.noteId,
       fileName: options?.fileName,
-    }),
+    },
+    processingLabel: 'Transcribing audio…',
+    timeoutMs: 120_000,
+    signal: options?.signal,
   });
 }
 

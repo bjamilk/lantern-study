@@ -31,8 +31,7 @@ export type AIJobName =
   | 'ai.companion.message'
   | 'notes.ai.summarize'
   | 'notes.ai.quiz'
-  | 'notes.ai.flashcards'
-  | 'notes.ai.transcribe';
+  | 'notes.ai.flashcards';
 
 export type FileJobName = 'deck.importApkg';
 

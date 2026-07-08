@@ -21,8 +21,7 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { runNoteAiSync } from '../queue/enqueue';
 import {
   assertPdfSize,
   assertPresentationSize,
@@ -536,17 +535,9 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     res.status(400).json({ error: 'audioBase64 is required.' });
     return;
   }
-  const outcome = await runSyncOrEnqueue(
-    'notes.ai.transcribe',
-    { audioBase64, mimeType: mimeType || 'audio/webm' },
-    userId,
-    async () => transcribeAudioBase64(audioBase64, mimeType || 'audio/webm')
+  const result = await runNoteAiSync(() =>
+    transcribeAudioBase64(audioBase64, mimeType || 'audio/webm')
   );
-  if (outcome.mode === 'async') {
-    sendAsyncJobAccepted(res, outcome.jobId);
-    return;
-  }
-  const result = outcome.result;
 
   const { logAIInference } = await import('../services/aiInferenceLog');
   await logAIInference(supabaseService.getClient(), {

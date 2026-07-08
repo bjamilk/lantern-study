@@ -77,9 +77,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [commentText, setCommentText] = useState('');
   const [showCollabModal, setShowCollabModal] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const discardRecordingRef = useRef(false);
+  const transcribeAbortRef = useRef<AbortController | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
@@ -304,33 +309,78 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setShareGroupOpen(true);
   };
 
+  useEffect(() => {
+    if (!recording) {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      return;
+    }
+
+    setRecordingSeconds(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [recording]);
+
+  const formatRecordingDuration = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const stopMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  };
+
   const startRecording = async () => {
     try {
+      discardRecordingRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = e => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
+        stopMediaStream();
+        if (discardRecordingRef.current) {
+          discardRecordingRef.current = false;
+          chunksRef.current = [];
+          return;
+        }
+
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64 = (reader.result as string).split(',')[1];
+          const abortController = new AbortController();
+          transcribeAbortRef.current = abortController;
           setTranscribing(true);
           try {
-            const result = await notesApi.transcribeAudioForNote(base64, {
+            await notesApi.transcribeAudioForNote(base64, {
               mimeType: 'audio/webm',
               noteId: note.id,
               fileName: `lecture-${Date.now()}.webm`,
+              signal: abortController.signal,
             });
-            onTranscriptReady(result.transcript);
-            userEditedRef.current = true;
-            setBody(prev => [prev, result.transcript].filter(Boolean).join('\n\n'));
-          } catch (err: any) {
-            useToastStore.getState().showToast(err.message || 'Transcription failed', 'error');
+            onTranscriptReady('');
+          } catch (err: unknown) {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+            const message = err instanceof Error ? err.message : 'Transcription failed';
+            useToastStore.getState().showToast(message, 'error');
           } finally {
+            transcribeAbortRef.current = null;
             setTranscribing(false);
           }
         };
@@ -346,7 +396,23 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
     setRecording(false);
+  };
+
+  const discardRecording = () => {
+    discardRecordingRef.current = true;
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    stopMediaStream();
+    chunksRef.current = [];
+    setRecording(false);
+  };
+
+  const cancelTranscription = () => {
+    transcribeAbortRef.current?.abort();
+    transcribeAbortRef.current = null;
+    setTranscribing(false);
   };
 
   return (
@@ -396,13 +462,34 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 <span className="sm:hidden">Record</span>
               </Button>
             ) : (
-              <Button size="sm" onClick={stopRecording}>
-                <StopIcon className="w-4 h-4 sm:mr-1" />
-                <span className="hidden sm:inline">Stop & transcribe</span>
-                <span className="sm:hidden">Stop</span>
-              </Button>
+              <>
+                <Button size="sm" variant="danger" onClick={stopRecording}>
+                  <StopIcon className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Stop & transcribe</span>
+                  <span className="sm:hidden">Stop</span>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={discardRecording}>
+                  Cancel
+                </Button>
+                <div className="flex items-center gap-2 self-center">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                  </span>
+                  <span className="text-xs sm:text-sm font-medium text-red-500">
+                    Recording {formatRecordingDuration(recordingSeconds)}
+                  </span>
+                </div>
+              </>
             )}
-            {transcribing && <span className="text-xs sm:text-sm text-gray-400 self-center">Transcribing...</span>}
+            {transcribing && (
+              <>
+                <span className="text-xs sm:text-sm text-gray-400 self-center">Transcribing...</span>
+                <Button size="sm" variant="ghost" onClick={cancelTranscription}>
+                  Cancel
+                </Button>
+              </>
+            )}
             {isSaving && <span className="sm:hidden text-xs text-gray-400 self-center">Saving...</span>}
           </div>
 

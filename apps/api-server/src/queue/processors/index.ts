@@ -11,7 +11,6 @@ import {
   enhanceFlashcard,
   summarizeNoteContent,
   generateDailyQuiz,
-  transcribeAudioBase64,
 } from '../../services/aiService';
 import { SupabaseService } from '../../services/supabase';
 import { parseApkgBuffer } from '../../services/apkgImport';
@@ -136,11 +135,6 @@ async function processAiJob(job: Job): Promise<unknown> {
         style: style as 'concise' | 'detailed' | undefined,
       });
       await recordInference(userId, 'note-flashcards', result);
-      return result;
-    }
-    case 'notes.ai.transcribe': {
-      const result = await transcribeAudioBase64(job.data.audioBase64, job.data.mimeType);
-      await recordInference(userId, 'transcribe-audio', result);
       return result;
     }
     default:
