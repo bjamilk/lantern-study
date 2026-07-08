@@ -2,6 +2,8 @@
 $script:ProductionWebUrl = 'https://lanternstudy.com'
 $script:ProductionWebDomain = 'lanternstudy.com'
 $script:ProductionFromEmail = 'noreply@lanternstudy.com'
+$script:SupportEmail = 'support@lanternstudy.com'
+$script:PrivacyEmail = 'privacy@lanternstudy.com'
 $script:LegacyPagesUrl = 'https://lantern-study.pages.dev'
 $script:SupabaseProjectRef = 'tiizkjhbrnaibaagmurl'
 

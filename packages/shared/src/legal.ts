@@ -1,7 +1,7 @@
 /** Base URL for hosted legal pages (web). Mobile may open these or use in-app Legal screen. */
 export const LEGAL_BASE_URL =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_LEGAL_BASE_URL) ||
-  'https://lanternstudy.app';
+  'https://lanternstudy.com';
 
 export type LegalDocumentId = 'privacy' | 'terms' | 'cookies';
 
@@ -33,7 +33,7 @@ Lantern Study ("we", "us", "our") provides a collaborative study platform with f
 ## 1. Who we are
 
 **Data controller:** Lantern Study  
-**Contact:** privacy@lanternstudy.app
+**Contact:** privacy@lanternstudy.com
 
 ## 2. Data we collect
 
@@ -63,7 +63,7 @@ We do not intentionally collect special category data (health, biometric, etc.).
 
 When you use AI features, relevant content (study notes, questions, audio for transcription, chat messages) may be sent to third-party AI providers to generate responses. Providers may include Groq, Google Gemini, Cloudflare Workers AI, and Hugging Face, selected automatically based on availability.
 
-AI output may be inaccurate. Do not rely on AI for medical, legal, or other professional advice. See our [Terms of Service](/terms) and [AI System Card](https://lanternstudy.app/docs/ai-system-card).
+AI output may be inaccurate. Do not rely on AI for medical, legal, or other professional advice. See our [Terms of Service](/terms) and [AI System Card](https://lanternstudy.com/docs/ai-system-card).
 
 We log AI inference metadata (feature, provider, timestamp) for rate limiting and auditability. We do not store full prompts in inference logs by default.
 
@@ -100,7 +100,7 @@ You may request:
 - **Erasure** — delete your account (Settings → Delete account)
 - **Rectification** — update profile in Settings
 - **Portability** — JSON export of your account data
-- **Object / restrict** — contact privacy@lanternstudy.app
+- **Object / restrict** — contact privacy@lanternstudy.com
 
 We respond within 30 days where applicable.
 
@@ -118,7 +118,7 @@ We may update this policy. Material changes will be notified in-app or by email 
 
 ## 12. Contact
 
-Questions or data subject requests: **privacy@lanternstudy.app**
+Questions or data subject requests: **privacy@lanternstudy.com**
 `;
 
 export const TERMS_OF_SERVICE_MD = `# Terms of Service
@@ -191,7 +191,7 @@ We may update these Terms. Continued use after changes constitutes acceptance of
 
 ## 12. Contact
 
-**support@lanternstudy.app**
+**support@lanternstudy.com**
 `;
 
 export const COOKIE_NOTICE_MD = `# Cookie Notice
@@ -222,7 +222,7 @@ If we add analytics, marketing, or third-party embeds that set non-essential coo
 
 ## Contact
 
-**privacy@lanternstudy.app**
+**privacy@lanternstudy.com**
 `;
 
 export const LEGAL_DOCUMENT_CONTENT: Record<LegalDocumentId, string> = {

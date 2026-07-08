@@ -7,6 +7,7 @@
 #   $env:RENDER_API_KEY = 'rnd_...'; .\scripts\deploy-render-api.ps1
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'deploy-constants.ps1')
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $ServiceName = 'lantern-study-api'
@@ -14,7 +15,7 @@ $WorkerServiceName = 'lantern-study-worker'
 $GitHubRepo = 'https://github.com/bjamilk/lantern-study'
 $Branch = 'main'
 $HealthPath = '/health'
-$ProductionFrontendUrl = 'https://lanternstudy.com'
+$ProductionFrontendUrl = $script:ProductionWebUrl
 $ApiBase = 'https://api.render.com/v1'
 
 function Write-Step([string]$Message) {
@@ -96,13 +97,13 @@ function New-JwtSecret {
     return -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 48 | ForEach-Object { [char]$_ })
 }
 
-function Build-EnvVars([hashtable]$ApiEnv) {
+function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
     $jwt = if ($ApiEnv['JWT_SECRET']) { $ApiEnv['JWT_SECRET'] } else { New-JwtSecret }
     $vars = @(
         @{ key = 'NODE_ENV'; value = 'production' },
         @{ key = 'PORT'; value = '3001' },
         @{ key = 'FRONTEND_URL'; value = $ProductionFrontendUrl },
-        @{ key = 'WEB_APP_URL'; value = 'https://lantern-study.pages.dev' },
+        @{ key = 'WEB_APP_URL'; value = $script:ProductionWebUrl },
         @{ key = 'REDIS_ENABLED'; value = 'true' },
         @{ key = 'REDIS_URL'; value = $ApiEnv['REDIS_URL'] },
         @{ key = 'GOTENBERG_URL'; value = $ApiEnv['GOTENBERG_URL'] },
@@ -131,6 +132,24 @@ function Build-EnvVars([hashtable]$ApiEnv) {
             @{ key = 'SENTRY_RELEASE'; value = $ApiEnv['SENTRY_RELEASE'] },
             @{ key = 'SENTRY_TRACES_SAMPLE_RATE'; value = $ApiEnv['SENTRY_TRACES_SAMPLE_RATE'] }
         )
+    }
+    if ($ResendEnv['RESEND_API_KEY']) {
+        $contactTo = if ($ResendEnv['CONTACT_TO_EMAIL']) { $ResendEnv['CONTACT_TO_EMAIL'] } else { $script:SupportEmail }
+        $fromName = if ($ResendEnv['RESEND_SENDER_NAME']) { $ResendEnv['RESEND_SENDER_NAME'] } else { 'Lantern Study' }
+        $fromEmail = if ($ResendEnv['RESEND_FROM_EMAIL']) { $ResendEnv['RESEND_FROM_EMAIL'] } else { $script:ProductionFromEmail }
+        $contactFrom = if ($ResendEnv['CONTACT_FROM_EMAIL']) {
+            $ResendEnv['CONTACT_FROM_EMAIL']
+        } else {
+            "$fromName <$fromEmail>"
+        }
+        $vars += @(
+            @{ key = 'RESEND_API_KEY'; value = $ResendEnv['RESEND_API_KEY'] },
+            @{ key = 'CONTACT_TO_EMAIL'; value = $contactTo },
+            @{ key = 'CONTACT_FROM_EMAIL'; value = $contactFrom },
+            @{ key = 'RESEND_FROM_EMAIL'; value = $fromEmail }
+        )
+    } else {
+        Write-Host 'Warning: RESEND_API_KEY missing in .env.resend (contact form and auth email may fail).' -ForegroundColor DarkYellow
     }
     return $vars
 }
@@ -299,6 +318,7 @@ function Test-Health([string]$BaseUrl) {
 Write-Host 'Lantern Study - Render API deploy' -ForegroundColor Cyan
 $script:RenderApiKey = Get-RenderApiKey
 $apiEnv = Read-DotEnvFile (Join-Path $RepoRoot 'apps/api-server/.env')
+$resendEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env.resend')
 if (-not $apiEnv['SUPABASE_SERVICE_ROLE_KEY']) {
     throw 'SUPABASE_SERVICE_ROLE_KEY missing in apps/api-server/.env'
 }
@@ -309,7 +329,7 @@ if (-not $apiEnv['REDIS_URL']) {
     Write-Host 'Warning: REDIS_URL missing in apps/api-server/.env (production startup requires Redis).' -ForegroundColor DarkYellow
 }
 
-$envVars = Build-EnvVars -ApiEnv $apiEnv
+$envVars = Build-EnvVars -ApiEnv $apiEnv -ResendEnv $resendEnv
 $ownerId = Get-OwnerId
 Write-Host "Render workspace id: $ownerId"
 $service = Ensure-Service -OwnerId $ownerId -EnvVars $envVars

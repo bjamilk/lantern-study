@@ -5,7 +5,7 @@
 ## 1. Detect
 
 - Sentry alerts (if enabled)
-- User reports (support@lanternstudy.app)
+- User reports (support@lanternstudy.com)
 - Admin audit anomalies
 - Supabase / hosting provider notices
 

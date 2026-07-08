@@ -17,7 +17,7 @@
 
 ## Data subject rights
 
-Export and delete via Settings (web + mobile). Contact: privacy@lanternstudy.app
+Export and delete via Settings (web + mobile). Contact: privacy@lanternstudy.com
 
 ## International transfers
 

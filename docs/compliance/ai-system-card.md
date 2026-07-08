@@ -31,7 +31,7 @@ Fallback chain: Groq (Llama 3.3 70B) → Google Gemini → Cloudflare Workers AI
 
 ## Human oversight
 
-Users review and edit generated content before saving. Users can report issues via support@lanternstudy.app.
+Users review and edit generated content before saving. Users can report issues via support@lanternstudy.com.
 
 ## Data sent to providers
 
@@ -43,4 +43,4 @@ In-app disclaimers on all AI surfaces. Privacy Policy § AI features.
 
 ## Contact
 
-privacy@lanternstudy.app
+privacy@lanternstudy.com
