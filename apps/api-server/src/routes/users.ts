@@ -4,7 +4,7 @@ import { authMiddleware, requirePlatformAdmin } from '../middleware/auth';
 import { mergeUserSettings, isPushEnabledInSettings } from '../utils/sanitizeSettings';
 import { parseUserSettings } from '../utils/userSettingsPolicy';
 import { canViewStudyActivity, resolvePublicOnlineStatus } from '@lantern/shared/settings';
-import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination } from '../middleware/validation';
+import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination, validateAccountPasswordBody, validateAccountImportBody } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -14,6 +14,15 @@ import { dataExportRateLimit } from '../middleware/rateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import { logAdminAction } from '../services/adminAudit';
+import {
+  getAccountLifecycle,
+  isAccountDeactivated,
+  reactivateAccount,
+  scheduleAccountDeletion,
+  verifyUserPassword,
+} from '../services/accountLifecycle';
+import { importAccountArchive } from '../services/accountImport';
+import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
 
 const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'name',
@@ -419,6 +428,206 @@ router.put(
       success: true,
       data: updatedUser,
     });
+  })
+);
+
+// GET /api/v1/users/:userId/lifecycle - Account pause / deletion schedule status
+router.get(
+  '/:userId/lifecycle',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (requestingUserId !== userId && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const row = await getAccountLifecycle(supabaseService, userId);
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const deactivated = isAccountDeactivated(row);
+    let graceDaysRemaining: number | null = null;
+    if (row.deletion_scheduled_at) {
+      const ms = new Date(row.deletion_scheduled_at).getTime() - Date.now();
+      graceDaysRemaining = Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+    }
+
+    res.json({
+      success: true,
+      data: {
+        status: deactivated ? 'deactivated' : 'active',
+        deactivatedAt: row.deactivated_at ?? null,
+        deletionScheduledAt: row.deletion_scheduled_at ?? null,
+        graceDaysRemaining,
+        gracePeriodDays: ACCOUNT_DELETION_GRACE_DAYS,
+      },
+    });
+  })
+);
+
+// POST /api/v1/users/:userId/deactivate - Pause account; permanent delete after grace period
+router.post(
+  '/:userId/deactivate',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (requestingUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const row = await getAccountLifecycle(supabaseService, userId);
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    if (isAccountDeactivated(row)) {
+      return res.status(409).json({ success: false, error: 'Account is already paused.' });
+    }
+
+    const scheduled = await scheduleAccountDeletion(supabaseService, userId);
+    res.json({
+      success: true,
+      data: {
+        ...scheduled,
+        gracePeriodDays: ACCOUNT_DELETION_GRACE_DAYS,
+        message: `Account paused. It will be permanently deleted in ${ACCOUNT_DELETION_GRACE_DAYS} days unless you reactivate.`,
+      },
+    });
+  })
+);
+
+// POST /api/v1/users/:userId/reactivate - Cancel scheduled deletion
+router.post(
+  '/:userId/reactivate',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (requestingUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const ok = await reactivateAccount(supabaseService, userId);
+    if (!ok) {
+      return res.status(409).json({ success: false, error: 'Account is not paused.' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Account reactivated. Welcome back!',
+    });
+  })
+);
+
+// POST /api/v1/users/:userId/delete-immediate - Permanently delete now (requires password)
+router.post(
+  '/:userId/delete-immediate',
+  authMiddleware,
+  validateUserId,
+  validateAccountPasswordBody,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (requestingUserId !== userId && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { password } = req.body as { password?: string };
+    if (requestingUserId === userId) {
+      const row = await getAccountLifecycle(supabaseService, userId);
+      const email = row?.email;
+      if (!email) {
+        return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
+      }
+      const valid = await verifyUserPassword(email, password || '');
+      if (!valid) {
+        return res.status(401).json({ success: false, error: 'Incorrect password.' });
+      }
+    }
+
+    const deleted = await supabaseService.deleteUser(userId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    await cacheService.delete(`user:${userId}`);
+    await cacheService.deletePattern('users:list:*');
+
+    res.json({ success: true, message: 'Account permanently deleted.' });
+  })
+);
+
+// POST /api/v1/users/:userId/import - Restore backup into current account
+router.post(
+  '/:userId/import',
+  authMiddleware,
+  dataExportRateLimit,
+  validateUserId,
+  validateAccountImportBody,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (requestingUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { password, export: exportPayload, confirmEmailMismatch } = req.body as {
+      password: string;
+      export: Record<string, unknown>;
+      confirmEmailMismatch?: boolean;
+    };
+
+    const row = await getAccountLifecycle(supabaseService, userId);
+    if (!row?.email) {
+      return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
+    }
+
+    const valid = await verifyUserPassword(row.email, password);
+    if (!valid) {
+      return res.status(401).json({ success: false, error: 'Incorrect password.' });
+    }
+
+    try {
+      const result = await importAccountArchive(
+        supabaseService,
+        userId,
+        exportPayload as {
+          format: string;
+          sourceUserId: string;
+          sourceEmail?: string | null;
+          exportedAt: string;
+          signature: string;
+          data: Record<string, unknown>;
+        },
+        { confirmEmailMismatch: !!confirmEmailMismatch }
+      );
+
+      res.json({ success: true, data: result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Import failed';
+      const status = message.includes('email does not match') ? 409 : 400;
+      res.status(status).json({ success: false, error: message });
+    }
   })
 );
 

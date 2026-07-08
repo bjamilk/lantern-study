@@ -56,6 +56,7 @@ import apiKeysRoutes from './routes/apiKeys';
 import authRoutes, { initializeAuthRoutes } from './routes/auth';
 import jobsRoutes from './routes/jobs';
 import budgetRoutes from './routes/budget';
+import contactRoutes from './routes/contact';
 import { isBullMqEnabled } from './queue/connection';
 
 // Import utilities
@@ -284,6 +285,7 @@ async function startServer() {
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
     app.use('/api/v1/budget', budgetRoutes);
+    app.use('/api/v1/contact', contactRoutes);
     app.use('/api/v1/groups', optionalAuthMiddleware, applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);

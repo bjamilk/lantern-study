@@ -15,12 +15,16 @@ import { Avatar, Button, Toggle } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { fetchMarketplaceCampuses } from '../services/supabase';
-import { CloudArrowDownIcon } from '@heroicons/react/24/outline';
+import { CloudArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import {
     type UserSettings,
     formatReminderTime,
     SETTINGS_FAQ,
 } from '@lantern/shared/settings';
+import { ACCOUNT_EXPORT_COPY } from '@lantern/shared';
+import { AccountDeletionModal } from './AccountDeletionModal';
+import { AccountImportModal } from './AccountImportModal';
+import { ContactForm } from './ContactForm';
 
 type SettingsTab =
     | 'profile'
@@ -46,8 +50,14 @@ interface SettingsModalProps {
   onUpdateAvatar: (avatarUrl: string) => void;
   onUpdatePassword: (current: string, newPass: string) => boolean;
   onLogout: () => void;
-  onDeleteAccount: () => void;
-  onExportAccount: () => void;
+  onPauseAccount: () => Promise<void>;
+  onDeleteAccountImmediate: (password: string) => Promise<void>;
+  onImportAccount: (payload: {
+    exportDoc: Record<string, unknown>;
+    password: string;
+    confirmEmailMismatch: boolean;
+  }) => Promise<{ noteFolders: number; notes: number; decks: number; flashcards: number } | void>;
+  onExportAccount: () => void | Promise<void>;
   onResetSettings: () => void;
 }
 
@@ -63,11 +73,17 @@ const ToggleSwitch = ({ enabled, onChange, label, description }: {
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
     isOpen, onClose, currentUser, userSettings,
     onUpdateSettingsCategory,
-    onUpdateProfile, onUpdateAvatar, onUpdatePassword, onLogout, onDeleteAccount,
+    onUpdateProfile, onUpdateAvatar, onUpdatePassword, onLogout,
+    onPauseAccount, onDeleteAccountImmediate, onImportAccount,
     onExportAccount, onResetSettings,
 }) => {
     const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
     const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+    const [deletionOpen, setDeletionOpen] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
+    const [accountActionLoading, setAccountActionLoading] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const { showToast } = useToastStore();
 
     const notifications = userSettings.notifications;
     const study = userSettings.study;
@@ -474,8 +490,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
                         ))}
                     </div>
-                    <a href="mailto:support@lanternstudy.app?subject=Lantern%20Study%20Support"
-                        className="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">Contact support</a>
+                    <div className="border-t border-lantern-border pt-4">
+                        <h4 className="font-medium text-lantern-text mb-3">Contact us</h4>
+                        <ContactForm
+                            compact
+                            defaultName={currentUser.name}
+                            defaultEmail={currentUser.email ?? ''}
+                            onSuccess={(msg) => showToast(msg, 'success')}
+                        />
+                    </div>
                     <button onClick={onResetSettings}
                         className="w-full flex items-center justify-center p-3 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-md border border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800">
                         <AdjustmentsHorizontalIcon className="w-5 h-5 mr-2" />
@@ -486,10 +509,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             case 'account': return (
                  <div>
                      <h3 className="text-lg font-semibold text-lantern-text">Account Actions</h3>
-                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Manage your account session and data.</p>
-                     <button onClick={onExportAccount} className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-200 dark:border-indigo-800">
+                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                         Export a signed backup, import it into a new account later, or manage account deletion.
+                     </p>
+                     <p className="text-xs text-lantern-text-secondary mb-4">{ACCOUNT_EXPORT_COPY.limitations}</p>
+                     <button
+                        type="button"
+                        onClick={async () => {
+                            setExporting(true);
+                            try {
+                                await onExportAccount();
+                                showToast('Backup downloaded.', 'success');
+                            } catch {
+                                showToast('Export failed. You may only export once every 24 hours.', 'error');
+                            } finally {
+                                setExporting(false);
+                            }
+                        }}
+                        disabled={exporting || accountActionLoading}
+                        className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-200 dark:border-indigo-800 disabled:opacity-60"
+                     >
                         <CloudArrowDownIcon className="w-5 h-5 mr-2" />
-                         Export my data (JSON)
+                         {exporting ? 'Exporting…' : 'Export my data (JSON)'}
+                     </button>
+                     <button
+                        type="button"
+                        onClick={() => setImportOpen(true)}
+                        disabled={accountActionLoading}
+                        className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md border border-teal-200 dark:bg-teal-900/30 dark:text-teal-200 dark:border-teal-800"
+                     >
+                        <CloudArrowUpIcon className="w-5 h-5 mr-2" />
+                         Import backup
                      </button>
                      <div className="text-xs text-lantern-text-secondary mb-4 space-x-3">
                         <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="underline">Privacy</a>
@@ -502,10 +552,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                      </button>
                      <div className="mt-8 p-4 border border-red-500/30 dark:border-red-600/50 bg-red-50 dark:bg-red-900/20 rounded-lg">
                         <h4 className="font-semibold text-red-700 dark:text-red-300">Danger Zone</h4>
-                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-3">Deleting your account is permanent and cannot be undone.</p>
-                        <button onClick={onDeleteAccount} className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md">
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-3">
+                            Pause your account for 30 days or delete it permanently. Export a backup first — uploaded files are not included in exports.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setDeletionOpen(true)}
+                            disabled={accountActionLoading}
+                            className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-60"
+                        >
                             <TrashIcon className="w-4 h-4 mr-2" />
-                            Delete My Account
+                            Delete or pause account…
                         </button>
                      </div>
                  </div>
@@ -515,6 +572,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     
     return (
+        <>
         <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-75 flex items-center justify-center p-4 z-[80]" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
             <div className="bg-lantern-surface rounded-lantern-xl shadow-xl w-full max-w-3xl h-[90vh] md:h-[75vh] flex flex-col md:flex-row overflow-hidden border border-lantern-border">
                 <div className="w-full md:w-1/3 bg-lantern-background-secondary border-b md:border-b-0 md:border-r border-lantern-border p-4 flex-shrink-0">
@@ -542,6 +600,53 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
             </div>
         </div>
+        <AccountDeletionModal
+            open={deletionOpen}
+            onClose={() => setDeletionOpen(false)}
+            onExport={onExportAccount}
+            exporting={exporting}
+            loading={accountActionLoading}
+            onPauseAccount={async () => {
+                setAccountActionLoading(true);
+                try {
+                    await onPauseAccount();
+                    showToast('Account paused. Sign in again within 30 days to reactivate.', 'info');
+                    onClose();
+                } finally {
+                    setAccountActionLoading(false);
+                }
+            }}
+            onDeleteImmediate={async (password) => {
+                setAccountActionLoading(true);
+                try {
+                    await onDeleteAccountImmediate(password);
+                    showToast('Account permanently deleted.', 'info');
+                    onClose();
+                } finally {
+                    setAccountActionLoading(false);
+                }
+            }}
+        />
+        <AccountImportModal
+            open={importOpen}
+            onClose={() => setImportOpen(false)}
+            loading={accountActionLoading}
+            onImport={async (payload) => {
+                setAccountActionLoading(true);
+                try {
+                    const result = await onImportAccount(payload);
+                    if (result) {
+                        showToast(
+                            `Imported ${result.notes} notes, ${result.decks} decks, ${result.flashcards} flashcards.`,
+                            'success'
+                        );
+                    }
+                } finally {
+                    setAccountActionLoading(false);
+                }
+            }}
+        />
+        </>
     );
 };
 

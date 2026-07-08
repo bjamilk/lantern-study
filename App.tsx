@@ -7,7 +7,7 @@ import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { setSessionExpiredHandler } from './services/sessionHandler';
-import { supabase as supabaseClient, apiLogoutSession } from './services/supabase';
+import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
 import { getNoteStudyContent } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
@@ -33,6 +33,7 @@ import OfflineModeScreen from './components/OfflineModeScreen';
 import AuthScreen from './components/AuthScreen';
 import ResetPasswordScreen from './components/ResetPasswordScreen';
 import SettingsModal from './components/SettingsModal';
+import AccountPausedBanner from './components/AccountPausedBanner';
 import DuplicateQuestionModal from './components/DuplicateQuestionModal';
 import CreateDeckModal from './components/CreateDeckModal';
 import CreateFlashcardModal from './components/CreateFlashcardModal';
@@ -125,6 +126,12 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [accountLifecycle, setAccountLifecycle] = useState<{
+        status: 'active' | 'deactivated';
+        deletionScheduledAt?: string | null;
+        graceDaysRemaining?: number | null;
+    } | null>(null);
+    const [reactivatingAccount, setReactivatingAccount] = useState(false);
 
     useEffect(() => {
         setSessionExpiredHandler(async (message) => {
@@ -188,10 +195,36 @@ export const App: React.FC = () => {
         toggleTheme, handleLogout,
         getUserSettings, handleUpdateSettingsCategory,
         handleUpdateProfile, handleUpdateCurrentUserAvatar,
-        handleUpdatePassword, handleDeleteAccount, handleExportAccount,
+        handleUpdatePassword, handlePauseAccount, handleDeleteAccountImmediate,
+        handleReactivateAccount, handleImportAccount, handleExportAccount,
         handleResetSettings,
         handleSavePreset, handleDeletePreset
     } = useAuthHandlers();
+
+    useEffect(() => {
+        if (!currentUser?.id) {
+            setAccountLifecycle(null);
+            return;
+        }
+        void fetchAccountLifecycle(currentUser.id).then(setAccountLifecycle);
+    }, [currentUser?.id]);
+
+    const handleReactivateFromBanner = async () => {
+        setReactivatingAccount(true);
+        try {
+            await handleReactivateAccount();
+            if (currentUser?.id) {
+                const next = await fetchAccountLifecycle(currentUser.id);
+                setAccountLifecycle(next);
+            }
+            showToast('Account reactivated. Welcome back!', 'success');
+        } catch (e: unknown) {
+            showToast(e instanceof Error ? e.message : 'Could not reactivate account.', 'error');
+        } finally {
+            setReactivatingAccount(false);
+        }
+    };
+
     const {
         handleSelectChat, handleInitiateDm, handleSendDm, handleDeleteDmThread,
         handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage,
@@ -1260,6 +1293,15 @@ export const App: React.FC = () => {
             <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, navigateTo, setActiveTestResult })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {accountLifecycle?.status === 'deactivated' && (
+                <AccountPausedBanner
+                    deletionScheduledAt={accountLifecycle.deletionScheduledAt}
+                    graceDaysRemaining={accountLifecycle.graceDaysRemaining}
+                    onReactivate={() => void handleReactivateFromBanner()}
+                    onExport={() => void handleExportAccount()}
+                    loading={reactivatingAccount}
+                />
+            )}
             {mainContent()}
             </div>
             <CreateGroupModal isOpen={modals.createGroup} onClose={handleCloseCreateGroupModal}
@@ -1297,7 +1339,9 @@ export const App: React.FC = () => {
                 onUpdateProfile={handleUpdateProfile}
                 onUpdateAvatar={handleUpdateCurrentUserAvatar}
                 onUpdatePassword={handleUpdatePassword} onLogout={handleLogoutAndRedirect}
-                onDeleteAccount={handleDeleteAccount}
+                onPauseAccount={handlePauseAccount}
+                onDeleteAccountImmediate={handleDeleteAccountImmediate}
+                onImportAccount={handleImportAccount}
                 onExportAccount={handleExportAccount}
                 onResetSettings={handleResetSettings} />
             <CreateDeckModal isOpen={modals.createDeck} onClose={() => closeModal('createDeck')}

@@ -5,6 +5,8 @@
 
 // Config
 export * from './config';
+export * from './accountLifecycle';
+export * from './contactForm';
 
 // Types
 export * from './types';

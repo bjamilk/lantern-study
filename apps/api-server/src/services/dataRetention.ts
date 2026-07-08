@@ -55,6 +55,8 @@ export function startDataRetentionJobs(supabaseService: SupabaseService): void {
   const run = async () => {
     await purgeExpiredAIInferenceLogs(supabaseService);
     await purgeExpiredAIAnalytics(supabaseService);
+    const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
+    await purgeScheduledAccountDeletions(supabaseService);
   };
 
   void run();

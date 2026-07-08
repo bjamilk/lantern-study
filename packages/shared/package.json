@@ -65,6 +65,18 @@
       "require": "./dist/legal.js",
       "default": "./src/legal.ts"
     },
+    "./accountLifecycle": {
+      "types": "./src/accountLifecycle.ts",
+      "import": "./src/accountLifecycle.ts",
+      "require": "./dist/accountLifecycle.js",
+      "default": "./src/accountLifecycle.ts"
+    },
+    "./contactForm": {
+      "types": "./src/contactForm.ts",
+      "import": "./src/contactForm.ts",
+      "require": "./dist/contactForm.js",
+      "default": "./src/contactForm.ts"
+    },
     "./settings": {
       "types": "./src/settings/index.ts",
       "import": "./src/settings/index.ts",

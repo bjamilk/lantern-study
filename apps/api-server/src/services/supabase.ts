@@ -459,7 +459,20 @@ export class SupabaseService {
 
   async exportUserData(userId: string): Promise<Record<string, unknown>> {
     const { exportUserDataArchive } = await import('./userDataLifecycle');
-    return exportUserDataArchive(this, userId);
+    const { wrapSignedExport } = await import('./accountExportSign');
+    const archive = await exportUserDataArchive(this, userId);
+    let sourceEmail: string | null = null;
+    try {
+      const { data: authUser } = await this.supabase.auth.admin.getUserById(userId);
+      sourceEmail = authUser?.user?.email ?? null;
+    } catch {
+      sourceEmail = null;
+    }
+    return wrapSignedExport({
+      sourceUserId: userId,
+      sourceEmail,
+      data: archive,
+    }) as unknown as Record<string, unknown>;
   }
 
   /** @deprecated use deleteUser — kept for internal reference */

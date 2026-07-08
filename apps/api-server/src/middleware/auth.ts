@@ -4,6 +4,11 @@ import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
 import { isUserBanned } from '../services/adminAudit';
+import {
+  getAccountLifecycle,
+  isAccountDeactivated,
+  isDeactivatedLifecycleRoute,
+} from '../services/accountLifecycle';
 import { isAccessTokenDenied } from '../services/tokenDenylist';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { createRequestContext, type RequestContext } from '../services/dataLoaders';
@@ -41,10 +46,40 @@ function attachUser(
   req.user = user;
 }
 
+async function rejectIfDeactivated(
+  userId: string,
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<boolean> {
+  if (req.user?.isAdmin || !supabaseService) return false;
+  if (isDeactivatedLifecycleRoute(req.method, req.path, userId)) return false;
+
+  const row = await getAccountLifecycle(supabaseService, userId);
+  if (!isAccountDeactivated(row)) return false;
+
+  res.status(403).json({
+    error: 'Forbidden',
+    message:
+      'Your account is paused and scheduled for deletion. Reactivate it from Settings or export your data before it is removed.',
+    code: 'ACCOUNT_DEACTIVATED',
+    deletionScheduledAt: row?.deletion_scheduled_at ?? null,
+  });
+  return true;
+}
+
 function proceedWithAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   if (!enforceApiKeyMutationPolicy(req, res)) return;
   if (req.user?.id) {
-    (req as AuthenticatedRequest & { context?: RequestContext }).context = createRequestContext(req.user.id);
+    void (async () => {
+      if (await rejectIfDeactivated(req.user!.id, req, res)) return;
+      if (req.user?.id) {
+        (req as AuthenticatedRequest & { context?: RequestContext }).context = createRequestContext(
+          req.user.id
+        );
+      }
+      authenticatedRateLimit(req, res, next);
+    })();
+    return;
   }
   authenticatedRateLimit(req, res, next);
 }

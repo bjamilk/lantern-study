@@ -19,6 +19,16 @@ export const handleValidationErrors = (
   next();
 };
 
+export const validateAccountPasswordBody = [
+  body('password').isString().isLength({ min: 8, max: 128 }).withMessage('Password is required'),
+];
+
+export const validateAccountImportBody = [
+  body('export').isObject().withMessage('Backup export payload is required'),
+  body('password').isString().isLength({ min: 8, max: 128 }).withMessage('Password is required'),
+  body('confirmEmailMismatch').optional().isBoolean(),
+];
+
 // User validation rules
 export const validateUserId = [
   param('userId').isUUID().withMessage('User ID must be a valid UUID'),

@@ -13,8 +13,11 @@ import {
     saveUserSettings,
     supabase,
     apiLogoutSession,
-    deleteUserAccount,
+    deactivateUserAccount,
+    deleteUserAccountImmediate,
+    reactivateUserAccount,
     exportUserAccountData,
+    importUserAccountBackup,
     hasValidSession,
 } from '../services/supabase';
 import {
@@ -168,24 +171,39 @@ export function useAuthHandlers() {
         return true;
     }, [currentUser, setCurrentUser]);
 
-    const handleDeleteAccount = useCallback(async () => {
-        if (window.confirm("Are you absolutely sure you want to delete your account? This action is permanent and cannot be undone.")) {
-            if (currentUser) {
-                try {
-                    const deleted = await deleteUserAccount(currentUser.id);
-                    if (deleted) {
-                        setUsers(prev => prev.filter(u => u.id !== currentUser.id));
-                        await handleLogout();
-                    } else {
-                        alert('Failed to delete account. Please try again.');
-                    }
-                } catch (error) {
-                    console.error('Error deleting account:', error);
-                    alert('Failed to delete account. Please try again.');
-                }
-            }
-        }
+    const handlePauseAccount = useCallback(async () => {
+        if (!currentUser) return;
+        await deactivateUserAccount(currentUser.id);
+        setUsers((prev) => prev.filter((u) => u.id !== currentUser.id));
+        await handleLogout();
     }, [currentUser, handleLogout]);
+
+    const handleDeleteAccountImmediate = useCallback(
+        async (password: string) => {
+            if (!currentUser) return;
+            await deleteUserAccountImmediate(currentUser.id, password);
+            setUsers((prev) => prev.filter((u) => u.id !== currentUser.id));
+            await handleLogout();
+        },
+        [currentUser, handleLogout]
+    );
+
+    const handleReactivateAccount = useCallback(async () => {
+        if (!currentUser) return;
+        await reactivateUserAccount(currentUser.id);
+    }, [currentUser]);
+
+    const handleImportAccount = useCallback(
+        async (payload: {
+            exportDoc: Record<string, unknown>;
+            password: string;
+            confirmEmailMismatch: boolean;
+        }) => {
+            if (!currentUser) return;
+            return importUserAccountBackup(currentUser.id, payload);
+        },
+        [currentUser]
+    );
 
     const handleExportAccount = useCallback(async () => {
         if (!currentUser) return;
@@ -237,7 +255,10 @@ export function useAuthHandlers() {
         handleUpdateProfile,
         handleUpdateCurrentUserAvatar,
         handleUpdatePassword,
-        handleDeleteAccount,
+        handlePauseAccount,
+        handleDeleteAccountImmediate,
+        handleReactivateAccount,
+        handleImportAccount,
         handleExportAccount,
         handleUpdatePrivacySettings,
         handleResetSettings,

@@ -126,6 +126,7 @@ let _aiPostBurstRateLimit: RateLimitRequestHandler | null = null;
 let _uploadBurstRateLimit: RateLimitRequestHandler | null = null;
 let _adminRateLimit: RateLimitRequestHandler | null = null;
 let _dataExportRateLimit: RateLimitRequestHandler | null = null;
+let _contactFormRateLimit: RateLimitRequestHandler | null = null;
 
 function buildAllLimiters(): void {
   const anonMax = parseInt(
@@ -228,6 +229,14 @@ function buildAllLimiters(): void {
     keyScope: 'user',
     redisPrefix: 'export',
   });
+
+  _contactFormRateLimit = createScopedRateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: prodOrDev(5, 20),
+    message: 'Too many contact requests. Please try again in an hour.',
+    keyScope: 'ip',
+    redisPrefix: 'contact',
+  });
 }
 
 buildAllLimiters();
@@ -276,4 +285,8 @@ export const adminRateLimit: RequestHandler = (req, res, next) => {
 
 export const dataExportRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_dataExportRateLimit, 'dataExportRateLimit')(req, res, next);
+};
+
+export const contactFormRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_contactFormRateLimit, 'contactFormRateLimit')(req, res, next);
 };

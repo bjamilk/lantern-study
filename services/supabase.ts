@@ -1648,6 +1648,95 @@ export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   }
 };
 
+export const deleteUserAccountImmediate = async (
+  userId: string,
+  password: string
+): Promise<void> => {
+  const headers = await getRequiredAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/delete-immediate`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || json.message || `Delete failed (${response.status})`);
+  }
+};
+
+export const deactivateUserAccount = async (userId: string): Promise<{
+  deletionScheduledAt: string;
+  deactivatedAt: string;
+  gracePeriodDays: number;
+  message?: string;
+}> => {
+  const headers = await getRequiredAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/deactivate`, {
+    method: 'POST',
+    headers,
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || json.message || `Pause failed (${response.status})`);
+  }
+  return json.data;
+};
+
+export const reactivateUserAccount = async (userId: string): Promise<void> => {
+  const headers = await getRequiredAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/reactivate`, {
+    method: 'POST',
+    headers,
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || json.message || `Reactivate failed (${response.status})`);
+  }
+};
+
+export const fetchAccountLifecycle = async (userId: string): Promise<{
+  status: 'active' | 'deactivated';
+  deactivatedAt?: string | null;
+  deletionScheduledAt?: string | null;
+  graceDaysRemaining?: number | null;
+  gracePeriodDays: number;
+} | null> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/lifecycle`, { headers });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return json.data ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const importUserAccountBackup = async (
+  userId: string,
+  payload: {
+    exportDoc: Record<string, unknown>;
+    password: string;
+    confirmEmailMismatch?: boolean;
+  }
+): Promise<{ noteFolders: number; notes: number; decks: number; flashcards: number }> => {
+  const headers = await getRequiredAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/import`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      export: payload.exportDoc,
+      password: payload.password,
+      confirmEmailMismatch: !!payload.confirmEmailMismatch,
+    }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || json.message || `Import failed (${response.status})`);
+  }
+  return json.data;
+};
+
 export const exportUserAccountData = async (userId: string): Promise<Record<string, unknown> | null> => {
   try {
     const headers = await getRequiredAuthHeaders();

@@ -37,6 +37,7 @@ import { supabase } from '../../services/supabase';
 import { deleteUserAccount, exportUserData } from '../../services/api';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
+import { ContactSupportModal } from '../../components/ContactSupportModal';
 
 interface SettingItemProps {
   icon: string;
@@ -111,7 +112,7 @@ const FAQ_ITEMS = [
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, profileName } = useAuthStore();
   const { 
     settings, 
     isLoading, 
@@ -155,6 +156,7 @@ export default function SettingsScreen() {
   const [showDirectMessagesModal, setShowDirectMessagesModal] = useState(false);
   const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   
   // Temp values for modals
@@ -215,12 +217,12 @@ export default function SettingsScreen() {
     const userId = useAuthStore.getState().user?.id;
     if (!userId) return;
     Alert.alert(
-      'Delete Account',
-      'This permanently deletes your account and data. This cannot be undone.',
+      'Delete or pause account',
+      'Export a backup from Settings first (uploaded PDFs are not included). On the web app you can pause for 30 days or delete permanently with your password. Mobile delete is immediate and cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete now',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -870,7 +872,7 @@ export default function SettingsScreen() {
               icon="chatbubble-outline"
               iconColor="#10b981"
               title="Contact Support"
-              onPress={() => void Linking.openURL('mailto:support@lanternstudy.app?subject=Lantern%20Study%20Support')}
+              onPress={() => setShowContactModal(true)}
             />
             <SettingItem
               colors={colors}
@@ -965,13 +967,32 @@ export default function SettingsScreen() {
             </ScrollView>
             <TouchableOpacity
               style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
-              onPress={() => void Linking.openURL('mailto:support@lanternstudy.app?subject=Lantern%20Study%20Support')}
+              onPress={() => {
+                setShowHelpModal(false);
+                setShowContactModal(true);
+              }}
             >
-              <Text style={styles.saveButtonText}>Email Support</Text>
+              <Text style={styles.saveButtonText}>Contact support</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      <ContactSupportModal
+        visible={showContactModal}
+        onClose={() => setShowContactModal(false)}
+        defaultName={profileName ?? user?.user_metadata?.name ?? ''}
+        defaultEmail={user?.email ?? ''}
+        colors={{
+          background: colors.background,
+          card: colors.card,
+          text: colors.text,
+          textSecondary: colors.textSecondary,
+          border: colors.border,
+          primary: colors.primary,
+          primaryText: '#ffffff',
+        }}
+      />
 
       {/* Daily Goal Modal */}
       <Modal

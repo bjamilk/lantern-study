@@ -91,6 +91,7 @@ export async function exportUserDataArchive(
     offlineBundlesRes,
     challengesRes,
     challengeParticipantsRes,
+    noteFoldersRes,
   ] = await Promise.all([
     client.from('profiles').select('*').eq('id', userId).maybeSingle(),
     client.from('decks').select('*, flashcards(*)').eq('user_id', userId),
@@ -110,6 +111,7 @@ export async function exportUserDataArchive(
     client.from('offline_bundles').select('*').eq('user_id', userId),
     client.from('group_challenges').select('*').or(`challenger_id.eq.${userId},opponent_id.eq.${userId}`).limit(200),
     client.from('challenge_participants').select('*').eq('user_id', userId).limit(200),
+    client.from('note_folders').select('*').eq('user_id', userId),
   ]);
 
   const { data: dmThreadsRaw } = await client.from('dm_threads').select('*');
@@ -144,6 +146,7 @@ export async function exportUserDataArchive(
     notifications: notificationsRes.data ?? [],
     testSessions: testSessionsRes.data ?? [],
     marketplaceListings: marketplaceRes.data ?? [],
+    noteFolders: noteFoldersRes.data ?? [],
     notes: notesRes.data ?? [],
     aiCompanionMessages: companionRes.data ?? [],
     aiAnalytics: analyticsRes.data ?? [],
