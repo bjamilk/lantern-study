@@ -82,7 +82,7 @@ const SellerCustomersScreen = lazyWithRetry(() => import('./components/SellerCus
 const SellerProfileScreen = lazyWithRetry(() => import('./components/SellerProfileScreen'));
 const AdminScreen = lazyWithRetry(() => import('./components/AdminScreen'));
 const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
-const NoteEditorScreen = lazyWithRetry(() => import('./components/NoteEditorScreen'));
+import NoteEditorScreen from './components/NoteEditorScreen';
 const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
 const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
 const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
@@ -984,6 +984,7 @@ export const App: React.FC = () => {
                 if (!selectedNote) return null;
                 return (
                     <NoteEditorScreen
+                        key={selectedNote.id}
                         theme={theme}
                         note={selectedNote}
                         comments={comments}

@@ -22,6 +22,16 @@ function isChunkLoadError(error: Error | null): boolean {
   );
 }
 
+function isReactHooksError(error: Error | null): boolean {
+  if (!error) return false;
+  const msg = error.message || '';
+  return (
+    /Minified React error #30[0-9]/.test(msg) ||
+    /Rendered (more|fewer) hooks than/.test(msg) ||
+    /Invalid hook call/.test(msg)
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, error: null };
 
@@ -48,23 +58,25 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
 
       const chunkError = isChunkLoadError(this.state.error);
+      const hooksError = isReactHooksError(this.state.error);
+      const shouldReload = chunkError || hooksError;
 
       return (
         <div className="min-h-[200px] flex flex-col items-center justify-center p-6 text-center">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-            {chunkError ? 'New version available' : 'Something went wrong'}
+            {shouldReload ? 'New version available' : 'Something went wrong'}
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 max-w-md">
-            {chunkError
+            {shouldReload
               ? 'The app was updated. Reload to get the latest version and continue.'
               : this.state.error?.message || 'An unexpected error occurred.'}
           </p>
           <button
             type="button"
-            onClick={chunkError ? this.handleReload : this.handleRetry}
+            onClick={shouldReload ? this.handleReload : this.handleRetry}
             className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
           >
-            {chunkError ? 'Reload' : 'Try again'}
+            {shouldReload ? 'Reload' : 'Try again'}
           </button>
         </div>
       );

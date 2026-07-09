@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { confirmDialog } from '../stores/confirmStore';
 import { getNoteStudyContent, hasEnoughNoteStudyContent, isPlaceholderExtractedText } from '@lantern/shared';
 import {
   ArrowLeftIcon,
@@ -18,7 +17,6 @@ import NotePdfViewer from './NotePdfViewer';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
-import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
 
 interface NoteEditorScreenProps {
@@ -97,7 +95,6 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const previewAttemptedRef = useRef<Set<string>>(new Set());
   const reextractAttemptedRef = useRef<Set<string>>(new Set());
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
-  const setImportProgress = useUIStore((s) => s.setImportProgress);
   const showToast = useToastStore((s) => s.showToast);
   const isDark = theme === 'dark';
 
@@ -155,6 +152,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   useEffect(() => {
     setPreviewError(null);
     setPreviewBannerDismissed(false);
+    previewAttemptedRef.current.delete(note.id);
   }, [note.id]);
 
   useEffect(() => {
@@ -660,12 +658,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </aside>
       </div>
 
-      <NoteCollaboratorsModal
-        isOpen={showCollabModal}
-        onClose={() => setShowCollabModal(false)}
-        noteId={note.id}
-        currentUserId={currentUserId}
-      />
+      {showCollabModal && (
+        <NoteCollaboratorsModal
+          isOpen={showCollabModal}
+          onClose={() => setShowCollabModal(false)}
+          noteId={note.id}
+          currentUserId={currentUserId}
+        />
+      )}
       {shareGroupOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
