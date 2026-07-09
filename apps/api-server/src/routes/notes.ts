@@ -21,7 +21,7 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { runNoteAiSync, enqueueJob } from '../queue/enqueue';
+import { runNoteAiSync } from '../queue/enqueue';
 import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
   assertPdfSize,
@@ -73,22 +73,6 @@ async function startPresentationPreviewJob(params: {
   buffer?: Buffer;
   extractedText?: string;
 }): Promise<void> {
-  const enqueued = await enqueueJob(
-    'notes.presentation.preview',
-    {
-      noteId: params.noteId,
-      attachmentId: params.attachmentId,
-      storagePath: params.storagePath,
-      fileName: params.fileName,
-      meta: params.meta,
-      bufferBase64: params.buffer?.toString('base64'),
-      extractedText: params.extractedText,
-    },
-    undefined
-  );
-
-  if (enqueued) return;
-
   void runPresentationPreviewJob(supabaseService, params).catch((err) => {
     logger.error('Presentation preview job unhandled error', {
       noteId: params.noteId,
@@ -124,7 +108,21 @@ function resolvePreviewStatus(meta: Record<string, unknown>): 'ready' | 'process
   if (typeof meta.previewError === 'string' && meta.previewError) {
     return 'failed';
   }
+  if (meta.previewProcessing === true && isPreviewProcessingStale(meta)) {
+    return 'failed';
+  }
   return 'none';
+}
+
+function resolvePreviewErrorMessage(meta: Record<string, unknown>, status: ReturnType<typeof resolvePreviewStatus>): string | undefined {
+  if (status !== 'failed') return undefined;
+  if (typeof meta.previewError === 'string' && meta.previewError) {
+    return meta.previewError;
+  }
+  if (meta.previewProcessing === true && isPreviewProcessingStale(meta)) {
+    return 'Preview generation timed out. Try Retry preview.';
+  }
+  return 'Could not generate slide preview.';
 }
 
 router.use(authMiddleware);
@@ -625,14 +623,13 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
 
   const meta = (attachment.metadata || {}) as Record<string, unknown>;
   const status = resolvePreviewStatus(meta);
-  const previewError = typeof meta.previewError === 'string' ? meta.previewError : undefined;
 
   res.json({
     success: true,
     data: {
       status,
       previewAvailable: status === 'ready',
-      previewError: status === 'failed' ? previewError : undefined,
+      previewError: resolvePreviewErrorMessage(meta, status),
       attachment,
     },
   });
