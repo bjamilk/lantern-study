@@ -91,6 +91,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewBannerDismissed, setPreviewBannerDismissed] = useState(false);
   const [previewTrigger, setPreviewTrigger] = useState(0);
+  const [shareGroupOpen, setShareGroupOpen] = useState(false);
   const saveEnabledRef = useRef(true);
   const userEditedRef = useRef(false);
   const previewAttemptedRef = useRef<Set<string>>(new Set());
@@ -258,6 +259,28 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     showToast,
   ]);
 
+  useEffect(() => {
+    if (!recording) {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      return;
+    }
+
+    setRecordingSeconds(0);
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [recording]);
+
   const handleDownloadOriginalSlides = async () => {
     if (!presentationAttachment) return;
     try {
@@ -293,8 +316,6 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setPreviewTrigger((t) => t + 1);
   };
 
-  const [shareGroupOpen, setShareGroupOpen] = useState(false);
-
   const handleShareGroup = () => {
     if (groups.length === 0) {
       useToastStore.getState().showToast('Join a group first to share notes.', 'info');
@@ -306,28 +327,6 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     }
     setShareGroupOpen(true);
   };
-
-  useEffect(() => {
-    if (!recording) {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      return;
-    }
-
-    setRecordingSeconds(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingSeconds((seconds) => seconds + 1);
-    }, 1000);
-
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    };
-  }, [recording]);
 
   const formatRecordingDuration = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);
