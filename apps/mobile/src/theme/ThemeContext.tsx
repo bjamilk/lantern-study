@@ -16,8 +16,8 @@ import {
 // Theme color definitions
 export const lightColors = {
   // Backgrounds
-  background: '#f8fafc',
-  backgroundSecondary: '#f1f5f9',
+  background: '#f4f6fb',
+  backgroundSecondary: '#e8ecf6',
   card: '#ffffff',
   cardSecondary: '#f8fafc',
   
@@ -28,34 +28,34 @@ export const lightColors = {
   textInverse: '#ffffff',
   
   // Primary colors
-  primary: '#6366f1',
-  primaryLight: '#818cf8',
-  primaryDark: '#4f46e5',
+  primary: '#4f46e5',
+  primaryLight: '#6366f1',
+  primaryDark: '#3730a3',
   primaryBackground: '#eef2ff',
   
   // Accent colors
-  success: '#10b981',
+  success: '#059669',
   successBackground: '#d1fae5',
-  warning: '#f59e0b',
-  warningBackground: '#fef3c7',
-  error: '#ef4444',
+  warning: '#d97706',
+  warningBackground: '#fff7ed',
+  error: '#dc2626',
   errorBackground: '#fee2e2',
   info: '#0ea5e9',
   infoBackground: '#e0f2fe',
   
   // Borders
-  border: '#e2e8f0',
+  border: '#d8dee9',
   borderLight: '#f1f5f9',
   
   // Tab bar
   tabBar: '#ffffff',
-  tabBarBorder: '#e2e8f0',
-  tabBarActive: '#6366f1',
+  tabBarBorder: '#d8dee9',
+  tabBarActive: '#4f46e5',
   tabBarInactive: '#94a3b8',
   
   // Input
   inputBackground: '#f1f5f9',
-  inputBorder: '#e2e8f0',
+  inputBorder: '#d8dee9',
   inputText: '#0f172a',
   inputPlaceholder: '#94a3b8',
   
@@ -64,18 +64,18 @@ export const lightColors = {
   modalBackground: '#ffffff',
   
   // Switch
-  switchTrackOn: '#6366f180',
-  switchTrackOff: '#e2e8f0',
-  switchThumbOn: '#6366f1',
+  switchTrackOn: '#4f46e580',
+  switchTrackOff: '#d8dee9',
+  switchThumbOn: '#4f46e5',
   switchThumbOff: '#94a3b8',
 };
 
 export const darkColors = {
   // Backgrounds
-  background: '#0f172a',
-  backgroundSecondary: '#1e293b',
-  card: '#1e293b',
-  cardSecondary: '#334155',
+  background: '#0b1220',
+  backgroundSecondary: '#151e2e',
+  card: '#151e2e',
+  cardSecondary: '#1e293b',
   
   // Text
   text: '#f8fafc',
@@ -84,15 +84,15 @@ export const darkColors = {
   textInverse: '#0f172a',
   
   // Primary colors
-  primary: '#6366f1',
-  primaryLight: '#818cf8',
-  primaryDark: '#4f46e5',
+  primary: '#818cf8',
+  primaryLight: '#a5b4fc',
+  primaryDark: '#6366f1',
   primaryBackground: '#6366f120',
   
   // Accent colors
   success: '#10b981',
   successBackground: '#10b98120',
-  warning: '#f59e0b',
+  warning: '#fbbf24',
   warningBackground: '#f59e0b20',
   error: '#ef4444',
   errorBackground: '#ef444420',
@@ -100,29 +100,29 @@ export const darkColors = {
   infoBackground: '#0ea5e920',
   
   // Borders
-  border: '#334155',
+  border: '#243044',
   borderLight: '#1e293b',
   
   // Tab bar
-  tabBar: '#1e293b',
-  tabBarBorder: '#334155',
-  tabBarActive: '#6366f1',
+  tabBar: '#151e2e',
+  tabBarBorder: '#243044',
+  tabBarActive: '#818cf8',
   tabBarInactive: '#64748b',
   
   // Input
-  inputBackground: '#0f172a',
-  inputBorder: '#334155',
+  inputBackground: '#0b1220',
+  inputBorder: '#243044',
   inputText: '#f8fafc',
   inputPlaceholder: '#64748b',
   
   // Modal
   modalOverlay: 'rgba(0, 0, 0, 0.7)',
-  modalBackground: '#1e293b',
+  modalBackground: '#151e2e',
   
   // Switch
-  switchTrackOn: '#6366f180',
-  switchTrackOff: '#334155',
-  switchThumbOn: '#6366f1',
+  switchTrackOn: '#818cf880',
+  switchTrackOff: '#243044',
+  switchThumbOn: '#818cf8',
   switchThumbOff: '#64748b',
 };
 

@@ -57,13 +57,13 @@ function TabButton({
         <Ionicons
           name={active ? tab.activeIcon : tab.icon}
           size={22}
-          color={active ? '#6366f1' : '#94a3b8'}
+          color={active ? '#4f46e5' : '#94a3b8'}
         />
         {tab.badge ? <Badge count={tab.badge} /> : null}
       </View>
       <Text
         numberOfLines={1}
-        className={`text-[10px] mt-1 font-medium text-center ${active ? 'text-indigo-500' : 'text-slate-400'}`}
+        className={`text-[10px] mt-1 font-medium text-center ${active ? 'text-lantern-primary' : 'text-lantern-text-tertiary'}`}
       >
         {tab.label}
       </Text>
@@ -108,7 +108,16 @@ export function BottomTabBar({
   };
 
   return (
-    <View className="absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 pb-6 pt-2 flex-row">
+    <View
+      className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pb-6 pt-2 flex-row"
+      style={{
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 12,
+      }}
+    >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -126,7 +135,7 @@ export function BottomTabBar({
         ))}
       </ScrollView>
 
-      <View className="border-l border-slate-200 dark:border-slate-700 pl-1">
+      <View className="border-l border-lantern-border pl-1">
         <TabButton
           tab={moreTab}
           active={isMoreActive === true}

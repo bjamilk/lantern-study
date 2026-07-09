@@ -7,7 +7,7 @@ import {
   AcademicCapIcon,
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
-import { Button, LanternIcon } from '../ui';
+import { Button, Card, LanternIcon } from '../ui';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -30,12 +30,12 @@ const faqs = [
 ];
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => (
-  <div className="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-y-auto">
-    <header className="border-b border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+  <div className="min-h-screen bg-lantern-background text-lantern-text overflow-y-auto">
+    <header className="border-b border-lantern-border/80 bg-lantern-surface/80 backdrop-blur-md sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <LanternIcon size={32} />
-          <span className="font-bold text-lg">Lantern Study</span>
+          <span className="font-display text-xl font-semibold tracking-tight">Lantern Study</span>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onSignIn}>Sign in</Button>
@@ -44,51 +44,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
       </div>
     </header>
 
-    <section className="max-w-6xl mx-auto px-4 py-16 md:py-24 text-center">
-      <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white max-w-3xl mx-auto">
-        Every AI study tool you need — notes, flashcards, and tests in one place
-      </h1>
-      <p className="mt-6 text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
-        Import your materials, generate flashcards with AI, and study with learn mode, matching games, and practice tests. Built for students who study together.
+    <section className="relative max-w-6xl mx-auto px-4 pt-16 md:pt-24 pb-14 md:pb-20 text-center">
+      <div className="pointer-events-none absolute inset-x-0 -top-8 h-72 bg-[radial-gradient(ellipse_at_center,rgba(79,70,229,0.14),transparent_65%)]" />
+      <p className="relative text-sm font-semibold uppercase tracking-[0.18em] text-lantern-primary mb-4">
+        Study with clarity
       </p>
-      <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+      <h1 className="relative font-display text-4xl md:text-6xl font-semibold tracking-tight text-lantern-text max-w-3xl mx-auto leading-[1.1]">
+        Lantern Study
+      </h1>
+      <p className="relative mt-5 text-lg md:text-xl text-lantern-text-secondary max-w-2xl mx-auto leading-relaxed">
+        Notes, flashcards, and tests in one place — import your materials, generate study tools with AI, and learn with friends.
+      </p>
+      <div className="relative mt-9 flex flex-col sm:flex-row gap-3 justify-center">
         <Button size="lg" onClick={onContinue}>Continue on the website</Button>
         <Button size="lg" variant="secondary" onClick={onSignIn}>Sign in</Button>
       </div>
     </section>
 
     <section className="max-w-6xl mx-auto px-4 py-12">
-      <h2 className="text-2xl font-bold text-center mb-10">Study smarter, not harder</h2>
+      <h2 className="font-display text-3xl font-semibold text-center mb-10 tracking-tight">Everything you need to study</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {features.map((f) => (
-          <div key={f.title} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-            <f.icon className="w-8 h-8 text-indigo-600 dark:text-indigo-400 mb-3" />
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100">{f.title}</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{f.description}</p>
-          </div>
+          <Card key={f.title} variant="elevated" className="text-left h-full">
+            <div className="w-10 h-10 rounded-xl bg-lantern-primary-background text-lantern-primary flex items-center justify-center mb-3">
+              <f.icon className="w-5 h-5" />
+            </div>
+            <h3 className="font-semibold text-lantern-text tracking-tight">{f.title}</h3>
+            <p className="text-sm text-lantern-text-secondary mt-2 leading-relaxed">{f.description}</p>
+          </Card>
         ))}
       </div>
     </section>
 
     <section className="max-w-3xl mx-auto px-4 py-12">
-      <h2 className="text-2xl font-bold text-center mb-8">Frequently asked questions</h2>
-      <div className="space-y-4">
+      <h2 className="font-display text-3xl font-semibold text-center mb-8 tracking-tight">Frequently asked questions</h2>
+      <div className="space-y-3">
         {faqs.map((faq) => (
-          <div key={faq.q} className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100">{faq.q}</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">{faq.a}</p>
-          </div>
+          <Card key={faq.q} padding="md">
+            <h3 className="font-semibold text-lantern-text">{faq.q}</h3>
+            <p className="text-sm text-lantern-text-secondary mt-2 leading-relaxed">{faq.a}</p>
+          </Card>
         ))}
       </div>
     </section>
 
-    <section className="max-w-6xl mx-auto px-4 py-16 text-center border-t border-slate-200 dark:border-slate-700">
-      <h2 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Ready to study?</h2>
-      <p className="text-slate-600 dark:text-slate-300 mb-6">Join students using Lantern Study for notes, flashcards, and group tests.</p>
-      <Button size="lg" onClick={onContinue}>Get started free</Button>
+    <section className="max-w-6xl mx-auto px-4 py-16 text-center">
+      <Card variant="elevated" className="max-w-2xl mx-auto bg-gradient-to-br from-lantern-primary/8 to-lantern-accent/8">
+        <h2 className="font-display text-3xl font-semibold mb-3 tracking-tight text-lantern-text">Ready to study?</h2>
+        <p className="text-lantern-text-secondary mb-6">Join students using Lantern Study for notes, flashcards, and group tests.</p>
+        <Button size="lg" onClick={onContinue}>Get started free</Button>
+      </Card>
     </section>
 
-    <footer className="border-t border-slate-200 dark:border-slate-700 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+    <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary">
       © {new Date().getFullYear()} Lantern Study
     </footer>
   </div>

@@ -234,16 +234,18 @@ const Sidebar: React.FC<SidebarProps> = ({
   const NavButton = ({ navFunc, icon: Icon, label, appMode, badgeCount }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, badgeCount?: number }) => (
     <button
       onClick={navFunc}
-      className={`w-full flex items-center p-3 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-150 relative ${
-          currentAppMode === appMode ? 'bg-slate-200 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-semibold' : ''
+      className={`w-full flex items-center p-3 rounded-xl text-lantern-text-secondary hover:bg-lantern-surface hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
+          currentAppMode === appMode
+            ? 'bg-lantern-primary-background text-lantern-primary font-semibold shadow-lantern'
+            : ''
       } ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''} ${!showText && 'justify-center'}`}
       disabled={!canInteractWithChats && !isSessionPaused}
       title={label}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'}`} />
-      {showText && <span className="flex-grow text-left">{label}</span>}
+      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${currentAppMode === appMode ? 'text-lantern-primary' : ''}`} />
+      {showText && <span className="flex-grow text-left text-[15px] tracking-tight">{label}</span>}
       {(badgeCount !== undefined && badgeCount > 0) && (
-          <span className={`absolute top-1.5 right-1.5 bg-red-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${!showText && 'px-1.5'}`}>
+          <span className={`absolute top-1.5 right-1.5 bg-lantern-error text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${!showText && 'px-1.5'}`}>
               {badgeCount}
           </span>
       )}
@@ -251,25 +253,25 @@ const Sidebar: React.FC<SidebarProps> = ({
   );
 
   const SectionHeader = ({ title }: { title: string }) => (
-    <div className={`px-3 pt-4 pb-2 ${!showText && 'hidden'}`}>
-      <h3 className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 tracking-wider">{title}</h3>
+    <div className={`px-3 pt-5 pb-2 ${!showText && 'hidden'}`}>
+      <h3 className="text-[11px] font-semibold uppercase text-lantern-text-tertiary tracking-[0.14em]">{title}</h3>
     </div>
   );
 
 
   return (
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${isExpanded ? 'w-72' : 'w-20'}`} data-expanded={isExpanded}>
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary/90 backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${isExpanded ? 'w-72' : 'w-20'}`} data-expanded={isExpanded}>
       <div className="flex items-center justify-between h-16 p-4 border-b border-lantern-border flex-shrink-0">
         {showText && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
               <LanternIcon size={28} />
-              <h1 className="text-xl font-semibold text-lantern-text">Lantern Study</h1>
+              <h1 className="font-display text-xl font-semibold tracking-tight text-lantern-text">Lantern Study</h1>
           </div>
         )}
         <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
             <button
               onClick={onToggleExpand}
-              className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="p-2 text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
               aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
               <Bars3Icon className={`w-6 h-6 transition-transform duration-300`} />

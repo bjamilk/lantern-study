@@ -18,6 +18,12 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ['var(--font-sans)'],
+        display: ['var(--font-display)'],
+      },
+      boxShadow: {
+        lantern: 'var(--shadow-sm)',
+        'lantern-md': 'var(--shadow-md)',
+        'lantern-lg': 'var(--shadow-lg)',
       },
       colors: {
         lantern: {

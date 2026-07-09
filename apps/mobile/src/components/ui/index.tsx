@@ -7,18 +7,18 @@ type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const variantClass: Record<Variant, string> = {
-  primary: 'bg-indigo-500 active:bg-indigo-600',
-  secondary: 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600',
-  accent: 'bg-amber-500 active:bg-amber-600',
+  primary: 'bg-lantern-primary active:bg-lantern-primary-dark',
+  secondary: 'bg-lantern-surface border border-lantern-border',
+  accent: 'bg-lantern-accent active:opacity-90',
   ghost: 'bg-transparent',
-  danger: 'bg-red-500 active:bg-red-600',
+  danger: 'bg-lantern-error active:opacity-90',
 };
 
 const textClass: Record<Variant, string> = {
   primary: 'text-white',
-  secondary: 'text-slate-800 dark:text-slate-100',
+  secondary: 'text-lantern-text',
   accent: 'text-white',
-  ghost: 'text-slate-600 dark:text-slate-300',
+  ghost: 'text-lantern-text-secondary',
   danger: 'text-white',
 };
 
@@ -58,7 +58,7 @@ export function Button({
       accessibilityLabel={accessibilityLabel}
       className={`flex-row items-center justify-center ${variantClass[variant]} ${sizeClass[size]} ${fullWidth ? 'w-full' : ''} ${disabled ? 'opacity-50' : ''} ${className}`}
     >
-      {loading ? <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? '#6366f1' : '#fff'} /> : null}
+      {loading ? <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? '#4f46e5' : '#fff'} /> : null}
       {typeof children === 'string' ? (
         <Text className={`font-semibold text-sm ${textClass[variant]}`}>{children}</Text>
       ) : (
@@ -70,7 +70,16 @@ export function Button({
 
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <View className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 ${className}`}>
+    <View
+      className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border p-4 ${className}`}
+      style={{
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
+    >
       {children}
     </View>
   );
@@ -93,11 +102,11 @@ export function ScreenHeader({
     <View className={`px-4 pt-2 pb-3 flex-row items-start ${className}`}>
       {onBack ? (
         <Pressable onPress={onBack} className="p-1 mr-2 mt-1">
-          <Text className="text-indigo-600 text-lg">←</Text>
+          <Text className="text-lantern-primary text-lg">←</Text>
         </Pressable>
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
-        <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">{title}</Text>
+        <Text className="text-2xl font-bold text-lantern-text tracking-tight">{title}</Text>
         {subtitle ? <Text className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</Text> : null}
       </View>
       {right}

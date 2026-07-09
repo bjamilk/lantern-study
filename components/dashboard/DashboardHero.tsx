@@ -48,13 +48,13 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   return (
     <div className="px-4 md:px-8 py-6 w-full">
       <div className="w-full">
-        <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/5 to-lantern-accent/5'}`} padding="lg">
+        <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/[0.07] via-lantern-surface to-lantern-accent/[0.06]'}`} padding="lg" variant="elevated">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-lantern-text">
-                {greeting}, {userName.split(' ')[0]}!
+              <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-lantern-text">
+                {greeting}, {userName.split(' ')[0]}
               </h1>
-              <p className="text-lantern-text-secondary mt-1 text-sm md:text-base">
+              <p className="text-lantern-text-secondary mt-1.5 text-sm md:text-base leading-relaxed">
                 {dueCardsCount > 0
                   ? `${dueCardsCount} flashcard${dueCardsCount !== 1 ? 's' : ''} due for review.`
                   : totalTestsTaken > 0

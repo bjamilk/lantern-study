@@ -39,7 +39,7 @@ export function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900">
+    <SafeAreaView className="flex-1 bg-lantern-background">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
@@ -47,8 +47,8 @@ export function LoginScreen({ navigation }: Props) {
         <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
-            <Text className="text-3xl font-bold text-slate-900 dark:text-white">Lantern Study</Text>
-            <Text className="text-slate-500 dark:text-slate-400 mt-1">Sign in to continue</Text>
+            <Text className="text-3xl font-bold text-lantern-text tracking-tight">Lantern Study</Text>
+            <Text className="text-lantern-text-secondary mt-1">Sign in to continue</Text>
           </View>
 
           {error ? (
@@ -59,7 +59,7 @@ export function LoginScreen({ navigation }: Props) {
 
           <View className="gap-3">
             <View>
-              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</Text>
+              <Text className="text-sm font-medium text-lantern-text-secondary mb-1.5">Email</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -67,11 +67,11 @@ export function LoginScreen({ navigation }: Props) {
                 keyboardType="email-address"
                 placeholder="you@university.edu"
                 placeholderTextColor="#94a3b8"
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
+                className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 text-lantern-text"
               />
             </View>
             <View>
-              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Password</Text>
+              <Text className="text-sm font-medium text-lantern-text-secondary mb-1.5">Password</Text>
               <View className="relative">
                 <TextInput
                   value={password}
@@ -79,7 +79,7 @@ export function LoginScreen({ navigation }: Props) {
                   secureTextEntry={!showPassword}
                   placeholder="••••••••"
                   placeholderTextColor="#94a3b8"
-                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 pr-12 text-slate-900 dark:text-white"
+                  className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 pr-12 text-lantern-text"
                 />
                 <Pressable
                   onPress={() => setShowPassword(v => !v)}
@@ -96,7 +96,7 @@ export function LoginScreen({ navigation }: Props) {
               Sign in
             </Button>
             <Pressable onPress={() => navigation.navigate('ForgotPassword')} className="py-2">
-              <Text className="text-center text-sm text-indigo-600 dark:text-indigo-400">
+              <Text className="text-center text-sm text-lantern-primary">
                 Forgot your password?
               </Text>
             </Pressable>

@@ -11,8 +11,8 @@ interface CardProps {
 }
 
 const variantClasses: Record<CardVariant, string> = {
-  default: 'bg-lantern-surface border border-lantern-border shadow-sm',
-  elevated: 'bg-lantern-surface border border-lantern-border shadow-md',
+  default: 'bg-lantern-surface/95 border border-lantern-border shadow-lantern backdrop-blur-[2px]',
+  elevated: 'bg-lantern-surface border border-lantern-border shadow-lantern-md',
   outline: 'bg-transparent border border-lantern-border',
 };
 
@@ -35,7 +35,7 @@ export const Card: React.FC<CardProps> = ({
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`rounded-lantern-xl ${variantClasses[variant]} ${paddingClasses[padding]} ${onClick ? 'text-left w-full hover:border-lantern-primary/40 transition-colors' : ''} ${className}`}
+      className={`rounded-lantern-xl ${variantClasses[variant]} ${paddingClasses[padding]} ${onClick ? 'text-left w-full hover:border-lantern-primary/40 hover:shadow-lantern-md transition-all duration-200' : ''} ${className}`}
     >
       {children}
     </Tag>

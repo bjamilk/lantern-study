@@ -772,14 +772,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-300">
-      <div className="w-full max-w-5xl m-4 lg:m-8 bg-white dark:bg-slate-800/50 dark:border dark:border-slate-700 rounded-3xl shadow-2xl overflow-hidden grid lg:grid-cols-2">
+    <div className="flex items-center justify-center min-h-screen bg-lantern-background transition-colors duration-300">
+      <div className="w-full max-w-5xl m-4 lg:m-8 bg-lantern-surface/95 border border-lantern-border rounded-3xl shadow-lantern-lg overflow-hidden grid lg:grid-cols-2 backdrop-blur-sm">
         {/* Left Branding Column */}
-        <div className={`hidden lg:block relative p-12 ${lowDataMode ? 'bg-lantern-accent-background' : 'bg-indigo-50 dark:bg-slate-800'}`}>
+        <div className={`hidden lg:block relative p-12 ${lowDataMode ? 'bg-lantern-accent-background' : 'bg-lantern-primary-background'}`}>
           {!lowDataMode && <AnimatedBackground />}
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
-                <div className="flex items-center text-2xl font-bold text-slate-900 dark:text-slate-100 gap-3">
+                <div className="flex items-center font-display text-2xl font-semibold tracking-tight text-lantern-text gap-3">
                     <LanternIcon size={40} />
                     <span>Lantern Study</span>
                 </div>
@@ -798,16 +798,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 <div className="text-center lg:hidden mb-8">
                     <LanternIcon size={48} className="mx-auto" />
                 </div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                <h2 className="font-display text-3xl font-semibold tracking-tight text-lantern-text">
                     {isVerifyEmailView
                       ? 'Verify your email'
                       : isForgotPasswordView
                         ? 'Reset Password'
                         : isLoginView
-                          ? 'Welcome Back!'
+                          ? 'Welcome Back'
                           : 'Create an Account'}
                 </h2>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                <p className="mt-2 text-sm text-lantern-text-secondary">
                     {isVerifyEmailView
                       ? `Enter the 6-digit code sent to ${email || 'your email'}. You can also confirm via the link in the email.`
                       : isForgotPasswordView
@@ -991,7 +991,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         <button
                             type="submit"
                             disabled={verifyLoading || resendLoading || authSubmitLoading}
-                            className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800 focus:ring-indigo-500 transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                            className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lantern text-white bg-lantern-primary hover:bg-lantern-primary-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-lantern-primary/50 shadow-lantern transition-all hover:shadow-lantern-md disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isVerifyEmailView
                               ? verifyLoading ? 'Verifying…' : 'Verify email'

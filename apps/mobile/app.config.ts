@@ -14,7 +14,7 @@ if (IS_PRODUCTION_BUILD) {
   }
 }
 
-const SPLASH_BACKGROUND_COLOR = '#7B88E8';
+const SPLASH_BACKGROUND_COLOR = '#4f46e5';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,

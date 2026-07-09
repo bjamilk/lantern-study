@@ -146,7 +146,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     ];
 
     return (
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-lantern-surface border-t border-lantern-border safe-area-bottom">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-lantern-surface/95 backdrop-blur-md border-t border-lantern-border shadow-[0_-8px_24px_rgba(15,23,42,0.06)] safe-area-bottom">
             <div className="flex items-center justify-around h-16">
                 {tabs.map((tab) => {
                     const active = isActive(tab);
@@ -162,10 +162,13 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                                 active ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
                             }`}
                         >
+                            {active && (
+                                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-lantern-primary" />
+                            )}
                             <div className="relative">
                                 <Icon className="w-6 h-6" />
                                 {tab.badge && tab.badge > 0 ? (
-                                    <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                                    <span className="absolute -top-1 -right-2 bg-lantern-error text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                                         {tab.badge > 99 ? '99+' : tab.badge}
                                     </span>
                                 ) : null}

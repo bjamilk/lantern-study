@@ -719,18 +719,18 @@ export default function DashboardScreen({
   }, [filteredTestResults]);
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-y-auto">
+    <div className="flex-1 flex flex-col bg-transparent text-lantern-text overflow-y-auto">
 
       {/* ─── Daily Login Bonus Banner ─── */}
       {showDailyBonus && (
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-3 flex items-center justify-between gap-3 shadow-md">
+        <div className="bg-gradient-to-r from-lantern-accent to-amber-500 text-white px-4 py-3 flex items-center justify-between gap-3 shadow-lantern-md">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🔥</span>
+            <span className="text-2xl" aria-hidden>🔥</span>
             <div>
-              <p className="font-bold text-sm leading-tight">
+              <p className="font-bold text-sm leading-tight tracking-tight">
                 Day {streakData.streak} streak! +{bonusXP} XP bonus claimed!
               </p>
-              <p className="text-orange-100 text-xs">
+              <p className="text-orange-50/90 text-xs">
                 {streakData.streak >= 7
                   ? `${streakData.streak} days in a row — incredible! Keep it up!`
                   : streakData.streak >= 3
@@ -884,7 +884,7 @@ export default function DashboardScreen({
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
                 <ChartBarIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -895,7 +895,7 @@ export default function DashboardScreen({
               </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
                 <ClockIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -908,7 +908,7 @@ export default function DashboardScreen({
               </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
                 <UsersIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -919,7 +919,7 @@ export default function DashboardScreen({
               </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center flex-shrink-0">
                 <RectangleStackIcon className="w-5 h-5 text-orange-600 dark:text-orange-400" />
@@ -968,7 +968,7 @@ export default function DashboardScreen({
         />
 
         {/* ─── Today's Summary ─── */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5">
+        <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center mb-4">
             <RocketLaunchIcon className="w-5 h-5 mr-2 text-indigo-500" />
             Today's Summary
@@ -1070,7 +1070,7 @@ export default function DashboardScreen({
         )}
 
         {/* ─── Activity Heatmap & Filter ─── */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
               <CalendarDaysIcon className="w-5 h-5 mr-2 text-emerald-500" />
@@ -1114,7 +1114,7 @@ export default function DashboardScreen({
 
         {/* ─── Two-Column Layout: Achievements + Analysis ─── */}
         <details open className="group">
-          <summary className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+          <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
               <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
               Achievements &amp; Topic Insights
@@ -1124,7 +1124,7 @@ export default function DashboardScreen({
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3">
           
           {/* Achievements Card */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700">
               <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                 <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
@@ -1184,7 +1184,7 @@ export default function DashboardScreen({
           </div>
 
           {/* Topic Performance Card */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+          <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700">
               <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                 <TagIcon className="w-5 h-5 mr-2 text-purple-500" />
@@ -1235,14 +1235,14 @@ export default function DashboardScreen({
         {/* ─── Troublesome Questions ─── */}
         {troublesomeQuestions.length > 0 && (
           <details open className="group">
-            <summary className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                 <ExclamationTriangleIcon className="w-5 h-5 mr-2 text-amber-500" />
                 Questions to Review
               </h2>
               <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180" />
             </summary>
-            <div className="divide-y divide-slate-100 dark:divide-slate-700/50 mt-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <div className="divide-y divide-slate-100 dark:divide-slate-700/50 mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
               {troublesomeQuestions.map(q => (
                 <div key={q.id} className="p-4 flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -1261,7 +1261,7 @@ export default function DashboardScreen({
         {/* ─── Performance by Group ─── */}
         {allGroupPerformanceData.length > 0 && (
           <details open className="group/perf">
-            <summary className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                 <PresentationChartBarIcon className="w-5 h-5 mr-2 text-indigo-500" />
                 Performance by Group
@@ -1270,8 +1270,8 @@ export default function DashboardScreen({
             </summary>
             <div className="space-y-4 mt-3">
             {allGroupPerformanceData.map(groupData => (
-              <div key={groupData.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <button onClick={() => toggleGroupExpansion(groupData.id)} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors" aria-expanded={!!expandedGroups[groupData.id]}>
+              <div key={groupData.id} className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
+                <button onClick={() => toggleGroupExpansion(groupData.id)} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={!!expandedGroups[groupData.id]}>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
                       <UsersIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -1327,8 +1327,8 @@ export default function DashboardScreen({
         )}
 
         {/* ─── Recent Tests ─── */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-          <button onClick={toggleRecentTestsExpansion} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors" aria-expanded={isRecentTestsExpanded}>
+        <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
+          <button onClick={toggleRecentTestsExpansion} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={isRecentTestsExpanded}>
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
               <PresentationChartLineIcon className="w-5 h-5 mr-2 text-blue-500" />
               Recent Tests
@@ -1386,7 +1386,7 @@ export default function DashboardScreen({
         {/* ─── Group Comparison ─── */}
         {allGroupPerformanceData.length >= 2 && (
           <details className="group/comp">
-            <summary className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+            <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <div>
                 <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
                   <PresentationChartBarIcon className="w-5 h-5 mr-2 text-teal-500" />
@@ -1396,7 +1396,7 @@ export default function DashboardScreen({
               </div>
               <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open/comp:rotate-180 flex-shrink-0" />
             </summary>
-            <div className="p-4 mt-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <div className="p-4 mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
               <div className="flex flex-wrap gap-2 mb-4">
                 {allGroupPerformanceData.map(groupData => (
                   <button 
