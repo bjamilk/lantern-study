@@ -10,10 +10,11 @@ import {
   LockClosedIcon,
   MagnifyingGlassIcon,
   LinkIcon,
-  ClipboardDocumentIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { searchUsers } from '../services/supabase';
+import GroupInviteLinkPanel from './GroupInviteLinkPanel';
+import { buildGroupInviteLink } from '../utils/groupInvite';
 
 interface SearchResult {
   id: string;
@@ -45,7 +46,7 @@ interface CreateGroupScreenProps {
 }
 
 function buildInviteLink(inviteId: string): string {
-  return `${window.location.origin}/invite/${inviteId}`;
+  return buildGroupInviteLink(inviteId);
 }
 
 const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (enabled: boolean) => void; label: string; }) => (
@@ -88,7 +89,6 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const [searchError, setSearchError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<CreatedGroupSummary | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
@@ -168,17 +168,6 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
 
   const inviteLink = createdGroup ? buildInviteLink(createdGroup.inviteId) : '';
 
-  const handleCopyLink = async () => {
-    if (!inviteLink) return;
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      useToastStore.getState().showToast('Failed to copy link.', 'error');
-    }
-  };
-
   const getAvatarUrl = (user: SearchResult) => {
     if (user.avatar_url) return user.avatar_url;
     const name = user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User';
@@ -200,18 +189,8 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center max-w-md">
             Anyone with this link can request to join. They will choose to accept or decline before joining.
           </p>
-          <div className="w-full max-w-md flex items-center gap-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-xl p-2">
-            <code className="flex-1 min-w-0 truncate text-xs sm:text-sm text-slate-700 dark:text-slate-200 px-2 font-mono">
-              {inviteLink}
-            </code>
-            <button
-              type="button"
-              onClick={() => void handleCopyLink()}
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium"
-            >
-              <ClipboardDocumentIcon className="w-4 h-4" />
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+          <div className="w-full max-w-md">
+            <GroupInviteLinkPanel inviteLink={inviteLink} groupName={createdGroup.name} />
           </div>
         </div>
         <div className="shrink-0 sticky bottom-0 p-4 bg-white dark:bg-slate-800 border-t dark:border-slate-700">

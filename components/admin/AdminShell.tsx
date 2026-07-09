@@ -9,9 +9,11 @@ import {
   AdminReport,
   AdminStats,
   AdminUser,
+  AdminAnalytics,
   fetchAdminActivity,
   fetchAdminAIAnalytics,
   fetchAdminAIUserUsage,
+  fetchAdminAnalytics,
   fetchAdminAudit,
   fetchAdminMarketplaceListings,
   fetchAdminMarketplaceOrders,
@@ -29,6 +31,7 @@ import {
 import { Button } from '../ui/Button';
 import { ScreenHeader } from '../ui/ScreenHeader';
 import { AdminAI } from './AdminAI';
+import { AdminAnalyticsPanel } from './AdminAnalytics';
 import { AdminAudit } from './AdminAudit';
 import { AdminCommunications } from './AdminCommunications';
 import { AdminContentModeration } from './AdminContentModeration';
@@ -114,6 +117,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
   } | null>(null);
   const [aiUsageByUser, setAiUsageByUser] = useState<AdminAIUserUsage[]>([]);
   const [aiPeriodDays, setAiPeriodDays] = useState(7);
+
+  const [analyticsData, setAnalyticsData] = useState<AdminAnalytics | null>(null);
+  const [analyticsPeriodDays, setAnalyticsPeriodDays] = useState<7 | 30 | 90>(30);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedUserSearch(userSearch.trim()), 300);
@@ -246,6 +252,15 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     [aiPeriodDays, runTabLoad]
   );
 
+  const loadAnalytics = useCallback(
+    async (force = false) => {
+      await runTabLoad('analytics', async () => {
+        setAnalyticsData(await fetchAdminAnalytics(analyticsPeriodDays));
+      }, force);
+    },
+    [analyticsPeriodDays, runTabLoad]
+  );
+
   const loadAudit = useCallback(
     async (force = false) => {
       await runTabLoad('audit', async () => {
@@ -257,6 +272,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   useEffect(() => {
     if (activeTab === 'overview') loadOverview();
+    if (activeTab === 'analytics') loadAnalytics();
     if (activeTab === 'reports') loadReports();
     if (activeTab === 'ai') loadAI();
     if (activeTab === 'audit') loadAudit();
@@ -266,7 +282,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     if (activeTab === 'moderation') {
       setLoadedTabs((p) => (p.moderation ? p : { ...p, moderation: true }));
     }
-  }, [activeTab, loadAI, loadAudit, loadOverview, loadReports]);
+  }, [activeTab, loadAI, loadAnalytics, loadAudit, loadOverview, loadReports]);
 
   useEffect(() => {
     if (activeTab !== 'users') return;
@@ -289,6 +305,12 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     setListingStatusFilter(value);
     setListingsPage(1);
   };
+
+  useEffect(() => {
+    if (activeTab !== 'analytics') return;
+    setLoadedTabs((prev) => ({ ...prev, analytics: false }));
+    loadAnalytics();
+  }, [analyticsPeriodDays]);
 
   useEffect(() => {
     if (activeTab !== 'reports') return;
@@ -482,6 +504,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   const onRefreshCurrent = async () => {
     if (activeTab === 'overview') await loadOverview(true);
+    if (activeTab === 'analytics') await loadAnalytics(true);
     if (activeTab === 'users') await loadUsers(true);
     if (activeTab === 'marketplace') await loadMarketplace(true);
     if (activeTab === 'reports') await loadReports(true);
@@ -533,6 +556,14 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           stats={stats}
           activity={activity}
           onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
+        />
+      )}
+
+      {activeTab === 'analytics' && (
+        <AdminAnalyticsPanel
+          analytics={analyticsData}
+          periodDays={analyticsPeriodDays}
+          onPeriodChange={setAnalyticsPeriodDays}
         />
       )}
 

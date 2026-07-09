@@ -29,6 +29,11 @@ interface UIState {
   isSidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   toggleSidebar: () => void;
+
+  /** When false, the Chats list is collapsed and unread rolls up to the Chats header. */
+  isChatsSectionExpanded: boolean;
+  setChatsSectionExpanded: (expanded: boolean) => void;
+  toggleChatsSection: () => void;
   
   // Modal States
   modals: {
@@ -208,6 +213,11 @@ export const useUIStore = create<UIState>()(
       isSidebarExpanded: true,
       setSidebarExpanded: (expanded) => set({ isSidebarExpanded: expanded }),
       toggleSidebar: () => set((state) => ({ isSidebarExpanded: !state.isSidebarExpanded })),
+
+      isChatsSectionExpanded: true,
+      setChatsSectionExpanded: (expanded) => set({ isChatsSectionExpanded: expanded }),
+      toggleChatsSection: () =>
+        set((state) => ({ isChatsSectionExpanded: !state.isChatsSectionExpanded })),
       
       // Modals
       modals: { ...initialModals },
@@ -290,6 +300,7 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
+        isChatsSectionExpanded: state.isChatsSectionExpanded,
         lowDataMode: state.lowDataMode,
         libraryTab: state.libraryTab,
       }),

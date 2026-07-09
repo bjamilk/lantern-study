@@ -491,7 +491,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         ))}
                     </div>
                     <div className="border-t border-lantern-border pt-4">
-                        <h4 className="font-medium text-lantern-text mb-3">Contact us</h4>
+                        <h4 className="font-medium text-lantern-text mb-1">Contact us</h4>
+                        <p className="text-sm text-lantern-text-secondary mb-3">
+                            Questions or issues? Use the form below or email{' '}
+                            <a href="mailto:support@lanternstudy.com" className="text-indigo-600 dark:text-indigo-400 underline">
+                                support@lanternstudy.com
+                            </a>
+                            .
+                        </p>
                         <ContactForm
                             compact
                             defaultName={currentUser.name}

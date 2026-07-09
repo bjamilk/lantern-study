@@ -434,7 +434,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     HomeTab: 'Home',
 
-    StudyTab: 'Study',
+    StudyTab: 'Library',
 
     ChatTab: 'Chat',
 
@@ -465,8 +465,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     if (currentRoute === 'MarketTab') return 'Marketplace';
 
     if (currentRoute === 'StudyTab' && focused) {
-      if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor') return 'Library';
-      if (focused === 'StudyHub') return 'Study';
+      if (focused === 'Library' || focused === 'NotesList' || focused === 'NoteEditor' || focused === 'StudyHub') return 'Library';
     }
 
     return routeNameToTabKey[currentRoute ?? ''] ?? 'Home';
@@ -523,11 +522,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     if (tab === 'Library') {
       navigation.navigate('StudyTab', { screen: 'Library' });
-      return;
-    }
-
-    if (tab === 'Study') {
-      navigation.navigate('StudyTab', { screen: 'StudyHub' });
       return;
     }
 

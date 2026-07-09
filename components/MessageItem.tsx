@@ -4,13 +4,15 @@ import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { normalizeStorageUrl } from '../utils/storageUrl';
-import { getQuestionVerificationThreshold } from '@lantern/shared/utils';
+import { resolveGroupChatSenderLabel, getQuestionVerificationThreshold } from '@lantern/shared/utils';
 import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HandThumbUpSolidIcon, HandThumbDownIcon as HandThumbDownSolidIcon } from '@heroicons/react/24/solid';
 
-function formatSenderLabel(sender: { username?: string | null; name?: string | null }): string {
-  if (sender.username) return `@${sender.username}`;
-  return sender.name || 'Unknown';
+function formatSenderLabel(
+  sender: { id?: string; username?: string | null } | undefined,
+  members?: Group['members']
+): string {
+  return resolveGroupChatSenderLabel(sender ?? {}, members);
 }
 
 interface MessageItemProps {
@@ -116,8 +118,8 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
           <div className="w-8 shrink-0" aria-hidden />
         ) : (
           <Avatar
-            name={message.sender.name}
-            src={resolveAvatarSrc(message.sender.avatarUrl, lowDataMode)}
+            name={formatSenderLabel(message.sender, group?.members)}
+            src={resolveAvatarSrc(message.sender?.avatarUrl, lowDataMode)}
             size="sm"
             localOnly={lowDataMode}
             className="self-end ring-1 ring-white dark:ring-slate-800"
@@ -129,7 +131,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 ${bubbleClasses}`}>
         {/* Sender name for other users */}
         {!isCurrentUserMessage && !isGroupedWithPrevious && (
-          <p className="text-xs font-semibold mb-0.5 text-indigo-600 dark:text-indigo-400">{formatSenderLabel(message.sender)}</p>
+          <p className="text-xs font-semibold mb-0.5 text-indigo-600 dark:text-indigo-400">{formatSenderLabel(message.sender, group?.members)}</p>
         )}
 
         {/* Text message */}
@@ -322,7 +324,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
       {isCurrentUserMessage && (
         <img
           src={resolveAvatarSrc(message.sender.avatarUrl, lowDataMode)}
-          alt={message.sender.name}
+          alt={formatSenderLabel(message.sender, group?.members)}
           className="w-7 h-7 rounded-full self-end object-cover flex-shrink-0 ring-1 ring-white dark:ring-slate-800"
           onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
         />

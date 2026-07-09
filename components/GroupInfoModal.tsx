@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Group, User } from '../types';
-import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, LinkIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { compressImage } from '../utils/imageCompression';
+import GroupInviteLinkPanel from './GroupInviteLinkPanel';
+import { buildGroupInviteLink } from '../utils/groupInvite';
 
 
 interface GroupInfoModalProps {
@@ -52,7 +54,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
 
@@ -63,7 +64,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
       setDescription(group.description || '');
       setDetailsChanged(false);
       setSelectedAvatarFile(null);
-      setLinkCopied(false);
       if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       setAvatarPreviewUrl(null);
       if (avatarFileRef.current) {
@@ -155,20 +155,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   const isCurrentUserAdmin = group.adminIds?.includes(currentUser.id) || false;
   
-  const inviteLink = group.inviteId
-    ? `${window.location.origin}/invite/${group.inviteId}`
-    : '';
-
-  const handleCopyLink = () => {
-      if (!inviteLink) return;
-      navigator.clipboard.writeText(inviteLink).then(() => {
-          setLinkCopied(true);
-          window.setTimeout(() => setLinkCopied(false), 2000);
-      }).catch(err => {
-          console.error('Failed to copy text: ', err);
-          useToastStore.getState().showToast('Failed to copy link.', 'error');
-      });
-  };
+  const inviteLink = group.inviteId ? buildGroupInviteLink(group.inviteId) : '';
 
   const pendingEmailInvites = (group.memberEmails || []).filter(email => !(group.members || []).some(m => m.email === email) && email !== currentUser.email);
   const pendingPhoneInvites = group.invitedPhoneNumbers || [];
@@ -227,23 +214,11 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             return (
                 <div className="space-y-6">
                      {isCurrentUserAdmin && inviteLink && (
-                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg space-y-2">
-                           <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
-                             <LinkIcon className="w-4 h-4" /> Invite link
-                           </h3>
-                           <div className="flex items-center gap-2">
-                             <code className="flex-1 min-w-0 truncate text-xs font-mono text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 px-2 py-2 rounded-md border border-indigo-100 dark:border-slate-600">
-                               {inviteLink}
-                             </code>
-                             <button
-                               type="button"
-                               onClick={handleCopyLink}
-                               className="shrink-0 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
-                             >
-                               {linkCopied ? 'Copied' : 'Copy'}
-                             </button>
-                           </div>
-                        </div>
+                        <GroupInviteLinkPanel
+                          inviteLink={inviteLink}
+                          groupName={group.name}
+                          compact
+                        />
                      )}
                      {isCurrentUserAdmin && (
                         <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">

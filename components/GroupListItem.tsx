@@ -5,6 +5,7 @@ import { ArchiveBoxIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
+import { formatUnreadBadgeCount } from '../utils/chatUnread';
 
 interface GroupListItemProps {
   chat: ChatItem;
@@ -122,8 +123,8 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
             </div>
             {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-slate-500 ml-2 flex-shrink-0" title="Archived"/>}
             {unreadCount > 0 && !isArchived && (
-                <span className="ml-2 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full flex-shrink-0">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                <span className="ml-2 bg-red-500 text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                    {formatUnreadBadgeCount(unreadCount)}
                 </span>
             )}
         </>

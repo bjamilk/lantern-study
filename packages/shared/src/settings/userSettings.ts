@@ -121,7 +121,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     showCardProgress: true,
   },
   appearance: {
-    theme: 'dark',
+    theme: 'light',
     accentColor: '#6366f1',
     fontSize: 'medium',
     compactMode: false,

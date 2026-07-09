@@ -4,13 +4,26 @@
   "description": "Collaborative study platform with flashcards, groups, and AI tools. Built for slow connections and offline learning.",
   "start_url": "https://lanternstudy.com/",
   "display": "standalone",
-  "background_color": "#020617",
-  "theme_color": "#020617",
+  "background_color": "#6569EE",
+  "theme_color": "#6569EE",
   "icons": [
     {
-      "src": "/lantern-icon.png",
+      "src": "/lantern-icon-v2.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png?v=2",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png?v=2",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

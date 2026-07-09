@@ -10,6 +10,7 @@ import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
+import { resolveGroupChatSenderLabel } from '@lantern/shared/utils';
 import {
   EllipsisVerticalIcon,
   UserGroupIcon,
@@ -100,7 +101,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const prevMessageCountRef = useRef(messages.length);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [typingNames, setTypingNames] = useState<string[]>([]);
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMore, setHasMore] = useState(true);
   const [isSummarizingChat, setIsSummarizingChat] = useState(false);
@@ -137,12 +138,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     channel
       .on('broadcast', { event: 'typing' }, ({ payload }) => {
         const userId = payload?.userId as string | undefined;
-        const name = (payload?.name as string) || 'Someone';
         if (!userId || userId === currentUser.id) return;
-        setTypingNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+        setTypingUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
         if (typingTimeoutsRef.current[userId]) clearTimeout(typingTimeoutsRef.current[userId]);
         typingTimeoutsRef.current[userId] = setTimeout(() => {
-          setTypingNames((prev) => prev.filter((n) => n !== name));
+          setTypingUserIds((prev) => prev.filter((id) => id !== userId));
           delete typingTimeoutsRef.current[userId];
         }, 3000);
       })
@@ -150,7 +150,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return () => {
       Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
       typingTimeoutsRef.current = {};
-      setTypingNames([]);
+      setTypingUserIds([]);
       typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
@@ -160,7 +160,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     void typingChannelRef.current?.send({
       type: 'broadcast',
       event: 'typing',
-      payload: { userId: currentUser.id, name: currentUser.name },
+      payload: { userId: currentUser.id },
     });
   };
 
@@ -524,7 +524,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }
 
   const isGroup = chat.chatType === 'group';
-  const group = isGroup ? { ...chat, members: chat.members ?? [] } : null;
+  const groupMemberList = isGroup
+    ? (groups.find((g) => g.id === chat.id)?.members ?? chat.members ?? [])
+    : [];
+  const group = isGroup ? { ...chat, members: groupMemberList } : null;
+
+  const typingLabels = typingUserIds.map((userId) =>
+    resolveGroupChatSenderLabel({ id: userId }, groupMemberList)
+  );
 
   const otherParticipant = !isGroup
     ? (() => {
@@ -954,7 +961,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               const isGroupedWithPrevious =
                 !!prevMsg &&
                 !showDateSeparator &&
-                prevMsg.sender.id === msg.sender.id &&
+                prevMsg.sender?.id === msg.sender?.id &&
                 msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
 
               const formatDateLabel = (d: Date) => {
@@ -981,7 +988,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   )}
                   <MessageItem
                     message={msg}
-                    isCurrentUserMessage={msg.sender.id === currentUser.id}
+                    isCurrentUserMessage={msg.sender?.id === currentUser.id}
                     currentUserVote={userVotes[msg.id]}
                     onVoteQuestion={onVoteQuestion}
                     onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
@@ -1036,11 +1043,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
           ) : (
             <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
-              {typingNames.length > 0 && (
+              {typingLabels.length > 0 && (
                 <p className="px-4 py-1 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
-                  {typingNames.length === 1
-                    ? `${typingNames[0]} is typing…`
-                    : `${typingNames.slice(0, 2).join(' and ')} are typing…`}
+                  {typingLabels.length === 1
+                    ? `${typingLabels[0]} is typing…`
+                    : `${typingLabels.slice(0, 2).join(' and ')} are typing…`}
                 </p>
               )}
               <MessageInputBar

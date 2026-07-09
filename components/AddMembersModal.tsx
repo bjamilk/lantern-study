@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Group } from '../types';
-import { XCircleIcon, UserPlusIcon, LinkIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { XCircleIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { searchUsers } from '../services/supabase';
+import GroupInviteLinkPanel from './GroupInviteLinkPanel';
+import { buildGroupInviteLink } from '../utils/groupInvite';
 
 interface SearchResult {
   id: string;
@@ -24,7 +26,6 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -36,7 +37,6 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
       setSearchTerm('');
       setSearchResults([]);
       setSelectedUserIds([]);
-      setCopied(false);
       setSearchError('');
       setSuccessMessage('');
       // Auto-focus the search input after a short delay for animation
@@ -105,14 +105,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
     );
   };
 
-  const inviteLink = `${window.location.origin}${window.location.pathname}?inviteId=${group.inviteId}`;
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const inviteLink = group.inviteId ? buildGroupInviteLink(group.inviteId) : '';
 
   const getAvatarUrl = (user: SearchResult) => {
     if (user.avatar_url) return user.avatar_url;
@@ -229,26 +222,16 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
         </div>
 
         {/* Invite link section — always visible at bottom */}
-        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
-            <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
-            <span className="px-3 uppercase tracking-wider font-medium">or share invite link</span>
-            <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex-1 flex items-center px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
-              <LinkIcon className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
-              <span className="text-sm text-gray-500 dark:text-gray-400 truncate">{inviteLink}</span>
+        {inviteLink && (
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
+              <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+              <span className="px-3 uppercase tracking-wider font-medium">or share invite link</span>
+              <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
             </div>
-            <button 
-              type="button"
-              onClick={handleCopyLink} 
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors whitespace-nowrap ${copied ? 'bg-green-600' : 'bg-gray-600 hover:bg-gray-700 dark:bg-gray-500 dark:hover:bg-gray-400'}`}
-            >
-              {copied ? <span className="flex items-center"><CheckIcon className="w-4 h-4 mr-1"/> Copied!</span> : 'Copy'}
-            </button>
+            <GroupInviteLinkPanel inviteLink={inviteLink} groupName={group.name} compact />
           </div>
-        </div>
+        )}
 
         {/* Footer */}
         <div className="flex justify-end space-x-3 pt-4 mt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">

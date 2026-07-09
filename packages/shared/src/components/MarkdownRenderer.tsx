@@ -7,6 +7,8 @@ export interface MarkdownRendererProps {
   content?: string;
   className?: string;
   style?: Record<string, unknown>;
+  /** When false, skip remark-math / rehype-katex (legal docs, plain prose). Default true. */
+  enableMath?: boolean;
 }
 
 function isReactNativeRuntime(): boolean {
@@ -28,14 +30,16 @@ function getMobileTextComponent(): React.ComponentType<any> | null {
 
 const isWeb = !isReactNativeRuntime();
 
-const useWebMarkdownDeps = () => {
-  const [deps, setDeps] = React.useState<{
-    ReactMarkdown: any;
-    remarkMath: any;
-    remarkGfm: any;
-    rehypeKatex: any;
-    rehypeSanitize: any;
-  } | null>(null);
+type WebMarkdownDeps = {
+  ReactMarkdown: any;
+  remarkMath: any;
+  remarkGfm: any;
+  rehypeKatex: any;
+  rehypeSanitize: any;
+};
+
+const useWebMarkdownDeps = (enableMath: boolean) => {
+  const [deps, setDeps] = React.useState<WebMarkdownDeps | null>(null);
 
   React.useEffect(() => {
     if (!isWeb) return;
@@ -44,41 +48,45 @@ const useWebMarkdownDeps = () => {
 
     (async () => {
       try {
-        const [
-          { default: ReactMarkdown },
-          remarkMath,
-          remarkGfm,
-          rehypeKatex,
-          rehypeSanitize,
-        ] = await Promise.all([
+        const imports: Promise<any>[] = [
           import('react-markdown'),
-          import('remark-math'),
           import('remark-gfm'),
-          import('rehype-katex'),
           import('rehype-sanitize'),
-          // @ts-ignore: CSS imports are handled by Vite
-          import('katex/dist/katex.min.css').catch(() => null),
-        ]);
+        ];
+        if (enableMath) {
+          imports.push(
+            import('remark-math'),
+            import('rehype-katex'),
+            // @ts-ignore: CSS imports are handled by Vite
+            import('katex/dist/katex.min.css').catch(() => null),
+          );
+        }
+
+        const modules = await Promise.all(imports);
+        const [{ default: ReactMarkdown }, remarkGfm, rehypeSanitize] = modules;
+        const remarkMath = enableMath ? modules[3] : null;
+        const rehypeKatex = enableMath ? modules[4] : null;
 
         const normalizePkg = (mod: any) => (mod ? (mod.default ?? mod) : null);
-        const mathPlugin = normalizePkg(remarkMath);
         const gfmPlugin = normalizePkg(remarkGfm);
-        const katexPlugin = normalizePkg(rehypeKatex);
         const sanitizePlugin = normalizePkg(rehypeSanitize);
+        const mathPlugin = enableMath ? normalizePkg(remarkMath) : null;
+        const katexPlugin = enableMath ? normalizePkg(rehypeKatex) : null;
 
-        if (isMounted) {
-          if (!mathPlugin || !gfmPlugin || !katexPlugin || !sanitizePlugin) {
-            setDeps(null);
-          } else {
-            setDeps({
-              ReactMarkdown,
-              remarkMath: mathPlugin,
-              remarkGfm: gfmPlugin,
-              rehypeKatex: katexPlugin,
-              rehypeSanitize: sanitizePlugin,
-            });
-          }
+        if (!isMounted) return;
+
+        if (!gfmPlugin || !sanitizePlugin || (enableMath && (!mathPlugin || !katexPlugin))) {
+          setDeps(null);
+          return;
         }
+
+        setDeps({
+          ReactMarkdown,
+          remarkMath: mathPlugin,
+          remarkGfm: gfmPlugin,
+          rehypeKatex: katexPlugin,
+          rehypeSanitize: sanitizePlugin,
+        });
       } catch {
         if (isMounted) setDeps(null);
       }
@@ -87,7 +95,7 @@ const useWebMarkdownDeps = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [enableMath]);
 
   return deps;
 };
@@ -132,35 +140,67 @@ const MobileMarkdownText: React.FC<{ content: string; style?: Record<string, unk
   );
 };
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, style }) => {
+class MarkdownRenderErrorBoundary extends React.Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn('[MarkdownRenderer] render failed, falling back to plain text', error);
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
+  content,
+  className,
+  style,
+  enableMath = true,
+}) => {
   const safeContent = content ?? '';
-  const deps = useWebMarkdownDeps();
+  const deps = useWebMarkdownDeps(enableMath);
+
+  const plainFallback = (
+    <pre className={className} style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
+      {safeContent}
+    </pre>
+  );
 
   if (!isWeb) {
     return <MobileMarkdownText content={safeContent} style={style} />;
   }
 
   if (!deps) {
-    return (
-      <pre className={className} style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>
-        {safeContent}
-      </pre>
-    );
+    return plainFallback;
   }
 
   const { ReactMarkdown, remarkMath, remarkGfm, rehypeKatex, rehypeSanitize } = deps;
+  const remarkPlugins = enableMath && remarkMath ? [remarkMath, remarkGfm] : [remarkGfm];
+  const rehypePlugins =
+    enableMath && rehypeKatex ? [rehypeSanitize, rehypeKatex] : [rehypeSanitize];
 
   return (
-    <div className={className}>
-      <ReactMarkdown
-        remarkPlugins={[remarkMath, remarkGfm]}
-        rehypePlugins={[rehypeSanitize, rehypeKatex]}
-        components={{
-          a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-        }}
-      >
-        {safeContent}
-      </ReactMarkdown>
-    </div>
+    <MarkdownRenderErrorBoundary fallback={plainFallback}>
+      <div className={className}>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={{
+            a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+          }}
+        >
+          {safeContent}
+        </ReactMarkdown>
+      </div>
+    </MarkdownRenderErrorBoundary>
   );
 };

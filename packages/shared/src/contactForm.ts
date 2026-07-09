@@ -92,3 +92,15 @@ export const CONTACT_FORM_LIMITS = {
   messageMax: 2000,
   messageMin: 20,
 } as const;
+
+export const SUPPORT_EMAIL = 'support@lanternstudy.com' as const;
+
+export function buildSupportMailtoUrl(params?: {
+  subject?: string;
+  body?: string;
+}): string {
+  const parts: string[] = [];
+  if (params?.subject) parts.push(`subject=${encodeURIComponent(params.subject)}`);
+  if (params?.body) parts.push(`body=${encodeURIComponent(params.body)}`);
+  return `mailto:${SUPPORT_EMAIL}${parts.length ? `?${parts.join('&')}` : ''}`;
+}

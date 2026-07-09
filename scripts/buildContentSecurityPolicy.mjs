@@ -29,15 +29,17 @@ export function buildContentSecurityPolicy(env = {}) {
 
   return [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
+    "script-src 'self' https://static.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     `connect-src ${[...connectSrc].join(' ')}`,
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
     "frame-src https://www.youtube-nocookie.com",
+    "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
+    "upgrade-insecure-requests",
   ].join('; ');
 }
 

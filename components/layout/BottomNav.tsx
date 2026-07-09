@@ -3,7 +3,6 @@ import { AppMode } from '../../types';
 import { useLowDataModeToggle } from '../../hooks/useLowDataModeToggle';
 import {
     HomeIcon,
-    AcademicCapIcon,
     ChatBubbleLeftRightIcon,
     EllipsisHorizontalIcon,
     BellIcon,
@@ -12,7 +11,6 @@ import {
 } from '@heroicons/react/24/outline';
 import {
     HomeIcon as HomeIconSolid,
-    AcademicCapIcon as AcademicCapIconSolid,
     ChatBubbleLeftRightIcon as ChatBubbleLeftRightIconSolid,
     EllipsisHorizontalIcon as EllipsisHorizontalIconSolid,
     BookOpenIcon as BookOpenIconSolid,
@@ -76,8 +74,6 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     const libraryModes = [
         AppMode.LIBRARY, AppMode.NOTES, AppMode.NOTE_EDITOR, AppMode.FLASHCARDS,
         AppMode.DECK_DETAIL,
-    ];
-    const studyModes = [
         AppMode.STUDY_HUB, AppMode.FLASHCARD_REVIEW, AppMode.FLASHCARD_CRAM,
         AppMode.FLASHCARD_MATCH, AppMode.FLASHCARD_LEARN, AppMode.AI_TOOLS,
     ];
@@ -96,14 +92,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
             icon: BookOpenIcon,
             activeIcon: BookOpenIconSolid,
             targetMode: AppMode.LIBRARY,
-        },
-        {
-            label: 'Study',
-            modes: studyModes,
-            icon: AcademicCapIcon,
-            activeIcon: AcademicCapIconSolid,
-            targetMode: AppMode.STUDY_HUB,
-            badge: dueCardsCount,
+            badge: dueCardsCount > 0 ? dueCardsCount : undefined,
         },
         {
             label: 'Chat',

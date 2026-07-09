@@ -6,9 +6,11 @@ import AIUsageBadge from './AIUsageBadge';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon, DocumentTextIcon, RectangleStackIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, Squares2X2Icon, CameraIcon, CloudArrowDownIcon, ArrowLeftOnRectangleIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, Cog6ToothIcon, BookOpenIcon, ChatBubbleLeftRightIcon, LightBulbIcon, UsersIcon, BellAlertIcon, BanknotesIcon, Bars3Icon, ShoppingBagIcon, PlusCircleIcon, PlayIcon, XCircleIcon, SunIcon, MoonIcon, SignalIcon, SignalSlashIcon } from '@heroicons/react/24/outline';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { useUIStore } from '../stores/uiStore';
+import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
 
 interface SidebarProps {
   currentUser: User;
@@ -19,10 +21,7 @@ interface SidebarProps {
   onNavigateToCreateGroup: () => void;
   onNavigateToDashboard: () => void;
   onNavigateToOfflineMode: () => void;
-  onNavigateToFlashcards: () => void;
-  onNavigateToNotes?: () => void;
   onNavigateToLibrary?: () => void;
-  onNavigateToStudyHub?: () => void;
   onNavigateToBudgetTracker: () => void;
   onNavigateToMarketplace: () => void;
   onNavigateToAdmin?: () => void;
@@ -59,10 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onNavigateToCreateGroup, 
   onNavigateToDashboard,
   onNavigateToOfflineMode,
-  onNavigateToFlashcards,
-  onNavigateToNotes,
   onNavigateToLibrary,
-  onNavigateToStudyHub,
   onNavigateToBudgetTracker,
   onNavigateToMarketplace,
   onNavigateToAdmin,
@@ -94,6 +90,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
+  const { isChatsSectionExpanded, toggleChatsSection, setChatsSectionExpanded } = useUIStore();
   
   const canInteractWithChats = ![AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE].includes(currentAppMode);
   
@@ -156,6 +153,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
     return { topLevelChats: topLevel, subGroupsMap: subMap, archivedGroups: archived };
   }, [groups, dmThreads]);
+
+  const totalUnreadChatCount = useMemo(
+    () => getTotalActiveUnreadChatCount(groups, dmThreads),
+    [groups, dmThreads],
+  );
+  const showChatsHeaderBadge = !isChatsSectionExpanded && totalUnreadChatCount > 0;
   
   const toggleParentGroupExpansion = (groupId: string) => {
     setExpandedParentGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
@@ -302,13 +305,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           {onNavigateToLibrary && (
             <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} />
           )}
-          <NavButton navFunc={onNavigateToFlashcards} icon={RectangleStackIcon} label="Flashcards" appMode={AppMode.FLASHCARDS} badgeCount={dueCardsCount} />
-          {onNavigateToNotes && (
-            <NavButton navFunc={onNavigateToNotes} icon={DocumentTextIcon} label="Notes" appMode={AppMode.NOTES} />
-          )}
-          {onNavigateToStudyHub && (
-            <NavButton navFunc={onNavigateToStudyHub} icon={AcademicCapIcon} label="Study" appMode={AppMode.STUDY_HUB} badgeCount={dueCardsCount} />
-          )}
         </div>
 
         <SectionHeader title="Social" />
@@ -328,27 +324,48 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         {isExpanded ? (
           <>
-            <div className={`px-3 pt-4 pb-2 flex items-center justify-between`}>
-              <h3 className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 tracking-wider">Chats</h3>
-              <div className="flex gap-1">
-                <button
-                  onClick={onNavigateToCreateGroup}
-                  className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={!canInteractWithChats}
-                  title="New Group"
-                >
-                  <PlusIcon className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={onOpenNewDmModal}
-                  className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={!canInteractWithChats}
-                  title="New DM"
-                >
-                  <ChatBubbleLeftRightIcon className="w-4 h-4" />
-                </button>
-              </div>
+            <div className={`px-3 pt-4 pb-2 flex items-center justify-between gap-2`}>
+              <button
+                type="button"
+                onClick={toggleChatsSection}
+                className="flex items-center gap-1.5 min-w-0 flex-1 text-left rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 px-1 py-0.5 -ml-1"
+                aria-expanded={isChatsSectionExpanded}
+                title={isChatsSectionExpanded ? 'Collapse chats' : 'Expand chats'}
+              >
+                <h3 className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 tracking-wider truncate">Chats</h3>
+                {showChatsHeaderBadge && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                    {formatUnreadBadgeCount(totalUnreadChatCount)}
+                  </span>
+                )}
+                {isChatsSectionExpanded ? (
+                  <ChevronDownIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+                ) : (
+                  <ChevronRightIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+                )}
+              </button>
+              {isChatsSectionExpanded && (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button
+                    onClick={onNavigateToCreateGroup}
+                    className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!canInteractWithChats}
+                    title="New Group"
+                  >
+                    <PlusIcon className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={onOpenNewDmModal}
+                    className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!canInteractWithChats}
+                    title="New DM"
+                  >
+                    <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
+            {isChatsSectionExpanded && (
             <div>
               {topLevelChats.map((chat) => {
                   if (chat.chatType === 'group') {
@@ -398,10 +415,28 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               )}
             </div>
+            )}
           </>
         ) : (
              <div className="mt-4 space-y-2 flex flex-col items-center px-2">
-                {groups.filter(g => !g.isArchived).map(group => {
+                {!isChatsSectionExpanded ? (
+                  <button
+                    onClick={() => {
+                      setChatsSectionExpanded(true);
+                      onToggleExpand();
+                    }}
+                    className="relative group w-14 h-14 flex items-center justify-center rounded-2xl hover:bg-slate-200/60 dark:hover:bg-slate-800/60"
+                    title="Chats"
+                  >
+                    <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-600 dark:text-slate-300" />
+                    {showChatsHeaderBadge && (
+                      <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-100 dark:border-slate-900">
+                        {formatUnreadBadgeCount(totalUnreadChatCount)}
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                groups.filter(g => !g.isArchived).map(group => {
                     const hasSubgroups = subGroupsMap[group.id] && subGroupsMap[group.id].length > 0;
                     return (
                     <button
@@ -429,7 +464,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         />
                         {(group.unreadCount ?? 0) > 0 && (
                             <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-100 dark:border-slate-900">
-                            {(group.unreadCount ?? 0) > 9 ? '9+' : group.unreadCount}
+                            {formatUnreadBadgeCount(group.unreadCount ?? 0)}
                             </span>
                         )}
                         {hasSubgroups && (
@@ -437,7 +472,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                         )}
                     </button>
                     );
-                })}
+                })
+                )}
              </div>
         )}
       </div>

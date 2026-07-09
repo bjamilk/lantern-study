@@ -47,6 +47,9 @@ export const mapUserFromApi = (data: any): User => {
     testPresets: data.test_presets || data.testPresets,
     decks: data.decks,
     flashcards: data.flashcards,
+    username: data.username || undefined,
+    firstName: data.first_name || data.firstName || undefined,
+    lastName: data.last_name || data.lastName || undefined,
   };
 };
 
@@ -116,25 +119,39 @@ export const mapGroupsFromApi = (data: any[]): Group[] => {
 
 export const mapMessageFromApi = (data: any): Message => {
   if (!data) return data;
-  
+
+  const senderId = data.sender_id ?? data.senderId;
+  const sender = data.sender
+    ? mapUserFromApi(data.sender)
+    : mapUserFromApi({
+        id: senderId || 'unknown',
+        name: 'Member',
+        username: data.sender?.username,
+      });
+
+  const questionData =
+    data.question_data && typeof data.question_data === 'object'
+      ? data.question_data
+      : {};
+
   return {
     id: data.id,
     groupId: data.group_id || data.groupId,
-    sender: mapUserFromApi(data.sender),
+    sender,
     timestamp: new Date(data.timestamp || data.created_at),
     type: data.type,
     text: data.text || data.content,
-    questionStem: data.question_stem || data.questionStem,
-    explanation: data.explanation,
-    questionType: data.question_type || data.questionType,
-    options: (data.options || []).map(mapQuestionOptionFromApi),
-    correctAnswerIds: data.correct_answer_ids || data.correctAnswerIds,
+    questionStem: data.question_stem || data.questionStem || questionData.questionStem,
+    explanation: data.explanation || questionData.explanation,
+    questionType: data.question_type || data.questionType || questionData.questionType,
+    options: (data.options || questionData.options || []).map(mapQuestionOptionFromApi),
+    correctAnswerIds: data.correct_answer_ids || data.correctAnswerIds || questionData.correctAnswerIds,
     imageUrl: (() => {
       const raw = data.image_url || data.imageUrl;
       return raw ? normalizeStorageUrl(raw) : undefined;
     })(),
-    tags: data.tags,
-    questionStatus: data.question_status || data.questionStatus,
+    tags: data.tags || questionData.tags,
+    questionStatus: data.question_status || data.questionStatus || questionData.questionStatus,
     upvotes: data.upvotes || 0,
     downvotes: data.downvotes || 0,
     flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || data.flaggedAsSimilarUserIds,

@@ -59,7 +59,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) =>
       <main className="max-w-3xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">{title}</h1>
         <div className="prose prose-slate dark:prose-invert max-w-none legal-markdown">
-          <MarkdownRenderer content={content} />
+          <MarkdownRenderer content={content} enableMath={false} />
         </div>
       </main>
     </div>

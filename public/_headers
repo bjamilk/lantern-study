@@ -1,37 +1,36 @@
-/*
-  https://developers.cloudflare.com/pages/configuration/headers/
-  CSP is finalized at build time (see apps/web/scripts/inject-csp-headers.mjs).
-*/
+# Cloudflare Pages headers — CSP placeholder replaced at build (inject-csp-headers.mjs)
+# https://developers.cloudflare.com/pages/configuration/headers/
 
 /*
-  Global security headers (production). CSP mitigates XSS impact when JWT is in localStorage.
-*/
-/*
-  /
-    Cache-Control: no-cache, no-store, must-revalidate
-    Content-Security-Policy: __CONTENT_SECURITY_POLICY__
-    Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-    X-Content-Type-Options: nosniff
-    X-Frame-Options: DENY
-    Referrer-Policy: strict-origin-when-cross-origin
-*/
+  Content-Security-Policy: __CONTENT_SECURITY_POLICY__
+  Permissions-Policy: accelerometer=(), autoplay=(self), camera=(self), display-capture=(), encrypted-media=(self), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), midi=(), payment=(), picture-in-picture=(self), publickey-credentials-get=(self), screen-wake-lock=(self), sync-xhr=(), usb=(), web-share=(self), xr-spatial-tracking=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
 
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
-  Content-Security-Policy: __CONTENT_SECURITY_POLICY__
-  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-  Referrer-Policy: strict-origin-when-cross-origin
-
-/*
-  Content-Security-Policy: __CONTENT_SECURITY_POLICY__
-  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-  Referrer-Policy: strict-origin-when-cross-origin
 
 /sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/favicon.svg
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/favicon-v2.svg
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/lantern-icon.png
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/lantern-icon-v2.png
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/favicon.png
   Cache-Control: no-cache, no-store, must-revalidate
 
 /robots.txt

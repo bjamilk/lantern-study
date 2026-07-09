@@ -20,6 +20,7 @@ import { useTestStore } from './stores/testStore';
 import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
+import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
 import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
@@ -667,7 +668,7 @@ export const App: React.FC = () => {
 
     if (isAuthLoading || (currentUser && routeHydrating)) return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-8">
-            <img src="/lantern-icon.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
+            <img src="/lantern-icon-v2.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400" />
         </div>
     );
@@ -1246,10 +1247,7 @@ export const App: React.FC = () => {
         onNavigateToCreateGroup: () => navigateTo(AppMode.CREATE_GROUP),
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
         onNavigateToOfflineMode: () => navigateTo(AppMode.OFFLINE_MODE),
-        onNavigateToFlashcards: () => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); },
-        onNavigateToNotes: () => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); },
         onNavigateToLibrary: () => navigateTo(AppMode.LIBRARY),
-        onNavigateToStudyHub: () => navigateTo(AppMode.STUDY_HUB),
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
         onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
@@ -1277,7 +1275,7 @@ export const App: React.FC = () => {
             </div>
         }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
-            unreadChatCount={groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0)}
+            unreadChatCount={getTotalActiveUnreadChatCount(groups, dmThreads)}
             hideMobileAiUsageBadge={
                 (appMode === AppMode.CHAT && !!selectedChat)
                 || appMode === AppMode.GAME_ACTIVE

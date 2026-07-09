@@ -81,12 +81,11 @@ export function BottomTabBar({
 }: Props) {
   const scrollTabs: TabDef[] = [
     { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
-    { key: 'Library', label: 'Library', icon: 'library-outline', activeIcon: 'library' },
     {
-      key: 'Study',
-      label: 'Study',
-      icon: 'school-outline',
-      activeIcon: 'school',
+      key: 'Library',
+      label: 'Library',
+      icon: 'library-outline',
+      activeIcon: 'library',
       badge: dueCardsCount,
     },
     {

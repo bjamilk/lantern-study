@@ -667,6 +667,18 @@ router.put('/reports/:id', async (req: any, res: any) => {
   }
 });
 
+// GET /api/v1/admin/analytics
+router.get('/analytics', async (req: any, res: any) => {
+  try {
+    const rawDays = parseInt(req.query.days as string, 10);
+    const days = [7, 30, 90].includes(rawDays) ? rawDays : 30;
+    const data = await supabaseService.getAdminAnalytics(days);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
 router.get('/ai-analytics', async (req: any, res: any) => {
   try {
     const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));

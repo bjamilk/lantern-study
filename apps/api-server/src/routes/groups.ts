@@ -310,6 +310,17 @@ router.post(
 
     const updatedGroup = await supabaseService.addGroupMember(groupId, memberId);
 
+    const groupMeta = await supabaseService.getGroupById(groupId);
+    const actor = await supabaseService.getUserById(userId);
+    const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
+    if (groupMeta) {
+      void supabaseService.createNotification(memberId, {
+        message: `You've been added to the group "${groupMeta.name}" by ${actorLabel}`,
+        link: `/chat/${groupId}`,
+        type: 'group_invite',
+      }).catch((err) => logger.error('Failed to notify added group member', { err, groupId, memberId }));
+    }
+
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
@@ -374,6 +385,23 @@ router.post(
       const batchResult = await supabaseService.addGroupMembersBatch(groupId, userIds);
       results.added = batchResult.added;
       results.alreadyMembers = batchResult.alreadyMembers;
+
+      if (results.added.length > 0) {
+        const groupMeta = await supabaseService.getGroupById(groupId);
+        const actor = await supabaseService.getUserById(userId);
+        const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
+        if (groupMeta) {
+          for (const memberId of results.added) {
+            void supabaseService.createNotification(memberId, {
+              message: `You've been added to the group "${groupMeta.name}" by ${actorLabel}`,
+              link: `/chat/${groupId}`,
+              type: 'group_invite',
+            }).catch((err) =>
+              logger.error('Failed to notify added group member', { err, groupId, memberId })
+            );
+          }
+        }
+      }
     } catch (error) {
       logger.error('Batch add members failed', { groupId, error });
       results.failed = userIds;

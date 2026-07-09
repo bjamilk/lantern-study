@@ -9,7 +9,7 @@
   <meta name="author" content="Lantern Study">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://lanternstudy.com/">
-  <meta name="theme-color" content="#020617">
+  <meta name="theme-color" content="#6569EE">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
@@ -17,7 +17,7 @@
   <meta property="og:title" content="Lantern Study — Flashcards, tests, groups &amp; AI study tools">
   <meta property="og:description" content="Collaborative study platform with flashcards, practice tests, study groups, and AI tools. Works on slow connections and offline.">
   <meta property="og:url" content="https://lanternstudy.com/">
-  <meta property="og:image" content="https://lanternstudy.com/lantern-icon.png">
+  <meta property="og:image" content="https://lanternstudy.com/lantern-icon-v2.png">
   <meta property="og:image:alt" content="Lantern Study app icon">
   <meta property="og:locale" content="en_US">
 
@@ -25,12 +25,13 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Lantern Study — Flashcards, tests, groups &amp; AI study tools">
   <meta name="twitter:description" content="Collaborative study platform with flashcards, practice tests, study groups, and AI tools.">
-  <meta name="twitter:image" content="https://lanternstudy.com/lantern-icon.png">
+  <meta name="twitter:image" content="https://lanternstudy.com/lantern-icon-v2.png">
   <meta name="twitter:image:alt" content="Lantern Study app icon">
 
-  <link rel="icon" href="/lantern-icon.png" type="image/png">
-  <link rel="apple-touch-icon" href="/lantern-icon.png">
-  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/favicon-v2.svg" type="image/svg+xml">
+  <link rel="icon" href="/lantern-icon-v2.png" type="image/png" sizes="1024x1024">
+  <link rel="apple-touch-icon" href="/lantern-icon-v2.png">
+  <link rel="manifest" href="/manifest.json?v=2">
 
   <script type="application/ld+json">
   {
@@ -46,29 +47,11 @@
       "price": "0",
       "priceCurrency": "USD"
     },
-    "image": "https://lanternstudy.com/lantern-icon.png"
+    "image": "https://lanternstudy.com/lantern-icon-v2.png"
   }
   </script>
 
-  <script>
-    // Apply dark mode immediately based on localStorage or system preference
-    if (localStorage.getItem('theme') === 'dark' || 
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      document.documentElement.classList.add('dark');
-    }
-    // Prefer branded fonts; fall back to system only when low-data mode is on
-    try {
-      var ui = JSON.parse(localStorage.getItem('ui-storage') || '{}');
-      var lowData = ui.state && ui.state.lowDataMode === true;
-      if (lowData) {
-        document.documentElement.classList.add('font-low-data');
-      } else {
-        document.documentElement.classList.add('font-full');
-      }
-    } catch (e) {
-      document.documentElement.classList.add('font-full');
-    }
-  </script>
+  <script src="/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">

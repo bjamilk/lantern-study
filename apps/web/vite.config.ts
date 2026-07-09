@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
           name: 'favicon-fallback',
           configureServer(server) {
             server.middlewares.use((req, _res, next) => {
-              if (req.url === '/favicon.ico') req.url = '/lantern-icon.png';
+              if (req.url === '/favicon.ico') req.url = '/lantern-icon-v2.png';
               next();
             });
           },

@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
-import { resolveQuestionStatusAfterVote, normalizeStorageUrl } from '@lantern/shared/utils';
+import { resolveQuestionStatusAfterVote, normalizeStorageUrl, formatChatSenderLabel } from '@lantern/shared/utils';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
 
@@ -192,7 +192,7 @@ interface GroupState {
   selectGroup: (groupId: string) => void;
   fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
   loadMoreMessages: (groupId: string) => Promise<number>;
-  sendMessage: (groupId: string, text: string, senderId: string, senderName: string) => Promise<void>;
+  sendMessage: (groupId: string, text: string, senderId: string, senderName?: string) => Promise<void>;
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
 
@@ -285,7 +285,7 @@ function mapApiMessage(m: any, groupId: string): Message {
     id: m.id,
     groupId: m.group_id || m.groupId || groupId,
     senderId: m.sender_id || sender.id || '',
-    senderName: sender.name || m.senderName || 'Unknown',
+    senderName: formatChatSenderLabel({ username: sender.username }),
     senderAvatar: sender.avatar_url || sender.avatarUrl,
     text: isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
     type: isQuestion ? 'question' : 'text',
@@ -709,7 +709,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return Math.max(0, afterCount - beforeCount);
   },
 
-  sendMessage: async (groupId: string, text: string, senderId: string, senderName: string) => {
+  sendMessage: async (groupId: string, text: string, senderId: string, _senderName?: string) => {
+    const group = get().groups.find((g) => g.id === groupId);
+    const member = group?.members?.find((m) => m.id === senderId);
+    const senderName = formatChatSenderLabel({ username: member?.username });
     let parsed: any = {};
     if (text.trim().startsWith('{')) {
       try {

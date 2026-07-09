@@ -478,15 +478,10 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         const storedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
         if (storedTheme) {
             setTheme(storedTheme);
-            if (storedTheme === 'dark') {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            setTheme('dark');
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
+            document.documentElement.classList.toggle('dark', storedTheme === 'dark');
+        } else {
+            setTheme('light');
+            document.documentElement.classList.remove('dark');
         }
     }, [currentUser?.id, currentUser?.settings, setTheme, setLowDataMode]);
 

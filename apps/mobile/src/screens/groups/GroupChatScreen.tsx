@@ -258,7 +258,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setSending(true);
     setText('');
     try {
-      await sendMessage(groupId, trimmed, user.id, user.user_metadata?.full_name || user.email || 'User');
+      await sendMessage(groupId, trimmed, user.id);
     } finally {
       setSending(false);
     }

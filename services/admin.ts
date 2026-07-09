@@ -118,8 +118,61 @@ export interface AdminActivityItem {
   user_id?: string;
 }
 
+export interface AdminAnalyticsDay {
+  date: string;
+  signups: number;
+  activeUsers: number;
+  tests: number;
+  flashcards: number;
+  newFlashcards: number;
+  questions: number;
+  games: number;
+  dailyQuizzes: number;
+  groupMessages: number;
+  dmMessages: number;
+  aiEvents: number;
+  newListings: number;
+  orders: number;
+}
+
+export interface AdminAnalytics {
+  periodDays: number;
+  kpis: {
+    totalUsers: number;
+    dau: number;
+    wau: number;
+    mau: number;
+    mobileAppUsers: number;
+    webOnlyUsers: number;
+    activeGroups: number;
+  };
+  streakDistribution: Record<string, number>;
+  featureTotals: {
+    tests: number;
+    flashcards: number;
+    newFlashcards: number;
+    questions: number;
+    games: number;
+    dailyQuizzes: number;
+    studyActions: number;
+  };
+  aiByFeature: Record<string, number>;
+  platformSplit: {
+    mobileAppUsers: number;
+    webOnlyUsers: number;
+  };
+  series: AdminAnalyticsDay[];
+}
+
 export async function fetchAdminStats(): Promise<AdminStats> {
   const response = await adminRequest<{ success: boolean; data: AdminStats }>('/stats');
+  return response.data;
+}
+
+export async function fetchAdminAnalytics(days: 7 | 30 | 90 = 30): Promise<AdminAnalytics> {
+  const response = await adminRequest<{ success: boolean; data: AdminAnalytics }>(
+    `/analytics?days=${encodeURIComponent(String(days))}`
+  );
   return response.data;
 }
 

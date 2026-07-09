@@ -5,7 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { initialUserStats } from '../utils/helpers';
-import { resolveQuestionStatusAfterVote } from '@lantern/shared/utils';
+import { resolveQuestionStatusAfterVote, formatActorLabel, mapMessagesFromApi, mapMessageFromApi } from '@lantern/shared/utils';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
@@ -34,6 +34,11 @@ function mapApiGroupMembers(fetchedMembers: any[]): User[] {
         badges: m.badges || [],
         stats: m.stats || {},
     }));
+}
+
+function normalizeFetchedMessages(raw: unknown): Message[] {
+    const list = Array.isArray(raw) ? raw : [];
+    return mapMessagesFromApi(list);
 }
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
@@ -79,7 +84,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (chat.chatType === 'group') {
             const limit = lowDataMode ? 20 : 50;
             fetchMessages(chat.id, undefined, limit).then(fetchedMessages => {
-                const list = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                const list = normalizeFetchedMessages(fetchedMessages);
                 updateMessages(prev => ({ ...prev, [chat.id]: list }));
             }).catch(error => {
                 console.error('[handleSelectChat] Error fetching messages:', error);
@@ -153,7 +158,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             fetchMessages(chatId, undefined, limit)
                 .then((fetchedMessages) => {
-                    const list = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                    const list = normalizeFetchedMessages(fetchedMessages);
                     updateMessages((prev) => ({ ...prev, [chatId]: list }));
                 })
                 .catch((error) => {
@@ -641,11 +646,14 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             try {
                 const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text);
                 if (sentMessage) {
-                    // Replace optimistic message with server-confirmed one
+                    const confirmed = mapMessageFromApi(sentMessage);
+                    // Replace optimistic message with server-confirmed one (keep sender if API omits profile)
                     updateMessages(prev => ({
                         ...prev,
                         [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
-                            m.id === optimisticId ? { ...m, id: sentMessage.id, timestamp: new Date(sentMessage.timestamp || m.timestamp) } : m
+                            m.id === optimisticId
+                                ? { ...m, ...confirmed, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
+                                : m
                         )
                     }));
                 }
@@ -657,7 +665,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         try {
                             await createNotification({
                                 user_id: member.id,
-                                message: `New message in ${group.name} from ${currentUser.name}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+                                message: `New message in ${group.name} from ${formatActorLabel(currentUser)}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
                                 link: `/chat/${selectedChat.id}`
                             });
                         } catch (error) {
@@ -923,16 +931,6 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }
 
             applyGroupMembersToState(groupId, mappedMembers);
-
-            if (group && currentUser) {
-                for (const userId of result.added) {
-                    createNotification({
-                        user_id: userId,
-                        message: `You've been added to the group "${group.name}" by ${currentUser.name}`,
-                        link: `/chat/${groupId}`
-                    }).catch(err => console.error('Failed to create notification:', err));
-                }
-            }
         } catch (error) {
             console.error('Error adding members to group:', error);
             throw error;
@@ -978,7 +976,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             try {
                 createNotification({
                     user_id: userId,
-                    message: `You've been promoted to admin in "${group.name}" by ${currentUser.name}`,
+                    message: `You've been promoted to admin in "${group.name}" by ${formatActorLabel(currentUser)}`,
                     link: `/chat/${groupId}`
                 }).catch(error => console.error('Failed to create promotion notification:', error));
             } catch (error) {
@@ -1008,7 +1006,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             if (groupToUpdate && user && currentUser && userId !== currentUser.id) {
                 createNotification({
                     user_id: userId,
-                    message: `You've been demoted from admin in "${groupToUpdate.name}" by ${currentUser.name}`,
+                    message: `You've been demoted from admin in "${groupToUpdate.name}" by ${formatActorLabel(currentUser)}`,
                     link: `/chat/${groupId}`
                 }).catch(error => console.error('Failed to create demotion notification:', error));
             }
@@ -1044,7 +1042,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                             try {
                                 await createNotification({
                                     user_id: member.id,
-                                    message: `The group "${group.name}" has been permanently deleted by ${currentUser.name}`,
+                                    message: `The group "${group.name}" has been permanently deleted by ${formatActorLabel(currentUser)}`,
                                     link: `/dashboard`
                                 });
                             } catch (error) {
@@ -1100,7 +1098,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         try {
                             await createNotification({
                                 user_id: member.id,
-                                message: `The group "${group.name}" has been ${isArchiving ? 'archived' : 'unarchived'} by ${currentUser.name}`,
+                                message: `The group "${group.name}" has been ${isArchiving ? 'archived' : 'unarchived'} by ${formatActorLabel(currentUser)}`,
                                 link: `/chat/${groupId}`
                             });
                         } catch (error) {
@@ -1135,7 +1133,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             try {
                 createNotification({
                     user_id: userId,
-                    message: `Your request to join "${group.name}" has been approved by ${currentUser.name}`,
+                    message: `Your request to join "${group.name}" has been approved by ${formatActorLabel(currentUser)}`,
                     link: `/chat/${groupId}`
                 }).catch(error => console.error('Failed to create approval notification:', error));
             } catch (error) {
@@ -1153,7 +1151,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             try {
                 createNotification({
                     user_id: userId,
-                    message: `Your request to join "${group.name}" has been declined by ${currentUser.name}`,
+                    message: `Your request to join "${group.name}" has been declined by ${formatActorLabel(currentUser)}`,
                     link: `/chat/${groupId}`
                 }).catch(error => console.error('Failed to create rejection notification:', error));
             } catch (error) {
@@ -1230,17 +1228,18 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             console.log('Loading more messages before:', beforeCursor);
             const olderMessages = await fetchMessages(groupId, undefined, limit, beforeCursor);
             if (olderMessages && olderMessages.length > 0) {
+                const mappedOlder = normalizeFetchedMessages(olderMessages);
                 updateMessages(prev => {
                     const prevGroupMsgs = prev[groupId] || [];
                     const existingIds = new Set(prevGroupMsgs.map(m => m.id));
-                    const filteredOlder = olderMessages.filter((m: Message) => !existingIds.has(m.id));
+                    const filteredOlder = mappedOlder.filter((m) => !existingIds.has(m.id));
                     
                     return {
                         ...prev,
                         [groupId]: [...filteredOlder, ...prevGroupMsgs]
                     };
                 });
-                return olderMessages.length;
+                return mappedOlder.length;
             }
             return 0;
         } catch (error) {

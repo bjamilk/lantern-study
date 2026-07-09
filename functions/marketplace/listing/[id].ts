@@ -50,7 +50,7 @@ export async function onRequest(context: {
     const image =
       Array.isArray(listing.images) && listing.images[0]
         ? String(listing.images[0])
-        : `${SITE_BASE}/lantern-icon.png`;
+        : `${SITE_BASE}/lantern-icon-v2.png`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">

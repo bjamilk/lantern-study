@@ -5,7 +5,7 @@ interface LanternBrandIconProps {
   size?: number;
 }
 
-/** Full Lantern Study brand mark — indigo tile + yellow lantern (matches favicon). */
+/** Full Lantern Study brand mark — blue tile + white flame (matches app icon). */
 export const LanternBrandIcon: React.FC<LanternBrandIconProps> = ({
   className = '',
   size = 32,
@@ -19,12 +19,12 @@ export const LanternBrandIcon: React.FC<LanternBrandIconProps> = ({
     className={className}
     aria-hidden
   >
-    <rect width="32" height="32" rx="8" fill="#4F46E5" />
+    <rect width="32" height="32" fill="#6569EE" />
     <path
-      d="M16 6c-4.5 0-8 3.2-8 7.2 0 3.1 1.9 5.8 4.7 7l1.3 4.8 2-3.4 2 3.4 1.3-4.8c2.8-1.2 4.7-3.9 4.7-7C24 9.2 20.5 6 16 6z"
-      fill="#FBBF24"
+      fill="#FFFFFF"
+      fillRule="evenodd"
+      d="M16 4.9c-3.6 4.5-6.75 8.6-6.75 13.4 0 4.5 3 8.1 6.75 8.1s6.75-3.6 6.75-8.1c0-4.8-3.15-8.9-6.75-13.4zm0 7.4c-2.1 0-3.6 2.1-3.6 4.5 0 1.75 1.1 3.25 2.6 3.75l-1 3 2-1.75 2 1.75-1-3c1.5-.5 2.6-2 2.6-3.75 0-2.4-1.5-4.5-3.6-4.5z"
     />
-    <ellipse cx="16" cy="13.2" rx="5.2" ry="3.6" fill="#FDE68A" opacity="0.85" />
   </svg>
 );
 

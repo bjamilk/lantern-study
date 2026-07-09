@@ -3,6 +3,8 @@ import {
   CONTACT_CATEGORIES,
   CONTACT_CATEGORY_LABELS,
   CONTACT_FORM_LIMITS,
+  SUPPORT_EMAIL,
+  buildSupportMailtoUrl,
   type ContactCategory,
 } from '@lantern/shared';
 import { Button, Input, Select, Textarea } from './ui';
@@ -33,6 +35,28 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  const mailtoUrl = buildSupportMailtoUrl({
+    subject: subject.trim()
+      ? `[${CONTACT_CATEGORY_LABELS[category]}] ${subject.trim()}`
+      : undefined,
+    body:
+      name.trim() || email.trim() || message.trim()
+        ? [
+            name.trim() ? `Name: ${name.trim()}` : null,
+            email.trim() ? `Email: ${email.trim()}` : null,
+            `Category: ${CONTACT_CATEGORY_LABELS[category]}`,
+            '',
+            message.trim(),
+          ]
+            .filter((line) => line !== null)
+            .join('\n')
+        : undefined,
+  });
+
+  const showMailtoFallback =
+    Boolean(error) &&
+    (error.includes('unavailable') || error.includes(SUPPORT_EMAIL));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -61,6 +85,13 @@ export const ContactForm: React.FC<ContactFormProps> = ({
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+      <p className="text-sm text-lantern-text-secondary">
+        Send a message below and we will reply by email. You can also reach us directly at{' '}
+        <a href={buildSupportMailtoUrl()} className="text-indigo-600 dark:text-indigo-400 underline">
+          {SUPPORT_EMAIL}
+        </a>
+        .
+      </p>
       {/* Honeypot — hidden from users, bots may fill it */}
       <div className="absolute opacity-0 pointer-events-none h-0 overflow-hidden" aria-hidden="true">
         <label htmlFor="contact-hp">Leave blank</label>
@@ -152,11 +183,27 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       </div>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {showMailtoFallback && (
+        <a
+          href={mailtoUrl}
+          className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-200 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 rounded-md"
+        >
+          Open in email app ({SUPPORT_EMAIL})
+        </a>
+      )}
       {success && <p className="text-sm text-green-700 dark:text-green-400">{success}</p>}
 
-      <Button type="submit" disabled={loading} className="w-full sm:w-auto">
-        {loading ? 'Sending…' : 'Send message'}
-      </Button>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+          {loading ? 'Sending…' : 'Send message'}
+        </Button>
+        <a
+          href={mailtoUrl}
+          className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-accent-background hover:bg-amber-100 dark:hover:bg-amber-900/30 border border-lantern-border rounded-md"
+        >
+          Email {SUPPORT_EMAIL}
+        </a>
+      </div>
 
       <p className="text-xs text-lantern-text-secondary">
         Do not include passwords or payment card numbers. We reply to the email address above.

@@ -142,7 +142,8 @@ export function computeStudyStreak(
 
   const current = anchor ? countConsecutiveFromAnchor(activeDates, anchor) : 0;
   const longest = Math.max(computeLongestStreak(activeDates), current);
-  const lastActiveDate = Array.from(activeDates).sort().at(-1) ?? null;
+  const sortedDates = Array.from(activeDates).sort();
+  const lastActiveDate = sortedDates.length > 0 ? (sortedDates[sortedDates.length - 1] ?? null) : null;
 
   return { current, longest, lastActiveDate };
 }

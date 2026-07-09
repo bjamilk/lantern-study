@@ -951,6 +951,57 @@ export class SupabaseService {
     return { added: toAdd, alreadyMembers };
   }
 
+  async isGroupMember(groupId: string, userId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return !!data;
+  }
+
+  /** Whether an authenticated user may deliver a notification to another user. */
+  async canNotifyUser(requestingUserId: string, targetUserId: string, link?: string): Promise<boolean> {
+    if (!link) return false;
+
+    const groupMatch = link.match(/^\/chat\/([0-9a-f-]{36})$/i);
+    if (groupMatch) {
+      const groupId = groupMatch[1];
+      const group = await this.getGroupById(groupId);
+      if (!group) return false;
+
+      const isAdmin =
+        (group.adminIds || []).includes(requestingUserId) ||
+        !!(group.permissions && group.permissions[requestingUserId]?.admin);
+
+      const requesterIsMember = await this.isGroupMember(groupId, requestingUserId);
+      if (!requesterIsMember && !isAdmin) return false;
+
+      if (isAdmin) return true;
+
+      return this.isGroupMember(groupId, targetUserId);
+    }
+
+    if (link === '/dashboard' || link.startsWith('/dashboard')) {
+      const { data, error } = await this.supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', targetUserId);
+
+      if (error) throw error;
+      for (const row of data || []) {
+        const group = await this.getGroupById(row.group_id);
+        if ((group?.adminIds || []).includes(requestingUserId)) return true;
+      }
+      return false;
+    }
+
+    return false;
+  }
+
   async removeGroupMember(groupId: string, userId: string): Promise<Group | null> {
     const { error } = await this.supabase
       .from('group_members')
@@ -6444,6 +6495,56 @@ export class SupabaseService {
     if (error) throw error;
     return this.mapNoteQuiz(data);
   }
+
+  async getAdminAnalytics(days: number): Promise<AdminAnalyticsPayload> {
+    const { data, error } = await this.supabase.rpc('admin_analytics', { p_days: days });
+    if (error) throw error;
+    return data as AdminAnalyticsPayload;
+  }
+}
+
+export interface AdminAnalyticsPayload {
+  periodDays: number;
+  kpis: {
+    totalUsers: number;
+    dau: number;
+    wau: number;
+    mau: number;
+    mobileAppUsers: number;
+    webOnlyUsers: number;
+    activeGroups: number;
+  };
+  streakDistribution: Record<string, number>;
+  featureTotals: {
+    tests: number;
+    flashcards: number;
+    newFlashcards: number;
+    questions: number;
+    games: number;
+    dailyQuizzes: number;
+    studyActions: number;
+  };
+  aiByFeature: Record<string, number>;
+  platformSplit: {
+    mobileAppUsers: number;
+    webOnlyUsers: number;
+  };
+  series: Array<{
+    date: string;
+    signups: number;
+    activeUsers: number;
+    tests: number;
+    flashcards: number;
+    newFlashcards: number;
+    questions: number;
+    games: number;
+    dailyQuizzes: number;
+    groupMessages: number;
+    dmMessages: number;
+    aiEvents: number;
+    newListings: number;
+    orders: number;
+  }>;
 }
 
 // Configuration - do NOT create singleton at module level

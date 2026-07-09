@@ -101,7 +101,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           title: `${listing.title}${seoPricing ? ` — ₦${seoPricing.toLocaleString()}` : ''} — ${campusLabel} | Lantern Study`,
           description: (listing.description || `Campus marketplace listing: ${listing.title}`).slice(0, 160),
           canonicalUrl: generateListingLink(listing.id),
-          ogImage: listing.images?.[0] || 'https://lanternstudy.com/lantern-icon.png',
+          ogImage: listing.images?.[0] || 'https://lanternstudy.com/lantern-icon-v2.png',
           ogType: 'product',
           jsonLd: {
             '@context': 'https://schema.org',

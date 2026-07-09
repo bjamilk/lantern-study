@@ -8,7 +8,7 @@ interface LanternIconProps {
 /** Lantern Study app mark */
 export const LanternIcon: React.FC<LanternIconProps> = ({ className = '', size = 24 }) => (
   <img
-    src="/lantern-icon.png"
+    src="/lantern-icon-v2.png"
     alt=""
     width={size}
     height={size}

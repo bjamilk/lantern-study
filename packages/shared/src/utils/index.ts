@@ -17,4 +17,5 @@ export * from './storageUrl';
 export * from './sentryScrub';
 export * from './noteStudyContent';
 export * from './noteUpload';
+export * from './displayNames';
 export * from './uploadValidation';

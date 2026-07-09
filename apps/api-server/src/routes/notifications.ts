@@ -154,13 +154,18 @@ router.post(
 
     logger.debug('Creating notification', { targetUserId, message, link, type, requestingUserId });
 
-    const finalUserId = (await isLivePlatformAdmin(requestingUserId)) && targetUserId ? targetUserId : requestingUserId;
-
-    if (requestingUserId !== finalUserId && !(await isLivePlatformAdmin(requestingUserId))) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
+    let finalUserId = requestingUserId;
+    if (targetUserId && targetUserId !== requestingUserId) {
+      if (await isLivePlatformAdmin(requestingUserId)) {
+        finalUserId = targetUserId;
+      } else if (await supabaseService.canNotifyUser(requestingUserId, targetUserId, link)) {
+        finalUserId = targetUserId;
+      } else {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied',
+        });
+      }
     }
 
     const notification = await supabaseService.createNotification(finalUserId, {
