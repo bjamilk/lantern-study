@@ -52,6 +52,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
 
@@ -62,6 +63,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
       setDescription(group.description || '');
       setDetailsChanged(false);
       setSelectedAvatarFile(null);
+      setLinkCopied(false);
       if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
       setAvatarPreviewUrl(null);
       if (avatarFileRef.current) {
@@ -156,7 +158,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const inviteLink = group.inviteId
     ? `${window.location.origin}/invite/${group.inviteId}`
     : '';
-  const [linkCopied, setLinkCopied] = useState(false);
 
   const handleCopyLink = () => {
       if (!inviteLink) return;
