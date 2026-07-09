@@ -21,12 +21,12 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { runNoteAiSync } from '../queue/enqueue';
+import { runNoteAiSync, enqueueJob } from '../queue/enqueue';
+import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
   assertPdfSize,
   assertPresentationSize,
   buildNoteStoragePath,
-  convertPresentationToPdf,
   extractPdfTextFromBuffer,
   extractPresentationTextFromBuffer,
   assertPresentationFileName,
@@ -64,7 +64,40 @@ async function resolveNoteStudyContent(
   });
 }
 
-const previewJobsInFlight = new Set<string>();
+async function startPresentationPreviewJob(params: {
+  noteId: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName: string;
+  meta: Record<string, unknown>;
+  buffer?: Buffer;
+  extractedText?: string;
+}): Promise<void> {
+  const enqueued = await enqueueJob(
+    'notes.presentation.preview',
+    {
+      noteId: params.noteId,
+      attachmentId: params.attachmentId,
+      storagePath: params.storagePath,
+      fileName: params.fileName,
+      meta: params.meta,
+      bufferBase64: params.buffer?.toString('base64'),
+      extractedText: params.extractedText,
+    },
+    undefined
+  );
+
+  if (enqueued) return;
+
+  void runPresentationPreviewJob(supabaseService, params).catch((err) => {
+    logger.error('Presentation preview job unhandled error', {
+      noteId: params.noteId,
+      attachmentId: params.attachmentId,
+      err,
+    });
+  });
+}
+
 const PREVIEW_PROCESSING_STALE_MS = 5 * 60 * 1000;
 
 function parsePreviewStartedAt(meta: Record<string, unknown>): number | null {
@@ -92,122 +125,6 @@ function resolvePreviewStatus(meta: Record<string, unknown>): 'ready' | 'process
     return 'failed';
   }
   return 'none';
-}
-
-async function runPresentationPreviewJob(params: {
-  noteId: string;
-  attachmentId: string;
-  storagePath: string;
-  fileName: string;
-  meta: Record<string, unknown>;
-  buffer?: Buffer;
-  extractedText?: string;
-}): Promise<void> {
-  const { noteId, attachmentId, storagePath, fileName } = params;
-  let meta = { ...params.meta };
-
-  if (previewJobsInFlight.has(attachmentId)) return;
-  previewJobsInFlight.add(attachmentId);
-
-  try {
-    let buffer = params.buffer;
-    if (!buffer) {
-      const downloaded = await supabaseService.downloadNoteFile(storagePath);
-      buffer = downloaded.buffer;
-    }
-    if (/\.pptx$/i.test(fileName)) {
-      assertValidOfficeZip(buffer, fileName);
-    }
-
-    const extractedText =
-      params.extractedText ?? (await extractPresentationTextFromBuffer(buffer, fileName));
-    const studyText =
-      extractedText ||
-      `[Presentation uploaded: ${fileName}. Text extraction unavailable.]`;
-
-    const { pdf: pdfBuffer, error: conversionError, wakeMs, convertMs, totalMs } =
-      await convertPresentationToPdf(buffer, fileName, { noteId });
-
-    if (!pdfBuffer) {
-      await supabaseService.updateNoteAttachment(attachmentId, {
-        extractedText: studyText,
-        metadata: {
-          ...meta,
-          previewProcessing: false,
-          previewError: conversionError || 'Could not generate slide preview.',
-          previewFailedAt: new Date().toISOString(),
-        },
-      });
-      logger.warn('Presentation preview failed', {
-        noteId,
-        fileName,
-        wakeMs,
-        convertMs,
-        totalMs,
-        success: false,
-      });
-      return;
-    }
-
-    const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
-    await supabaseService.uploadNoteFile({
-      storagePath: previewStoragePath,
-      buffer: pdfBuffer,
-      contentType: 'application/pdf',
-    });
-    const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
-    await supabaseService.updateNoteAttachment(attachmentId, {
-      extractedText: studyText,
-      metadata: {
-        ...meta,
-        previewStoragePath,
-        previewUrl,
-        previewProcessing: false,
-        previewError: undefined,
-        previewFailedAt: undefined,
-      },
-    });
-    logger.info('Presentation preview ready', {
-      noteId,
-      fileName,
-      wakeMs,
-      convertMs,
-      totalMs,
-      success: true,
-    });
-  } catch (err) {
-    logger.error('Presentation preview job error', { noteId, attachmentId, err });
-    await supabaseService
-      .updateNoteAttachment(attachmentId, {
-        metadata: {
-          ...meta,
-          previewProcessing: false,
-          previewError: err instanceof Error ? err.message : 'Preview generation failed.',
-          previewFailedAt: new Date().toISOString(),
-        },
-      })
-      .catch(() => {});
-  } finally {
-    previewJobsInFlight.delete(attachmentId);
-  }
-}
-
-function startPresentationPreviewJob(params: {
-  noteId: string;
-  attachmentId: string;
-  storagePath: string;
-  fileName: string;
-  meta: Record<string, unknown>;
-  buffer?: Buffer;
-  extractedText?: string;
-}): void {
-  void runPresentationPreviewJob(params).catch((err) => {
-    logger.error('Presentation preview job unhandled error', {
-      noteId: params.noteId,
-      attachmentId: params.attachmentId,
-      err,
-    });
-  });
 }
 
 router.use(authMiddleware);

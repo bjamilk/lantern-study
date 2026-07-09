@@ -7,6 +7,10 @@
  */
 
 import { ApiError } from '../middleware/errorHandler';
+import {
+  incrementProviderDailyUsage,
+  syncProviderUsageFromRedis,
+} from './aiProviderUsage';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -360,13 +364,15 @@ async function chatCompletion(
   const errors: string[] = [];
 
   for (const provider of providers) {
-    if (!provider.isAvailable()) {
+    const available = await syncProviderUsageFromRedis(provider, checkAndResetCounter);
+    if (!available) {
       errors.push(`${provider.name}: unavailable (${provider.dailyUsed}/${provider.dailyLimit} used)`);
       continue;
     }
 
     try {
       const text = await provider.chat(systemPrompt, userPrompt, options);
+      await incrementProviderDailyUsage(provider.name);
       return { text, provider: provider.name };
     } catch (error: any) {
       errors.push(`${provider.name}: ${error.message}`);

@@ -9,7 +9,7 @@ import {
   isAccountDeactivated,
   isDeactivatedLifecycleRoute,
 } from '../services/accountLifecycle';
-import { isAccessTokenDenied } from '../services/tokenDenylist';
+import { isAccessTokenDenied, isTokenIssuedBeforeUserCutoff } from '../services/tokenDenylist';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { createRequestContext, type RequestContext } from '../services/dataLoaders';
 import { AuthenticatedRequest } from '../types';
@@ -121,6 +121,22 @@ export function evictAuthTokenCache(token: string): void {
   tokenCache.delete(hashToken(token));
 }
 
+async function rejectIfSessionCutoff(
+  token: string,
+  userId: string,
+  res: Response
+): Promise<boolean> {
+  if (await isTokenIssuedBeforeUserCutoff(token, userId)) {
+    res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Session has been revoked. Please sign in again.',
+      code: 'SESSION_REVOKED',
+    });
+    return true;
+  }
+  return false;
+}
+
 async function rejectIfTokenDenied(token: string, res: Response): Promise<boolean> {
   if (await isAccessTokenDenied(token)) {
     res.status(401).json({
@@ -153,6 +169,7 @@ export const jwtOnlyAuthMiddleware = async (
 
   const cached = tokenCache.get(tokenKey);
   if (cached) {
+    if (await rejectIfSessionCutoff(credential, cached.id, res)) return;
     if (await rejectIfBanned(cached.id, res)) return;
     attachUser(req, {
       id: cached.id,
@@ -167,6 +184,7 @@ export const jwtOnlyAuthMiddleware = async (
   if (supabaseService) {
     const supabaseResult = await supabaseService.verifySupabaseToken(credential);
     if (supabaseResult.isValid && supabaseResult.user) {
+      if (await rejectIfSessionCutoff(credential, supabaseResult.user.id, res)) return;
       if (await rejectIfBanned(supabaseResult.user.id, res)) return;
       tokenCache.set(tokenKey, supabaseResult.user);
       attachUser(req, {
@@ -227,6 +245,7 @@ export const authMiddleware = async (
 
     const cached = tokenCache.get(tokenKey);
     if (cached) {
+      if (await rejectIfSessionCutoff(credential, cached.id, res)) return;
       if (await rejectIfBanned(cached.id, res)) return;
       attachUser(req, {
         id: cached.id,
@@ -241,6 +260,7 @@ export const authMiddleware = async (
     if (supabaseService) {
       const supabaseResult = await supabaseService.verifySupabaseToken(credential);
       if (supabaseResult.isValid && supabaseResult.user) {
+        if (await rejectIfSessionCutoff(credential, supabaseResult.user.id, res)) return;
         if (await rejectIfBanned(supabaseResult.user.id, res)) return;
         tokenCache.set(tokenKey, supabaseResult.user);
         attachUser(req, {

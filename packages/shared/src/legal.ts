@@ -216,9 +216,9 @@ These are necessary for the Service to function. We do not use non-essential ana
 
 The mobile app stores session tokens and preferences in on-device storage (AsyncStorage), not browser cookies.
 
-## Future changes
+## Essential-only notice
 
-If we add analytics, marketing, or third-party embeds that set non-essential cookies, we will update this notice and, where required, request consent before setting those cookies.
+When you first use Lantern Study on the web or mobile app, we show a one-time notice explaining that we only use essential storage. Dismissing that notice is stored locally on your device so we do not show it again.
 
 ## Contact
 

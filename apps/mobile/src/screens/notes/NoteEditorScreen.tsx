@@ -1,25 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-
   ActivityIndicator,
-
   Alert,
-
   KeyboardAvoidingView,
-
+  Linking,
   Platform,
-
   Pressable,
-
   ScrollView,
-
   Text,
-
   TextInput,
-
   View,
-
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,6 +28,8 @@ import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
+import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
+import { useAuthStore } from '../../stores/authStore';
 
 type NavigationProp = {
 
@@ -59,7 +52,7 @@ interface Props {
 export function NoteEditorScreen({ navigation, route }: Props) {
 
   const noteId = route.params.noteId;
-
+  const { user } = useAuthStore();
   const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote } = useNotesStore();
 
   const { handleAIGenerateFlashcards, isAILoading } = useAIHandlers();
@@ -89,6 +82,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
   const [generatingCards, setGeneratingCards] = useState(false);
+  const [showCollaborators, setShowCollaborators] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -484,6 +478,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         ) : null}
 
         <Pressable
+          onPress={() => setShowCollaborators(true)}
+          className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
+          accessibilityLabel="Manage collaborators"
+        >
+          <Ionicons name="people-outline" size={20} color="#6366f1" />
+        </Pressable>
+
+        <Pressable
 
           onPress={handleDelete}
 
@@ -557,6 +559,28 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             <View className="mb-4">
               <NotePdfViewer noteId={noteId} attachment={documentAttachment} />
             </View>
+          ) : null}
+
+          {selectedNote?.youtubeVideoId ? (
+            <Pressable
+              onPress={() =>
+                void Linking.openURL(
+                  selectedNote.youtubeUrl ||
+                    `https://www.youtube.com/watch?v=${selectedNote.youtubeVideoId}`
+                )
+              }
+              className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-4 flex-row items-center gap-3"
+            >
+              <Ionicons name="logo-youtube" size={28} color="#ef4444" />
+              <View className="flex-1">
+                <Text className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  Linked YouTube video
+                </Text>
+                <Text className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+                  Tap to open in YouTube
+                </Text>
+              </View>
+            </Pressable>
           ) : null}
 
           {isDocumentNote && !documentAttachment ? (
@@ -671,7 +695,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       </KeyboardAvoidingView>
 
-
+      <NoteCollaboratorsModal
+        visible={showCollaborators}
+        noteId={noteId}
+        currentUserId={user?.id}
+        onClose={() => setShowCollaborators(false)}
+      />
 
     </SafeAreaView>
 

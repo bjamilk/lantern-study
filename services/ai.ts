@@ -247,12 +247,17 @@ async function companionRequest<T>(
     }
   }
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `Companion request failed (${response.status})`);
+  const json = await response.json().catch(() => ({}));
+  if (response.status === 202 && typeof json.jobId === 'string') {
+    const { pollApiJob } = await import('./jobPoll');
+    return pollApiJob<T>(json.jobId);
   }
 
-  return response.json();
+  if (!response.ok) {
+    throw new Error(json.error || `Companion request failed (${response.status})`);
+  }
+
+  return json as T;
 }
 
 export async function companionSendMessage(

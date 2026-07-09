@@ -3,7 +3,6 @@ import compression from 'compression';
 import { 
   securityHeaders, 
   corsConfig, 
-  rateLimiters,
   requestIdMiddleware,
   sanitizationMiddleware,
 } from '../middleware/security';
@@ -57,12 +56,7 @@ export function applyProductionMiddleware(app: Express): void {
   // Request logging
   app.use(logger.requestLogger());
   
-  // ============ RATE LIMITING ============
-  
-  if (isProduction) {
-    // General rate limit for all API routes
-    app.use('/api', rateLimiters.general);
-  }
+  // Rate limiting: see middleware/rateLimit.ts (mounted in server.ts)
   
   // ============ HEALTH CHECKS ============
   

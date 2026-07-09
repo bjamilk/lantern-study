@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
 import { getAllowedCorsOrigins } from '../utils/corsOrigins';
@@ -70,55 +69,7 @@ export const strictAuthMiddleware = async (
   }
 };
 
-// 2. Rate Limiting Configuration
-export const createRateLimiter = (options?: {
-  windowMs?: number;
-  max?: number;
-  message?: string;
-}) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
-  return rateLimit({
-    windowMs: options?.windowMs || (isProduction ? 60 * 1000 : 60 * 60 * 1000),
-    max: options?.max || (isProduction ? 100 : 10000),
-    message: { 
-      error: options?.message || 'Too many requests, please try again later',
-      code: 'RATE_LIMITED'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req: AuthenticatedRequest) => {
-      if (req.user?.userId) return req.user.userId;
-      const ip = req.ip || 'anonymous';
-      return ipKeyGenerator(ip);
-    },
-    skip: (req) => {
-      return req.path === '/health' || req.path === '/ready';
-    },
-  });
-};
-
-// Pre-configured rate limiters
-export const rateLimiters = {
-  general: createRateLimiter({ max: 100, windowMs: 60 * 1000 }),
-  auth: createRateLimiter({ 
-    max: 10, 
-    windowMs: 15 * 60 * 1000,
-    message: 'Too many login attempts, please try again later'
-  }),
-  expensive: createRateLimiter({ 
-    max: 20, 
-    windowMs: 60 * 1000,
-    message: 'Too many requests for this resource'
-  }),
-  messages: createRateLimiter({ 
-    max: 60, 
-    windowMs: 60 * 1000,
-    message: 'Sending messages too quickly'
-  }),
-};
-
-// 3. Security Headers
+// Security headers (rate limiting lives in middleware/rateLimit.ts)
 export const securityHeaders = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {

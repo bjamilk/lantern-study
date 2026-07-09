@@ -11,6 +11,38 @@ type CompanionRequestOptions = {
   trackUsage?: boolean;
 };
 
+async function pollCompanionJob<T>(
+  config: AIClientConfig,
+  jobId: string,
+  timeoutMs = 180_000
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const headers = await config.getAuthHeaders();
+    const response = await fetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
+    const payload = (await response.json().catch(() => ({}))) as {
+      data?: { status?: string; result?: T; error?: string };
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error || `Job status check failed (${response.status})`);
+    }
+    const job = payload.data ?? payload;
+    const status = (job as { status?: string }).status;
+    if (status === 'completed') {
+      const result = (job as { result?: T }).result;
+      if (result !== undefined) return result;
+      throw new Error('Companion job completed without a result.');
+    }
+    if (status === 'failed') {
+      const err = (job as { error?: string }).error;
+      throw new Error(typeof err === 'string' && err ? err : 'Companion request failed.');
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error('Companion request timed out. Try again.');
+}
+
 export function createCompanionClient(config: AIClientConfig) {
   const companionRequest = async <T>(
     endpoint: string,
@@ -34,12 +66,20 @@ export function createCompanionClient(config: AIClientConfig) {
       parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
     }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || `Companion request failed (${response.status})`);
+    const json = (await response.json().catch(() => ({}))) as {
+      jobId?: string;
+      error?: string;
+    };
+
+    if (response.status === 202 && typeof json.jobId === 'string') {
+      return pollCompanionJob<T>(config, json.jobId);
     }
 
-    return response.json() as Promise<T>;
+    if (!response.ok) {
+      throw new Error(json.error || `Companion request failed (${response.status})`);
+    }
+
+    return json as T;
   };
 
   return {

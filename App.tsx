@@ -6,6 +6,7 @@ import { useToastStore } from './stores/toastStore';
 import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
+import CookieNoticeBanner from './components/CookieNoticeBanner';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
 import { getNoteStudyContent } from '@lantern/shared';
@@ -1492,6 +1493,7 @@ export const App: React.FC = () => {
                 onCancel={globalConfirm.handleCancel}
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
+            <CookieNoticeBanner />
         </AppShell>
         </Suspense>
         </ErrorBoundary>

@@ -80,6 +80,14 @@ export class CacheService {
     return entry.expiry ? Date.now() > entry.expiry : false;
   }
 
+  private isProductionRedisRequired(): boolean {
+    return process.env.NODE_ENV === 'production' && process.env.REDIS_ENABLED === 'true';
+  }
+
+  private shouldUseMemoryFallback(): boolean {
+    return !this.isProductionRedisRequired();
+  }
+
   async get<T>(key: string): Promise<T | null> {
     const cacheKey = this.getKey(key);
 
@@ -89,11 +97,15 @@ export class CacheService {
         return data ? JSON.parse(data) : null;
       } catch (error) {
         console.error('Redis get error:', error);
-        // Fall back to memory cache
+        if (!this.shouldUseMemoryFallback()) throw error;
       }
     }
 
-    // Memory cache fallback
+    if (!this.shouldUseMemoryFallback()) {
+      return null;
+    }
+
+    // Memory cache fallback (development only)
     const entry = this.memoryCache.get(cacheKey);
     if (entry && !this.isExpired(entry)) {
       return entry.value;
@@ -118,11 +130,15 @@ export class CacheService {
         return;
       } catch (error) {
         console.error('Redis set error:', error);
-        // Fall back to memory cache
+        if (!this.shouldUseMemoryFallback()) throw error;
       }
     }
 
-    // Memory cache fallback
+    if (!this.shouldUseMemoryFallback()) {
+      return;
+    }
+
+    // Memory cache fallback (development only)
     const expiry = ttl ? Date.now() + (ttl * 1000) : undefined;
     this.memoryCache.set(cacheKey, { value, expiry });
   }

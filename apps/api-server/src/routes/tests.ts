@@ -28,8 +28,6 @@ async function awardTestPassCoins(userId: string, testId: string, score: number)
   return { walletBalance: award.walletBalance, awarded: award.awarded };
 }
 
-console.log('Loading tests.ts');
-
 const router = Router();
 
 // Initialize services (will be injected in main server)

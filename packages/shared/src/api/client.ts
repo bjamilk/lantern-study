@@ -62,12 +62,29 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       timeoutMs
     );
 
-    if (response.status === 401 && allowRetry && config.refreshAuth) {
-      const refreshed = await config.refreshAuth();
-      if (refreshed) {
-        return requestRaw<T>(endpoint, options, timeoutMs, false);
+    if (response.status === 401 && allowRetry) {
+      let authCode: string | undefined;
+      try {
+        const clone = response.clone();
+        const body = (await clone.json().catch(() => ({}))) as { code?: string };
+        authCode = body.code;
+      } catch {
+        authCode = undefined;
       }
-      config.onUnauthorized?.();
+      if (authCode === 'SESSION_REVOKED' || authCode === 'ACCOUNT_BANNED' || authCode === 'ACCOUNT_DEACTIVATED') {
+        config.onUnauthorized?.();
+        const errBody = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(errBody.message || 'Session ended. Please sign in again.');
+      }
+      if (config.refreshAuth) {
+        const refreshed = await config.refreshAuth();
+        if (refreshed) {
+          return requestRaw<T>(endpoint, options, timeoutMs, false);
+        }
+        config.onUnauthorized?.();
+      } else {
+        config.onUnauthorized?.();
+      }
     }
 
     if (!response.ok) {

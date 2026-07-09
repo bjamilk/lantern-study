@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, evictAuthTokenCache } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { denylistAccessToken } from '../services/tokenDenylist';
+import { denylistAccessToken, setUserSessionCutoff } from '../services/tokenDenylist';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -39,6 +39,8 @@ router.post(
       await denylistAccessToken(token);
       evictAuthTokenCache(token);
     }
+
+    await setUserSessionCutoff(userId);
 
     try {
       await supabaseService.getClient().auth.admin.signOut(userId, 'global');

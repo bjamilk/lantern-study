@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateCreateNotification, validatePagination } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { assertLivePlatformAdmin, isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -153,9 +154,9 @@ router.post(
 
     logger.debug('Creating notification', { targetUserId, message, link, type, requestingUserId });
 
-    const finalUserId = req.user?.isAdmin && targetUserId ? targetUserId : requestingUserId;
+    const finalUserId = (await isLivePlatformAdmin(requestingUserId)) && targetUserId ? targetUserId : requestingUserId;
 
-    if (requestingUserId !== finalUserId && !req.user?.isAdmin) {
+    if (requestingUserId !== finalUserId && !(await isLivePlatformAdmin(requestingUserId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -342,13 +343,7 @@ router.post(
       });
     }
 
-    // Check permissions (only admins can create bulk notifications)
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
+    if (!(await assertLivePlatformAdmin(req, res))) return;
 
     const createdNotifications = await supabaseService.createBulkNotifications(notifications);
 

@@ -16,6 +16,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   'notes.ai.quiz': 'ai-generation',
   'notes.ai.flashcards': 'ai-generation',
   'deck.importApkg': 'file-processing',
+  'notes.presentation.preview': 'file-processing',
   'export.userData': 'data-export',
   'cron.dataRetention': 'marketplace-alerts',
   'cron.marketplaceAlerts': 'marketplace-alerts',

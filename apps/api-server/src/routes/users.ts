@@ -9,6 +9,10 @@ import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
+import {
+  isLivePlatformAdmin,
+  isSelfOrLivePlatformAdmin,
+} from '../utils/platformAdminAuth';
 import { AuthenticatedRequest, User, Group } from '../types';
 import { dataExportRateLimit } from '../middleware/rateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
@@ -194,8 +198,7 @@ router.get(
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    const isPlatformAdmin = !!req.user?.isAdmin ||
-      (await supabaseService.isPlatformAdmin(userId));
+    const isPlatformAdmin = await isLivePlatformAdmin(userId);
 
     res.json({
       success: true,
@@ -221,7 +224,7 @@ router.get(
 
     const { userId } = req.params;
     const isOwner = requestingUserId === userId;
-    const isAdmin = !!req.user?.isAdmin;
+    const isAdmin = await isLivePlatformAdmin(requestingUserId);
 
     logger.debug('Fetching user', { userId, requestingUserId, isOwner, isAdmin });
 
@@ -265,7 +268,7 @@ router.post(
 
     logger.debug('Creating user', { userData, requestingUserId });
 
-    if (requestingUserId !== userData.id && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userData.id))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied: cannot create profile for another user',
@@ -392,7 +395,7 @@ router.put(
 
     const { userId } = req.params;
 
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -400,7 +403,7 @@ router.put(
     }
 
     let updateData = { ...req.body };
-    if (!req.user?.isAdmin) {
+    if (!(await isLivePlatformAdmin(requestingUserId))) {
       for (const field of ADMIN_ONLY_USER_FIELDS) {
         delete updateData[field];
       }
@@ -442,7 +445,7 @@ router.get(
     if (!requestingUserId) return;
 
     const { userId } = req.params;
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -545,7 +548,7 @@ router.post(
     if (!requestingUserId) return;
 
     const { userId } = req.params;
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -646,7 +649,7 @@ router.delete(
     logger.debug('Deleting user', { userId, requestingUserId });
 
     // Check permissions (users can only delete themselves or admins can delete anyone)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -662,7 +665,7 @@ router.delete(
       });
     }
 
-    if (requestingUserId !== userId && req.user?.isAdmin) {
+    if (requestingUserId !== userId && (await isLivePlatformAdmin(requestingUserId))) {
       await logAdminAction(supabaseService, {
         actorId: requestingUserId,
         action: 'user_delete',
@@ -697,7 +700,7 @@ router.get(
 
     const { userId } = req.params;
 
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -741,7 +744,7 @@ router.get(
     logger.debug('Fetching user stats', { userId, requestingUserId });
 
     // Check permissions (users can only view their own stats or admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -782,7 +785,7 @@ router.get(
     logger.debug('Fetching user groups', { userId, page, limit, requestingUserId });
 
     // Check permissions (users can only view their own groups or admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -829,7 +832,7 @@ router.get(
     logger.debug('Fetching user settings', { userId, requestingUserId });
 
     // Users can only view their own settings
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -881,7 +884,7 @@ router.put(
     logger.debug('Updating user settings', { userId, requestingUserId });
 
     // Users can only update their own settings
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',

@@ -109,6 +109,8 @@ async function initializeServices() {
 
     const { initializeAuthorizeResource, assertProductionAuthStrict } = await import('./middleware/authorizeResource');
     initializeAuthorizeResource(supabaseService);
+    const { initializePlatformAdminAuth } = await import('./utils/platformAdminAuth');
+    initializePlatformAdminAuth(supabaseService);
     assertProductionAuthStrict();
 
     // Initialize routes with services

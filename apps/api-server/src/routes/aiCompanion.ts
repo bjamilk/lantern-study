@@ -10,6 +10,8 @@ import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
 import { clientErrorMessage } from '../utils/safeError';
 import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
+import { runSyncOrEnqueue } from '../queue/enqueue';
+import { sendAsyncJobAccepted } from '../queue/respondAsync';
 
 let supabaseService: SupabaseService;
 
@@ -159,32 +161,46 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
   }
 
   try {
-    const { data: historyRows } = await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .select('role, content')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
-    const { reply, actions, provider } = await companionChat(message.trim(), history, context || {});
-
-    await logAIInference(supabaseService.getClient(), {
+    const outcome = await runSyncOrEnqueue(
+      'ai.companion.message',
+      { message: message.trim(), context: context || {} },
       userId,
-      feature: 'companion-message',
-      provider,
-      requestId: (req as any).requestId,
-    });
+      async () => {
+        const { data: historyRows } = await supabaseService.getClient()
+          .from('ai_companion_messages')
+          .select('role, content')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(20);
 
-    const now = new Date().toISOString();
-    await supabaseService.getClient()
-      .from('ai_companion_messages')
-      .insert([
-        { user_id: userId, role: 'user', content: message.trim(), created_at: now },
-        { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
-      ]);
+        const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
+        const { reply, actions, provider } = await companionChat(message.trim(), history, context || {});
 
-    res.json({ reply, actions, provider });
+        await logAIInference(supabaseService.getClient(), {
+          userId,
+          feature: 'companion-message',
+          provider,
+          requestId: (req as any).requestId,
+        });
+
+        const now = new Date().toISOString();
+        await supabaseService.getClient()
+          .from('ai_companion_messages')
+          .insert([
+            { user_id: userId, role: 'user', content: message.trim(), created_at: now },
+            { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
+          ]);
+
+        return { reply, actions, provider };
+      }
+    );
+
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+
+    res.json(outcome.result);
   } catch (err: any) {
     console.error('Companion message error:', err.message);
     res.status(503).json({ error: clientErrorMessage(err, 'AI companion is temporarily unavailable') });

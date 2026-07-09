@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { RootNavigator } from './src/navigation';
 import { useAppTheme } from './src/theme';
+import CookieNoticeBanner from './src/components/CookieNoticeBanner';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -15,6 +16,7 @@ function AppInner() {
     <>
       <RootNavigator />
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      <CookieNoticeBanner />
     </>
   );
 }

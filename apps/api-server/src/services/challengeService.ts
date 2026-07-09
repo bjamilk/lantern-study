@@ -355,7 +355,22 @@ export class ChallengeService {
       data.status = 'expired';
     }
 
-    return this.mapChallenge(data, userId);
+    const { data: participantRows } = await this.db
+      .from('challenge_participants')
+      .select('*')
+      .eq('challenge_id', challengeId);
+
+    const profileIds = [
+      data.challenger_id,
+      data.opponent_id,
+      ...(participantRows || []).map((p: { user_id: string }) => p.user_id),
+    ];
+    const profileMap = await this.fetchProfilesBatch(profileIds);
+
+    return this.mapChallenge(data, userId, {
+      profileMap,
+      participantRows: participantRows || [],
+    });
   }
 
   async acceptChallenge(challengeId: string, userId: string): Promise<GroupChallenge> {

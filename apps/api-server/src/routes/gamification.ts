@@ -6,6 +6,10 @@ import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
+import {
+  assertLivePlatformAdmin,
+  isSelfOrLivePlatformAdmin,
+} from '../utils/platformAdminAuth';
 import { canViewStudyActivity } from '@lantern/shared/settings';
 import {
   WALLET_COINS,
@@ -126,7 +130,7 @@ router.get(
     logger.debug('Fetching user achievements', { userId, page, limit, requestingUserId });
 
     // Check permissions (users can view their own achievements, admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -187,13 +191,7 @@ router.post(
       });
     }
 
-    // Check permissions (only admins can award points)
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
+    if (!(await assertLivePlatformAdmin(req, res))) return;
 
     const result = await supabaseService.awardPoints(userId, points, reason, source);
 
@@ -231,13 +229,7 @@ router.post(
       });
     }
 
-    // Check permissions (only admins can award achievements)
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
+    if (!(await assertLivePlatformAdmin(req, res))) return;
 
     const result = await supabaseService.awardAchievement(userId, achievementId);
 
@@ -266,7 +258,7 @@ router.get(
     logger.debug('Fetching user progress', { userId, requestingUserId });
 
     // Check permissions (users can view their own progress, admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -375,7 +367,7 @@ router.get(
     logger.debug('Fetching user badges', { userId, page, limit, requestingUserId });
 
     // Check permissions (users can view their own badges, admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -429,13 +421,7 @@ router.post(
       });
     }
 
-    // Check permissions (only admins can award badges)
-    if (!req.user?.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
+    if (!(await assertLivePlatformAdmin(req, res))) return;
 
     const result = await supabaseService.awardBadge(userId, badgeId);
 
@@ -492,7 +478,7 @@ router.get(
     logger.debug('Fetching user level', { userId, requestingUserId });
 
     // Check permissions (users can view their own level, admins can view anyone's)
-    if (requestingUserId !== userId && !req.user?.isAdmin) {
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',

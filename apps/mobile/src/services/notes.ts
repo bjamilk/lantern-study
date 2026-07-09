@@ -60,6 +60,7 @@ export interface StudyNote {
   sourceType?: string;
   summary?: string;
   youtubeUrl?: string;
+  youtubeVideoId?: string;
   updatedAt?: string;
   createdAt?: string;
 }
@@ -164,6 +165,30 @@ export const addNoteAttachment = (
 
 export const refreshNoteAttachmentUrl = (noteId: string, attachmentId: string) =>
   notesRequest<{ url: string; expiresIn: number }>(`/${noteId}/attachments/${attachmentId}/url`);
+
+export const fetchNoteCollaborators = (noteId: string) =>
+  notesRequest<Array<{ noteId: string; userId: string; role: string; user?: { id: string; name?: string } }>>(
+    `/${noteId}/collaborators`
+  );
+
+export const addNoteCollaborator = (
+  noteId: string,
+  collaboratorUserId: string,
+  role: 'viewer' | 'editor' = 'editor'
+) =>
+  notesRequest(`/${noteId}/collaborators`, {
+    method: 'POST',
+    body: JSON.stringify({ collaboratorUserId, role }),
+  });
+
+export const removeNoteCollaborator = (noteId: string, collaboratorUserId: string) =>
+  notesRequest(`/${noteId}/collaborators/${collaboratorUserId}`, { method: 'DELETE' });
+
+export const shareNoteWithGroup = (noteId: string, groupId: string) =>
+  notesRequest<StudyNote>(`/${noteId}/share-group`, {
+    method: 'POST',
+    body: JSON.stringify({ groupId }),
+  });
 
 export const fetchNoteAttachmentContent = async (noteId: string, attachmentId: string) => {
   const headers = await getAuthHeaders();

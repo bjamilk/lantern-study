@@ -75,6 +75,30 @@ module.exports = {
       // Health monitoring
       exp_backoff_restart_delay: 100, // Exponential backoff on restarts
     },
+    {
+      name: 'lantern-worker',
+      script: './dist/worker.js',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '1G',
+      env: {
+        NODE_ENV: 'development',
+        BULLMQ_ENABLED: 'false',
+        REDIS_ENABLED: 'false',
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        BULLMQ_ENABLED: 'true',
+        REDIS_ENABLED: 'true',
+        REDIS_URL: 'redis://localhost:6379',
+      },
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      error_file: './logs/pm2-worker-error.log',
+      out_file: './logs/pm2-worker-out.log',
+      merge_logs: true,
+    },
   ],
   
   // Deploy configuration (optional - for automated deployments)

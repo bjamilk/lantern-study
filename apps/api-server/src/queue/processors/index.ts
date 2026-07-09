@@ -11,9 +11,11 @@ import {
   enhanceFlashcard,
   summarizeNoteContent,
   generateDailyQuiz,
+  companionChat,
 } from '../../services/aiService';
 import { SupabaseService } from '../../services/supabase';
 import { parseApkgBuffer } from '../../services/apkgImport';
+import { runPresentationPreviewJob } from '../../services/presentationPreview';
 import { purgeExpiredAIAnalytics, purgeExpiredAIInferenceLogs } from '../../services/dataRetention';
 import {
   processAbandonedCheckoutReminders,
@@ -83,6 +85,45 @@ async function processAiJob(job: Job): Promise<unknown> {
       await recordInference(userId, 'enhance-flashcard', result);
       return result;
     }
+    case 'ai.companion.message': {
+      const { message, context } = job.data as {
+        message: string;
+        context?: Record<string, unknown>;
+      };
+      if (!userId || !supabaseService) {
+        throw new Error('Companion message job requires userId and supabase service');
+      }
+      const { data: historyRows } = await supabaseService.getClient()
+        .from('ai_companion_messages')
+        .select('role, content')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
+      const { reply, actions, provider } = await companionChat(
+        String(message).trim(),
+        history,
+        (context || {}) as Parameters<typeof companionChat>[2]
+      );
+      await recordInference(userId, 'companion-message', { provider });
+
+      const now = new Date().toISOString();
+      await supabaseService.getClient()
+        .from('ai_companion_messages')
+        .insert([
+          { user_id: userId, role: 'user', content: String(message).trim(), created_at: now },
+          {
+            user_id: userId,
+            role: 'assistant',
+            content: reply,
+            actions: actions.length ? actions : null,
+            created_at: new Date(Date.now() + 1).toISOString(),
+          },
+        ]);
+
+      return { reply, actions, provider };
+    }
     case 'notes.ai.summarize': {
       const { content, title, noteId } = job.data as {
         content: string;
@@ -149,6 +190,35 @@ async function processFileJob(job: Job): Promise<unknown> {
     const importData = await parseApkgBuffer(buffer);
     const importedDeck = await supabaseService.importDeck(importData, userId);
     return { success: true, data: importedDeck };
+  }
+  if (job.name === 'notes.presentation.preview') {
+    const {
+      noteId,
+      attachmentId,
+      storagePath,
+      fileName,
+      meta,
+      bufferBase64,
+      extractedText,
+    } = job.data as {
+      noteId: string;
+      attachmentId: string;
+      storagePath: string;
+      fileName: string;
+      meta: Record<string, unknown>;
+      bufferBase64?: string;
+      extractedText?: string;
+    };
+    await runPresentationPreviewJob(supabaseService, {
+      noteId,
+      attachmentId,
+      storagePath,
+      fileName,
+      meta: meta || {},
+      buffer: bufferBase64 ? Buffer.from(bufferBase64, 'base64') : undefined,
+      extractedText,
+    });
+    return { success: true, attachmentId };
   }
   throw new Error(`Unknown file job: ${job.name}`);
 }

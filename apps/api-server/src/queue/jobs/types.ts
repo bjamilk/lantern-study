@@ -33,7 +33,7 @@ export type AIJobName =
   | 'notes.ai.quiz'
   | 'notes.ai.flashcards';
 
-export type FileJobName = 'deck.importApkg';
+export type FileJobName = 'deck.importApkg' | 'notes.presentation.preview';
 
 export type ExportJobName = 'export.userData';
 

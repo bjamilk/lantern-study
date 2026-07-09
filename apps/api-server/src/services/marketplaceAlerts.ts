@@ -3,6 +3,52 @@ import { logger } from '../utils/logger';
 
 const INTERVAL_MS = parseInt(process.env.MARKETPLACE_ALERTS_INTERVAL_MS || '900000', 10);
 
+type NotificationInsert = {
+  userId: string;
+  message: string;
+  link?: string;
+  type?: string;
+  data?: Record<string, unknown>;
+};
+
+async function batchCreateNotifications(
+  supabaseService: SupabaseService,
+  items: NotificationInsert[]
+): Promise<number> {
+  if (!items.length) return 0;
+
+  const db = supabaseService.getClient();
+  const userIds = [...new Set(items.map((item) => item.userId))];
+  const { data: profiles } = await db.from('profiles').select('id, settings').in('id', userIds);
+  const settingsByUser = new Map(
+    (profiles || []).map((row) => [row.id, row.settings as Record<string, unknown> | null])
+  );
+
+  const { shouldCreateInAppNotification } = await import('../utils/userSettingsPolicy');
+  const rows = items
+    .filter((item) => {
+      const settings = settingsByUser.get(item.userId);
+      return shouldCreateInAppNotification(settings, item.type);
+    })
+    .map((item) => ({
+      user_id: item.userId,
+      message: item.message,
+      link: item.link,
+      type: item.type || 'info',
+      data: item.data || {},
+      read: false,
+    }));
+
+  if (!rows.length) return 0;
+
+  const { error } = await db.from('notifications').insert(rows);
+  if (error) {
+    logger.warn('Batch notification insert failed', { error: error.message, count: rows.length });
+    return 0;
+  }
+  return rows.length;
+}
+
 function listingMatchesFilters(
   listing: Record<string, unknown>,
   filters: Record<string, unknown>
@@ -77,10 +123,11 @@ export async function processSavedSearchAlerts(supabaseService: SupabaseService)
       }
     }
 
+    const pending: NotificationInsert[] = [];
     for (const listing of matches) {
       if (existingListingIds.has(listing.id)) continue;
-
-      const notification = await supabaseService.createNotification(search.user_id, {
+      pending.push({
+        userId: search.user_id,
         type: 'saved_search_match',
         message: `New match for "${search.name}": ${listing.title}`,
         link: `marketplace:listing:${listing.id}`,
@@ -89,8 +136,10 @@ export async function processSavedSearchAlerts(supabaseService: SupabaseService)
           listing_id: listing.id,
         },
       });
+    }
 
-      if (notification) sent += 1;
+    if (pending.length) {
+      sent += await batchCreateNotifications(supabaseService, pending);
     }
 
     await db

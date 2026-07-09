@@ -34,7 +34,10 @@ import {
 } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import { supabase } from '../../services/supabase';
-import { deleteUserAccount, exportUserData } from '../../services/api';
+import { exportUserData } from '../../services/api';
+import type { AccountLifecycleInfo } from '@lantern/shared';
+import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
+import { reactivateUserAccount } from '../../services/accountLifecycle';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
@@ -157,6 +160,10 @@ export default function SettingsScreen() {
   const [showAccessibilityModal, setShowAccessibilityModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showImportAccountModal, setShowImportAccountModal] = useState(false);
+  const [accountLifecycle, setAccountLifecycle] = useState<AccountLifecycleInfo | null>(null);
+  const [reactivatingAccount, setReactivatingAccount] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   
   // Temp values for modals
@@ -214,28 +221,23 @@ export default function SettingsScreen() {
   }, []);
 
   const handleDeleteAccount = useCallback(() => {
+    setShowDeleteAccountModal(true);
+  }, []);
+
+  const handleReactivateAccount = useCallback(async () => {
     const userId = useAuthStore.getState().user?.id;
     if (!userId) return;
-    Alert.alert(
-      'Delete or pause account',
-      'Export a backup from Settings first (uploaded PDFs are not included). On the web app you can pause for 30 days or delete permanently with your password. Mobile delete is immediate and cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete now',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteUserAccount(userId);
-              await signOut();
-            } catch {
-              Alert.alert('Error', 'Failed to delete account. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  }, [signOut]);
+    setReactivatingAccount(true);
+    try {
+      await reactivateUserAccount(userId);
+      setAccountLifecycle({ status: 'active' });
+      Alert.alert('Account reactivated', 'Welcome back to Lantern Study.');
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to reactivate account.');
+    } finally {
+      setReactivatingAccount(false);
+    }
+  }, []);
 
   const handleManualSync = useCallback(async () => {
     if (user?.id) {
@@ -310,6 +312,15 @@ export default function SettingsScreen() {
             </Text>
           )}
         </View>
+
+        {accountLifecycle?.status === 'deactivated' ? (
+          <AccountPausedBannerMobile
+            lifecycle={accountLifecycle}
+            onReactivate={() => void handleReactivateAccount()}
+            onExport={() => void handleExportData()}
+            loading={reactivatingAccount}
+          />
+        ) : null}
 
         {/* Profile Section */}
         <View style={[styles.profileSection, { backgroundColor: colors.card }]}>
@@ -920,10 +931,18 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="cloud-upload-outline"
+              iconColor="#6366f1"
+              title="Import backup"
+              subtitle="Restore notes and flashcards from export"
+              onPress={() => setShowImportAccountModal(true)}
+            />
+            <SettingItem
+              colors={colors}
               icon="trash-outline"
               iconColor="#ef4444"
-              title="Delete account"
-              subtitle="Permanent — cannot be undone"
+              title="Delete or pause account"
+              subtitle="Pause 30 days or delete with password"
               onPress={handleDeleteAccount}
             />
           </View>
@@ -993,6 +1012,19 @@ export default function SettingsScreen() {
           primaryText: '#ffffff',
         }}
       />
+
+      {user?.id ? (
+        <AccountLifecycleModals
+          userId={user.id}
+          deleteOpen={showDeleteAccountModal}
+          importOpen={showImportAccountModal}
+          onCloseDelete={() => setShowDeleteAccountModal(false)}
+          onCloseImport={() => setShowImportAccountModal(false)}
+          onSignedOut={() => void signOut()}
+          onExport={() => void handleExportData()}
+          onLifecycleChange={setAccountLifecycle}
+        />
+      ) : null}
 
       {/* Daily Goal Modal */}
       <Modal

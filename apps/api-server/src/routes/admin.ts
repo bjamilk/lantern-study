@@ -18,6 +18,8 @@ import {
 import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middleware/aiRateLimit';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+import { setUserSessionCutoff } from '../services/tokenDenylist';
+import { logger } from '../utils/logger';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -302,6 +304,15 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     });
     await invalidateBanCache(id);
 
+    if (status === 'banned') {
+      try {
+        await client.auth.admin.signOut(id, 'global');
+      } catch (signOutErr) {
+        logger.warn('Supabase global signOut failed on ban', { id, signOutErr });
+      }
+      await setUserSessionCutoff(id);
+    }
+
     res.json({ success: true, data: { id, status } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
@@ -375,6 +386,15 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
       targetType: 'user',
       targetId: id,
     });
+
+    if (isPlatformAdmin !== true) {
+      try {
+        await client.auth.admin.signOut(id, 'global');
+      } catch (signOutErr) {
+        logger.warn('Supabase global signOut failed on role revoke', { id, signOutErr });
+      }
+      await setUserSessionCutoff(id);
+    }
 
     res.json({ success: true, data: { id, is_platform_admin: isPlatformAdmin === true } });
   } catch (err: any) {

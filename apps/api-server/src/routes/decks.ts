@@ -107,6 +107,7 @@ router.post(
 router.put(
   '/:deckId',
   authMiddleware,
+  requireDeckAccess('deckId', 'edit'),
   validateDeckId,
   validateDeckUpdate,
   handleValidationErrors,
@@ -133,6 +134,7 @@ router.put(
 router.delete(
   '/:deckId',
   authMiddleware,
+  requireDeckAccess('deckId', 'owner'),
   validateDeckId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
@@ -157,6 +159,7 @@ router.delete(
 router.get(
   '/:deckId/collaborators',
   authMiddleware,
+  requireDeckAccess('deckId', 'read'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -171,6 +174,7 @@ router.get(
 router.post(
   '/:deckId/collaborators',
   authMiddleware,
+  requireDeckAccess('deckId', 'edit'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -198,6 +202,7 @@ router.post(
 router.delete(
   '/:deckId/collaborators/:userId',
   authMiddleware,
+  requireDeckAccess('deckId', 'edit'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const authUserId = requireAuthUserId(req, res);
@@ -219,6 +224,7 @@ router.delete(
 router.post(
   '/:deckId/reset',
   authMiddleware,
+  requireDeckAccess('deckId', 'edit'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -241,6 +247,7 @@ router.post(
 router.get(
   '/:deckId/export/csv',
   authMiddleware,
+  requireDeckAccess('deckId', 'read'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -328,6 +335,7 @@ router.post(
 router.get(
   '/:deckId/export',
   authMiddleware,
+  requireDeckAccess('deckId', 'read'),
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);

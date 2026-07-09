@@ -634,6 +634,7 @@ router.get(
 router.post(
   '/:groupId/read',
   authMiddleware,
+  requireGroupMember('groupId'),
   validateGroupId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
