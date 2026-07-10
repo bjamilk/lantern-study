@@ -5,6 +5,7 @@ import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStat
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { featureAccents } from '@lantern/shared/design';
 
 interface TestConfigModalProps {
   isOpen: boolean;
@@ -317,11 +318,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   if (mode === 'study') {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain" role="dialog" aria-modal="true" aria-labelledby="test-config-study-title">
-        <div ref={dialogRef} className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-t-2xl sm:rounded-lg shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4 border-blue-500">
+        <div ref={dialogRef} className="bg-lantern-surface p-4 sm:p-6 rounded-t-2xl sm:rounded-lantern-xl shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4" style={{ borderTopColor: featureAccents.groups }}>
           <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
-            <h2 id="test-config-study-title" className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center min-w-0">
+            <h2 id="test-config-study-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
               <span className="text-2xl mr-2 shrink-0">📚</span>
-              <AcademicCapIcon className="w-6 h-6 mr-2 text-blue-500 shrink-0" />
+              <AcademicCapIcon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
               <span className="truncate">Configure Study for "{group.name}"</span>
             </h2>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">
@@ -541,11 +542,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain" role="dialog" aria-modal="true" aria-labelledby="test-config-modal-title">
-      <div ref={dialogRef} className={`bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-t-2xl sm:rounded-lg shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4 ${mode === 'test' ? 'border-purple-500' : 'border-green-500'}`}>
+      <div ref={dialogRef} className="bg-lantern-surface p-4 sm:p-6 rounded-t-2xl sm:rounded-lantern-xl shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4" style={{ borderTopColor: featureAccents.groups }}>
         <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
-          <h2 id="test-config-modal-title" className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center min-w-0">
+          <h2 id="test-config-modal-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
             {mode === 'test' && <span className="text-2xl mr-2 shrink-0">📝</span>}
-            <Icon className={`w-6 h-6 mr-2 shrink-0 ${mode === 'test' ? 'text-purple-500' : 'text-green-500'}`} />
+            <Icon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
             <span className="truncate">{mode === 'test' ? `Configure Test for "${group.name}"` : getModalTitle()}</span>
           </h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">

@@ -350,7 +350,7 @@ export default function TestConfigModal({
               <Ionicons 
                 name={isStudyMode ? 'bulb' : 'timer'} 
                 size={20} 
-                color={isStudyMode ? '#10b981' : '#6366f1'} 
+                color={isStudyMode ? '#10b981' : '#10b981'} 
               />
               <Text style={styles.infoText}>
                 {isStudyMode 
@@ -531,7 +531,7 @@ export default function TestConfigModal({
             {onSavePreset ? (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Ionicons name="bookmark" size={20} color="#6366f1" />
+                  <Ionicons name="bookmark" size={20} color="#10b981" />
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>Presets</Text>
                 </View>
                 {presets.length > 0 ? (
@@ -791,7 +791,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#6366f120',
+    backgroundColor: '#10b98120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -822,10 +822,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 14,
-    backgroundColor: '#6366f115',
+    backgroundColor: '#10b98115',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#6366f130',
+    borderColor: '#10b98130',
     marginBottom: 24,
   },
   infoBoxStudy: {
@@ -856,7 +856,7 @@ const styles = StyleSheet.create({
   questionCount: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#6366f1',
+    color: '#10b981',
   },
   availableHint: {
     fontSize: 12,
@@ -966,8 +966,8 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   quickSelectButtonActive: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
   },
   quickSelectText: {
     fontSize: 14,
@@ -1062,7 +1062,7 @@ const styles = StyleSheet.create({
   advancedToggleText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6366f1',
+    color: '#10b981',
   },
   toggleSection: {
     flexDirection: 'row',
@@ -1162,7 +1162,7 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#10b981',
     alignItems: 'center',
     justifyContent: 'center',
   },

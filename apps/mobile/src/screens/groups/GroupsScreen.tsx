@@ -16,7 +16,9 @@ import { useGroupStore, type Group } from '../../stores/groupStore';
 import { Avatar, Button, ScreenHeader } from '../../components/ui';
 import NewDirectMessageModal from '../../components/NewDirectMessageModal';
 import { useGroupHandlers } from '../../hooks/useGroupHandlers';
+import { featureAccents } from '@lantern/shared/design';
 import type { ChatStackParamList } from '../../navigation/types';
+import { useTheme } from '../../theme';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
 
@@ -58,17 +60,22 @@ function ChatRow({
   onToggleExpand?: () => void;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   return (
     <View
-      style={{ paddingLeft: 16 + nestingLevel * 20 }}
-      className="flex-row items-center pr-4 py-3.5 border-b border-slate-100 dark:border-slate-800"
+      style={{
+        paddingLeft: 16 + nestingLevel * 20,
+        borderLeftWidth: nestingLevel > 0 ? 3 : 0,
+        borderLeftColor: nestingLevel > 0 ? `${featureAccents.groups}55` : 'transparent',
+      }}
+      className="flex-row items-center pr-4 py-3.5 border-b border-lantern-border"
     >
       {hasChildren ? (
         <Pressable onPress={onToggleExpand} hitSlop={8} className="mr-1 p-1">
           <Ionicons
             name={isExpanded ? 'chevron-down' : 'chevron-forward'}
             size={16}
-            color="#94a3b8"
+            color={colors.textTertiary}
           />
         </Pressable>
       ) : nestingLevel > 0 ? (
@@ -80,27 +87,30 @@ function ChatRow({
       >
       <View className="relative mr-3">
         {isDm ? (
-          <View className="w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-700 items-center justify-center">
-            <Ionicons name="person" size={20} color="#6366f1" />
+          <View
+            className="w-11 h-11 rounded-full items-center justify-center"
+            style={{ backgroundColor: colors.backgroundSecondary }}
+          >
+            <Ionicons name="person" size={20} color={colors.primary} />
           </View>
         ) : (
           <Avatar name={name} size={44} />
         )}
         {unread && unread > 0 ? (
-          <View className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 items-center justify-center">
+          <View className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
             <Text className="text-[10px] font-bold text-white">{unread > 99 ? '99+' : unread}</Text>
           </View>
         ) : null}
       </View>
       <View className="flex-1 min-w-0">
         <View className="flex-row items-center justify-between gap-2">
-          <Text className="text-base font-semibold text-slate-900 dark:text-slate-100 flex-1" numberOfLines={1}>
+          <Text className="text-base font-semibold text-lantern-text flex-1" numberOfLines={1}>
             {name}
           </Text>
-          {time ? <Text className="text-xs text-slate-400 shrink-0">{time}</Text> : null}
+          {time ? <Text className="text-xs text-lantern-text-tertiary shrink-0">{time}</Text> : null}
         </View>
         {preview ? (
-          <Text className="text-sm text-slate-500 dark:text-slate-400 mt-0.5" numberOfLines={1}>
+          <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
             {preview}
           </Text>
         ) : null}

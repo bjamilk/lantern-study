@@ -55,7 +55,7 @@ export function MoreSheet({ visible, onClose, items, theme, onToggleTheme, lowDa
                 {item.label}
               </Text>
               {item.badge ? (
-                <View className="bg-red-500 rounded-full min-w-[20px] h-5 px-1 items-center justify-center">
+                <View className="bg-lantern-error rounded-full min-w-[20px] h-5 px-1 items-center justify-center">
                   <Text className="text-white text-xs font-bold">{item.badge}</Text>
                 </View>
               ) : null}

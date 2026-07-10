@@ -434,14 +434,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     const totalArchived = archivedTopLevelGroups.length + archivedDmThreads.length;
 
     return (
-      <div className="flex-1 flex flex-col bg-gradient-to-br from-slate-50 to-indigo-50/30 dark:from-slate-900 dark:to-indigo-950/20">
+      <div className="flex-1 flex flex-col bg-lantern-background">
         {/* Desktop placeholder */}
         <div className="hidden md:flex flex-1 flex-col items-center justify-center p-8 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center mb-6">
-            <ChatBubbleLeftRightIcon className="w-10 h-10 text-indigo-500" />
+          <div className="w-20 h-20 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-6">
+            <ChatBubbleLeftRightIcon className="w-10 h-10 text-lantern-primary" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Welcome to Lantern Study!</h2>
-          <p className="text-slate-500 dark:text-slate-400 max-w-sm">
+          <h2 className="text-xl font-bold text-lantern-text mb-2">Welcome to Lantern Study!</h2>
+          <p className="text-lantern-text-secondary max-w-sm">
             Select a conversation from the sidebar to start collaborating, or create a new group.
           </p>
         </div>
@@ -449,16 +449,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {/* Mobile group list */}
         <div className="md:hidden flex-1 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">Chats</h1>
+          <div className="flex items-center justify-between px-4 py-3 bg-lantern-surface border-b border-lantern-border">
+            <h1 className="text-lg font-bold text-lantern-text">Chats</h1>
             <div className="flex items-center gap-2">
               {onOpenNewDmModal && (
-                <button onClick={onOpenNewDmModal} className="p-2 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="New message">
+                <button onClick={onOpenNewDmModal} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New message">
                   <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" />
                 </button>
               )}
               {onCreateGroup && (
-                <button onClick={onCreateGroup} className="p-2 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700" title="New group">
+                <button onClick={onCreateGroup} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New group">
                   <PlusCircleIcon className="w-5 h-5" />
                 </button>
               )}
@@ -469,19 +469,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div className="flex-1 overflow-y-auto">
             {activeTopLevelGroups.length === 0 && activeDmThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center mb-4">
-                  <UserGroupIcon className="w-8 h-8 text-indigo-500" />
+                <div className="w-16 h-16 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-4">
+                  <UserGroupIcon className="w-8 h-8 text-lantern-primary" />
                 </div>
-                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No conversations yet</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Create a group or start a direct message to begin.</p>
+                <h3 className="text-base font-semibold text-lantern-text mb-1">No conversations yet</h3>
+                <p className="text-sm text-lantern-text-secondary mb-4">Create a group or start a direct message to begin.</p>
                 {onCreateGroup && (
-                  <button onClick={onCreateGroup} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
+                  <button onClick={onCreateGroup} className="px-4 py-2 min-h-[44px] bg-lantern-primary text-white rounded-lantern text-sm font-medium hover:bg-lantern-primary-dark transition-colors">
                     Create Group
                   </button>
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="divide-y divide-lantern-border">
                 {/* DM threads */}
                 {activeDmThreads.map(thread => (
                   <GroupListItem
@@ -500,7 +500,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 {/* Archived section (groups + DMs) */}
                 {totalArchived > 0 && (
                   <>
-                    <div className="px-4 py-2 text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider bg-slate-50 dark:bg-slate-900">
+                    <div className="px-4 py-2 text-xs font-semibold text-lantern-text-tertiary uppercase tracking-wider bg-lantern-background-secondary">
                       Archived ({totalArchived})
                     </div>
                     {archivedDmThreads.map(thread => (
@@ -580,14 +580,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const questionCount = visibleMessages.filter(m => m.questionType).length;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background">
       {/* Header — fixed at top */}
       <div className="flex-shrink-0 z-20 relative">
-        <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-lantern-surface/90 backdrop-blur-md border-b border-lantern-border">
           <div className="flex items-center min-w-0 gap-3">
             {/* Mobile back button */}
             {onBack && (
-              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 relative z-20" aria-label="Back to chats">
+              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label="Back to chats">
                 <ArrowLeftIcon className="w-5 h-5" />
               </button>
             )}
@@ -604,8 +604,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               )}
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-semibold truncate text-slate-900 dark:text-slate-100" title={name}>{name}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate" title={description}>
+              <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
+              <p className="text-xs text-lantern-text-secondary truncate" title={description}>
                 {isArchived ? <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span> : description}
               </p>
             </div>
@@ -617,7 +617,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <div className="flex items-center gap-1 mr-2">
                 <button
                   onClick={onOpenQuestionModal}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 rounded-lg transition-colors duration-150"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Submit question"
                   title="Submit Question"
                 >
@@ -626,7 +626,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </button>
                 <button
                   onClick={onOpenTestConfigModal}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 rounded-lg transition-colors duration-150"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Take a test"
                   title="Take a Test"
                 >
@@ -635,7 +635,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </button>
                 <button
                   onClick={onOpenStudyConfigModal}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400 rounded-lg transition-colors duration-150"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Study mode"
                   title="Study Mode"
                 >
@@ -645,7 +645,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={handleSummarizeGroup}
                   disabled={isSummarizingChat}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-purple-50 hover:text-purple-600 dark:hover:bg-purple-900/30 dark:hover:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors duration-150"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lantern transition-colors duration-200"
                   aria-label="Summarize group chat with AI"
                   title="AI Summary"
                 >
@@ -660,7 +660,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="p-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                 aria-haspopup="true"
                 aria-expanded={isDropdownOpen}
                 aria-label="Chat options"
@@ -668,13 +668,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <EllipsisVerticalIcon className="w-5 h-5" />
               </button>
               {isDropdownOpen && isGroup && group && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl ring-1 ring-slate-200 dark:ring-slate-700 z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
                   <button
                     onClick={() => handleDropdownAction(onOpenGroupInfoModal)}
-                    className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-2.5 transition-colors duration-150"
+                    className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
                     role="menuitem"
                   >
-                    <UserGroupIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                    <UserGroupIcon className="w-4 h-4 text-lantern-text-tertiary" />
                     Group Info & Members
                   </button>
                   {isArchived ? (
@@ -690,37 +690,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     <>
                       <button
                         onClick={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                        className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-2.5 transition-colors duration-150"
+                        className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
                         role="menuitem"
                       >
-                        <PlusCircleIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                        <PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />
                         Create Sub-group
                       </button>
-                      <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
+                      <div className="border-t border-lantern-border my-1" />
                       {/* Mobile-only study actions (hidden on md+ where toolbar shows) */}
                       <div className="md:hidden">
                         <button
                           onClick={() => handleDropdownAction(onOpenQuestionModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-2.5 transition-colors duration-150"
+                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
                           role="menuitem"
                         >
-                          <PencilSquareIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                          <PencilSquareIcon className="w-4 h-4 text-lantern-text-tertiary" />
                           Submit New Question
                         </button>
                         <button
                           onClick={() => handleDropdownAction(onOpenTestConfigModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-2.5 transition-colors duration-150"
+                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
                           role="menuitem"
                         >
-                          <QuestionMarkCircleIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                          <QuestionMarkCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />
                           Take a Test
                         </button>
                         <button
                           onClick={() => handleDropdownAction(onOpenStudyConfigModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 flex items-center gap-2.5 transition-colors duration-150"
+                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
                           role="menuitem"
                         >
-                          <AcademicCapIcon className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                          <AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" />
                           Study Mode
                         </button>
                       </div>
@@ -743,7 +743,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         <SparklesIcon className="w-4 h-4" />
                         {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
                       </button>
-                      <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
+                      <div className="border-t border-lantern-border my-1" />
                       <button
                         onClick={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
                         className="w-full text-left px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2.5 transition-colors duration-150"
@@ -757,7 +757,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               )}
               {isDropdownOpen && !isGroup && chat && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl ring-1 ring-slate-200 dark:ring-slate-700 z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
                   {(chat as any).isArchived ? (
                     <button
                       onClick={() => {

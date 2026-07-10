@@ -38,6 +38,8 @@ export * from './sync';
 // Design tokens
 export * from './design';
 
+export * from './notifications';
+
 // Legal documents & URLs (single file — Metro-friendly)
 export * from './legal';
 export * from './auth';

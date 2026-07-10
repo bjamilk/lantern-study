@@ -40,7 +40,7 @@ export default function SavingsGoalsScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title="Savings goals" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerClassName="px-4 pb-8 gap-3">
         <Card className="p-4 gap-3">

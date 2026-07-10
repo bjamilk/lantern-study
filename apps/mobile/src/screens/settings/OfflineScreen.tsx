@@ -26,6 +26,9 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useGroupStore } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
+import { useNetworkStatus } from '../../hooks';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 // Question type options
 const QUESTION_TYPES = [
@@ -41,6 +44,15 @@ export default function OfflineScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
+  const network = useNetworkStatus();
+  const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
+  const connectionStatus = getConnectionStatus({
+    isOnline: network.isConnected,
+    lowDataMode,
+    pendingSyncCount: pendingResults.filter(r => !r.synced).length,
+    isSyncing,
+    lastSyncedAt: lastSyncAt,
+  });
   
   // Download options modal state
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -317,19 +329,24 @@ export default function OfflineScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#6366f1"
+            tintColor={colors.primary}
           />
         }
       >
         {/* Storage Status */}
-        <View style={styles.storageCard}>
+        <View style={[styles.storageCard, { borderLeftColor: featureAccents.offline, backgroundColor: colors.card }]}>
           <View style={styles.storageHeader}>
-            <Ionicons name="folder" size={24} color="#6366f1" />
+            <Ionicons name="folder" size={24} color={featureAccents.offline} />
             <View style={styles.storageInfo}>
-              <Text style={styles.storageTitle}>Offline Storage</Text>
-              <Text style={styles.storageSize}>
-                {formatSize(totalStorageUsed)} used
+              <Text style={[styles.storageTitle, { color: colors.text }]}>Offline Storage</Text>
+              <Text style={[styles.storageSize, { color: colors.textSecondary }]}>
+                {formatSize(totalStorageUsed)} used · {connectionStatus.shortLabel}
               </Text>
+              {lowDataMode ? (
+                <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+                  {syncCopy.savedLocally}
+                </Text>
+              ) : null}
             </View>
           </View>
           
@@ -371,7 +388,7 @@ export default function OfflineScreen() {
             <Ionicons 
               name="download" 
               size={18} 
-              color={selectedTab === 'downloads' ? '#6366f1' : '#9ca3af'} 
+              color={selectedTab === 'downloads' ? colors.primary : colors.textTertiary} 
             />
             <Text style={[
               styles.tabText,
@@ -388,7 +405,7 @@ export default function OfflineScreen() {
             <Ionicons 
               name="time" 
               size={18} 
-              color={selectedTab === 'pending' ? '#6366f1' : '#9ca3af'} 
+              color={selectedTab === 'pending' ? colors.primary : colors.textTertiary} 
             />
             <Text style={[
               styles.tabText,
@@ -767,10 +784,10 @@ const styles = StyleSheet.create({
   },
   // Storage Card
   storageCard: {
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderLeftWidth: 3,
   },
   storageHeader: {
     flexDirection: 'row',

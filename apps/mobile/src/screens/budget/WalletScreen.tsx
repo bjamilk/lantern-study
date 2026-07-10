@@ -30,13 +30,13 @@ export default function WalletScreen() {
   }, [userId, loadWalletBalance]);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title="Study wallet" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerClassName="px-4 pb-8">
         <Card className="p-6 items-center mb-4">
-          <Text className="text-sm text-slate-500">Lantern coins</Text>
-          <Text className="text-4xl font-bold text-indigo-600 mt-1">{walletBalance}</Text>
-          <Text className="text-xs text-slate-400 mt-2 text-center">
+          <Text className="text-sm text-lantern-text-secondary">Lantern coins</Text>
+          <Text className="text-4xl font-bold text-teal-600 mt-1">{walletBalance}</Text>
+          <Text className="text-xs text-lantern-text-tertiary mt-2 text-center">
             Earn coins by studying and saving smart. Spend 50 coins on a streak freeze.
           </Text>
         </Card>

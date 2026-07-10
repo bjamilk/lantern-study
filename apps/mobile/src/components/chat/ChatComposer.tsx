@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
+import { featureAccents } from '@lantern/shared/design';
 
 interface ChatComposerProps {
   value: string;
@@ -44,18 +45,21 @@ export function ChatComposer({
   };
 
   return (
-    <View className="flex-row items-end gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+    <View
+      className="flex-row items-end gap-2 px-3 py-2 border-t border-lantern-border bg-lantern-surface"
+      style={{ borderTopColor: colors.border }}
+    >
       {onAttachImage ? (
         <Pressable
           onPress={() => void pickImage()}
           disabled={attaching || sending}
-          className="p-2 mb-0.5"
+          className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center"
           accessibilityLabel="Attach image"
         >
           {attaching ? (
-            <ActivityIndicator size="small" color="#6366f1" />
+            <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            <Ionicons name="image-outline" size={24} color="#6366f1" />
+            <Ionicons name="image-outline" size={24} color={featureAccents.groups} />
           )}
         </Pressable>
       ) : null}
@@ -65,7 +69,12 @@ export function ChatComposer({
         placeholder={placeholder}
         placeholderTextColor={colors.inputPlaceholder}
         multiline
-        className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100"
+        className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
+        style={{
+          borderColor: colors.inputBorder,
+          backgroundColor: colors.inputBackground,
+          color: colors.inputText,
+        }}
       />
       <Button size="sm" loading={sending} disabled={!value.trim()} onPress={onSend}>
         Send

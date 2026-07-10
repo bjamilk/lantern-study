@@ -26,6 +26,8 @@ import {
 } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
+import { FeatureHero } from '../../components/ui';
+import { featureAccents } from '@lantern/shared/design';
 
 const { width } = Dimensions.get('window');
 
@@ -134,21 +136,33 @@ export default function BudgetScreen() {
   }, [expensesByCategory]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.title, { color: colors.text }]}>Campus Pocket</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[styles.settingsButton, { backgroundColor: colors.card }]}
-          onPress={() => navigation.navigate('SetBudget')}
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <View className="px-4 pt-2">
+        <FeatureHero
+          title="Campus Pocket"
+          subtitle={new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          accentColor={featureAccents.budget}
+          right={
+            <TouchableOpacity
+              className="p-2 rounded-xl bg-lantern-primary-background min-w-[44px] min-h-[44px] items-center justify-center"
+              onPress={() => navigation.navigate('SetBudget')}
+            >
+              <Ionicons name="settings-outline" size={22} color={featureAccents.budget} />
+            </TouchableOpacity>
+          }
         >
-          <Ionicons name="settings-outline" size={22} color={colors.text} />
-        </TouchableOpacity>
+          <View className="flex-row flex-wrap gap-2">
+            <View className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30">
+              <Text className="text-xs font-medium text-lantern-success">Income {formatCurrency(monthlyIncome)}</Text>
+            </View>
+            <View className="px-2.5 py-1 rounded-full bg-lantern-accent-background">
+              <Text className="text-xs font-medium text-lantern-accent">Spent {formatCurrency(monthlyExpenses)}</Text>
+            </View>
+            <View className="px-2.5 py-1 rounded-full bg-lantern-primary-background">
+              <Text className="text-xs font-medium text-lantern-primary">Net {formatCurrency(netAmount)}</Text>
+            </View>
+          </View>
+        </FeatureHero>
       </View>
 
       <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
@@ -161,12 +175,12 @@ export default function BudgetScreen() {
             <Ionicons
               name={tab.icon}
               size={16}
-              color={activeTab === tab.key ? '#6366f1' : colors.textSecondary}
+              color={activeTab === tab.key ? featureAccents.budget : colors.textSecondary}
             />
             <Text
               style={[
                 styles.tabLabel,
-                { color: activeTab === tab.key ? '#6366f1' : colors.textSecondary },
+                { color: activeTab === tab.key ? featureAccents.budget : colors.textSecondary },
               ]}
             >
               {tab.label}
@@ -182,8 +196,8 @@ export default function BudgetScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#6366f1"
-            colors={['#6366f1']}
+            tintColor={featureAccents.budget}
+            colors={[featureAccents.budget]}
           />
         }
       >
@@ -307,7 +321,7 @@ export default function BudgetScreen() {
               style={[styles.menuRow, { borderBottomColor: colors.border }]}
               onPress={() => navigation.navigate(item.route)}
             >
-              <Ionicons name={item.icon as any} size={20} color="#6366f1" />
+              <Ionicons name={item.icon as any} size={20} color={featureAccents.budget} />
               <Text style={[styles.menuRowText, { color: colors.text }]}>{item.label}</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </TouchableOpacity>

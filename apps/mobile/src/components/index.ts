@@ -6,7 +6,6 @@ export { DailyQuestsWidget } from './DailyQuestsWidget';
 export { DailyQuizWidget } from './DailyQuizWidget';
 
 // Legacy modals (StyleSheet + useTheme)
-export { default as NotificationModal } from './NotificationModal';
 export { default as QuestionModal } from './QuestionModal';
 export { default as TestConfigModal } from './TestConfigModal';
 export { default as TestAnalysisModal } from './TestAnalysisModal';

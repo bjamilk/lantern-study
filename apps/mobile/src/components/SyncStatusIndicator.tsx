@@ -2,7 +2,7 @@
  * Sync Status Indicator
  * Shows sync status and pending changes in the UI
  */
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,48 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getConnectionStatus, featureAccents } from '@lantern/shared/design';
 import { useSyncStatus, useNetworkStatus } from '../hooks';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme } from '../theme';
 
 interface SyncStatusIndicatorProps {
   compact?: boolean;
   showLabel?: boolean;
   onPress?: () => void;
+}
+
+function statusColor(state: string): string {
+  switch (state) {
+    case 'offline':
+      return featureAccents.offline;
+    case 'syncing':
+    case 'lowData':
+      return featureAccents.offline;
+    case 'stale':
+      return '#94a3b8';
+    default:
+      return '#22c55e';
+  }
+}
+
+function statusIcon(
+  icon: 'wifi' | 'wifi-off' | 'sync' | 'signal' | 'clock',
+  isSyncing: boolean
+): keyof typeof Ionicons.glyphMap {
+  if (isSyncing) return 'sync';
+  switch (icon) {
+    case 'wifi-off':
+      return 'cloud-offline';
+    case 'sync':
+      return 'cloud-upload';
+    case 'signal':
+      return 'cellular';
+    case 'clock':
+      return 'time';
+    default:
+      return 'cloud-done';
+  }
 }
 
 export function SyncStatusIndicator({
@@ -27,55 +62,41 @@ export function SyncStatusIndicator({
 }: SyncStatusIndicatorProps) {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
   const { colors } = useTheme();
 
-  // Determine status
-  const isOffline = !network.isConnected;
+  const status = useMemo(
+    () =>
+      getConnectionStatus({
+        isOnline: network.isConnected,
+        lowDataMode,
+        pendingSyncCount: sync.pendingCount,
+        isSyncing: sync.isSyncing,
+      }),
+    [network.isConnected, lowDataMode, sync.pendingCount, sync.isSyncing]
+  );
+
+  const color = statusColor(status.state);
   const hasPending = sync.pendingCount > 0;
-  const isSyncing = sync.isSyncing;
-
-  // Status color
-  const getStatusColor = () => {
-    if (isOffline) return '#ef4444'; // red
-    if (isSyncing) return '#f59e0b'; // amber
-    if (hasPending) return '#f59e0b'; // amber
-    return '#22c55e'; // green
-  };
-
-  // Status icon
-  const getStatusIcon = () => {
-    if (isOffline) return 'cloud-offline';
-    if (isSyncing) return 'sync';
-    if (hasPending) return 'cloud-upload';
-    return 'cloud-done';
-  };
-
-  // Status text
-  const getStatusText = () => {
-    if (isOffline) return 'Offline';
-    if (isSyncing) return 'Syncing...';
-    if (hasPending) return `${sync.pendingCount} pending`;
-    return 'Synced';
-  };
 
   const content = (
-    <View style={[styles.container, compact && styles.containerCompact]}>
-      {isSyncing ? (
-        <ActivityIndicator size="small" color={getStatusColor()} />
+    <View style={[styles.container, compact && styles.containerCompact, { backgroundColor: `${color}15` }]}>
+      {sync.isSyncing ? (
+        <ActivityIndicator size="small" color={color} />
       ) : (
         <Ionicons
-          name={getStatusIcon() as any}
+          name={statusIcon(status.icon, sync.isSyncing)}
           size={compact ? 16 : 20}
-          color={getStatusColor()}
+          color={color}
         />
       )}
       {showLabel && !compact && (
-        <Text style={[styles.label, { color: getStatusColor() }]}>
-          {getStatusText()}
+        <Text style={[styles.label, { color: compact ? colors.textSecondary : color }]}>
+          {status.shortLabel}
         </Text>
       )}
-      {hasPending && !isSyncing && !compact && (
-        <View style={[styles.badge, { backgroundColor: getStatusColor() }]}>
+      {hasPending && !sync.isSyncing && !compact && (
+        <View style={[styles.badge, { backgroundColor: color }]}>
           <Text style={styles.badgeText}>{sync.pendingCount}</Text>
         </View>
       )}
@@ -93,35 +114,31 @@ export function SyncStatusIndicator({
   return content;
 }
 
-// Mini indicator for header/tab bar
 export function SyncDot() {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
 
-  const isOffline = !network.isConnected;
-  const hasPending = sync.pendingCount > 0;
-  const isSyncing = sync.isSyncing;
+  const status = getConnectionStatus({
+    isOnline: network.isConnected,
+    lowDataMode,
+    pendingSyncCount: sync.pendingCount,
+    isSyncing: sync.isSyncing,
+  });
 
-  if (!isOffline && !hasPending && !isSyncing) {
+  if (status.state === 'online') {
     return null;
   }
 
-  const getColor = () => {
-    if (isOffline) return '#ef4444';
-    if (isSyncing) return '#f59e0b';
-    return '#f59e0b';
-  };
+  const color = statusColor(status.state);
 
   return (
-    <View style={[styles.dot, { backgroundColor: getColor() }]}>
-      {isSyncing && (
-        <ActivityIndicator size={8} color="#fff" />
-      )}
+    <View style={[styles.dot, { backgroundColor: color }]}>
+      {sync.isSyncing && <ActivityIndicator size={8} color="#fff" />}
     </View>
   );
 }
 
-// Full sync status banner
 export function SyncBanner({
   onSyncPress,
 }: {
@@ -129,19 +146,24 @@ export function SyncBanner({
 }) {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
 
-  const isOffline = !network.isConnected;
-  const hasPending = sync.pendingCount > 0;
+  const status = getConnectionStatus({
+    isOnline: network.isConnected,
+    lowDataMode,
+    pendingSyncCount: sync.pendingCount,
+    isSyncing: sync.isSyncing,
+  });
 
-  if (!isOffline && !hasPending) {
+  if (status.state === 'online') {
     return null;
   }
 
+  const isOffline = status.state === 'offline';
+  const bannerColor = isOffline ? featureAccents.offline : featureAccents.offline;
+
   return (
-    <View style={[
-      styles.banner,
-      isOffline ? styles.bannerOffline : styles.bannerPending
-    ]}>
+    <View style={[styles.banner, { backgroundColor: bannerColor }]}>
       <View style={styles.bannerContent}>
         <Ionicons
           name={isOffline ? 'cloud-offline' : 'cloud-upload'}
@@ -154,7 +176,7 @@ export function SyncBanner({
             : `${sync.pendingCount} changes waiting to sync`}
         </Text>
       </View>
-      {!isOffline && hasPending && onSyncPress && (
+      {!isOffline && sync.pendingCount > 0 && onSyncPress && (
         <TouchableOpacity onPress={onSyncPress} style={styles.bannerButton}>
           <Text style={styles.bannerButtonText}>Sync Now</Text>
         </TouchableOpacity>
@@ -170,7 +192,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.05)',
   },
   containerCompact: {
     paddingHorizontal: 8,
@@ -209,12 +230,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 10,
-  },
-  bannerOffline: {
-    backgroundColor: '#ef4444',
-  },
-  bannerPending: {
-    backgroundColor: '#f59e0b',
   },
   bannerContent: {
     flexDirection: 'row',

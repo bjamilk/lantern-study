@@ -187,7 +187,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                         <div className="relative">
                             {isMoreActive ? <EllipsisHorizontalIconSolid className="w-6 h-6" /> : <EllipsisHorizontalIcon className="w-6 h-6" />}
                             {unreadNotificationCount > 0 && (
-                                <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                                <span className="absolute -top-1 -right-2 bg-lantern-error text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                                     {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
                                 </span>
                             )}
@@ -208,7 +208,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                                             <div className="relative">
                                                 <item.icon className="w-5 h-5" />
                                                 {'badge' in item && (item as { badge?: number }).badge! > 0 && (
-                                                    <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
+                                                    <span className="absolute -top-1.5 -right-2 bg-lantern-error text-white text-[9px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
                                                         {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
                                                     </span>
                                                 )}

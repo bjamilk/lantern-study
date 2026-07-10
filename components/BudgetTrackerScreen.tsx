@@ -9,6 +9,9 @@ import {
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
+import { FeatureHero, StatChip } from './ui';
+import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
+import { featureAccents } from '@lantern/shared/design';
 
 type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
 
@@ -144,7 +147,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
     }
     const ctx = chartRef.current.getContext('2d');
     if (!ctx || expenseByCategory.length === 0) return;
-    const colors = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#06b6d4', '#f97316', '#ef4444', '#14b8a6', '#a855f7', '#64748b', '#e11d48', '#22c55e'];
+    const colors = ['#14b8a6', '#059669', '#4f46e5', '#d97706', '#8b5cf6', '#0ea5e9', '#dc2626', '#6366f1', '#f43f5e', '#64748b'];
 
     let active = true;
     let localChartInstance: ChartType | null = null;
@@ -206,52 +209,54 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
         </div>
       )}
       {/* ─── HEADER ─── */}
-      <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 px-5 py-5 md:px-8 shrink-0">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
-              <WalletIcon className="w-7 h-7" /> Campus Pocket
-            </h1>
-            <p className="text-white/85 text-sm mt-0.5">{monthName}</p>
-          </div>
-          <div className="flex gap-2">
-            {onOpenWallet && (
-              <button onClick={onOpenWallet} className="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
-                <SparklesIcon className="w-4 h-4" /> {walletBalance} coins
+      <div className="shrink-0 px-4 md:px-6 pt-3 pb-2 bg-lantern-background">
+        <FeatureHero
+          title="Campus Pocket"
+          subtitle={monthName}
+          accentColor={featureAccents.budget}
+          icon={<WalletIcon className="w-6 h-6" style={{ color: featureAccents.budget }} />}
+          actions={
+            <>
+              {onOpenWallet && (
+                <button
+                  type="button"
+                  onClick={onOpenWallet}
+                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern text-xs font-medium flex items-center gap-1 hover:border-teal-500/30 transition-colors"
+                >
+                  <SparklesIcon className="w-4 h-4" />
+                  {walletBalance} coins
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenSetBudget}
+                className="h-9 px-3 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern text-xs font-medium flex items-center gap-1 transition-colors"
+              >
+                <Cog6ToothIcon className="w-4 h-4" />
+                Budget
               </button>
-            )}
-            <button onClick={onOpenSetBudget} className="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
-              <Cog6ToothIcon className="w-4 h-4" /> Budget
-            </button>
+            </>
+          }
+        >
+          <div className="flex flex-wrap gap-2">
+            <StatChip label={`Income ₦${monthlyIncome.toLocaleString('en-NG')}`} variant="success" />
+            <StatChip label={`Spent ₦${monthlyExpenses.toLocaleString('en-NG')}`} variant="accent" />
+            <StatChip
+              label={`Balance ₦${(monthlyIncome - monthlyExpenses).toLocaleString('en-NG')}`}
+              variant={monthlyIncome - monthlyExpenses >= 0 ? 'primary' : 'neutral'}
+            />
           </div>
-        </div>
-        {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-3 mt-4">
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5">
-            <p className="text-white/80 text-xs">Income</p>
-            <p className="text-white font-bold text-lg">₦{monthlyIncome.toLocaleString('en-NG')}</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5">
-            <p className="text-white/60 text-xs">Expenses</p>
-            <p className="text-white font-bold text-lg">₦{monthlyExpenses.toLocaleString('en-NG')}</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl px-3 py-2.5">
-            <p className="text-white/60 text-xs">Balance</p>
-            <p className={`font-bold text-lg ${monthlyIncome - monthlyExpenses >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-              ₦{(monthlyIncome - monthlyExpenses).toLocaleString('en-NG')}
-            </p>
-          </div>
-        </div>
+        </FeatureHero>
       </div>
 
       {/* ─── TAB BAR ─── */}
-      <div className="shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 flex gap-1 overflow-x-auto">
+      <div className="shrink-0 bg-lantern-surface border-b border-lantern-border px-4 flex gap-1 overflow-x-auto">
         {tabs.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               activeTab === t.key
-                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                ? 'border-lantern-primary text-lantern-primary'
+                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
             }`}>
             {t.icon} {t.label}
           </button>
@@ -313,31 +318,14 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               </div>
             )}
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <button onClick={onOpenAddExpense} className="bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
-                <ArrowDownIcon className="w-6 h-6" />
-                <span className="text-xs font-semibold">Add Expense</span>
-              </button>
-              <button onClick={onOpenAddIncome} className="bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
-                <ArrowUpIcon className="w-6 h-6" />
-                <span className="text-xs font-semibold">Add Income</span>
-              </button>
-              {onOpenAddInvestment && (
-                <button onClick={onOpenAddInvestment} className="bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
-                  <ArrowTrendingUpIcon className="w-6 h-6" />
-                  <span className="text-xs font-semibold">Investment</span>
-                </button>
-              )}
-              <button onClick={onOpenSavingsGoal || (() => setActiveTab('goals'))} className="bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
-                <TrophyIcon className="w-6 h-6" />
-                <span className="text-xs font-semibold">Savings Goal</span>
-              </button>
-              <button onClick={onOpenExpenseSplit || (() => {})} className="bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-2xl p-4 flex flex-col items-center gap-1.5 transition-colors">
-                <UserGroupIcon className="w-6 h-6" />
-                <span className="text-xs font-semibold">Split Expense</span>
-              </button>
-            </div>
+            <BudgetQuickLinks
+              onAddExpense={onOpenAddExpense}
+              onAddIncome={onOpenAddIncome}
+              onAddInvestment={onOpenAddInvestment}
+              onSavingsGoal={onOpenSavingsGoal || (() => setActiveTab('goals'))}
+              onExpenseSplit={onOpenExpenseSplit}
+              onWallet={onOpenWallet}
+            />
 
             {/* Spending by Category */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

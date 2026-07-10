@@ -11,6 +11,7 @@ import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useUIStore } from '../stores/uiStore';
 import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
+import { featureAccents } from '@lantern/shared/design';
 
 interface SidebarProps {
   currentUser: User;
@@ -328,27 +329,27 @@ const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={toggleChatsSection}
-                className="flex items-center gap-1.5 min-w-0 flex-1 text-left rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 px-1 py-0.5 -ml-1"
+                className="flex items-center gap-1.5 min-w-0 flex-1 text-left rounded-md hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary px-1 py-0.5 -ml-1"
                 aria-expanded={isChatsSectionExpanded}
                 title={isChatsSectionExpanded ? 'Collapse chats' : 'Expand chats'}
               >
-                <h3 className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400 tracking-wider truncate">Chats</h3>
+                <h3 className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wider truncate" style={{ color: featureAccents.groups }}>Chats</h3>
                 {showChatsHeaderBadge && (
-                  <span className="bg-red-500 text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                  <span className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                     {formatUnreadBadgeCount(totalUnreadChatCount)}
                   </span>
                 )}
                 {isChatsSectionExpanded ? (
-                  <ChevronDownIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+                  <ChevronDownIcon className="w-4 h-4 text-lantern-text-tertiary flex-shrink-0" />
                 ) : (
-                  <ChevronRightIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
+                  <ChevronRightIcon className="w-4 h-4 text-lantern-text-tertiary flex-shrink-0" />
                 )}
               </button>
               {isChatsSectionExpanded && (
                 <div className="flex gap-1 flex-shrink-0">
                   <button
                     onClick={onNavigateToCreateGroup}
-                    className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
                     disabled={!canInteractWithChats}
                     title="New Group"
                   >
@@ -356,7 +357,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                   <button
                     onClick={onOpenNewDmModal}
-                    className={`p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`p-1.5 rounded-md text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''}`}
                     disabled={!canInteractWithChats}
                     title="New DM"
                   >
@@ -386,12 +387,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                     );
                   }
               })}
-              {topLevelChats.length === 0 && showText && <p className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">No active chats.</p>}
+              {topLevelChats.length === 0 && showText && <p className="px-3 py-2 text-sm text-lantern-text-secondary">No active chats.</p>}
               {archivedGroups.length > 0 && showText && (
-                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="mt-2 pt-2 border-t border-lantern-border">
                     <button
                         onClick={() => setIsArchivedExpanded(!isArchivedExpanded)}
-                        className="w-full flex items-center justify-between p-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase hover:text-slate-900 dark:hover:text-white focus:outline-none"
+                        className="w-full flex items-center justify-between p-3 text-xs font-semibold text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
                         aria-expanded={isArchivedExpanded}
                     >
                         <span className="flex items-center"><ArchiveBoxIcon className="w-4 h-4 mr-2"/> Archived</span>

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PaperAirplaneIcon, PlusCircleIcon } from '@heroicons/react/24/solid';
+import { featureAccents } from '@lantern/shared/design';
 
 interface MessageInputBarProps {
   onSendMessage: (text: string) => void;
@@ -14,7 +15,6 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingRef = useRef(0);
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
@@ -27,7 +27,6 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
     if (inputText.trim()) {
       const trimmed = inputText.trim();
 
-      // Detect @AI or /ask prefix
       const aiMatch = trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
       if (aiMatch && onAIQuery) {
         const question = aiMatch[1].trim();
@@ -54,12 +53,13 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
   };
 
   return (
-    <div className="px-4 md:px-6 py-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
+    <div className="px-4 md:px-6 py-3 bg-lantern-surface border-t border-lantern-border">
       <div className="flex items-end gap-2">
         {onOpenQuestionModal && (
           <button
+            type="button"
             onClick={onOpenQuestionModal}
-            className="flex-shrink-0 p-2 text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+            className="flex-shrink-0 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-primary hover:bg-lantern-primary-background rounded-lantern-xl transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Submit a question"
             title="Submit Question"
           >
@@ -82,24 +82,27 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
             placeholder={isAIThinking ? 'AI is thinking...' : 'Type a message... (prefix @AI or /ask for AI tutor)'}
             rows={1}
             disabled={isAIThinking}
-            className="w-full resize-none px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-2xl bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:border-transparent transition-colors duration-150"
+            className="w-full resize-none px-4 py-2.5 border border-lantern-border rounded-2xl bg-lantern-background text-lantern-text text-sm placeholder:text-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:border-transparent transition-colors duration-200"
             style={{ maxHeight: '120px' }}
           />
         </div>
         <button
+          type="button"
           onClick={handleSend}
           disabled={!inputText.trim()}
-          className="flex-shrink-0 p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-700 text-white disabled:text-slate-400 dark:disabled:text-slate-500 rounded-xl transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:cursor-not-allowed"
+          className="flex-shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-background-secondary text-white disabled:text-lantern-text-tertiary rounded-lantern-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:cursor-not-allowed"
           aria-label="Send message"
         >
           <PaperAirplaneIcon className="w-5 h-5" />
         </button>
       </div>
       <div className="flex items-center justify-between mt-1.5 ml-1">
-        <p className="text-[11px] text-slate-400 dark:text-slate-500 hidden sm:block">
-          Press <kbd className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[10px] font-mono">Shift+Enter</kbd> for new line
+        <p className="text-[11px] text-lantern-text-tertiary hidden sm:block">
+          Press <kbd className="px-1 py-0.5 rounded bg-lantern-background-secondary text-lantern-text-secondary text-[10px] font-mono">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-lantern-background-secondary text-lantern-text-secondary text-[10px] font-mono">Shift+Enter</kbd> for new line
         </p>
-
+        <p className="text-[10px] hidden sm:block" style={{ color: featureAccents.groups }}>
+          Tip: prefix @AI or /ask for the AI tutor
+        </p>
       </div>
     </div>
   );

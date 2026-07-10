@@ -129,7 +129,7 @@ export function Avatar({ name, size = 40 }: { name?: string; size?: number }) {
 export function Badge({ count }: { count: number }) {
   if (!count || count <= 0) return null;
   return (
-    <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 items-center justify-center">
+    <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-lantern-error items-center justify-center">
       <Text className="text-[10px] font-bold text-white">{count > 99 ? '99+' : count}</Text>
     </View>
   );
@@ -201,3 +201,6 @@ export function ConfirmSheetHost() {
     </Modal>
   );
 }
+
+export { NotificationRow } from './NotificationRow';
+export { FeatureHero } from './FeatureHero';

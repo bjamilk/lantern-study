@@ -5,6 +5,7 @@ import { ArchiveBoxIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
+import { featureAccents } from '@lantern/shared/design';
 import { formatUnreadBadgeCount } from '../utils/chatUnread';
 
 interface GroupListItemProps {
@@ -41,8 +42,11 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   const unreadCount = chat.unreadCount || 0;
   const isArchived = isGroup ? chat.isArchived : (chat as any).isArchived;
   
-  const baseClasses = `flex items-center w-full p-3 md:p-3 py-3.5 md:py-3 border-l-4 transition-colors duration-150 min-h-[52px]`;
-  const selectedClasses = isSelected ? 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-slate-200/60 dark:hover:bg-slate-800/60';
+  const baseClasses = `flex items-center w-full p-3 md:p-3 py-3.5 md:py-3 border-l-4 transition-colors duration-200 min-h-[52px]`;
+  const accentBorder = isSubGroup || nestingLevel > 0 ? featureAccents.groups : undefined;
+  const selectedClasses = isSelected
+    ? `bg-lantern-primary-background ${accentBorder ? '' : 'border-lantern-primary'}`
+    : 'border-transparent hover:bg-lantern-background-secondary';
   const disabledClasses = isDisabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer';
   // Calculate indentation based on nesting level: 12px base + 16px per level
   const indentPadding = showText ? `${12 + (nestingLevel * 16)}px` : '12px';
@@ -75,7 +79,13 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   return (
     <div
       className={`${baseClasses} ${selectedClasses} ${disabledClasses} ${archivedClasses} ${collapsedClasses}`}
-      style={{ paddingLeft: indentPadding }}
+      style={{
+        paddingLeft: indentPadding,
+        ...(accentBorder && isSelected ? { borderLeftColor: accentBorder } : {}),
+        ...(accentBorder && !isSelected && nestingLevel > 0
+          ? { borderLeftColor: `${accentBorder}40` }
+          : {}),
+      }}
       onClick={handleItemClick}
       aria-disabled={isDisabled}
       role="button"
@@ -90,7 +100,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
             onToggleExpand();
           }}
           onKeyDown={handleToggleKeyDown}
-          className="expand-toggle-button p-0.5 mr-1.5 rounded-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          className="expand-toggle-button p-0.5 mr-1.5 rounded-sm text-lantern-text-tertiary hover:text-lantern-text focus:outline-none focus:ring-1 focus:ring-lantern-primary"
           aria-expanded={isExpanded}
           aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
         >
@@ -119,11 +129,11 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
       {showText && (
         <>
             <div className="flex-1 min-w-0 ml-2.5">
-                <p className="font-semibold truncate text-slate-800 dark:text-slate-100">{name}</p>
+                <p className="font-semibold truncate text-lantern-text">{name}</p>
             </div>
-            {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-slate-500 ml-2 flex-shrink-0" title="Archived"/>}
+            {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived"/>}
             {unreadCount > 0 && !isArchived && (
-                <span className="ml-2 bg-red-500 text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                <span className="ml-2 bg-lantern-error text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                     {formatUnreadBadgeCount(unreadCount)}
                 </span>
             )}

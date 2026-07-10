@@ -8,17 +8,19 @@ import {
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
 import { normalizeUserSettings } from '@lantern/shared/settings';
-import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
+import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
 import { MarketplaceListing, SavedSearch } from '../types';
 import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
+import { ListingCard } from './marketplace/ListingCard';
+import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
+import { FeatureHero } from './ui';
+import { featureAccents } from '@lantern/shared/design';
 import {
   MagnifyingGlassIcon,
   PlusIcon,
-  MapPinIcon,
   ClockIcon,
-  StarIcon,
   AcademicCapIcon,
   BriefcaseIcon,
   ShoppingBagIcon,
@@ -30,11 +32,9 @@ import {
   ChatBubbleLeftEllipsisIcon,
   FunnelIcon,
   ChevronDownIcon,
-  XMarkIcon,
   BookmarkIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
-import { HeartIcon } from '@heroicons/react/24/solid';
 
 interface MarketplaceScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -371,7 +371,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setShowFilters(false);
   };
 
-  const activeFilterCount = [minPrice, maxPrice, locationFilter].filter(Boolean).length + (sortBy !== 'created_at' ? 1 : 0);
+  const activeFilterCount =
+    [minPrice, maxPrice, locationFilter, campusIdFilter].filter(Boolean).length +
+    (sortBy !== 'created_at' ? 1 : 0);
 
   const handleCreateListing = () => {
     onNavigate('CreateMarketplaceListing', { category: activeTab });
@@ -444,205 +446,132 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const categoryChipClass = (isSelected: boolean) =>
     `lg:snap-start lg:flex-shrink-0 lg:min-w-[max-content] min-h-[30px] sm:min-h-[34px] px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-colors duration-150 flex items-center justify-center lg:justify-start gap-1 touch-manipulation ${
       isSelected
-        ? 'bg-indigo-600 text-white shadow-sm'
-        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+        ? 'bg-lantern-primary text-white shadow-sm'
+        : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/50'
     }`;
 
   const activeCategoryLabel = selectedCategory ? getCategoryName(selectedCategory) : 'All categories';
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-slate-50 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
       <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2">
         <MarketplaceComplianceBanner />
       </div>
-      {/* Hero Header — compact on mobile */}
-      <div className="shrink-0 max-w-full overflow-x-hidden box-border bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 px-3 sm:px-4 md:px-6 py-2 sm:py-4 md:py-8">
-        <div className="flex items-center justify-between gap-2 max-w-full">
-          <div className="min-w-0 flex items-center gap-2">
-            <div className="hidden sm:flex w-8 h-8 md:w-10 md:h-10 shrink-0 bg-white/20 rounded-lg md:rounded-xl items-center justify-center backdrop-blur-sm">
-              <ShoppingBagIcon className="w-5 h-5 md:w-6 md:h-6 text-white" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-2xl md:text-3xl font-bold text-white truncate">Marketplace</h1>
-              <p className="hidden sm:block text-indigo-100 mt-0.5 text-xs sm:text-sm">
-                Discover academic resources and student essentials
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-1 sm:gap-2">
-            {guestMode ? (
+      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 pb-2">
+        <FeatureHero
+          title="Explore"
+          subtitle="Discover academic resources and student essentials on campus"
+          accentColor={featureAccents.marketplace}
+          icon={<ShoppingBagIcon className="w-6 h-6" style={{ color: featureAccents.marketplace }} />}
+          actions={
+            guestMode ? (
               <button
                 type="button"
                 onClick={() => onSignInRequired?.()}
-                className="h-8 sm:h-9 px-3 sm:px-4 bg-white text-indigo-700 hover:bg-indigo-50 rounded-lg font-semibold flex items-center justify-center transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                className="h-9 px-4 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern font-semibold text-sm transition-colors"
               >
                 Sign in to buy or sell
               </button>
             ) : (
               <>
-            <button
-              onClick={() => onNavigate('MarketplaceOrders')}
-              aria-label="Orders"
-              className="h-8 w-8 sm:h-9 sm:w-auto sm:px-3 sm:py-2 bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white rounded-lg font-medium flex items-center justify-center transition-colors duration-150 text-xs sm:text-sm"
-            >
-              <ShoppingBagIcon className="w-4 h-4 sm:mr-1.5 shrink-0" />
-              <span className="hidden sm:inline">Orders</span>
-            </button>
-            <button
-              onClick={() => onNavigate('MyListings')}
-              aria-label="My listings"
-              className="h-8 w-8 sm:h-9 sm:w-auto sm:px-3 sm:py-2 bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white rounded-lg font-medium flex items-center justify-center transition-colors duration-150 text-xs sm:text-sm"
-            >
-              <ClipboardDocumentListIcon className="w-4 h-4 sm:mr-1.5 shrink-0" />
-              <span className="hidden sm:inline">Listings</span>
-            </button>
-            <button
-              onClick={() => onNavigate('MarketplaceInquiries')}
-              aria-label="Inquiries"
-              className="h-8 w-8 sm:h-9 sm:w-auto sm:px-3 sm:py-2 bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white rounded-lg font-medium flex items-center justify-center transition-colors duration-150 text-xs sm:text-sm"
-            >
-              <ChatBubbleLeftEllipsisIcon className="w-4 h-4 sm:mr-1.5 shrink-0" />
-              <span className="hidden sm:inline">Inquiries</span>
-            </button>
-            <button
-              onClick={handleCreateListing}
-              aria-label="Create listing"
-              className="h-8 w-8 sm:h-9 sm:w-auto sm:px-3 sm:py-2 bg-white text-indigo-700 hover:bg-indigo-50 rounded-lg font-semibold flex items-center justify-center transition-colors duration-150 shadow-sm text-xs sm:text-sm"
-            >
-              <PlusIcon className="w-4 h-4 sm:mr-1.5 shrink-0" />
-              <span className="hidden sm:inline">Create</span>
-            </button>
+                <button
+                  onClick={() => onNavigate('MarketplaceOrders')}
+                  aria-label="Orders"
+                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
+                >
+                  Orders
+                </button>
+                <button
+                  onClick={() => onNavigate('MyListings')}
+                  aria-label="My listings"
+                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
+                >
+                  Listings
+                </button>
+                <button
+                  onClick={() => onNavigate('MarketplaceInquiries')}
+                  aria-label="Inquiries"
+                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
+                >
+                  Inquiries
+                </button>
+                <button
+                  onClick={handleCreateListing}
+                  aria-label="Create listing"
+                  className="h-9 px-3 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern font-semibold text-xs sm:text-sm transition-colors"
+                >
+                  <PlusIcon className="w-4 h-4 inline mr-1" />
+                  Sell
+                </button>
               </>
-            )}
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="mt-2 sm:mt-4 flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
-          <div className="flex-1 min-w-0 w-full relative">
-            <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
-              defaultValue={searchTerm}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-full min-w-0 max-w-full box-border pl-8 sm:pl-10 pr-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 shadow-lg text-sm"
-            />
-          </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            aria-label="Toggle filters"
-            aria-expanded={showFilters}
-            className={`shrink-0 h-8 w-8 sm:h-9 sm:w-auto sm:min-w-[36px] sm:px-3 rounded-lg sm:rounded-xl flex items-center justify-center gap-1 font-medium text-xs shadow-lg transition-colors duration-150 ${
-              showFilters || activeFilterCount > 0
-                ? 'bg-white text-indigo-700'
-                : 'bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white'
-            }`}
-          >
-            <FunnelIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Filters</span>
-            {activeFilterCount > 0 && (
-              <span className="hidden sm:flex ml-1 w-4 h-4 bg-indigo-600 text-white text-[10px] items-center justify-center rounded-full">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={handleSaveCurrentSearch}
-            disabled={savingSearch}
-            aria-label="Save current search"
-            className="shrink-0 h-8 w-8 sm:h-9 sm:w-auto sm:min-w-[36px] sm:px-3 rounded-lg sm:rounded-xl flex items-center justify-center text-sm shadow-lg transition-colors duration-150 bg-white/15 hover:bg-white/25 backdrop-blur-sm text-white disabled:opacity-50"
-            title="Save current search"
-          >
-            <BookmarkIcon className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <div className="mt-2 sm:mt-3 max-w-full overflow-hidden bg-white/10 backdrop-blur-sm rounded-lg sm:rounded-xl p-2.5 sm:p-4 space-y-2 sm:space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 min-w-0">
-              {/* Price Range */}
-              <div className="min-w-0">
-                <label className="block text-xs font-medium text-indigo-100 mb-1">Price Range (₦)</label>
-                <div className="flex gap-2 min-w-0">
-                  <input
-                    type="number"
-                    placeholder="Min"
-                    value={minPrice}
-                    onChange={(e) => setMinPrice(e.target.value)}
-                    className="w-full min-w-0 box-border px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                  />
-                  <input
-                    type="number"
-                    placeholder="Max"
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                    className="w-full min-w-0 box-border px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                  />
-                </div>
-              </div>
-
-              {/* Campus */}
-              <div>
-                <label className="block text-xs font-medium text-indigo-100 mb-1">Campus</label>
-                <select
-                  value={campusIdFilter}
-                  onChange={(e) => setCampusIdFilter(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                >
-                  <option value="">All campuses</option>
-                  {campuses.map((campus) => (
-                    <option key={campus.id} value={campus.id}>
-                      {formatCampusLabel(campus)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Meetup detail search */}
-              <div>
-                <label className="block text-xs font-medium text-indigo-100 mb-1">Meetup area</label>
-                <input
-                  type="text"
-                  placeholder="Gate, hall, faculty…"
-                  value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                />
-              </div>
-
-              {/* Sort */}
-              <div>
-                <label className="block text-xs font-medium text-indigo-100 mb-1">Sort By</label>
-                <select
-                  value={`${sortBy}:${sortOrder}`}
-                  onChange={(e) => {
-                    const [field, order] = e.target.value.split(':');
-                    setSortBy(field);
-                    setSortOrder(order as 'asc' | 'desc');
-                  }}
-                  className="w-full px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                >
-                  <option value="created_at:desc">Newest First</option>
-                  <option value="created_at:asc">Oldest First</option>
-                  <option value="price:asc">Price: Low to High</option>
-                  <option value="price:desc">Price: High to Low</option>
-                </select>
-              </div>
+            )
+          }
+        >
+          <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
+            <div className="flex-1 min-w-0 w-full relative">
+              <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
+              <input
+                type="text"
+                placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
+                defaultValue={searchTerm}
+                onChange={e => handleSearchChange(e.target.value)}
+                className="w-full min-w-0 max-w-full box-border pl-8 sm:pl-10 pr-3 py-2 sm:py-2.5 rounded-lantern bg-lantern-surface border border-lantern-border text-lantern-text placeholder-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary text-sm shadow-lantern"
+              />
             </div>
-
-            {activeFilterCount > 0 && (
-              <button
-                onClick={clearFilters}
-                className="text-xs text-indigo-100 hover:text-white flex items-center gap-1 transition-colors"
-              >
-                <XMarkIcon className="w-3.5 h-3.5" />
-                Clear all filters
-              </button>
-            )}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              aria-label="Toggle filters"
+              aria-expanded={showFilters}
+              className={`shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center gap-1 font-medium text-xs border transition-colors duration-150 ${
+                showFilters || activeFilterCount > 0
+                  ? 'bg-lantern-primary text-white border-lantern-primary'
+                  : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
+              }`}
+            >
+              <FunnelIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="ml-1 w-4 h-4 bg-white text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleSaveCurrentSearch}
+              disabled={savingSearch}
+              aria-label="Save current search"
+              className="shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
+              title="Save current search"
+            >
+              <BookmarkIcon className="w-4 h-4" />
+            </button>
           </div>
-        )}
+
+          {showFilters && (
+            <div className="mt-3">
+              <MarketplaceFilterPanel
+                minPrice={minPrice}
+                maxPrice={maxPrice}
+                campusIdFilter={campusIdFilter}
+                locationFilter={locationFilter}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                campuses={campuses}
+                activeFilterCount={activeFilterCount}
+                onMinPriceChange={setMinPrice}
+                onMaxPriceChange={setMaxPrice}
+                onCampusChange={setCampusIdFilter}
+                onLocationChange={setLocationFilter}
+                onSortChange={(field, order) => {
+                  setSortBy(field);
+                  setSortOrder(order);
+                }}
+                onClearFilters={clearFilters}
+                variant="hero"
+              />
+            </div>
+          )}
+        </FeatureHero>
       </div>
 
       {/* Marketplace Intelligence — collapsed on mobile */}
@@ -696,8 +625,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={() => { setActiveTab('academic'); setShowCategoryPanel(false); }}
             className={`flex-1 sm:flex-initial px-2 sm:px-5 py-1.5 sm:py-2.5 font-medium text-[11px] sm:text-sm border-b-2 transition-colors duration-150 flex items-center justify-center sm:justify-start gap-1 sm:gap-2 ${
               activeTab === 'academic'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                ? 'border-lantern-primary text-lantern-primary'
+                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
             }`}
           >
             <AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -707,8 +636,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={() => { setActiveTab('student-life'); setShowCategoryPanel(false); }}
             className={`flex-1 sm:flex-initial px-2 sm:px-5 py-1.5 sm:py-2.5 font-medium text-[11px] sm:text-sm border-b-2 transition-colors duration-150 flex items-center justify-center sm:justify-start gap-1 sm:gap-2 ${
               activeTab === 'student-life'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                ? 'border-lantern-primary text-lantern-primary'
+                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
             }`}
           >
             <BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -880,114 +809,17 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           <div className="grid w-full max-w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-5">
             {listings.map(listing => {
               const IconComponent = getCategoryIcon(listing.category);
-              const isFavorite = favorites.has(listing.id);
-              const isOwner = listing.user_id === currentUser?.id || listing.seller_id === currentUser?.id;
-
               return (
-                <div
+                <ListingCard
                   key={listing.id}
-                  onClick={() => handleListingClick(listing)}
-                  className={`min-w-0 rounded-2xl shadow-sm ring-1 overflow-hidden hover:shadow-md active:scale-[0.99] transition-all duration-200 cursor-pointer group ${
-                    isOwner
-                      ? 'bg-indigo-50/60 dark:bg-indigo-950/30 ring-indigo-300 dark:ring-indigo-600/60 hover:ring-indigo-400 dark:hover:ring-indigo-500'
-                      : 'bg-white dark:bg-slate-800 ring-slate-200/60 dark:ring-slate-700/60 hover:ring-indigo-300/60 dark:hover:ring-indigo-600/40'
-                  }`}
-                >
-                  {/* Image */}
-                  <div className="relative aspect-[16/10] sm:aspect-[4/3] bg-slate-100 dark:bg-slate-700/50 overflow-hidden">
-                    {listing.images && listing.images.length > 0 ? (
-                      <img
-                        src={listing.images[0]}
-                        alt={listing.title}
-                        className="w-full h-full max-w-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <IconComponent className="w-10 h-10 text-slate-300 dark:text-slate-600" />
-                      </div>
-                    )}
-
-                    {/* Favorite Button */}
-                    <button
-                      onClick={(e) => toggleFavorite(listing.id, e)}
-                      className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 p-2 sm:p-1.5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-lg hover:bg-white dark:hover:bg-slate-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 touch-manipulation"
-                      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      <HeartIcon
-                        className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-current' : 'text-slate-400'}`}
-                      />
-                    </button>
-
-                    {/* Category Badge */}
-                    <span className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 max-w-[calc(100%-3.5rem)] px-2 py-0.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm text-[10px] sm:text-xs font-medium rounded-md text-slate-700 dark:text-slate-300 flex items-center gap-1 shadow-sm">
-                      <IconComponent className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{getCategoryName(listing.category)}</span>
-                    </span>
-
-                    {/* Your Listing Badge */}
-                    {isOwner && (
-                      <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-indigo-600/90 backdrop-blur-sm text-[10px] font-semibold rounded-md text-white shadow-sm">
-                        Your Listing
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="p-2 sm:p-3">
-                    <h3 className="font-semibold text-xs sm:text-sm text-slate-800 dark:text-slate-200 mb-0.5 sm:mb-1 line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors duration-150">
-                      {listing.title}
-                    </h3>
-
-                    <p className="text-slate-500 dark:text-slate-400 text-xs mb-2 line-clamp-1 sm:line-clamp-2 leading-relaxed">
-                      {listing.description}
-                    </p>
-
-                    {/* Price */}
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-base sm:text-lg font-bold text-indigo-600 dark:text-indigo-400 truncate">
-                        {(listing.is_on_sale && listing.effective_price != null) ? (
-                          <>
-                            <span className="line-through text-slate-400 text-xs mr-1">
-                              ₦{Number(listing.price).toLocaleString()}
-                            </span>
-                            <span className="text-red-600 dark:text-red-400 font-bold">
-                              ₦{Number(listing.effective_price).toLocaleString()}
-                            </span>
-                            {listing.promo_label && (
-                              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
-                                {listing.promo_label}
-                              </span>
-                            )}
-                          </>
-                        ) : listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
-                      </span>
-                      {(() => {
-                        const avgRating = listing.reviews && listing.reviews.length > 0
-                          ? listing.reviews.reduce((sum, r) => sum + r.rating, 0) / listing.reviews.length
-                          : 0;
-                        return avgRating > 0 ? (
-                          <div className="flex items-center text-xs text-slate-400 dark:text-slate-500 shrink-0">
-                            <StarIcon className="w-3.5 h-3.5 mr-0.5 text-amber-400 fill-current" />
-                            <span>{avgRating.toFixed(1)}</span>
-                          </div>
-                        ) : null;
-                      })()}
-                    </div>
-
-                    {/* Location and Time */}
-                    <div className="flex items-center justify-between gap-2 text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 pt-2 border-t border-slate-100 dark:border-slate-700 min-w-0">
-                      <div className="flex items-center gap-1 min-w-0 flex-1">
-                        <MapPinIcon className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{listing.location || 'Not specified'}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <ClockIcon className="w-3.5 h-3.5 hidden sm:block" />
-                        <span className="whitespace-nowrap">{new Date(listing.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  listing={listing}
+                  isFavorite={favorites.has(listing.id)}
+                  isOwner={listing.user_id === currentUser?.id || listing.seller_id === currentUser?.id}
+                  categoryName={getCategoryName(listing.category)}
+                  CategoryIcon={IconComponent}
+                  onPress={() => handleListingClick(listing)}
+                  onToggleFavorite={e => toggleFavorite(listing.id, e)}
+                />
               );
             })}
           </div>
