@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import * as notesApi from '../services/notes';
 import type { NoteAttachment, NoteFolder, StudyNote } from '../services/notes';
 
+let loadNoteSeq = 0;
+const saveChains = new Map<string, Promise<unknown>>();
+
 interface NotesState {
   folders: NoteFolder[];
   notes: StudyNote[];
@@ -53,12 +56,15 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   },
 
   loadNote: async (noteId) => {
+    const requestId = ++loadNoteSeq;
     set({ isLoading: true, error: null });
     try {
       const note = await notesApi.fetchNote(noteId);
+      if (requestId !== loadNoteSeq) return false;
       set({ selectedNote: note, isLoading: false });
       return true;
     } catch (e: unknown) {
+      if (requestId !== loadNoteSeq) return false;
       set({
         error: e instanceof Error ? e.message : 'Failed to load note',
         isLoading: false,
@@ -85,25 +91,37 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     if (state.selectedNote?.id !== noteId && !state.notes.some((n) => n.id === noteId)) {
       return null as unknown as StudyNote;
     }
-    set({ isSaving: true });
-    try {
-      const saved = await notesApi.updateNote(noteId, updates);
-      set({
-        notes: get().notes.map((n) => (n.id === noteId ? { ...n, ...saved } : n)),
-        selectedNote: get().selectedNote?.id === noteId
-          ? {
-              ...get().selectedNote!,
-              ...saved,
-              attachments: get().selectedNote!.attachments,
-            }
-          : get().selectedNote,
-        isSaving: false,
-      });
-      return saved;
-    } catch (e: unknown) {
-      set({ isSaving: false, error: e instanceof Error ? e.message : 'Save failed' });
-      throw e;
-    }
+
+    const runSave = async () => {
+      const latest = get();
+      if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
+        return null as unknown as StudyNote;
+      }
+      set({ isSaving: true });
+      try {
+        const saved = await notesApi.updateNote(noteId, updates);
+        set({
+          notes: get().notes.map((n) => (n.id === noteId ? { ...n, ...saved } : n)),
+          selectedNote: get().selectedNote?.id === noteId
+            ? {
+                ...get().selectedNote!,
+                ...saved,
+                attachments: get().selectedNote!.attachments,
+              }
+            : get().selectedNote,
+          isSaving: false,
+        });
+        return saved;
+      } catch (e: unknown) {
+        set({ isSaving: false, error: e instanceof Error ? e.message : 'Save failed' });
+        throw e;
+      }
+    };
+
+    const previous = saveChains.get(noteId) || Promise.resolve();
+    const next = previous.then(runSave, runSave);
+    saveChains.set(noteId, next.catch(() => {}));
+    return next;
   },
 
   removeNote: async (noteId) => {

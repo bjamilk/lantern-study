@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { XCircleIcon } from '@heroicons/react/24/outline';
 import { Group } from '../types'; // Import Group type
+import Modal from './ui/Modal';
 
 interface CreateGroupModalProps {
   isOpen: boolean;
@@ -58,21 +59,15 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
     }
   }, [isOpen, parentId, allGroups]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('CreateGroupModal handleSubmit called:', { name: name.trim(), description, memberEmails, parentId });
     if (name.trim()) {
       onSubmit(name.trim(), description.trim(), memberEmails.trim(), parentId);
-    } else {
-      console.log('Name is empty, not submitting');
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 transition-opacity duration-300 ease-in-out" role="dialog" aria-modal="true" aria-labelledby="create-group-modal-title">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-md transform transition-all duration-300 ease-in-out scale-100">
+    <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="create-group-modal-title" maxWidthClass="max-w-md">
         <div className="flex justify-between items-center mb-4">
           <h2 id="create-group-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">{modalTitle}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">
@@ -151,8 +146,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

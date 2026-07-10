@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import type { NoteAttachment, NoteComment, NoteFolder, StudyNote } from '../types';
 import * as notesApi from '../services/notes';
 
+let loadNoteSeq = 0;
+const saveChains = new Map<string, Promise<unknown>>();
+
 interface NotesState {
   folders: NoteFolder[];
   notes: StudyNote[];
@@ -72,12 +75,15 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   },
 
   loadNote: async (noteId) => {
+    const requestId = ++loadNoteSeq;
     set({ isLoading: true, error: null });
     try {
       const note = await notesApi.fetchNote(noteId);
+      if (requestId !== loadNoteSeq) return false;
       set({ selectedNote: note, isLoading: false });
       return true;
     } catch (e: any) {
+      if (requestId !== loadNoteSeq) return false;
       set({
         error: e.message,
         isLoading: false,
@@ -114,37 +120,49 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     if (state.selectedNote?.id !== noteId && !state.notes.some((n) => n.id === noteId)) {
       return null as unknown as StudyNote;
     }
-    set({ isSaving: true });
-    try {
-      const saved = await notesApi.updateNote(noteId, updates);
-      set({
-        notes: get().notes.map(n => (n.id === noteId ? { ...n, ...saved } : n)),
-        selectedNote:
-          get().selectedNote?.id === noteId
+
+    const runSave = async () => {
+      const latest = get();
+      if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
+        return null as unknown as StudyNote;
+      }
+      set({ isSaving: true });
+      try {
+        const saved = await notesApi.updateNote(noteId, updates);
+        set({
+          notes: get().notes.map(n => (n.id === noteId ? { ...n, ...saved } : n)),
+          selectedNote:
+            get().selectedNote?.id === noteId
+              ? {
+                  ...get().selectedNote!,
+                  ...saved,
+                  attachments: get().selectedNote!.attachments,
+                }
+              : get().selectedNote,
+          isSaving: false,
+        });
+        return saved;
+      } catch (e: any) {
+        const isNotFound = /not found|404/i.test(e.message || '');
+        set({
+          error: isNotFound ? null : e.message,
+          isSaving: false,
+          ...(isNotFound
             ? {
-                ...get().selectedNote!,
-                ...saved,
-                attachments: get().selectedNote!.attachments,
+                notes: get().notes.filter(n => n.id !== noteId),
+                selectedNote: get().selectedNote?.id === noteId ? null : get().selectedNote,
               }
-            : get().selectedNote,
-        isSaving: false,
-      });
-      return saved;
-    } catch (e: any) {
-      const isNotFound = /not found|404/i.test(e.message || '');
-      set({
-        error: isNotFound ? null : e.message,
-        isSaving: false,
-        ...(isNotFound
-          ? {
-              notes: get().notes.filter(n => n.id !== noteId),
-              selectedNote: get().selectedNote?.id === noteId ? null : get().selectedNote,
-            }
-          : {}),
-      });
-      if (!isNotFound) throw e;
-      return null as unknown as StudyNote;
-    }
+            : {}),
+        });
+        if (!isNotFound) throw e;
+        return null as unknown as StudyNote;
+      }
+    };
+
+    const previous = saveChains.get(noteId) || Promise.resolve();
+    const next = previous.then(runSave, runSave);
+    saveChains.set(noteId, next.catch(() => {}));
+    return next;
   },
 
   removeNote: async (noteId) => {

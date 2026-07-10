@@ -43,6 +43,8 @@ function normalizeFetchedMessages(raw: unknown): Message[] {
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const pendingCreatedGroupRef = useRef<any>(null);
+    const groupMessagesFetchSeqRef = useRef(0);
+    const dmFetchSeqRef = useRef(0);
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
         groups, setGroups, updateGroups,
@@ -119,7 +121,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             
             const otherUserId = (chat as DMThread).participantIds.find(id => id !== currentUser.id);
             if (otherUserId) {
+                const requestId = ++dmFetchSeqRef.current;
+                const threadId = chat.id;
                 fetchDirectMessages(currentUser.id, otherUserId).then(fetchedMessages => {
+                    if (requestId !== dmFetchSeqRef.current) return;
+                    if (useUIStore.getState().selectedChat?.id !== threadId) return;
                     const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) => ({
                         id: m.id,
                         threadId: m.threadId || chat.id,
@@ -147,9 +153,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (selectedChat.chatType === 'group') {
             const chatId = selectedChat.id;
             const limit = lowDataMode ? 20 : 50;
+            const requestId = ++groupMessagesFetchSeqRef.current;
 
             fetchMessages(chatId, undefined, limit)
                 .then((fetchedMessages) => {
+                    if (requestId !== groupMessagesFetchSeqRef.current) return;
                     if (useUIStore.getState().selectedChat?.id !== chatId) return;
                     const list = normalizeFetchedMessages(fetchedMessages);
                     updateMessages((prev) => ({ ...prev, [chatId]: list }));
@@ -191,8 +199,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
                 : undefined;
             if (otherUserId) {
+                const requestId = ++dmFetchSeqRef.current;
                 fetchDirectMessages(currentUser.id, otherUserId)
                     .then((fetchedMessages) => {
+                        if (requestId !== dmFetchSeqRef.current) return;
+                        if (useUIStore.getState().selectedChat?.id !== threadId) return;
                         const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
                         const mappedMessages: DirectMessage[] = raw.map((m: any) => ({
                             id: m.id,

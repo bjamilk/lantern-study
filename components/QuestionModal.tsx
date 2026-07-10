@@ -5,6 +5,7 @@ import { PlusCircleIcon, TrashIcon, PhotoIcon, XCircleIcon, TagIcon, CheckIcon, 
 import VoiceInputButton from './VoiceInputButton';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadQuestionImage } from '../services/supabase';
+import Modal from './ui/Modal';
 
 interface QuestionModalProps {
   isOpen: boolean;
@@ -208,9 +209,6 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [draggingLabelId]);
-
-
-  if (!isOpen) return null;
 
   const handleFieldChange = (field: keyof FormState, value: any) => {
     dispatch({ type: 'SET_FIELD', field, value });
@@ -437,8 +435,14 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
   const showTypeSpecificFields = state.questionType !== QuestionType.OPEN_ENDED;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-75 flex items-center justify-center p-4 z-50 transition-opacity duration-300 ease-in-out" role="dialog" aria-modal="true" aria-labelledby="question-modal-title">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl transform transition-all duration-300 ease-in-out scale-100 max-h-[90vh] overflow-y-auto">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="question-modal-title"
+      maxWidthClass="max-w-2xl"
+      loading={isSubmitting}
+      panelClassName="max-h-[90vh] overflow-y-auto"
+    >
         <div className="flex justify-between items-center mb-4">
           <h2 id="question-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Add Question to <span className="text-blue-600 dark:text-blue-400">{groupName}</span></h2>
           <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close modal">
@@ -697,8 +701,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

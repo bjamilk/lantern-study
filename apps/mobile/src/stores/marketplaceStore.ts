@@ -14,6 +14,7 @@ import { useAuthStore } from './authStore';
 const DEMO_MODE = false;
 
 let listingsRequestSeq = 0;
+let listingFetchSeq = 0;
 
 function unwrapListings<T>(raw: T[] | { data: T[] }): T[] {
   return Array.isArray(raw) ? raw : raw.data;
@@ -744,11 +745,13 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
   
   fetchListing: async (listingId: string) => {
+    const requestId = ++listingFetchSeq;
     try {
       set({ isLoading: true, error: null });
       
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
+        if (requestId !== listingFetchSeq) return;
         const allListings = [...DEMO_LISTINGS, ...DEMO_MY_LISTINGS];
         const listing = allListings.find(l => l.id === listingId) || null;
         set({ currentListing: listing, isLoading: false });
@@ -756,6 +759,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
       
       const l = await api.fetchMarketplaceListing(listingId);
+      if (requestId !== listingFetchSeq) return;
       const currentListing: MarketplaceListing = {
         id: l.id,
         user_id: l.user_id,
@@ -775,6 +779,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       };
       set({ currentListing, isLoading: false });
     } catch (error: any) {
+      if (requestId !== listingFetchSeq) return;
       console.error('Failed to fetch listing:', error);
       set({ error: error.message, isLoading: false });
     }

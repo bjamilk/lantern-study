@@ -4,8 +4,10 @@ import { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
 
 export const API_KEY_PREFIX = 'lsk_';
-/** Allowed permission scopes for user API keys. */
-export const VALID_API_KEY_PERMISSIONS = ['read', 'write', 'ai', 'admin'] as const;
+/** Permissions users may request when creating API keys. */
+export const USER_CREATABLE_API_KEY_PERMISSIONS = ['read', 'write', 'ai'] as const;
+/** All permission scopes that may exist on stored keys (includes legacy admin). */
+export const VALID_API_KEY_PERMISSIONS = [...USER_CREATABLE_API_KEY_PERMISSIONS, 'admin'] as const;
 export type ApiKeyPermission = (typeof VALID_API_KEY_PERMISSIONS)[number];
 const KEY_PREFIX_LENGTH = 12;
 const DEFAULT_MAX_KEYS_PER_USER = parseInt(process.env.API_KEY_MAX_PER_USER || '10', 10);
@@ -253,9 +255,8 @@ export class ApiKeyService {
 
   normalizePermissions(permissions: string[]): string[] {
     const normalized = [...new Set(
-      permissions.filter(p => VALID_API_KEY_PERMISSIONS.includes(p as ApiKeyPermission))
+      permissions.filter(p => USER_CREATABLE_API_KEY_PERMISSIONS.includes(p as (typeof USER_CREATABLE_API_KEY_PERMISSIONS)[number]))
     )];
-    if (normalized.includes('admin')) return ['admin'];
     if (normalized.length === 0) return ['read'];
     if (!normalized.includes('read') && !normalized.includes('write') && !normalized.includes('ai')) {
       return ['read', ...normalized];

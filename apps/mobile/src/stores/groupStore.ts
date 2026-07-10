@@ -14,6 +14,10 @@ export type DirectMessage = SharedDirectMessage;
 
 const MESSAGES_PAGE_SIZE = 50;
 
+const messagesFetchSeqByGroup: Record<string, number> = {};
+const dmFetchSeqByThread: Record<string, number> = {};
+const sendingGroupIds = new Set<string>();
+
 // Demo mode - use mock data without API
 const DEMO_MODE = false;
 
@@ -645,6 +649,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const page = options?.page ?? 1;
     const limit = options?.limit ?? MESSAGES_PAGE_SIZE;
     const refresh = options?.refresh ?? page === 1;
+    const requestId = (messagesFetchSeqByGroup[groupId] = (messagesFetchSeqByGroup[groupId] || 0) + 1);
 
     if (page === 1) {
       set({ isLoading: true });
@@ -679,8 +684,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       const hasMore = pagination?.hasMore ?? mapped.length >= limit;
 
+      if (requestId !== messagesFetchSeqByGroup[groupId]) return;
+
+      const isCurrentGroup = get().currentGroup?.id === groupId;
       set({
-        messages: merged,
+        messages: isCurrentGroup ? merged : get().messages,
         messagesCache: { ...get().messagesCache, [groupId]: merged },
         messagePagination: {
           ...get().messagePagination,
@@ -690,6 +698,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         isLoadingMore: false,
       });
     } catch (error: any) {
+      if (requestId !== messagesFetchSeqByGroup[groupId]) return;
       set({
         error: error.message || 'Failed to fetch messages',
         isLoading: false,
@@ -710,6 +719,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   sendMessage: async (groupId: string, text: string, senderId: string, _senderName?: string) => {
+    if (sendingGroupIds.has(groupId)) return;
+    sendingGroupIds.add(groupId);
+
     const group = get().groups.find((g) => g.id === groupId);
     const member = group?.members?.find((m) => m.id === senderId);
     const senderName = formatChatSenderLabel({ username: member?.username });
@@ -770,28 +782,34 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
     
     // Optimistic update for immediate feedback
-    const currentMessages = get().messages;
-    set({ messages: [...currentMessages, newMessage] });
+    const previousMessages = get().messages;
+    const previousGroups = get().groups;
+    const previousCache = get().messagesCache[groupId] || [];
+    set({ messages: [...previousMessages, newMessage] });
 
-    const groups = get().groups.map(g => {
+    const groups = previousGroups.map(g => {
       if (g.id === groupId) {
         return { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() };
       }
       return g;
     });
-    set({ groups });
+    set({
+      groups,
+      messagesCache: { ...get().messagesCache, [groupId]: [...previousCache, newMessage] },
+    });
 
     try {
       await api.sendMessage(groupId, senderId, { content: text });
     } catch (error: any) {
-      set({ error: error.message || 'Failed to send message' });
-      await syncService.queueOperation(
-        'message',
-        newMessage.id,
-        'create',
-        { groupId, content: text, type: isQuestion ? 'QUESTION' : 'TEXT' },
-        senderId
-      );
+      const isCurrentGroup = get().currentGroup?.id === groupId;
+      set({
+        error: error.message || 'Failed to send message',
+        messages: isCurrentGroup ? previousMessages : get().messages,
+        groups: previousGroups,
+        messagesCache: { ...get().messagesCache, [groupId]: previousCache },
+      });
+    } finally {
+      sendingGroupIds.delete(groupId);
     }
   },
 
@@ -1268,14 +1286,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   fetchDirectMessagesForThread: async (userId: string, otherUserId: string, threadId: string) => {
+    const requestId = (dmFetchSeqByThread[threadId] = (dmFetchSeqByThread[threadId] || 0) + 1);
     try {
       const result = await api.fetchDirectMessages(userId, otherUserId);
+      if (requestId !== dmFetchSeqByThread[threadId]) return;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
       set(state => ({
         directMessages: { ...state.directMessages, [threadId]: mapped },
       }));
     } catch (error) {
+      if (requestId !== dmFetchSeqByThread[threadId]) return;
       console.warn('[GroupStore] Failed to fetch direct messages:', error);
     }
   },

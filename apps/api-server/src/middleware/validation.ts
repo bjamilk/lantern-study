@@ -131,7 +131,7 @@ export const validateSearch = [
 export const validateApiKeyCreation = [
   body('name').trim().isLength({ min: 1, max: 50 }).withMessage('API key name must be 1-50 characters'),
   body('permissions').optional().isArray().withMessage('Permissions must be an array'),
-  body('permissions.*').optional().isIn(['read', 'write', 'admin']).withMessage('Invalid permission'),
+  body('permissions.*').optional().isIn(['read', 'write', 'ai']).withMessage('Invalid permission'),
 ];
 
 // File upload validation (for future use)

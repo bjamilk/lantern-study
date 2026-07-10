@@ -15,4 +15,10 @@ describe('ApiKeyService', () => {
     expect(service.hasPermission(['read'], 'write')).toBe(false);
     expect(service.hasPermission(['read', 'write'], 'write')).toBe(true);
   });
+
+  it('normalizePermissions strips admin from user-created keys', () => {
+    expect(service.normalizePermissions(['admin', 'write'])).toEqual(['write']);
+    expect(service.normalizePermissions(['read', 'ai'])).toEqual(['read', 'ai']);
+    expect(service.normalizePermissions(['bogus'])).toEqual(['read']);
+  });
 });

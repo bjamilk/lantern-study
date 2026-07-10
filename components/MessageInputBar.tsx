@@ -3,7 +3,7 @@ import { PaperAirplaneIcon, PlusCircleIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
 
 interface MessageInputBarProps {
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string) => void | Promise<void>;
   onOpenQuestionModal?: () => void;
   onAIQuery?: (question: string) => Promise<string | null>;
   onTyping?: () => void;
@@ -12,6 +12,7 @@ interface MessageInputBarProps {
 const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpenQuestionModal, onAIQuery, onTyping }) => {
   const [inputText, setInputText] = useState('');
   const [isAIThinking, setIsAIThinking] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastTypingRef = useRef(0);
 
@@ -24,24 +25,37 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
   }, [inputText]);
 
   const handleSend = async () => {
-    if (inputText.trim()) {
-      const trimmed = inputText.trim();
+    if (isSending || isAIThinking || !inputText.trim()) return;
 
-      const aiMatch = trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
-      if (aiMatch && onAIQuery) {
-        const question = aiMatch[1].trim();
-        setInputText('');
-        setIsAIThinking(true);
-        const answer = await onAIQuery(question);
-        setIsAIThinking(false);
-        if (answer) {
-          onSendMessage(`🤖 AI Tutor:\n${answer}`);
-        }
-        return;
-      }
+    const trimmed = inputText.trim();
 
-      onSendMessage(trimmed);
+    const aiMatch = trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
+    if (aiMatch && onAIQuery) {
+      const question = aiMatch[1].trim();
       setInputText('');
+      setIsAIThinking(true);
+      try {
+        const answer = await onAIQuery(question);
+        if (answer) {
+          setIsSending(true);
+          try {
+            await onSendMessage(`🤖 AI Tutor:\n${answer}`);
+          } finally {
+            setIsSending(false);
+          }
+        }
+      } finally {
+        setIsAIThinking(false);
+      }
+      return;
+    }
+
+    setIsSending(true);
+    setInputText('');
+    try {
+      await onSendMessage(trimmed);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -79,9 +93,9 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
               }
             }}
             onKeyDown={handleKeyDown}
-            placeholder={isAIThinking ? 'AI is thinking...' : 'Type a message... (prefix @AI or /ask for AI tutor)'}
+            placeholder={isAIThinking ? 'AI is thinking...' : isSending ? 'Sending...' : 'Type a message... (prefix @AI or /ask for AI tutor)'}
             rows={1}
-            disabled={isAIThinking}
+            disabled={isAIThinking || isSending}
             className="w-full resize-none px-4 py-2.5 border border-lantern-border rounded-2xl bg-lantern-background text-lantern-text text-sm placeholder:text-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:border-transparent transition-colors duration-200"
             style={{ maxHeight: '120px' }}
           />
@@ -89,7 +103,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
         <button
           type="button"
           onClick={handleSend}
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || isSending || isAIThinking}
           className="flex-shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-background-secondary text-white disabled:text-lantern-text-tertiary rounded-lantern-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:cursor-not-allowed"
           aria-label="Send message"
         >
