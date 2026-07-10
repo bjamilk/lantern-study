@@ -261,17 +261,19 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm overflow-hidden">
               <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                 {searchResults.map((user) => (
-                  <li
-                    key={user.id}
-                    onClick={() => handleUserSelect(user)}
-                    className="p-3 flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700"
-                  >
-                    <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
-                      {user.username && <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>}
-                    </div>
-                    <CheckIcon className="w-5 h-5 text-blue-500" />
+                  <li key={user.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleUserSelect(user)}
+                      className="w-full p-3 flex items-center text-left hover:bg-gray-50 dark:hover:bg-slate-700"
+                    >
+                      <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
+                        {user.username && <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>}
+                      </div>
+                      <CheckIcon className="w-5 h-5 text-blue-500" />
+                    </button>
                   </li>
                 ))}
               </ul>

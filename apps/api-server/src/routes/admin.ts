@@ -20,6 +20,7 @@ import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { setUserSessionCutoff } from '../services/tokenDenylist';
 import { logger } from '../utils/logger';
+import { invalidateListingCaches } from '../utils/marketplaceCache';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -444,7 +445,7 @@ router.delete('/marketplace/listings/:id', async (req: any, res: any) => {
       targetId: id,
     });
 
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true });
@@ -472,7 +473,7 @@ router.patch('/marketplace/listings/:id', async (req: any, res: any) => {
       targetId: id,
     });
 
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true, data: { id, status } });
@@ -542,7 +543,7 @@ router.patch('/marketplace/orders/:id/dispute', async (req: any, res: any) => {
       },
     });
 
-    await cacheService.delete(`marketplace:listing:${order.listing_id}`);
+    await invalidateListingCaches(cacheService, order.listing_id);
     await cacheService.deletePattern('marketplace:listings:*');
     await invalidateSellerAnalyticsCache(order.seller_id);
 
@@ -625,7 +626,7 @@ router.put('/reports/:id', async (req: any, res: any) => {
 
     if (action === 'remove_listing') {
       await client.from('marketplace_listings').update({ status: 'removed_by_admin' }).eq('id', report.listing_id);
-      await cacheService.delete(`marketplace:listing:${report.listing_id}`);
+      await invalidateListingCaches(cacheService, report.listing_id);
       await cacheService.deletePattern('marketplace:listings:*');
       await logAdminAction(supabaseService, {
         actorId: req.user.id,

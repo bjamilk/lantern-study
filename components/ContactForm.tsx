@@ -84,7 +84,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   };
 
   return (
-    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+    <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4" noValidate>
       <p className="text-sm text-lantern-text-secondary">
         Send a message below and we will reply by email. You can also reach us directly at{' '}
         <a href={buildSupportMailtoUrl()} className="text-indigo-600 dark:text-indigo-400 underline">
@@ -116,6 +116,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             maxLength={CONTACT_FORM_LIMITS.nameMax}
             required
             autoComplete="name"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'contact-form-error' : undefined}
           />
         </div>
         <div>
@@ -130,6 +132,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             maxLength={254}
             required
             autoComplete="email"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'contact-form-error' : undefined}
           />
         </div>
       </div>
@@ -176,13 +180,19 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           maxLength={CONTACT_FORM_LIMITS.messageMax}
           required
           placeholder={`Tell us how we can help (${CONTACT_FORM_LIMITS.messageMin} characters minimum)…`}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? 'contact-form-error' : undefined}
         />
         <p className="text-xs text-lantern-text-secondary mt-1">
           {message.length}/{CONTACT_FORM_LIMITS.messageMax}
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <p id="contact-form-error" role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
       {showMailtoFallback && (
         <a
           href={mailtoUrl}

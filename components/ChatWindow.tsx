@@ -322,20 +322,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setActiveOrder(null);
 
     if (chat && chat.chatType === 'dm') {
+      let cancelled = false;
       const loadInquiryContext = async () => {
         try {
           const inquiryData = await getInquiryByThread(chat.id);
+          if (cancelled) return;
           if (inquiryData) {
             setInquiry(inquiryData);
             await loadOfferHistory(inquiryData);
+            if (cancelled) return;
             const order = await fetchOrderForInquiry(inquiryData.id);
-            if (order) setActiveOrder(order);
+            if (!cancelled && order) setActiveOrder(order);
           }
         } catch (err) {
-          console.error('Error loading inquiry context:', err);
+          if (!cancelled) {
+            console.error('Error loading inquiry context:', err);
+          }
         }
       };
-      loadInquiryContext();
+      void loadInquiryContext();
+      return () => { cancelled = true; };
     }
   }, [chat?.id]);
 

@@ -86,6 +86,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listingLoadId = useRef(0);
   const { currentUser } = useAuthStore();
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const isOwner = listing?.user_id === currentUser?.id || listing?.seller_id === currentUser?.id;
@@ -141,7 +142,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   };
 
   useEffect(() => {
-    loadListingFull();
+    const loadId = ++listingLoadId.current;
+    void loadListingFull(loadId);
     if (!guestMode) {
       addRecentlyViewed(listingId);
     }
@@ -180,10 +182,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   };
 
   // Batched load: listing + isFavorited + similarListings in one request
-  const loadListingFull = async () => {
+  const loadListingFull = async (loadId?: number) => {
     setLoading(true);
     try {
       const data = await fetchMarketplaceListingFull(listingId, currentUser?.id);
+      if (loadId !== undefined && loadId !== listingLoadId.current) return;
       setListing(data.listing);
       setReviews(data.listing.reviews || []);
       setIsFavorited(data.isFavorited);
@@ -197,7 +200,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     } catch (error) {
       console.error('Error loading listing:', error);
     } finally {
-      setLoading(false);
+      if (loadId === undefined || loadId === listingLoadId.current) {
+        setLoading(false);
+      }
     }
   };
 

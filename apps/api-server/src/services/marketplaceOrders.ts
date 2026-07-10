@@ -200,6 +200,14 @@ export class MarketplaceOrdersService {
     return data;
   }
 
+  private async voidOrphanPendingTransaction(txnId: string): Promise<void> {
+    await this.db
+      .from('marketplace_transactions')
+      .delete()
+      .eq('id', txnId)
+      .eq('status', 'pending');
+  }
+
   private async findInquiryForDeal(
     listingId: string,
     buyerId: string
@@ -271,6 +279,7 @@ export class MarketplaceOrdersService {
 
     if (error) {
       if (this.isUniqueViolation(error)) {
+        await this.voidOrphanPendingTransaction(txn.id);
         const existing = await this.getOpenOrderForListing(listingId);
         if (existing) {
           if (existing.buyer_id === buyerId) return existing;
@@ -359,6 +368,7 @@ export class MarketplaceOrdersService {
 
     if (orderError) {
       if (this.isUniqueViolation(orderError)) {
+        await this.voidOrphanPendingTransaction(txn.id);
         const byOffer = await this.getOrderByOfferId(offerId);
         if (byOffer) return byOffer;
         const open = await this.getOpenOrderForListing(offer.listing_id);

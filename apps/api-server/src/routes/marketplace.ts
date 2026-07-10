@@ -7,6 +7,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 
 const router = Router();
@@ -129,6 +130,10 @@ router.get(
     // Do not serve non-active listings from a shared public cache key.
     const cacheKey = viewerId ? null : `marketplace:listing:public:${id}`;
     let listing = cacheKey ? await cacheService.get<any>(cacheKey) : null;
+
+    if (listing && listing.status !== 'active') {
+      listing = null;
+    }
 
     if (!listing) {
       listing = await supabaseService.getMarketplaceListingForViewer(id, viewerId);
@@ -284,7 +289,7 @@ router.put(
     }
 
     // Invalidate caches
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({
@@ -324,7 +329,7 @@ router.delete(
     await supabaseService.deleteMarketplaceListing(id);
 
     // Invalidate caches
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({
@@ -361,7 +366,7 @@ router.post(
     const review = await supabaseService.addMarketplaceReview(id, userId, { rating, comment });
 
     // Invalidate caches
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.status(201).json({
@@ -390,7 +395,7 @@ router.post(
       req.body?.couponCode
     );
 
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
     await invalidateSellerAnalyticsCache(String(result.order?.seller_id || ''));
 
@@ -414,7 +419,7 @@ router.post(
 
     const listing = await supabaseService.boostMarketplaceListing(id, userId, durationHours);
 
-    await cacheService.delete(`marketplace:listing:${id}`);
+    await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true, data: listing });
@@ -524,7 +529,7 @@ router.put(
       const listing = await supabaseService.updateListingStatus(id, status, userId);
 
       // Invalidate caches
-      await cacheService.delete(`marketplace:listing:${id}`);
+      await invalidateListingCaches(cacheService, id);
       await cacheService.deletePattern('marketplace:listings:*');
       await invalidateSellerAnalyticsCache(userId);
 

@@ -6,6 +6,7 @@ import { SparklesIcon } from '@heroicons/react/24/solid';
 import { compressImage } from '../utils/imageCompression';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 
 interface GroupInfoModalProps {
@@ -81,6 +82,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
     };
   }, [avatarPreviewUrl]);
 
+  const dialogRef = useModalFocusTrap(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -331,7 +333,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 transition-opacity duration-300 ease-in-out" role="dialog" aria-modal="true" aria-labelledby="group-info-modal-title">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform transition-all duration-300 ease-in-out scale-100 max-h-[90vh] flex flex-col">
+      <div ref={dialogRef} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform transition-all duration-300 ease-in-out scale-100 max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
           <h2 id="group-info-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Group Information</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">

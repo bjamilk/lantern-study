@@ -702,17 +702,17 @@ export class SupabaseService {
         throw error;
       }
 
-      // Check if user has access to this group
+      // Check if user has active (non-pending) membership
       if (userId) {
         const { data: membership, error: memberError } = await this.supabase
           .from('group_members')
-          .select('user_id')
+          .select('user_id, pending')
           .eq('group_id', groupId)
           .eq('user_id', userId)
           .single();
 
         if (memberError && memberError.code !== 'PGRST116') throw memberError;
-        if (!membership) return null; // User is not a member
+        if (!membership || membership.pending === true) return null;
       }
 
       // Transform snake_case to camelCase
@@ -880,22 +880,6 @@ export class SupabaseService {
   }
 
   async addGroupMember(groupId: string, userId: string): Promise<Group | null> {
-    // Check if user is already a member
-    const { data: existingMember, error: checkError } = await this.supabase
-      .from('group_members')
-      .select('user_id')
-      .eq('group_id', groupId)
-      .eq('user_id', userId)
-      .single();
-
-    if (checkError && checkError.code !== 'PGRST116') throw checkError;
-
-    if (existingMember) {
-      // User is already a member, return the group
-      return await this.getGroupById(groupId);
-    }
-
-    // Add the member
     const { error: memberError } = await this.supabase
       .from('group_members')
       .insert({
@@ -903,14 +887,18 @@ export class SupabaseService {
         user_id: userId,
       });
 
-    if (memberError) throw memberError;
+    if (memberError) {
+      if (memberError.code === '23505') {
+        return await this.getGroupById(groupId, userId);
+      }
+      throw memberError;
+    }
 
-    // Invalidate caches
     await cacheService.invalidateGroupCache(groupId);
     await cacheService.invalidateUserCache(userId);
     await cacheService.deletePattern('groups:list:*');
 
-    return await this.getGroupById(groupId);
+    return await this.getGroupById(groupId, userId);
   }
 
   /** Bulk add members with a single insert (avoids N sequential round-trips). */
@@ -936,8 +924,9 @@ export class SupabaseService {
     const toAdd = uniqueIds.filter((id) => !existingSet.has(id));
 
     if (toAdd.length) {
-      const { error: insertError } = await this.supabase.from('group_members').insert(
-        toAdd.map((user_id) => ({ group_id: groupId, user_id }))
+      const { error: insertError } = await this.supabase.from('group_members').upsert(
+        toAdd.map((user_id) => ({ group_id: groupId, user_id, pending: false })),
+        { onConflict: 'group_id,user_id', ignoreDuplicates: true }
       );
       if (insertError) throw insertError;
 
@@ -954,13 +943,13 @@ export class SupabaseService {
   async isGroupMember(groupId: string, userId: string): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('group_members')
-      .select('user_id')
+      .select('user_id, pending')
       .eq('group_id', groupId)
       .eq('user_id', userId)
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') throw error;
-    return !!data;
+    return !!data && data.pending !== true;
   }
 
   /**
@@ -1279,10 +1268,10 @@ export class SupabaseService {
   }
 
   async getMessageById(messageId: string, userId?: string): Promise<Message | null> {
-    const cacheKey = `message:${messageId}`;
+    const rawCacheKey = `message:raw:${messageId}`;
 
-    return cacheService.cached(cacheKey, async () => {
-      const { data, error } = await this.supabase
+    const data = await cacheService.cached(rawCacheKey, async () => {
+      const { data: row, error } = await this.supabase
         .from('messages')
         .select(`
           id,
@@ -1306,35 +1295,37 @@ export class SupabaseService {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST116') return null; // Not found
+        if (error.code === 'PGRST116') return null;
         throw error;
       }
+      return row;
+    }, { ttl: 600 });
 
-      // Check if user has access to this message (must be member of the group)
-      if (userId) {
-        const { data: membership, error: memberError } = await this.supabase
-          .from('group_members')
-          .select('user_id')
-          .eq('group_id', data.group_id)
-          .eq('user_id', userId)
-          .single();
+    if (!data) return null;
 
-        if (memberError && memberError.code !== 'PGRST116') throw memberError;
-        if (!membership) return null; // User doesn't have access
-      }
+    if (userId) {
+      const { data: membership, error: memberError } = await this.supabase
+        .from('group_members')
+        .select('user_id, pending')
+        .eq('group_id', data.group_id)
+        .eq('user_id', userId)
+        .maybeSingle();
 
-      return {
-        id: data.id,
-        groupId: data.group_id,
-        sender: mapProfileSender(resolveNestedProfile((data as any).profiles), data.sender_id),
-        senderId: data.sender_id,
-        timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
-        flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
-        upvotes: data.upvotes || 0,
-        downvotes: data.downvotes || 0,
-        ...this.normalizeMessageRecord(data),
-      };
-    }, { ttl: 600 }); // Cache for 10 minutes
+      if (memberError && memberError.code !== 'PGRST116') throw memberError;
+      if (!membership || membership.pending === true) return null;
+    }
+
+    return {
+      id: data.id,
+      groupId: data.group_id,
+      sender: mapProfileSender(resolveNestedProfile((data as any).profiles), data.sender_id),
+      senderId: data.sender_id,
+      timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
+      flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
+      upvotes: data.upvotes || 0,
+      downvotes: data.downvotes || 0,
+      ...this.normalizeMessageRecord(data),
+    };
   }
 
   async updateMessage(messageId: string, content: string): Promise<Message | null> {
@@ -4047,68 +4038,13 @@ export class SupabaseService {
         ? activityDate
         : new Date().toISOString().slice(0, 10);
 
-    const typeIncrements = {
-      test_count: type === 'test' ? vAmount : 0,
-      flashcard_count: type === 'flashcard' || type === 'flashcard_new' ? vAmount : 0,
-      new_flashcard_count: type === 'flashcard_new' ? vAmount : 0,
-      question_count: type === 'study_question' ? vAmount : 0,
-      game_count: type === 'game' ? vAmount : 0,
-      daily_quiz_count: type === 'daily_quiz' ? vAmount : 0,
-    };
+    const { data, error } = await this.supabase.rpc('record_study_activity', {
+      p_user_id: userId,
+      p_type: type,
+      p_amount: vAmount,
+      p_activity_date: activityDateStr,
+    });
 
-    if (vAmount === 0) {
-      const { data, error } = await this.supabase
-        .from('study_activity')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('activity_date', activityDateStr)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    }
-
-    const { data: existing, error: readError } = await this.supabase
-      .from('study_activity')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('activity_date', activityDateStr)
-      .maybeSingle();
-    if (readError) throw readError;
-
-    const now = new Date().toISOString();
-
-    if (existing) {
-      const { data, error } = await this.supabase
-        .from('study_activity')
-        .update({
-          count: (existing.count ?? 0) + vAmount,
-          test_count: (existing.test_count ?? 0) + typeIncrements.test_count,
-          flashcard_count: (existing.flashcard_count ?? 0) + typeIncrements.flashcard_count,
-          new_flashcard_count: (existing.new_flashcard_count ?? 0) + typeIncrements.new_flashcard_count,
-          question_count: (existing.question_count ?? 0) + typeIncrements.question_count,
-          game_count: (existing.game_count ?? 0) + typeIncrements.game_count,
-          daily_quiz_count: (existing.daily_quiz_count ?? 0) + typeIncrements.daily_quiz_count,
-          updated_at: now,
-        })
-        .eq('user_id', userId)
-        .eq('activity_date', activityDateStr)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    }
-
-    const { data, error } = await this.supabase
-      .from('study_activity')
-      .insert({
-        user_id: userId,
-        activity_date: activityDateStr,
-        count: vAmount,
-        ...typeIncrements,
-        updated_at: now,
-      })
-      .select()
-      .single();
     if (error) throw error;
     return data;
   }

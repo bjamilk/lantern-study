@@ -624,6 +624,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (!currentUser || !selectedChat) return;
 
         if (selectedChat.chatType === 'group') {
+            const groupBefore = groups.find(g => g.id === selectedChat.id);
+            const prevLastMessage = groupBefore?.lastMessage;
+            const prevLastMessageTime = groupBefore?.lastMessageTime;
+
             // Optimistic update - show message immediately
             const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
             const newMessage: Message = {
@@ -675,12 +679,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 }
             } catch (error) {
                 console.error('Error sending message to server:', error);
-                // Message stays visible locally even if API fails
+                updateMessages(prev => ({
+                    ...prev,
+                    [selectedChat.id]: (prev[selectedChat.id] || []).filter(m => m.id !== optimisticId),
+                }));
+                updateGroups(prev => prev.map(g =>
+                    g.id === selectedChat.id
+                        ? { ...g, lastMessage: prevLastMessage, lastMessageTime: prevLastMessageTime }
+                        : g
+                ));
+                void addNotification('Message failed to send. Please try again.');
             }
         } else if (selectedChat.chatType === 'dm') {
             handleSendDm(selectedChat.id, text);
         }
-    }, [currentUser, selectedChat, groups, updateMessages, updateGroups, handleSendDm]);
+    }, [currentUser, selectedChat, groups, updateMessages, updateGroups, handleSendDm, addNotification]);
 
     const onVoteQuestion = useCallback(async (messageId: string, voteType: 'up' | 'down') => {
         if (!selectedChat || selectedChat.chatType !== 'group' || !currentUser) return;

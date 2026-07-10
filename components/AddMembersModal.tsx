@@ -4,6 +4,7 @@ import { XCircleIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, A
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 interface SearchResult {
   id: string;
@@ -31,6 +32,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useModalFocusTrap(isOpen, onClose, { loading: isSubmitting });
 
   useEffect(() => {
     if (isOpen) {
@@ -115,7 +117,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[90]" role="dialog" aria-modal="true" aria-labelledby="add-members-modal-title">
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform flex flex-col h-[80vh] max-h-[40rem]">
+      <div ref={dialogRef} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform flex flex-col h-[80vh] max-h-[40rem]">
         {/* Header */}
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
           <h2 id="add-members-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
@@ -195,25 +197,27 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
               {searchResults.map(user => {
                 const isSelected = selectedUserIds.includes(user.id);
                 return (
-                  <li 
-                    key={user.id} 
-                    onClick={() => handleUserToggle(user.id)} 
-                    className={`p-3 flex items-center cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/50' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
-                  >
-                    <div className="relative">
-                      <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
-                      {isSelected && (
-                        <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
-                          <CheckIcon className="w-3 h-3 text-white"/>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
-                      {user.username && (
-                        <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>
-                      )}
-                    </div>
+                  <li key={user.id} className={isSelected ? 'bg-blue-50 dark:bg-blue-900/50' : ''}>
+                    <button
+                      type="button"
+                      onClick={() => handleUserToggle(user.id)}
+                      className={`w-full p-3 flex items-center text-left transition-colors ${isSelected ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                    >
+                      <div className="relative">
+                        <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
+                        {isSelected && (
+                          <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                            <CheckIcon className="w-3 h-3 text-white"/>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
+                        {user.username && (
+                          <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>
+                        )}
+                      </div>
+                    </button>
                   </li>
                 );
               })}

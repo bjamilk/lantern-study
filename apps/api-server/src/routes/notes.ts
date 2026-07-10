@@ -193,19 +193,26 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
   const studyText = extractedText || `[PDF uploaded: ${fileName}. Text extraction unavailable.]`;
   const noteTitle = String(fileName).replace(/\.pdf$/i, '') || 'Imported PDF';
 
-  const note = await supabaseService.createNote(userId, {
-    title: noteTitle,
-    body: '',
-    folderId,
-    sourceType: 'pdf',
-  });
-  const attachment = await supabaseService.addNoteAttachment(note.id, {
-    type: 'pdf',
-    fileUrl,
-    fileName,
-    extractedText: studyText,
-    metadata: { storagePath },
-  });
+  let note;
+  let attachment;
+  try {
+    note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: '',
+      folderId,
+      sourceType: 'pdf',
+    });
+    attachment = await supabaseService.addNoteAttachment(note.id, {
+      type: 'pdf',
+      fileUrl,
+      fileName,
+      extractedText: studyText,
+      metadata: { storagePath },
+    });
+  } catch (err) {
+    await supabaseService.deleteNoteFile(storagePath).catch(() => {});
+    throw err;
+  }
   res.json({ success: true, data: { note, attachment } });
 }));
 
@@ -250,25 +257,33 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
     `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
-  const note = await supabaseService.createNote(userId, {
-    title: noteTitle,
-    body: '',
-    folderId,
-    sourceType: 'presentation',
-  });
   const processingMeta = {
     storagePath,
     originalMime: contentType,
     previewProcessing: true,
     previewStartedAt: new Date().toISOString(),
   };
-  const attachment = await supabaseService.addNoteAttachment(note.id, {
-    type: 'presentation',
-    fileUrl,
-    fileName: safeName,
-    extractedText: studyText,
-    metadata: processingMeta,
-  });
+
+  let note;
+  let attachment;
+  try {
+    note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: '',
+      folderId,
+      sourceType: 'presentation',
+    });
+    attachment = await supabaseService.addNoteAttachment(note.id, {
+      type: 'presentation',
+      fileUrl,
+      fileName: safeName,
+      extractedText: studyText,
+      metadata: processingMeta,
+    });
+  } catch (err) {
+    await supabaseService.deleteNoteFile(storagePath).catch(() => {});
+    throw err;
+  }
 
   startPresentationPreviewJob({
     noteId: note.id,
@@ -299,18 +314,22 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
 
   const safeName = String(fileName);
   let buffer: Buffer;
+  let ownedPath: string | null = null;
 
   try {
     assertUserOwnedNoteStoragePath(String(storagePath), userId);
+    ownedPath = String(storagePath);
     assertPresentationFileName(safeName);
-    const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+    const downloaded = await supabaseService.downloadNoteFile(ownedPath);
     buffer = downloaded.buffer;
     assertPresentationSize(buffer);
     if (/\.pptx$/i.test(safeName)) {
       assertValidOfficeZip(buffer, safeName);
     }
   } catch (err) {
-    await supabaseService.deleteNoteFile(String(storagePath));
+    if (ownedPath) {
+      await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'Presentation file is invalid. Please re-upload.',
     });
@@ -318,39 +337,51 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   }
 
   const contentType = presentationContentType(safeName);
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+  const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
   const extractedText = await extractPresentationTextFromBuffer(buffer, safeName);
   const studyText =
     extractedText ||
     `[Presentation uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.(pptx?|ppt)$/i, '') || 'Imported slides';
 
-  const note = await supabaseService.createNote(userId, {
-    title: noteTitle,
-    body: '',
-    folderId,
-    sourceType: 'presentation',
-  });
-  const processingMeta = {
-    storagePath: String(storagePath),
-    originalMime: contentType,
-    previewProcessing: true,
-    previewStartedAt: new Date().toISOString(),
-  };
-  const attachment = await supabaseService.addNoteAttachment(note.id, {
-    type: 'presentation',
-    fileUrl,
-    fileName: safeName,
-    extractedText: studyText,
-    metadata: processingMeta,
-  });
+  let note;
+  let attachment;
+  try {
+    note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: '',
+      folderId,
+      sourceType: 'presentation',
+    });
+    const processingMeta = {
+      storagePath: ownedPath,
+      originalMime: contentType,
+      previewProcessing: true,
+      previewStartedAt: new Date().toISOString(),
+    };
+    attachment = await supabaseService.addNoteAttachment(note.id, {
+      type: 'presentation',
+      fileUrl,
+      fileName: safeName,
+      extractedText: studyText,
+      metadata: processingMeta,
+    });
+  } catch (err) {
+    await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    throw err;
+  }
 
   startPresentationPreviewJob({
     noteId: note.id,
     attachmentId: attachment.id,
-    storagePath: String(storagePath),
+    storagePath: ownedPath,
     fileName: safeName,
-    meta: processingMeta,
+    meta: {
+      storagePath: ownedPath,
+      originalMime: contentType,
+      previewProcessing: true,
+      previewStartedAt: new Date().toISOString(),
+    },
     buffer,
     extractedText: studyText,
   });
@@ -387,38 +418,49 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
 
   const safeName = String(fileName);
   let buffer: Buffer;
+  let ownedPath: string | null = null;
 
   try {
     assertUserOwnedNoteStoragePath(String(storagePath), userId);
-    const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+    ownedPath = String(storagePath);
+    const downloaded = await supabaseService.downloadNoteFile(ownedPath);
     buffer = downloaded.buffer;
     assertPdfSize(buffer);
   } catch (err) {
-    await supabaseService.deleteNoteFile(String(storagePath));
+    if (ownedPath) {
+      await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'PDF file is invalid. Please re-upload.',
     });
     return;
   }
 
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+  const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
   const extractedText = await extractPdfTextFromBuffer(buffer);
   const studyText = extractedText || `[PDF uploaded: ${safeName}. Text extraction unavailable.]`;
   const noteTitle = safeName.replace(/\.pdf$/i, '') || 'Imported PDF';
 
-  const note = await supabaseService.createNote(userId, {
-    title: noteTitle,
-    body: '',
-    folderId,
-    sourceType: 'pdf',
-  });
-  const attachment = await supabaseService.addNoteAttachment(note.id, {
-    type: 'pdf',
-    fileUrl,
-    fileName: safeName,
-    extractedText: studyText,
-    metadata: { storagePath: String(storagePath) },
-  });
+  let note;
+  let attachment;
+  try {
+    note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: '',
+      folderId,
+      sourceType: 'pdf',
+    });
+    attachment = await supabaseService.addNoteAttachment(note.id, {
+      type: 'pdf',
+      fileUrl,
+      fileName: safeName,
+      extractedText: studyText,
+      metadata: { storagePath: ownedPath },
+    });
+  } catch (err) {
+    await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    throw err;
+  }
 
   logger.info('PDF upload finalized', {
     userId,

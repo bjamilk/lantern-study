@@ -68,6 +68,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [campusFilterInitialized, setCampusFilterInitialized] = useState(false);
   const ITEMS_PER_PAGE = 20;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const listingsRequestId = useRef(0);
   const [recentlyViewed, setRecentlyViewed] = useState<MarketplaceListing[]>([]);
   const [missingRecentlyViewed, setMissingRecentlyViewed] = useState<Set<string>>(new Set());
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
@@ -127,12 +128,13 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   }, [guestMode, userCampusId, campusFilterInitialized]);
 
   useEffect(() => {
+    const requestId = ++listingsRequestId.current;
     setPage(1);
     setListings([]);
     setHasMore(true);
     setPrimaryListingsLoaded(false);
     setRateLimitMessage(null);
-    loadListings(1, true);
+    loadListings(1, true, requestId);
     if (!guestMode) {
       loadFavorites();
     }
@@ -274,7 +276,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     }
   };
 
-  const loadListings = async (pageNum: number = 1, reset: boolean = false) => {
+  const loadListings = async (pageNum: number = 1, reset: boolean = false, requestId?: number) => {
     if (reset) {
       setLoading(true);
     } else {
@@ -303,6 +305,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       filters.country_code = 'NG';
 
       const { data, pagination } = await fetchMarketplaceListingsPage(filters);
+      if (requestId !== undefined && requestId !== listingsRequestId.current) return;
       setTotalListingsCount(pagination?.total || 0);
       
       // Filter by tab if no specific category is selected
@@ -348,7 +351,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      loadListings(page + 1, false);
+      loadListings(page + 1, false, listingsRequestId.current);
     }
   };
 
