@@ -29,6 +29,7 @@ module.exports = {
       borderRadius: {
         lantern: '16px',
         'lantern-xl': '20px',
+        't-lantern': '16px',
       },
     },
   },

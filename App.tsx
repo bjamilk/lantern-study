@@ -948,6 +948,8 @@ export const App: React.FC = () => {
                         tab={libraryTab}
                         onTabChange={setLibraryTab}
                         dueCardsCount={dueCardsCount}
+                        noteCount={notes.length}
+                        deckCount={decks.length}
                         notesContent={renderNotesScreen(true)}
                         flashcardsContent={renderFlashcardsScreen(true)}
                     />

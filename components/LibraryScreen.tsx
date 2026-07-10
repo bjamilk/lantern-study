@@ -10,6 +10,8 @@ interface LibraryScreenProps {
   notesContent: React.ReactNode;
   flashcardsContent: React.ReactNode;
   dueCardsCount?: number;
+  noteCount?: number;
+  deckCount?: number;
 }
 
 const tabs: { id: LibraryTab; label: string; icon: React.ElementType }[] = [
@@ -23,6 +25,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   notesContent,
   flashcardsContent,
   dueCardsCount = 0,
+  noteCount,
+  deckCount,
 }) => (
   <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-lantern-background">
     <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 border-b border-lantern-border bg-lantern-surface">
@@ -31,6 +35,20 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         subtitle="Notes and flashcard decks in one place"
         className="mb-3 sm:mb-4"
       />
+      {(noteCount != null || deckCount != null) && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {noteCount != null && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-lantern-primary-background text-lantern-primary">
+              {noteCount} notes
+            </span>
+          )}
+          {deckCount != null && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-lantern-accent-background text-lantern-accent">
+              {deckCount} decks
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex gap-1 pb-0" role="tablist" aria-label="Library sections">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = tab === id;

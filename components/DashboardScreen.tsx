@@ -18,6 +18,7 @@ import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { DashboardProgress } from './dashboard/DashboardProgress';
+import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
 
 interface DashboardScreenProps {
@@ -245,7 +246,6 @@ export default function DashboardScreen({
   const [selectedTimePeriod, setSelectedTimePeriod] = useState<TimePeriodOptionValue>('allTime');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
-  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
   const [chartDisplayMode, setChartDisplayMode] = useState<'bar' | 'line'>('line');
   const [selectedComparisonGroupIds, setSelectedComparisonGroupIds] = useState<string[]>([]);
   const [aiCoachData, setAiCoachData] = useState<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>(null);
@@ -554,20 +554,6 @@ export default function DashboardScreen({
     return map;
   }, [studyActivityDays, filteredTestResults]);
 
-  const simulatedGroupAverages = useMemo(() => {
-    const averages = new Map<string, number>();
-    filteredTestResults.forEach(result => {
-        const key = result.session.startTime.toISOString();
-        if (!averages.has(key)) {
-            // Generate a random offset between -7 and +10
-            const offset = Math.random() * 17 - 7;
-            const groupAvg = Math.max(40, Math.min(98, result.score - offset)); // Clamp to a realistic range
-            averages.set(key, Math.round(groupAvg));
-        }
-    });
-    return averages;
-  }, [filteredTestResults]);
-
   const toggleGroupExpansion = (groupId: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   };
@@ -690,14 +676,6 @@ export default function DashboardScreen({
   }, [selectedComparisonGroupIds, allGroupPerformanceData]);
 
 
-  // --- Greeting ---
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  };
-
   // --- Study streak calculation ---
   const studyStreak = useMemo(() => {
     const days = new Set<string>();
@@ -797,35 +775,13 @@ export default function DashboardScreen({
 
       {/* Secondary quick links */}
       <div className="px-4 md:px-8 -mt-2 w-full">
-        <div className="w-full">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {onNavigateToAITools && (
-              <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToAITools}>
-                <SparklesIcon className="w-5 h-5 text-amber-600" />
-                <span className="text-xs">AI Tools</span>
-              </Button>
-            )}
-            {onNavigateToNotes && (
-              <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToNotes}>
-                <DocumentTextIcon className="w-5 h-5 text-indigo-600" />
-                <span className="text-xs">Notes</span>
-              </Button>
-            )}
-            <Button variant="secondary" className="flex-col h-auto py-3 relative" onClick={onNavigateToFlashcards}>
-              <RectangleStackIcon className="w-5 h-5 text-emerald-600" />
-              <span className="text-xs">Flashcards</span>
-              {dueCardsCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
-                  {dueCardsCount > 99 ? '99+' : dueCardsCount}
-                </span>
-              )}
-            </Button>
-            <Button variant="secondary" className="flex-col h-auto py-3" onClick={onNavigateToMarketplace}>
-              <ShoppingBagIcon className="w-5 h-5 text-purple-600" />
-              <span className="text-xs">Explore</span>
-            </Button>
-          </div>
-        </div>
+        <DashboardQuickLinks
+          dueCardsCount={dueCardsCount}
+          onNavigateToAITools={onNavigateToAITools}
+          onNavigateToNotes={onNavigateToNotes}
+          onNavigateToFlashcards={onNavigateToFlashcards}
+          onNavigateToMarketplace={onNavigateToMarketplace}
+        />
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
@@ -852,57 +808,28 @@ export default function DashboardScreen({
           />
         )}
 
-        {filteredTestResults.length > 0 && onViewTestResult && (
-          <Card padding="md">
-            <h2 className="text-lg font-semibold text-lantern-text mb-3">Recent tests</h2>
-            <div className="space-y-2">
-              {filteredTestResults.slice(0, 5).map((result) => {
-                const score = result.session.questions.length
-                  ? Math.round((result.correctCount / result.session.questions.length) * 100)
-                  : 0;
-                return (
-                  <button
-                    key={result.session.id}
-                    type="button"
-                    onClick={() => onViewTestResult(result)}
-                    className="w-full flex items-center justify-between p-3 rounded-lg border border-lantern-border hover:border-lantern-primary text-left transition-colors"
-                  >
-                    <div>
-                      <p className="font-medium text-sm text-lantern-text">
-                        {new Date(result.session.startTime).toLocaleDateString()} · {result.session.questions.length} questions
-                      </p>
-                      <p className="text-xs text-lantern-text-secondary">{score}% correct</p>
-                    </div>
-                    <span className="text-sm font-semibold text-lantern-primary">Review</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-        )}
-
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
-                <ChartBarIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <div className="w-10 h-10 rounded-lg bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
+                <ChartBarIcon className="w-5 h-5 text-lantern-primary" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Tests Taken</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{totalTestsTakenOverall}</p>
+                <p className="text-xs text-lantern-text-secondary truncate">Tests Taken</p>
+                <p className="text-2xl font-bold text-lantern-text">{totalTestsTakenOverall}</p>
               </div>
             </div>
           </div>
           <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
-                <ClockIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <div className="w-10 h-10 rounded-lg bg-lantern-accent-background flex items-center justify-center flex-shrink-0">
+                <ClockIcon className="w-5 h-5 text-lantern-accent" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Avg. Time/Q</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                <p className="text-xs text-lantern-text-secondary truncate">Avg. Time/Q</p>
+                <p className="text-2xl font-bold text-lantern-text">
                   {overallAverageTimePerQuestion > 0 ? `${overallAverageTimePerQuestion.toFixed(0)}s` : '—'}
                 </p>
               </div>
@@ -910,23 +837,23 @@ export default function DashboardScreen({
           </div>
           <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center flex-shrink-0">
-                <UsersIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <div className="w-10 h-10 rounded-lg bg-lantern-success/15 flex items-center justify-center flex-shrink-0">
+                <UsersIcon className="w-5 h-5 text-lantern-success" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Groups</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{groups.length}</p>
+                <p className="text-xs text-lantern-text-secondary truncate">Groups</p>
+                <p className="text-2xl font-bold text-lantern-text">{groups.length}</p>
               </div>
             </div>
           </div>
           <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center flex-shrink-0">
-                <RectangleStackIcon className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              <div className="w-10 h-10 rounded-lg bg-lantern-warning/15 flex items-center justify-center flex-shrink-0">
+                <RectangleStackIcon className="w-5 h-5 text-lantern-warning" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Cards Due</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{dueCardsCount}</p>
+                <p className="text-xs text-lantern-text-secondary truncate">Cards Due</p>
+                <p className="text-2xl font-bold text-lantern-text">{dueCardsCount}</p>
               </div>
             </div>
           </div>

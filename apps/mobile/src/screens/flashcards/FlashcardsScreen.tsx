@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -186,11 +186,37 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
     setAiDeckId(null);
   };
 
+  const dueCount = useMemo(() => decks.reduce((s, d) => s + (d.due_count || 0), 0), [decks]);
+
   const Wrapper = embedded ? View : SafeAreaView;
-  const wrapperProps = embedded ? { className: 'flex-1 bg-slate-50 dark:bg-slate-900' } : { className: 'flex-1 bg-slate-50 dark:bg-slate-900', edges: ['top'] as const };
+  const wrapperProps = embedded ? { className: 'flex-1 bg-lantern-background' } : { className: 'flex-1 bg-lantern-background', edges: ['top'] as const };
 
   return (
     <Wrapper {...wrapperProps}>
+      {embedded && (
+        <View className="flex-row flex-wrap gap-2 justify-end px-4 pt-3">
+          {dueCount > 0 ? (
+            <Button
+              size="sm"
+              variant="accent"
+              onPress={() => {
+                const deckWithDue = decks.find(d => (d.due_count || 0) > 0);
+                if (deckWithDue) {
+                  navigation.navigate('FlashcardReview', { deckId: deckWithDue.id, deckName: deckWithDue.name });
+                }
+              }}
+            >
+              Study due
+            </Button>
+          ) : null}
+          <Button size="sm" variant="secondary" onPress={() => setImportOpen(true)}>
+            Import
+          </Button>
+          <Button size="sm" onPress={() => setCreateOpen(true)}>
+            + Deck
+          </Button>
+        </View>
+      )}
       {!embedded && (
       <ScreenHeader
         title="Flashcards"
@@ -248,6 +274,9 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
                 Create your first deck to start studying with spaced repetition.
               </Text>
               <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
+              <Button className="mt-2" variant="secondary" onPress={() => setImportOpen(true)}>
+                Import deck
+              </Button>
             </View>
           }
           renderItem={({ item, index }) => (

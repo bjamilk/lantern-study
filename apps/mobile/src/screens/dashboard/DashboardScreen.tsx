@@ -8,7 +8,7 @@ import {
 
   RefreshControl,
 
-  FlatList,
+  ScrollView,
 
   Text,
 
@@ -41,7 +41,11 @@ import { useNotesStore } from '../../stores/notesStore';
 
 import { useTestStore } from '../../stores/testStore';
 
-import { Card, ScreenHeader, Button } from '../../components/ui';
+import { Card, Button } from '../../components/ui';
+
+import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
+
+import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
@@ -53,7 +57,9 @@ import TestAnalysisModal from '../../components/TestAnalysisModal';
 import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../services/gamification';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
-import { buildActivityHeatmapGrid, getActivityHeatLevel, getActivityHeatHexColor, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, type ActivityHeatLevel } from '@lantern/shared/utils';
+
+import { useTheme } from '../../theme';
 
 
 
@@ -81,7 +87,7 @@ const PERIOD_OPTIONS: { value: TimePeriod; label: string }[] = [
 
 
 
-function ActivityHeatmap({ days }: { days: { date: string; count: number }[] }) {
+function ActivityHeatmap({ days, theme }: { days: { date: string; count: number }[]; theme: 'light' | 'dark' }) {
   const legendLevels: ActivityHeatLevel[] = [0, 1, 2, 3, 4];
   const weeks: { date: string; count: number }[][] = [];
 
@@ -97,35 +103,24 @@ function ActivityHeatmap({ days }: { days: { date: string; count: number }[] }) 
             {week.map(day => (
               <View
                 key={day.date}
-                style={{ backgroundColor: getActivityHeatHexColor(getActivityHeatLevel(day.count)) }}
-                className="w-3 h-3 rounded-sm"
+                className={`w-3 h-3 rounded-sm ${getActivityHeatColorForCount(day.count, theme)}`}
               />
             ))}
           </View>
         ))}
       </View>
       <View className="flex-row items-center gap-1">
-        <Text className="text-xs text-slate-500">Less</Text>
+        <Text className="text-xs text-lantern-text-tertiary">Less</Text>
         {legendLevels.map(level => (
           <View
             key={level}
-            style={{ backgroundColor: getActivityHeatHexColor(level) }}
-            className="w-3 h-3 rounded-sm"
+            className={`w-3 h-3 rounded-sm ${getActivityHeatTailwindClass(level, theme)}`}
           />
         ))}
-        <Text className="text-xs text-slate-500">More</Text>
+        <Text className="text-xs text-lantern-text-tertiary">More</Text>
       </View>
     </View>
   );
-}
-
-
-
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
 }
 
 
@@ -314,6 +309,8 @@ export function DashboardScreen({ navigation }: Props) {
 
   const parent = navigation.getParent();
 
+  const { isDark } = useTheme();
+
   const streak = serverStreak || stats?.currentStreak || 0;
 
   const level = stats?.userLevel;
@@ -406,34 +403,37 @@ export function DashboardScreen({ navigation }: Props) {
 
   return (
 
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
 
-      <FlatList
-
-        data={[]}
-
-        renderItem={() => null}
-
-        keyExtractor={() => 'dashboard'}
-
+      <ScrollView
         className="flex-1"
-
         contentContainerStyle={{ paddingBottom: 96, paddingHorizontal: 16 }}
-
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-
         showsVerticalScrollIndicator={false}
+      >
 
-        ListHeaderComponent={
-
-          <>
-
-        <ScreenHeader title={`${getGreeting()}, ${displayName}!`} subtitle="Your study hub" />
-
-
+        <DashboardHeroCard
+          userName={displayName}
+          streak={streak}
+          points={stats?.totalPoints ?? 0}
+          dueCount={dueCount}
+          totalTests={stats?.totalTestsTaken ?? 0}
+          level={level}
+          onPrimaryAction={() => {
+            if (dueCount > 0) {
+              parent?.navigate('StudyTab', { screen: 'FlashcardsList' });
+            } else {
+              parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'notes' } });
+            }
+          }}
+          primaryActionLabel={
+            dueCount > 0
+              ? `Review ${dueCount} due card${dueCount !== 1 ? 's' : ''}`
+              : 'Import & study'
+          }
+        />
 
         {activeTest ? (
-
           <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
 
             <View className="flex-row items-center justify-between gap-3">
@@ -466,52 +466,6 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        {level ? (
-
-          <Card className="mb-4">
-
-            <View className="flex-row items-center justify-between mb-2">
-
-              <View>
-
-                <Text className="text-xs text-slate-500 uppercase tracking-wide">Level {level.level}</Text>
-
-                <Text className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{level.name}</Text>
-
-              </View>
-
-              <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-
-                {level.currentXP} XP
-
-              </Text>
-
-            </View>
-
-            <View className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-
-              <View
-
-                className="h-full bg-indigo-500 rounded-full"
-
-                style={{ width: `${level.progressToNextLevel}%` }}
-
-              />
-
-            </View>
-
-            <Text className="text-xs text-slate-400 mt-1">
-
-              {Math.round(level.progressToNextLevel)}% to next level
-
-            </Text>
-
-          </Card>
-
-        ) : null}
-
-
-
         <View className="flex-row gap-2 mb-3">
 
           {PERIOD_OPTIONS.map(opt => (
@@ -526,9 +480,9 @@ export function DashboardScreen({ navigation }: Props) {
 
                 selectedPeriod === opt.value
 
-                  ? 'bg-indigo-500'
+                  ? 'bg-lantern-primary'
 
-                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600'
+                  : 'bg-lantern-surface border border-lantern-border'
 
               }`}
 
@@ -538,7 +492,7 @@ export function DashboardScreen({ navigation }: Props) {
 
                 className={`text-xs font-semibold ${
 
-                  selectedPeriod === opt.value ? 'text-white' : 'text-slate-600 dark:text-slate-300'
+                  selectedPeriod === opt.value ? 'text-white' : 'text-lantern-text-secondary'
 
                 }`}
 
@@ -619,7 +573,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             <>
 
-              <ActivityHeatmap days={heatmap.days} />
+              <ActivityHeatmap days={heatmap.days} theme={isDark ? 'dark' : 'light'} />
 
               <Text className="text-xs text-slate-400 mt-2">Darker = more study activity</Text>
 
@@ -851,207 +805,43 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Quick actions</Text>
-
-        <View className="gap-2 mb-6">
-
-          <Pressable
-
-            onPress={() => parent?.navigate('StudyTab', { screen: 'FlashcardsList' })}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 items-center justify-center">
-
-              <Ionicons name="school" size={20} color="#f43f5e" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Flashcards</Text>
-
-              <Text className="text-xs text-slate-500">{dueCount} cards due</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-
-
-          <Pressable
-
-            onPress={() => parent?.navigate('StudyTab', { screen: 'NotesList' })}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 items-center justify-center">
-
-              <Ionicons name="document-text" size={20} color="#6366f1" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Notes</Text>
-
-              <Text className="text-xs text-slate-500">Capture & study</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-
-
-          <Pressable
-
-            onPress={() => parent?.navigate('StudyTab', { screen: 'TestsList' })}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 items-center justify-center">
-
-              <Ionicons name="help-circle" size={20} color="#f59e0b" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Tests</Text>
-
-              <Text className="text-xs text-slate-500">Practice & exam mode</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-
-
-          <Pressable
-
-            onPress={() => parent?.navigate('ChatTab')}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 items-center justify-center">
-
-              <Ionicons name="chatbubbles" size={20} color="#10b981" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Chat</Text>
-
-              <Text className="text-xs text-slate-500">{groups.length} groups</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-
-
-          <Pressable
-
-            onPress={() => parent?.navigate('BudgetTab', { screen: 'BudgetHome' })}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 items-center justify-center">
-
-              <Ionicons name="card" size={20} color="#10b981" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Campus Pocket</Text>
-
-              <Text className="text-xs text-slate-500">Budget & expenses</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-
-
-          <Pressable
-
-            onPress={() => parent?.navigate('MarketTab')}
-
-            className="flex-row items-center gap-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4"
-
-          >
-
-            <View className="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 items-center justify-center">
-
-              <Ionicons name="bag" size={20} color="#8b5cf6" />
-
-            </View>
-
-            <View className="flex-1">
-
-              <Text className="font-semibold text-slate-900 dark:text-white">Marketplace</Text>
-
-              <Text className="text-xs text-slate-500">Buy & sell on campus</Text>
-
-            </View>
-
-            <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-
-          </Pressable>
-
-        </View>
-
-
-
-        {dueCount > 0 ? (
-
-          <Card className="mb-4 bg-indigo-50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800">
-
-            <Text className="font-semibold text-indigo-900 dark:text-indigo-100 mb-1">Cards waiting</Text>
-
-            <Text className="text-sm text-indigo-700 dark:text-indigo-300 mb-3">
-
-              You have {dueCount} flashcard{dueCount !== 1 ? 's' : ''} ready to review.
-
-            </Text>
-
-            <Button size="sm" onPress={() => parent?.navigate('StudyTab', { screen: 'FlashcardsList' })}>
-
-              Start studying
-
-            </Button>
-
-          </Card>
-
-        ) : null}
-
-          </>
-
-        }
-
-      />
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Quick actions</Text>
+
+        <DashboardQuickLinks
+          links={[
+            {
+              id: 'flashcards',
+              label: 'Flashcards',
+              icon: 'layers',
+              iconColor: '#059669',
+              badge: dueCount,
+              onPress: () => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } }),
+            },
+            {
+              id: 'notes',
+              label: 'Notes',
+              icon: 'document-text',
+              iconColor: '#4f46e5',
+              onPress: () => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'notes' } }),
+            },
+            {
+              id: 'tests',
+              label: 'Tests',
+              icon: 'help-circle',
+              iconColor: '#d97706',
+              onPress: () => parent?.navigate('StudyTab', { screen: 'TestsList' }),
+            },
+            {
+              id: 'marketplace',
+              label: 'Explore',
+              icon: 'bag',
+              iconColor: '#6366f1',
+              onPress: () => parent?.navigate('MarketTab'),
+            },
+          ]}
+        />
+
+      </ScrollView>
 
 
 

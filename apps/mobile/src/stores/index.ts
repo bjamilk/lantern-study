@@ -45,3 +45,5 @@ export type { OfflineTest, OfflineQuestion, PendingResult, DownloadOptions } fro
 export { useCompanionStore } from './companionStore';
 export { useStudyGoalsStore } from './studyGoalsStore';
 export { useNotificationStore } from './notificationStore';
+export { useUIStore } from './uiStore';
+export type { LibraryTab } from './uiStore';

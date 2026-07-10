@@ -235,10 +235,20 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   };
 
   const Wrapper = embedded ? View : SafeAreaView;
-  const wrapperProps = embedded ? { className: 'flex-1 bg-slate-50 dark:bg-slate-900' } : { className: 'flex-1 bg-slate-50 dark:bg-slate-900', edges: ['top'] as const };
+  const wrapperProps = embedded ? { className: 'flex-1 bg-lantern-background' } : { className: 'flex-1 bg-lantern-background', edges: ['top'] as const };
 
   return (
     <Wrapper {...wrapperProps}>
+      {embedded && (
+        <View className="flex-row gap-1.5 justify-end px-4 pt-3">
+          <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
+            Folder
+          </Button>
+          <Button size="sm" onPress={handleCreateNote}>
+            + Note
+          </Button>
+        </View>
+      )}
       {!embedded && (
       <ScreenHeader
         title="Notes"
@@ -378,6 +388,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               </Text>
               <Button className="mt-4" size="sm" onPress={handleCreateNote}>
                 New note
+              </Button>
+              <Button className="mt-2" size="sm" variant="secondary" onPress={() => void handlePickFile('pdf')}>
+                Import PDF
               </Button>
             </Card>
           }
