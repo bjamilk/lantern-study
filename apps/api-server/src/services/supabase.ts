@@ -963,6 +963,46 @@ export class SupabaseService {
     return !!data;
   }
 
+  /**
+   * Authorize mutation of a group message. Returns the message row when the user
+   * is an active (non-pending) member of its group; otherwise null (treat as not
+   * found to avoid IDOR leaks).
+   */
+  async getAuthorizedGroupMessage(
+    messageId: string,
+    userId: string
+  ): Promise<{ id: string; group_id: string; sender_id: string; type: string } | null> {
+    const { data, error } = await this.supabase
+      .from('messages')
+      .select('id, group_id, sender_id, type')
+      .eq('id', messageId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!data?.group_id) return null;
+
+    const { data: membership, error: memberError } = await this.supabase
+      .from('group_members')
+      .select('user_id, pending')
+      .eq('group_id', data.group_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (memberError && memberError.code !== 'PGRST116') throw memberError;
+    if (!membership || membership.pending === true) return null;
+
+    return data;
+  }
+
+  async isGroupAdmin(groupId: string, userId: string): Promise<boolean> {
+    const group = await this.getGroupById(groupId);
+    if (!group) return false;
+    return (
+      (group.adminIds || []).includes(userId) ||
+      !!(group.permissions && group.permissions[userId]?.admin)
+    );
+  }
+
   /** Whether an authenticated user may deliver a notification to another user. */
   async canNotifyUser(requestingUserId: string, targetUserId: string, link?: string): Promise<boolean> {
     if (!link) return false;
@@ -4757,8 +4797,11 @@ export class SupabaseService {
       .sort((a, b) => b.total - a.total);
   }
 
-  async getMarketplaceListingById(listingId: string): Promise<any | null> {
-    const { data, error } = await this.supabase
+  async getMarketplaceListingById(
+    listingId: string,
+    options?: { requireActive?: boolean }
+  ): Promise<any | null> {
+    let query = this.supabase
       .from('marketplace_listings')
       .select(`
         *,
@@ -4776,15 +4819,40 @@ export class SupabaseService {
           country_code
         )
       `)
-      .eq('id', listingId)
-      .single();
+      .eq('id', listingId);
+
+    if (options?.requireActive) {
+      query = query.eq('status', 'active');
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null;
       throw error;
     }
 
-    return this.normalizeListingRecord(data);
+    return data ? this.normalizeListingRecord(data) : null;
+  }
+
+  /**
+   * Public marketplace detail: active listings for anyone; owners/admins may view non-active.
+   */
+  async getMarketplaceListingForViewer(
+    listingId: string,
+    viewerId?: string | null
+  ): Promise<any | null> {
+    const listing = await this.getMarketplaceListingById(listingId);
+    if (!listing) return null;
+
+    if (listing.status === 'active') return listing;
+
+    if (!viewerId) return null;
+
+    if (listing.user_id === viewerId) return listing;
+
+    const isAdmin = await this.isPlatformAdmin(viewerId).catch(() => false);
+    return isAdmin ? listing : null;
   }
 
   async createMarketplaceListing(listingData: any, userId: string): Promise<any> {

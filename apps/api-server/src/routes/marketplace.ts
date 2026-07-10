@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -117,18 +117,21 @@ router.get(
 // GET /api/v1/marketplace/listings/:id - Get listing by ID
 router.get(
   '/listings/:id',
+  optionalAuthMiddleware,
   validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
+    const viewerId = req.user?.id as string | undefined;
 
-    logger.debug('Fetching marketplace listing', { id });
+    logger.debug('Fetching marketplace listing', { id, viewerId: viewerId || null });
 
-    const cacheKey = `marketplace:listing:${id}`;
-    let listing = await cacheService.get<any>(cacheKey);
+    // Do not serve non-active listings from a shared public cache key.
+    const cacheKey = viewerId ? null : `marketplace:listing:public:${id}`;
+    let listing = cacheKey ? await cacheService.get<any>(cacheKey) : null;
 
     if (!listing) {
-      listing = await supabaseService.getMarketplaceListingById(id);
+      listing = await supabaseService.getMarketplaceListingForViewer(id, viewerId);
 
       if (!listing) {
         return res.status(404).json({
@@ -136,11 +139,17 @@ router.get(
           error: 'Listing not found',
         });
       }
+
+      if (cacheKey && listing.status === 'active') {
+        await cacheService.set(cacheKey, listing, 600);
+      }
     }
 
     await supabaseService.incrementListingViews(id);
     listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
-    await cacheService.set(cacheKey, listing, 600);
+    if (cacheKey && listing.status === 'active') {
+      await cacheService.set(cacheKey, listing, 600);
+    }
 
     res.json({
       success: true,
@@ -960,15 +969,24 @@ router.put(
         logger.warn('Failed to send counter notification', e);
       }
     } else {
-      // accept, decline, or withdraw
+      // accept, decline, or withdraw — conditional update prevents double-accept races
+      const nextStatus =
+        action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'withdrawn';
       const { data, error: updateErr } = await supabaseService.getClient()
         .from('marketplace_offers')
-        .update({ status: action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'withdrawn' })
+        .update({ status: nextStatus })
         .eq('id', id)
+        .eq('status', 'pending')
         .select('*')
-        .single();
+        .maybeSingle();
 
       if (updateErr) throw updateErr;
+      if (!data) {
+        return res.status(409).json({
+          success: false,
+          error: `Cannot ${action} an offer that is no longer pending`,
+        });
+      }
       updatedOffer = data;
 
       if (action === 'accept') {
@@ -976,7 +994,17 @@ router.put(
           await supabaseService.finalizeOfferAcceptSale(id);
           await invalidateSellerAnalyticsCache(offer.seller_id);
         } catch (finalizeErr) {
-          logger.warn('Failed to finalize offer accept sale / budget log', finalizeErr);
+          // Roll offer back to pending so the seller can retry; do not leave accepted-without-order.
+          await supabaseService.getClient()
+            .from('marketplace_offers')
+            .update({ status: 'pending' })
+            .eq('id', id)
+            .eq('status', 'accepted');
+          logger.error('Failed to finalize offer accept sale', finalizeErr);
+          return res.status(500).json({
+            success: false,
+            error: clientErrorMessage(finalizeErr, 'Failed to create order from accepted offer'),
+          });
         }
       }
 
@@ -1284,25 +1312,31 @@ router.get(
 // Returns listing + isFavorited + similarListings in a single round trip.
 router.get(
   '/listings/:id/full',
+  optionalAuthMiddleware,
   validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
-    const { userId } = req.query;
+    const viewerId = req.user?.id as string | undefined;
 
-    // --- 1. Listing (cached 10 min) ---
-    const listingCacheKey = `marketplace:listing:${id}`;
-    let listing = await cacheService.get<any>(listingCacheKey);
+    // --- 1. Listing (active for public; owner/admin may see non-active) ---
+    const listingCacheKey = viewerId ? null : `marketplace:listing:public:${id}`;
+    let listing = listingCacheKey ? await cacheService.get<any>(listingCacheKey) : null;
     if (!listing) {
-      listing = await supabaseService.getMarketplaceListingById(id);
+      listing = await supabaseService.getMarketplaceListingForViewer(id, viewerId);
       if (!listing) {
         return res.status(404).json({ success: false, error: 'Listing not found' });
+      }
+      if (listingCacheKey && listing.status === 'active') {
+        await cacheService.set(listingCacheKey, listing, 600);
       }
     }
 
     await supabaseService.incrementListingViews(id);
     listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
-    await cacheService.set(listingCacheKey, listing, 600);
+    if (listingCacheKey && listing.status === 'active') {
+      await cacheService.set(listingCacheKey, listing, 600);
+    }
 
     // --- 2. Similar listings (cached 5 min, shared across all users) ---
     const similarCacheKey = `marketplace:similar:${id}`;
@@ -1326,10 +1360,10 @@ router.get(
       await cacheService.set(similarCacheKey, similarListings, 300);
     }
 
-    // --- 3. isFavorited (user-specific, not cached) ---
+    // --- 3. isFavorited (session user only — never trust query userId) ---
     let isFavorited = false;
-    if (userId) {
-      isFavorited = await supabaseService.isListingFavorited(userId as string, id);
+    if (viewerId) {
+      isFavorited = await supabaseService.isListingFavorited(viewerId, id);
     }
 
     res.json({

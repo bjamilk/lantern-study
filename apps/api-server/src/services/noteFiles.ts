@@ -82,6 +82,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
+ * Allow the public Render fallback only when explicitly opted in for non-production.
+ * Production must configure GOTENBERG_URL — never send private uploads to a shared host.
+ */
+function allowPublicGotenbergFallback(): boolean {
+  if (isProductionRuntime()) return false;
+  return process.env.ALLOW_PUBLIC_GOTENBERG_FALLBACK === 'true';
+}
+
 function resolveGotenbergBaseUrl(): string | undefined {
   const raw = process.env.GOTENBERG_URL?.trim();
   if (!raw) return undefined;
@@ -94,8 +107,16 @@ function resolveGotenbergBaseUrl(): string | undefined {
 
 function getGotenbergCandidates(): string[] {
   const configured = resolveGotenbergBaseUrl();
-  const urls = [configured, GOTENBERG_PUBLIC_FALLBACK].filter(Boolean) as string[];
-  return [...new Set(urls)];
+  if (configured) {
+    return [configured];
+  }
+  if (allowPublicGotenbergFallback()) {
+    logger.warn('Using public Gotenberg fallback (non-production only)', {
+      url: GOTENBERG_PUBLIC_FALLBACK,
+    });
+    return [GOTENBERG_PUBLIC_FALLBACK];
+  }
+  return [];
 }
 
 /** Wake cold Gotenberg instances (Render free tier) before conversion. Returns time spent waking. */
@@ -191,7 +212,20 @@ export async function convertPresentationToPdf(
   let wakeMs = 0;
   let convertMs = 0;
 
-  for (const gotenbergUrl of getGotenbergCandidates()) {
+  const candidates = getGotenbergCandidates();
+  if (candidates.length === 0) {
+    const message = isProductionRuntime()
+      ? 'Presentation conversion is not configured (set GOTENBERG_URL)'
+      : 'Presentation conversion is not configured (set GOTENBERG_URL or ALLOW_PUBLIC_GOTENBERG_FALLBACK=true for local/dev)';
+    logger.error('Gotenberg not configured; refusing to convert presentation', {
+      noteId: context?.noteId,
+      fileName,
+      production: isProductionRuntime(),
+    });
+    return { pdf: null, error: message, totalMs: Date.now() - totalStartedAt };
+  }
+
+  for (const gotenbergUrl of candidates) {
     wakeMs = await warmGotenbergService(gotenbergUrl);
     for (let attempt = 1; attempt <= GOTENBERG_CONVERT_ATTEMPTS; attempt++) {
       const convertStartedAt = Date.now();

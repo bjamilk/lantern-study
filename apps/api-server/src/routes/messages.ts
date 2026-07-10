@@ -725,6 +725,11 @@ router.post(
       });
     }
 
+    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    if (!authorized) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
     const result = await supabaseService.voteQuestion(messageId, userId, voteType);
 
     // Invalidate message cache
@@ -749,6 +754,11 @@ router.delete(
     const { messageId } = req.params;
 
     logger.debug('Removing vote from message', { messageId, userId });
+
+    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    if (!authorized) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
 
     const result = await supabaseService.removeVote(messageId, userId);
 
@@ -783,6 +793,20 @@ router.put(
       });
     }
 
+    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    if (!authorized) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    const isSender = authorized.sender_id === userId;
+    const isAdmin = await supabaseService.isGroupAdmin(authorized.group_id, userId);
+    if (!isSender && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the question author or a group admin can update question status',
+      });
+    }
+
     const result = await supabaseService.updateQuestionStatus(messageId, questionStatus);
 
     // Invalidate message cache
@@ -809,6 +833,18 @@ router.put(
     const flagIds = flagged_as_similar_user_ids ?? flaggedUserIds;
 
     logger.debug('Updating message', { messageId, userId });
+
+    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    if (!authorized) {
+      return res.status(404).json({ success: false, error: 'Message not found' });
+    }
+
+    if (!Array.isArray(flagIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'flagged_as_similar_user_ids must be an array',
+      });
+    }
 
     const result = await supabaseService.updateMessageFlagged(messageId, flagIds);
 

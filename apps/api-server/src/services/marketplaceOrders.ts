@@ -150,6 +150,34 @@ export class MarketplaceOrdersService {
     }
   }
 
+  private isUniqueViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+    if (!error) return false;
+    return error.code === '23505' || /duplicate key|unique constraint/i.test(error.message || '');
+  }
+
+  private async getOpenOrderForListing(listingId: string): Promise<MarketplaceOrderRow | null> {
+    const { data, error } = await this.db
+      .from('marketplace_orders')
+      .select(this.orderSelect)
+      .eq('listing_id', listingId)
+      .in('status', OPEN_ORDER_STATUSES)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as MarketplaceOrderRow) || null;
+  }
+
+  private async getOrderByOfferId(offerId: string): Promise<MarketplaceOrderRow | null> {
+    const { data, error } = await this.db
+      .from('marketplace_orders')
+      .select(this.orderSelect)
+      .eq('offer_id', offerId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as MarketplaceOrderRow) || null;
+  }
+
   private async insertPendingTransaction(
     listingId: string,
     buyerId: string,
@@ -241,7 +269,16 @@ export class MarketplaceOrdersService {
       .select(this.orderSelect)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (this.isUniqueViolation(error)) {
+        const existing = await this.getOpenOrderForListing(listingId);
+        if (existing) {
+          if (existing.buyer_id === buyerId) return existing;
+          throw new Error('This listing already has an open order');
+        }
+      }
+      throw error;
+    }
     const row = order as MarketplaceOrderRow;
 
     if (couponId) {
@@ -320,7 +357,18 @@ export class MarketplaceOrdersService {
       .select(this.orderSelect)
       .single();
 
-    if (orderError) throw orderError;
+    if (orderError) {
+      if (this.isUniqueViolation(orderError)) {
+        const byOffer = await this.getOrderByOfferId(offerId);
+        if (byOffer) return byOffer;
+        const open = await this.getOpenOrderForListing(offer.listing_id);
+        if (open) {
+          if (open.buyer_id === offer.buyer_id) return open;
+          throw new Error('This listing already has an open order');
+        }
+      }
+      throw orderError;
+    }
     const row = order as MarketplaceOrderRow;
 
     const title = listingRaw.title || 'listing';
