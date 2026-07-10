@@ -19,6 +19,8 @@ import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { DashboardProgress } from './dashboard/DashboardProgress';
 import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
+import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
+import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
 
 interface DashboardScreenProps {
@@ -146,7 +148,7 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
                     );
                 })}
             </div>
-            <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-1 text-xs text-lantern-text-secondary">
                 <span>Less</span>
                 {legendLevels.map(level => (
                     <div
@@ -810,54 +812,34 @@ export default function DashboardScreen({
 
         <DashboardProgress defaultOpen={false}>
         {/* ─── Stat Cards Row ─── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
-                <ChartBarIcon className="w-5 h-5 text-lantern-primary" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-lantern-text-secondary truncate">Tests Taken</p>
-                <p className="text-2xl font-bold text-lantern-text">{totalTestsTakenOverall}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-lantern-accent-background flex items-center justify-center flex-shrink-0">
-                <ClockIcon className="w-5 h-5 text-lantern-accent" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-lantern-text-secondary truncate">Avg. Time/Q</p>
-                <p className="text-2xl font-bold text-lantern-text">
-                  {overallAverageTimePerQuestion > 0 ? `${overallAverageTimePerQuestion.toFixed(0)}s` : '—'}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-lantern-success/15 flex items-center justify-center flex-shrink-0">
-                <UsersIcon className="w-5 h-5 text-lantern-success" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-lantern-text-secondary truncate">Groups</p>
-                <p className="text-2xl font-bold text-lantern-text">{groups.length}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-lantern-surface/95 rounded-lantern-xl p-4 shadow-lantern border border-lantern-border">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-lantern-warning/15 flex items-center justify-center flex-shrink-0">
-                <RectangleStackIcon className="w-5 h-5 text-lantern-warning" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-lantern-text-secondary truncate">Cards Due</p>
-                <p className="text-2xl font-bold text-lantern-text">{dueCardsCount}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardStatGrid
+          items={[
+            {
+              label: 'Tests Taken',
+              value: totalTestsTakenOverall,
+              icon: <ChartBarIcon className="w-5 h-5 text-lantern-primary" />,
+              iconBgClass: 'bg-lantern-primary-background',
+            },
+            {
+              label: 'Avg. Time/Q',
+              value: overallAverageTimePerQuestion > 0 ? `${overallAverageTimePerQuestion.toFixed(0)}s` : '—',
+              icon: <ClockIcon className="w-5 h-5 text-lantern-accent" />,
+              iconBgClass: 'bg-lantern-accent-background',
+            },
+            {
+              label: 'Groups',
+              value: groups.length,
+              icon: <UsersIcon className="w-5 h-5 text-lantern-success" />,
+              iconBgClass: 'bg-lantern-success/15',
+            },
+            {
+              label: 'Cards Due',
+              value: dueCardsCount,
+              icon: <RectangleStackIcon className="w-5 h-5 text-lantern-warning" />,
+              iconBgClass: 'bg-lantern-warning/15',
+            },
+          ]}
+        />
 
         {(activeTestSession || activeStudySession) && onResumeSession && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 flex items-center justify-between gap-3">
@@ -894,36 +876,11 @@ export default function DashboardScreen({
           activityDays={studyActivityDays}
         />
 
-        {/* ─── Today's Summary ─── */}
-        <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center mb-4">
-            <RocketLaunchIcon className="w-5 h-5 mr-2 text-indigo-500" />
-            Today's Summary
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-              <RectangleStackIcon className="w-8 h-8 text-emerald-500 flex-shrink-0" />
-              <div>
-                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{dueCardsCount}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Flashcards Due</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-              <ClockOutline className="w-8 h-8 text-amber-500 flex-shrink-0" />
-              <div>
-                <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{pendingSyncCount}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Pending Syncs</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <BellIcon className="w-8 h-8 text-blue-500 flex-shrink-0" />
-              <div>
-                <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{unreadNotificationCount}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Unread Notifications</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardSummaryRow
+          dueCardsCount={dueCardsCount}
+          pendingSyncCount={pendingSyncCount}
+          unreadNotificationCount={unreadNotificationCount}
+        />
 
         {/* ─── AI Study Coach ─── */}
         {onGetStudyRecommendations && (
@@ -936,8 +893,8 @@ export default function DashboardScreen({
             ) : (
           <>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
-                <SparklesIcon className="w-5 h-5 mr-2 text-purple-500" />
+              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+                <SparklesIcon className="w-5 h-5 mr-2 text-lantern-primary" />
                 AI Study Coach
               </h2>
               <button
@@ -959,20 +916,20 @@ export default function DashboardScreen({
                   setIsCoachLoading(false);
                 }}
                 disabled={isCoachLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary/10 border border-lantern-primary/30 rounded-lantern transition-colors disabled:opacity-50"
               >
                 {isCoachLoading ? 'Analyzing...' : aiCoachData ? 'Refresh' : 'Get Recommendations'}
               </button>
             </div>
             {aiCoachData ? (
               <div className="space-y-3">
-                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                  <p className="text-sm font-medium text-purple-700 dark:text-purple-300 mb-1">💡 Study Tip</p>
-                  <p className="text-sm text-slate-700 dark:text-slate-300">{aiCoachData.studyTip}</p>
+                <div className="p-3 bg-lantern-primary-background rounded-lantern">
+                  <p className="text-sm font-medium text-lantern-primary mb-1">💡 Study Tip</p>
+                  <p className="text-sm text-lantern-text">{aiCoachData.studyTip}</p>
                 </div>
                 {aiCoachData.weakTopics.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Focus Areas</p>
+                    <p className="text-xs font-semibold text-lantern-text-secondary mb-1">Focus Areas</p>
                     <div className="flex flex-wrap gap-1.5">
                       {aiCoachData.weakTopics.map((topic, i) => (
                         <span key={i} className="px-2 py-1 text-xs bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md">
@@ -982,12 +939,12 @@ export default function DashboardScreen({
                     </div>
                   </div>
                 )}
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-lantern-text-secondary">
                   ⏱ Estimated study time: <span className="font-semibold">{aiCoachData.estimatedMinutes} min</span>
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-lantern-text-secondary">
                 Click "Get Recommendations" to receive personalized study tips based on your performance.
               </p>
             )}
@@ -998,17 +955,17 @@ export default function DashboardScreen({
 
         {/* ─── Activity Heatmap & Filter ─── */}
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
-          <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+          <div className="p-4 md:p-5 border-b border-lantern-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
               <CalendarDaysIcon className="w-5 h-5 mr-2 text-emerald-500" />
               Study Activity
             </h2>
             <div className="flex items-center gap-2">
-              <FunnelIcon className="w-4 h-4 text-slate-400" />
+              <FunnelIcon className="w-4 h-4 text-lantern-text-tertiary" />
               <select
                 value={selectedTimePeriod}
                 onChange={(e) => setSelectedTimePeriod(e.target.value as TimePeriodOptionValue)}
-                className="text-sm p-1.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-indigo-500 focus:border-indigo-500"
+                className="text-sm p-1.5 bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
               >
                 {timePeriodOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -1017,18 +974,18 @@ export default function DashboardScreen({
             </div>
           </div>
           {selectedTimePeriod === 'custom' && (
-            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div className="px-4 py-3 bg-lantern-background-secondary border-b border-lantern-border">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div>
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-0.5">Start Date</label>
+                  <label className="block text-xs text-lantern-text-secondary mb-0.5">Start Date</label>
                   <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)}
-                    className="p-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                    className="p-1.5 text-sm border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                     max={customEndDate || undefined} />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-0.5">End Date</label>
+                  <label className="block text-xs text-lantern-text-secondary mb-0.5">End Date</label>
                   <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="p-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                    className="p-1.5 text-sm border border-lantern-border rounded-lantern bg-lantern-surface text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                     min={customStartDate || undefined} />
                 </div>
               </div>
@@ -1042,18 +999,18 @@ export default function DashboardScreen({
         {/* ─── Two-Column Layout: Achievements + Analysis ─── */}
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
               <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
               Achievements &amp; Topic Insights
             </h2>
-            <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180" />
+            <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open:rotate-180" />
           </summary>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3">
           
           {/* Achievements Card */}
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
-            <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+            <div className="p-4 md:p-5 border-b border-lantern-border">
+              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
                 <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
                 Achievements
               </h2>
@@ -1078,16 +1035,16 @@ export default function DashboardScreen({
                 }
 
                 return (
-                  <div key={definition.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/40 rounded-lg">
+                  <div key={definition.id} className="flex items-center gap-3 p-3 bg-lantern-background-secondary rounded-lg">
                     <span className="text-3xl flex-shrink-0">{definition.icon}</span>
                     <div className="flex-grow min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm text-slate-800 dark:text-slate-200 truncate">{userBadge ? userBadge.name : definition.baseName}</p>
+                        <p className="font-semibold text-sm text-lantern-text truncate">{userBadge ? userBadge.name : definition.baseName}</p>
                         {userBadge && <span className="text-xs bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ml-2">Lv.{userBadge.level}</span>}
                       </div>
                       {isRisingStar ? (
                         nextLevelInfo ? (
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          <p className="text-xs text-lantern-text-secondary mt-0.5">
                             Goal: {nextLevelInfo.threshold} upvotes on one question
                           </p>
                         ) : (
@@ -1095,11 +1052,11 @@ export default function DashboardScreen({
                         )
                       ) : (
                         <div className="mt-1.5">
-                          <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-0.5">
+                          <div className="flex justify-between text-[10px] text-lantern-text-secondary mb-0.5">
                             <span>{progressText}</span>
                           </div>
-                          <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5">
-                            <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(progress, 100)}%` }}></div>
+                          <div className="w-full bg-lantern-background-secondary rounded-full h-1.5">
+                            <div className="bg-lantern-primary h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.min(progress, 100)}%` }}></div>
                           </div>
                         </div>
                       )}
@@ -1112,9 +1069,9 @@ export default function DashboardScreen({
 
           {/* Topic Performance Card */}
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
-            <div className="p-4 md:p-5 border-b border-slate-200 dark:border-slate-700">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
-                <TagIcon className="w-5 h-5 mr-2 text-purple-500" />
+            <div className="p-4 md:p-5 border-b border-lantern-border">
+              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+                <TagIcon className="w-5 h-5 mr-2 text-lantern-primary" />
                 Topic Insights
               </h2>
             </div>
@@ -1124,10 +1081,10 @@ export default function DashboardScreen({
                 <div className="space-y-1.5">
                   {analysisData.strongestTopics.length > 0 ? analysisData.strongestTopics.map(topic => (
                     <div key={topic.tag} className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
-                      <span className="text-sm text-slate-700 dark:text-slate-300 truncate pr-2">{topic.tag}</span>
+                      <span className="text-sm text-lantern-text truncate pr-2">{topic.tag}</span>
                       <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
                     </div>
-                  )) : <p className="text-xs text-slate-400 italic">Not enough data yet.</p>}
+                  )) : <p className="text-xs text-lantern-text-tertiary italic">Not enough data yet.</p>}
                 </div>
               </div>
               <div>
@@ -1135,21 +1092,21 @@ export default function DashboardScreen({
                 <div className="space-y-1.5">
                   {analysisData.weakestTopics.length > 0 ? analysisData.weakestTopics.map(topic => (
                     <div key={topic.tag} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                      <span className="text-sm text-slate-700 dark:text-slate-300 truncate pr-2">{topic.tag}</span>
+                      <span className="text-sm text-lantern-text truncate pr-2">{topic.tag}</span>
                       <span className="text-sm font-bold text-red-600 dark:text-red-400 flex-shrink-0">{topic.accuracy.toFixed(0)}%</span>
                     </div>
-                  )) : <p className="text-xs text-slate-400 italic">Not enough data yet.</p>}
+                  )) : <p className="text-xs text-lantern-text-tertiary italic">Not enough data yet.</p>}
                 </div>
               </div>
               <div>
-                <h4 className="text-xs font-semibold uppercase text-indigo-600 dark:text-indigo-400 tracking-wider mb-2">Speed by Type</h4>
+                <h4 className="text-xs font-semibold uppercase text-lantern-primary tracking-wider mb-2">Speed by Type</h4>
                 <div className="space-y-1.5">
                   {analysisData.speedAnalysis.length > 0 ? analysisData.speedAnalysis.map(item => (
-                    <div key={item.type} className="flex items-center justify-between p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
-                      <span className="text-sm text-slate-700 dark:text-slate-300">{getQuestionTypeLabel(item.type)}</span>
-                      <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 flex-shrink-0">{item.avgTime.toFixed(1)}s</span>
+                    <div key={item.type} className="flex items-center justify-between p-2 bg-lantern-primary-background rounded-lantern">
+                      <span className="text-sm text-lantern-text">{getQuestionTypeLabel(item.type)}</span>
+                      <span className="text-sm font-bold text-lantern-primary flex-shrink-0">{item.avgTime.toFixed(1)}s</span>
                     </div>
-                  )) : <p className="text-xs text-slate-400 italic">No time data available.</p>}
+                  )) : <p className="text-xs text-lantern-text-tertiary italic">No time data available.</p>}
                 </div>
               </div>
             </div>
@@ -1163,21 +1120,21 @@ export default function DashboardScreen({
         {troublesomeQuestions.length > 0 && (
           <details open className="group">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
                 <ExclamationTriangleIcon className="w-5 h-5 mr-2 text-amber-500" />
                 Questions to Review
               </h2>
-              <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180" />
+              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open:rotate-180" />
             </summary>
-            <div className="divide-y divide-slate-100 dark:divide-slate-700/50 mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
+            <div className="divide-y divide-lantern-border mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
               {troublesomeQuestions.map(q => (
                 <div key={q.id} className="p-4 flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
                     <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{q.accuracy.toFixed(0)}%</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-slate-700 dark:text-slate-300 line-clamp-2">{q.stem}</p>
-                    <p className="text-xs text-slate-400 mt-1">{q.incorrectAttempts} incorrect attempt{q.incorrectAttempts !== 1 ? 's' : ''}</p>
+                    <p className="text-sm text-lantern-text line-clamp-2">{q.stem}</p>
+                    <p className="text-xs text-lantern-text-tertiary mt-1">{q.incorrectAttempts} incorrect attempt{q.incorrectAttempts !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
               ))}
@@ -1189,51 +1146,51 @@ export default function DashboardScreen({
         {allGroupPerformanceData.length > 0 && (
           <details open className="group/perf">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
-                <PresentationChartBarIcon className="w-5 h-5 mr-2 text-indigo-500" />
+              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+                <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
                 Performance by Group
               </h2>
-              <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open/perf:rotate-180" />
+              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open/perf:rotate-180" />
             </summary>
             <div className="space-y-4 mt-3">
             {allGroupPerformanceData.map(groupData => (
               <div key={groupData.id} className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
                 <button onClick={() => toggleGroupExpansion(groupData.id)} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={!!expandedGroups[groupData.id]}>
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
-                      <UsersIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <div className="w-8 h-8 rounded-lg bg-lantern-primary-background flex items-center justify-center">
+                      <UsersIcon className="w-4 h-4 text-lantern-primary" />
                     </div>
-                    <h3 className="font-semibold text-slate-800 dark:text-slate-200">{groupData.name}</h3>
+                    <h3 className="font-semibold text-lantern-text">{groupData.name}</h3>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="hidden sm:inline text-sm text-slate-500 dark:text-slate-400">{groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</span>
-                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{groupData.averageScore.toFixed(1)}%</span>
-                    {expandedGroups[groupData.id] ? <ChevronUpIcon className="w-5 h-5 text-slate-400" /> : <ChevronDownIcon className="w-5 h-5 text-slate-400" />}
+                    <span className="hidden sm:inline text-sm text-lantern-text-secondary">{groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</span>
+                    <span className="text-sm font-bold text-lantern-primary">{groupData.averageScore.toFixed(1)}%</span>
+                    {expandedGroups[groupData.id] ? <ChevronUpIcon className="w-5 h-5 text-lantern-text-tertiary" /> : <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary" />}
                   </div>
                 </button>
                 {expandedGroups[groupData.id] && (
-                  <div className="border-t border-slate-200 dark:border-slate-700">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-200 dark:bg-slate-700">
-                      <div className="bg-white dark:bg-slate-800 p-3 text-center">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Tests</p>
-                        <p className="text-lg font-bold text-slate-900 dark:text-white">{groupData.testCount}</p>
+                  <div className="border-t border-lantern-border">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-lantern-border">
+                      <div className="bg-lantern-surface p-3 text-center">
+                        <p className="text-xs text-lantern-text-secondary">Tests</p>
+                        <p className="text-lg font-bold text-lantern-text">{groupData.testCount}</p>
                       </div>
-                      <div className="bg-white dark:bg-slate-800 p-3 text-center">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Avg Score</p>
-                        <p className="text-lg font-bold text-slate-900 dark:text-white">{groupData.averageScore.toFixed(1)}%</p>
+                      <div className="bg-lantern-surface p-3 text-center">
+                        <p className="text-xs text-lantern-text-secondary">Avg Score</p>
+                        <p className="text-lg font-bold text-lantern-text">{groupData.averageScore.toFixed(1)}%</p>
                       </div>
-                      <div className="bg-white dark:bg-slate-800 p-3 text-center">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Accuracy</p>
-                        <p className="text-lg font-bold text-slate-900 dark:text-white">{groupData.accuracy.toFixed(1)}%</p>
+                      <div className="bg-lantern-surface p-3 text-center">
+                        <p className="text-xs text-lantern-text-secondary">Accuracy</p>
+                        <p className="text-lg font-bold text-lantern-text">{groupData.accuracy.toFixed(1)}%</p>
                       </div>
-                      <div className="bg-white dark:bg-slate-800 p-3 text-center">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Avg Time/Q</p>
-                        <p className="text-lg font-bold text-slate-900 dark:text-white">{groupData.averageTimePerQuestion > 0 ? `${groupData.averageTimePerQuestion.toFixed(1)}s` : '—'}</p>
+                      <div className="bg-lantern-surface p-3 text-center">
+                        <p className="text-xs text-lantern-text-secondary">Avg Time/Q</p>
+                        <p className="text-lg font-bold text-lantern-text">{groupData.averageTimePerQuestion > 0 ? `${groupData.averageTimePerQuestion.toFixed(1)}s` : '—'}</p>
                       </div>
                     </div>
                     <div className="p-4">
                       {lowDataMode ? (
-                        <div className="py-4 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                        <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern">
                           <p className="font-medium">Chart hidden in Low-Data Mode</p>
                           <p className="text-xs mt-1">Avg Score: {groupData.averageScore.toFixed(1)}% across {groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</p>
                         </div>
@@ -1241,8 +1198,8 @@ export default function DashboardScreen({
                         <GroupPerformanceChart datasets={[{ label: 'Score', data: chartDisplayMode === 'bar' ? groupData.weeklyChartData : groupData.chartData }]} theme={theme} type={chartDisplayMode} />
                       )}
                       <div className="flex justify-end gap-1 mt-3">
-                        <button onClick={() => setChartDisplayMode('line')} className={`px-3 py-1 text-xs rounded-l-lg border transition-colors ${chartDisplayMode === 'line' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}>Timeline</button>
-                        <button onClick={() => setChartDisplayMode('bar')} className={`px-3 py-1 text-xs rounded-r-lg border transition-colors ${chartDisplayMode === 'bar' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}>Weekly</button>
+                        <button onClick={() => setChartDisplayMode('line')} className={`px-3 py-1 text-xs rounded-l-lg border transition-colors ${chartDisplayMode === 'line' ? 'bg-lantern-primary text-white border-lantern-primary' : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'}`}>Timeline</button>
+                        <button onClick={() => setChartDisplayMode('bar')} className={`px-3 py-1 text-xs rounded-r-lg border transition-colors ${chartDisplayMode === 'bar' ? 'bg-lantern-primary text-white border-lantern-primary' : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'}`}>Weekly</button>
                       </div>
                     </div>
                   </div>
@@ -1256,14 +1213,14 @@ export default function DashboardScreen({
         {/* ─── Recent Tests ─── */}
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <button onClick={toggleRecentTestsExpansion} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={isRecentTestsExpanded}>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+            <h2 className="text-lg font-semibold text-lantern-text flex items-center">
               <PresentationChartLineIcon className="w-5 h-5 mr-2 text-blue-500" />
               Recent Tests
             </h2>
-            {isRecentTestsExpanded ? <ChevronUpIcon className="w-5 h-5 text-slate-400" /> : <ChevronDownIcon className="w-5 h-5 text-slate-400" />}
+            {isRecentTestsExpanded ? <ChevronUpIcon className="w-5 h-5 text-lantern-text-tertiary" /> : <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary" />}
           </button>
           {isRecentTestsExpanded && (
-            <div className="border-t border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700/50">
+            <div className="border-t border-lantern-border divide-y divide-lantern-border">
               {recentTests.length > 0 ? recentTests.map((result, index) => {
                 let testTimeSpentSeconds = 0;
                 const answersWithTime = Object.values(result.session.userAnswers).filter((ans: UserAnswerRecord) => ans.timeSpentSeconds !== undefined);
@@ -1274,25 +1231,25 @@ export default function DashboardScreen({
                 const recentTestKey = result.id ?? `${result.session.startTime}-${result.session.config.groupId ?? 'group'}-${result.totalQuestions}-${index}`;
 
                 return (
-                  <div key={recentTestKey} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
+                  <div key={recentTestKey} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-lantern-background-secondary transition-colors">
                     <div className="min-w-0">
-                      <p className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">{getGroupName(result.session.config.groupId, result.session.config.groupName)}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{new Date(result.session.startTime).toLocaleString()}</p>
+                      <p className="font-medium text-sm text-lantern-text truncate">{getGroupName(result.session.config.groupId, result.session.config.groupName)}</p>
+                      <p className="text-xs text-lantern-text-tertiary mt-0.5">{new Date(result.session.startTime).toLocaleString()}</p>
                     </div>
                     <div className="flex items-center gap-4 flex-shrink-0">
                       <div className="text-center">
-                        <p className="text-lg font-bold text-indigo-600 dark:text-indigo-400">{result.score.toFixed(1)}%</p>
-                        <p className="text-[10px] text-slate-400">{result.correctAnswersCount}/{result.totalQuestions}</p>
+                        <p className="text-lg font-bold text-lantern-primary">{result.score.toFixed(1)}%</p>
+                        <p className="text-[10px] text-lantern-text-tertiary">{result.correctAnswersCount}/{result.totalQuestions}</p>
                       </div>
                       {avgTime && (
                         <div className="text-center">
-                          <p className="text-lg font-bold text-slate-600 dark:text-slate-300">{avgTime}s</p>
-                          <p className="text-[10px] text-slate-400">avg/q</p>
+                          <p className="text-lg font-bold text-lantern-text-secondary">{avgTime}s</p>
+                          <p className="text-[10px] text-lantern-text-tertiary">avg/q</p>
                         </div>
                       )}
                       <button 
                         onClick={() => onViewAnalysis(result)} 
-                        className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                        className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors"
                       >
                         <PresentationChartLineIcon className="w-3.5 h-3.5" />
                         Analyze
@@ -1302,8 +1259,8 @@ export default function DashboardScreen({
                 )
               }) : (
                 <div className="p-8 text-center">
-                  <AcademicCapOutline className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                  <p className="text-sm text-slate-400">No tests taken yet. Start a test from one of your groups!</p>
+                  <AcademicCapOutline className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+                  <p className="text-sm text-lantern-text-tertiary">No tests taken yet. Start a test from one of your groups!</p>
                 </div>
               )}
             </div>
@@ -1315,13 +1272,13 @@ export default function DashboardScreen({
           <details className="group/comp">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <div>
-                <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center">
+                <h2 className="text-lg font-semibold text-lantern-text flex items-center">
                   <PresentationChartBarIcon className="w-5 h-5 mr-2 text-teal-500" />
                   Group Comparison
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Select two or more groups to compare their weekly performance.</p>
+                <p className="text-xs text-lantern-text-secondary mt-1">Select two or more groups to compare their weekly performance.</p>
               </div>
-              <ChevronDownIcon className="w-5 h-5 text-slate-400 transition-transform group-open/comp:rotate-180 flex-shrink-0" />
+              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open/comp:rotate-180 flex-shrink-0" />
             </summary>
             <div className="p-4 mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
               <div className="flex flex-wrap gap-2 mb-4">
@@ -1329,7 +1286,7 @@ export default function DashboardScreen({
                   <button 
                     key={groupData.id}
                     onClick={() => handleComparisonGroupToggle(groupData.id)}
-                    className={`px-3 py-1.5 text-xs rounded-full border transition-all ${selectedComparisonGroupIds.includes(groupData.id) ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' : 'bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 border-slate-300 dark:border-slate-600'}`}
+                    className={`px-3 py-1.5 text-xs rounded-full border transition-all ${selectedComparisonGroupIds.includes(groupData.id) ? 'bg-lantern-primary text-white border-lantern-primary shadow-sm' : 'bg-lantern-background-secondary hover:bg-lantern-background border-lantern-border text-lantern-text-secondary'}`}
                   >
                     {groupData.name}
                   </button>
@@ -1337,7 +1294,7 @@ export default function DashboardScreen({
               </div>
               {comparisonChartDatasets ? (
                 lowDataMode ? (
-                  <div className="py-4 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                  <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern">
                     <p className="font-medium">Chart hidden in Low-Data Mode</p>
                     <p className="text-xs mt-1">{comparisonChartDatasets.length} group{comparisonChartDatasets.length !== 1 ? 's' : ''} selected for comparison</p>
                   </div>
@@ -1345,7 +1302,7 @@ export default function DashboardScreen({
                   <GroupPerformanceChart datasets={comparisonChartDatasets} theme={theme} type="line" />
                 )
               ) : (
-                <p className="text-center text-sm text-slate-400 py-6">Select at least two groups to compare.</p>
+                <p className="text-center text-sm text-lantern-text-tertiary py-6">Select at least two groups to compare.</p>
               )}
             </div>
           </details>
@@ -1359,33 +1316,33 @@ export default function DashboardScreen({
           onClick={() => setQuickActionPicker(null)}
         >
           <div
-            className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+            className="w-full max-w-md bg-lantern-surface rounded-lantern-xl shadow-2xl overflow-hidden border border-lantern-border"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
               <div className="flex items-center gap-2">
                 {quickActionPicker === 'test'
                   ? <BoltIcon className="w-5 h-5 text-yellow-500" />
                   : <AcademicCapOutline className="w-5 h-5 text-emerald-500" />
                 }
-                <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                <h2 className="text-base font-semibold text-lantern-text">
                   Select a group for Quick {quickActionPicker === 'test' ? 'Test' : 'Study'}
                 </h2>
               </div>
               <button
                 onClick={() => setQuickActionPicker(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="p-1.5 rounded-lantern hover:bg-lantern-background-secondary transition-colors"
                 aria-label="Close"
               >
-                <XMarkIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" />
               </button>
             </div>
 
             {/* Group list */}
-            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+            <div className="max-h-72 overflow-y-auto divide-y divide-lantern-border">
               {availableGroups.length === 0 ? (
-                <p className="text-center text-sm text-slate-400 dark:text-slate-500 py-8">
+                <p className="text-center text-sm text-lantern-text-tertiary py-8">
                   No groups available. Join or create a group first.
                 </p>
               ) : (
@@ -1393,7 +1350,7 @@ export default function DashboardScreen({
                   <button
                     key={group.id}
                     onClick={() => handleQuickActionGroupSelect(group.id)}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors"
+                    className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-lantern-background-secondary transition-colors"
                   >
                     {group.avatarUrl ? (
                       <img
@@ -1402,14 +1359,14 @@ export default function DashboardScreen({
                         className="w-9 h-9 rounded-full object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0">
-                        <UsersIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                      <div className="w-9 h-9 rounded-full bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
+                        <UsersIcon className="w-5 h-5 text-lantern-primary" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{group.name}</p>
+                      <p className="text-sm font-semibold text-lantern-text truncate">{group.name}</p>
                       {group.members && group.members.length > 0 && (
-                        <p className="text-xs text-slate-400 dark:text-slate-500">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
+                        <p className="text-xs text-lantern-text-tertiary">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</p>
                       )}
                     </div>
                     {quickActionPicker === 'test'

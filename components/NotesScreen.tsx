@@ -217,7 +217,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                       ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/40'
                       : job.status === 'complete'
                         ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
-                        : 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40'
+                        : 'border-lantern-primary/40 bg-lantern-primary-background'
                   }`}
                 >
                   {job.status === 'failed' ? (
@@ -225,7 +225,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   ) : job.status === 'complete' ? (
                     <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
                   ) : (
-                    <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                    <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate text-lantern-text">{job.label}</p>

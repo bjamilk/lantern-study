@@ -18,7 +18,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "seo:notify": "node scripts/seo/notify-search-engines.mjs"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",

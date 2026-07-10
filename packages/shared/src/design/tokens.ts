@@ -108,6 +108,8 @@ export const darkColors = darkTheme;
 /** Feature accent colors for consistent screen identity */
 export const featureAccents = {
   dashboard: lanternColors.primary,
+  library: '#f43f5e',
+  admin: '#64748b',
   flashcards: '#f43f5e',
   groups: '#10b981',
   marketplace: '#8b5cf6',

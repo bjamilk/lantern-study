@@ -181,4 +181,24 @@ After deploy, confirm these URLs respond (copied from `public/`):
    - `https://lanternstudy.com/sitemap/marketplace.xml`
 5. Use **URL Inspection** → **Request indexing** on the homepage
 
-Indexing can take days to weeks. The app is login-first, so ranking improves further with backlinks (GitHub README, app stores, social profiles).
+**After each production deploy (automated):**
+
+The deploy script runs `npm run seo:notify`, which:
+
+- Pings Google and Bing with both sitemap URLs
+- Submits priority public URLs via [IndexNow](https://www.indexnow.org/) (key file: `public/lanternstudyindex2026.txt`)
+
+Run manually anytime:
+
+```bash
+npm run seo:notify
+```
+
+**Google “Request indexing” (manual, still recommended once):**
+
+Search Console does not offer a simple public API without a Google Cloud service account. After verification, in [URL Inspection](https://search.google.com/search-console?resource_id=https%3A%2F%2Flanternstudy.com%2F):
+
+1. Enter `https://lanternstudy.com/` → **Request indexing**
+2. Enter `https://lanternstudy.com/marketplace` → **Request indexing**
+
+Indexing can take days to weeks. The public landing page (`/` and `/welcome`) and marketplace listings are the best crawl targets; ranking improves further with backlinks (GitHub README, app stores, social profiles).

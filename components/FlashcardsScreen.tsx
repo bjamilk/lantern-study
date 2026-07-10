@@ -33,12 +33,12 @@ interface FlashcardsScreenProps {
 }
 
 const ACCENT_GRADIENTS = [
-  'from-indigo-500 via-violet-500 to-rose-500',
-  'from-rose-500 via-orange-400 to-amber-500',
-  'from-emerald-500 via-teal-500 to-cyan-500',
-  'from-blue-500 via-indigo-500 to-purple-500',
-  'from-fuchsia-500 via-pink-500 to-rose-500',
-  'from-amber-500 via-orange-500 to-red-500',
+  'from-rose-500 via-pink-500 to-fuchsia-500',
+  'from-fuchsia-500 via-rose-500 to-red-500',
+  'from-pink-500 via-rose-400 to-orange-400',
+  'from-rose-400 via-red-400 to-amber-400',
+  'from-red-500 via-rose-500 to-pink-500',
+  'from-orange-400 via-rose-500 to-fuchsia-500',
 ];
 
 const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({

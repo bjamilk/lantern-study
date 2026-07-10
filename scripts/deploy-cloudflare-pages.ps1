@@ -311,3 +311,11 @@ Write-Host "Production URL: $($script:ProductionWebUrl)"
 Write-Host "Dashboard: https://dash.cloudflare.com/$accountId/pages/view/$ProjectName"
 Write-Host ''
 Write-Host 'Custom domain: run .\scripts\attach-cloudflare-pages-domain.ps1 if not attached yet.' -ForegroundColor Cyan
+
+Write-Step 'Notifying search engines (sitemap ping + IndexNow)...'
+try {
+    node (Join-Path $RepoRoot 'scripts/seo/notify-search-engines.mjs')
+} catch {
+    Write-Host "Search engine notify failed: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    Write-Host 'Run manually: npm run seo:notify' -ForegroundColor DarkYellow
+}

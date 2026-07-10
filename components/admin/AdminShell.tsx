@@ -29,7 +29,9 @@ import {
   updateAdminUserStatus,
 } from '../../services/admin';
 import { Button } from '../ui/Button';
-import { ScreenHeader } from '../ui/ScreenHeader';
+import { FeatureHero } from '../ui/FeatureHero';
+import { ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { featureAccents } from '@lantern/shared/design';
 import { AdminAI } from './AdminAI';
 import { AdminAnalyticsPanel } from './AdminAnalytics';
 import { AdminAudit } from './AdminAudit';
@@ -514,11 +516,12 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 w-full max-w-full bg-lantern-background">
-      <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-3 space-y-3 border-b border-lantern-border bg-lantern-background">
-        <ScreenHeader
+      <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-3 space-y-3 bg-lantern-background">
+        <FeatureHero
           title="Admin Console"
           subtitle="Platform oversight and moderation"
-          className="mb-0"
+          accentColor={featureAccents.admin}
+          icon={<ShieldCheckIcon className="w-6 h-6" />}
           actions={
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>
@@ -531,23 +534,27 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           }
         />
 
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin shrink-0">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin shrink-0 border-b border-lantern-border">
           {ADMIN_TABS.map((tab) => (
-            <Button
+            <button
               key={tab.id}
-              size="sm"
-              variant={activeTab === tab.id ? 'primary' : 'ghost'}
+              type="button"
               onClick={() => setActiveTab(tab.id)}
-              className="shrink-0"
+              className={`shrink-0 px-4 py-2 min-h-[44px] text-sm font-medium rounded-full border transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-lantern-surface text-lantern-text border-lantern-border shadow-lantern'
+                  : 'bg-transparent text-lantern-text-secondary border-transparent hover:bg-lantern-background-secondary'
+              }`}
+              style={activeTab === tab.id ? { borderBottomWidth: 2, borderBottomColor: featureAccents.admin } : undefined}
             >
               {tab.label}
-            </Button>
+            </button>
           ))}
         </div>
 
         {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
         {error && <p className="text-sm text-lantern-error">{error}</p>}
-        {success && <p className="text-sm text-emerald-600 dark:text-emerald-400">{success}</p>}
+        {success && <p className="text-sm text-lantern-success">{success}</p>}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-4">

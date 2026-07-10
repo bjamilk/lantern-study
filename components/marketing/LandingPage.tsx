@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   SparklesIcon,
   RectangleStackIcon,
@@ -8,6 +8,7 @@ import {
   ShoppingBagIcon,
 } from '@heroicons/react/24/outline';
 import { Button, Card, LanternIcon } from '../ui';
+import { usePageSeo } from '../../hooks/usePageSeo';
 
 interface LandingPageProps {
   onSignIn: () => void;
@@ -29,7 +30,40 @@ const faqs = [
   { q: 'Can I study offline?', a: 'Yes. Download flashcard decks for offline review in the app.' },
 ];
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => (
+export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => {
+  const seo = useMemo(
+    () => ({
+      title: 'Lantern Study — Flashcards, tests, groups & AI study tools',
+      description:
+        'Free study app with notes, AI flashcards, practice tests, study groups, and a deck marketplace. Built for slow connections and offline learning.',
+      canonicalUrl: 'https://lanternstudy.com/',
+      ogImage: 'https://lanternstudy.com/lantern-icon-v2.png',
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'WebSite',
+            name: 'Lantern Study',
+            url: 'https://lanternstudy.com/',
+            description:
+              'Collaborative study platform with flashcards, practice tests, study groups, and AI tools.',
+          },
+          {
+            '@type': 'FAQPage',
+            mainEntity: faqs.map((faq) => ({
+              '@type': 'Question',
+              name: faq.q,
+              acceptedAnswer: { '@type': 'Answer', text: faq.a },
+            })),
+          },
+        ],
+      },
+    }),
+    [],
+  );
+  usePageSeo(seo);
+
+  return (
   <div className="min-h-screen bg-lantern-background text-lantern-text overflow-y-auto">
     <header className="border-b border-lantern-border/80 bg-lantern-surface/80 backdrop-blur-md sticky top-0 z-10">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -96,10 +130,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
       </Card>
     </section>
 
-    <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary">
-      © {new Date().getFullYear()} Lantern Study
+    <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary space-y-2">
+      <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+        <a href="/marketplace" className="hover:text-lantern-text-secondary transition-colors">Explore marketplace</a>
+        <a href="/privacy" className="hover:text-lantern-text-secondary transition-colors">Privacy</a>
+        <a href="/terms" className="hover:text-lantern-text-secondary transition-colors">Terms</a>
+        <a href="/cookies" className="hover:text-lantern-text-secondary transition-colors">Cookies</a>
+      </nav>
+      <p>© {new Date().getFullYear()} Lantern Study</p>
     </footer>
   </div>
-);
+  );
+};
 
 export default LandingPage;

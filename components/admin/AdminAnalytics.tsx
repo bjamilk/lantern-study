@@ -122,7 +122,7 @@ const LineChart: React.FC<LineChartProps> = ({ title, labels, datasets, theme })
   }, [labels, datasets, theme, colors]);
 
   return (
-    <Card>
+    <Card variant="elevated">
       <h3 className="text-sm font-semibold text-lantern-text mb-3">{title}</h3>
       <div className="h-56">
         <canvas ref={canvasRef} />
@@ -200,7 +200,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ title, type, labels, data, th
   }, [labels, data, theme, type, title, colors]);
 
   return (
-    <Card>
+    <Card variant="elevated">
       <h3 className="text-sm font-semibold text-lantern-text mb-3">{title}</h3>
       <div className={type === 'doughnut' ? 'h-52' : 'h-56'}>
         <canvas ref={canvasRef} />
@@ -360,7 +360,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             data={streakData}
           />
         ) : (
-          <Card>
+          <Card variant="elevated">
             <h3 className="text-sm font-semibold text-lantern-text mb-3">Streak distribution</h3>
             <p className="text-sm text-lantern-text-muted">No streak data yet.</p>
           </Card>
@@ -368,7 +368,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
       </div>
 
       {aiEntries.length > 0 && (
-        <Card>
+        <Card variant="elevated">
           <h3 className="text-sm font-semibold text-lantern-text mb-3">AI by feature (period)</h3>
           <div className="space-y-1">
             {aiEntries.map(([event, count]) => (

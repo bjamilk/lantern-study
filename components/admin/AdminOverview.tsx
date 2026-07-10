@@ -2,6 +2,7 @@ import React from 'react';
 import { AdminActivityItem, AdminStats } from '../../services/admin';
 import { Card } from '../ui/Card';
 import { StatPill } from '../ui/StatPill';
+import { StatChip } from '../ui/StatChip';
 import { formatDateTime } from './types';
 
 interface AdminOverviewProps {
@@ -15,7 +16,15 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ stats, activity, o
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {stats.openReports > 0 ? (
+            <StatChip label={`${stats.openReports} open reports`} variant="accent" />
+          ) : null}
+          {(stats.openDisputes ?? 0) > 0 ? (
+            <StatChip label={`${stats.openDisputes} open disputes`} variant="accent" />
+          ) : null}
+        </div>
         <button type="button" onClick={onExportStats} className="text-sm text-lantern-primary hover:underline">
           Export stats CSV
         </button>
@@ -51,7 +60,7 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ stats, activity, o
         <h3 className="text-sm font-semibold text-lantern-text mb-3">Recent activity</h3>
         <ul className="space-y-2">
           {activity.map((item) => (
-            <li key={item.id} className="flex justify-between gap-3 text-sm border-b border-lantern-border pb-2">
+            <li key={item.id} className="flex justify-between gap-3 text-sm border-b border-lantern-border pb-2 hover:bg-lantern-background-secondary rounded-lantern px-1 -mx-1 transition-colors">
               <div>
                 <p className="font-medium text-lantern-text">{item.title}</p>
                 <p className="text-lantern-text-muted">{item.description}</p>

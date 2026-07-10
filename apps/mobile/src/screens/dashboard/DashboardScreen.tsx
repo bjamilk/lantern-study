@@ -57,6 +57,7 @@ import TestAnalysisModal from '../../components/TestAnalysisModal';
 import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../services/gamification';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
+import { featureAccents } from '@lantern/shared/design';
 import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
@@ -309,7 +310,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const parent = navigation.getParent();
 
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
 
   const streak = serverStreak || stats?.currentStreak || 0;
 
@@ -521,21 +522,21 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-indigo-600">{stats?.totalTestsTaken ?? '—'}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary">{stats?.totalTestsTaken ?? '—'}</Text>
 
-            <Text className="text-xs text-slate-500 mt-1">Tests taken</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">Tests taken</Text>
 
           </Card>
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-violet-600">
+            <Text className="text-2xl font-bold text-lantern-accent">
 
               {stats?.averageTimePerQuestion ? `${stats.averageTimePerQuestion}s` : '—'}
 
             </Text>
 
-            <Text className="text-xs text-slate-500 mt-1">Avg / question</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">Avg / question</Text>
 
           </Card>
 
@@ -549,7 +550,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             </View>
 
-            <Text className="text-xs text-slate-500 mt-1">Streak</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">Streak</Text>
 
           </Card>
 
@@ -559,7 +560,7 @@ export function DashboardScreen({ navigation }: Props) {
 
         <Card className="mb-4">
 
-          <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+          <Text className="text-sm font-semibold text-lantern-text mb-2">
 
             16-week activity
 
@@ -567,7 +568,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           {statsLoading && !stats ? (
 
-            <Text className="text-xs text-slate-400">Loading activity...</Text>
+            <Text className="text-xs text-lantern-text-tertiary">Loading activity...</Text>
 
           ) : (
 
@@ -575,7 +576,7 @@ export function DashboardScreen({ navigation }: Props) {
 
               <ActivityHeatmap days={heatmap.days} theme={isDark ? 'dark' : 'light'} />
 
-              <Text className="text-xs text-slate-400 mt-2">Darker = more study activity</Text>
+              <Text className="text-xs text-lantern-text-tertiary mt-2">Darker = more study activity</Text>
 
             </>
 
@@ -589,7 +590,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <View className="mb-4">
 
-            <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Badges</Text>
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Badges</Text>
 
             <View className="flex-row flex-wrap gap-2">
 
@@ -603,11 +604,11 @@ export function DashboardScreen({ navigation }: Props) {
 
                     size={22}
 
-                    color={badge.level > 0 ? '#6366f1' : '#94a3b8'}
+                    color={badge.level > 0 ? colors.primary : colors.textTertiary}
 
                   />
 
-                  <Text className="text-[10px] font-semibold text-slate-700 dark:text-slate-200 mt-1 text-center" numberOfLines={2}>
+                  <Text className="text-[10px] font-semibold text-lantern-text mt-1 text-center" numberOfLines={2}>
 
                     {badge.name}
 
@@ -615,11 +616,11 @@ export function DashboardScreen({ navigation }: Props) {
 
                   {badge.level > 0 ? (
 
-                    <Text className="text-[9px] text-indigo-500 mt-0.5">Lv {badge.level}</Text>
+                    <Text className="text-[9px] text-lantern-primary mt-0.5">Lv {badge.level}</Text>
 
                   ) : (
 
-                    <Text className="text-[9px] text-slate-400 mt-0.5">{badge.progress}%</Text>
+                    <Text className="text-[9px] text-lantern-text-tertiary mt-0.5">{badge.progress}%</Text>
 
                   )}
 
@@ -639,7 +640,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <View className="mb-4">
 
-            <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Recent tests</Text>
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Recent tests</Text>
 
             {stats.recentTests.slice(0, 5).map(test => (
 
@@ -655,13 +656,13 @@ export function DashboardScreen({ navigation }: Props) {
 
                     <View className="flex-1 min-w-0 pr-2">
 
-                      <Text className="font-medium text-slate-800 dark:text-slate-100" numberOfLines={1}>
+                      <Text className="font-medium text-lantern-text" numberOfLines={1}>
 
                         {test.groupName}
 
                       </Text>
 
-                      <Text className="text-xs text-slate-500 mt-0.5">
+                      <Text className="text-xs text-lantern-text-secondary mt-0.5">
 
                         {new Date(test.completedAt).toLocaleDateString()} · {formatDuration(test.timeSpent)}
 
@@ -729,17 +730,17 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-4">
 
-            <Text className="text-2xl font-bold text-indigo-600">{dueCount}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary">{dueCount}</Text>
 
-            <Text className="text-xs text-slate-500 mt-1">Due cards</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">Due cards</Text>
 
           </Card>
 
           <Card className="flex-1 items-center py-4">
 
-            <Text className="text-2xl font-bold text-violet-600">{groups.length}</Text>
+            <Text className="text-2xl font-bold text-lantern-accent">{groups.length}</Text>
 
-            <Text className="text-xs text-slate-500 mt-1">Groups</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">Groups</Text>
 
           </Card>
 
@@ -821,7 +822,7 @@ export function DashboardScreen({ navigation }: Props) {
               id: 'notes',
               label: 'Notes',
               icon: 'document-text',
-              iconColor: '#4f46e5',
+              iconColor: featureAccents.library,
               onPress: () => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'notes' } }),
             },
             {
@@ -835,7 +836,7 @@ export function DashboardScreen({ navigation }: Props) {
               id: 'marketplace',
               label: 'Explore',
               icon: 'bag',
-              iconColor: '#6366f1',
+              iconColor: featureAccents.marketplace,
               onPress: () => parent?.navigate('MarketTab'),
             },
           ]}
@@ -849,9 +850,9 @@ export function DashboardScreen({ navigation }: Props) {
 
         <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setGroupPickerOpen(false)}>
 
-          <Pressable onPress={e => e.stopPropagation?.()} className="bg-white dark:bg-slate-800 rounded-2xl p-4">
+          <Pressable onPress={e => e.stopPropagation?.()} className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border">
 
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Pick a group</Text>
+            <Text className="text-lg font-bold text-lantern-text mb-3">Pick a group</Text>
 
             {availableGroups.map(g => (
 
@@ -861,11 +862,11 @@ export function DashboardScreen({ navigation }: Props) {
 
                 onPress={() => handleGroupPick(g.id, g.name)}
 
-                className="py-3 border-b border-slate-100 dark:border-slate-700"
+                className="py-3 border-b border-lantern-border"
 
               >
 
-                <Text className="text-slate-800 dark:text-slate-100 font-medium">{g.name}</Text>
+                <Text className="text-lantern-text font-medium">{g.name}</Text>
 
               </Pressable>
 

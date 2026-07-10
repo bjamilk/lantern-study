@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
   LEGAL_DOCUMENT_TITLES,
   LEGAL_PATHS,
@@ -6,6 +6,7 @@ import {
   type LegalDocumentId,
 } from '@lantern/shared';
 import { MarkdownRenderer } from '@lantern/shared';
+import { usePageSeo } from '../hooks/usePageSeo';
 
 const PATH_TO_DOC: Record<string, LegalDocumentId> = {
   [LEGAL_PATHS.privacy]: 'privacy',
@@ -22,19 +23,26 @@ interface LegalPageProps {
   document: LegalDocumentId;
 }
 
-const DEFAULT_DOCUMENT_TITLE = 'Lantern Study — Flashcards, tests, groups & AI study tools';
+const LEGAL_DESCRIPTIONS: Record<LegalDocumentId, string> = {
+  privacy: 'How Lantern Study collects, uses, and protects your personal data.',
+  terms: 'Terms of Service for using Lantern Study flashcards, tests, groups, and marketplace.',
+  cookies: 'How Lantern Study uses cookies and similar technologies on lanternstudy.com.',
+};
 
 export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) => {
   const title = LEGAL_DOCUMENT_TITLES[documentId];
   const content = getLegalDocumentContent(documentId);
+  const path = LEGAL_PATHS[documentId];
 
-  useEffect(() => {
-    const previousTitle = window.document.title;
-    window.document.title = `${title} — Lantern Study`;
-    return () => {
-      window.document.title = previousTitle || DEFAULT_DOCUMENT_TITLE;
-    };
-  }, [title]);
+  const seo = useMemo(
+    () => ({
+      title: `${title} — Lantern Study`,
+      description: LEGAL_DESCRIPTIONS[documentId],
+      canonicalUrl: `https://lanternstudy.com${path}`,
+    }),
+    [documentId, path, title],
+  );
+  usePageSeo(seo);
 
   return (
     <div className="min-h-screen bg-lantern-background text-lantern-text">

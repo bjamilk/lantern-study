@@ -21,6 +21,7 @@ import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
 import { Button, Card, ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -60,8 +61,8 @@ function FolderChip({
       onPress={onPress}
       className={`shrink-0 px-3 py-2 rounded-lg flex-row items-center gap-1.5 ${
         isActive
-          ? 'bg-indigo-500'
-          : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600'
+          ? 'bg-lantern-primary'
+          : 'bg-lantern-surface border border-lantern-border'
       }`}
     >
       {folder.color ? (
@@ -69,7 +70,7 @@ function FolderChip({
       ) : null}
       <Text
         className={`text-sm font-semibold ${
-          isActive ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+          isActive ? 'text-white' : 'text-lantern-text'
         }`}
         numberOfLines={1}
       >
@@ -82,22 +83,22 @@ function FolderChip({
 function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} className="mb-3 active:opacity-90">
-      <Card className="border-slate-200 dark:border-slate-700">
+      <Card className="border-lantern-border">
         <View className="flex-row items-start justify-between gap-2 mb-2">
-          <Text className="flex-1 text-base font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+          <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={2}>
             {note.title}
           </Text>
-          <View className="bg-indigo-100 dark:bg-indigo-900/40 px-2 py-0.5 rounded-full shrink-0">
-            <Text className="text-[10px] font-semibold text-indigo-700 dark:text-indigo-200">
+          <View className="bg-lantern-primary-background px-2 py-0.5 rounded-full shrink-0">
+            <Text className="text-[10px] font-semibold text-lantern-primary">
               {sourceBadge(note)}
             </Text>
           </View>
         </View>
-        <Text className="text-sm text-slate-600 dark:text-slate-400" numberOfLines={3}>
+        <Text className="text-sm text-lantern-text-secondary" numberOfLines={3}>
           {note.summary || note.body || 'Empty note'}
         </Text>
         {note.updatedAt ? (
-          <Text className="text-xs text-slate-400 dark:text-slate-500 mt-3">
+          <Text className="text-xs text-lantern-text-tertiary mt-3">
             Updated {new Date(note.updatedAt).toLocaleDateString()}
           </Text>
         ) : null}
@@ -107,6 +108,7 @@ function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
 }
 
 export function NotesScreen({ navigation, embedded = false }: Props) {
+  const { colors } = useTheme();
   const {
     folders,
     notes,
@@ -272,13 +274,13 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           onPress={() => setSelectedFolderId(null)}
           className={`shrink-0 px-2.5 py-2 rounded-lg ${
             !selectedFolderId
-              ? 'bg-indigo-500'
-              : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600'
+              ? 'bg-lantern-primary'
+              : 'bg-lantern-surface border border-lantern-border'
           }`}
         >
           <Text
             className={`text-sm font-semibold ${
-              !selectedFolderId ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+              !selectedFolderId ? 'text-white' : 'text-lantern-text'
             }`}
             numberOfLines={1}
           >
@@ -304,27 +306,28 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         ) : null}
       </View>
 
-      <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface">
         <Ionicons name="search" size={16} color="#94a3b8" />
         <TextInput
           value={search}
           onChangeText={setSearch}
           placeholder="Search notes..."
           placeholderTextColor="#94a3b8"
-          className="flex-1 text-sm text-slate-800 dark:text-slate-100 py-0.5"
+          className="flex-1 text-sm text-lantern-text py-0.5"
+          placeholderTextColor={colors.inputPlaceholder}
         />
       </View>
 
       <View className="mx-4 mb-1.5">
-        <Text className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+        <Text className="text-xs text-lantern-text-secondary mb-2">
           {formatMaxNoteUploadLabel()}
         </Text>
         {pendingImport ? (
-          <Card className="border-indigo-200 dark:border-indigo-800 mb-2">
-            <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100" numberOfLines={2}>
+          <Card className="border-lantern-primary/30 mb-2">
+            <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
               {pendingImport.name}
             </Text>
-            <Text className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            <Text className="text-xs text-lantern-text-secondary mt-1">
               {formatFileSize(pendingImport.size)} · {formatMaxNoteUploadLabel()}
             </Text>
             <View className="flex-row gap-2 mt-3">
@@ -370,7 +373,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
 
       {isLoading && notes.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -378,12 +381,12 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           keyExtractor={item => item.id}
           contentContainerClassName="px-4 pb-8"
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
           ListEmptyComponent={
-            <Card className="items-center py-10 border-slate-200 dark:border-slate-700">
+            <Card className="items-center py-10 border-lantern-border">
               <Ionicons name="document-text-outline" size={40} color="#818cf8" />
-              <Text className="text-sm text-slate-600 dark:text-slate-300 text-center mt-3 px-4">
+              <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
                 No notes yet. Create one to get started.
               </Text>
               <Button className="mt-4" size="sm" onPress={handleCreateNote}>

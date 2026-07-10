@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
 import { Button, Card, ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
+import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import { FlashcardType } from '@lantern/shared';
@@ -30,12 +32,12 @@ interface Props {
 }
 
 const ACCENT_GRADIENTS: [string, string, ...string[]][] = [
-  ['#6366f1', '#8b5cf6', '#f43f5e'],
-  ['#f43f5e', '#fb923c', '#fbbf24'],
-  ['#10b981', '#14b8a6', '#06b6d4'],
-  ['#3b82f6', '#6366f1', '#a855f7'],
+  ['#f43f5e', '#ec4899', '#d946ef'],
+  ['#fb7185', '#f43f5e', '#e11d48'],
+  ['#f472b6', '#fb7185', '#fda4af'],
+  ['#e11d48', '#f43f5e', '#fb923c'],
   ['#d946ef', '#ec4899', '#f43f5e'],
-  ['#f59e0b', '#f97316', '#ef4444'],
+  ['#fb923c', '#f43f5e', '#fda4af'],
 ];
 
 function DeckCard({
@@ -57,7 +59,7 @@ function DeckCard({
 
   return (
     <Pressable onPress={onPress} className="mb-3 active:opacity-90">
-      <View className="rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm">
+      <View className="rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface shadow-sm">
         <LinearGradient
           colors={gradient}
           start={{ x: 0, y: 0 }}
@@ -94,20 +96,20 @@ function DeckCard({
         </LinearGradient>
         <View className="px-4 py-3">
           {deck.description ? (
-            <Text className="text-xs text-slate-500 dark:text-slate-400 mb-2" numberOfLines={2}>
+            <Text className="text-xs text-lantern-text-secondary mb-2" numberOfLines={2}>
               {deck.description}
             </Text>
           ) : null}
           <View className="flex-row gap-4 items-center justify-between">
             <View className="flex-row gap-4">
             <View className="flex-row items-center gap-1.5">
-              <Text className="text-xs text-slate-500 dark:text-slate-400">Cards</Text>
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">{cardCount}</Text>
+              <Text className="text-xs text-lantern-text-secondary">Cards</Text>
+              <Text className="text-sm font-semibold text-lantern-text">{cardCount}</Text>
             </View>
             <View className="flex-row items-center gap-1.5">
-              <Text className="text-xs text-slate-500 dark:text-slate-400">Due</Text>
+              <Text className="text-xs text-lantern-text-secondary">Due</Text>
               <Text
-                className={`text-sm font-semibold ${dueCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}
+                className={`text-sm font-semibold ${dueCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-lantern-text'}`}
               >
                 {dueCount}
               </Text>
@@ -126,6 +128,7 @@ function DeckCard({
 }
 
 export function FlashcardsScreen({ navigation, embedded = false }: Props) {
+  const { colors } = useTheme();
   const user = useAuthStore(s => s.user);
   const { decks, isLoading, error, fetchDecks, createDeck, createFlashcard, clearError } = useFlashcardStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -238,15 +241,15 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
       <View className="flex-row gap-2 px-4 mb-3">
         <Pressable
           onPress={() => navigation.navigate('NotesList')}
-          className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          className="px-3 py-1.5 rounded-full bg-lantern-surface border border-lantern-border"
         >
-          <Text className="text-xs font-medium text-slate-600 dark:text-slate-300">Notes</Text>
+          <Text className="text-xs font-medium text-lantern-text-secondary">Notes</Text>
         </Pressable>
         <Pressable
           onPress={() => navigation.navigate('TestsList')}
-          className="px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          className="px-3 py-1.5 rounded-full bg-lantern-surface border border-lantern-border"
         >
-          <Text className="text-xs font-medium text-slate-600 dark:text-slate-300">Tests</Text>
+          <Text className="text-xs font-medium text-lantern-text-secondary">Tests</Text>
         </Pressable>
       </View>
       )}
@@ -259,18 +262,18 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
 
       {isLoading && decks.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
           data={decks}
           keyExtractor={item => item.id}
           contentContainerClassName="px-4 pb-8"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <Text className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-2">No decks yet</Text>
-              <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+              <Text className="text-lg font-semibold text-lantern-text mb-2">No decks yet</Text>
+              <Text className="text-sm text-lantern-text-secondary text-center mb-6">
                 Create your first deck to start studying with spaced repetition.
               </Text>
               <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
@@ -301,14 +304,15 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
         <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setCreateOpen(false)}>
           <Pressable onPress={e => e.stopPropagation?.()}>
             <Card className="border-0 shadow-lg">
-              <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">New Deck</Text>
+              <Text className="text-lg font-bold text-lantern-text mb-4">New Deck</Text>
               <TextInput
                 value={deckName}
                 onChangeText={setDeckName}
                 placeholder="Deck name"
                 placeholderTextColor="#94a3b8"
                 autoFocus
-                className="border border-slate-200 dark:border-slate-600 rounded-2xl px-4 py-3 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-4"
+                className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-background mb-4"
+                placeholderTextColor={colors.inputPlaceholder}
               />
               <View className="flex-row gap-2">
                 <Button variant="secondary" className="flex-1" onPress={() => setCreateOpen(false)}>
