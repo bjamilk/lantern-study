@@ -26,17 +26,41 @@ export class WalletInsufficientError extends Error {
   }
 }
 
+function parseInsufficientWalletError(err: unknown): WalletInsufficientError | null {
+  if (!err || typeof err !== 'object') return null;
+  const record = err as { message?: string; details?: string };
+  const message = record.message || '';
+  if (!message.includes('insufficient_wallet_balance')) return null;
+
+  if (record.details) {
+    try {
+      const detail = JSON.parse(record.details) as { balance?: number; required?: number };
+      return new WalletInsufficientError(
+        Number(detail.balance) || 0,
+        Number(detail.required) || 0
+      );
+    } catch {
+      // fall through
+    }
+  }
+
+  return new WalletInsufficientError(0, 0);
+}
+
 export class WalletService {
   constructor(
     private supabase: SupabaseService,
     private cache?: CacheService
   ) {}
 
+  private get client() {
+    return this.supabase.getClient();
+  }
+
   private async loadPrefsRow(userId: string): Promise<{
     theme: string;
     preferences: Record<string, any>;
   }> {
-    // Always read through to DB — never use preferences cache for wallet mutations.
     const row = await this.supabase.getUserPreferences(userId);
     return {
       theme: row?.theme || 'light',
@@ -102,15 +126,23 @@ export class WalletService {
   }
 
   async adjustWallet(userId: string, delta: number, reason: string): Promise<WalletAdjustResult> {
-    const extras = await this.getBudgetExtras(userId);
-    const next = extras.walletBalance + delta;
-    if (next < 0) {
-      throw new WalletInsufficientError(extras.walletBalance, Math.abs(delta));
+    const { data, error } = await this.client.rpc('wallet_adjust_balance', {
+      p_user_id: userId,
+      p_delta: delta,
+      p_reason: reason,
+    });
+
+    if (error) {
+      const insufficient = parseInsufficientWalletError(error);
+      if (insufficient) throw insufficient;
+      throw error;
     }
-    extras.walletBalance = next;
-    await this.saveBudgetExtras(userId, extras);
-    logger.info('Wallet adjusted', { userId, delta, reason, walletBalance: next });
-    return { walletBalance: next, awarded: delta > 0 ? delta : 0 };
+
+    const payload = (data || {}) as { walletBalance?: number; awarded?: number };
+    await this.invalidatePrefsCache(userId);
+    const walletBalance = Number(payload.walletBalance) || 0;
+    logger.info('Wallet adjusted', { userId, delta, reason, walletBalance });
+    return { walletBalance, awarded: delta > 0 ? Number(payload.awarded) || delta : 0 };
   }
 
   async awardWalletOnce(
@@ -119,21 +151,31 @@ export class WalletService {
     amount: number,
     reason: string
   ): Promise<WalletAdjustResult> {
-    if (amount <= 0) {
-      const balance = await this.getWalletBalance(userId);
-      return { walletBalance: balance, awarded: 0 };
+    const { data, error } = await this.client.rpc('wallet_award_once', {
+      p_user_id: userId,
+      p_award_key: awardKey,
+      p_amount: amount,
+      p_reason: reason,
+    });
+
+    if (error) throw error;
+
+    const payload = (data || {}) as {
+      walletBalance?: number;
+      awarded?: number;
+      alreadyAwarded?: boolean;
+    };
+    await this.invalidatePrefsCache(userId);
+    const walletBalance = Number(payload.walletBalance) || 0;
+    const awarded = Number(payload.awarded) || 0;
+    if (awarded > 0) {
+      logger.info('Wallet award', { userId, awardKey, amount, reason, walletBalance });
     }
-    const extras = await this.getBudgetExtras(userId);
-    const awards = extras.walletAwards || {};
-    if (awards[awardKey] != null) {
-      return { walletBalance: extras.walletBalance, awarded: 0, alreadyAwarded: true };
-    }
-    awards[awardKey] = amount;
-    extras.walletAwards = awards;
-    extras.walletBalance = extras.walletBalance + amount;
-    await this.saveBudgetExtras(userId, extras);
-    logger.info('Wallet award', { userId, awardKey, amount, reason, walletBalance: extras.walletBalance });
-    return { walletBalance: extras.walletBalance, awarded: amount };
+    return {
+      walletBalance,
+      awarded,
+      alreadyAwarded: payload.alreadyAwarded === true,
+    };
   }
 }
 

@@ -34,7 +34,6 @@ const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'phone',
   'avatarUrl',
   'avatar_url',
-  'stats',
   'settings',
   'test_presets',
 ]);
@@ -283,9 +282,6 @@ router.post(
       name: userData.name,
       avatarUrl: userData.avatarUrl || userData.avatar_url,
       phoneNumber: userData.phoneNumber || userData.phone,
-      points: userData.points,
-      stats: userData.stats,
-      badges: userData.badges,
       settings: userData.settings,
       username: userData.username,
       first_name: userData.first_name ?? userData.firstName,

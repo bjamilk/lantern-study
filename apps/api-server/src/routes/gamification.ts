@@ -19,6 +19,8 @@ import {
   streakMilestoneFor,
 } from '@lantern/shared/utils/walletCoins';
 import { getWalletService, WalletInsufficientError } from '../services/walletService';
+import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
+import { resolveAllowedActivityDate } from '../utils/activityDate';
 
 const router = Router();
 
@@ -503,7 +505,6 @@ router.get(
 );
 
 const VALID_ACTIVITY_TYPES = new Set(['test', 'flashcard', 'flashcard_new', 'study_question', 'game', 'daily_quiz']);
-const ACTIVITY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const DAILY_QUEST_TEMPLATES = [
   { quest_type: 'review_cards', target_count: 10, reward_xp: 15 },
@@ -513,8 +514,7 @@ const DAILY_QUEST_TEMPLATES = [
 ];
 
 function resolveQuestDate(input?: unknown): string {
-  if (typeof input === 'string' && ACTIVITY_DATE_RE.test(input)) return input;
-  return new Date().toISOString().split('T')[0];
+  return resolveAllowedActivityDate(input);
 }
 
 async function ensureDailyQuests(userId: string, questDate: string) {
@@ -548,10 +548,7 @@ router.post(
     if (!userId) return;
 
     const { activityDate } = req.body ?? {};
-    const referenceDate =
-      typeof activityDate === 'string' && ACTIVITY_DATE_RE.test(activityDate)
-        ? activityDate
-        : undefined;
+    const referenceDate = resolveAllowedActivityDate(activityDate);
 
     const data = await supabaseService.recomputeUserStreak(userId, referenceDate);
     let awarded = 0;
@@ -573,7 +570,7 @@ router.post(
   })
 );
 
-// POST /api/v1/gamification/me/sync-progress - Persist badges/points from current stats
+// POST /api/v1/gamification/me/sync-progress - Re-evaluate badges from server-side stats only
 router.post(
   '/me/sync-progress',
   authMiddleware,
@@ -582,12 +579,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { stats, bonusPoints, bonusReason } = req.body ?? {};
-    const data = await supabaseService.syncGamificationProgress(userId, {
-      stats: stats && typeof stats === 'object' ? stats : undefined,
-      bonusPoints: typeof bonusPoints === 'number' ? bonusPoints : undefined,
-      bonusReason: typeof bonusReason === 'string' ? bonusReason : undefined,
-    });
+    const data = await supabaseService.syncGamificationProgress(userId);
 
     await cacheService.delete(`user:${userId}`);
 
@@ -614,10 +606,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'Invalid activity amount' });
     }
 
-    const date: string =
-      typeof activityDate === 'string' && ACTIVITY_DATE_RE.test(activityDate)
-        ? activityDate
-        : new Date().toISOString().slice(0, 10);
+    const date = resolveAllowedActivityDate(activityDate);
 
     const data = await supabaseService.recordStudyActivity(
       userId,
@@ -714,10 +703,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const activityDate =
-      typeof req.query.activityDate === 'string' && ACTIVITY_DATE_RE.test(req.query.activityDate)
-        ? req.query.activityDate
-        : undefined;
+    const activityDate = resolveAllowedActivityDate(req.query.activityDate);
 
     const data = await supabaseService.recomputeUserStreak(userId, activityDate);
     res.json({ success: true, data });
@@ -771,59 +757,83 @@ router.post(
 
     const STREAK_FREEZE_COST = WALLET_COINS.STREAK_FREEZE_COST;
     const wallet = getWalletService();
+    const idempotencyKey =
+      normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+      `${userId}:streak_freeze_purchase:${Math.floor(Date.now() / 300_000)}`;
 
-    let debitResult;
-    try {
-      debitResult = await wallet.adjustWallet(userId, -STREAK_FREEZE_COST, 'streak_freeze');
-    } catch (err) {
-      if (err instanceof WalletInsufficientError) {
-        return res.status(400).json({
-          success: false,
-          error: `You need ${STREAK_FREEZE_COST} wallet coins to buy a streak freeze.`,
-          walletBalance: err.balance,
-        });
+    const payload = await withIdempotency(
+      supabaseService.getClient(),
+      userId,
+      'streak_freeze_purchase',
+      idempotencyKey,
+      async () => {
+        let debitResult;
+        try {
+          debitResult = await wallet.adjustWallet(userId, -STREAK_FREEZE_COST, 'streak_freeze');
+        } catch (err) {
+          if (err instanceof WalletInsufficientError) {
+            return {
+              error: true as const,
+              status: 400,
+              body: {
+                success: false,
+                error: `You need ${STREAK_FREEZE_COST} wallet coins to buy a streak freeze.`,
+                walletBalance: err.balance,
+              },
+            };
+          }
+          throw err;
+        }
+
+        const { data: streak, error: fetchErr } = await supabaseService.getClient()
+          .from('user_streaks')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (fetchErr) {
+          await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
+          throw fetchErr;
+        }
+
+        const { data, error } = await supabaseService.getClient()
+          .from('user_streaks')
+          .upsert({
+            user_id: userId,
+            current_streak: streak?.current_streak ?? 0,
+            longest_streak: streak?.longest_streak ?? 0,
+            last_login_date: streak?.last_login_date ?? null,
+            streak_freezes: (streak?.streak_freezes ?? 0) + 1,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id' })
+          .select()
+          .single();
+
+        if (error) {
+          await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
+          throw error;
+        }
+
+        await cacheService.delete(`user:preferences:${userId}`);
+        return {
+          error: false as const,
+          body: {
+            success: true,
+            data: {
+              ...data,
+              cost: STREAK_FREEZE_COST,
+              walletBalance: debitResult.walletBalance,
+            },
+          },
+        };
       }
-      throw err;
+    );
+
+    if (payload.error) {
+      return res.status(payload.status).json(payload.body);
     }
 
-    const { data: streak, error: fetchErr } = await supabaseService.getClient()
-      .from('user_streaks')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (fetchErr) {
-      await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
-      throw fetchErr;
-    }
-
-    const { data, error } = await supabaseService.getClient()
-      .from('user_streaks')
-      .upsert({
-        user_id: userId,
-        current_streak: streak?.current_streak ?? 0,
-        longest_streak: streak?.longest_streak ?? 0,
-        last_login_date: streak?.last_login_date ?? null,
-        streak_freezes: (streak?.streak_freezes ?? 0) + 1,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
-      .select()
-      .single();
-
-    if (error) {
-      await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
-      throw error;
-    }
-
-    await cacheService.delete(`user:preferences:${userId}`);
-    res.json({
-      success: true,
-      data: {
-        ...data,
-        cost: STREAK_FREEZE_COST,
-        walletBalance: debitResult.walletBalance,
-      },
-    });
+    res.json(payload.body);
   })
 );
 

@@ -9,6 +9,7 @@ import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
+import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
 
 const router = Router();
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
@@ -389,10 +390,17 @@ router.post(
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    const result = await supabaseService.buyMarketplaceListingNow(
-      id,
+    const idempotencyKey =
+      normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+      `${buyerId}:buy_now:${id}:${Math.floor(Date.now() / 300_000)}`;
+
+    const result = await withIdempotency(
+      supabaseService.getClient(),
       buyerId,
-      req.body?.couponCode
+      'marketplace_buy_now',
+      idempotencyKey,
+      async () =>
+        supabaseService.buyMarketplaceListingNow(id, buyerId, req.body?.couponCode)
     );
 
     await invalidateListingCaches(cacheService, id);

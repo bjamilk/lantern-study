@@ -29,14 +29,10 @@ export interface GamificationSyncResult {
   awardedBadges?: Array<{ id: string; level: number; name: string }>;
 }
 
-export const syncGamificationProgress = (options?: {
-  stats?: Partial<UserStats>;
-  bonusPoints?: number;
-  bonusReason?: string;
-}) =>
+export const syncGamificationProgress = () =>
   gamificationRequest<GamificationSyncResult>('/me/sync-progress', {
     method: 'POST',
-    body: JSON.stringify(options ?? {}),
+    body: JSON.stringify({}),
   });
 
 export const recordLoginStreak = () =>

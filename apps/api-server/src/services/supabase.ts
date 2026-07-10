@@ -45,15 +45,16 @@ function buildProfileUpsertRow(profile: Partial<User> & {
   username?: string;
   phone?: string;
   avatar_url?: string;
-}): Record<string, unknown> {
+}, options?: { allowGamificationFields?: boolean }): Record<string, unknown> {
+  const allowGamification = options?.allowGamificationFields === true;
   const row: Record<string, unknown> = {
     id: profile.id,
     name: profile.name,
     avatar_url: profile.avatarUrl ?? profile.avatar_url,
     phone: profile.phoneNumber ?? profile.phone,
-    points: profile.points ?? 0,
-    stats: profile.stats ?? {},
-    badges: profile.badges ?? [],
+    points: allowGamification ? (profile.points ?? 0) : 0,
+    stats: allowGamification ? (profile.stats ?? {}) : {},
+    badges: allowGamification ? (profile.badges ?? []) : [],
     settings: profile.settings ?? {},
     username: profile.username ?? undefined,
     first_name: profile.firstName ?? profile.first_name ?? undefined,
@@ -4076,11 +4077,16 @@ export class SupabaseService {
   }
 
   async syncGamificationProgress(
+    userId: string
+  ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
+    return this.syncGamificationProgressWithStats(userId, {});
+  }
+
+  /** Server-only: apply trusted stats before badge evaluation (e.g. after test completion). */
+  async syncGamificationProgressWithStats(
     userId: string,
     options: {
       stats?: Partial<UserStats>;
-      bonusPoints?: number;
-      bonusReason?: string;
       activityDate?: string;
     } = {}
   ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
@@ -4089,16 +4095,7 @@ export class SupabaseService {
       throw new Error('User not found');
     }
 
-    let user = this.profileToGamificationUser(profile as unknown as Record<string, unknown>, options.stats);
-
-    if (options.bonusPoints && options.bonusPoints > 0 && options.bonusReason) {
-      await this.awardPoints(userId, options.bonusPoints, options.bonusReason, 'sync_progress');
-      const refreshed = await this.getUserById(userId);
-      if (refreshed) {
-        user = this.profileToGamificationUser(refreshed as unknown as Record<string, unknown>, options.stats);
-      }
-    }
-
+    const user = this.profileToGamificationUser(profile as unknown as Record<string, unknown>, options.stats);
     const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
 
     await this.updateUser(userId, {
@@ -4137,7 +4134,7 @@ export class SupabaseService {
       stats.perfectScoreTests = (stats.perfectScoreTests || 0) + 1;
     }
 
-    const result = await this.syncGamificationProgress(userId, { stats });
+    const result = await this.syncGamificationProgressWithStats(userId, { stats });
     await this.recordStudyActivity(userId, 'test', 1, activityDate).catch((err) => {
       logger.warn('Failed to record study activity after test', { userId, err });
     });

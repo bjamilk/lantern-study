@@ -464,7 +464,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     groupsCreated: (currentUser.stats.groupsCreated || 0) + 1,
                 };
 
-                void syncGamificationProgress({ stats: updatedStats })
+                void syncGamificationProgress()
                     .then((synced) => {
                         setCurrentUser({
                             ...currentUser,
@@ -589,7 +589,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     questionsCreated: (currentUser.stats.questionsCreated || 0) + 1,
                 };
 
-                void syncGamificationProgress({ stats: updatedStats })
+                void syncGamificationProgress()
                     .then((synced) => {
                         setCurrentUser({
                             ...currentUser,
@@ -787,10 +787,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
         
         if (currentUser) {
-            void syncGamificationProgress({
-                bonusPoints: 5,
-                bonusReason: 'Duplicate question help',
-            })
+            void syncGamificationProgress()
                 .then((synced) => {
                     setCurrentUser({
                         ...currentUser,
