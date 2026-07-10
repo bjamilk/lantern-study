@@ -31,6 +31,7 @@ import {
     sendPresenceHeartbeat,
 } from '../services/supabase';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
+import { mapMessageFromApi } from '@lantern/shared/utils';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
@@ -64,10 +65,10 @@ interface UseAppEffectsParams {
 export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotification }: UseAppEffectsParams) {
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, setPasswordRecovery } = useAuthStore();
     const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
-    const {
-        groups, setGroups, updateGroups,
+  const { groups, setGroups, updateGroups,
         dmThreads, setDmThreads, updateDmThreads,
         setAllMessages,
+        updateMessages,
         updateDirectMessages,
         setNotifications, updateNotifications, notifications
     } = useGroupStore();
@@ -85,7 +86,8 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
     const { transactions, setTransactions, budget, setBudget, savingsGoals, expenseSplits, walletBalance, setSavingsGoals, setExpenseSplits, setWalletBalance } = useBudgetStore();
     const {
         theme, setTheme, setAppMode,
-        openModal, lowDataMode, setLowDataMode
+        openModal, lowDataMode, setLowDataMode,
+        selectedChat,
     } = useUIStore();
 
     const [dailyQuests, setDailyQuests] = useState<any[]>([]);
@@ -557,7 +559,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             // Phase 2: deferred heavy loads (paginated / background)
             const deferredResults = await Promise.allSettled([
                 fetchDecks(userId),
-                fetchFlashcards(undefined, userId, { page: 1, limit: 50 }),
+                fetchFlashcards(undefined, userId, { page: 1, limit: 200 }),
                 fetchTestResults(userId, { limit: 50 }),
                 fetchUserQuestionStats(userId),
                 fetchOfflineBundles(userId),
@@ -942,6 +944,57 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             channels.forEach(ch => ch.unsubscribe());
         };
     }, [currentUser?.id, dmThreads, lowDataMode, updateDirectMessages, updateDmThreads]);
+
+    // --- Real-time group message subscription (selected chat only) ---
+    useEffect(() => {
+        if (!currentUser || lowDataMode || selectedChat?.chatType !== 'group') return;
+
+        const groupId = selectedChat.id;
+        const channel = supabase
+            .channel(`group-messages:${groupId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `group_id=eq.${groupId}`,
+                },
+                (payload) => {
+                    const mapped = mapMessageFromApi(payload.new);
+                    updateMessages(prev => {
+                        const existing = prev[groupId] || [];
+                        if (existing.some(m => m.id === mapped.id)) return prev;
+                        return { ...prev, [groupId]: [...existing, mapped] };
+                    });
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `group_id=eq.${groupId}`,
+                },
+                (payload) => {
+                    const mapped = mapMessageFromApi(payload.new);
+                    updateMessages(prev => {
+                        const existing = prev[groupId] || [];
+                        const idx = existing.findIndex(m => m.id === mapped.id);
+                        if (idx === -1) return prev;
+                        const updated = [...existing];
+                        updated[idx] = { ...updated[idx], ...mapped };
+                        return { ...prev, [groupId]: updated };
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [currentUser?.id, selectedChat?.id, selectedChat?.chatType, lowDataMode, updateMessages]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {

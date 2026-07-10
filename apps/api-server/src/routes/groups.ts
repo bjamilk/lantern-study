@@ -600,6 +600,7 @@ router.get(
       members = await supabaseService.getGroupMembers(groupId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
+        requestingUserId: userId,
       });
 
       // Cache for 5 minutes

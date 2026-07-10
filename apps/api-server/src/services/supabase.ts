@@ -1068,8 +1068,11 @@ export class SupabaseService {
     await cacheService.deletePattern('groups:list:*');
   }
 
-  async getGroupMembers(groupId: string, options: { page?: number; limit?: number } = {}): Promise<User[]> {
-    const { page = 1, limit = 50 } = options;
+  async getGroupMembers(
+    groupId: string,
+    options: { page?: number; limit?: number; requestingUserId?: string } = {}
+  ): Promise<User[]> {
+    const { page = 1, limit = 50, requestingUserId } = options;
     const offset = (page - 1) * limit;
 
     const cacheKey = `group:members:${groupId}:${page}:${limit}`;
@@ -1103,18 +1106,27 @@ export class SupabaseService {
         throw profileError;
       }
 
-      // Transform to User format
-      return (profileData || []).map((profile: any) => ({
-        id: profile.id,
-        name: profile.name,
-        username: profile.username,
-        avatarUrl: profile.avatar_url,
-        phoneNumber: profile.phone,
-        points: profile.points || 0,
-        stats: profile.stats || {},
-        badges: profile.badges || [],
-        settings: profile.settings,
-      }));
+      // Transform to User format; omit phone/settings for other members
+      return (profileData || []).map((profile: any) => {
+        const isSelf = requestingUserId && profile.id === requestingUserId;
+        const base = {
+          id: profile.id,
+          name: profile.name,
+          username: profile.username,
+          avatarUrl: profile.avatar_url,
+          points: profile.points || 0,
+          stats: profile.stats || {},
+          badges: profile.badges || [],
+        };
+        if (isSelf) {
+          return {
+            ...base,
+            phoneNumber: profile.phone,
+            settings: profile.settings,
+          };
+        }
+        return base;
+      });
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 

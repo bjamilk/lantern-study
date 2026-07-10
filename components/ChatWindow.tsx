@@ -99,6 +99,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(messages.length);
+  const lastMessageIdRef = useRef<string | null>(null);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
@@ -397,16 +398,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Only auto-scroll when new messages are added, not on vote/status updates
+  // Only auto-scroll when a new message is appended at the end, not when older messages are prepended
   useEffect(() => {
-    if (messages.length !== prevMessageCountRef.current) {
+    const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
+    if (lastId && lastId !== lastMessageIdRef.current) {
       scrollToBottom();
-      prevMessageCountRef.current = messages.length;
     }
+    lastMessageIdRef.current = lastId;
+    prevMessageCountRef.current = messages.length;
   }, [messages]);
 
   // Scroll to bottom on initial load / chat switch
   useEffect(() => {
+    lastMessageIdRef.current = messages.length > 0 ? messages[messages.length - 1].id : null;
     prevMessageCountRef.current = messages.length;
     scrollToBottom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -569,7 +573,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setIsDropdownOpen(false);
   };
 
-  const visibleMessages = messages.filter(msg => isGroup ? !msg.isArchived : true);
+  const visibleMessages = useMemo(
+    () => messages.filter(msg => isGroup ? !msg.isArchived : true),
+    [messages, isGroup]
+  );
   const questionCount = visibleMessages.filter(m => m.questionType).length;
 
   return (

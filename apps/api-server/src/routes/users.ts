@@ -14,7 +14,7 @@ import {
   isSelfOrLivePlatformAdmin,
 } from '../utils/platformAdminAuth';
 import { AuthenticatedRequest, User, Group } from '../types';
-import { dataExportRateLimit } from '../middleware/rateLimit';
+import { dataExportRateLimit, searchRateLimit, usernameCheckRateLimit } from '../middleware/rateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import { logAdminAction } from '../services/adminAudit';
@@ -121,6 +121,7 @@ router.get(
 router.get(
   '/search',
   authMiddleware,
+  searchRateLimit,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const currentUserId = requireAuthUserId(req, res);
     if (!currentUserId) return;
@@ -936,6 +937,7 @@ router.put(
 // GET /api/v1/users/check-username/:username - Check if username is available
 router.get(
   '/check-username/:username',
+  usernameCheckRateLimit,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const { username } = req.params;
 

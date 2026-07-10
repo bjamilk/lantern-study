@@ -56,7 +56,7 @@ router.get(
       });
 
       // Cache for 5 minutes
-      await cacheService.set(cacheKey, flashcards, 300);
+      await cacheService.set(cacheKey, flashcards, 60);
     }
 
     res.json({
@@ -99,7 +99,7 @@ router.get(
       }
 
       // Cache for 10 minutes (user-scoped key prevents cross-user IDOR)
-      await cacheService.set(cacheKey, flashcard, 600);
+      await cacheService.set(cacheKey, flashcard, 60);
     }
 
     res.json({

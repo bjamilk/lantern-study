@@ -27,7 +27,7 @@ interface MessageItemProps {
   isGroupedWithPrevious?: boolean;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
 
@@ -331,6 +331,6 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isCurrentUserMessage
       )}
     </div>
   );
-};
+});
 
 export default MessageItem;

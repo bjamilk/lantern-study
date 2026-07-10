@@ -110,6 +110,7 @@ router.get(
         page: parsedPage,
         limit: parsedLimit,
         total: messages.length,
+        hasMore: messages.length === parsedLimit,
       },
       responseProfile: profile,
     });

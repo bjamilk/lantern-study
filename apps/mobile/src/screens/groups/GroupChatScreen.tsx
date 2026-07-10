@@ -107,10 +107,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
     messages,
     currentGroup,
     isLoading,
+    isLoadingMore,
     userVotes,
     groups,
     selectGroup,
     fetchMessages,
+    loadMoreMessages,
     sendMessage,
     markGroupAsRead,
     updateGroupDetails,
@@ -124,6 +126,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     fetchUserVotesForGroup,
     getSubgroupsWithLevel,
     getMessagesForGroups,
+    messagePagination,
   } = useGroupStore();
 
   const [text, setText] = useState('');
@@ -141,6 +144,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const displayName = groupName || currentGroup?.name || 'Group chat';
   const messageLimit = lowDataMode ? 30 : 100;
+  const hasMoreMessages = messagePagination[groupId]?.hasMore ?? true;
+
+  const handleLoadOlderMessages = useCallback(() => {
+    if (!hasMoreMessages || isLoadingMore) return;
+    void loadMoreMessages(groupId);
+  }, [groupId, hasMoreMessages, isLoadingMore, loadMoreMessages]);
   const availableSubgroups = useMemo(
     () => getSubgroupsWithLevel(groupId).map(({ group, level }) => ({
       id: group.id,
@@ -400,6 +409,19 @@ export function GroupChatScreen({ navigation, route }: Props) {
             keyExtractor={item => item.id}
             className="flex-1"
             contentContainerClassName="px-4 py-4 flex-grow"
+            onScroll={(e) => {
+              if (e.nativeEvent.contentOffset.y <= 16) {
+                handleLoadOlderMessages();
+              }
+            }}
+            scrollEventThrottle={200}
+            ListHeaderComponent={
+              isLoadingMore ? (
+                <View className="py-2 items-center">
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">
                 <Text className="text-sm text-slate-500">No messages yet. Say hello!</Text>

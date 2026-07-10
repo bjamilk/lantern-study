@@ -43,6 +43,8 @@ export interface AppearanceSettings {
 
 export interface PrivacySettings {
   profileVisibility: 'public' | 'groups' | 'private';
+  /** When false, username does not appear in invite/member search (profile RLS unchanged). */
+  discoverableForInvites: boolean;
   showOnlineStatus: boolean;
   showStudyActivity: boolean;
   allowDirectMessages: 'everyone' | 'groups' | 'none';
@@ -130,6 +132,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   },
   privacy: {
     profileVisibility: 'groups',
+    discoverableForInvites: true,
     showOnlineStatus: true,
     showStudyActivity: true,
     allowDirectMessages: 'groups',

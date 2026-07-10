@@ -44,6 +44,7 @@ import { useChallengeNotificationHandler } from '../hooks/useChallengeNotificati
 import { useDeepLinkHandler } from '../hooks/useDeepLinkHandler';
 import { useDailyStudyReminder } from '../hooks/useDailyStudyReminder';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
+import { useAutoSync } from '../hooks/useSync';
 
 import {
 
@@ -735,6 +736,7 @@ function RootNavigatorInner() {
   useDeepLinkHandler();
   useDailyStudyReminder();
   usePresenceHeartbeat();
+  useAutoSync(user?.id);
 
   useEffect(() => {
     setSentryUser(user ? { id: user.id, email: user.email } : null);

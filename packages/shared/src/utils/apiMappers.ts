@@ -205,6 +205,9 @@ export const mapSrsDataFromApi = (data: any): SrsData | undefined => {
     nextReviewDate: data.next_review_date || data.nextReviewDate || data.next_review,
     failedAttempts: data.failed_attempts || data.failedAttempts || 0,
     isLeech: data.is_leech || data.isLeech || false,
+    scheduler: data.scheduler,
+    difficulty: data.difficulty,
+    stability: data.stability,
   };
 };
 
@@ -406,6 +409,9 @@ export const mapFlashcardToApi = (flashcard: Partial<Flashcard>): any => {
       next_review_date: flashcard.srsData.nextReviewDate,
       failed_attempts: flashcard.srsData.failedAttempts,
       is_leech: flashcard.srsData.isLeech,
+      scheduler: flashcard.srsData.scheduler,
+      difficulty: flashcard.srsData.difficulty,
+      stability: flashcard.srsData.stability,
     } : undefined,
     tags: flashcard.tags,
   };

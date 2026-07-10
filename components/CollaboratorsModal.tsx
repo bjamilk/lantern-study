@@ -3,7 +3,7 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { XCircleIcon, PlusIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { DeckCollaborator, User } from '../types';
-import { addDeckCollaborator, fetchDeckCollaborators, fetchUsers, removeDeckCollaborator } from '../services/supabase';
+import { addDeckCollaborator, fetchDeckCollaborators, searchUsers, removeDeckCollaborator } from '../services/supabase';
 
 interface CollaboratorsModalProps {
   isOpen: boolean;
@@ -36,15 +36,26 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
     }
   };
 
-  const searchUsers = async (query: string) => {
-    if (!query.trim()) {
+  const searchUsersForCollaborator = async (query: string) => {
+    if (!query.trim() || query.trim().length < 2) {
       setUserSuggestions([]);
       return;
     }
     setIsSearchingUsers(true);
     try {
-      const users = await fetchUsers(query, { limit: 10 });
-      setUserSuggestions(users);
+      const users = await searchUsers(query.trim(), 10);
+      setUserSuggestions(users.map((u: { id: string; name?: string; username?: string | null }) => ({
+        id: u.id,
+        name: u.name || '',
+        username: u.username || undefined,
+        email: '',
+        password: '',
+        phoneNumber: '',
+        avatarUrl: '',
+        points: 0,
+        badges: [],
+        stats: {} as User['stats'],
+      })));
     } catch (err) {
       console.error('Failed to search users', err);
       setUserSuggestions([]);
@@ -62,7 +73,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
   useEffect(() => {
     const handler = setTimeout(() => {
       if (userQuery.trim()) {
-        searchUsers(userQuery.trim());
+        searchUsersForCollaborator(userQuery.trim());
       } else {
         setUserSuggestions([]);
       }
@@ -129,7 +140,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
                   setUserQuery(e.target.value);
                   setNewUserId(e.target.value);
                 }}
-                placeholder="Search users by name/email"
+                placeholder="Search by username (min 2 chars)"
                 className="w-full p-2 border rounded-md bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100"
               />
               {isSearchingUsers && (
@@ -143,13 +154,13 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
                       type="button"
                       onClick={() => {
                         setNewUserId(user.id);
-                        setUserQuery(`${user.name || ''} (${user.email || ''})`);
+                        setUserQuery(user.username ? `@${user.username}` : (user.name || user.id));
                         setUserSuggestions([]);
                       }}
                       className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700"
                     >
-                      <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{user.name || user.email || user.id}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">{user.email || user.id}</div>
+                      <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{user.name || user.username || user.id}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{user.username ? `@${user.username}` : user.id}</div>
                     </button>
                   ))}
                 </div>

@@ -82,14 +82,6 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             navigateForAppMode(AppMode.CHAT, { threadId: chat.id });
         }
         if (chat.chatType === 'group') {
-            const limit = lowDataMode ? 20 : 50;
-            fetchMessages(chat.id, undefined, limit).then(fetchedMessages => {
-                const list = normalizeFetchedMessages(fetchedMessages);
-                updateMessages(prev => ({ ...prev, [chat.id]: list }));
-            }).catch(error => {
-                console.error('[handleSelectChat] Error fetching messages:', error);
-            });
-            
             if (currentUser) {
                 fetchUserVotesForGroup(chat.id, currentUser.id).then(fetchedVotes => {
                     updateUserVotes(prev => ({ ...prev, ...fetchedVotes }));
@@ -158,6 +150,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             fetchMessages(chatId, undefined, limit)
                 .then((fetchedMessages) => {
+                    if (useUIStore.getState().selectedChat?.id !== chatId) return;
                     const list = normalizeFetchedMessages(fetchedMessages);
                     updateMessages((prev) => ({ ...prev, [chatId]: list }));
                 })

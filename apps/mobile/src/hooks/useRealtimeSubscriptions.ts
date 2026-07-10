@@ -438,7 +438,7 @@ export function useRealtimeSubscriptions(
   } = options;
 
   const { user } = useAuthStore();
-  const { groups, dmThreads, addDirectMessage } = useGroupStore();
+  const { groups, dmThreads, addDirectMessage, appendGroupMessage, mergeGroupMessage } = useGroupStore();
   const { loadSettings } = useSettingsStore();
   
   const isSubscribedRef = useRef(false);
@@ -460,13 +460,19 @@ export function useRealtimeSubscriptions(
   }, [onNotification, user?.id]);
 
   // Handle message received
-  const handleMessage = useCallback((message: Message) => {
-    console.log('[useRealtimeSubscriptions] Message received in group:', message.groupId);
-    onMessage?.(message);
-    
-    // The groupStore should handle updating its state
-    // This could trigger a refresh of the messages list
-  }, [onMessage]);
+  const handleMessage = useCallback((raw: Message) => {
+    const groupId = (raw as { group_id?: string; groupId?: string }).group_id
+      || raw.groupId;
+    if (!groupId) return;
+
+    const cached = useGroupStore.getState().messagesCache[groupId] || [];
+    if (cached.some(m => m.id === raw.id)) {
+      mergeGroupMessage(groupId, raw);
+    } else {
+      appendGroupMessage(groupId, raw);
+    }
+    onMessage?.(raw);
+  }, [onMessage, appendGroupMessage, mergeGroupMessage]);
 
   const handleDirectMessage = useCallback((message: DirectMessage) => {
     console.log('[useRealtimeSubscriptions] DM received in thread:', message.threadId);

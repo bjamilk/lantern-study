@@ -206,6 +206,8 @@ interface GroupState {
   deleteDmThread: (threadId: string, userId: string) => Promise<void>;
   removeDmThread: (threadId: string) => void;
   addDirectMessage: (threadId: string, message: DirectMessage) => void;
+  appendGroupMessage: (groupId: string, rawMessage: unknown) => void;
+  mergeGroupMessage: (groupId: string, rawMessage: unknown) => void;
 
   updateGroupDetails: (groupId: string, name: string, description: string) => Promise<void>;
   promoteToAdmin: (groupId: string, userId: string) => Promise<void>;
@@ -675,9 +677,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         ? mapped
         : [...mapped.filter((m: Message) => !existingIds.has(m.id)), ...existing];
 
-      const hasMore = pagination
-        ? pagination.page * pagination.limit < pagination.total
-        : mapped.length >= limit;
+      const hasMore = pagination?.hasMore ?? mapped.length >= limit;
 
       set({
         messages: merged,
@@ -1394,6 +1394,34 @@ export const useGroupStore = create<GroupState>((set, get) => ({
               }
             : t
         ),
+      };
+    });
+  },
+
+  appendGroupMessage: (groupId: string, rawMessage: unknown) => {
+    const message = mapApiMessage(rawMessage, groupId);
+    set(state => {
+      const cached = state.messagesCache[groupId] || [];
+      if (cached.some(m => m.id === message.id)) return state;
+      const updated = [...cached, message];
+      return {
+        messagesCache: { ...state.messagesCache, [groupId]: updated },
+        messages: state.currentGroup?.id === groupId ? updated : state.messages,
+      };
+    });
+  },
+
+  mergeGroupMessage: (groupId: string, rawMessage: unknown) => {
+    const message = mapApiMessage(rawMessage, groupId);
+    set(state => {
+      const cached = state.messagesCache[groupId] || [];
+      const idx = cached.findIndex(m => m.id === message.id);
+      if (idx === -1) return state;
+      const updated = [...cached];
+      updated[idx] = { ...updated[idx], ...message };
+      return {
+        messagesCache: { ...state.messagesCache, [groupId]: updated },
+        messages: state.currentGroup?.id === groupId ? updated : state.messages,
       };
     });
   },

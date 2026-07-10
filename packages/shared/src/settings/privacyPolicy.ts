@@ -13,6 +13,12 @@ export function userShowsOnlineStatus(settings: Pick<PrivacySettings, 'showOnlin
   return settings.showOnlineStatus !== false;
 }
 
+export function userDiscoverableForInvites(
+  settings: Pick<PrivacySettings, 'discoverableForInvites'>
+): boolean {
+  return settings.discoverableForInvites !== false;
+}
+
 export function canViewStudyActivity(rawTargetSettings: unknown): boolean {
   const settings = normalizeUserSettings(rawTargetSettings);
   return userSharesStudyActivity(settings.privacy);

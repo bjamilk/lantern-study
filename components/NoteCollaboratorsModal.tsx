@@ -3,7 +3,7 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { XCircleIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { User } from '../types';
-import { fetchUsers } from '../services/supabase';
+import { searchUsers } from '../services/supabase';
 import * as notesApi from '../services/notes';
 
 interface NoteCollaborator {
@@ -65,9 +65,18 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
         setUserSuggestions([]);
         return;
       }
+      if (userQuery.trim().length < 2) {
+        setUserSuggestions([]);
+        return;
+      }
       setIsSearchingUsers(true);
-      fetchUsers(userQuery.trim(), { limit: 10 })
-        .then(setUserSuggestions)
+      searchUsers(userQuery.trim(), 10)
+        .then((users) => setUserSuggestions(users.map((u) => ({
+          id: u.id,
+          name: u.name || '',
+          username: u.username || undefined,
+          avatarUrl: u.avatarUrl,
+        }))))
         .catch(() => setUserSuggestions([]))
         .finally(() => setIsSearchingUsers(false));
     }, 250);

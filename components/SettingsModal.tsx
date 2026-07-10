@@ -425,6 +425,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <option value="none">Nobody</option>
                         </select>
                     </div>
+                    <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow username search for invites" description="Let others find you by username when adding group or deck members. Profile visibility still controls who can view your full profile." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
                  </div>

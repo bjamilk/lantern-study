@@ -704,6 +704,22 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="search-outline"
+              iconColor="#6366f1"
+              title="Discoverable for Invites"
+              subtitle="Let others find you by username when adding group or deck members"
+              rightElement={
+                <Switch
+                  value={settings.privacy.discoverableForInvites !== false}
+                  onValueChange={(val) => updateSingleSetting('privacy', 'discoverableForInvites', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.privacy.discoverableForInvites !== false ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
               icon="radio-button-on-outline"
               iconColor="#10b981"
               title="Online Status"

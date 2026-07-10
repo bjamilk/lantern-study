@@ -127,6 +127,8 @@ let _uploadBurstRateLimit: RateLimitRequestHandler | null = null;
 let _adminRateLimit: RateLimitRequestHandler | null = null;
 let _dataExportRateLimit: RateLimitRequestHandler | null = null;
 let _contactFormRateLimit: RateLimitRequestHandler | null = null;
+let _searchRateLimit: RateLimitRequestHandler | null = null;
+let _usernameCheckRateLimit: RateLimitRequestHandler | null = null;
 
 function buildAllLimiters(): void {
   const anonMax = parseInt(
@@ -237,6 +239,22 @@ function buildAllLimiters(): void {
     keyScope: 'ip',
     redisPrefix: 'contact',
   });
+
+  _searchRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: prodOrDev(30, 200),
+    message: 'Too many user searches. Please wait before trying again.',
+    keyScope: 'user',
+    redisPrefix: 'search',
+  });
+
+  _usernameCheckRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: prodOrDev(20, 100),
+    message: 'Too many username checks. Please wait before trying again.',
+    keyScope: 'ip',
+    redisPrefix: 'unamechk',
+  });
 }
 
 buildAllLimiters();
@@ -289,4 +307,12 @@ export const dataExportRateLimit: RequestHandler = (req, res, next) => {
 
 export const contactFormRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_contactFormRateLimit, 'contactFormRateLimit')(req, res, next);
+};
+
+export const searchRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_searchRateLimit, 'searchRateLimit')(req, res, next);
+};
+
+export const usernameCheckRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_usernameCheckRateLimit, 'usernameCheckRateLimit')(req, res, next);
 };
