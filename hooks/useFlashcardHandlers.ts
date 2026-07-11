@@ -4,26 +4,25 @@ import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useUIStore } from '../stores/uiStore';
 import { shuffleArray } from '../utils/helpers';
-import { calculateFsrsData } from '@lantern/shared/utils';
 import {
   buildFlashcardReviewQueue,
   getTodayStudyCounts,
-  getSrsMaxInterval,
   isNewFlashcard,
 } from '@lantern/shared/settings';
-import { normalizeUserSettings } from '@lantern/shared/settings';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
-    createFlashcard, fetchFlashcards, updateFlashcard, deleteFlashcard,
+    createFlashcard, fetchFlashcards, updateFlashcard, reviewFlashcard, deleteFlashcard,
     resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks
 } from '../services/supabase';
 import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { navigateForAppMode } from '../utils/appNavigation';
+
+const srsReviewInFlight = new Set<string>();
 
 export function useFlashcardHandlers() {
     const { currentUser } = useAuthStore();
@@ -456,19 +455,24 @@ export function useFlashcardHandlers() {
 
     const handleUpdateSrsData = useCallback(async (cardId: string, performanceRating: 'again' | 'hard' | 'good' | 'easy') => {
         if (!currentUser) return;
+        if (srsReviewInFlight.has(cardId)) return;
+        srsReviewInFlight.add(cardId);
+
         const cardIndex = flashcards.findIndex(fc => fc.id === cardId);
-        if (cardIndex === -1) return;
-        
+        if (cardIndex === -1) {
+            srsReviewInFlight.delete(cardId);
+            return;
+        }
+
         const card = flashcards[cardIndex];
-        const settings = normalizeUserSettings(currentUser.settings);
         const wasNew = isNewFlashcard(card);
-        const newSrsData = calculateFsrsData(card.srsData, performanceRating, {
-            maxInterval: getSrsMaxInterval(settings.study),
-        });
-        
+
         try {
-            await updateFlashcard(cardId, { srsData: newSrsData });
-            updateFlashcards(prev => prev.map(fc => fc.id === cardId ? { ...fc, srsData: newSrsData } : fc));
+            const updated = await reviewFlashcard(cardId, performanceRating);
+            const newSrsData = updated?.srs_data ?? updated?.srsData;
+            if (newSrsData) {
+                updateFlashcards(prev => prev.map(fc => fc.id === cardId ? { ...fc, srsData: newSrsData } : fc));
+            }
             trackQuestProgress('review_cards');
             trackStudyActivity('flashcard', 1);
             if (wasNew) {
@@ -477,6 +481,8 @@ export function useFlashcardHandlers() {
         } catch (error) {
             console.error('Error updating SRS data:', error);
             alert('Failed to update SRS data. Please try again.');
+        } finally {
+            srsReviewInFlight.delete(cardId);
         }
     }, [currentUser, flashcards, updateFlashcards]);
 

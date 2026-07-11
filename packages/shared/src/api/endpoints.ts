@@ -245,6 +245,20 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify(updates),
       }),
 
+    reviewFlashcard: (
+      flashcardId: string,
+      rating: 'again' | 'hard' | 'good' | 'easy'
+    ) =>
+      apiRequest<{
+        id: string;
+        deck_id: string;
+        srs_data: unknown;
+        updated_at: string;
+      }>(`/flashcards/${flashcardId}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ rating }),
+      }),
+
     deleteFlashcard: (flashcardId: string) =>
       apiRequest<void>(`/flashcards/${flashcardId}`, { method: 'DELETE' }),
 

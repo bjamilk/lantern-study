@@ -1105,7 +1105,6 @@ export const updateFlashcard = async (flashcardId: string, updates: {
   clozeText?: string;
   imageUrl?: string;
   occlusionData?: any;
-  srsData?: any;
   tags?: string[];
 }) => {
   console.log('Updating flashcard:', flashcardId, 'updates:', updates);
@@ -1119,7 +1118,6 @@ export const updateFlashcard = async (flashcardId: string, updates: {
         clozeText: updates.clozeText,
         imageUrl: updates.imageUrl,
         occlusionData: updates.occlusionData,
-        srsData: updates.srsData,
         tags: updates.tags,
       }),
     });
@@ -1132,8 +1130,32 @@ export const updateFlashcard = async (flashcardId: string, updates: {
     const result = await response.json();
     console.log('Flashcard updated:', result.data);
     return result.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating flashcard:', error.message || JSON.stringify(error));
+    throw error;
+  }
+};
+
+export const reviewFlashcard = async (
+  flashcardId: string,
+  rating: 'again' | 'hard' | 'good' | 'easy'
+) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}/review`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ rating }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || error.message || 'Failed to review flashcard');
+    }
+
+    const result = await response.json();
+    return result.data;
+  } catch (error: any) {
+    console.error('Error reviewing flashcard:', error.message || JSON.stringify(error));
     throw error;
   }
 };

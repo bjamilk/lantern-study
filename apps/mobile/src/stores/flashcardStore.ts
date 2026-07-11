@@ -207,6 +207,12 @@ interface FlashcardState {
     userId: string;
   }) => Promise<Flashcard>;
   updateFlashcard: (flashcardId: string, deckId: string, updates: any, userId: string) => Promise<void>;
+  reviewFlashcard: (
+    flashcardId: string,
+    deckId: string,
+    rating: 'again' | 'hard' | 'good' | 'easy',
+    userId: string
+  ) => Promise<void>;
   deleteFlashcard: (flashcardId: string, deckId: string, userId: string) => Promise<void>;
   clearError: () => void;
   // Local storage helpers
@@ -562,6 +568,34 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       console.error('Failed to update flashcard on server:', error);
       await syncService.queueOperation('flashcard', flashcardId, 'update', updates, userId);
       flushScheduledSave(() => get().saveToStorage());
+    }
+  },
+
+  reviewFlashcard: async (
+    flashcardId: string,
+    deckId: string,
+    rating: 'again' | 'hard' | 'good' | 'easy',
+    userId: string
+  ) => {
+    try {
+      const updated = await api.reviewFlashcard(flashcardId, rating);
+      const mapped = mapFlashcardFromApi(updated);
+      set(state => {
+        const flashcards = {
+          ...state.flashcards,
+          [deckId]: (state.flashcards[deckId] || []).map(c =>
+            c.id === flashcardId ? mapped : c
+          ),
+        };
+        return {
+          flashcards,
+          decks: enrichDecksWithStats(state.decks, flashcards),
+        };
+      });
+      flushScheduledSave(() => get().saveToStorage());
+    } catch (error: any) {
+      console.error('Failed to review flashcard on server:', error);
+      throw error;
     }
   },
   

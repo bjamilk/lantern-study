@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination, validateFlashcardCreate } from '../middleware/validation';
+import { handleValidationErrors, validatePagination, validateFlashcardCreate, validateFlashcardReview } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { SupabaseService } from '../services/supabase';
@@ -248,6 +248,38 @@ router.post(
   })
 );
 
+// POST /api/v1/flashcards/:flashcardId/review - Server-computed SRS update
+router.post(
+  '/:flashcardId/review',
+  authMiddleware,
+  validateFlashcardReview,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { flashcardId } = req.params;
+    const { rating } = req.body as { rating: 'again' | 'hard' | 'good' | 'easy' };
+
+    const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating);
+
+    if (!updatedFlashcard) {
+      return res.status(404).json({
+        success: false,
+        error: 'Flashcard not found',
+      });
+    }
+
+    await cacheService.delete(`flashcard:${flashcardId}`);
+    await cacheService.deletePattern(`flashcards:*`);
+
+    res.json({
+      success: true,
+      data: updatedFlashcard,
+    });
+  })
+);
+
 // PUT /api/v1/flashcards/:flashcardId - Update flashcard
 router.put(
   '/:flashcardId',
@@ -260,7 +292,14 @@ router.put(
     const { flashcardId } = req.params;
     const { front, back, clozeText, imageUrl, occlusionData, srsData, tags } = req.body;
 
-    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, srsData: !!srsData, userId });
+    if (srsData !== undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Use POST /flashcards/:flashcardId/review to update SRS scheduling data',
+      });
+    }
+
+    logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, userId });
 
     const updatedFlashcard = await supabaseService.updateFlashcard(flashcardId, {
       front,
@@ -268,7 +307,6 @@ router.put(
       clozeText,
       imageUrl,
       occlusionData,
-      srsData,
       tags,
     }, userId);
 

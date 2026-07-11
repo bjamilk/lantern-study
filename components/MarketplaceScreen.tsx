@@ -512,6 +512,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
               <input
                 type="text"
+                aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search campus essentials'}
                 placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
                 defaultValue={searchTerm}
                 onChange={e => handleSearchChange(e.target.value)}

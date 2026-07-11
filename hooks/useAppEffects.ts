@@ -598,6 +598,9 @@ export function useAppEffects({
 
             if (cancelled) return;
 
+            const shouldApplyBootstrap = () =>
+                !cancelled && useAuthStore.getState().currentUser?.id === userId;
+
             console.log('[Data Loading] All parallel fetches settled');
 
             const nextBootstrap: BootstrapLoadState = {
@@ -617,6 +620,7 @@ export function useAppEffects({
                         ? 'loaded'
                         : 'error',
             };
+            if (!shouldApplyBootstrap()) return;
             setBootstrapLoad(nextBootstrap);
 
             if (nextBootstrap.groups === 'error') {
@@ -630,6 +634,8 @@ export function useAppEffects({
                     'error'
                 );
             }
+
+                if (!shouldApplyBootstrap()) return;
 
                 // --- [0] Groups + [1] Unread counts ---
                 const groupsResult = results[0];
@@ -820,7 +826,7 @@ export function useAppEffects({
                 }
 
                 // Mark bootstrap settled — per-domain status tracks individual failures
-                if (!cancelled && allBootstrapDomainsSettled(nextBootstrap)) {
+                if (shouldApplyBootstrap() && allBootstrapDomainsSettled(nextBootstrap)) {
                     setDataLoaded(true);
                 }
 
@@ -1067,18 +1073,18 @@ export function useAppEffects({
                       console.log('Real-time profile update received');
                     }
                     const updatedProfile = payload.new;
-                    if (currentUser) {
-                        setCurrentUser({
-                            ...currentUser,
-                            name: updatedProfile.name,
-                            avatarUrl: updatedProfile.avatar_url,
-                            phoneNumber: updatedProfile.phone,
-                            points: updatedProfile.points || 0,
-                            badges: updatedProfile.badges || [],
-                            stats: updatedProfile.stats || initialUserStats,
-                            settings: updatedProfile.settings || {}
-                        });
-                    }
+                    const prev = useAuthStore.getState().currentUser;
+                    if (!prev || prev.id !== updatedProfile.id) return;
+                    setCurrentUser({
+                        ...prev,
+                        name: updatedProfile.name,
+                        avatarUrl: updatedProfile.avatar_url,
+                        phoneNumber: updatedProfile.phone,
+                        points: updatedProfile.points || 0,
+                        badges: updatedProfile.badges || [],
+                        stats: updatedProfile.stats || initialUserStats,
+                        settings: updatedProfile.settings || {},
+                    });
                 }
             )
             .subscribe();

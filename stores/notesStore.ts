@@ -4,6 +4,7 @@ import * as notesApi from '../services/notes';
 
 let loadNoteSeq = 0;
 const saveChains = new Map<string, Promise<unknown>>();
+const saveGenerations = new Map<string, number>();
 
 interface NotesState {
   folders: NoteFolder[];
@@ -121,14 +122,20 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       return null as unknown as StudyNote;
     }
 
+    const generation = (saveGenerations.get(noteId) ?? 0) + 1;
+    saveGenerations.set(noteId, generation);
+
     const runSave = async () => {
       const latest = get();
       if (latest.selectedNote?.id !== noteId && !latest.notes.some((n) => n.id === noteId)) {
         return null as unknown as StudyNote;
       }
-      set({ isSaving: true });
+      set({ isSaving: true, error: null });
       try {
         const saved = await notesApi.updateNote(noteId, updates);
+        if (saveGenerations.get(noteId) !== generation) {
+          return saved;
+        }
         set({
           notes: get().notes.map(n => (n.id === noteId ? { ...n, ...saved } : n)),
           selectedNote:
@@ -143,6 +150,9 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         });
         return saved;
       } catch (e: any) {
+        if (saveGenerations.get(noteId) !== generation) {
+          throw e;
+        }
         const isNotFound = /not found|404/i.test(e.message || '');
         set({
           error: isNotFound ? null : e.message,

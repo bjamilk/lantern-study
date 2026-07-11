@@ -38,6 +38,7 @@ export const {
   fetchFlashcards,
   createFlashcard,
   updateFlashcard,
+  reviewFlashcard,
   deleteFlashcard,
   fetchFlashcardComments,
   addFlashcardComment,

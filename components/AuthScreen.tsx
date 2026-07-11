@@ -784,7 +784,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-lantern-background transition-colors duration-300">
+    <main className="flex items-center justify-center min-h-screen bg-lantern-background transition-colors duration-300">
       <div className="w-full max-w-5xl m-4 lg:m-8 bg-lantern-surface/95 border border-lantern-border rounded-3xl shadow-lantern-lg overflow-hidden grid lg:grid-cols-2 backdrop-blur-sm">
         {/* Left Branding Column */}
         <div className={`hidden lg:block relative p-12 ${lowDataMode ? 'bg-lantern-accent-background' : 'bg-lantern-primary-background'}`}>
@@ -810,7 +810,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 <div className="text-center lg:hidden mb-8">
                     <LanternIcon size={48} className="mx-auto" />
                 </div>
-                <h2 className="font-display text-3xl font-semibold tracking-tight text-lantern-text">
+                <h1 className="font-display text-3xl font-semibold tracking-tight text-lantern-text">
                     {isVerifyEmailView
                       ? 'Verify your email'
                       : isForgotPasswordView
@@ -818,7 +818,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         : isLoginView
                           ? 'Welcome Back'
                           : 'Create an Account'}
-                </h2>
+                </h1>
                 <p className="mt-2 text-sm text-lantern-text-secondary">
                     {isVerifyEmailView
                       ? `Enter the 6-digit code sent to ${email || 'your email'}. You can also confirm via the link in the email.`
@@ -1147,7 +1147,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
             </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 

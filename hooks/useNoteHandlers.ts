@@ -12,6 +12,7 @@ import { aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
+import { useToastStore } from '../stores/toastStore';
 
 const INSUFFICIENT_STUDY_CONTENT_MESSAGE = `Note needs at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For presentations, wait for slide text extraction or add your own notes.`;
 
@@ -106,8 +107,9 @@ export function useNoteHandlers(currentUserId?: string) {
         if (!latestStored || noteMatchesUpdates(latestStored, updates)) {
           return;
         }
-        void saveNote(noteId, updates).catch(() => {
-          // Auto-save failures (e.g. note deleted) are non-fatal
+        void saveNote(noteId, updates).catch((err) => {
+          const message = err instanceof Error ? err.message : 'Failed to save note';
+          useToastStore.getState().showToast(message, 'error');
         });
       }, 800);
     },

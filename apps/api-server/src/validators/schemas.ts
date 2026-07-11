@@ -148,7 +148,7 @@ export const schemas = {
   }),
 
   reviewFlashcard: Joi.object({
-    rating: Joi.number().valid(1, 2, 3, 4, 5).required(),
+    rating: Joi.string().valid('again', 'hard', 'good', 'easy').required(),
     responseTime: Joi.number().min(0).max(300000).optional(), // Max 5 min
   }),
 

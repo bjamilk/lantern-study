@@ -597,9 +597,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <XCircleIcon className="w-6 h-6" />
                         </button>
                     </div>
-                    <nav className="flex space-x-1 md:flex-col md:space-y-1 md:space-x-0 overflow-x-auto pb-2 md:pb-0 md:overflow-x-visible">
+                    <nav className="flex space-x-1 md:flex-col md:space-y-1 md:space-x-0 overflow-x-auto pb-2 md:pb-0 md:overflow-x-visible" role="tablist" aria-label="Settings sections">
                         {navItems.map(item => (
                             <button key={item.id} onClick={() => setActiveTab(item.id)}
+                                role="tab"
+                                aria-selected={activeTab === item.id}
+                                aria-current={activeTab === item.id ? 'page' : undefined}
                                 className={`flex-shrink-0 md:w-full flex items-center p-2.5 text-sm font-medium rounded-lantern transition-colors ${activeTab === item.id ? 'bg-lantern-primary-background text-lantern-primary-dark' : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'}`}>
                                 <item.icon className="w-5 h-5 mr-2 md:mr-3" />
                                 <span>{item.label}</span>

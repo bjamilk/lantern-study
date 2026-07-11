@@ -97,11 +97,18 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   useEffect(() => {
     if (!currentCard?.id) return;
 
+    let cancelled = false;
     fetchFlashcardComments(currentCard.id)
-      .then(setComments)
+      .then((data) => {
+        if (!cancelled) setComments(data);
+      })
       .catch((err) => {
-        console.warn('Failed to load flashcard comments', err);
+        if (!cancelled) console.warn('Failed to load flashcard comments', err);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentCard?.id]);
 
   const handleShowAnswer = () => setIsAnswerShown(true);

@@ -12,6 +12,8 @@ import {
 } from '@lantern/shared/utils/server';
 import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
 import { computeStudyStreak } from '@lantern/shared/utils/activity';
+import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
+import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
 
 type UserStats = typeof initialUserStats;
 
@@ -2255,6 +2257,26 @@ export class SupabaseService {
 
     await cacheService.delete(`flashcard_comments:${flashcardId}`);
     return data;
+  }
+
+  async reviewFlashcard(
+    flashcardId: string,
+    userId: string,
+    rating: 'again' | 'hard' | 'good' | 'easy'
+  ): Promise<any | null> {
+    const existing = await this.getFlashcardForUser(flashcardId, userId);
+    if (!existing) return null;
+
+    const canEdit = await this.verifyDeckAccess(userId, existing.deck_id, 'edit');
+    if (!canEdit) return null;
+
+    const prefs = await this.getUserPreferences(userId);
+    const settings = normalizeUserSettings(prefs?.preferences ?? prefs?.settings ?? {});
+    const newSrsData = calculateFsrsData(existing.srs_data, rating, {
+      maxInterval: getSrsMaxInterval(settings.study),
+    });
+
+    return this.updateFlashcard(flashcardId, { srsData: newSrsData }, userId);
   }
 
   async updateFlashcard(flashcardId: string, updates: { 

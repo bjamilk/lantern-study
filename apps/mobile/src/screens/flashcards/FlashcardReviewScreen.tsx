@@ -3,14 +3,10 @@ import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType } from '@lantern/shared';
-import {
-  calculateSrsWithFsrs,
-  type PerformanceRating,
-} from '@lantern/shared/utils';
+import type { PerformanceRating } from '@lantern/shared/utils';
 import {
   buildFlashcardReviewQueue,
   getTodayStudyCounts,
-  getSrsMaxInterval,
   isNewFlashcard,
 } from '@lantern/shared/settings';
 import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
@@ -72,7 +68,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const user = useAuthStore(s => s.user);
   const deckCards = useFlashcardStore(s => s.flashcards[deckId] ?? EMPTY_CARDS);
   const isLoading = useFlashcardStore(s => s.isLoading);
-  const updateFlashcard = useFlashcardStore(s => s.updateFlashcard);
+  const reviewFlashcard = useFlashcardStore(s => s.reviewFlashcard);
 
   const queueSnapshotRef = useRef<Flashcard[] | null>(null);
   if (!queueSnapshotRef.current && deckCards.length > 0) {
@@ -118,19 +114,23 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         withHaptic(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
       }
 
-      const studySettings = useSettingsStore.getState().settings.study;
       const wasNew = isNewFlashcard(currentCard);
-      const newSrs = calculateSrsWithFsrs(currentCard.srsData, rating, true, {
-        maxInterval: getSrsMaxInterval(studySettings),
-      });
-      void updateFlashcard(currentCard.id, deckId, { srsData: newSrs }, user.id);
-      trackStudyActivity('flashcard', 1);
-      if (wasNew) {
-        trackStudyActivity('flashcard_new', 1);
-      }
-      setIndex(prev => prev + 1);
+      void reviewFlashcard(currentCard.id, deckId, rating, user.id)
+        .then(() => {
+          trackStudyActivity('flashcard', 1);
+          if (wasNew) {
+            trackStudyActivity('flashcard_new', 1);
+          }
+          setIndex(prev => prev + 1);
+        })
+        .catch((err) => {
+          console.error('Failed to save review:', err);
+        })
+        .finally(() => {
+          setGrading(false);
+        });
     },
-    [currentCard, user?.id, grading, updateFlashcard, deckId]
+    [currentCard, user?.id, grading, reviewFlashcard, deckId]
   );
 
   if (!sessionTotal && deckCards.length === 0) {

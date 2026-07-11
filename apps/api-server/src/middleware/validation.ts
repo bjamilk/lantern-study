@@ -268,6 +268,11 @@ export const validateFlashcardCreate = [
   body('type').optional().isIn(['BASIC', 'CLOZE', 'IMAGE_OCCLUSION']),
 ];
 
+export const validateFlashcardReview = [
+  body('rating').isIn(['again', 'hard', 'good', 'easy']).withMessage('rating must be again, hard, good, or easy'),
+  body('responseTime').optional().isInt({ min: 0, max: 300000 }),
+];
+
 export const validateAIMessage = [
   body('message').optional().trim().isLength({ max: 20000 }),
   body('context').optional().isObject(),
