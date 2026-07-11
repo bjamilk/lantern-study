@@ -150,14 +150,64 @@ export class SupabaseService {
       return false;
     }
 
-    if (bucket === 'flashcard-images' || bucket === 'question-images') {
-      return !!userId;
+    if (bucket === 'flashcard-images') {
+      if (!userId) return false;
+      return this.canAccessFlashcardImage(userId, path);
+    }
+
+    if (bucket === 'question-images') {
+      if (!userId) return false;
+      return this.canAccessQuestionImage(userId, path);
     }
 
     if (bucket === 'note-files') {
       return !!userId && ownerId === userId;
     }
 
+    return false;
+  }
+
+  private escapeIlikePattern(value: string): string {
+    return value.replace(/[%_\\]/g, '\\$&');
+  }
+
+  /** True when the user owns the deck or has collaborator/shared read access. */
+  private async canAccessFlashcardImage(userId: string, path: string): Promise<boolean> {
+    const escapedPath = this.escapeIlikePattern(path);
+    const { data: cards, error } = await this.supabase
+      .from('flashcards')
+      .select('deck_id')
+      .not('image_url', 'is', null)
+      .ilike('image_url', `%${escapedPath}%`)
+      .limit(20);
+
+    if (error) throw error;
+    if (!cards?.length) return false;
+
+    const deckIds = [...new Set(cards.map((c) => c.deck_id).filter(Boolean))];
+    for (const deckId of deckIds) {
+      if (await this.verifyDeckAccess(userId, deckId, 'read')) return true;
+    }
+    return false;
+  }
+
+  /** True when the image is attached to a group message in a group the user belongs to. */
+  private async canAccessQuestionImage(userId: string, path: string): Promise<boolean> {
+    const escapedPath = this.escapeIlikePattern(path);
+    const { data: rows, error } = await this.supabase
+      .from('messages')
+      .select('group_id')
+      .not('image_url', 'is', null)
+      .ilike('image_url', `%${escapedPath}%`)
+      .limit(20);
+
+    if (error) throw error;
+    if (!rows?.length) return false;
+
+    const groupIds = [...new Set(rows.map((r) => r.group_id).filter(Boolean))];
+    for (const groupId of groupIds) {
+      if (await this.isGroupMember(groupId, userId)) return true;
+    }
     return false;
   }
 

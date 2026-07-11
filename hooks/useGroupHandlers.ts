@@ -682,18 +682,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             // Send to API in background
             try {
                 const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text, optimisticId);
-                if (sentMessage) {
-                    const confirmed = mapMessageFromApi(sentMessage);
-                    // Replace optimistic message with server-confirmed one (keep sender if API omits profile)
-                    updateMessages(prev => ({
-                        ...prev,
-                        [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
-                            m.id === optimisticId || m.id === confirmed.id
-                                ? { ...m, ...confirmed, id: confirmed.id, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
-                                : m
-                        )
-                    }));
+                if (!sentMessage) {
+                    throw new Error('Message failed to send. Please try again.');
                 }
+                const confirmed = mapMessageFromApi(sentMessage);
+                // Replace optimistic message with server-confirmed one (keep sender if API omits profile)
+                updateMessages(prev => ({
+                    ...prev,
+                    [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
+                        m.id === optimisticId || m.id === confirmed.id
+                            ? { ...m, ...confirmed, id: confirmed.id, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
+                            : m
+                    )
+                }));
 
                 const group = groups.find(g => g.id === selectedChat.id);
                 if (group) {

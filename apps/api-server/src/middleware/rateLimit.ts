@@ -3,6 +3,7 @@ import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { AuthenticatedRequest } from '../types';
 import { getRedisClient, redisKey } from '../services/redisStore';
 import { rateLimitErrorHandler } from './errorHandler';
+import { ACCESS_COOKIE, REFRESH_COOKIE } from '../utils/authCookies';
 
 type SendCommand = (...args: string[]) => Promise<unknown>;
 
@@ -22,7 +23,15 @@ export function hasAuthCredential(req: Request): boolean {
   const apiKey = req.headers['x-api-key'];
   if (typeof apiKey === 'string' && apiKey.trim()) return true;
   const auth = req.headers.authorization;
-  return typeof auth === 'string' && auth.trim().length > 0;
+  if (typeof auth === 'string' && auth.trim().length > 0) return true;
+  const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
+  if (cookies) {
+    const access = cookies[ACCESS_COOKIE];
+    const refresh = cookies[REFRESH_COOKIE];
+    if (typeof access === 'string' && access.trim()) return true;
+    if (typeof refresh === 'string' && refresh.trim()) return true;
+  }
+  return false;
 }
 
 export function resolveClientIp(req: Request): string {
@@ -129,6 +138,8 @@ let _dataExportRateLimit: RateLimitRequestHandler | null = null;
 let _contactFormRateLimit: RateLimitRequestHandler | null = null;
 let _searchRateLimit: RateLimitRequestHandler | null = null;
 let _usernameCheckRateLimit: RateLimitRequestHandler | null = null;
+let _authLoginRateLimit: RateLimitRequestHandler | null = null;
+let _authSessionRateLimit: RateLimitRequestHandler | null = null;
 
 function buildAllLimiters(): void {
   const anonMax = parseInt(
@@ -156,6 +167,46 @@ function buildAllLimiters(): void {
   const aiPostBurstMax = parseInt(process.env.AI_POST_BURST_MAX || String(prodOrDev(15, 500)), 10);
   const uploadBurstMax = parseInt(process.env.UPLOAD_BURST_MAX || String(prodOrDev(10, 500)), 10);
   const adminMax = parseInt(process.env.ADMIN_RATE_LIMIT_MAX || String(prodOrDev(300, 10000)), 10);
+  const authLoginMax = parseInt(
+    process.env.AUTH_LOGIN_RATE_LIMIT_MAX || String(prodOrDev(10, 200)),
+    10
+  );
+  const authSessionMax = parseInt(
+    process.env.AUTH_SESSION_RATE_LIMIT_MAX || String(prodOrDev(30, 500)),
+    10
+  );
+  const authWindowMs = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || '900000', 10);
+
+  _authLoginRateLimit = rateLimit({
+    ...buildStoreOptions('authlogin'),
+    windowMs: authWindowMs,
+    max: authLoginMax,
+    message: {
+      error: 'Rate Limit Exceeded',
+      message: 'Too many login attempts. Please try again later.',
+      retryAfter: Math.ceil(authWindowMs / 1000),
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res, _next) => rateLimitErrorHandler(req, res, () => {}),
+    keyGenerator: (req: Request) => {
+      const ip = resolveClientIp(req);
+      const email =
+        typeof (req.body as { email?: unknown })?.email === 'string'
+          ? (req.body as { email: string }).email.trim().toLowerCase()
+          : '';
+      return email ? `${ip}:${email}` : ip;
+    },
+    skip: (req) => skipHealthPaths(req) || req.method === 'OPTIONS',
+  });
+
+  _authSessionRateLimit = createScopedRateLimit({
+    windowMs: authWindowMs,
+    max: authSessionMax,
+    message: 'Too many authentication requests. Please try again later.',
+    keyScope: 'ip',
+    redisPrefix: 'authsess',
+  });
 
   _anonymousIpRateLimit = createScopedRateLimit({
     windowMs: defaultWindowMs,
@@ -315,4 +366,12 @@ export const searchRateLimit: RequestHandler = (req, res, next) => {
 
 export const usernameCheckRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_usernameCheckRateLimit, 'usernameCheckRateLimit')(req, res, next);
+};
+
+export const authLoginRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_authLoginRateLimit, 'authLoginRateLimit')(req, res, next);
+};
+
+export const authSessionRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_authSessionRateLimit, 'authSessionRateLimit')(req, res, next);
 };

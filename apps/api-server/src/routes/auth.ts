@@ -13,6 +13,7 @@ import {
   readRefreshCookie,
   setAuthCookies,
 } from '../utils/authCookies';
+import { authLoginRateLimit, authSessionRateLimit } from '../middleware/rateLimit';
 import type { AuthenticatedRequest } from '../types';
 
 const router = Router();
@@ -78,6 +79,7 @@ async function applySessionCookies(res: Response, session: {
 /** POST /api/v1/auth/login */
 router.post(
   '/login',
+  authLoginRateLimit,
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
@@ -98,6 +100,7 @@ router.post(
 /** POST /api/v1/auth/exchange — set cookies after OAuth/magic-link client session */
 router.post(
   '/exchange',
+  authSessionRateLimit,
   asyncHandler(async (req: Request, res: Response) => {
     const { access_token, refresh_token, expires_in, expires_at, token_type, user } = req.body || {};
     if (!access_token || !refresh_token || !user?.id) {
@@ -124,6 +127,7 @@ router.post(
 /** POST /api/v1/auth/refresh */
 router.post(
   '/refresh',
+  authSessionRateLimit,
   asyncHandler(async (req: Request, res: Response) => {
     const refreshToken = readRefreshCookie((req as any).cookies || {});
     if (!refreshToken) {
@@ -145,6 +149,7 @@ router.post(
 /** GET /api/v1/auth/session */
 router.get(
   '/session',
+  authSessionRateLimit,
   optionalAuthMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const accessToken = extractBearerToken(req) || readAccessCookie((req as any).cookies || {});

@@ -65,6 +65,20 @@ describe('hasAuthCredential', () => {
     expect(hasAuthCredential(mockRequest())).toBe(false);
     expect(hasAuthCredential(mockRequest({ headers: { authorization: '   ' } }))).toBe(false);
   });
+
+  it('detects HttpOnly auth cookies', () => {
+    expect(
+      hasAuthCredential(
+        mockRequest({ cookies: { lantern_access: 'access-token' } } as Partial<AuthenticatedRequest>)
+      )
+    ).toBe(true);
+    expect(
+      hasAuthCredential(
+        mockRequest({ cookies: { lantern_refresh: 'refresh-token' } } as Partial<AuthenticatedRequest>)
+      )
+    ).toBe(true);
+    expect(hasAuthCredential(mockRequest({ cookies: { lantern_access: '   ' } } as Partial<AuthenticatedRequest>))).toBe(false);
+  });
 });
 
 describe('resolveClientIp', () => {

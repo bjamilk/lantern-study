@@ -654,8 +654,7 @@ export const sendMessage = async (
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        console.debug('Auth not ready for sendMessage, returning null');
-        return null;
+        throw new Error('Authentication required. Please sign in again.');
       }
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Failed to send message');
