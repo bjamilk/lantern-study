@@ -11,6 +11,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { StatPill } from '../ui/StatPill';
+import Drawer from '../ui/Drawer';
 import { formatDate, formatDateTime } from './types';
 
 interface UserDetailDrawerProps {
@@ -41,8 +42,8 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
       try {
         const data = await fetchAdminUserDetail(userId);
         if (!cancelled) setDetail(data);
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || 'Failed to load user');
+      } catch (err: unknown) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load user');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -52,26 +53,33 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
     };
   }, [userId]);
 
-  if (!userId) return null;
-
   const reload = async () => {
+    if (!userId) return;
     const data = await fetchAdminUserDetail(userId);
     setDetail(data);
     onUpdated?.();
   };
 
   const loadCompanion = async () => {
+    if (!userId) return;
     const messages = await fetchAdminCompanionMessages(userId, 15);
     setCompanionPreview(messages);
     setShowCompanion(true);
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/40">
-      <Card className="h-full w-full max-w-lg overflow-y-auto rounded-none border-l border-lantern-border p-0">
+    <Drawer
+      isOpen={Boolean(userId)}
+      onClose={onClose}
+      ariaLabelledBy="admin-user-detail-title"
+      maxWidthClass="max-w-lg"
+      zIndexClass="z-40"
+      backdropClassName="bg-black/40"
+      panelClassName="!p-0 overflow-y-auto rounded-none border-l border-lantern-border bg-lantern-surface"
+    >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-lantern-border bg-lantern-surface p-4">
           <div>
-            <h2 className="text-lg font-semibold text-lantern-text">User detail</h2>
+            <h2 id="admin-user-detail-title" className="text-lg font-semibold text-lantern-text">User detail</h2>
             <p className="text-xs text-lantern-text-muted font-mono">{userId}</p>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -112,16 +120,19 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                     value={pointsDelta}
                     onChange={(e) => setPointsDelta(e.target.value)}
                     className="w-24 px-2 py-1"
+                    aria-label="Points delta"
                   />
                   <Input
                     value={pointsReason}
                     onChange={(e) => setPointsReason(e.target.value)}
                     placeholder="Reason"
                     className="flex-1 px-2 py-1"
+                    aria-label="Points reason"
                   />
                   <Button
                     size="sm"
                     onClick={async () => {
+                      if (!userId) return;
                       await awardAdminPoints(userId, Number(pointsDelta), pointsReason || undefined);
                       await reload();
                     }}
@@ -135,12 +146,13 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                     onChange={(e) => setBadgeId(e.target.value)}
                     placeholder="Badge ID"
                     className="flex-1 px-2 py-1"
+                    aria-label="Badge ID"
                   />
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={async () => {
-                      if (!badgeId.trim()) return;
+                      if (!userId || !badgeId.trim()) return;
                       await awardAdminBadge(userId, badgeId.trim());
                       await reload();
                     }}
@@ -153,7 +165,7 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
               <Card variant="outline" padding="sm" className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-lantern-text">AI quotas</p>
-                  <Button size="sm" variant="ghost" onClick={async () => { await resetAdminAIQuota(userId); await reload(); }}>
+                  <Button size="sm" variant="ghost" onClick={async () => { if (!userId) return; await resetAdminAIQuota(userId); await reload(); }}>
                     Reset all
                   </Button>
                 </div>
@@ -163,7 +175,7 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                     <span>{q.used}/{q.limit}</span>
                   </div>
                 ))}
-                <Button size="sm" variant="secondary" onClick={loadCompanion}>
+                <Button size="sm" variant="secondary" onClick={() => void loadCompanion()}>
                   Review companion messages
                 </Button>
               </Card>
@@ -183,7 +195,6 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
             </>
           )}
         </div>
-      </Card>
-    </div>
+    </Drawer>
   );
 };

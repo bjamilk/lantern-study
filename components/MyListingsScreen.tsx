@@ -665,8 +665,10 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
 
       {/* Click outside to close menu */}
       {actionMenuOpen && (
-        <div 
-          className="fixed inset-0 z-0" 
+        <button
+          type="button"
+          className="fixed inset-0 z-0 cursor-default bg-transparent"
+          aria-label="Close listing actions menu"
           onClick={() => setActionMenuOpen(null)}
         />
       )}

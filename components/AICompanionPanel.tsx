@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import { CompanionMessage, CompanionAction, CompanionUserContext } from '../types';
 import { submitCompanionFeedback, trackAIAnalyticsEvent } from '../services/ai';
 import { AIDisclaimer } from './AIDisclaimer';
+import Drawer from './ui/Drawer';
 
 interface AICompanionPanelProps {
   context?: CompanionUserContext;
@@ -111,16 +112,17 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
   if (!isOpen) return null;
 
   return (
-    <>
-      {/* Backdrop (mobile) */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 md:hidden"
-        onClick={close}
-      />
-
-      {/* Slide-in panel */}
-      <div className={`fixed right-0 top-0 h-full w-full max-w-sm z-50 flex flex-col shadow-2xl transition-transform duration-300
-        ${theme === 'dark' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}>
+    <Drawer
+      isOpen={isOpen}
+      onClose={close}
+      ariaLabelledBy="ai-companion-title"
+      maxWidthClass="max-w-sm"
+      zIndexClass="z-50"
+      backdropClassName="bg-black/20 md:hidden"
+      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}
+      loading={isBusy}
+      closeOnBackdrop={!isBusy}
+    >
 
         {/* Header */}
         <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
@@ -129,7 +131,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <SparklesIcon className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-indigo-700 dark:text-indigo-300">Lantern</p>
+            <p id="ai-companion-title" className="font-semibold text-sm text-indigo-700 dark:text-indigo-300">Lantern</p>
             <p className={`text-xs truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
               {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
             </p>
@@ -145,7 +147,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <button
               onClick={close}
               title="Close"
-              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+              aria-label="Close AI companion"
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
             >
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -244,8 +247,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <AIDisclaimer compact />
           </div>
         </div>
-      </div>
-    </>
+    </Drawer>
   );
 };
 

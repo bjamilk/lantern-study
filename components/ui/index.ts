@@ -16,3 +16,5 @@ export { LanternIcon } from './LanternIcon';
 export { EmptyState } from './EmptyState';
 export { FolderNameModal } from './FolderNameModal';
 export { ConfirmDialog } from './ConfirmDialog';
+export { Modal } from './Modal';
+export { Drawer } from './Drawer';
