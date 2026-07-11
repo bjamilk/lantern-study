@@ -14,6 +14,7 @@ import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/tes
 import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
+import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
 
 type UserStats = typeof initialUserStats;
 
@@ -89,6 +90,86 @@ export class SupabaseService {
     if (!url) return url;
     const base = this.supabaseUrl.replace(/\/$/, '');
     return url.replace(/https?:\/\/(localhost|127\.0\.0\.1):54321/gi, base);
+  }
+
+  resolveStorageReference(
+    bucket?: string,
+    path?: string,
+    url?: string
+  ): { bucket: string; path: string } | null {
+    if (bucket && path) return { bucket, path };
+    if (!url) return null;
+    const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
+    return parsed;
+  }
+
+  async createSignedStorageUrl(
+    bucket: string,
+    path: string,
+    expiresInSeconds = 60 * 60 * 24
+  ): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, expiresInSeconds);
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message || 'Failed to create signed URL');
+    }
+    return this.normalizeStorageUrl(data.signedUrl);
+  }
+
+  async signStorageDisplayUrl(url: string, expiresInSeconds = 60 * 60 * 24): Promise<string> {
+    if (!url || url.startsWith('data:')) return url;
+    const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
+    if (!parsed || !isPrivateStorageBucket(parsed.bucket)) {
+      return this.normalizeStorageUrl(url);
+    }
+    return this.createSignedStorageUrl(parsed.bucket, parsed.path, expiresInSeconds);
+  }
+
+  async canAccessStorageObject(
+    userId: string | null,
+    bucket: string,
+    path: string
+  ): Promise<boolean> {
+    if (!isPrivateStorageBucket(bucket)) return true;
+    const ownerId = path.split('/')[0];
+    if (userId && ownerId === userId) return true;
+
+    if (bucket === 'marketplace-images') {
+      const parts = path.split('/');
+      if (parts[1] === 'listings' && parts[2]) {
+        const listingId = parts[2];
+        const { data } = await this.supabase
+          .from('marketplace_listings')
+          .select('id, status, user_id')
+          .eq('id', listingId)
+          .maybeSingle();
+        if (data?.status === 'active') return true;
+        if (userId && data?.user_id === userId) return true;
+      }
+      return false;
+    }
+
+    if (bucket === 'flashcard-images' || bucket === 'question-images') {
+      return !!userId;
+    }
+
+    if (bucket === 'note-files') {
+      return !!userId && ownerId === userId;
+    }
+
+    return false;
+  }
+
+  private async normalizeListingRecordAsync(listing: any): Promise<any> {
+    const base = this.normalizeListingRecord(listing);
+    if (!base || !Array.isArray(base.images)) return base;
+    return {
+      ...base,
+      images: await Promise.all(
+        base.images.map((imageUrl: string) => this.signStorageDisplayUrl(imageUrl))
+      ),
+    };
   }
 
   private normalizeListingRecord(listing: any): any {
@@ -1999,7 +2080,7 @@ export class SupabaseService {
       uploadResult.error.message.toLowerCase().includes('bucket') &&
       uploadResult.error.message.toLowerCase().includes('not found')
     ) {
-      await this.supabase.storage.createBucket(bucket, { public: true });
+      await this.supabase.storage.createBucket(bucket, { public: false });
       uploadResult = await attemptUpload();
     }
 
@@ -2009,13 +2090,10 @@ export class SupabaseService {
       throw new Error(error.message);
     }
 
-    // Build a public URL based on the configured Supabase URL.
-    // This ensures the returned URL matches the environment (e.g., if using the local Supabase emulator vs a hosted project).
-    const baseUrl = (process.env.SUPABASE_URL || this.supabaseUrl || '').replace(/\/+$/, '');
-    const publicUrl = `${baseUrl}/storage/v1/object/public/${bucket}/${encodeURIComponent(filePath)}`;
+    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
 
     return {
-      url: publicUrl,
+      url: signedUrl,
       path: filePath,
     };
   }
@@ -4732,7 +4810,7 @@ export class SupabaseService {
     const { data, error } = await query;
     if (error) throw error;
 
-    return (data || []).map((listing: any) => this.normalizeListingRecord(listing));
+    return Promise.all((data || []).map((listing: any) => this.normalizeListingRecordAsync(listing)));
   }
 
   async getMarketplaceCategoryAnalytics(): Promise<Array<{
@@ -4796,7 +4874,7 @@ export class SupabaseService {
       throw error;
     }
 
-    return data ? this.normalizeListingRecord(data) : null;
+    return data ? this.normalizeListingRecordAsync(data) : null;
   }
 
   /**
@@ -5027,7 +5105,7 @@ export class SupabaseService {
       .single();
 
     if (error) throw error;
-    return this.normalizeListingRecord(data);
+    return this.normalizeListingRecordAsync(data);
   }
 
   async reportMarketplaceListing(listingId: string, reporterId: string, report: { reason: string; details?: string }): Promise<any> {
@@ -5563,12 +5641,15 @@ export class SupabaseService {
       throw error;
     }
 
-    // Transform the count results
-    return (data || []).map(listing => this.normalizeListingRecord({
-      ...listing,
-      favorites_count: listing.favorites_count?.[0]?.count || 0,
-      inquiries_count: listing.inquiries_count?.[0]?.count || 0
-    }));
+    return Promise.all(
+      (data || []).map((listing) =>
+        this.normalizeListingRecordAsync({
+          ...listing,
+          favorites_count: listing.favorites_count?.[0]?.count || 0,
+          inquiries_count: listing.inquiries_count?.[0]?.count || 0,
+        })
+      )
+    );
   }
 
   // Update listing status (active, inactive, sold)
@@ -6256,13 +6337,7 @@ export class SupabaseService {
   }
 
   async createSignedNoteFileUrl(storagePath: string, expiresInSeconds = 60 * 60 * 24): Promise<string> {
-    const { data, error } = await this.supabase.storage
-      .from('note-files')
-      .createSignedUrl(storagePath, expiresInSeconds);
-    if (error || !data?.signedUrl) {
-      throw new Error(error?.message || 'Failed to create signed URL');
-    }
-    return data.signedUrl;
+    return this.createSignedStorageUrl('note-files', storagePath, expiresInSeconds);
   }
 
   async deleteNoteFile(storagePath: string): Promise<void> {

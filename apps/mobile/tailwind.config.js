@@ -24,6 +24,17 @@ module.exports = {
           warning: '#d97706',
           error: '#dc2626',
           border: '#d8dee9',
+          feature: {
+            dashboard: '#4f46e5',
+            library: '#f43f5e',
+            admin: '#64748b',
+            flashcards: '#f43f5e',
+            groups: '#10b981',
+            marketplace: '#8b5cf6',
+            offline: '#f59e0b',
+            tests: '#0ea5e9',
+            budget: '#14b8a6',
+          },
         },
       },
       fontFamily: {

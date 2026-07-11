@@ -10,11 +10,16 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './index.css';
 import { bootstrapAuthFromStorage } from './services/supabase';
+import { applyDesignTokensToDom } from './utils/applyDesignTokens';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import LegalPage from './components/LegalPage';
 
 bootstrapAuthFromStorage();
+
+const initialTheme =
+  typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+applyDesignTokensToDom(initialTheme);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

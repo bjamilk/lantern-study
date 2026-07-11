@@ -40,8 +40,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         <FeatureHero
           title="Library"
           subtitle="Notes and flashcard decks in one place"
-          accentColor={featureAccents.library}
-          icon={<RectangleStackIcon className="w-6 h-6" />}
+        accentColor={featureAccents.library}
+        icon={<RectangleStackIcon className="w-6 h-6 text-lantern-feature-library" />}
           className="mb-3"
         >
           <div className="flex flex-wrap gap-2">

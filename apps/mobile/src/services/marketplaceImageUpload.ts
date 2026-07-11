@@ -26,8 +26,13 @@ export async function uploadMarketplaceImage(
 
   if (error) throw new Error(error.message);
 
-  const { data: { publicUrl } } = supabase.storage.from('marketplace-images').getPublicUrl(filePath);
-  return { url: publicUrl, path: filePath };
+  const { data: signed, error: signError } = await supabase.storage
+    .from('marketplace-images')
+    .createSignedUrl(filePath, 60 * 60 * 24);
+  if (signError || !signed?.signedUrl) {
+    throw new Error(signError?.message || 'Failed to sign uploaded image');
+  }
+  return { url: signed.signedUrl, path: filePath };
 }
 
 export async function deleteMarketplaceImage(filePath: string): Promise<void> {

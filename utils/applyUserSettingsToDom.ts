@@ -1,4 +1,5 @@
 import type { UserSettings } from '@lantern/shared/settings';
+import { applyDesignTokensToDom } from './applyDesignTokens';
 
 export function applyUserSettingsToDom(
     settings: UserSettings,
@@ -18,6 +19,7 @@ export function applyUserSettingsToDom(
     opts.setTheme(themePref);
     localStorage.setItem('theme', themePref);
     root.classList.toggle('dark', themePref === 'dark');
+    applyDesignTokensToDom(themePref, { accentColor: settings.appearance.accentColor });
     opts.setLowDataMode(settings.appearance.lowDataMode);
 
     const reduceMotion =
@@ -29,6 +31,4 @@ export function applyUserSettingsToDom(
     root.classList.toggle('font-size-large', settings.appearance.fontSize === 'large');
     root.classList.toggle('compact-mode', settings.appearance.compactMode);
     root.classList.toggle('screen-reader-optimized', settings.accessibility.screenReaderOptimized);
-    root.style.setProperty('--lantern-accent', settings.appearance.accentColor || '#6366f1');
-    root.style.setProperty('--color-primary', settings.appearance.accentColor || '#6366f1');
 }

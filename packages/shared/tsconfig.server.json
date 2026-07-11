@@ -25,6 +25,7 @@
     "src/utils/srs.ts",
     "src/utils/fsrs.ts",
     "src/utils/server.ts",
+    "src/utils/storageUrl.ts",
     "src/settings/**/*.ts",
     "src/marketplace/**/*.ts",
     "src/accountLifecycle.ts",

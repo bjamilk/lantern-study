@@ -54,6 +54,7 @@ import notesRoutes, { initializeNotesRoutes } from './routes/notes';
 import challengeRoutes, { initializeChallengeRoutes } from './routes/challenges';
 import apiKeysRoutes from './routes/apiKeys';
 import authRoutes, { initializeAuthRoutes } from './routes/auth';
+import storageRoutes, { initializeStorageRoutes } from './routes/storage';
 import jobsRoutes from './routes/jobs';
 import budgetRoutes from './routes/budget';
 import contactRoutes from './routes/contact';
@@ -147,6 +148,7 @@ async function initializeServices() {
     initializeNotesRoutes(supabaseService, cacheService);
     initializeChallengeRoutes(supabaseService, cacheService);
     initializeAuthRoutes(supabaseService, cacheService);
+    initializeStorageRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -287,6 +289,7 @@ async function startServer() {
     // API routes (mount after services initialization)
     app.use('/api/v1/users', userRoutes);
     app.use('/api/v1/auth', authRoutes);
+    app.use('/api/v1/storage', storageRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
     app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/contact', contactRoutes);

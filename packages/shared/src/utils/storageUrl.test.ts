@@ -1,4 +1,4 @@
-import { normalizeStorageUrl } from './storageUrl';
+import { normalizeStorageUrl, parseStorageObjectUrl } from './storageUrl';
 
 describe('normalizeStorageUrl', () => {
   it('rewrites legacy localhost:54321 storage URLs', () => {
@@ -14,9 +14,21 @@ describe('normalizeStorageUrl', () => {
     expect(normalizeStorageUrl(dataUrl, 'http://127.0.0.1:55421')).toBe(dataUrl);
   });
 
-  it('leaves already-correct URLs unchanged', () => {
+  it('parses public storage object URLs', () => {
     const url =
-      'http://127.0.0.1:55421/storage/v1/object/public/question-images/question-test.png';
-    expect(normalizeStorageUrl(url, 'http://127.0.0.1:55421')).toBe(url);
+      'http://127.0.0.1:55421/storage/v1/object/public/question-images/user-1/questions/q.png';
+    expect(parseStorageObjectUrl(url)).toEqual({
+      bucket: 'question-images',
+      path: 'user-1/questions/q.png',
+    });
+  });
+
+  it('parses signed storage object URLs', () => {
+    const url =
+      'https://example.supabase.co/storage/v1/object/sign/marketplace-images/u1/listings/x.jpg?token=abc';
+    expect(parseStorageObjectUrl(url)).toEqual({
+      bucket: 'marketplace-images',
+      path: 'u1/listings/x.jpg',
+    });
   });
 });

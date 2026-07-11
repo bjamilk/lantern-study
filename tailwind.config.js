@@ -45,6 +45,17 @@ module.exports = {
           warning: 'var(--color-warning)',
           error: 'var(--color-error)',
           border: 'var(--color-border)',
+          feature: {
+            dashboard: 'var(--color-feature-dashboard)',
+            library: 'var(--color-feature-library)',
+            admin: 'var(--color-feature-admin)',
+            flashcards: 'var(--color-feature-flashcards)',
+            groups: 'var(--color-feature-groups)',
+            marketplace: 'var(--color-feature-marketplace)',
+            offline: 'var(--color-feature-offline)',
+            tests: 'var(--color-feature-tests)',
+            budget: 'var(--color-feature-budget)',
+          },
         },
       },
       borderRadius: {

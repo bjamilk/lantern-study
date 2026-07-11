@@ -4,7 +4,7 @@ import type { SupabaseService } from './supabase';
 import { cacheService } from './cache';
 import { resetAIUsageForUser } from '../middleware/aiRateLimit';
 
-const STORAGE_BUCKETS = ['flashcard-images', 'marketplace-images', 'question-images'] as const;
+const STORAGE_BUCKETS = ['flashcard-images', 'marketplace-images', 'question-images', 'note-files'] as const;
 
 async function listAndRemoveStoragePrefix(client: SupabaseClient, bucket: string, prefix: string): Promise<void> {
   try {

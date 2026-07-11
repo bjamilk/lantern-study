@@ -368,6 +368,32 @@ export async function ensureAuthTokenReady(): Promise<boolean> {
   return Boolean(headers.Authorization);
 };
 
+/** Mint a signed read URL for a private storage object via the API BFF. */
+export async function fetchSignedStorageUrl(
+  bucket: string,
+  path: string,
+  expiresInSeconds?: number
+): Promise<string> {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/storage/signed-url`,
+    withApiCredentials({
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ bucket, path, expiresInSeconds }),
+    }),
+    10000
+  );
+  const body = await response.json().catch(() => ({} as { error?: string; message?: string; data?: { signedUrl?: string } }));
+  if (!response.ok) {
+    throw new Error(body.error || body.message || 'Failed to sign storage URL');
+  }
+  if (!body.data?.signedUrl) {
+    throw new Error('Signed URL missing from response');
+  }
+  return body.data.signedUrl;
+}
+
 const getRequiredAuthHeaders = async (): Promise<Record<string, string>> => {
   const headers = await getAuthHeaders();
   if (!headers.Authorization || !(await hasValidSession())) {
@@ -3255,11 +3281,8 @@ export const uploadFlashcardImage = async (file: File) => {
     throw new Error(error.message);
   }
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('flashcard-images')
-    .getPublicUrl(filePath);
-
-  return { url: publicUrl, path: filePath };
+  const url = await fetchSignedStorageUrl('flashcard-images', filePath);
+  return { url, path: filePath };
 };
 
 /** Upload a question attachment; path must be scoped under auth uid for storage RLS. */
@@ -3280,11 +3303,8 @@ export const uploadQuestionImage = async (file: File) => {
     throw new Error(error.message);
   }
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('question-images')
-    .getPublicUrl(filePath);
-
-  return { url: publicUrl, path: filePath };
+  const url = await fetchSignedStorageUrl('question-images', filePath);
+  return { url, path: filePath };
 };
 
 export const uploadMarketplaceImage = async (file: File, listingId?: string) => {
@@ -3309,13 +3329,9 @@ export const uploadMarketplaceImage = async (file: File, listingId?: string) => 
       throw new Error(error.message);
     }
 
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('marketplace-images')
-      .getPublicUrl(filePath);
-
-    console.log('Image uploaded successfully:', publicUrl);
-    return { url: publicUrl, path: filePath };
+    const url = await fetchSignedStorageUrl('marketplace-images', filePath);
+    console.log('Image uploaded successfully:', url);
+    return { url, path: filePath };
   } catch (error) {
     console.error('Error uploading image:', error);
     throw error;
