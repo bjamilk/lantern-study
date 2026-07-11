@@ -5,6 +5,7 @@ import { XCircleIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { User } from '../types';
 import { searchUsers } from '../services/supabase';
 import * as notesApi from '../services/notes';
+import Modal from './ui/Modal';
 
 interface NoteCollaborator {
   noteId: string;
@@ -116,20 +117,30 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-lg shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-indigo-600" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="note-collaborators-title"
+      maxWidthClass="max-w-lg"
+      panelClassName="!p-0 overflow-hidden"
+    >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
+          <h2 id="note-collaborators-title" className="text-lg font-semibold text-lantern-text flex items-center gap-2">
+            <UserIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
             Note Collaborators
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
-            <XCircleIcon className="w-6 h-6" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            aria-label="Close note collaborators dialog"
+          >
+            <XCircleIcon className="w-6 h-6" aria-hidden />
           </button>
         </div>
 
         <div className="p-5">
-          <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+          <p className="text-sm text-lantern-text-secondary mb-4">
             Invite someone by searching their name, or enter their @username or email.
           </p>
 
@@ -143,13 +154,14 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
                 setSelectedUserId('');
               }}
               placeholder="Search name, @username, or email"
-              className="w-full p-2 border rounded-md bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100"
+              aria-label="Search users to invite"
+              className="w-full min-h-[44px] p-2 border rounded-lg bg-lantern-surface border-lantern-border text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
             />
             {isSearchingUsers && (
-              <div className="absolute right-2 top-2 text-xs text-slate-500">Searching…</div>
+              <div className="absolute right-2 top-2 text-xs text-lantern-text-muted">Searching…</div>
             )}
             {userSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50">
+              <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-lantern-surface border border-lantern-border rounded-lg shadow-lg z-50">
                 {userSuggestions.map(user => (
                   <button
                     key={user.id}
@@ -160,12 +172,12 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
                       setUserQuery(user.name ? `${user.name}${user.email ? ` (${user.email})` : ''}` : user.email || user.id);
                       setUserSuggestions([]);
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    className="w-full text-left px-3 py-2 min-h-[44px] hover:bg-lantern-background-secondary"
                   >
-                    <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                    <div className="text-sm font-medium text-lantern-text">
                       {user.name || user.email || user.id}
                     </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                    <div className="text-xs text-lantern-text-muted">
                       {user.username ? `@${user.username}` : user.email || user.id}
                     </div>
                   </button>
@@ -177,9 +189,9 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
           <div className="flex justify-end mb-4">
             <button
               type="button"
-              onClick={handleAdd}
+              onClick={() => void handleAdd()}
               disabled={!(selectedUserId || inviteValue).trim() || isSaving}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white rounded-md text-sm font-semibold"
+              className="min-h-[44px] px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
             >
               {isSaving ? 'Adding…' : 'Add Collaborator'}
             </button>
@@ -187,26 +199,27 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
 
           <div className="space-y-3 max-h-60 overflow-y-auto">
             {isLoading ? (
-              <div className="text-sm text-slate-500">Loading collaborators…</div>
+              <div className="text-sm text-lantern-text-muted">Loading collaborators…</div>
             ) : collaborators.length === 0 ? (
-              <div className="text-sm text-slate-500">No collaborators yet.</div>
+              <div className="text-sm text-lantern-text-muted">No collaborators yet.</div>
             ) : (
               collaborators.map(collab => (
-                <div key={collab.userId} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
+                <div key={collab.userId} className="flex items-center justify-between p-3 bg-lantern-background-secondary rounded-lg">
                   <div>
-                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <div className="text-sm font-semibold text-lantern-text">
                       {collab.user?.name || collab.userId}
                     </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">{collab.role}</div>
+                    <div className="text-xs text-lantern-text-muted">{collab.role}</div>
                   </div>
                   {collab.userId !== currentUserId && (
                     <button
                       type="button"
                       onClick={() => void handleRemove(collab.userId)}
-                      className="p-2 text-red-600 hover:text-red-800 rounded-md"
+                      className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-error hover:opacity-80 rounded-lg"
                       title="Remove collaborator"
+                      aria-label="Remove collaborator"
                     >
-                      <TrashIcon className="w-5 h-5" />
+                      <TrashIcon className="w-5 h-5" aria-hidden />
                     </button>
                   )}
                 </div>
@@ -214,8 +227,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

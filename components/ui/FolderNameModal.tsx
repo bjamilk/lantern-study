@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './Button';
 import { Input } from './Input';
+import Modal from './Modal';
 
 interface FolderNameModalProps {
   isOpen: boolean;
@@ -23,8 +24,6 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
     if (isOpen) setName('');
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
@@ -34,24 +33,23 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="folder-name-title">
-      <div className="w-full max-w-sm rounded-2xl bg-lantern-surface border border-lantern-border shadow-xl p-6">
-        <h2 id="folder-name-title" className="text-lg font-bold text-lantern-text mb-4">{title}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={placeholder}
-            maxLength={80}
-          />
-          <div className="flex gap-2 justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!name.trim()}>Create</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="folder-name-title" maxWidthClass="max-w-sm">
+      <h2 id="folder-name-title" className="text-lg font-bold text-lantern-text mb-4">{title}</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={placeholder}
+          maxLength={80}
+          aria-label={placeholder}
+        />
+        <div className="flex gap-2 justify-end">
+          <Button type="button" variant="ghost" onClick={onClose} className="min-h-[44px]">Cancel</Button>
+          <Button type="submit" disabled={!name.trim()} className="min-h-[44px]">Create</Button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

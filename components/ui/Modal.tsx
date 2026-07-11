@@ -13,6 +13,8 @@ export interface ModalProps {
   loading?: boolean;
   closeOnBackdrop?: boolean;
   panelClassName?: string;
+  /** Override stacking when nested above other modals (e.g. z-[80], z-[90]). */
+  zIndexClass?: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export function Modal({
   loading = false,
   closeOnBackdrop = true,
   panelClassName = '',
+  zIndexClass = 'z-50',
 }: ModalProps) {
   const dialogRef = useModalFocusTrap(isOpen, onClose, { loading });
 
@@ -44,7 +47,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 transition-opacity duration-300"
+      className={`fixed inset-0 ${zIndexClass} flex items-center justify-center bg-black/60 p-4 transition-opacity duration-300`}
       role="presentation"
       onMouseDown={(event) => {
         if (closeOnBackdrop && !loading && event.target === event.currentTarget) {

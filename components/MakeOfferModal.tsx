@@ -4,9 +4,10 @@ import { MarketplaceListing } from '../types';
 import {
   CurrencyDollarIcon,
   ClockIcon,
-  ArrowLeftIcon,
+  XMarkIcon,
   ChatBubbleLeftIcon,
 } from '@heroicons/react/24/outline';
+import Modal from './ui/Modal';
 
 interface MakeOfferModalProps {
   isOpen: boolean;
@@ -21,8 +22,6 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  if (!isOpen) return null;
 
   const handleSubmit = async () => {
     const offerAmount = parseFloat(amount);
@@ -42,8 +41,8 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
       await createOffer(listing.id, offerAmount, message || undefined);
       onSuccess(offerAmount);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Failed to submit offer');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to submit offer');
     } finally {
       setLoading(false);
     }
@@ -54,113 +53,120 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
     : 0;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-            <CurrencyDollarIcon className="w-5 h-5 text-emerald-500" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="make-offer-title"
+      maxWidthClass="max-w-md"
+      loading={loading}
+      closeOnBackdrop={!loading}
+      panelClassName="!p-0 overflow-hidden"
+    >
+        <div className="flex items-center justify-between p-6 border-b border-lantern-border">
+          <h3 id="make-offer-title" className="text-lg font-bold text-lantern-text flex items-center gap-2">
+            <CurrencyDollarIcon className="w-5 h-5 text-lantern-accent" aria-hidden />
             Make an Offer
           </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            disabled={loading}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-lantern-background-secondary disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            aria-label="Close make offer dialog"
           >
-            <ArrowLeftIcon className="w-5 h-5 rotate-45" />
+            <XMarkIcon className="w-5 h-5" aria-hidden />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Listing Summary */}
-          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Making an offer on:</p>
-            <p className="font-semibold text-slate-800 dark:text-slate-200 line-clamp-1">{listing.title}</p>
-            <p className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">
+          <div className="bg-lantern-background-secondary rounded-lg p-4">
+            <p className="text-sm text-lantern-text-muted mb-1">Making an offer on:</p>
+            <p className="font-semibold text-lantern-text line-clamp-1">{listing.title}</p>
+            <p className="text-lantern-primary font-bold text-lg">
               {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
             </p>
           </div>
 
-          {/* Offer Amount */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="offer-amount" className="block text-sm font-semibold text-lantern-text mb-2">
               Your Offer (₦)
             </label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₦</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lantern-text-muted font-medium">₦</span>
               <input
+                id="offer-amount"
                 type="number"
                 value={amount}
                 onChange={(e) => { setAmount(e.target.value); setError(''); }}
                 placeholder="Enter your offer amount"
                 min="1"
                 max={listing.price || undefined}
-                className="w-full pl-8 pr-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-lg font-semibold"
+                className="w-full min-h-[44px] pl-8 pr-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-transparent bg-lantern-surface text-lantern-text text-lg font-semibold"
               />
             </div>
             {listing.price && percentage > 0 && (
               <p className={`text-xs mt-1.5 ${
-                percentage >= 80 ? 'text-emerald-600' : percentage >= 60 ? 'text-amber-600' : 'text-red-500'
+                percentage >= 80 ? 'text-lantern-accent' : percentage >= 60 ? 'text-amber-600' : 'text-lantern-error'
               }`}>
                 {percentage}% of asking price
               </p>
             )}
           </div>
 
-          {/* Optional Message */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="offer-message" className="block text-sm font-semibold text-lantern-text mb-2">
               Message (optional)
             </label>
             <textarea
+              id="offer-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Add a message to the seller..."
               rows={3}
               maxLength={500}
-              className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 resize-none text-sm"
+              className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-transparent bg-lantern-surface text-lantern-text placeholder-lantern-text-muted resize-none text-sm"
             />
           </div>
 
-          {/* Expiry Notice */}
-          <div className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
-            <ClockIcon className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-            <span>This offer will expire in <strong>48 hours</strong> if the seller doesn't respond. You can withdraw it anytime before that.</span>
+          <div className="flex items-start gap-2 text-xs text-lantern-text-muted bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
+            <ClockIcon className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" aria-hidden />
+            <span>This offer will expire in <strong>48 hours</strong> if the seller doesn&apos;t respond. You can withdraw it anytime before that.</span>
           </div>
 
-          {/* Error */}
           {error && (
-            <p className="text-sm text-red-500 font-medium">{error}</p>
+            <p className="text-sm text-lantern-error font-medium">{error}</p>
           )}
 
-          {/* Actions */}
           <div className="flex justify-end space-x-3 pt-2">
             <button
+              type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold transition-colors text-sm"
+              disabled={loading}
+              className="min-h-[44px] px-4 py-2 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background-secondary font-semibold text-sm disabled:opacity-50"
             >
               Cancel
             </button>
             <button
-              onClick={handleSubmit}
+              type="button"
+              onClick={() => void handleSubmit()}
               disabled={loading || !amount || parseFloat(amount) <= 0}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors text-sm flex items-center gap-2"
+              className="min-h-[44px] px-5 py-2 bg-lantern-accent hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-semibold text-sm flex items-center gap-2"
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" aria-hidden />
                   Submitting...
                 </>
               ) : (
                 <>
-                  <ChatBubbleLeftIcon className="w-4 h-4" />
+                  <ChatBubbleLeftIcon className="w-4 h-4" aria-hidden />
                   Submit Offer
                 </>
               )}
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

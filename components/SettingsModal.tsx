@@ -25,7 +25,7 @@ import { ACCOUNT_EXPORT_COPY } from '@lantern/shared';
 import { AccountDeletionModal } from './AccountDeletionModal';
 import { AccountImportModal } from './AccountImportModal';
 import { ContactForm } from './ContactForm';
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import Modal from './ui/Modal';
 
 type SettingsTab =
     | 'profile'
@@ -124,8 +124,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     useEffect(() => {
         setIsProfileDirty(profileData.name !== currentUser.name || profileData.phone !== (currentUser.phoneNumber || ''));
     }, [profileData, currentUser]);
-
-    const dialogRef = useModalFocusTrap(isOpen, onClose);
 
     if (!isOpen) return null;
     
@@ -584,8 +582,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     
     return (
         <>
-        <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-75 flex items-center justify-center p-4 z-[80]" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-            <div ref={dialogRef} className="bg-lantern-surface rounded-lantern-xl shadow-xl w-full max-w-3xl h-[90vh] md:h-[75vh] flex flex-col md:flex-row overflow-hidden border border-lantern-border">
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            ariaLabelledBy="settings-modal-title"
+            maxWidthClass="max-w-3xl"
+            zIndexClass="z-[80]"
+            panelClassName="!p-0 h-[90vh] md:h-[75vh] flex flex-col md:flex-row overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
+        >
                 <div className="w-full md:w-1/3 bg-lantern-background-secondary border-b md:border-b-0 md:border-r border-lantern-border p-4 flex-shrink-0">
                     <div className="flex justify-between items-center mb-2 md:mb-6">
                         <h2 id="settings-modal-title" className="text-xl font-bold text-lantern-text">Settings</h2>
@@ -609,8 +613,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <Button variant="secondary" onClick={onClose}>Done</Button>
                     </div>
                 </div>
-            </div>
-        </div>
+        </Modal>
         <AccountDeletionModal
             open={deletionOpen}
             onClose={() => setDeletionOpen(false)}

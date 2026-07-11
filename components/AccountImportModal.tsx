@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { ACCOUNT_EXPORT_COPY, isSignedExportV2 } from '@lantern/shared';
 import { Button, Input } from './ui';
-import { Card } from './ui/Card';
 import { CloudArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import Modal from './ui/Modal';
 
 export interface AccountImportModalProps {
   open: boolean;
@@ -90,16 +90,17 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="account-import-title"
+    <Modal
+      isOpen={open}
+      onClose={handleClose}
+      ariaLabelledBy="account-import-title"
+      maxWidthClass="max-w-lg"
+      loading={loading}
+      closeOnBackdrop={!loading}
+      zIndexClass="z-[90]"
     >
-      <Card className="w-full max-w-lg space-y-4">
+      <div className="space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="account-import-title" className="text-lg font-semibold text-lantern-text">
@@ -107,8 +108,14 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
             </h2>
             <p className="text-sm text-lantern-text-secondary mt-1">{ACCOUNT_EXPORT_COPY.restoreHint}</p>
           </div>
-          <button type="button" onClick={handleClose} disabled={loading} aria-label="Close">
-            <XCircleIcon className="w-6 h-6 text-lantern-text-secondary" />
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={loading}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
+            aria-label="Close import backup dialog"
+          >
+            <XCircleIcon className="w-6 h-6 text-lantern-text-secondary" aria-hidden />
           </button>
         </div>
 
@@ -127,9 +134,9 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
           variant="secondary"
           onClick={() => fileRef.current?.click()}
           disabled={loading}
-          className="w-full"
+          className="w-full min-h-[44px]"
         >
-          <CloudArrowUpIcon className="w-5 h-5 mr-2" />
+          <CloudArrowUpIcon className="w-5 h-5 mr-2" aria-hidden />
           {fileName ? fileName : 'Choose backup file (.json)'}
         </Button>
 
@@ -157,7 +164,7 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
           </label>
         )}
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-lantern-error">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={handleClose} disabled={loading}>
@@ -171,8 +178,8 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
             {loading ? 'Importing…' : 'Import backup'}
           </Button>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Modal>
   );
 };
 

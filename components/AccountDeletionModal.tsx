@@ -7,8 +7,8 @@ import {
   isSignedExportV2,
 } from '@lantern/shared';
 import { Button, Input } from './ui';
-import { Card } from './ui/Card';
-import { ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import Modal from './ui/Modal';
 
 export type AccountDeletionChoice = 'pause' | 'immediate';
 
@@ -71,16 +71,19 @@ export const AccountDeletionModal: React.FC<AccountDeletionModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="account-deletion-title"
+    <Modal
+      isOpen={open}
+      onClose={onClose}
+      ariaLabelledBy="account-deletion-title"
+      maxWidthClass="max-w-lg"
+      loading={loading || exporting}
+      closeOnBackdrop={!loading && !exporting}
+      zIndexClass="z-[90]"
+      panelClassName="max-h-[90vh] overflow-y-auto space-y-4"
     >
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
-            <ExclamationTriangleIcon className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
+            <ExclamationTriangleIcon className="w-6 h-6 text-lantern-error shrink-0 mt-0.5" aria-hidden />
             <div>
               <h2 id="account-deletion-title" className="text-lg font-semibold text-lantern-text">
                 {step === 'warn' && 'Before you go'}
@@ -98,10 +101,10 @@ export const AccountDeletionModal: React.FC<AccountDeletionModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="text-lantern-text-secondary hover:text-lantern-text"
-            aria-label="Close"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
+            aria-label="Close account deletion dialog"
           >
-            <XCircleIcon className="w-6 h-6" />
+            <XMarkIcon className="w-6 h-6" aria-hidden />
           </button>
         </div>
 
@@ -231,8 +234,7 @@ export const AccountDeletionModal: React.FC<AccountDeletionModalProps> = ({
             </div>
           </>
         )}
-      </Card>
-    </div>
+    </Modal>
   );
 };
 

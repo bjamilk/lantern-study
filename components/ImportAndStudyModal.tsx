@@ -7,6 +7,7 @@ import {
 import { getNoteStudyContent } from '@lantern/shared';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { Button } from './ui';
+import Modal from './ui/Modal';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
@@ -26,7 +27,6 @@ interface ImportAndStudyModalProps {
   onClose: () => void;
   onComplete: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
-  theme?: 'light' | 'dark';
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -36,7 +36,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   onClose,
   onComplete,
   onOpenNote,
-  theme = 'light',
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -44,7 +43,6 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [result, setResult] = useState<ImportAndStudyResult | null>(null);
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
-  const isDark = theme === 'dark';
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
 
@@ -184,39 +182,54 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isBusy = step === 'processing';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className={`w-full max-w-lg rounded-2xl shadow-xl ${isDark ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-900'}`}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <SparklesIcon className="w-5 h-5 text-violet-500" />
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      ariaLabelledBy="import-study-title"
+      maxWidthClass="max-w-lg"
+      loading={isBusy}
+      closeOnBackdrop={!isBusy}
+      panelClassName="!p-0 overflow-hidden"
+    >
+        <div className="flex items-center justify-between p-4 border-b border-lantern-border">
+          <h2 id="import-study-title" className="text-lg font-bold flex items-center gap-2 text-lantern-text">
+            <SparklesIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
             Import & Study
           </h2>
-          <button onClick={handleClose} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
-            <XMarkIcon className="w-5 h-5" />
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={isBusy}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-lantern-background-secondary disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            aria-label="Close import and study dialog"
+          >
+            <XMarkIcon className="w-5 h-5" aria-hidden />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4 bg-lantern-surface">
           {step === 'input' && (
             <>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-lantern-text-secondary">
                 Drop content in once — get a note plus optional flashcards and quiz.
               </p>
 
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-lantern-text-muted">
                 {formatMaxNoteUploadLabel()}
               </p>
 
               <div className="flex gap-3">
-                <label className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-indigo-400 ${isDark ? 'border-slate-600' : 'border-slate-300'}`}>
-                  <DocumentArrowUpIcon className="w-8 h-8 text-indigo-500" />
-                  <span className="text-sm font-medium">Upload PDF</span>
+                <label className="flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <DocumentArrowUpIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
+                  <span className="text-sm font-medium text-lantern-text">Upload PDF</span>
                   <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
                 </label>
-                <label className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-indigo-400 ${isDark ? 'border-slate-600' : 'border-slate-300'}`}>
-                  <DocumentArrowUpIcon className="w-8 h-8 text-violet-500" />
-                  <span className="text-sm font-medium">PowerPoint</span>
+                <label className="flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <DocumentArrowUpIcon className="w-8 h-8 text-lantern-accent" aria-hidden />
+                  <span className="text-sm font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
               </div>
@@ -226,7 +239,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 value={textContent}
                 onChange={(e) => setTextContent(e.target.value)}
                 rows={4}
-                className={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${isDark ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-300'}`}
+                aria-label="Paste notes or text to import"
+                className="w-full px-3 py-2 rounded-lg border text-sm resize-none border-lantern-border bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
               />
 
               <div className="flex gap-4 text-sm">
@@ -244,23 +258,23 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 <Button onClick={handleTextSubmit} className="w-full">Import text</Button>
               )}
 
-              {error && <p className="text-sm text-red-500">{error}</p>}
+              {error && <p className="text-sm text-lantern-error">{error}</p>}
             </>
           )}
 
           {step === 'processing' && (
             <div className="py-8 text-center">
-              <div className="animate-spin w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4" />
-              <p className="font-medium">Creating your study materials...</p>
-              <p className="text-sm text-slate-500 mt-1">Note + flashcards + quiz</p>
+              <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" aria-hidden />
+              <p className="font-medium text-lantern-text">Creating your study materials...</p>
+              <p className="text-sm text-lantern-text-muted mt-1">Note + flashcards + quiz</p>
             </div>
           )}
 
           {step === 'done' && result && (
             <div className="py-4 text-center space-y-4">
-              <div className="text-4xl">✓</div>
-              <p className="font-semibold">{result.noteTitle} ready!</p>
-              <div className="flex justify-center gap-4 text-sm text-slate-500">
+              <div className="text-4xl" aria-hidden>✓</div>
+              <p className="font-semibold text-lantern-text">{result.noteTitle} ready!</p>
+              <div className="flex justify-center gap-4 text-sm text-lantern-text-muted">
                 {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
                 {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz Qs</span> : null}
               </div>
@@ -270,8 +284,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
