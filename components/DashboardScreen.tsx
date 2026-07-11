@@ -22,6 +22,7 @@ import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
 import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
 import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
+import Modal from './ui/Modal';
 
 interface DashboardScreenProps {
   testResults: TestResult[];
@@ -1311,14 +1312,16 @@ export default function DashboardScreen({
 
       {/* ═══════════════ GROUP PICKER MODAL ═══════════════ */}
       {quickActionPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          onClick={() => setQuickActionPicker(null)}
+        <Modal
+          isOpen={Boolean(quickActionPicker)}
+          onClose={() => setQuickActionPicker(null)}
+          ariaLabelledBy="quick-action-group-picker-title"
+          maxWidthClass="max-w-md"
+          alignClass="items-end sm:items-center justify-center"
+          backdropClassName="backdrop-blur-sm"
+          panelClassName="!p-0 overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
         >
-          <div
-            className="w-full max-w-md bg-lantern-surface rounded-lantern-xl shadow-2xl overflow-hidden border border-lantern-border"
-            onClick={e => e.stopPropagation()}
-          >
+          <div className="w-full">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
               <div className="flex items-center gap-2">
@@ -1326,7 +1329,7 @@ export default function DashboardScreen({
                   ? <BoltIcon className="w-5 h-5 text-yellow-500" />
                   : <AcademicCapOutline className="w-5 h-5 text-emerald-500" />
                 }
-                <h2 className="text-base font-semibold text-lantern-text">
+                <h2 id="quick-action-group-picker-title" className="text-base font-semibold text-lantern-text">
                   Select a group for Quick {quickActionPicker === 'test' ? 'Test' : 'Study'}
                 </h2>
               </div>
@@ -1378,7 +1381,7 @@ export default function DashboardScreen({
               )}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

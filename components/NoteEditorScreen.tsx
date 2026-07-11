@@ -13,6 +13,7 @@ import NoteLearnPanel from './NoteLearnPanel';
 import DailyQuizWidget from './DailyQuizWidget';
 import YouTubeEmbed from './YouTubeEmbed';
 import NoteCollaboratorsModal from './NoteCollaboratorsModal';
+import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
@@ -667,15 +668,21 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         />
       )}
       {shareGroupOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-3">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Share with group</h3>
-            <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+        <Modal
+          isOpen={shareGroupOpen}
+          onClose={() => setShareGroupOpen(false)}
+          ariaLabelledBy="share-group-title"
+          maxWidthClass="max-w-sm"
+          zIndexClass="z-[70]"
+        >
+          <div className="space-y-3">
+            <h3 id="share-group-title" className="text-lg font-semibold text-lantern-text">Share with group</h3>
+            <ul className="max-h-60 overflow-y-auto divide-y divide-lantern-border">
               {groups.map((g) => (
                 <li key={g.id}>
                   <button
                     type="button"
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg"
+                    className="w-full text-left px-3 py-2 min-h-[44px] text-sm text-lantern-text hover:bg-lantern-background-secondary rounded-lg"
                     onClick={() => {
                       setShareGroupOpen(false);
                       onShareWithGroup(g.id);
@@ -686,11 +693,11 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 </li>
               ))}
             </ul>
-            <button type="button" onClick={() => setShareGroupOpen(false)} className="w-full py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-700">
+            <button type="button" onClick={() => setShareGroupOpen(false)} className="w-full min-h-[44px] py-2 text-sm rounded-lg bg-lantern-background-secondary text-lantern-text">
               Cancel
             </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

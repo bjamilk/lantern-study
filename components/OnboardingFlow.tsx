@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AcademicCapIcon, FireIcon, SparklesIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { Button } from './ui';
+import Modal from './ui/Modal';
 
 export type OnboardingStep = 'welcome' | 'goal' | 'demo' | 'starter' | 'streak' | 'done';
 
@@ -92,8 +93,17 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-      <div className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onSkip}
+      ariaLabelledBy="onboarding-title"
+      maxWidthClass="max-w-md"
+      loading={loading || demoProcessing}
+      closeOnBackdrop={!loading && !demoProcessing}
+      zIndexClass="z-[60]"
+      panelClassName="!p-0 rounded-2xl overflow-hidden"
+    >
+      <div className={`w-full ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
         {step === 'welcome' && (
           <div className="p-8 text-center">
             <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/40 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -215,7 +225,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 };
 

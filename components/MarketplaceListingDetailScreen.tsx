@@ -24,6 +24,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
 import MakeOfferModal from './MakeOfferModal';
+import Modal from './ui/Modal';
 import {
   ArrowLeftIcon,
   MapPinIcon,
@@ -952,15 +953,23 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
       {/* Review Modal */}
       {showReviewForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+        <Modal
+          isOpen={showReviewForm}
+          onClose={() => setShowReviewForm(false)}
+          ariaLabelledBy="listing-review-title"
+          maxWidthClass="max-w-md"
+          panelClassName="!p-0 overflow-hidden rounded-xl"
+        >
+          <div className="w-full">
             <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Write a Review</h3>
+              <h3 id="listing-review-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Write a Review</h3>
               <button
+                type="button"
                 onClick={() => setShowReviewForm(false)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                aria-label="Close review form"
               >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" />
+                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
               </button>
             </div>
 
@@ -1013,20 +1022,28 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Report Modal */}
       {showReportForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+        <Modal
+          isOpen={showReportForm}
+          onClose={() => setShowReportForm(false)}
+          ariaLabelledBy="listing-report-title"
+          maxWidthClass="max-w-md"
+          panelClassName="!p-0 overflow-hidden rounded-xl"
+        >
+          <div className="w-full">
             <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Report Listing</h3>
+              <h3 id="listing-report-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Report Listing</h3>
               <button
+                type="button"
                 onClick={() => setShowReportForm(false)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                aria-label="Close report form"
               >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" />
+                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
               </button>
             </div>
 
@@ -1079,20 +1096,31 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Contact Seller Modal */}
       {showContactForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full">
+        <Modal
+          isOpen={showContactForm}
+          onClose={() => setShowContactForm(false)}
+          ariaLabelledBy="listing-contact-title"
+          maxWidthClass="max-w-md"
+          loading={contactLoading}
+          closeOnBackdrop={!contactLoading}
+          panelClassName="!p-0 overflow-hidden rounded-xl"
+        >
+          <div className="w-full">
             <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Contact Seller</h3>
+              <h3 id="listing-contact-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Contact Seller</h3>
               <button
+                type="button"
                 onClick={() => setShowContactForm(false)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                disabled={contactLoading}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200 disabled:opacity-50"
+                aria-label="Close contact form"
               >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" />
+                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
               </button>
             </div>
 
@@ -1171,7 +1199,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       {/* Make Offer Modal */}
       {listing && (

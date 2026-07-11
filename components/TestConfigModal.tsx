@@ -4,8 +4,8 @@ import { useToastStore } from '../stores/toastStore';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { featureAccents } from '@lantern/shared/design';
+import Modal from './ui/Modal';
 
 interface TestConfigModalProps {
   isOpen: boolean;
@@ -178,7 +178,9 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     }
   }, [focusOnNew, mode]);
 
-  const dialogRef = useModalFocusTrap(isOpen, onClose);
+  const testConfigPanelClass =
+    '!p-4 sm:!p-6 rounded-t-2xl sm:rounded-lantern-xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4 bg-lantern-surface';
+  const testConfigPanelStyle = { borderTopColor: featureAccents.groups };
 
   if (!isOpen) return null;
 
@@ -317,8 +319,19 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   // For study mode, show a completely distinct blue-themed interface
   if (mode === 'study') {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain" role="dialog" aria-modal="true" aria-labelledby="test-config-study-title">
-        <div ref={dialogRef} className="bg-lantern-surface p-4 sm:p-6 rounded-t-2xl sm:rounded-lantern-xl shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4" style={{ borderTopColor: featureAccents.groups }}>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        ariaLabelledBy="test-config-study-title"
+        maxWidthClass="max-w-2xl"
+        loading={isDownloading}
+        closeOnBackdrop={!isDownloading}
+        alignClass="items-end sm:items-center justify-center"
+        paddingClass="p-0 sm:p-4"
+        backdropClassName="overscroll-contain"
+        panelClassName={testConfigPanelClass}
+        panelStyle={testConfigPanelStyle}
+      >
           <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
             <h2 id="test-config-study-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
               <span className="text-2xl mr-2 shrink-0">📚</span>
@@ -535,14 +548,24 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 overscroll-contain" role="dialog" aria-modal="true" aria-labelledby="test-config-modal-title">
-      <div ref={dialogRef} className="bg-lantern-surface p-4 sm:p-6 rounded-t-2xl sm:rounded-lantern-xl shadow-xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col min-h-0 overflow-hidden border-t-4" style={{ borderTopColor: featureAccents.groups }}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="test-config-modal-title"
+      maxWidthClass="max-w-2xl"
+      loading={isDownloading}
+      closeOnBackdrop={!isDownloading}
+      alignClass="items-end sm:items-center justify-center"
+      paddingClass="p-0 sm:p-4"
+      backdropClassName="overscroll-contain"
+      panelClassName={testConfigPanelClass}
+      panelStyle={testConfigPanelStyle}
+    >
         <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
           <h2 id="test-config-modal-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
             {mode === 'test' && <span className="text-2xl mr-2 shrink-0">📝</span>}
@@ -768,7 +791,6 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

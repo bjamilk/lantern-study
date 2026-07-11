@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIcon, SparklesIcon, BoltIcon, ArrowPathIcon, ClockIcon, UserGroupIcon, Squares2X2Icon, AcademicCapIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import CollaboratorsModal from './CollaboratorsModal';
+import Modal from './ui/Modal';
 import { MarkdownRenderer } from '@lantern/shared';
 
 interface DeckDetailScreenProps {
@@ -459,26 +460,32 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         currentUserId={currentUser?.id}
       />
       {cramMinutesOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-800 p-5 shadow-xl space-y-4">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Timed cram</h3>
-            <label className="block text-sm text-slate-600 dark:text-slate-300">
+        <Modal
+          isOpen={cramMinutesOpen}
+          onClose={() => setCramMinutesOpen(false)}
+          ariaLabelledBy="cram-minutes-title"
+          maxWidthClass="max-w-sm"
+          zIndexClass="z-[70]"
+        >
+          <div className="space-y-4">
+            <h3 id="cram-minutes-title" className="text-lg font-semibold text-lantern-text">Timed cram</h3>
+            <label className="block text-sm text-lantern-text-secondary">
               Duration (minutes)
               <input
                 type="number"
                 min={1}
                 value={cramMinutes}
                 onChange={(e) => setCramMinutes(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2"
+                className="mt-1 w-full min-h-[44px] rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-lantern-text focus:ring-2 focus:ring-lantern-primary"
                 autoFocus
               />
             </label>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setCramMinutesOpen(false)} className="px-3 py-2 text-sm rounded-lg bg-slate-100 dark:bg-slate-700">Cancel</button>
-              <button type="button" onClick={confirmTimedCram} className="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white">Start</button>
+              <button type="button" onClick={() => setCramMinutesOpen(false)} className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-background-secondary text-lantern-text">Cancel</button>
+              <button type="button" onClick={confirmTimedCram} className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-primary text-white">Start</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

@@ -19,6 +19,10 @@ export interface ModalProps {
   alignClass?: string;
   /** Backdrop padding (e.g. p-0 sm:p-4 for edge-to-edge mobile sheets). */
   paddingClass?: string;
+  /** Extra classes on the backdrop container. */
+  backdropClassName?: string;
+  /** Inline styles on the dialog panel (e.g. accent border color). */
+  panelStyle?: React.CSSProperties;
 }
 
 /**
@@ -37,6 +41,8 @@ export function Modal({
   zIndexClass = 'z-50',
   alignClass = 'items-center justify-center',
   paddingClass = 'p-4',
+  backdropClassName = '',
+  panelStyle,
 }: ModalProps) {
   const dialogRef = useModalFocusTrap(isOpen, onClose, { loading });
 
@@ -53,7 +59,7 @@ export function Modal({
 
   return (
     <div
-      className={`fixed inset-0 ${zIndexClass} flex ${alignClass} bg-black/60 ${paddingClass} transition-opacity duration-300`}
+      className={`fixed inset-0 ${zIndexClass} flex ${alignClass} bg-black/60 ${paddingClass} transition-opacity duration-300 ${backdropClassName}`}
       role="presentation"
       onMouseDown={(event) => {
         if (closeOnBackdrop && !loading && event.target === event.currentTarget) {
@@ -68,6 +74,7 @@ export function Modal({
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
         className={`w-full ${maxWidthClass} transform rounded-lg bg-white p-6 shadow-xl transition-all duration-300 dark:bg-gray-800 ${panelClassName}`}
+        style={panelStyle}
       >
         {children}
       </div>
