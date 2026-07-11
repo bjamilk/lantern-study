@@ -371,15 +371,17 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify({ settings }),
       }),
 
-    searchUsers: (query: string, limit = 20) =>
-      apiRequest<
+    searchUsers: (query: string, limit = 20) => {
+      const normalizedQuery = query.trim().toLowerCase().replace(/^@+/, '');
+      return apiRequest<
         Array<{
           id: string;
           name: string;
           username?: string;
           avatar_url?: string;
         }>
-      >(`/users/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+      >(`/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`);
+    },
 
     checkUsername: (username: string) =>
       apiRequestRaw<{

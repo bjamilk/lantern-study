@@ -849,7 +849,11 @@ export const fetchUsers = async (search?: string, options?: { page?: number; lim
 
 export const searchUsers = async (query: string, limit: number = 20) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
+    const normalizedQuery = query.trim().toLowerCase().replace(/^@+/, '');
+    if (normalizedQuery.length < 2) {
+      return [];
+    }
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });

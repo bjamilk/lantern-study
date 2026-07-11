@@ -215,7 +215,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
           </button>
           <div>
             <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-100">New Group</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Add members by searching for their @username</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Add members by searching name, @username, or email</p>
           </div>
         </header>
 
