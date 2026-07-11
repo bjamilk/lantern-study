@@ -611,6 +611,7 @@ export function createApiEndpoints(client: ApiClient) {
       userId: string,
       data: {
         content: string;
+        clientMessageId?: string;
         type?: 'TEXT' | 'QUESTION';
         questionType?: string;
         questionStem?: string;
@@ -729,7 +730,12 @@ export function createApiEndpoints(client: ApiClient) {
       >(endpoint);
     },
 
-    sendDirectMessage: (senderId: string, recipientId: string, content: string) =>
+    sendDirectMessage: (
+      senderId: string,
+      recipientId: string,
+      content: string,
+      clientMessageId?: string
+    ) =>
       apiRequest<{
         id: string;
         thread_id: string;
@@ -738,7 +744,7 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
       }>(`/messages/user/${senderId}`, {
         method: 'POST',
-        body: JSON.stringify({ content, recipientId }),
+        body: JSON.stringify({ content, recipientId, clientMessageId }),
       }),
 
     markDMAsRead: (threadId: string, userId: string) =>

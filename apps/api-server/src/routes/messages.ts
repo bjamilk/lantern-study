@@ -159,9 +159,9 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { content } = req.body;
+    const { content, clientMessageId } = req.body;
 
-    logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId });
+    logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
 
     const group = await supabaseService.getGroupById(groupId, userId);
     if (!group) {
@@ -171,7 +171,7 @@ router.post(
       });
     }
 
-    const message = await supabaseService.sendMessage(groupId, userId, content);
+    const message = await supabaseService.sendMessage(groupId, userId, content, clientMessageId);
 
     // Invalidate message caches for this group
     await cacheService.deletePattern(`messages:group:${groupId}:*`);
@@ -651,7 +651,7 @@ router.post(
     if (!senderId) return;
 
     const { userId } = req.params;
-    const { content, recipientId } = req.body;
+    const { content, recipientId, clientMessageId } = req.body;
 
     if (senderId !== userId) {
       return res.status(403).json({
@@ -681,7 +681,9 @@ router.post(
     }
 
     try {
-      const message = await supabaseService.sendDirectMessage(senderId, recipientId, content);
+      const message = await supabaseService.sendDirectMessage(senderId, recipientId, content, {
+        clientMessageId,
+      });
 
       // Invalidate direct message caches
       await cacheService.deletePattern(`messages:direct:${senderId}:${recipientId}:*`);

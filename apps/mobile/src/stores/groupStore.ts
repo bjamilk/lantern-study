@@ -8,6 +8,7 @@ import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage }
 import { resolveQuestionStatusAfterVote, normalizeStorageUrl, formatChatSenderLabel } from '@lantern/shared/utils';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import * as Crypto from 'expo-crypto';
 
 export type DMThread = SharedDMThread;
 export type DirectMessage = SharedDirectMessage;
@@ -772,8 +773,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       !!parsed.question_stem;
     const questionStem = parsed.questionStem || parsed.question_stem;
 
+    const clientMessageId = Crypto.randomUUID();
     const newMessage: Message = {
-      id: `msg-${Date.now()}`,
+      id: clientMessageId,
       groupId,
       senderId,
       senderName,
@@ -831,7 +833,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
 
     try {
-      const serverPayload = await api.sendMessage(groupId, senderId, { content: text });
+      const serverPayload = await api.sendMessage(groupId, senderId, {
+        content: text,
+        clientMessageId,
+      });
       const serverMessage = mapApiMessage(serverPayload, groupId);
       const isCurrentGroup = get().currentGroup?.id === groupId;
       set((state) => {
@@ -1356,8 +1361,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   sendDirectMessageTo: async (senderId: string, recipientId: string, text: string, threadId: string) => {
+    const clientMessageId = Crypto.randomUUID();
     const optimistic: DirectMessage = {
-      id: `optimistic-${Date.now()}`,
+      id: clientMessageId,
       threadId,
       senderId,
       text,
@@ -1377,13 +1383,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }));
 
     try {
-      const sent = await api.sendDirectMessage(senderId, recipientId, text);
+      const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId);
       const confirmed = mapDirectMessage(sent, threadId);
       set(state => ({
         directMessages: {
           ...state.directMessages,
           [threadId]: (state.directMessages[threadId] || []).map(m =>
-            m.id === optimistic.id ? confirmed : m
+            m.id === optimistic.id || m.id === confirmed.id ? confirmed : m
           ),
         },
       }));

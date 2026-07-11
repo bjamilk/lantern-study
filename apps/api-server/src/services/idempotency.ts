@@ -2,6 +2,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const MAX_KEY_LENGTH = 128;
 
+async function claimIdempotencyLock(
+  client: SupabaseClient,
+  userId: string,
+  operation: string,
+  idempotencyKey: string
+): Promise<void> {
+  const { error } = await client.rpc('claim_idempotency_lock', {
+    p_user_id: userId,
+    p_operation: operation,
+    p_idempotency_key: idempotencyKey,
+  });
+  if (error) throw error;
+}
+
 export function normalizeIdempotencyKey(
   headerValue: string | string[] | undefined,
   fallback?: string
@@ -58,6 +72,7 @@ export async function withIdempotency<T extends Record<string, unknown>>(
   handler: () => Promise<T>
 ): Promise<T> {
   if (idempotencyKey) {
+    await claimIdempotencyLock(client, userId, operation, idempotencyKey);
     const cached = await getIdempotentResponse<T>(client, userId, operation, idempotencyKey);
     if (cached) return cached;
   }

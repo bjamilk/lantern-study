@@ -289,8 +289,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         const otherUserId = thread.participantIds.find(id => id !== currentUser.id);
         if (!otherUserId) return;
         
+        const clientMessageId = uuidv4();
         const optimisticMessage: DirectMessage = {
-            id: uuidv4(),
+            id: clientMessageId,
             threadId,
             senderId: currentUser.id,
             text,
@@ -306,7 +307,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         ));
         
         try {
-            await sendDirectMessage(currentUser.id, otherUserId, text);
+            await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId);
             const [fetchedThreads, dmUnreadCounts] = await Promise.all([
                 fetchDmThreads(currentUser.id),
                 fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
@@ -661,7 +662,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             const prevLastMessageTime = groupBefore?.lastMessageTime;
 
             // Optimistic update - show message immediately
-            const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const optimisticId = uuidv4();
             const newMessage: Message = {
                 id: optimisticId,
                 groupId: selectedChat.id,
@@ -680,15 +681,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             // Send to API in background
             try {
-                const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text);
+                const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text, optimisticId);
                 if (sentMessage) {
                     const confirmed = mapMessageFromApi(sentMessage);
                     // Replace optimistic message with server-confirmed one (keep sender if API omits profile)
                     updateMessages(prev => ({
                         ...prev,
                         [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
-                            m.id === optimisticId
-                                ? { ...m, ...confirmed, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
+                            m.id === optimisticId || m.id === confirmed.id
+                                ? { ...m, ...confirmed, id: confirmed.id, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
                                 : m
                         )
                     }));

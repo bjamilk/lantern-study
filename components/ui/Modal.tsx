@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
+import { useModalStackLayer } from '../../hooks/useModalStackLayer';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -44,6 +45,8 @@ export function Modal({
   backdropClassName = '',
   panelStyle,
 }: ModalProps) {
+  const stackLayerClass = useModalStackLayer(isOpen);
+  const resolvedZIndexClass = zIndexClass === 'z-50' ? stackLayerClass : zIndexClass;
   const dialogRef = useModalFocusTrap(isOpen, onClose, { loading });
 
   useEffect(() => {
@@ -59,7 +62,7 @@ export function Modal({
 
   return (
     <div
-      className={`fixed inset-0 ${zIndexClass} flex ${alignClass} bg-black/60 ${paddingClass} transition-opacity duration-300 ${backdropClassName}`}
+      className={`fixed inset-0 ${resolvedZIndexClass} flex ${alignClass} bg-black/60 ${paddingClass} transition-opacity duration-300 ${backdropClassName}`}
       role="presentation"
       onMouseDown={(event) => {
         if (closeOnBackdrop && !loading && event.target === event.currentTarget) {

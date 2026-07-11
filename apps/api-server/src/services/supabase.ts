@@ -2611,7 +2611,7 @@ export class SupabaseService {
     senderId: string,
     recipientId: string,
     content: string,
-    options?: { bypassPrivacy?: boolean }
+    options?: { bypassPrivacy?: boolean; clientMessageId?: string }
   ): Promise<Message> {
     if (!options?.bypassPrivacy) {
       const { data: recipientProfile, error: recipientError } = await this.supabase
@@ -2658,19 +2658,25 @@ export class SupabaseService {
       }
 
       // Insert the message
+      const insertPayload: Record<string, unknown> = {
+        thread_id: threadId,
+        sender_id: senderId,
+        text: content,
+      };
+      if (options?.clientMessageId) {
+        insertPayload.client_message_id = options.clientMessageId;
+      }
+
       const { data, error } = await this.supabase
         .from('dm_messages')
-        .insert({
-          thread_id: threadId,
-          sender_id: senderId,
-          text: content,
-        })
+        .insert(insertPayload)
         .select(`
           id,
           thread_id,
           sender_id,
           text,
           timestamp,
+          client_message_id,
           profiles:sender_id (
             id,
             name,
@@ -2680,6 +2686,30 @@ export class SupabaseService {
         .single();
 
       if (error) {
+        if (error.code === '23505' && options?.clientMessageId) {
+          const { data: existing } = await this.supabase
+            .from('dm_messages')
+            .select(`
+              id,
+              thread_id,
+              sender_id,
+              text,
+              timestamp,
+              client_message_id,
+              profiles:sender_id (
+                id,
+                name,
+                avatar_url
+              )
+            `)
+            .eq('thread_id', threadId)
+            .eq('sender_id', senderId)
+            .eq('client_message_id', options.clientMessageId)
+            .maybeSingle();
+          if (existing) {
+            return existing as unknown as Message;
+          }
+        }
         logger.error('Error inserting DM message', { error });
         throw new Error(`Failed to send DM: ${error.message}`);
       }
@@ -4287,7 +4317,32 @@ export class SupabaseService {
   }
 
   // Message Functions
-  async sendMessage(groupId: string, userId: string, content: string): Promise<any> {
+  private async findGroupMessageByClientId(
+    groupId: string,
+    userId: string,
+    clientMessageId: string
+  ): Promise<any | null> {
+    const { data, error } = await this.supabase
+      .from('messages')
+      .select('*')
+      .eq('group_id', groupId)
+      .eq('sender_id', userId)
+      .eq('client_message_id', clientMessageId)
+      .maybeSingle();
+
+    if (error) {
+      logger.error('findGroupMessageByClientId failed', { error, groupId, userId, clientMessageId });
+      return null;
+    }
+    return data;
+  }
+
+  async sendMessage(
+    groupId: string,
+    userId: string,
+    content: string,
+    clientMessageId?: string
+  ): Promise<any> {
     let messageData: any;
     let isQuestion = false;
 
@@ -4315,11 +4370,18 @@ export class SupabaseService {
         questionType: messageData.questionType
       });
       
+      const insertBase: Record<string, unknown> = {
+        group_id: groupId,
+        sender_id: userId,
+      };
+      if (clientMessageId) {
+        insertBase.client_message_id = clientMessageId;
+      }
+
       const { data, error } = await this.supabase
         .from('messages')
         .insert({
-          group_id: groupId,
-          sender_id: userId,
+          ...insertBase,
           type: 'QUESTION',
           question_data: messageData,
         })
@@ -4327,6 +4389,10 @@ export class SupabaseService {
         .single();
 
       if (error) {
+        if (error.code === '23505' && clientMessageId) {
+          const existing = await this.findGroupMessageByClientId(groupId, userId, clientMessageId);
+          if (existing) return existing;
+        }
         logger.error('sendMessage: Failed to insert QUESTION message', { error });
         throw error;
       }
@@ -4344,11 +4410,18 @@ export class SupabaseService {
       // Text message
       logger.info('sendMessage: Inserting TEXT message', { groupId, userId });
       
+      const insertBase: Record<string, unknown> = {
+        group_id: groupId,
+        sender_id: userId,
+      };
+      if (clientMessageId) {
+        insertBase.client_message_id = clientMessageId;
+      }
+
       const { data, error } = await this.supabase
         .from('messages')
         .insert({
-          group_id: groupId,
-          sender_id: userId,
+          ...insertBase,
           type: 'TEXT',
           text: content,
         })
@@ -4356,6 +4429,10 @@ export class SupabaseService {
         .single();
 
       if (error) {
+        if (error.code === '23505' && clientMessageId) {
+          const existing = await this.findGroupMessageByClientId(groupId, userId, clientMessageId);
+          if (existing) return existing;
+        }
         logger.error('sendMessage: Failed to insert TEXT message', { error });
         throw error;
       }

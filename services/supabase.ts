@@ -560,12 +560,17 @@ export const joinGroupByInvite = async (inviteId: string) => {
   return result.data;
 };
 
-export const sendMessage = async (groupId: string, userId: string, content: string) => {
+export const sendMessage = async (
+  groupId: string,
+  userId: string,
+  content: string,
+  clientMessageId?: string
+) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({ content, userId }),
+      body: JSON.stringify({ content, userId, clientMessageId }),
     });
 
     if (!response.ok) {
@@ -3349,7 +3354,12 @@ export const fetchDmThreads = async (userId: string) => {
   }
 };
 
-export const sendDirectMessage = async (senderId: string, recipientId: string, content: string) => {
+export const sendDirectMessage = async (
+  senderId: string,
+  recipientId: string,
+  content: string,
+  clientMessageId?: string
+) => {
   console.log('Sending direct message from:', senderId, 'to:', recipientId);
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/messages/user/${senderId}`, {
@@ -3358,6 +3368,7 @@ export const sendDirectMessage = async (senderId: string, recipientId: string, c
       body: JSON.stringify({
         content,
         recipientId,
+        clientMessageId,
       }),
     });
 

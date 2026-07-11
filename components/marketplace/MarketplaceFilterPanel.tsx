@@ -50,18 +50,22 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
     <div className={shellClass}>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0">
         <div className="min-w-0">
-          <label className={labelClass}>Price range (₦)</label>
+          <label htmlFor="marketplace-filter-min-price" className={labelClass}>Price range (₦)</label>
           <div className="flex gap-2 min-w-0">
             <input
+              id="marketplace-filter-min-price"
               type="number"
               placeholder="Min"
+              aria-label="Minimum price"
               value={minPrice}
               onChange={e => onMinPriceChange(e.target.value)}
               className={inputClass}
             />
             <input
+              id="marketplace-filter-max-price"
               type="number"
               placeholder="Max"
+              aria-label="Maximum price"
               value={maxPrice}
               onChange={e => onMaxPriceChange(e.target.value)}
               className={inputClass}
@@ -70,8 +74,13 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Campus</label>
-          <select value={campusIdFilter} onChange={e => onCampusChange(e.target.value)} className={inputClass}>
+          <label htmlFor="marketplace-filter-campus" className={labelClass}>Campus</label>
+          <select
+            id="marketplace-filter-campus"
+            value={campusIdFilter}
+            onChange={e => onCampusChange(e.target.value)}
+            className={inputClass}
+          >
             <option value="">All campuses</option>
             {campuses.map(campus => (
               <option key={campus.id} value={campus.id}>
@@ -82,8 +91,9 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Meetup area</label>
+          <label htmlFor="marketplace-filter-location" className={labelClass}>Meetup area</label>
           <input
+            id="marketplace-filter-location"
             type="text"
             placeholder="Gate, hall, faculty…"
             value={locationFilter}
@@ -93,8 +103,9 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>Sort by</label>
+          <label htmlFor="marketplace-filter-sort" className={labelClass}>Sort by</label>
           <select
+            id="marketplace-filter-sort"
             value={`${sortBy}:${sortOrder}`}
             onChange={e => {
               const [field, order] = e.target.value.split(':');

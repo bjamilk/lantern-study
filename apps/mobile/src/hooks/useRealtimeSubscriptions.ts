@@ -469,6 +469,9 @@ export function useRealtimeSubscriptions(
       (raw as { sender_id?: string; senderId?: string }).sender_id
       || raw.senderId
       || (raw as { sender?: { id?: string } }).sender?.id;
+    const clientMessageId =
+      (raw as { client_message_id?: string; clientMessageId?: string }).client_message_id
+      || (raw as { clientMessageId?: string }).clientMessageId;
 
     const cached = useGroupStore.getState().messagesCache[groupId] || [];
     if (cached.some(m => m.id === raw.id)) {
@@ -477,6 +480,10 @@ export function useRealtimeSubscriptions(
     }
 
     if (senderId && senderId === user?.id) {
+      if (clientMessageId && cached.some((message) => message.id === clientMessageId)) {
+        mergeGroupMessage(groupId, raw);
+        return;
+      }
       const rawContent =
         (raw as { content?: string; text?: string }).content
         || (raw as { text?: string }).text

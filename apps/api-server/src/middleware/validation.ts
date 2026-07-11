@@ -84,6 +84,7 @@ export const validateUpdateGroup = [
 export const validateSendMessage = [
   param('groupId').isUUID().withMessage('Group ID must be a valid UUID'),
   body('content').trim().isLength({ min: 1, max: 10000 }).withMessage('Message content must be 1-10000 characters'),
+  body('clientMessageId').optional().isUUID().withMessage('clientMessageId must be a valid UUID'),
 ];
 
 export const validateMessageId = [
