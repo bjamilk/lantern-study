@@ -131,7 +131,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     lowDataMode: false,
   },
   privacy: {
-    profileVisibility: 'groups',
+    profileVisibility: 'public',
     discoverableForInvites: true,
     showOnlineStatus: true,
     showStudyActivity: true,
