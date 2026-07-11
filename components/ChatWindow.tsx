@@ -32,6 +32,7 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   getInquiryByThread,
+  threadMayHaveMarketplaceInquiry,
   fetchOffers,
   respondToOffer,
   updateInquiryStatus,
@@ -323,6 +324,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setActiveOrder(null);
 
     if (chat && chat.chatType === 'dm') {
+      const dmTexts = messages.map((message) => message.text);
+      if (!threadMayHaveMarketplaceInquiry(dmTexts)) {
+        return;
+      }
+
       let cancelled = false;
       const loadInquiryContext = async () => {
         try {
@@ -344,7 +350,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       void loadInquiryContext();
       return () => { cancelled = true; };
     }
-  }, [chat?.id]);
+  }, [chat?.id, chat?.chatType, messages]);
 
 
   // build top‑level vs subgroup map once

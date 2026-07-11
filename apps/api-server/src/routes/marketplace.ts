@@ -800,7 +800,7 @@ router.get(
 
     const inquiry = await supabaseService.getInquiryByThread(threadId);
     if (!inquiry) {
-      return res.status(404).json({ success: false, error: 'Inquiry not found' });
+      return res.json({ success: true, data: null });
     }
 
     const listingOwnerId = inquiry.listing?.user_id ?? inquiry.listing?.userId;

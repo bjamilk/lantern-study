@@ -2532,6 +2532,18 @@ export const updateInquiryStatus = async (inquiryId: string, status: 'open' | 'n
   }
 };
 
+const MARKETPLACE_INQUIRY_MESSAGE_MARKERS = ['📦 Inquiry about', '[Offer]'] as const;
+
+/** Heuristic: skip optional inquiry lookup for plain DMs without marketplace context. */
+export const threadMayHaveMarketplaceInquiry = (
+  texts: Array<string | undefined | null>
+): boolean =>
+  texts.some(
+    (text) =>
+      typeof text === 'string' &&
+      MARKETPLACE_INQUIRY_MESSAGE_MARKERS.some((marker) => text.includes(marker))
+  );
+
 export const getInquiryByThread = async (threadId: string) => {
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/inquiries/thread/${threadId}`, {
