@@ -256,7 +256,7 @@ function Test-PagesUrl([string]$Url) {
 function Ensure-WebDist {
     $distPath = Join-Path $RepoRoot $OutputDir
     if (Test-Path (Join-Path $distPath 'index.html')) { return $distPath }
-    Write-Step "dist/ not found — running npm run build:web ..."
+    Write-Step "dist/ not found - running npm run build:web ..."
     Push-Location $RepoRoot
     try {
         npm run build:web
@@ -305,7 +305,7 @@ function Try-GetCloudflareApiToken {
 Write-Host 'Lantern Study - Cloudflare Pages deploy' -ForegroundColor Cyan
 $script:CloudflareApiToken = Try-GetCloudflareApiToken
 if (-not $script:CloudflareApiToken) {
-    Write-Host 'CLOUDFLARE_API_TOKEN not set — falling back to Wrangler CLI.' -ForegroundColor DarkYellow
+    Write-Host 'CLOUDFLARE_API_TOKEN not set - falling back to Wrangler CLI.' -ForegroundColor DarkYellow
     Deploy-ViaWrangler
     Write-Step 'Notifying search engines (sitemap ping + IndexNow)...'
     try {
