@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { XCircleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useBudgetStore } from '../stores/budgetStore';
+import Modal from './ui/Modal';
 import {
   createSavingsGoalApi,
   contributeToSavingsGoalApi,
@@ -118,16 +119,31 @@ const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onClose, cu
   const contributeGoal = savingsGoals.find(g => g.id === contributeGoalId);
 
   return (
-    <div className="fixed inset-0 bg-black/60 dark:bg-black/75 flex items-center justify-center p-4 z-[80]" role="dialog" aria-modal="true">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col">
-        <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-white">
-            {mode === 'create' ? 'New Savings Goal' : mode === 'contribute' ? 'Add to Goal' : 'Savings Goals'}
-          </h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white"><XCircleIcon className="w-6 h-6" /></button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="savings-goal-modal-title"
+      maxWidthClass="max-w-md"
+      loading={busy}
+      closeOnBackdrop={!busy}
+      panelClassName="!p-0 overflow-hidden max-h-[85vh] flex flex-col"
+    >
+      <div className="bg-gradient-to-r from-lantern-accent to-lantern-warning px-5 py-4 flex justify-between items-center shrink-0">
+        <h2 id="savings-goal-modal-title" className="text-lg font-bold text-white">
+          {mode === 'create' ? 'New Savings Goal' : mode === 'contribute' ? 'Add to Goal' : 'Savings Goals'}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50"
+          aria-label="Close savings goals"
+        >
+          <XMarkIcon className="w-6 h-6" aria-hidden />
+        </button>
+      </div>
 
-        <div className="p-5 overflow-y-auto flex-1">
+      <div className="p-5 overflow-y-auto flex-1 bg-lantern-surface">
           {error && (
             <p className="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">{error}</p>
           )}
@@ -271,8 +287,7 @@ const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onClose, cu
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

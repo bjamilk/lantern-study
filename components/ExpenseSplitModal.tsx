@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { ExpenseSplit, ExpenseSplitParticipant, STUDENT_EXPENSE_CATEGORIES } from '../types';
-import { XCircleIcon, PlusIcon, TrashIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { ExpenseSplit, STUDENT_EXPENSE_CATEGORIES } from '../types';
+import { PlusIcon, TrashIcon, UserPlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useBudgetStore } from '../stores/budgetStore';
+import Modal from './ui/Modal';
 
 interface ExpenseSplitModalProps {
   isOpen: boolean;
@@ -83,16 +84,28 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
   const selectedCat = STUDENT_EXPENSE_CATEGORIES.find(c => c.id === category);
 
   return (
-    <div className="fixed inset-0 bg-black/60 dark:bg-black/75 flex items-center justify-center p-4 z-[80]" role="dialog" aria-modal="true">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col">
-        <div className="bg-gradient-to-r from-purple-500 to-violet-600 px-5 py-4 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-white">
-            {mode === 'create' ? 'Split an Expense' : 'Expense Splits'}
-          </h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white"><XCircleIcon className="w-6 h-6" /></button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="expense-split-modal-title"
+      maxWidthClass="max-w-md"
+      panelClassName="!p-0 overflow-hidden max-h-[85vh] flex flex-col"
+    >
+      <div className="bg-gradient-to-r from-lantern-primary to-lantern-primary-dark px-5 py-4 flex justify-between items-center shrink-0">
+        <h2 id="expense-split-modal-title" className="text-lg font-bold text-white">
+          {mode === 'create' ? 'Split an Expense' : 'Expense Splits'}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          aria-label="Close expense splits"
+        >
+          <XMarkIcon className="w-6 h-6" aria-hidden />
+        </button>
+      </div>
 
-        <div className="p-5 overflow-y-auto flex-1">
+      <div className="p-5 overflow-y-auto flex-1 bg-lantern-surface">
           {/* LIST MODE */}
           {mode === 'list' && (
             <div className="space-y-4">
@@ -246,8 +259,7 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

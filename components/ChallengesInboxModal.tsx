@@ -7,6 +7,7 @@ import {
   acceptChallenge,
   declineChallenge,
 } from '../services/challenges';
+import Modal from './ui/Modal';
 
 interface ChallengesInboxModalProps {
   isOpen: boolean;
@@ -77,7 +78,69 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  const renderRow = (c: GroupChallenge) => {
+    const isOpponent = c.opponentId === currentUserId;
+    const otherName = isOpponent ? c.challenger?.name : c.opponent?.name;
+    const busy = actionId === c.id;
+
+    return (
+      <div key={c.id} className="p-3 border border-lantern-border rounded-lg flex flex-col gap-2">
+        <div className="flex justify-between items-start gap-2">
+          <div>
+            <p className="font-medium text-lantern-text">
+              {isOpponent ? `${otherName} challenged you` : `You challenged ${otherName}`}
+            </p>
+            <p className="text-xs text-lantern-text-muted capitalize">{c.status} · {c.config.numberOfQuestions} questions</p>
+          </div>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-lantern-background-secondary text-lantern-text-secondary">
+            {c.status}
+          </span>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {c.status === 'pending' && isOpponent && (
+            <>
+              <button
+                disabled={busy}
+                onClick={() => handleAccept(c.id)}
+                className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-success text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+              >
+                <CheckIcon className="w-4 h-4" aria-hidden /> Accept
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => handleDecline(c.id)}
+                className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-background-secondary rounded-lg hover:opacity-90 disabled:opacity-50"
+              >
+                <XCircleIcon className="w-4 h-4" aria-hidden /> Decline
+              </button>
+            </>
+          )}
+          {c.status === 'accepted' && !c.myParticipant?.finishedAt && (
+            <button
+              onClick={() => { onPlayChallenge(c.id); onClose(); }}
+              className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-primary text-white rounded-lg hover:bg-lantern-primary-dark"
+            >
+              <PlayIcon className="w-4 h-4" aria-hidden /> Play Duel
+            </button>
+          )}
+          {c.status === 'pending' && !isOpponent && (
+            <span className="text-sm text-lantern-warning italic">Waiting for {otherName} to accept…</span>
+          )}
+          {c.status === 'accepted' && c.myParticipant?.finishedAt && (
+            <span className="text-sm text-lantern-text-muted italic">Waiting for opponent…</span>
+          )}
+          {c.status === 'completed' && (
+            <button
+              onClick={() => { onPlayChallenge(c.id); onClose(); }}
+              className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-background-secondary rounded-lg"
+            >
+              View Results
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const pendingIncoming = challenges.filter(
     c => c.status === 'pending' && c.opponentId === currentUserId
@@ -88,109 +151,56 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
   const active = challenges.filter(c => c.status === 'accepted');
   const recent = challenges.filter(c => ['completed', 'declined', 'expired'].includes(c.status));
 
-  const renderRow = (c: GroupChallenge) => {
-    const isOpponent = c.opponentId === currentUserId;
-    const otherName = isOpponent ? c.challenger?.name : c.opponent?.name;
-    const busy = actionId === c.id;
-
-    return (
-      <div key={c.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded-lg flex flex-col gap-2">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <p className="font-medium text-slate-800 dark:text-slate-100">
-              {isOpponent ? `${otherName} challenged you` : `You challenged ${otherName}`}
-            </p>
-            <p className="text-xs text-slate-500 capitalize">{c.status} · {c.config.numberOfQuestions} questions</p>
-          </div>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-            {c.status}
-          </span>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {c.status === 'pending' && isOpponent && (
-            <>
-              <button
-                disabled={busy}
-                onClick={() => handleAccept(c.id)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50"
-              >
-                <CheckIcon className="w-4 h-4" /> Accept
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => handleDecline(c.id)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-200 dark:bg-slate-600 rounded-md hover:bg-slate-300 dark:hover:bg-slate-500 disabled:opacity-50"
-              >
-                <XCircleIcon className="w-4 h-4" /> Decline
-              </button>
-            </>
-          )}
-          {c.status === 'accepted' && !c.myParticipant?.finishedAt && (
-            <button
-              onClick={() => { onPlayChallenge(c.id); onClose(); }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-            >
-              <PlayIcon className="w-4 h-4" /> Play Duel
-            </button>
-          )}
-          {c.status === 'pending' && !isOpponent && (
-            <span className="text-sm text-amber-600 dark:text-amber-400 italic">Waiting for {otherName} to accept…</span>
-          )}
-          {c.status === 'accepted' && c.myParticipant?.finishedAt && (
-            <span className="text-sm text-slate-500 italic">Waiting for opponent…</span>
-          )}
-          {c.status === 'completed' && (
-            <button
-              onClick={() => { onPlayChallenge(c.id); onClose(); }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-200 dark:bg-slate-600 rounded-md"
-            >
-              View Results
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[85]" role="dialog">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Duel Challenges</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700"><XMarkIcon className="w-6 h-6" /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading && <p className="text-sm text-slate-500">Loading…</p>}
-          {!loading && pendingIncoming.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">Incoming</h3>
-              <div className="space-y-2">{pendingIncoming.map(renderRow)}</div>
-            </section>
-          )}
-          {!loading && pendingOutgoing.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">Sent — waiting for response</h3>
-              <div className="space-y-2">{pendingOutgoing.map(renderRow)}</div>
-            </section>
-          )}
-          {!loading && active.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">Active</h3>
-              <div className="space-y-2">{active.map(renderRow)}</div>
-            </section>
-          )}
-          {!loading && recent.length > 0 && (
-            <section>
-              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-2">Recent</h3>
-              <div className="space-y-2">{recent.slice(0, 10).map(renderRow)}</div>
-            </section>
-          )}
-          {!loading && challenges.length === 0 && (
-            <p className="text-sm text-slate-500 text-center py-8">No duels yet. Challenge a group member to get started!</p>
-          )}
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="challenges-inbox-title"
+      maxWidthClass="max-w-lg"
+      panelClassName="!p-0 max-h-[80vh] flex flex-col overflow-hidden"
+    >
+      <div className="flex items-center justify-between p-4 border-b border-lantern-border shrink-0">
+        <h2 id="challenges-inbox-title" className="text-lg font-semibold text-lantern-text">Duel Challenges</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+          aria-label="Close challenges inbox"
+        >
+          <XMarkIcon className="w-6 h-6" aria-hidden />
+        </button>
       </div>
-    </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-lantern-surface">
+        {loading && <p className="text-sm text-lantern-text-muted">Loading…</p>}
+        {!loading && pendingIncoming.length > 0 && (
+          <section>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary mb-2">Incoming</h3>
+            <div className="space-y-2">{pendingIncoming.map(renderRow)}</div>
+          </section>
+        )}
+        {!loading && pendingOutgoing.length > 0 && (
+          <section>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary mb-2">Sent — waiting for response</h3>
+            <div className="space-y-2">{pendingOutgoing.map(renderRow)}</div>
+          </section>
+        )}
+        {!loading && active.length > 0 && (
+          <section>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary mb-2">Active</h3>
+            <div className="space-y-2">{active.map(renderRow)}</div>
+          </section>
+        )}
+        {!loading && recent.length > 0 && (
+          <section>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary mb-2">Recent</h3>
+            <div className="space-y-2">{recent.slice(0, 10).map(renderRow)}</div>
+          </section>
+        )}
+        {!loading && challenges.length === 0 && (
+          <p className="text-sm text-lantern-text-muted text-center py-8">No duels yet. Challenge a group member to get started!</p>
+        )}
+      </div>
+    </Modal>
   );
 };
 
