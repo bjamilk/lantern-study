@@ -432,6 +432,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const isGroupChat = chat?.chatType === 'group';
+  const visibleMessages = useMemo(
+    () => messages.filter((msg) => !isGroupChat || !msg.isArchived),
+    [messages, isGroupChat]
+  );
+
   if (!chat) {
     // Desktop: show placeholder
     // Mobile: show inline group/DM list for navigation
@@ -539,7 +545,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     );
   }
 
-  const isGroup = chat.chatType === 'group';
+  const isGroup = isGroupChat;
   const groupMemberList = isGroup
     ? (groups.find((g) => g.id === chat.id)?.members ?? chat.members ?? [])
     : [];
@@ -579,10 +585,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setIsDropdownOpen(false);
   };
 
-  const visibleMessages = useMemo(
-    () => messages.filter(msg => isGroup ? !msg.isArchived : true),
-    [messages, isGroup]
-  );
   const questionCount = visibleMessages.filter(m => m.questionType).length;
 
   return (
