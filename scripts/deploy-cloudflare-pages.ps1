@@ -253,8 +253,69 @@ function Test-PagesUrl([string]$Url) {
     return $false
 }
 
+function Ensure-WebDist {
+    $distPath = Join-Path $RepoRoot $OutputDir
+    if (Test-Path (Join-Path $distPath 'index.html')) { return $distPath }
+    Write-Step "dist/ not found — running npm run build:web ..."
+    Push-Location $RepoRoot
+    try {
+        npm run build:web
+        if ($LASTEXITCODE -ne 0) { throw "build:web failed with exit code $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
+    if (-not (Test-Path (Join-Path $distPath 'index.html'))) {
+        throw "Build completed but $($OutputDir)/index.html is missing."
+    }
+    return $distPath
+}
+
+function Deploy-ViaWrangler {
+    $distPath = Ensure-WebDist
+    Write-Step "Deploying via Wrangler CLI (project: $ProjectName, branch: $Branch)..."
+    Push-Location $RepoRoot
+    try {
+        npx wrangler pages deploy $OutputDir --project-name $ProjectName --branch $Branch
+        if ($LASTEXITCODE -ne 0) { throw "wrangler pages deploy failed with exit code $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
+    $pagesUrl = $script:ProductionWebUrl
+    Write-Step "Checking $pagesUrl ..."
+    if (Test-PagesUrl -Url $pagesUrl) {
+        Write-Ok 'Production URL responds with HTML.'
+    } else {
+        Write-Host 'Wrangler deploy finished but smoke test did not pass yet (CDN may still be propagating).' -ForegroundColor DarkYellow
+    }
+    Update-RenderFrontendUrl -PagesUrl $script:ProductionWebUrl
+    Write-Host ''
+    Write-Ok 'Cloudflare Pages deploy complete (Wrangler).'
+    Write-Host "Production URL: $($script:ProductionWebUrl)"
+    Write-Host "Preview URL: https://$ProjectName.pages.dev"
+}
+
+function Try-GetCloudflareApiToken {
+    try {
+        return Get-CloudflareApiToken
+    } catch {
+        return $null
+    }
+}
+
 Write-Host 'Lantern Study - Cloudflare Pages deploy' -ForegroundColor Cyan
-$script:CloudflareApiToken = Get-CloudflareApiToken
+$script:CloudflareApiToken = Try-GetCloudflareApiToken
+if (-not $script:CloudflareApiToken) {
+    Write-Host 'CLOUDFLARE_API_TOKEN not set — falling back to Wrangler CLI.' -ForegroundColor DarkYellow
+    Deploy-ViaWrangler
+    Write-Step 'Notifying search engines (sitemap ping + IndexNow)...'
+    try {
+        node (Join-Path $RepoRoot 'scripts/seo/notify-search-engines.mjs')
+    } catch {
+        Write-Host "Search engine notify failed: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    }
+    exit 0
+}
+
 $cfEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env.cloudflare')
 $rootEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env')
 
