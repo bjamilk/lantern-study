@@ -14,7 +14,7 @@ import {
     updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
     sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads, fetchDMUnreadCounts,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
-    deleteDmThread, archiveDmThread, unarchiveDmThread
+    deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile
 } from '../services/supabase';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
@@ -225,7 +225,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [selectedChat?.id, selectedChat?.chatType, currentUser?.id, lowDataMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
 
-    const handleInitiateDm = useCallback((otherUserId: string) => {
+    const handleInitiateDm = useCallback(async (otherUserId: string) => {
         if (!currentUser || otherUserId === currentUser.id) return;
 
         const sortedIds: [string, string] = [currentUser.id, otherUserId].sort() as [string, string];
@@ -240,6 +240,20 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 for (const group of groups) {
                     const member = (group.members || []).find(m => m.id === otherUserId);
                     if (member) { otherUser = member; break; }
+                }
+            }
+            if (!otherUser) {
+                try {
+                    const profile = await fetchUserProfile(otherUserId);
+                    if (profile) {
+                        otherUser = {
+                            id: profile.id,
+                            name: profile.name,
+                            avatarUrl: profile.avatar_url ?? profile.avatarUrl,
+                        } as User;
+                    }
+                } catch {
+                    // Profile lookup failed; handled below.
                 }
             }
             if (!otherUser) {

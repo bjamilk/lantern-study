@@ -199,7 +199,7 @@ router.get(
       const { data: threads, error } = await supabaseService.getClient()
         .from('dm_threads')
         .select('id, participant_ids, participants, last_message, last_message_time, archived_by')
-        .contains('participant_ids', [userId])
+        .contains('participant_ids', JSON.stringify([userId]))
         .order('last_message_time', { ascending: false });
 
       if (error) {
