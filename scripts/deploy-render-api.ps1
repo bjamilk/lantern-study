@@ -56,17 +56,42 @@ function Invoke-RenderApi {
     param(
         [string]$Method,
         [string]$Path,
-        [object]$Body = $null
+        [object]$Body = $null,
+        [int]$MaxAttempts = 5
     )
     $headers = @{
         Authorization = "Bearer $script:RenderApiKey"
         Accept        = 'application/json'
     }
     $uri = "$ApiBase$Path"
-    if ($null -ne $Body) {
-        return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 20)
+    $lastError = $null
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            if ($null -ne $Body) {
+                return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 20)
+            }
+            return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers
+        } catch {
+            $lastError = $_
+            $retryable = $false
+            if ($_.Exception -is [System.Net.WebException]) {
+                $status = [int]$_.Exception.Response.StatusCode
+                if ($status -ge 500 -or $status -eq 429) { $retryable = $true }
+            }
+            if ($_.Exception.Message -match 'could not be resolved|timed out|connection|temporarily unavailable') {
+                $retryable = $true
+            }
+            if (-not $retryable -or $attempt -eq $MaxAttempts) {
+                throw
+            }
+            $delay = [Math]::Min(30, 2 * $attempt)
+            Write-Host "  Render API $Method $Path failed (attempt $attempt/$MaxAttempts): $($_.Exception.Message). Retrying in ${delay}s..." -ForegroundColor DarkYellow
+            Start-Sleep -Seconds $delay
+        }
     }
-    return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers
+
+    throw $lastError
 }
 
 function Get-RenderItems([object]$Response) {
@@ -262,9 +287,22 @@ function Start-Deploy([string]$ServiceId) {
 function Wait-Deploy([string]$ServiceId, [string]$DeployId) {
     Write-Step 'Waiting for deploy to finish (up to 35 min)...'
     $deadline = (Get-Date).AddMinutes(35)
+    $consecutivePollErrors = 0
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 20
-        $items = Get-RenderItems (Invoke-RenderApi -Method GET -Path "/services/$ServiceId/deploys?limit=5")
+        try {
+            $items = Get-RenderItems (Invoke-RenderApi -Method GET -Path "/services/$ServiceId/deploys?limit=5")
+            $consecutivePollErrors = 0
+        } catch {
+            $consecutivePollErrors++
+            Write-Host "  deploy poll failed ($consecutivePollErrors): $($_.Exception.Message)" -ForegroundColor DarkYellow
+            if ($consecutivePollErrors -ge 8) {
+                Write-Host '  too many consecutive poll failures; will verify via health check instead.' -ForegroundColor DarkYellow
+                return $false
+            }
+            continue
+        }
+
         $deploy = $items | Where-Object { $_.id -eq $DeployId } | Select-Object -First 1
         if (-not $deploy) { continue }
         $status = $deploy.status
@@ -364,16 +402,23 @@ try {
 $service = Get-ExistingService -OwnerId $ownerId
 $serviceUrl = Get-ServiceUrl -Service $service
 Write-Step "Checking $serviceUrl$HealthPath ..."
-if (Test-Health -BaseUrl $serviceUrl) {
+$healthOk = Test-Health -BaseUrl $serviceUrl
+if ($healthOk) {
     Write-Ok 'Health check passed.'
 } else {
     Write-Host 'Deploy finished but health check not yet OK (free tier may still be waking up).' -ForegroundColor DarkYellow
 }
 Update-RootEnv -ApiUrl $serviceUrl
 Write-Host ''
-Write-Ok 'Render deploy complete.'
 Write-Host "API URL: $serviceUrl"
 Write-Host "Dashboard: https://dashboard.render.com/web/$($service.id)"
 if ($worker) {
     Write-Host "Worker dashboard: https://dashboard.render.com/worker/$($worker.id)"
 }
+if ($healthOk -or $apiDeployOk) {
+    Write-Ok 'Render deploy complete.'
+    exit 0
+}
+
+Write-Host 'Render deploy did not reach live status and health check failed.' -ForegroundColor Red
+exit 1
