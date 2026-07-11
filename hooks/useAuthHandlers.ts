@@ -28,6 +28,33 @@ import {
 } from '@lantern/shared/settings';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 
+export type BootstrapDomain =
+    | 'groups'
+    | 'dms'
+    | 'decks'
+    | 'flashcards'
+    | 'tests'
+    | 'notifications'
+    | 'preferences'
+    | 'budget'
+    | 'offline';
+
+export type BootstrapDomainStatus = 'pending' | 'loaded' | 'error';
+
+export type BootstrapLoadState = Record<BootstrapDomain, BootstrapDomainStatus>;
+
+export const INITIAL_BOOTSTRAP_LOAD_STATE: BootstrapLoadState = {
+    groups: 'pending',
+    dms: 'pending',
+    decks: 'pending',
+    flashcards: 'pending',
+    tests: 'pending',
+    notifications: 'pending',
+    preferences: 'pending',
+    budget: 'pending',
+    offline: 'pending',
+};
+
 export function useAuthHandlers() {
     const { currentUser, setCurrentUser, setAuthLoading } = useAuthStore();
     const { setGroups, setAllMessages, setDmThreads, setAllDirectMessages } = useGroupStore();
@@ -35,6 +62,7 @@ export function useAuthHandlers() {
 
     const [users, setUsers] = useState<User[]>(MOCK_USERS);
     const [dataLoaded, setDataLoaded] = useState(false);
+    const [bootstrapLoad, setBootstrapLoad] = useState<BootstrapLoadState>(INITIAL_BOOTSTRAP_LOAD_STATE);
 
     const getUserSettings = useCallback((): UserSettings => {
         return normalizeUserSettings(currentUser?.settings);
@@ -140,6 +168,7 @@ export function useAuthHandlers() {
         setDmThreads([]);
         setAllDirectMessages({});
         setDataLoaded(false);
+        setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
         useBudgetStore.getState().reset();
         useStudyGoalsStore.getState().reset();
     }, [setCurrentUser, setGroups, setAllMessages, setSelectedChat, setDmThreads, setAllDirectMessages]);
@@ -247,6 +276,8 @@ export function useAuthHandlers() {
         setUsers,
         dataLoaded,
         setDataLoaded,
+        bootstrapLoad,
+        setBootstrapLoad,
         getUserSettings,
         toggleTheme,
         handleLogout,

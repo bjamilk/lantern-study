@@ -18,9 +18,9 @@ interface ToastBannerProps {
 }
 
 const typeStyles: Record<ToastType, string> = {
-  success: 'bg-emerald-600 text-white',
-  error: 'bg-red-600 text-white',
-  info: 'bg-indigo-600 text-white',
+  success: 'bg-lantern-success text-white',
+  error: 'bg-lantern-error text-white',
+  info: 'bg-lantern-primary text-white',
 };
 
 export const ToastBanner: React.FC<ToastBannerProps> = ({
@@ -46,7 +46,7 @@ export const ToastBanner: React.FC<ToastBannerProps> = ({
       <button
         type="button"
         onClick={onDismiss}
-        className="rounded p-1 opacity-80 hover:opacity-100"
+        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 opacity-80 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
         aria-label="Dismiss notification"
       >
         <XMarkIcon className="h-4 w-4" />

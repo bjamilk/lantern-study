@@ -54,9 +54,19 @@ const AnimatedBackground = () => {
   const engineRef = useRef<MatterType.Engine | null>(null);
   const runnerRef = useRef<MatterType.Runner | null>(null);
   const { lowDataMode } = useUIStore();
+  const [reduceMotion, setReduceMotion] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 
   useEffect(() => {
-    if (lowDataMode) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduceMotion(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (lowDataMode || reduceMotion) return;
 
     const scene = sceneRef.current;
     if (!scene) return;
@@ -167,7 +177,9 @@ const AnimatedBackground = () => {
         if (localEngine) MatterModule.Engine.clear(localEngine);
       }
     };
-  }, [lowDataMode]);
+  }, [lowDataMode, reduceMotion]);
+
+  if (lowDataMode || reduceMotion) return null;
 
   return <div ref={sceneRef} className="absolute inset-0 w-full h-full" />;
 };

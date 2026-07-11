@@ -53,12 +53,16 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       <div className="flex gap-1 border-b border-lantern-border" role="tablist" aria-label="Library sections">
         {tabs.map(({ id, label, icon: Icon }) => {
           const active = tab === id;
+          const tabId = `library-tab-${id}`;
+          const panelId = `library-panel-${id}`;
           return (
             <button
               key={id}
+              id={tabId}
               type="button"
               role="tab"
               aria-selected={active}
+              aria-controls={panelId}
               onClick={() => onTabChange(id)}
               className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors min-h-[44px] ${
                 active
@@ -79,7 +83,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         })}
       </div>
     </div>
-    <div className="flex-1 min-h-0 overflow-hidden flex flex-col" role="tabpanel">
+    <div
+      id={`library-panel-${tab}`}
+      role="tabpanel"
+      aria-labelledby={`library-tab-${tab}`}
+      className="flex-1 min-h-0 overflow-hidden flex flex-col"
+    >
       {tab === 'notes' ? notesContent : flashcardsContent}
     </div>
   </div>

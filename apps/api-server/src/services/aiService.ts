@@ -720,6 +720,7 @@ export interface CompanionContext {
   activeSessionSummary?: string;
   noteContext?: string;
   noteTitle?: string;
+  noteId?: string;
   studyGoal?: string;
 }
 

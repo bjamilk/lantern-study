@@ -935,6 +935,7 @@ export interface CompanionUserContext {
   activeSessionSummary?: string;
   noteContext?: string;
   noteTitle?: string;
+  noteId?: string;
   studyGoal?: StudyGoalMode;
 }
 

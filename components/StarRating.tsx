@@ -24,7 +24,7 @@ const StarRating: React.FC<StarRatingProps> = ({
   };
 
   return (
-    <div className={`flex items-center space-x-0.5 ${readOnly ? '' : 'cursor-pointer'}`}>
+    <div className="flex items-center space-x-0.5" role="group" aria-label={`Rating: ${rating} of ${starCount} stars`}>
       {[...Array(starCount)].map((_, index) => {
         const starValue = index + 1;
         const isFilled = starValue <= rating;
@@ -35,9 +35,10 @@ const StarRating: React.FC<StarRatingProps> = ({
             key={index}
             disabled={readOnly}
             onClick={() => onRatingChange && onRatingChange(starValue)}
-            onMouseOver={() => !readOnly && onRatingChange && onRatingChange(starValue)}
-            className={`transition-colors duration-150 focus:outline-none ${readOnly ? 'cursor-default' : ''}`}
+            onMouseEnter={() => !readOnly && onRatingChange && onRatingChange(starValue)}
+            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             aria-label={`Rate ${starValue} star${starValue > 1 ? 's' : ''}`}
+            aria-pressed={isFilled}
           >
             <StarIcon 
               className={`${sizeClasses[size]} ${isFilled ? 'text-yellow-500' : 'text-gray-300 dark:text-gray-600'}`} 

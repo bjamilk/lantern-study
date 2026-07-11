@@ -395,10 +395,10 @@ export async function aiGenerateListingDescription(details: {
 }
 
 export async function summarizeGroupChat(
-  messages: string[],
-  groupName: string
+  groupId: string,
+  groupName?: string
 ): Promise<{ summary: string; provider: string }> {
-  return companionRequest('/summarize-group', 'POST', { messages, groupName });
+  return companionRequest('/summarize-group', 'POST', { groupId, groupName });
 }
 
 // ─── Health check (no auth needed) ──────────────────────────

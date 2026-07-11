@@ -250,44 +250,40 @@ export class MarketplaceOrdersService {
     }
 
     const inquiryId = await this.findInquiryForDeal(listingId, buyerId);
-    const txn = await this.insertPendingTransaction(
-      listingId,
-      buyerId,
-      listing.user_id,
-      amount
-    );
-
     const initialStatus = await this.resolveInitialOrderStatus(listing.user_id);
 
-    const { data: order, error } = await this.db
-      .from('marketplace_orders')
-      .insert({
-        listing_id: listingId,
-        buyer_id: buyerId,
-        seller_id: listing.user_id,
-        amount,
-        coupon_id: couponId,
-        discount_amount: discountAmount,
-        inquiry_id: inquiryId,
-        transaction_id: txn.id,
-        source: 'buy_now',
-        status: initialStatus,
-        fulfillment_mode: 'campus_meetup',
-      })
-      .select(this.orderSelect)
-      .single();
+    const { data: rpcRows, error: rpcError } = await this.db.rpc('marketplace_create_buy_now_order', {
+      p_listing_id: listingId,
+      p_buyer_id: buyerId,
+      p_amount: amount,
+      p_inquiry_id: inquiryId,
+      p_initial_status: initialStatus,
+      p_coupon_id: couponId,
+      p_discount_amount: discountAmount,
+    });
 
-    if (error) {
-      if (this.isUniqueViolation(error)) {
-        await this.voidOrphanPendingTransaction(txn.id);
+    if (rpcError) {
+      if (this.isUniqueViolation(rpcError)) {
         const existing = await this.getOpenOrderForListing(listingId);
         if (existing) {
           if (existing.buyer_id === buyerId) return existing;
           throw new Error('This listing already has an open order');
         }
       }
-      throw error;
+      throw rpcError;
     }
+
+    const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const orderId = rpcRow?.order_id as string | undefined;
+    if (!orderId) throw new Error('Failed to create marketplace order');
+
+    const { data: order, error: orderError } = await this.db
+      .from('marketplace_orders')
+      .select(this.orderSelect)
+      .eq('id', orderId)
+      .single();
+
+    if (orderError || !order) throw orderError || new Error('Order not found after creation');
     const row = order as MarketplaceOrderRow;
 
     if (couponId) {

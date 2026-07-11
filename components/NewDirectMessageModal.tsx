@@ -51,12 +51,18 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
         <div className="flex-1 overflow-y-auto border-t border-gray-200 dark:border-gray-700 -mx-6 px-6 pt-3">
            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
             {filteredUsers.map(user => (
-                <li key={user.id} onClick={() => onStartDm(user.id)} className="p-3 flex items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-md">
-                  <img src={user.avatarUrl} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
+                <li key={user.id}>
+                  <button
+                    type="button"
+                    onClick={() => onStartDm(user.id)}
+                    className="w-full p-3 flex items-center text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                  >
+                  <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
                   <div>
                     <p className="font-medium text-gray-800 dark:text-gray-200">{user.name}</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
                   </div>
+                  </button>
                 </li>
               )
             )}

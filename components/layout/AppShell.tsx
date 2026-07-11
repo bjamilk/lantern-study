@@ -79,15 +79,21 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
         AppMode.GAME_RESULTS, AppMode.TEST_REVIEW,
     ].includes(appMode);
 
-    return (
-        <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
+  return (
+    <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-lantern-primary focus:px-4 focus:py-2 focus:text-white focus:outline-none"
+      >
+        Skip to main content
+      </a>
             {/* Desktop sidebar - hidden on mobile */}
             <div className="hidden md:block">
                 <Sidebar {...sidebarProps} />
             </div>
 
             {/* Main content area */}
-            <main className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'pb-16'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'pb-16'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && (
@@ -130,31 +136,31 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 </div>
                 {importProgress ? (
                     <div
-                        className="shrink-0 px-3 py-2 md:px-4 border-b border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40"
+                        className="shrink-0 px-3 py-2 md:px-4 border-b border-lantern-primary/20 bg-lantern-primary-background"
                         role="status"
                         aria-live="polite"
                     >
                         <div className="flex items-center gap-3 min-w-0 max-w-full">
-                            <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                            <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                <p className="text-sm font-medium text-lantern-text truncate">
                                     {importProgress.label}
                                 </p>
                                 {importProgress.fileName && (
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                    <p className="text-xs text-lantern-text-secondary truncate mt-0.5">
                                         {importProgress.fileName}
                                     </p>
                                 )}
                                 {importProgress.percent != null ? (
-                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-indigo-100 dark:bg-gray-700">
+                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-lantern-primary/10">
                                         <div
-                                            className="h-full bg-indigo-500 transition-all duration-300"
+                                            className="h-full bg-lantern-primary transition-all duration-300"
                                             style={{ width: `${importProgress.percent}%` }}
                                         />
                                     </div>
                                 ) : (
-                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-indigo-100 dark:bg-gray-700">
-                                        <div className="h-full w-1/3 bg-indigo-500 rounded-full animate-upload-indeterminate" />
+                                    <div className="mt-2 h-2 rounded-full overflow-hidden bg-lantern-primary/10">
+                                        <div className="h-full w-1/3 bg-lantern-primary rounded-full animate-upload-indeterminate" />
                                     </div>
                                 )}
                             </div>

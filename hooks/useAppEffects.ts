@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
@@ -43,6 +43,15 @@ import {
   requestWebNotificationPermission,
   showWebNotification,
 } from '../utils/webNotifications';
+import { useToastStore } from '../stores/toastStore';
+import {
+  INITIAL_BOOTSTRAP_LOAD_STATE,
+  type BootstrapLoadState,
+} from './useAuthHandlers';
+
+function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
+  return Object.values(state).every((status) => status !== 'pending');
+}
 
 function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
     return fetched.map((t: any) => ({
@@ -59,10 +68,18 @@ function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, numb
 interface UseAppEffectsParams {
     dataLoaded: boolean;
     setDataLoaded: (v: boolean) => void;
+    bootstrapLoad: BootstrapLoadState;
+    setBootstrapLoad: Dispatch<SetStateAction<BootstrapLoadState>>;
     onChallengeNotification?: (type: string, challengeId: string) => void;
 }
 
-export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotification }: UseAppEffectsParams) {
+export function useAppEffects({
+    dataLoaded,
+    setDataLoaded,
+    bootstrapLoad,
+    setBootstrapLoad,
+    onChallengeNotification,
+}: UseAppEffectsParams) {
     const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, setPasswordRecovery } = useAuthStore();
     const [authTokenReady, setAuthTokenReady] = useState(() => bootstrapAuthFromStorage() !== null);
   const { groups, setGroups, updateGroups,
@@ -412,6 +429,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                 if (!store.isAuthLoading) {
                     setCurrentUser(null);
                     setDataLoaded(false);
+                    setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
                 }
             } else if (event === 'PASSWORD_RECOVERY') {
                 if (session?.access_token) {
@@ -538,6 +556,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             if (cancelled) return;
 
             console.log('[Data Loading] Starting PARALLEL data fetch for user:', currentUser.id);
+            setBootstrapLoad(INITIAL_BOOTSTRAP_LOAD_STATE);
             const userId = currentUser.id;
             const currentMonthYear = new Date().toISOString().slice(0, 7);
 
@@ -580,6 +599,37 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
             if (cancelled) return;
 
             console.log('[Data Loading] All parallel fetches settled');
+
+            const nextBootstrap: BootstrapLoadState = {
+                groups: criticalResults[0].status === 'fulfilled' ? 'loaded' : 'error',
+                dms: criticalResults[2].status === 'fulfilled' ? 'loaded' : 'error',
+                notifications: criticalResults[4].status === 'fulfilled' ? 'loaded' : 'error',
+                preferences: criticalResults[5].status === 'fulfilled' ? 'loaded' : 'error',
+                decks: deferredResults[0].status === 'fulfilled' ? 'loaded' : 'error',
+                flashcards: deferredResults[1].status === 'fulfilled' ? 'loaded' : 'error',
+                tests:
+                    deferredResults[2].status === 'fulfilled' && deferredResults[3].status === 'fulfilled'
+                        ? 'loaded'
+                        : 'error',
+                offline: deferredResults[4].status === 'fulfilled' ? 'loaded' : 'error',
+                budget:
+                    deferredResults[5].status === 'fulfilled' && deferredResults[6].status === 'fulfilled'
+                        ? 'loaded'
+                        : 'error',
+            };
+            setBootstrapLoad(nextBootstrap);
+
+            if (nextBootstrap.groups === 'error') {
+                useToastStore.getState().showToast(
+                    'Could not load your groups. Some features may be unavailable until you refresh.',
+                    'error'
+                );
+            } else if (nextBootstrap.decks === 'error' || nextBootstrap.flashcards === 'error') {
+                useToastStore.getState().showToast(
+                    'Some study library data failed to load. Try refreshing the page.',
+                    'error'
+                );
+            }
 
                 // --- [0] Groups + [1] Unread counts ---
                 const groupsResult = results[0];
@@ -769,8 +819,10 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
                     }
                 }
 
-                // Mark data as loaded regardless of individual failures
-                if (!cancelled) setDataLoaded(true);
+                // Mark bootstrap settled — per-domain status tracks individual failures
+                if (!cancelled && allBootstrapDomainsSettled(nextBootstrap)) {
+                    setDataLoaded(true);
+                }
 
             // Sync pending results (non-critical, fire-and-forget)
             if (!cancelled && pendingSyncResults.length > 0) {
@@ -785,7 +837,7 @@ export function useAppEffects({ dataLoaded, setDataLoaded, onChallengeNotificati
         return () => {
             cancelled = true;
         };
-    }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady, refreshDashboardGamification]);
+    }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady, refreshDashboardGamification, setBootstrapLoad]);
 
     // Sync budget extras (goals, splits, category budgets) — never walletBalance (server-owned)
     useEffect(() => {

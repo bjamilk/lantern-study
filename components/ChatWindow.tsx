@@ -175,7 +175,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     if (msgTexts.length === 0) { useToastStore.getState().showToast('No messages to summarize.', 'info'); return; }
     setIsSummarizingChat(true);
     try {
-      const { summary } = await summarizeGroupChat(msgTexts, groupName);
+      const { summary } = await summarizeGroupChat(chat.id, groupName);
       const companion = useCompanionStore.getState();
       companion.open();
       await companion.sendMessage(`Here's a summary of recent activity in #${groupName}:\n\n${summary}\n\nIs there anything specific from this you'd like help with?`);

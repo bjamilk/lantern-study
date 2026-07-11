@@ -276,7 +276,8 @@ function Wait-Deploy([string]$ServiceId, [string]$DeployId) {
             throw "Deploy failed with status: $status"
         }
     }
-    throw 'Deploy timed out after 35 minutes.'
+    Write-Host 'Deploy wait timed out after 35 minutes (service may still be live on free tier).' -ForegroundColor DarkYellow
+    return $false
 }
 
 function Get-ServiceUrl([object]$Service) {
@@ -335,13 +336,30 @@ Write-Host "Render workspace id: $ownerId"
 $service = Ensure-Service -OwnerId $ownerId -EnvVars $envVars
 Update-ServiceEnvVars -ServiceId $service.id -EnvVars $envVars
 $deployId = Start-Deploy -ServiceId $service.id
-Wait-Deploy -ServiceId $service.id -DeployId $deployId | Out-Null
+$apiDeployOk = Wait-Deploy -ServiceId $service.id -DeployId $deployId
+if (-not $apiDeployOk) {
+    Write-Host 'Continuing to health check despite deploy wait timeout.' -ForegroundColor DarkYellow
+}
 
-$workerEnvVars = Build-WorkerEnvVars -ApiEnv $apiEnv
-$worker = Ensure-WorkerService -OwnerId $ownerId -EnvVars $workerEnvVars
-Update-ServiceEnvVars -ServiceId $worker.id -EnvVars $workerEnvVars
-$workerDeployId = Start-Deploy -ServiceId $worker.id
-Wait-Deploy -ServiceId $worker.id -DeployId $workerDeployId | Out-Null
+$worker = $null
+$workerDeployId = $null
+try {
+    $workerEnvVars = Build-WorkerEnvVars -ApiEnv $apiEnv
+    $worker = Ensure-WorkerService -OwnerId $ownerId -EnvVars $workerEnvVars
+    Update-ServiceEnvVars -ServiceId $worker.id -EnvVars $workerEnvVars
+    $workerDeployId = Start-Deploy -ServiceId $worker.id
+    $workerDeployOk = Wait-Deploy -ServiceId $worker.id -DeployId $workerDeployId
+    if (-not $workerDeployOk) {
+        Write-Host 'Worker deploy wait timed out; skipping worker health verification.' -ForegroundColor DarkYellow
+    }
+} catch {
+    $workerMessage = $_.Exception.Message
+    if ($workerMessage -match 'only web services allowed for plan') {
+        Write-Host 'Worker deploy skipped: current Render plan allows web services only (API deploy succeeded).' -ForegroundColor DarkYellow
+    } else {
+        Write-Host "Worker deploy skipped: $workerMessage" -ForegroundColor DarkYellow
+    }
+}
 
 $service = Get-ExistingService -OwnerId $ownerId
 $serviceUrl = Get-ServiceUrl -Service $service
@@ -356,4 +374,6 @@ Write-Host ''
 Write-Ok 'Render deploy complete.'
 Write-Host "API URL: $serviceUrl"
 Write-Host "Dashboard: https://dashboard.render.com/web/$($service.id)"
-Write-Host "Worker dashboard: https://dashboard.render.com/worker/$($worker.id)"
+if ($worker) {
+    Write-Host "Worker dashboard: https://dashboard.render.com/worker/$($worker.id)"
+}

@@ -277,11 +277,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     if (!user?.id || summarizing) return;
     setSummarizing(true);
     try {
-      const chatLines = messages
-        .slice(-50)
-        .map(m => `${m.senderName}: ${m.questionStem || m.text}`)
-        .filter(Boolean);
-      const result = await summarizeGroupChat(chatLines, displayName);
+      const result = await summarizeGroupChat(groupId, displayName);
       const summary = result?.summary || 'Summary unavailable.';
       // Show summary in companion-friendly toast (long text truncated)
       const { useToastStore } = await import('../../stores/toastStore');

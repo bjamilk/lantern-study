@@ -193,7 +193,7 @@ export const App: React.FC = () => {
         libraryTab, setLibraryTab,
     } = useUIStore();
     const {
-        users, dataLoaded, setDataLoaded,
+        users, dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
         toggleTheme, handleLogout,
         getUserSettings, handleUpdateSettingsCategory,
         handleUpdateProfile, handleUpdateCurrentUserAvatar,
@@ -353,6 +353,8 @@ export const App: React.FC = () => {
     } = useAppEffects({
         dataLoaded,
         setDataLoaded,
+        bootstrapLoad,
+        setBootstrapLoad,
         onChallengeNotification: handleChallengeNotification,
     });
 
@@ -440,6 +442,7 @@ export const App: React.FC = () => {
                     default: return undefined;
                 }
             })(),
+            noteId: appMode === AppMode.NOTE_EDITOR ? selectedNote?.id : undefined,
             noteContext: appMode === AppMode.NOTE_EDITOR && selectedNote
                 ? getNoteStudyContent({
                     sourceType: selectedNote.sourceType,
@@ -813,7 +816,9 @@ export const App: React.FC = () => {
         <FlashcardsScreen
             decks={decks}
             flashcards={flashcards}
-            isInitialLoading={!dataLoaded}
+            isInitialLoading={
+                bootstrapLoad.decks === 'pending' || bootstrapLoad.flashcards === 'pending'
+            }
             embedded={embedded}
             onOpenCreateDeck={handleOpenCreateDeckModal}
             onOpenCreateFlashcard={() => handleOpenCreateFlashcardModal()}

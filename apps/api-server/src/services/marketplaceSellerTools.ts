@@ -314,24 +314,15 @@ export class MarketplaceSellerToolsService {
   }
 
   async consumeBoostCredit(sellerId: string): Promise<number> {
-    const prefs = await this.getPreferences(sellerId);
-    if ((prefs.boost_credits ?? 0) <= 0) {
+    const { data, error } = await this.db.rpc('marketplace_consume_boost_credit', {
+      p_seller_id: sellerId,
+    });
+
+    if (error) throw error;
+    if (typeof data !== 'number') {
       throw new Error('No boost credits remaining. Complete more sales to earn boosts.');
     }
-    const next = (prefs.boost_credits ?? 0) - 1;
-    await this.db
-      .from('marketplace_seller_preferences')
-      .upsert({
-        seller_id: sellerId,
-        hall_dropoff_enabled: prefs.hall_dropoff_enabled,
-        hall_dropoff_min_amount: prefs.hall_dropoff_min_amount,
-        onboarding_completed_at: prefs.onboarding_completed_at,
-        boost_credits: next,
-        require_payment_confirmation: prefs.require_payment_confirmation,
-        favorite_alert_threshold: prefs.favorite_alert_threshold ?? 3,
-        updated_at: new Date().toISOString(),
-      });
-    return next;
+    return data;
   }
 }
 

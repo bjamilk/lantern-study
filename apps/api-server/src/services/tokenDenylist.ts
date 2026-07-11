@@ -123,9 +123,14 @@ export async function getUserSessionCutoff(userId: string): Promise<number | nul
 }
 
 export async function isTokenIssuedBeforeUserCutoff(token: string, userId: string): Promise<boolean> {
+  const client = await getRedisClient();
+  if (!client && isProductionRedisRequired()) {
+    // Fail closed: cannot verify session revocation without Redis in production.
+    return true;
+  }
   const cutoff = await getUserSessionCutoff(userId);
   if (cutoff == null) return false;
   const iat = getJwtIssuedAt(token);
-  if (iat == null) return false;
+  if (iat == null) return true;
   return iat <= cutoff;
 }

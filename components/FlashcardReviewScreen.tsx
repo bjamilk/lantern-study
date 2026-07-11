@@ -280,62 +280,70 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       </div>
 
       <div className="flex-1 flex flex-col justify-center items-center">
-        <div
-          className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border transition-transform duration-300 ease-out"
-          style={{ transform: isAnswerShown ? 'rotateY(0deg)' : 'rotateY(0deg)', transformStyle: 'preserve-3d' }}
-          onClick={() => { if (!isAnswerShown) handleShowAnswer(); }}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isAnswerShown) handleShowAnswer(); } }}
-          aria-label={isAnswerShown ? 'Flashcard answer' : 'Flashcard prompt, press to reveal answer'}
-        >
-          {/* Card Content */}
-          <div
-            key={`${currentCard.id}-${isAnswerShown ? 'back' : 'front'}`}
-            className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+        {isAnswerShown ? (
+          <article
+            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border"
+            aria-label="Flashcard answer"
           >
-            {renderCardContent(currentCard, isAnswerShown)}
-            {!isAnswerShown && (
-              <p className="mt-4 text-xs text-slate-400">Space or click to reveal · 1–4 to rate</p>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
-            {/* Leech card helper */}
-            {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
-              <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
-                <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
-                <button
-                  onClick={() => {
-                    const companion = useCompanionStore.getState();
-                    companion.open();
-                    companion.sendMessage(`I keep getting this flashcard wrong. Can you help me understand it and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
-                  }}
-                  className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
-                >
-                  <SparklesIcon className="w-3.5 h-3.5" />
-                  Ask Lantern
-                </button>
+            <div
+              key={`${currentCard.id}-back`}
+              className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+            >
+              {renderCardContent(currentCard, true)}
+            </div>
+            <div className="mt-6 pt-4 border-t border-lantern-border">
+              {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
+                <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
+                  <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const companion = useCompanionStore.getState();
+                      companion.open();
+                      companion.sendMessage(`I keep getting this flashcard wrong. Can you help me understand it and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
+                    }}
+                    className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
+                  >
+                    <SparklesIcon className="w-3.5 h-3.5" />
+                    Ask Lantern
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button type="button" onClick={() => handleRatePerformance('again')} className="py-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors">Again</button>
+                <button type="button" onClick={() => handleRatePerformance('hard')} className="py-3 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors">Hard</button>
+                <button type="button" onClick={() => handleRatePerformance('good')} className="py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors">Good</button>
+                <button type="button" onClick={() => handleRatePerformance('easy')} className="py-3 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors">Easy</button>
               </div>
-            )}
-            {!isAnswerShown ? (
+            </div>
+          </article>
+        ) : (
+          <div
+            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col justify-between border border-lantern-border cursor-pointer"
+            onClick={handleShowAnswer}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleShowAnswer(); } }}
+            aria-label="Flashcard prompt, press to reveal answer"
+          >
+            <div
+              key={`${currentCard.id}-front`}
+              className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
+            >
+              {renderCardContent(currentCard, false)}
+              <p className="mt-4 text-xs text-lantern-text-tertiary">Space or click to reveal · 1–4 to rate</p>
+            </div>
+            <div className="mt-6 pt-4 border-t border-lantern-border">
               <button
-                onClick={handleShowAnswer}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-lg font-semibold transition-colors"
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleShowAnswer(); }}
+                className="w-full py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-lg font-semibold transition-colors"
               >
                 Show Answer
               </button>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button onClick={() => handleRatePerformance('again')} className="py-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors">Again</button>
-                <button onClick={() => handleRatePerformance('hard')} className="py-3 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors">Hard</button>
-                <button onClick={() => handleRatePerformance('good')} className="py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors">Good</button>
-                <button onClick={() => handleRatePerformance('easy')} className="py-3 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors">Easy</button>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <div className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-inner border border-slate-200 dark:border-slate-700">
         <div className="flex items-center justify-between mb-2">

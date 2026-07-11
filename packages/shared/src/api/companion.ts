@@ -193,9 +193,9 @@ export function createCompanionClient(config: AIClientConfig) {
       }
     },
 
-    summarizeGroupChat: (messages: string[], groupName: string) =>
+    summarizeGroupChat: (groupId: string, groupName?: string) =>
       companionRequest<{ summary: string; provider: string }>('/summarize-group', 'POST', {
-        messages,
+        groupId,
         groupName,
       }),
   };

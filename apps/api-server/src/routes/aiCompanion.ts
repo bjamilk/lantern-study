@@ -12,6 +12,10 @@ import { clientErrorMessage } from '../utils/safeError';
 import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import {
+  buildTrustedCompanionContext,
+  fetchAuthorizedGroupSummaryMessages,
+} from '../services/companionContext';
 
 let supabaseService: SupabaseService;
 
@@ -109,29 +113,33 @@ router.post('/analytics', async (req: Request, res: Response) => {
 });
 
 router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: Request, res: Response) => {
-  const { messages, groupName } = req.body as {
-    messages: string[];
-    groupName: string;
+  const userId = (req as any).user.id;
+  const { groupId, groupName: clientGroupName } = req.body as {
+    groupId?: string;
+    groupName?: string;
+    messages?: string[];
   };
 
-  if (!Array.isArray(messages) || !groupName) {
-    res.status(400).json({ error: 'messages array and groupName are required' });
+  if (!groupId || typeof groupId !== 'string') {
+    res.status(400).json({ error: 'groupId is required' });
     return;
   }
-
-  if (messages.length > 200) {
-    res.status(400).json({ error: 'messages array exceeds maximum size of 200' });
-    return;
-  }
-
-  const boundedMessages = messages
-    .filter((entry): entry is string => typeof entry === 'string')
-    .slice(0, 200)
-    .map((entry) => entry.slice(0, 4000));
 
   try {
-    const { summary, provider } = await summarizeGroupChat(boundedMessages, groupName);
-    const userId = (req as any).user.id;
+    const { groupName, messages } = await fetchAuthorizedGroupSummaryMessages(
+      supabaseService,
+      groupId,
+      userId,
+      50
+    );
+
+    if (messages.length === 0) {
+      res.status(400).json({ error: 'No messages to summarize in this group' });
+      return;
+    }
+
+    const displayName = groupName || clientGroupName || 'Group';
+    const { summary, provider } = await summarizeGroupChat(messages, displayName);
     await logAIInference(supabaseService.getClient(), {
       userId,
       feature: 'companion-summarize-group',
@@ -140,6 +148,11 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
     });
     res.json({ summary, provider });
   } catch (err: any) {
+    const status = err?.statusCode === 403 ? 403 : 503;
+    if (status === 403) {
+      res.status(403).json({ error: 'You are not a member of this group' });
+      return;
+    }
     console.error('Group summarize error:', err.message);
     res.status(503).json({ error: clientErrorMessage(err, 'Failed to summarize group chat') });
   }
@@ -174,7 +187,12 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           .limit(20);
 
         const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
-        const { reply, actions, provider } = await companionChat(message.trim(), history, context || {});
+        const trustedContext = await buildTrustedCompanionContext(
+          supabaseService,
+          userId,
+          context || {}
+        );
+        const { reply, actions, provider } = await companionChat(message.trim(), history, trustedContext);
 
         await logAIInference(supabaseService.getClient(), {
           userId,
@@ -238,7 +256,12 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       .limit(20);
 
     const history = (historyRows || []).reverse() as Array<{ role: 'user' | 'assistant'; content: string }>;
-    const { reply, actions } = await companionChat(message.trim(), history, context || {});
+    const trustedContext = await buildTrustedCompanionContext(
+      supabaseService,
+      userId,
+      context || {}
+    );
+    const { reply, actions } = await companionChat(message.trim(), history, trustedContext);
 
     const now = new Date().toISOString();
     await supabaseService.getClient()

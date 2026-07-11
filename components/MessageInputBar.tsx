@@ -96,6 +96,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({ onSendMessage, onOpen
             placeholder={isAIThinking ? 'AI is thinking...' : isSending ? 'Sending...' : 'Type a message... (prefix @AI or /ask for AI tutor)'}
             rows={1}
             disabled={isAIThinking || isSending}
+            aria-label="Message text"
             className="w-full resize-none px-4 py-2.5 border border-lantern-border rounded-2xl bg-lantern-background text-lantern-text text-sm placeholder:text-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary focus-visible:border-transparent transition-colors duration-200"
             style={{ maxHeight: '120px' }}
           />

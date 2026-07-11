@@ -19,7 +19,7 @@ let supabaseService: SupabaseService | null = null;
 interface CachedUser { id: string; [key: string]: any }
 const tokenCache = new LRUCache<string, CachedUser>({
   max: 20_000,
-  ttl: 60_000,
+  ttl: 15_000,
   updateAgeOnGet: true,
 });
 
