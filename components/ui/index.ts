@@ -18,3 +18,5 @@ export { FolderNameModal } from './FolderNameModal';
 export { ConfirmDialog } from './ConfirmDialog';
 export { Modal } from './Modal';
 export { Drawer } from './Drawer';
+export { Tabs, TabList, Tab, TabPanel } from './Tabs';
+export { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './Menu';

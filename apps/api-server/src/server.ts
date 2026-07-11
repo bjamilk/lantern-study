@@ -57,6 +57,7 @@ import authRoutes, { initializeAuthRoutes } from './routes/auth';
 import jobsRoutes from './routes/jobs';
 import budgetRoutes from './routes/budget';
 import contactRoutes from './routes/contact';
+import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
 // Import utilities
@@ -232,6 +233,7 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(cookieParser());
 app.use(sanitizationMiddleware);
 app.use(validateBodyShape());
 

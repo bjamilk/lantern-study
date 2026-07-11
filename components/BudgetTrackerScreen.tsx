@@ -9,7 +9,7 @@ import {
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
-import { FeatureHero, StatChip } from './ui';
+import { FeatureHero, StatChip, Tabs, TabList, Tab } from './ui';
 import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
 import { featureAccents } from '@lantern/shared/design';
 
@@ -250,18 +250,21 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       </div>
 
       {/* ─── TAB BAR ─── */}
-      <div className="shrink-0 bg-lantern-surface border-b border-lantern-border px-4 flex gap-1 overflow-x-auto">
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === t.key
-                ? 'border-lantern-primary text-lantern-primary'
-                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
-            }`}>
-            {t.icon} {t.label}
-          </button>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as BudgetTab)} aria-label="Budget sections" className="shrink-0">
+      <TabList className="bg-lantern-surface border-b border-lantern-border px-4 gap-1 overflow-x-auto !border-solid">
+        {tabs.map((t, index) => (
+          <Tab
+            key={t.key}
+            value={t.key}
+            index={index}
+            icon={t.icon}
+            className="!rounded-none whitespace-nowrap !px-4 !py-3"
+          >
+            {t.label}
+          </Tab>
         ))}
-      </div>
+      </TabList>
+      </Tabs>
 
       <div className="p-4 md:p-6 flex-1 min-h-0 overflow-y-auto">
         {/* ═══ OVERVIEW TAB ═══ */}

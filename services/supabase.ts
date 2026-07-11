@@ -20,18 +20,30 @@ import {
   normalizeOfferRecord,
   normalizeStorageUrl,
 } from '../utils/storageUrl'
+import {
+  isCookieAuthEnabled,
+  memoryAuthStorage,
+  refreshCookieSession,
+  fetchCookieSession,
+  logoutCookieSession,
+} from './authCookieSession'
 
 // Use shared config for URLs
 const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
 const API_BASE_URL = getApiBaseUrl()
+const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
-    persistSession: true,
+    autoRefreshToken: !cookieAuthEnabled,
+    persistSession: !cookieAuthEnabled,
     detectSessionInUrl: true,
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storage: cookieAuthEnabled
+      ? memoryAuthStorage
+      : typeof window !== 'undefined'
+        ? window.localStorage
+        : undefined,
   },
   global: {
     headers: {
@@ -48,7 +60,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
   
   try {
     const response = await fetch(url, {
-      ...options,
+      ...withApiCredentials(options),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -108,12 +120,25 @@ export function clearAllClientAuthStorage(): void {
   }
 }
 
+/** Merge cookie credentials for BFF auth when enabled. */
+export function withApiCredentials(init: RequestInit = {}): RequestInit {
+  if (!isCookieAuthEnabled()) return init;
+  return { ...init, credentials: 'include' };
+}
+
 /** Server-side session invalidation + Supabase global sign-out + local cleanup. */
 export async function apiLogoutSession(): Promise<void> {
   try {
-    const headers = await getAuthHeaders();
-    if (headers.Authorization) {
-      await fetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST', headers });
+    if (isCookieAuthEnabled()) {
+      await logoutCookieSession();
+    } else {
+      const headers = await getAuthHeaders();
+      if (headers.Authorization) {
+        await fetch(
+          `${API_BASE_URL}/api/v1/auth/logout`,
+          withApiCredentials({ method: 'POST', headers })
+        );
+      }
     }
   } catch (e) {
     console.warn('Server logout failed:', e);
@@ -252,27 +277,55 @@ const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
 // Uses cached token for instant resolution (~0ms) on the hot path.
 // Only calls getSession() on the very first cold call when no cache/localStorage token exists.
 export const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  const cookieMode = isCookieAuthEnabled();
   // 1. FAST PATH: Check in-memory cache (instant, no async)
   let token: string | null = _cachedAccessToken;
   
-  // 2. Check localStorage (still fast, synchronous)
-  if (!token) {
+  // 2. Check localStorage (still fast, synchronous) — legacy token mode only
+  if (!token && !cookieMode) {
     token = getTokenFromLocalStorage();
     if (token) {
       _cachedAccessToken = token; // warm the cache for next call
     }
   }
   
-  // 3. SLOW PATH (cold start only): Fall back to getSession with short timeout
-  if (!token) {
+  // 3. Cookie BFF: restore session from HttpOnly cookies
+  if (!token && cookieMode) {
+    const session = await getSessionWithTimeout(1000);
+    if (session?.access_token) {
+      token = session.access_token;
+      _cachedAccessToken = token;
+    }
+  }
+
+  if (!token && cookieMode) {
+    const refreshed = (await refreshCookieSession()) ?? (await fetchCookieSession());
+    if (refreshed?.access_token) {
+      token = refreshed.access_token;
+      _cachedAccessToken = token;
+      if (refreshed.refresh_token) {
+        try {
+          await supabase.auth.setSession({
+            access_token: refreshed.access_token,
+            refresh_token: refreshed.refresh_token,
+          });
+        } catch {
+          // ignore — memory cache is enough for API calls
+        }
+      }
+    }
+  }
+  
+  // 4. SLOW PATH (cold start only): Fall back to getSession with short timeout
+  if (!token && !cookieMode) {
     const session = await getSessionWithTimeout(2000);
     if (session?.access_token) {
       token = session.access_token;
     }
   }
   
-  // 4. Last resort: try refreshing the session
-  if (!token) {
+  // 5. Last resort: try refreshing the session (legacy mode)
+  if (!token && !cookieMode) {
     try {
       const refreshPromise = supabase.auth.refreshSession();
       const timeoutPromise = new Promise<{ timeout: boolean }>((resolve) => {

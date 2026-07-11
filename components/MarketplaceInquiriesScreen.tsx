@@ -15,6 +15,7 @@ import {
   ChevronRightIcon,
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
+import { Tabs, TabList, Tab } from './ui';
 
 interface MarketplaceInquiriesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -171,43 +172,26 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
 
       {/* Tabs */}
       <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6">
-        <div className="flex space-x-0.5 sm:space-x-1">
-          <button
-            onClick={() => setActiveTab('seller')}
-            className={`flex-1 sm:flex-initial px-2 sm:px-6 py-2.5 sm:py-3 font-semibold text-xs sm:text-sm border-b-2 transition-colors ${
-              activeTab === 'seller'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
-            }`}
-          >
-            <span className="sm:hidden">Received</span>
-            <span className="hidden sm:inline">Received (As Seller)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('buyer')}
-            className={`flex-1 sm:flex-initial px-2 sm:px-6 py-2.5 sm:py-3 font-semibold text-xs sm:text-sm border-b-2 transition-colors ${
-              activeTab === 'buyer'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
-            }`}
-          >
-            <span className="sm:hidden">Sent</span>
-            <span className="hidden sm:inline">Sent (As Buyer)</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('offers')}
-            className={`flex-1 sm:flex-initial px-2 sm:px-6 py-2.5 sm:py-3 font-semibold text-xs sm:text-sm border-b-2 transition-colors ${
-              activeTab === 'offers'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
-            }`}
-          >
-            <span className="flex items-center justify-center gap-1 sm:gap-1.5">
-              <CurrencyDollarIcon className="w-4 h-4" />
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'seller' | 'buyer' | 'offers')} aria-label="Inquiry views">
+          <TabList className="space-x-0.5 sm:space-x-1 !border-0">
+            <Tab value="seller" index={0} className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold">
+              <span className="sm:hidden">Received</span>
+              <span className="hidden sm:inline">Received (As Seller)</span>
+            </Tab>
+            <Tab value="buyer" index={1} className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold">
+              <span className="sm:hidden">Sent</span>
+              <span className="hidden sm:inline">Sent (As Buyer)</span>
+            </Tab>
+            <Tab
+              value="offers"
+              index={2}
+              icon={<CurrencyDollarIcon className="w-4 h-4" />}
+              className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold"
+            >
               Offers
-            </span>
-          </button>
-        </div>
+            </Tab>
+          </TabList>
+        </Tabs>
       </div>
 
       {/* Filters (inquiries only) */}

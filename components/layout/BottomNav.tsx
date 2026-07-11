@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AppMode } from '../../types';
 import { useLowDataModeToggle } from '../../hooks/useLowDataModeToggle';
+import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from '../ui';
 import {
     HomeIcon,
     ChatBubbleLeftRightIcon,
@@ -57,19 +58,6 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     const { lowDataMode: lowDataToggle, toggleLowDataMode } = useLowDataModeToggle();
     const lowDataMode = lowDataProp ?? lowDataToggle;
     const [isMoreOpen, setIsMoreOpen] = useState(false);
-    const moreRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
-                setIsMoreOpen(false);
-            }
-        };
-        if (isMoreOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-            return () => document.removeEventListener('mousedown', handleClickOutside);
-        }
-    }, [isMoreOpen]);
 
     const libraryModes = [
         AppMode.LIBRARY, AppMode.NOTES, AppMode.NOTE_EDITOR, AppMode.FLASHCARDS,
@@ -172,14 +160,10 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                     );
                 })}
 
-                <div ref={moreRef} className="relative flex-1 h-full">
-                    <button
-                        type="button"
+                <Menu open={isMoreOpen} onOpenChange={setIsMoreOpen}>
+                <div className="relative flex-1 h-full">
+                    <MenuTrigger
                         aria-label="More"
-                        aria-expanded={isMoreOpen}
-                        aria-haspopup="menu"
-                        aria-current={isMoreActive ? 'page' : undefined}
-                        onClick={() => setIsMoreOpen(prev => !prev)}
                         className={`flex flex-col items-center justify-center w-full h-full relative transition-colors ${
                             isMoreActive || isMoreOpen ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
                         }`}
@@ -193,71 +177,65 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                             )}
                         </div>
                         <span className={`text-[10px] mt-0.5 font-medium ${isMoreActive ? 'font-semibold' : ''}`}>More</span>
-                    </button>
+                    </MenuTrigger>
 
-                    {isMoreOpen && (
-                        <div className="absolute bottom-full right-0 mb-2 mr-2 w-48 bg-lantern-surface rounded-xl shadow-xl border border-lantern-border overflow-hidden">
+                    <MenuContent placement="top" align="end" className="w-48 mb-2 mr-2 !rounded-xl overflow-hidden">
                             {moreItems.map(item => {
                                 if ('action' in item) {
                                     return (
-                                        <button
+                                        <MenuItem
                                             key={item.label}
-                                            onClick={() => { item.action(); setIsMoreOpen(false); }}
-                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-lantern-text hover:bg-lantern-background-secondary transition-colors"
+                                            onSelect={() => item.action()}
+                                            icon={
+                                                <div className="relative">
+                                                    <item.icon className="w-5 h-5" />
+                                                    {'badge' in item && (item as { badge?: number }).badge! > 0 && (
+                                                        <span className="absolute -top-1.5 -right-2 bg-lantern-error text-white text-[9px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
+                                                            {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            }
+                                            className={'isCompanion' in item && isCompanionOpen ? 'text-lantern-primary bg-lantern-primary-background font-medium' : ''}
                                         >
-                                            <div className="relative">
-                                                <item.icon className="w-5 h-5" />
-                                                {'badge' in item && (item as { badge?: number }).badge! > 0 && (
-                                                    <span className="absolute -top-1.5 -right-2 bg-lantern-error text-white text-[9px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
-                                                        {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
-                                                    </span>
-                                                )}
-                                            </div>
                                             {item.label}
-                                        </button>
+                                        </MenuItem>
                                     );
                                 }
                                 return (
-                                    <button
+                                    <MenuItem
                                         key={item.label}
-                                        onClick={() => { onNavigate(item.mode!); setIsMoreOpen(false); }}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                                            currentMode === item.mode
-                                                ? 'bg-lantern-primary-background text-lantern-primary font-medium'
-                                                : 'text-lantern-text hover:bg-lantern-background-secondary'
-                                        }`}
+                                        onSelect={() => onNavigate(item.mode!)}
+                                        icon={<item.icon className="w-5 h-5" />}
+                                        className={currentMode === item.mode ? 'bg-lantern-primary-background text-lantern-primary font-medium' : ''}
                                     >
-                                        <item.icon className="w-5 h-5" />
                                         {item.label}
-                                    </button>
+                                    </MenuItem>
                                 );
                             })}
                             {actionItems.length > 0 && (
                                 <>
-                                    <div className="border-t border-lantern-border" />
+                                    <MenuSeparator />
                                     {actionItems.map(item => (
-                                        <button
+                                        <MenuItem
                                             key={item.label}
-                                            onClick={() => { item.action(); if (!('isLowData' in item)) setIsMoreOpen(false); }}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                                                'isDestructive' in item && item.isDestructive
-                                                    ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-                                                    : 'isCompanion' in item
-                                                    ? `text-lantern-primary hover:bg-lantern-primary-background font-medium${isCompanionOpen ? ' bg-lantern-primary-background' : ''}`
-                                                    : 'isLowData' in item && lowDataMode
+                                            onSelect={() => item.action()}
+                                            icon={<item.icon className="w-5 h-5" />}
+                                            destructive={'isDestructive' in item && item.isDestructive}
+                                            className={
+                                                'isLowData' in item && lowDataMode
                                                     ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
-                                                    : 'text-lantern-text hover:bg-lantern-background-secondary'
-                                            }`}
+                                                    : ''
+                                            }
                                         >
-                                            <item.icon className="w-5 h-5" />
                                             {item.label}
-                                        </button>
+                                        </MenuItem>
                                     ))}
                                 </>
                             )}
-                        </div>
-                    )}
+                    </MenuContent>
                 </div>
+                </Menu>
             </div>
         </nav>
     );

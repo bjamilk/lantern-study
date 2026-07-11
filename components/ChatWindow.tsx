@@ -6,7 +6,7 @@ import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
-import { Avatar } from './ui';
+import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, TabList, Tab } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
@@ -98,7 +98,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(messages.length);
   const lastMessageIdRef = useRef<string | null>(null);
 
@@ -422,25 +421,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat?.id]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, []);
-
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
     () => messages.filter((msg) => !isGroupChat || !msg.isArchived),
@@ -674,136 +654,105 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             )}
 
             {/* Overflow menu */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            <Menu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
+            <div className="relative">
+              <MenuTrigger
                 className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                aria-haspopup="menu"
-                aria-expanded={isDropdownOpen}
                 aria-label="Chat options"
               >
                 <EllipsisVerticalIcon className="w-5 h-5" />
-              </button>
-              {isDropdownOpen && isGroup && group && (
-                <div role="menu" className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <button
-                    onClick={() => handleDropdownAction(onOpenGroupInfoModal)}
-                    className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
-                    role="menuitem"
-                  >
-                    <UserGroupIcon className="w-4 h-4 text-lantern-text-tertiary" />
+              </MenuTrigger>
+              {isGroup && group && (
+                <MenuContent align="end" className="w-56">
+                  <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<UserGroupIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                     Group Info & Members
-                  </button>
+                  </MenuItem>
                   {isArchived ? (
-                    <button
-                      onClick={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                      className="w-full text-left px-4 py-2 text-sm text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                      role="menuitem"
+                    <MenuItem
+                      onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
+                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      className="text-amber-700 dark:text-amber-400"
                     >
-                      <ArchiveBoxIcon className="w-4 h-4" />
                       Unarchive Group
-                    </button>
+                    </MenuItem>
                   ) : (
                     <>
-                      <button
-                        onClick={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                        className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
-                        role="menuitem"
+                      <MenuItem
+                        onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
+                        icon={<PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}
                       >
-                        <PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />
                         Create Sub-group
-                      </button>
-                      <div className="border-t border-lantern-border my-1" />
-                      {/* Mobile-only study actions (hidden on md+ where toolbar shows) */}
+                      </MenuItem>
+                      <MenuSeparator />
                       <div className="md:hidden">
-                        <button
-                          onClick={() => handleDropdownAction(onOpenQuestionModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
-                          role="menuitem"
-                        >
-                          <PencilSquareIcon className="w-4 h-4 text-lantern-text-tertiary" />
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenQuestionModal)} icon={<PencilSquareIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Submit New Question
-                        </button>
-                        <button
-                          onClick={() => handleDropdownAction(onOpenTestConfigModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
-                          role="menuitem"
-                        >
-                          <QuestionMarkCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />
+                        </MenuItem>
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<QuestionMarkCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Take a Test
-                        </button>
-                        <button
-                          onClick={() => handleDropdownAction(onOpenStudyConfigModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
-                          role="menuitem"
-                        >
-                          <AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" />
+                        </MenuItem>
+                        <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                           Study Mode
-                        </button>
+                        </MenuItem>
                       </div>
                       {onOpenAIGenerateModal && (
-                        <button
-                          onClick={() => handleDropdownAction(onOpenAIGenerateModal)}
-                          className="w-full text-left px-4 py-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                          role="menuitem"
+                        <MenuItem
+                          onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
+                          icon={<SparklesIcon className="w-4 h-4" />}
+                          className="text-purple-600 dark:text-purple-400"
                         >
-                          <SparklesIcon className="w-4 h-4" />
                           AI Generate Questions
-                        </button>
+                        </MenuItem>
                       )}
-                      <button
-                        onClick={() => handleDropdownAction(handleSummarizeGroup)}
-                        disabled={isSummarizingChat}
-                        className="w-full text-left px-4 py-2 text-sm text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-2.5 transition-colors duration-150 disabled:opacity-50"
-                        role="menuitem"
+                      <MenuItem
+                        onSelect={() => handleDropdownAction(handleSummarizeGroup)}
+                        icon={<SparklesIcon className="w-4 h-4" />}
+                        className="text-purple-600 dark:text-purple-400"
                       >
-                        <SparklesIcon className="w-4 h-4" />
                         {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
-                      </button>
-                      <div className="border-t border-lantern-border my-1" />
-                      <button
-                        onClick={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                        className="w-full text-left px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                        role="menuitem"
+                      </MenuItem>
+                      <MenuSeparator />
+                      <MenuItem
+                        onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
+                        icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                        className="text-amber-600 dark:text-amber-400"
                       >
-                        <ArchiveBoxIcon className="w-4 h-4" />
                         Archive Group
-                      </button>
+                      </MenuItem>
                     </>
                   )}
-                </div>
+                </MenuContent>
               )}
-              {isDropdownOpen && !isGroup && chat && (
-                <div role="menu" className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+              {!isGroup && chat && (
+                <MenuContent align="end" className="w-56">
                   {(chat as any).isArchived ? (
-                    <button
-                      onClick={() => {
+                    <MenuItem
+                      onSelect={() => {
                         setIsDropdownOpen(false);
                         onUnarchiveDmThread?.(chat.id);
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                      role="menuitem"
+                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      className="text-amber-700 dark:text-amber-400"
                     >
-                      <ArchiveBoxIcon className="w-4 h-4" />
                       Unarchive Conversation
-                    </button>
+                    </MenuItem>
                   ) : (
-                    <button
-                      onClick={() => {
+                    <MenuItem
+                      onSelect={() => {
                         setIsDropdownOpen(false);
                         onArchiveDmThread?.(chat.id);
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                      role="menuitem"
+                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      className="text-amber-600 dark:text-amber-400"
                     >
-                      <ArchiveBoxIcon className="w-4 h-4" />
                       Archive Conversation
-                    </button>
+                    </MenuItem>
                   )}
-                  <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
+                  <MenuSeparator />
                   {onDeleteDmThread && (
-                    <button
-                      onClick={() => {
+                    <MenuItem
+                      destructive
+                      onSelect={() => {
                         setIsDropdownOpen(false);
                         void confirmDialog({
                           title: 'Delete conversation?',
@@ -814,16 +763,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           if (ok) onDeleteDmThread(chat.id);
                         });
                       }}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors duration-150"
-                      role="menuitem"
+                      icon={<TrashIcon className="w-4 h-4" />}
                     >
-                      <TrashIcon className="w-4 h-4" />
                       Delete Conversation
-                    </button>
+                    </MenuItem>
                   )}
-                </div>
+                </MenuContent>
               )}
             </div>
+            </Menu>
           </div>
         </div>
         {isGroup && !isArchived && (
@@ -882,31 +830,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
             
             <div className="flex items-center gap-2">
-              <div className="flex bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                <button
-                  onClick={() => setActiveTab('chat')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                    activeTab === 'chat'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
+              <Tabs
+                value={activeTab}
+                onValueChange={(value) => setActiveTab(value as 'chat' | 'offers')}
+                variant="segmented"
+                aria-label="Marketplace conversation"
+              >
+              <TabList className="bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 !border-solid">
+                <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-1.5 !min-h-0 !rounded-md">
                   Chat
-                </button>
-                <button
-                  onClick={() => setActiveTab('offers')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${
-                    activeTab === 'offers'
-                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
+                </Tab>
+                <Tab
+                  value="offers"
+                  index={1}
+                  className="!text-xs !font-semibold !px-3 !py-1.5 !min-h-0 !rounded-md"
+                  badge={activeOffer ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : undefined}
                 >
                   Offers
-                  {activeOffer && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  )}
-                </button>
-              </div>
+                </Tab>
+              </TabList>
+              </Tabs>
             </div>
           </div>
         )}

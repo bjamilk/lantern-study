@@ -28,7 +28,7 @@
     "adm-zip": "^0.5.16",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.79.2",
-    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/compression": "^1.7.5",
+    "@types/cookie-parser": "^1.4.8",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/jsonwebtoken": "^9.0.10",

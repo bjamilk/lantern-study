@@ -7,6 +7,7 @@ import { compressImage } from '../utils/imageCompression';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
 import Modal from './ui/Modal';
+import { Tabs, TabList, Tab, TabPanel } from './ui';
 
 
 interface GroupInfoModalProps {
@@ -161,8 +162,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   const pendingPhoneInvites = group.invitedPhoneNumbers || [];
   const hasPendingInvites = pendingEmailInvites.length > 0 || pendingPhoneInvites.length > 0;
 
-  const renderContent = () => {
-      switch (activeTab) {
+  const renderContent = (tab: 'details' | 'members' | 'danger' = activeTab) => {
+      switch (tab) {
         case 'details':
             return (
                  <form onSubmit={handleDetailsSubmit} className="space-y-4">
@@ -349,17 +350,34 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         </button>
       </div>
 
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as 'details' | 'members' | 'danger')}
+        aria-label="Group info tabs"
+        className="flex flex-col flex-1 min-h-0"
+      >
       <div className="border-b border-lantern-border px-6 flex-shrink-0">
-            <nav className="-mb-px flex space-x-4" aria-label="Group info tabs">
-                <button type="button" onClick={() => setActiveTab('details')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details' ? 'border-lantern-primary text-lantern-primary' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Details</button>
-                <button type="button" onClick={() => setActiveTab('members')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'members' ? 'border-lantern-primary text-lantern-primary' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Members</button>
-                {isCurrentUserAdmin && <button type="button" onClick={() => setActiveTab('danger')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'danger' ? 'border-lantern-error text-lantern-error' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Danger Zone</button>}
-            </nav>
+            <TabList className="!border-0 -mb-px gap-4">
+                <Tab value="details" index={0} className="!rounded-none whitespace-nowrap !px-1">Details</Tab>
+                <Tab value="members" index={1} className="!rounded-none whitespace-nowrap !px-1">Members</Tab>
+                {isCurrentUserAdmin ? (
+                  <Tab value="danger" index={2} className={`!rounded-none whitespace-nowrap !px-1 ${activeTab === 'danger' ? '!text-lantern-error' : ''}`}>Danger Zone</Tab>
+                ) : null}
+            </TabList>
         </div>
 
-        <div className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
-            {renderContent()}
-        </div>
+        <TabPanel value="details" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
+            {renderContent('details')}
+        </TabPanel>
+        <TabPanel value="members" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
+            {renderContent('members')}
+        </TabPanel>
+        {isCurrentUserAdmin ? (
+          <TabPanel value="danger" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
+            {renderContent('danger')}
+          </TabPanel>
+        ) : null}
+      </Tabs>
     </Modal>
   );
 };

@@ -30,6 +30,7 @@ import {
 } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { FeatureHero } from '../ui/FeatureHero';
+import { Tabs, TabList, Tab } from '../ui';
 import { ShieldCheckIcon } from '@heroicons/react/24/outline';
 import { featureAccents } from '@lantern/shared/design';
 import { AdminAI } from './AdminAI';
@@ -534,23 +535,21 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           }
         />
 
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin shrink-0 border-b border-lantern-border">
-          {ADMIN_TABS.map((tab) => (
-            <button
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} aria-label="Admin sections" variant="pills">
+        <TabList className="overflow-x-auto pb-1 scrollbar-thin shrink-0 !border-0">
+          {ADMIN_TABS.map((tab, index) => (
+            <Tab
               key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 px-4 py-2 min-h-[44px] text-sm font-medium rounded-full border transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-lantern-surface text-lantern-text border-lantern-border shadow-lantern'
-                  : 'bg-transparent text-lantern-text-secondary border-transparent hover:bg-lantern-background-secondary'
-              }`}
+              value={tab.id}
+              index={index}
+              className="shrink-0 !rounded-full !px-4 !py-2 !min-h-[44px]"
               style={activeTab === tab.id ? { borderBottomWidth: 2, borderBottomColor: featureAccents.admin } : undefined}
             >
               {tab.label}
-            </button>
+            </Tab>
           ))}
-        </div>
+        </TabList>
+        </Tabs>
 
         {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
         {error && <p className="text-sm text-lantern-error">{error}</p>}

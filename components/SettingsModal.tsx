@@ -11,7 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
-import { Avatar, Button, Toggle } from './ui';
+import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { fetchMarketplaceCampuses } from '../services/supabase';
@@ -109,6 +109,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [showNewPass, setShowNewPass] = useState(false);
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [settingsTabOrientation, setSettingsTabOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
+
+    useEffect(() => {
+        const mq = window.matchMedia('(min-width: 768px)');
+        const update = () => setSettingsTabOrientation(mq.matches ? 'vertical' : 'horizontal');
+        update();
+        mq.addEventListener('change', update);
+        return () => mq.removeEventListener('change', update);
+    }, []);
 
     useEffect(() => {
         if (isOpen) {
@@ -200,8 +209,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         { id: 'account', label: 'Account', icon: ShieldExclamationIcon },
     ];
 
-    const renderContent = () => {
-        switch (activeTab) {
+    const renderContent = (tab: SettingsTab = activeTab) => {
+        switch (tab) {
             case 'profile': return (
                 <div className="space-y-6">
                     <div>
@@ -588,8 +597,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             ariaLabelledBy="settings-modal-title"
             maxWidthClass="max-w-3xl"
             zIndexClass="z-[80]"
-            panelClassName="!p-0 h-[90vh] md:h-[75vh] flex flex-col md:flex-row overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
+            panelClassName="!p-0 h-[90vh] md:h-[75vh] flex flex-col overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
         >
+            <Tabs
+                value={activeTab}
+                onValueChange={(value) => setActiveTab(value as SettingsTab)}
+                orientation={settingsTabOrientation}
+                aria-label="Settings sections"
+                variant="pills"
+                className="h-full flex flex-col md:flex-row overflow-hidden"
+            >
                 <div className="w-full md:w-1/3 bg-lantern-background-secondary border-b md:border-b-0 md:border-r border-lantern-border p-4 flex-shrink-0">
                     <div className="flex justify-between items-center mb-2 md:mb-6">
                         <h2 id="settings-modal-title" className="text-xl font-bold text-lantern-text">Settings</h2>
@@ -597,25 +614,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <XCircleIcon className="w-6 h-6" />
                         </button>
                     </div>
-                    <nav className="flex space-x-1 md:flex-col md:space-y-1 md:space-x-0 overflow-x-auto pb-2 md:pb-0 md:overflow-x-visible" role="tablist" aria-label="Settings sections">
-                        {navItems.map(item => (
-                            <button key={item.id} onClick={() => setActiveTab(item.id)}
-                                role="tab"
-                                aria-selected={activeTab === item.id}
-                                aria-current={activeTab === item.id ? 'page' : undefined}
-                                className={`flex-shrink-0 md:w-full flex items-center p-2.5 text-sm font-medium rounded-lantern transition-colors ${activeTab === item.id ? 'bg-lantern-primary-background text-lantern-primary-dark' : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'}`}>
-                                <item.icon className="w-5 h-5 mr-2 md:mr-3" />
-                                <span>{item.label}</span>
-                            </button>
+                    <TabList className="flex space-x-1 md:flex-col md:space-y-1 md:space-x-0 overflow-x-auto pb-2 md:pb-0 md:overflow-x-visible !border-0">
+                        {navItems.map((item, index) => (
+                            <Tab
+                                key={item.id}
+                                value={item.id}
+                                index={index}
+                                icon={<item.icon className="w-5 h-5 mr-0 md:mr-1" />}
+                                className="flex-shrink-0 md:w-full !rounded-lantern justify-start"
+                            >
+                                <span className="md:ml-2">{item.label}</span>
+                            </Tab>
                         ))}
-                    </nav>
+                    </TabList>
                 </div>
-                <div className="w-full md:w-2/3 flex flex-col">
-                    <div className="flex-grow p-6 overflow-y-auto">{renderContent()}</div>
+                <div className="w-full md:w-2/3 flex flex-col min-h-0">
+                    {navItems.map((item) => (
+                        <TabPanel key={item.id} value={item.id} className="flex-grow p-6 overflow-y-auto">
+                            {renderContent(item.id)}
+                        </TabPanel>
+                    ))}
                      <div className="flex-shrink-0 p-4 border-t border-lantern-border bg-lantern-background-secondary flex justify-end">
                         <Button variant="secondary" onClick={onClose}>Done</Button>
                     </div>
                 </div>
+            </Tabs>
         </Modal>
         <AccountDeletionModal
             open={deletionOpen}

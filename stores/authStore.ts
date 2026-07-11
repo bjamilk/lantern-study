@@ -16,6 +16,13 @@ import {
   createUserProfile as apiCreateUserProfile,
   updateUserProfile as apiUpdateUserProfile,
 } from '../services/supabase';
+import {
+  isCookieAuthEnabled,
+  loginViaCookieBff,
+  fetchCookieSession,
+  refreshCookieSession,
+  exchangeCookieSession,
+} from '../services/authCookieSession';
 import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import { setSentryUser } from '../services/sentry';
 
@@ -115,30 +122,57 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         set({ isAuthLoading: true, error: null });
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
+          let authUser: { id: string; email?: string; user_metadata?: Record<string, unknown>; app_metadata?: Record<string, unknown> };
+          let session: { access_token?: string; refresh_token?: string } | null = null;
 
-          if (error) {
-            set({ isAuthLoading: false, error: error.message });
-            return { success: false, error: error.message };
+          if (isCookieAuthEnabled()) {
+            const cookieResult = await loginViaCookieBff(email, password);
+            if (cookieResult.error || !cookieResult.session?.user) {
+              set({ isAuthLoading: false, error: cookieResult.error || 'Login failed' });
+              return { success: false, error: cookieResult.error || 'Login failed' };
+            }
+            session = cookieResult.session;
+            authUser = cookieResult.session.user;
+            if (session.access_token && session.refresh_token) {
+              await supabase.auth.setSession({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+              });
+            }
+          } else {
+            const { data, error } = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+
+            if (error) {
+              set({ isAuthLoading: false, error: error.message });
+              return { success: false, error: error.message };
+            }
+
+            if (!data.user) {
+              set({ isAuthLoading: false });
+              return { success: false, error: 'Login failed' };
+            }
+
+            authUser = data.user;
+            session = data.session;
           }
 
-          if (data.user) {
+          if (authUser) {
             // Fetch or create user profile via API server
             let profile: any = null;
             try {
-              profile = await apiFetchUserProfile(data.user.id);
+              profile = await apiFetchUserProfile(authUser.id);
             } catch (e) {
               // Profile may not exist yet
             }
             
             if (!profile) {
-              const meta = data.user.user_metadata || {};
+              const meta = authUser.user_metadata || {};
               try {
                 profile = await apiCreateUserProfile({
-                  id: data.user.id,
+                  id: authUser.id,
                   name:
                     (typeof meta.name === 'string' && meta.name.trim()) ||
                     email.split('@')[0],
@@ -159,7 +193,7 @@ export const useAuthStore = create<AuthState>()(
               id: profile.id,
               name: profile.name || 'User',
               email: email,
-              isAdmin: data.user.app_metadata?.is_platform_admin === true,
+              isAdmin: authUser.app_metadata?.is_platform_admin === true,
               avatarUrl: profile.avatar_url || '',
               points: profile.points || 0,
               badges: profile.badges || [],
@@ -168,10 +202,10 @@ export const useAuthStore = create<AuthState>()(
               firstName: profile.first_name || undefined,
               lastName: profile.last_name || undefined,
             } : {
-              id: data.user.id,
-              name: data.user.user_metadata?.name || email.split('@')[0],
+              id: authUser.id,
+              name: (authUser.user_metadata?.name as string) || email.split('@')[0],
               email: email,
-              isAdmin: data.user.app_metadata?.is_platform_admin === true,
+              isAdmin: authUser.app_metadata?.is_platform_admin === true,
               avatarUrl: '',
               points: 0,
               badges: [],
@@ -179,8 +213,8 @@ export const useAuthStore = create<AuthState>()(
             };
 
             // Cache the access token so subsequent API calls are instant
-            if (data.session?.access_token) {
-              setCachedAuthToken(data.session.access_token, data.user.id);
+            if (session?.access_token) {
+              setCachedAuthToken(session.access_token, authUser.id);
             }
 
             set({
@@ -245,6 +279,9 @@ export const useAuthStore = create<AuthState>()(
             // Cache the access token so subsequent API calls are instant
             if (data.session?.access_token) {
               setCachedAuthToken(data.session.access_token, data.user.id);
+              if (isCookieAuthEnabled()) {
+                await exchangeCookieSession(data.session);
+              }
             }
 
             set({
@@ -360,21 +397,31 @@ export const useAuthStore = create<AuthState>()(
       checkAuthState: async () => {
         set({ isAuthLoading: true });
         try {
-          // Add timeout to prevent indefinite hangs
-          const getSessionPromise = supabase.auth.getSession();
-          const timeoutPromise = new Promise<null>((resolve) => {
-            setTimeout(() => resolve(null), 5000);
-          });
-          
-          const sessionResult = await Promise.race([getSessionPromise, timeoutPromise]);
-          
-          if (!sessionResult) {
-            console.warn('[Auth] checkAuthState timed out');
-            set({ isAuthLoading: false });
-            return;
+          let session: { access_token?: string; refresh_token?: string; user?: { id: string; email?: string; user_metadata?: Record<string, unknown>; app_metadata?: Record<string, unknown> } } | null = null;
+
+          if (isCookieAuthEnabled()) {
+            session =
+              (await fetchCookieSession()) ??
+              (await refreshCookieSession());
+            if (session?.access_token && session.refresh_token) {
+              await supabase.auth.setSession({
+                access_token: session.access_token,
+                refresh_token: session.refresh_token,
+              });
+            }
+          } else {
+            const getSessionPromise = supabase.auth.getSession();
+            const timeoutPromise = new Promise<null>((resolve) => {
+              setTimeout(() => resolve(null), 5000);
+            });
+            const sessionResult = await Promise.race([getSessionPromise, timeoutPromise]);
+            if (!sessionResult) {
+              console.warn('[Auth] checkAuthState timed out');
+              set({ isAuthLoading: false });
+              return;
+            }
+            session = (sessionResult as { data: { session: typeof session } }).data.session;
           }
-          
-          const { data: { session } } = sessionResult as any;
           
           if (session?.user) {
             // Cache the token

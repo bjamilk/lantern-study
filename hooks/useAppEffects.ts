@@ -30,6 +30,12 @@ import {
     shouldRefreshStoredSession,
     sendPresenceHeartbeat,
 } from '../services/supabase';
+import {
+    isCookieAuthEnabled,
+    fetchCookieSession,
+    refreshCookieSession,
+    exchangeCookieSession,
+} from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
 import { mapMessageFromApi } from '@lantern/shared/utils';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
@@ -250,12 +256,29 @@ export function useAppEffects({
 
         const syncSessionInBackground = async (hadFastBoot: boolean) => {
             try {
-                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-                if (!isMounted) return;
+                let session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'] = null;
 
-                if (sessionError) {
-                    console.error('[Auth] getSession error:', sessionError);
+                if (isCookieAuthEnabled()) {
+                    const cookieSession =
+                        (await fetchCookieSession()) ??
+                        (await refreshCookieSession());
+                    if (cookieSession?.access_token && cookieSession.refresh_token) {
+                        await supabase.auth.setSession({
+                            access_token: cookieSession.access_token,
+                            refresh_token: cookieSession.refresh_token,
+                        });
+                        const { data } = await supabase.auth.getSession();
+                        session = data.session;
+                    }
+                } else {
+                    const { data: { session: storedSession }, error: sessionError } = await supabase.auth.getSession();
+                    if (sessionError) {
+                        console.error('[Auth] getSession error:', sessionError);
+                    }
+                    session = storedSession;
                 }
+
+                if (!isMounted) return;
 
                 if (!session?.user) {
                     if (hadFastBoot || useAuthStore.getState().currentUser) {
@@ -274,7 +297,19 @@ export function useAppEffects({
                 }
 
                 let authUser = session.user;
-                if (shouldRefreshStoredSession()) {
+                if (isCookieAuthEnabled()) {
+                    if (shouldRefreshStoredSession()) {
+                        try {
+                            const refreshed = await refreshCookieSession();
+                            if (refreshed?.user) {
+                                setCachedAuthToken(refreshed.access_token, refreshed.user.id);
+                                authUser = refreshed.user;
+                            }
+                        } catch (refreshErr) {
+                            console.warn('[Auth] cookie refresh failed, using existing session');
+                        }
+                    }
+                } else if (shouldRefreshStoredSession()) {
                     try {
                         const { data: refreshData } = await supabase.auth.refreshSession();
                         if (refreshData?.session?.user) {
@@ -438,6 +473,9 @@ export function useAppEffects({
                 }
                 setPasswordRecovery(true);
             } else if (event === 'SIGNED_IN' && session?.user) {
+                if (isCookieAuthEnabled() && session) {
+                    await exchangeCookieSession(session);
+                }
                 if (useAuthStore.getState().isPasswordRecovery) {
                     if (session.access_token) {
                         setCachedAuthToken(session.access_token, session.user?.id);

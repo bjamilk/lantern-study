@@ -1,11 +1,18 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware, evictAuthTokenCache } from '../middleware/auth';
+import { authMiddleware, evictAuthTokenCache, optionalAuthMiddleware } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { denylistAccessToken, setUserSessionCutoff } from '../services/tokenDenylist';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
+import {
+  clearAuthCookies,
+  readAccessCookie,
+  readRefreshCookie,
+  setAuthCookies,
+} from '../utils/authCookies';
 import type { AuthenticatedRequest } from '../types';
 
 const router = Router();
@@ -18,19 +25,168 @@ export function initializeAuthRoutes(supabase: SupabaseService, cache: CacheServ
   cacheService = cache;
 }
 
+function getAnonAuthClient() {
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required for auth routes');
+  }
+  return createClient(url, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 function extractBearerToken(req: AuthenticatedRequest): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.substring(7).trim();
   }
-  return null;
+  return readAccessCookie((req as any).cookies || {});
 }
+
+function serializeSession(session: {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number;
+  token_type?: string;
+  user: unknown;
+}) {
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_in: session.expires_in,
+    expires_at: session.expires_at,
+    token_type: session.token_type,
+    user: session.user,
+  };
+}
+
+async function applySessionCookies(res: Response, session: {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number;
+  token_type?: string;
+  user: unknown;
+}) {
+  const expiresIn = session.expires_in ?? Math.max(60, (session.expires_at ?? 0) - Math.floor(Date.now() / 1000));
+  setAuthCookies(res, session.access_token, session.refresh_token, expiresIn);
+  return serializeSession(session);
+}
+
+/** POST /api/v1/auth/login */
+router.post(
+  '/login',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    }
+
+    const client = getAnonAuthClient();
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error || !data.session) {
+      return res.status(401).json({ success: false, error: error?.message || 'Invalid credentials' });
+    }
+
+    const session = await applySessionCookies(res, data.session);
+    res.json({ success: true, data: { session, user: data.user } });
+  })
+);
+
+/** POST /api/v1/auth/exchange — set cookies after OAuth/magic-link client session */
+router.post(
+  '/exchange',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { access_token, refresh_token, expires_in, expires_at, token_type, user } = req.body || {};
+    if (!access_token || !refresh_token || !user?.id) {
+      return res.status(400).json({ success: false, error: 'Invalid session payload' });
+    }
+
+    const verified = await supabaseService.verifySupabaseToken(access_token);
+    if (!verified.isValid || !verified.user || verified.user.id !== user.id) {
+      return res.status(401).json({ success: false, error: 'Invalid access token' });
+    }
+
+    const session = await applySessionCookies(res, {
+      access_token,
+      refresh_token,
+      expires_in,
+      expires_at,
+      token_type,
+      user,
+    });
+    res.json({ success: true, data: { session, user } });
+  })
+);
+
+/** POST /api/v1/auth/refresh */
+router.post(
+  '/refresh',
+  asyncHandler(async (req: Request, res: Response) => {
+    const refreshToken = readRefreshCookie((req as any).cookies || {});
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, error: 'Missing refresh session', code: 'SESSION_REVOKED' });
+    }
+
+    const client = getAnonAuthClient();
+    const { data, error } = await client.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data.session) {
+      clearAuthCookies(res);
+      return res.status(401).json({ success: false, error: 'Session expired', code: 'SESSION_REVOKED' });
+    }
+
+    const session = await applySessionCookies(res, data.session);
+    res.json({ success: true, data: { session, user: data.user } });
+  })
+);
+
+/** GET /api/v1/auth/session */
+router.get(
+  '/session',
+  optionalAuthMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const accessToken = extractBearerToken(req) || readAccessCookie((req as any).cookies || {});
+    if (!accessToken) {
+      const refreshToken = readRefreshCookie((req as any).cookies || {});
+      if (!refreshToken) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+      }
+      const client = getAnonAuthClient();
+      const { data, error } = await client.auth.refreshSession({ refresh_token: refreshToken });
+      if (error || !data.session) {
+        clearAuthCookies(res);
+        return res.status(401).json({ success: false, error: 'Session expired', code: 'SESSION_REVOKED' });
+      }
+      const session = await applySessionCookies(res, data.session);
+      return res.json({ success: true, data: { session, user: data.user } });
+    }
+
+    const verified = await supabaseService.verifySupabaseToken(accessToken);
+    if (!verified.isValid || !verified.user) {
+      clearAuthCookies(res);
+      return res.status(401).json({ success: false, error: 'Invalid session', code: 'SESSION_REVOKED' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: verified.user,
+        session: {
+          access_token: accessToken,
+          user: verified.user,
+        },
+      },
+    });
+  })
+);
 
 /** POST /api/v1/auth/logout — invalidate session server-side */
 router.post(
   '/logout',
   authMiddleware,
-  asyncHandler(async (req: AuthenticatedRequest, res: import('express').Response) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
@@ -49,6 +205,7 @@ router.post(
     }
 
     await cacheService.invalidateUserCache(userId);
+    clearAuthCookies(res);
 
     res.json({ success: true, message: 'Logged out successfully' });
   })

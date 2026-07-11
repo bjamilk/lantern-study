@@ -15,7 +15,7 @@ import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
-import { FeatureHero } from './ui';
+import { FeatureHero, Tabs, TabList, Tab } from './ui';
 import { featureAccents } from '@lantern/shared/design';
 import {
   MagnifyingGlassIcon,
@@ -621,30 +621,34 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <div className="shrink-0 max-w-full bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
       <div className="sticky top-0 z-20 bg-white dark:bg-slate-800 shadow-sm md:shadow-none px-3 sm:px-4 md:px-6 max-w-full">
         <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/60">
-          <div className="flex flex-1 min-w-0">
-          <button
-            onClick={() => { setActiveTab('academic'); setShowCategoryPanel(false); }}
-            className={`flex-1 sm:flex-initial px-2 sm:px-5 py-1.5 sm:py-2.5 font-medium text-[11px] sm:text-sm border-b-2 transition-colors duration-150 flex items-center justify-center sm:justify-start gap-1 sm:gap-2 ${
-              activeTab === 'academic'
-                ? 'border-lantern-primary text-lantern-primary'
-                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
-            }`}
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+              setActiveTab(value as 'academic' | 'student-life');
+              setShowCategoryPanel(false);
+            }}
+            aria-label="Marketplace categories"
+            className="flex-1 min-w-0"
           >
-            <AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <TabList className="!border-0 flex-1 min-w-0">
+          <Tab
+            value="academic"
+            index={0}
+            icon={<AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-1.5 sm:!py-2.5 !text-[11px] sm:!text-sm !min-h-0 border-b-2 border-transparent"
+          >
             Academic
-          </button>
-          <button
-            onClick={() => { setActiveTab('student-life'); setShowCategoryPanel(false); }}
-            className={`flex-1 sm:flex-initial px-2 sm:px-5 py-1.5 sm:py-2.5 font-medium text-[11px] sm:text-sm border-b-2 transition-colors duration-150 flex items-center justify-center sm:justify-start gap-1 sm:gap-2 ${
-              activeTab === 'student-life'
-                ? 'border-lantern-primary text-lantern-primary'
-                : 'border-transparent text-lantern-text-secondary hover:text-lantern-text'
-            }`}
+          </Tab>
+          <Tab
+            value="student-life"
+            index={1}
+            icon={<BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-1.5 sm:!py-2.5 !text-[11px] sm:!text-sm !min-h-0 border-b-2 border-transparent"
           >
-            <BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             Student Life
-          </button>
-          </div>
+          </Tab>
+          </TabList>
+          </Tabs>
           {/* Mobile category toggle — collapsed by default */}
           <button
             type="button"

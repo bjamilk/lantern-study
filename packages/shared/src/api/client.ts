@@ -10,6 +10,7 @@ export interface ApiClientConfig {
   getBaseUrl: () => string;
   getAuthHeaders: AuthHeadersProvider;
   defaultTimeoutMs?: number;
+  credentials?: RequestCredentials;
   /** Called once after a 401 when refreshAuth returns true and request is retried. */
   refreshAuth?: () => Promise<boolean>;
   /** Called when session cannot be refreshed (sign out / show login). */
@@ -57,6 +58,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       `${config.getBaseUrl()}/api/v1${endpoint}`,
       {
         ...options,
+        credentials: options.credentials ?? config.credentials ?? 'same-origin',
         headers: { ...headers, ...options.headers },
       },
       timeoutMs
@@ -126,7 +128,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     const headers = await config.getAuthHeaders();
     const response = await fetchWithTimeout(
       `${config.getBaseUrl()}/api/v1${endpoint}`,
-      { ...options, headers: { ...headers, ...options.headers } },
+      {
+        ...options,
+        credentials: options.credentials ?? config.credentials ?? 'same-origin',
+        headers: { ...headers, ...options.headers },
+      },
       timeoutMs
     );
     if (!response.ok) {

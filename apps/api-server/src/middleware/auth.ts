@@ -10,6 +10,7 @@ import {
   isDeactivatedLifecycleRoute,
 } from '../services/accountLifecycle';
 import { isAccessTokenDenied, isTokenIssuedBeforeUserCutoff } from '../services/tokenDenylist';
+import { readAccessCookie } from '../utils/authCookies';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { createRequestContext, type RequestContext } from '../services/dataLoaders';
 import { AuthenticatedRequest } from '../types';
@@ -36,6 +37,9 @@ function extractAuthCredential(req: Request): string | null {
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.substring(7).trim();
   }
+  const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
+  const cookieToken = readAccessCookie(cookies || {});
+  if (cookieToken) return cookieToken;
   return null;
 }
 
