@@ -229,7 +229,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
               value={searchTerm ?? ''}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 p-3 border border-gray-300 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Search by username..."
+              placeholder="Search by name or @username"
               autoFocus
             />
           </div>

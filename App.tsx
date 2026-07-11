@@ -1338,7 +1338,7 @@ export const App: React.FC = () => {
                 onSoloPractice={(config) => handleStartSoloPractice(config)}
                 onDownloadForOffline={handleDownloadForOffline} />}
             <NewDirectMessageModal isOpen={modals.newDm} onClose={() => closeModal('newDm')}
-                currentUser={currentUser} allUsers={users}
+                currentUser={currentUser}
                 onStartDm={(userId) => { handleInitiateDm(userId); closeModal('newDm'); }} />
             <SettingsModal isOpen={modals.settings} onClose={() => closeModal('settings')}
                 currentUser={currentUser} userSettings={getUserSettings()}

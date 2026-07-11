@@ -3,7 +3,7 @@
 // Start a chat with contacts/members
 // ===========================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,11 @@ import {
   TextInput,
   FlatList,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
+import * as api from '../services/api';
 
 interface Contact {
   id: string;
@@ -24,6 +26,13 @@ interface Contact {
   email?: string;
   avatarUrl?: string;
   status?: 'online' | 'offline' | 'away';
+}
+
+interface SearchResult {
+  id: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
 }
 
 interface NewDirectMessageModalProps {
@@ -42,22 +51,96 @@ export default function NewDirectMessageModal({
   onStartChat,
 }: NewDirectMessageModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [apiResults, setApiResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const { colors } = useTheme();
+  const searchRequestRef = useRef(0);
+
+  useEffect(() => {
+    if (visible) {
+      setSearchTerm('');
+      setApiResults([]);
+      setSearchError('');
+      setIsSearching(false);
+    }
+  }, [visible]);
+
+  const trimmedSearch = searchTerm.trim();
+  const useApiSearch = trimmedSearch.length >= 2;
+
+  useEffect(() => {
+    if (!useApiSearch) {
+      setApiResults([]);
+      setSearchError('');
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+    const requestId = ++searchRequestRef.current;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const data = await api.searchUsers(trimmedSearch, 20);
+        if (requestId !== searchRequestRef.current) return;
+
+        const filtered = (data || [])
+          .filter(u => u.id !== currentUserId)
+          .map((u): SearchResult => ({
+            id: u.id,
+            name: u.name,
+            username: u.username,
+            avatarUrl: u.avatarUrl,
+          }));
+        setApiResults(filtered);
+      } catch (err) {
+        if (requestId !== searchRequestRef.current) return;
+        console.error('DM search failed:', err);
+        setSearchError('Failed to search. Please try again.');
+        setApiResults([]);
+      } finally {
+        if (requestId === searchRequestRef.current) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [trimmedSearch, useApiSearch, currentUserId]);
 
   const filteredContacts = useMemo(() => {
     const otherContacts = contacts.filter(c => c.userId !== currentUserId);
-    
-    if (!searchTerm.trim()) {
+
+    if (!trimmedSearch) {
       return otherContacts;
     }
-    
-    return otherContacts.filter(contact =>
-      contact.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-      contact.email?.toLowerCase().includes(searchTerm.trim().toLowerCase())
-    );
-  }, [searchTerm, contacts, currentUserId]);
 
-  const handleSelectContact = (contact: Contact) => {
+    if (useApiSearch) {
+      return [];
+    }
+
+    return otherContacts.filter(contact =>
+      contact.name.toLowerCase().includes(trimmedSearch.toLowerCase()) ||
+      contact.email?.toLowerCase().includes(trimmedSearch.toLowerCase())
+    );
+  }, [trimmedSearch, contacts, currentUserId, useApiSearch]);
+
+  const listData = useMemo(() => {
+    if (useApiSearch) {
+      return apiResults.map(r => ({
+        id: r.id,
+        userId: r.id,
+        name: r.name,
+        username: r.username,
+        avatarUrl: r.avatarUrl,
+      }));
+    }
+    return filteredContacts;
+  }, [useApiSearch, apiResults, filteredContacts]);
+
+  const handleSelectContact = (contact: { userId: string; name: string }) => {
     onStartChat(contact.userId, contact.name);
     setSearchTerm('');
     onClose();
@@ -71,7 +154,7 @@ export default function NewDirectMessageModal({
     }
   };
 
-  const renderContact = ({ item }: { item: Contact }) => (
+  const renderContact = ({ item }: { item: Contact & { username?: string } }) => (
     <TouchableOpacity
       style={styles.contactItem}
       onPress={() => handleSelectContact(item)}
@@ -85,19 +168,61 @@ export default function NewDirectMessageModal({
           }}
           style={styles.avatar}
         />
-        <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+        {!useApiSearch && (
+          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+        )}
       </View>
       
       <View style={styles.contactInfo}>
         <Text style={styles.contactName}>{item.name}</Text>
-        {item.email && (
+        {item.username ? (
+          <Text style={styles.contactEmail}>@{item.username}</Text>
+        ) : item.email ? (
           <Text style={styles.contactEmail}>{item.email}</Text>
-        )}
+        ) : null}
       </View>
       
       <Ionicons name="chatbubble-outline" size={20} color="#6366f1" />
     </TouchableOpacity>
   );
+
+  const emptyMessage = () => {
+    if (isSearching) return null;
+    if (searchError) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>{searchError}</Text>
+        </View>
+      );
+    }
+    if (useApiSearch && listData.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={48} color="#4b5563" />
+          <Text style={styles.emptyText}>No users found</Text>
+          <Text style={styles.emptySubtext}>Try a different name or @username</Text>
+        </View>
+      );
+    }
+    if (!trimmedSearch && listData.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={48} color="#4b5563" />
+          <Text style={styles.emptyText}>No contacts available</Text>
+          <Text style={styles.emptySubtext}>Join groups to connect with others</Text>
+        </View>
+      );
+    }
+    if (trimmedSearch && !useApiSearch && listData.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No contacts found</Text>
+          <Text style={styles.emptySubtext}>Type 2+ characters to search all users</Text>
+        </View>
+      );
+    }
+    return null;
+  };
 
   return (
     <Modal
@@ -108,7 +233,6 @@ export default function NewDirectMessageModal({
     >
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.card }]}>
-          {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>New Message</Text>
             <TouchableOpacity onPress={onClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
@@ -116,12 +240,11 @@ export default function NewDirectMessageModal({
             </TouchableOpacity>
           </View>
 
-          {/* Search */}
           <View style={[styles.searchContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
             <Ionicons name="search" size={20} color={colors.textSecondary} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Search contacts..."
+              placeholder="Search by name or @username"
               placeholderTextColor={colors.textSecondary}
               value={searchTerm}
               onChangeText={setSearchTerm}
@@ -134,33 +257,25 @@ export default function NewDirectMessageModal({
             )}
           </View>
 
-          {/* Contacts List */}
+          {isSearching && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#6366f1" />
+            </View>
+          )}
+
           <FlatList
-            data={filteredContacts}
+            data={listData}
             keyExtractor={(item) => item.id}
             renderItem={renderContact}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="people-outline" size={48} color="#4b5563" />
-                <Text style={styles.emptyText}>
-                  {searchTerm ? 'No contacts found' : 'No contacts available'}
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {searchTerm 
-                    ? 'Try a different search term'
-                    : 'Join groups to connect with others'}
-                </Text>
-              </View>
-            }
+            ListEmptyComponent={emptyMessage}
           />
 
-          {/* Recent Section */}
-          {!searchTerm && filteredContacts.length > 0 && (
+          {!trimmedSearch && !useApiSearch && listData.length > 0 && (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>All Contacts</Text>
-              <Text style={styles.sectionCount}>{filteredContacts.length}</Text>
+              <Text style={styles.sectionCount}>{listData.length}</Text>
             </View>
           )}
         </View>
@@ -222,6 +337,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#ffffff',
   },
+  loadingContainer: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -249,6 +368,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 40,
+    flexGrow: 1,
   },
   contactItem: {
     flexDirection: 'row',

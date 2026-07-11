@@ -1,29 +1,72 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { XCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { searchUsers } from '../services/supabase';
 import Modal from './ui/Modal';
+
+interface SearchResult {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  name: string;
+  avatar_url: string | null;
+}
 
 interface NewDirectMessageModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User;
-  allUsers: User[];
   onStartDm: (userId: string) => void;
 }
 
-const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, onClose, currentUser, allUsers, onStartDm }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+const getAvatarUrl = (user: SearchResult) => {
+  if (user.avatar_url) return user.avatar_url;
+  const name = user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'User';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=100`;
+};
 
-  const filteredUsers = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return []; // Don't show anyone until user starts typing
+const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, onClose, currentUser, onStartDm }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm('');
+      setSearchResults([]);
+      setSearchError('');
+      setIsSearching(false);
     }
-    return allUsers.filter(user =>
-      user.id !== currentUser.id &&
-      (user.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-       user.email?.toLowerCase().includes(searchTerm.trim().toLowerCase()))
-    );
-  }, [searchTerm, allUsers, currentUser]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+      setSearchResults([]);
+      setSearchError('');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchError('');
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const data = await searchUsers(searchTerm.trim(), 20);
+        const filtered = (data || []).filter((user: SearchResult) => user.id !== currentUser.id);
+        setSearchResults(filtered);
+      } catch (err) {
+        console.error('Search failed:', err);
+        setSearchError(err instanceof Error ? err.message : 'Failed to search. Please try again.');
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, currentUser.id]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="new-dm-modal-title" maxWidthClass="max-w-md" panelClassName="flex h-[70vh] max-h-[35rem] flex-col">
@@ -43,34 +86,52 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Search for a user..."
+            placeholder="Search by name or @username"
             autoFocus
           />
         </div>
 
         <div className="flex-1 overflow-y-auto border-t border-gray-200 dark:border-gray-700 -mx-6 px-6 pt-3">
+          {isSearching && (
+            <div className="p-8 flex justify-center">
+              <svg className="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+          )}
+
+          {searchError && (
+            <p className="p-4 text-center text-sm text-red-500">{searchError}</p>
+          )}
+
+          {!isSearching && !searchError && searchTerm.trim().length < 2 && (
+            <p className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              Type at least 2 characters to search by name or @username.
+            </p>
+          )}
+
            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-            {filteredUsers.map(user => (
+            {!isSearching && searchResults.map(user => (
                 <li key={user.id}>
                   <button
                     type="button"
                     onClick={() => onStartDm(user.id)}
                     className="w-full p-3 flex items-center text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                   >
-                  <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
+                  <img src={getAvatarUrl(user)} alt="" className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
                   <div>
-                    <p className="font-medium text-gray-800 dark:text-gray-200">{user.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+                    <p className="font-medium text-gray-800 dark:text-gray-200">{user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim()}</p>
+                    {user.username && (
+                      <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>
+                    )}
                   </div>
                   </button>
                 </li>
               )
             )}
-             {searchTerm && filteredUsers.length === 0 && (
+             {!isSearching && !searchError && searchTerm.trim().length >= 2 && searchResults.length === 0 && (
                 <p className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">No users found.</p>
-             )}
-             {!searchTerm && (
-                <p className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">Start typing to find someone to message.</p>
              )}
           </ul>
         </div>

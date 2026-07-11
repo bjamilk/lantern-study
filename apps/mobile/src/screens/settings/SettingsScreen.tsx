@@ -707,7 +707,7 @@ export default function SettingsScreen() {
               icon="search-outline"
               iconColor="#6366f1"
               title="Discoverable for Invites"
-              subtitle="Let others find you by username when adding group or deck members"
+              subtitle="Let others find you by name or @username when adding group or deck members"
               rightElement={
                 <Switch
                   value={settings.privacy.discoverableForInvites !== false}

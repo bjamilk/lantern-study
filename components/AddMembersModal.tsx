@@ -158,7 +158,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 p-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Search by username..."
+            placeholder="Search by name or @username"
           />
         </div>
 
@@ -184,7 +184,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
                 Type at least 2 characters to search for users
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Search by username
+                Search by name or @username
               </p>
             </div>
           )}

@@ -134,7 +134,7 @@ router.get(
       });
     }
 
-    const searchQuery = q.trim().toLowerCase();
+    const searchQuery = q.trim().toLowerCase().replace(/^@+/, '');
     const resultLimit = Math.min(parseInt(limit as string) || 20, 50);
 
     logger.debug('Searching users', { query: searchQuery, limit: resultLimit, currentUserId });
