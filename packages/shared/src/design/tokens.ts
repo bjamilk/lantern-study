@@ -147,8 +147,8 @@ export const typography = {
 } as const;
 
 export const fontStacks = {
-  full: "'DM Sans', 'Segoe UI', system-ui, sans-serif",
-  display: "'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif",
+  full: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  display: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   lowData: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 } as const;
 

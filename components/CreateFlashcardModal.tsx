@@ -4,6 +4,7 @@ import { Flashcard, FlashcardType, Deck } from '../types';
 import { uploadFlashcardImage } from '../services/supabase';
 import { XCircleIcon, PlusCircleIcon, InformationCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
+import Modal from './ui/Modal';
 import {
   formatFreeformPointsForSvg,
   getBlurRegions,
@@ -642,21 +643,29 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-start justify-center p-4 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="create-card-modal-title">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg my-auto flex flex-col max-h-[calc(100vh-2rem)]">
-        {/* Sticky header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <h2 id="create-card-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
-            <PlusCircleIcon className="w-6 h-6 mr-2 text-green-500" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="create-card-modal-title"
+      maxWidthClass="max-w-lg"
+      panelClassName="!p-0 max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden"
+    >
+      <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
+          <h2 id="create-card-modal-title" className="text-xl font-semibold text-lantern-text flex items-center">
+            <PlusCircleIcon className="w-6 h-6 mr-2 text-lantern-success" aria-hidden />
             {isEditing ? 'Edit Flashcard' : 'Create New Flashcard'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-            <XCircleIcon className="w-6 h-6" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            aria-label="Close flashcard dialog"
+          >
+            <XCircleIcon className="w-6 h-6" aria-hidden />
           </button>
         </div>
 
-        {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 px-6 py-4">
+        <div className="overflow-y-auto flex-1 px-6 py-4 bg-lantern-surface">
         {decks.length === 0 ? (
             <div className="text-center p-4 border-2 border-dashed rounded-lg border-gray-300 dark:border-gray-600">
                 <p className="text-gray-600 dark:text-gray-400">You need to create a deck first before adding flashcards.</p>
@@ -1320,9 +1329,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                 </div>
             </form>
         )}
-        </div>{/* end scrollable body */}
-      </div>
-    </div>
+        </div>
+    </Modal>
   );
 };
 

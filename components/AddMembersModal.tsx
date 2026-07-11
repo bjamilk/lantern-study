@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Group } from '../types';
-import { XCircleIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import Modal from './ui/Modal';
 
 interface SearchResult {
   id: string;
@@ -32,7 +32,6 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useModalFocusTrap(isOpen, onClose, { loading: isSubmitting });
 
   useEffect(() => {
     if (isOpen) {
@@ -116,23 +115,34 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[90]" role="dialog" aria-modal="true" aria-labelledby="add-members-modal-title">
-      <div ref={dialogRef} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform flex flex-col h-[80vh] max-h-[40rem]">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <h2 id="add-members-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100 flex items-center">
-            <UserPlusIcon className="w-6 h-6 mr-2 text-blue-500" />
-            Add Members to "{group.name}"
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="add-members-modal-title"
+      maxWidthClass="max-w-lg"
+      loading={isSubmitting}
+      closeOnBackdrop={!isSubmitting}
+      panelClassName="!p-0 h-[80vh] max-h-[40rem] flex flex-col overflow-hidden"
+    >
+        <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
+          <h2 id="add-members-modal-title" className="text-xl font-semibold text-lantern-text flex items-center min-w-0">
+            <UserPlusIcon className="w-6 h-6 mr-2 text-lantern-primary shrink-0" aria-hidden />
+            <span className="truncate">Add Members to &quot;{group.name}&quot;</span>
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">
-            <XCircleIcon className="w-6 h-6" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+            aria-label="Close add members dialog"
+          >
+            <XMarkIcon className="w-6 h-6" aria-hidden />
           </button>
         </div>
 
-        {/* Success banner */}
+        <div className="px-6 py-4 flex flex-col flex-1 min-h-0 bg-lantern-surface">
         {successMessage && (
-          <div className="mb-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg flex items-center text-green-700 dark:text-green-300 animate-pulse">
-            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" />
+          <div className="mb-3 p-3 bg-lantern-success/10 border border-lantern-success/30 rounded-lg flex items-center text-lantern-success">
+            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" aria-hidden />
             <span className="text-sm font-medium">{successMessage}</span>
           </div>
         )}
@@ -257,8 +267,8 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
             </button>
           )}
         </div>
-      </div>
-    </div>
+        </div>
+    </Modal>
   );
 };
 

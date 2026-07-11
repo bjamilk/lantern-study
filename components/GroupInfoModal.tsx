@@ -6,7 +6,7 @@ import { SparklesIcon } from '@heroicons/react/24/solid';
 import { compressImage } from '../utils/imageCompression';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
-import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import Modal from './ui/Modal';
 
 
 interface GroupInfoModalProps {
@@ -81,8 +81,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
       }
     };
   }, [avatarPreviewUrl]);
-
-  const dialogRef = useModalFocusTrap(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -332,28 +330,37 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 transition-opacity duration-300 ease-in-out" role="dialog" aria-modal="true" aria-labelledby="group-info-modal-title">
-      <div ref={dialogRef} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg transform transition-all duration-300 ease-in-out scale-100 max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-4 flex-shrink-0">
-          <h2 id="group-info-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Group Information</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">
-            <XCircleIcon className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <div className="border-b border-gray-200 dark:border-gray-700 mb-4 flex-shrink-0">
-            <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                <button onClick={() => setActiveTab('details')} className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'}`}>Details</button>
-                <button onClick={() => setActiveTab('members')} className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'members' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'}`}>Members</button>
-                {isCurrentUserAdmin && <button onClick={() => setActiveTab('danger')} className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'danger' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600'}`}>Danger Zone</button>}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="group-info-modal-title"
+      maxWidthClass="max-w-lg"
+      panelClassName="!p-0 max-h-[90vh] flex flex-col overflow-hidden"
+    >
+      <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
+        <h2 id="group-info-modal-title" className="text-xl font-semibold text-lantern-text">Group Information</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+          aria-label="Close group information"
+        >
+          <XCircleIcon className="w-6 h-6" aria-hidden />
+        </button>
+      </div>
+
+      <div className="border-b border-lantern-border px-6 flex-shrink-0">
+            <nav className="-mb-px flex space-x-4" aria-label="Group info tabs">
+                <button type="button" onClick={() => setActiveTab('details')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'details' ? 'border-lantern-primary text-lantern-primary' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Details</button>
+                <button type="button" onClick={() => setActiveTab('members')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'members' ? 'border-lantern-primary text-lantern-primary' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Members</button>
+                {isCurrentUserAdmin && <button type="button" onClick={() => setActiveTab('danger')} className={`whitespace-nowrap min-h-[44px] py-2 px-1 border-b-2 font-medium text-sm ${activeTab === 'danger' ? 'border-lantern-error text-lantern-error' : 'border-transparent text-lantern-text-muted hover:text-lantern-text'}`}>Danger Zone</button>}
             </nav>
         </div>
-        
-        <div className="flex-grow overflow-y-auto pr-2 -mr-2">
+
+        <div className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
             {renderContent()}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 export default GroupInfoModal;

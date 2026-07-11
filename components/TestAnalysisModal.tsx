@@ -4,7 +4,8 @@
 
 import React, { useEffect, useRef } from 'react';
 import { TestResult } from '../types';
-import { XCircleIcon, ChartPieIcon, ClockIcon, TagIcon, SparklesIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ChartPieIcon, ClockIcon, TagIcon, SparklesIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import Modal from './ui/Modal';
 import { Chart, registerables } from 'chart.js';
 import type { Chart as ChartType } from 'chart.js';
 import { computeWeakTopicsFromTestResult } from '../utils/buildFlashcardSource';
@@ -217,38 +218,51 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="analysis-modal-title">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-xl w-full max-w-4xl transform h-[90vh] flex flex-col">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                    <h2 id="analysis-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Detailed Test Analysis</h2>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleGenerateFlashcards}
-                            disabled={!onGenerateWeakTopicFlashcards || isGeneratingFlashcards}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg shadow-sm transition-colors"
-                            title={weakTopics.length ? `Generate flashcards for: ${weakTopics.join(', ')}` : 'Generate flashcards from questions you missed'}
-                        >
-                            {isGeneratingFlashcards ? (
-                                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <SparklesIcon className="w-4 h-4" />
-                            )}
-                            {isGeneratingFlashcards
-                                ? 'Generating...'
-                                : weakTopics.length
-                                    ? 'Generate Flashcards for Weak Topics'
-                                    : 'Generate Flashcards'}
-                        </button>
-                        <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close modal">
-                            <XCircleIcon className="w-6 h-6" />
-                        </button>
-                    </div>
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            ariaLabelledBy="analysis-modal-title"
+            maxWidthClass="max-w-4xl"
+            loading={isGeneratingFlashcards}
+            closeOnBackdrop={!isGeneratingFlashcards}
+            panelClassName="!p-0 h-[90vh] flex flex-col overflow-hidden"
+        >
+            <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
+                <h2 id="analysis-modal-title" className="text-xl font-semibold text-lantern-text">Detailed Test Analysis</h2>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={handleGenerateFlashcards}
+                        disabled={!onGenerateWeakTopicFlashcards || isGeneratingFlashcards}
+                        className="flex items-center gap-1.5 min-h-[44px] px-3 py-1.5 text-sm font-medium bg-lantern-primary hover:bg-lantern-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg shadow-sm transition-colors"
+                        title={weakTopics.length ? `Generate flashcards for: ${weakTopics.join(', ')}` : 'Generate flashcards from questions you missed'}
+                    >
+                        {isGeneratingFlashcards ? (
+                            <ArrowPathIcon className="w-4 h-4 animate-spin" aria-hidden />
+                        ) : (
+                            <SparklesIcon className="w-4 h-4" aria-hidden />
+                        )}
+                        {isGeneratingFlashcards
+                            ? 'Generating...'
+                            : weakTopics.length
+                                ? 'Generate Flashcards for Weak Topics'
+                                : 'Generate Flashcards'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                        aria-label="Close analysis dialog"
+                    >
+                        <XMarkIcon className="w-6 h-6" aria-hidden />
+                    </button>
                 </div>
-                <div className="flex-grow overflow-y-auto pr-2 -mr-4 space-y-8">
+            </div>
+            <div className="flex-grow overflow-y-auto px-6 py-4 space-y-8 bg-lantern-surface">
                     {/* Pie Chart */}
                     <section>
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                            <ChartPieIcon className="w-5 h-5 mr-2 text-green-500"/>
+                        <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
+                            <ChartPieIcon className="w-5 h-5 mr-2 text-lantern-success" aria-hidden />
                             Question Performance
                         </h3>
                         <div className="relative h-64 md:h-80 mx-auto max-w-sm">
@@ -257,8 +271,8 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                     </section>
                     {/* Time per Question */}
                     <section>
-                        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                            <ClockIcon className="w-5 h-5 mr-2 text-blue-500"/>
+                        <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
+                            <ClockIcon className="w-5 h-5 mr-2 text-lantern-primary" aria-hidden />
                             Time Spent per Question
                         </h3>
                         <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-300">
@@ -282,8 +296,8 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                     {/* Time per Tag */}
                     {hasTags && (
                         <section>
-                             <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
-                                <TagIcon className="w-5 h-5 mr-2 text-purple-500"/>
+                             <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
+                                <TagIcon className="w-5 h-5 mr-2 text-lantern-accent" aria-hidden />
                                 Average Time per Tag
                             </h3>
                             <div className="relative h-72">
@@ -292,8 +306,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                         </section>
                     )}
                 </div>
-            </div>
-        </div>
+        </Modal>
     );
 };
 
