@@ -14,6 +14,7 @@ import {
   PlusIcon,
   TrashIcon
 } from '@heroicons/react/24/outline';
+import Modal from './ui/Modal';
 
 interface EditMarketplaceListingModalProps {
   isOpen: boolean;
@@ -264,18 +265,28 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="edit-listing-title"
+      maxWidthClass="max-w-2xl"
+      loading={loading || uploadingImages}
+      closeOnBackdrop={!loading && !uploadingImages}
+      panelClassName="!p-0 max-h-[90vh] overflow-y-auto rounded-xl"
+    >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">
+          <h2 id="edit-listing-title" className="text-xl font-bold text-slate-800 dark:text-slate-200">
             Edit Listing
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            disabled={loading || uploadingImages}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+            aria-label="Close edit listing dialog"
           >
-            <XMarkIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+            <XMarkIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" aria-hidden />
           </button>
         </div>
 
@@ -529,8 +540,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

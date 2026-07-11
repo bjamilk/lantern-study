@@ -4,6 +4,7 @@ import type { MarketplaceListing } from '../../types';
 import Button from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
+import Modal from '../ui/Modal';
 
 interface CreateBundleModalProps {
   listings: MarketplaceListing[];
@@ -62,27 +63,37 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
       });
       onCreated();
       onClose();
-    } catch (e: any) {
-      setError(e?.message || 'Failed to create bundle');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create bundle');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-      <div className="w-full sm:max-w-xl bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold">Create bundle</h2>
-          <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+    <Modal
+      isOpen
+      onClose={onClose}
+      ariaLabelledBy="create-bundle-title"
+      maxWidthClass="max-w-xl"
+      loading={saving}
+      closeOnBackdrop={!saving}
+      alignClass="items-end sm:items-center justify-center"
+      paddingClass="p-0 sm:p-4"
+      panelClassName="!p-0 rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto border border-lantern-border"
+    >
+        <div className="flex items-center justify-between p-4 border-b border-lantern-border">
+          <h2 id="create-bundle-title" className="text-lg font-semibold text-lantern-text">Create bundle</h2>
+          <Button size="sm" variant="ghost" onClick={onClose} disabled={saving}>Close</Button>
         </div>
         <div className="p-4 space-y-3">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Bundle title" />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Bundle title" aria-label="Bundle title" />
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
             placeholder="Optional description"
+            aria-label="Bundle description"
           />
           <div className="flex gap-2 items-end">
             <Input
@@ -91,6 +102,7 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
               onChange={(e) => setPrice(e.target.value)}
               placeholder="Bundle price"
               className="flex-1"
+              aria-label="Bundle price"
             />
             {suggestedPrice > 0 && (
               <Button
@@ -102,35 +114,34 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
               </Button>
             )}
           </div>
-          <p className="text-xs text-slate-500">Select active listings to include:</p>
-          <div className="max-h-48 overflow-y-auto space-y-2 border border-slate-200 dark:border-slate-700 rounded-lg p-2">
+          <p className="text-xs text-lantern-text-muted">Select active listings to include:</p>
+          <div className="max-h-48 overflow-y-auto space-y-2 border border-lantern-border rounded-lg p-2">
             {activeListings.length === 0 && (
-              <p className="text-sm text-slate-500 p-2">No active listings available.</p>
+              <p className="text-sm text-lantern-text-muted p-2">No active listings available.</p>
             )}
             {activeListings.map((listing) => (
               <label
                 key={listing.id}
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                className="flex items-center gap-2 p-2 min-h-[44px] rounded-lg hover:bg-lantern-background-secondary cursor-pointer"
               >
                 <input
                   type="checkbox"
                   checked={selected.has(listing.id)}
                   onChange={() => toggle(listing.id)}
                 />
-                <span className="text-sm flex-1 truncate">{listing.title}</span>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm flex-1 truncate text-lantern-text">{listing.title}</span>
+                <span className="text-xs text-lantern-text-muted">
                   {listing.price ? `₦${Number(listing.price).toLocaleString()}` : 'Free'}
                 </span>
               </label>
             ))}
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button onClick={handleCreate} loading={saving} className="w-full">
+          {error && <p className="text-sm text-lantern-error">{error}</p>}
+          <Button onClick={() => void handleCreate()} loading={saving} className="w-full min-h-[44px]">
             Publish bundle
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
