@@ -465,14 +465,36 @@ export function useRealtimeSubscriptions(
       || raw.groupId;
     if (!groupId) return;
 
+    const senderId =
+      (raw as { sender_id?: string; senderId?: string }).sender_id
+      || raw.senderId
+      || (raw as { sender?: { id?: string } }).sender?.id;
+
     const cached = useGroupStore.getState().messagesCache[groupId] || [];
     if (cached.some(m => m.id === raw.id)) {
       mergeGroupMessage(groupId, raw);
-    } else {
-      appendGroupMessage(groupId, raw);
+      return;
     }
+
+    if (senderId && senderId === user?.id) {
+      const rawContent =
+        (raw as { content?: string; text?: string }).content
+        || (raw as { text?: string }).text
+        || '';
+      const hasOptimistic = cached.some(
+        (message) =>
+          message.id.startsWith('msg-')
+          && message.senderId === senderId
+          && message.text === rawContent
+      );
+      if (hasOptimistic) {
+        return;
+      }
+    }
+
+    appendGroupMessage(groupId, raw);
     onMessage?.(raw);
-  }, [onMessage, appendGroupMessage, mergeGroupMessage]);
+  }, [onMessage, appendGroupMessage, mergeGroupMessage, user?.id]);
 
   const handleDirectMessage = useCallback((message: DirectMessage) => {
     console.log('[useRealtimeSubscriptions] DM received in thread:', message.threadId);

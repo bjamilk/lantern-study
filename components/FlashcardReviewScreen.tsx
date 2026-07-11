@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Deck, Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
@@ -24,6 +24,8 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   const currentUser = useAuthStore(state => state.currentUser);
+  const ratedCardIdsRef = useRef(new Set<string>());
+  const gradingRef = useRef(false);
 
   const currentCard = session.cardQueue[currentIndex];
   const isSessionComplete = currentIndex >= session.cardQueue.length;
@@ -67,6 +69,9 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
       // Anki-style ratings when answer is shown
       if (isAnswerShown && currentCard) {
+        if (event.repeat) return;
+        if (gradingRef.current || ratedCardIdsRef.current.has(currentCard.id)) return;
+
         const ratingMap: Record<string, 'again' | 'hard' | 'good' | 'easy'> = {
           '1': 'again',
           '2': 'hard',
@@ -76,8 +81,11 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         const rating = ratingMap[event.key];
         if (rating) {
           event.preventDefault();
+          gradingRef.current = true;
+          ratedCardIdsRef.current.add(currentCard.id);
           onUpdateSrs(currentCard.id, rating);
           setCurrentIndex(prev => prev + 1);
+          gradingRef.current = false;
         }
       }
     };
@@ -109,9 +117,12 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   };
 
   const handleRatePerformance = (rating: 'again' | 'hard' | 'good' | 'easy') => {
-    if (!currentCard) return;
+    if (!currentCard || gradingRef.current || ratedCardIdsRef.current.has(currentCard.id)) return;
+    gradingRef.current = true;
+    ratedCardIdsRef.current.add(currentCard.id);
     onUpdateSrs(currentCard.id, rating);
     setCurrentIndex(prev => prev + 1);
+    gradingRef.current = false;
   };
 
   const handleSubmitComment = async () => {

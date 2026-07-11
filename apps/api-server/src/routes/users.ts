@@ -166,7 +166,12 @@ router.get(
         lastName: user.last_name,
         name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
         avatarUrl: user.avatar_url,
-        onlineStatus: resolvePublicOnlineStatus(user.settings, user.last_seen_at),
+        onlineStatus: resolvePublicOnlineStatus(
+          user.show_online_status === false
+            ? { privacy: { showOnlineStatus: false } }
+            : null,
+          user.last_seen_at
+        ),
       }));
 
       res.json({

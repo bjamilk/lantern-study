@@ -238,6 +238,38 @@ interface GroupState {
   getActiveDmThreads: () => DMThread[];
 }
 
+function isOptimisticMessageId(id: string): boolean {
+  return id.startsWith('msg-');
+}
+
+function stripOptimisticDuplicates(messages: Message[], serverMessage: Message): Message[] {
+  return messages.filter((message) => {
+    if (!isOptimisticMessageId(message.id)) return true;
+    if (message.senderId !== serverMessage.senderId) return true;
+    if (message.text !== serverMessage.text) return true;
+    const messageTime = new Date(message.createdAt).getTime();
+    const serverTime = new Date(serverMessage.createdAt).getTime();
+    return Math.abs(messageTime - serverTime) > 60_000;
+  });
+}
+
+function replaceOptimisticWithServer(
+  messages: Message[],
+  optimisticId: string,
+  serverMessage: Message
+): Message[] {
+  const withoutServerDup = messages.filter((message) => message.id !== serverMessage.id);
+  const optimisticIndex = withoutServerDup.findIndex((message) => message.id === optimisticId);
+  if (optimisticIndex >= 0) {
+    const updated = [...withoutServerDup];
+    updated[optimisticIndex] = serverMessage;
+    return updated;
+  }
+  const stripped = stripOptimisticDuplicates(withoutServerDup, serverMessage);
+  if (stripped.some((message) => message.id === serverMessage.id)) return stripped;
+  return [...stripped, serverMessage];
+}
+
 function mapApiMessage(m: any, groupId: string): Message {
   let parsed: any = {};
   const rawContent = m.content || m.text || '';
@@ -799,7 +831,29 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
 
     try {
-      await api.sendMessage(groupId, senderId, { content: text });
+      const serverPayload = await api.sendMessage(groupId, senderId, { content: text });
+      const serverMessage = mapApiMessage(serverPayload, groupId);
+      const isCurrentGroup = get().currentGroup?.id === groupId;
+      set((state) => {
+        const previousCache = state.messagesCache[groupId] || [];
+        const updatedCache = replaceOptimisticWithServer(previousCache, newMessage.id, serverMessage);
+        const updatedMessages = isCurrentGroup
+          ? replaceOptimisticWithServer(state.messages, newMessage.id, serverMessage)
+          : state.messages;
+        const updatedGroups = state.groups.map((group) => {
+          if (group.id !== groupId) return group;
+          return {
+            ...group,
+            lastMessage: serverMessage,
+            updatedAt: serverMessage.createdAt,
+          };
+        });
+        return {
+          groups: updatedGroups,
+          messages: updatedMessages,
+          messagesCache: { ...state.messagesCache, [groupId]: updatedCache },
+        };
+      });
     } catch (error: any) {
       const isCurrentGroup = get().currentGroup?.id === groupId;
       set({
@@ -1424,7 +1478,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     set(state => {
       const cached = state.messagesCache[groupId] || [];
       if (cached.some(m => m.id === message.id)) return state;
-      const updated = [...cached, message];
+      const withoutOptimisticDup = stripOptimisticDuplicates(cached, message);
+      const updated = [...withoutOptimisticDup, message];
       return {
         messagesCache: { ...state.messagesCache, [groupId]: updated },
         messages: state.currentGroup?.id === groupId ? updated : state.messages,
