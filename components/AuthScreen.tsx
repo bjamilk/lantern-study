@@ -859,8 +859,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                     {!isForgotPasswordView && !isVerifyEmailView && (
                         <>
-                            <div className={`transition-all duration-500 ease-in-out ${!isLoginView ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-                                <div className="space-y-5">
+                            {!isLoginView && (
+                            <div className="space-y-5">
                                     <div className="flex space-x-4">
                                         <div className="w-1/2">
                                             <label htmlFor="firstName" className="sr-only">First Name</label>
@@ -941,7 +941,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                             
                             <div>
                                 <label htmlFor="email" className="sr-only">Email address</label>

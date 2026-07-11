@@ -1392,94 +1392,43 @@ export class SupabaseService {
   }
 
   async voteQuestion(messageId: string, userId: string, voteType: 'up' | 'down'): Promise<any> {
-    // Check if vote already exists
     const { data: existingVote, error: checkError } = await this.supabase
       .from('question_votes')
-      .select('*')
+      .select('vote_type')
       .eq('message_id', messageId)
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (checkError && checkError.code !== 'PGRST116') throw checkError;
+    if (checkError) throw checkError;
 
-    const oldVoteType = existingVote?.vote_type;
+    if (existingVote?.vote_type === voteType) {
+      const { data: msg } = await this.supabase
+        .from('messages')
+        .select('group_id, upvotes, downvotes')
+        .eq('id', messageId)
+        .single();
+      return { success: true, voteType, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
+    }
 
-    if (existingVote) {
-      // Update existing vote using composite key
-      const { error } = await this.supabase
-        .from('question_votes')
-        .update({ vote_type: voteType })
-        .eq('message_id', messageId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-      
-      // Update message vote counts (if vote type changed)
-      if (oldVoteType !== voteType) {
-        // Get current message
-        const { data: message } = await this.supabase
-          .from('messages')
-          .select('upvotes, downvotes')
-          .eq('id', messageId)
-          .single();
-        
-        if (message) {
-          const updates: any = {};
-          if (oldVoteType === 'up') {
-            updates.upvotes = Math.max(0, (message.upvotes || 0) - 1);
-          } else if (oldVoteType === 'down') {
-            updates.downvotes = Math.max(0, (message.downvotes || 0) - 1);
-          }
-          if (voteType === 'up') {
-            updates.upvotes = (updates.upvotes !== undefined ? updates.upvotes : (message.upvotes || 0)) + 1;
-          } else if (voteType === 'down') {
-            updates.downvotes = (updates.downvotes !== undefined ? updates.downvotes : (message.downvotes || 0)) + 1;
-          }
-          
-          await this.supabase
-            .from('messages')
-            .update(updates)
-            .eq('id', messageId);
-        }
-      }
-    } else {
-      // Create new vote
-      const { error } = await this.supabase
-        .from('question_votes')
-        .insert({
+    const { error } = await this.supabase
+      .from('question_votes')
+      .upsert(
+        {
           message_id: messageId,
           user_id: userId,
           vote_type: voteType,
-        });
+        },
+        { onConflict: 'message_id,user_id' }
+      );
 
-      if (error) throw error;
-      
-      // Update message vote counts
-      const { data: message } = await this.supabase
-        .from('messages')
-        .select('upvotes, downvotes')
-        .eq('id', messageId)
-        .single();
-      
-      if (message) {
-        const updates: any = {};
-        if (voteType === 'up') {
-          updates.upvotes = (message.upvotes || 0) + 1;
-        } else {
-          updates.downvotes = (message.downvotes || 0) + 1;
-        }
-        
-        await this.supabase
-          .from('messages')
-          .update(updates)
-          .eq('id', messageId);
-      }
-    }
+    if (error) throw error;
 
-    // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
-    // Also invalidate group messages cache
-    const { data: msg } = await this.supabase.from('messages').select('group_id, upvotes, downvotes').eq('id', messageId).single();
+    const { data: msg } = await this.supabase
+      .from('messages')
+      .select('group_id, upvotes, downvotes')
+      .eq('id', messageId)
+      .single();
     if (msg) {
       await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
     }
@@ -1488,14 +1437,6 @@ export class SupabaseService {
   }
 
   async removeVote(messageId: string, userId: string): Promise<any> {
-    // Get existing vote first
-    const { data: existingVote } = await this.supabase
-      .from('question_votes')
-      .select('vote_type')
-      .eq('message_id', messageId)
-      .eq('user_id', userId)
-      .single();
-    
     const { error } = await this.supabase
       .from('question_votes')
       .delete()
@@ -1503,34 +1444,13 @@ export class SupabaseService {
       .eq('user_id', userId);
 
     if (error) throw error;
-    
-    // Update message vote counts
-    if (existingVote) {
-      const { data: message } = await this.supabase
-        .from('messages')
-        .select('upvotes, downvotes')
-        .eq('id', messageId)
-        .single();
-      
-      if (message) {
-        const updates: any = {};
-        if (existingVote.vote_type === 'up') {
-          updates.upvotes = Math.max(0, (message.upvotes || 0) - 1);
-        } else if (existingVote.vote_type === 'down') {
-          updates.downvotes = Math.max(0, (message.downvotes || 0) - 1);
-        }
-        
-        await this.supabase
-          .from('messages')
-          .update(updates)
-          .eq('id', messageId);
-      }
-    }
 
-    // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
-    // Also invalidate group messages cache
-    const { data: msg } = await this.supabase.from('messages').select('group_id, upvotes, downvotes').eq('id', messageId).single();
+    const { data: msg } = await this.supabase
+      .from('messages')
+      .select('group_id, upvotes, downvotes')
+      .eq('id', messageId)
+      .single();
     if (msg) {
       await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
     }
@@ -4903,12 +4823,15 @@ export class SupabaseService {
   async addMarketplaceReview(listingId: string, reviewerId: string, review: { rating: number; comment?: string }): Promise<any> {
     const { data, error } = await this.supabase
       .from('marketplace_reviews')
-      .insert({
-        listing_id: listingId,
-        reviewer_id: reviewerId,
-        rating: review.rating,
-        comment: review.comment,
-      })
+      .upsert(
+        {
+          listing_id: listingId,
+          reviewer_id: reviewerId,
+          rating: review.rating,
+          comment: review.comment,
+        },
+        { onConflict: 'listing_id,reviewer_id' }
+      )
       .select()
       .single();
 

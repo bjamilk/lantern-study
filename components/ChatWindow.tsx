@@ -428,8 +428,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         setIsDropdownOpen(false);
       }
     };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false);
+      }
+    };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const isGroupChat = chat?.chatType === 'group';
@@ -669,14 +678,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                 className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                aria-haspopup="true"
+                aria-haspopup="menu"
                 aria-expanded={isDropdownOpen}
                 aria-label="Chat options"
               >
                 <EllipsisVerticalIcon className="w-5 h-5" />
               </button>
               {isDropdownOpen && isGroup && group && (
-                <div className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div role="menu" className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
                   <button
                     onClick={() => handleDropdownAction(onOpenGroupInfoModal)}
                     className="w-full text-left px-4 py-2 text-sm text-lantern-text hover:bg-lantern-background-secondary flex items-center gap-2.5 transition-colors duration-200"
@@ -765,7 +774,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               )}
               {isDropdownOpen && !isGroup && chat && (
-                <div className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div role="menu" className="absolute right-0 mt-2 w-56 bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
                   {(chat as any).isArchived ? (
                     <button
                       onClick={() => {

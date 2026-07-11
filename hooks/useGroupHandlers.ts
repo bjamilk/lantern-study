@@ -19,6 +19,10 @@ import {
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
 
+const sendingGroupIds = new Set<string>();
+const sendingThreadIds = new Set<string>();
+const votingMessageIds = new Set<string>();
+
 interface UseGroupHandlersParams {
     users: User[];
 }
@@ -259,9 +263,14 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
     const handleSendDm = useCallback(async (threadId: string, text: string) => {
         if (!currentUser) return;
-        
+        if (sendingThreadIds.has(threadId)) return;
+        sendingThreadIds.add(threadId);
+
         const thread = dmThreads.find(t => t.id === threadId);
-        if (!thread) return;
+        if (!thread) {
+            sendingThreadIds.delete(threadId);
+            return;
+        }
         
         const otherUserId = thread.participantIds.find(id => id !== currentUser.id);
         if (!otherUserId) return;
@@ -307,6 +316,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }));
             const message = error instanceof Error ? error.message : 'Failed to send direct message';
             alert(message);
+        } finally {
+            sendingThreadIds.delete(threadId);
         }
     }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads]);
 
@@ -628,6 +639,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (!currentUser || !selectedChat) return;
 
         if (selectedChat.chatType === 'group') {
+            if (sendingGroupIds.has(selectedChat.id)) return;
+            sendingGroupIds.add(selectedChat.id);
+
             const groupBefore = groups.find(g => g.id === selectedChat.id);
             const prevLastMessage = groupBefore?.lastMessage;
             const prevLastMessageTime = groupBefore?.lastMessageTime;
@@ -693,6 +707,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         : g
                 ));
                 void addNotification('Message failed to send. Please try again.');
+            } finally {
+                sendingGroupIds.delete(selectedChat.id);
             }
         } else if (selectedChat.chatType === 'dm') {
             handleSendDm(selectedChat.id, text);
@@ -701,10 +717,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
     const onVoteQuestion = useCallback(async (messageId: string, voteType: 'up' | 'down') => {
         if (!selectedChat || selectedChat.chatType !== 'group' || !currentUser) return;
+        if (votingMessageIds.has(messageId)) return;
+        votingMessageIds.add(messageId);
 
         const groupMessages = messages[selectedChat.id] || [];
         const messageIndex = groupMessages.findIndex(m => m.id === messageId);
-        if (messageIndex === -1) return;
+        if (messageIndex === -1) {
+            votingMessageIds.delete(messageId);
+            return;
+        }
 
         const message = groupMessages[messageIndex];
         const currentUserVote = userVotes[messageId];
@@ -741,6 +762,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             console.error('Error voting:', error);
             alert('Failed to vote. Please try again.');
             return;
+        } finally {
+            votingMessageIds.delete(messageId);
         }
 
         const updatedMessage = { ...message, upvotes: newUpvotes, downvotes: newDownvotes };

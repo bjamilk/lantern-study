@@ -78,7 +78,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
 
   return (
     <div
-      className={`${baseClasses} ${selectedClasses} ${disabledClasses} ${archivedClasses} ${collapsedClasses}`}
+      className={`${baseClasses} ${selectedClasses} ${archivedClasses} ${collapsedClasses}`}
       style={{
         paddingLeft: indentPadding,
         ...(accentBorder && isSelected ? { borderLeftColor: accentBorder } : {}),
@@ -86,11 +86,6 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
           ? { borderLeftColor: `${accentBorder}40` }
           : {}),
       }}
-      onClick={handleItemClick}
-      aria-disabled={isDisabled}
-      role="button"
-      tabIndex={isDisabled ? -1 : 0}
-      onKeyDown={handleItemKeyDown}
       title={!showText ? name : undefined}
     >
       {hasSubGroups && onToggleExpand && showText && (
@@ -100,7 +95,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
             onToggleExpand();
           }}
           onKeyDown={handleToggleKeyDown}
-          className="expand-toggle-button p-0.5 mr-1.5 rounded-sm text-lantern-text-tertiary hover:text-lantern-text focus:outline-none focus:ring-1 focus:ring-lantern-primary"
+          className="expand-toggle-button p-0.5 mr-1.5 rounded-sm text-lantern-text-tertiary hover:text-lantern-text focus:outline-none focus:ring-1 focus:ring-lantern-primary shrink-0"
           aria-expanded={isExpanded}
           aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
         >
@@ -108,7 +103,15 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
         </button>
       )}
       {!hasSubGroups && !isSubGroup && showText && <div className="w-[1.375rem] mr-1.5 flex-shrink-0"></div>}
-      
+
+      <div
+        className={`flex items-center flex-1 min-w-0 ${disabledClasses}`}
+        onClick={handleItemClick}
+        aria-disabled={isDisabled}
+        role="button"
+        tabIndex={isDisabled ? -1 : 0}
+        onKeyDown={handleItemKeyDown}
+      >
       {isGroup ? (
         <Avatar
           name={name}
@@ -139,6 +142,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
             )}
         </>
       )}
+      </div>
     </div>
   );
 };

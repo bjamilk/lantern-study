@@ -18,22 +18,23 @@ export const Toggle: React.FC<ToggleProps> = ({
   id,
 }) => {
   const toggleId = id || label?.replace(/\s+/g, '-').toLowerCase();
+  const labelId = toggleId ? `${toggleId}-label` : undefined;
 
   return (
-    <label
-      htmlFor={toggleId}
-      className={`flex items-start gap-3 cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+    <div
+      className={`flex items-start gap-3 ${disabled ? 'opacity-50' : ''}`}
     >
       <button
         id={toggleId}
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-labelledby={label ? labelId : undefined}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`relative shrink-0 w-11 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary ${
           checked ? 'bg-lantern-primary' : 'bg-slate-300 dark:bg-slate-600'
-        }`}
+        } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <span
           className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
@@ -42,12 +43,12 @@ export const Toggle: React.FC<ToggleProps> = ({
         />
       </button>
       {(label || description) && (
-        <div className="flex-1 min-w-0">
+        <div id={labelId} className="flex-1 min-w-0">
           {label && <p className="text-sm font-medium text-lantern-text">{label}</p>}
           {description && <p className="text-xs text-lantern-text-secondary mt-0.5">{description}</p>}
         </div>
       )}
-    </label>
+    </div>
   );
 };
 

@@ -716,15 +716,21 @@ router.post(
 
     // Send DM to seller with listing context
     const dmMessage = `📦 Inquiry about: "${listing.title}"\n\n${message}`;
-    await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
-      bypassPrivacy: true,
-    });
-
-    // Generate thread ID (same logic as sendDirectMessage)
     const sortedIds = [buyerId, listing.user_id].sort();
     const threadId = sortedIds.join('-');
 
-    // Create inquiry record
+    const existingInquiry = await supabaseService.getInquiryByListingAndBuyer(finalListingId, buyerId);
+    if (existingInquiry) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...existingInquiry,
+          dm_thread_id: existingInquiry.dm_thread_id || threadId,
+        },
+        existing: true,
+      });
+    }
+
     const inquiry = await supabaseService.createInquiry(
       finalListingId,
       buyerId,
@@ -732,6 +738,10 @@ router.post(
       threadId,
       message
     );
+
+    await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
+      bypassPrivacy: true,
+    });
 
     // Get buyer name for notification
     const buyerProfile = await supabaseService.fetchUserProfile(buyerId);
@@ -862,7 +872,22 @@ router.post(
       .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') {
+        const { data: existing, error: existingError } = await supabaseService.getClient()
+          .from('marketplace_offers')
+          .select('*')
+          .eq('listing_id', listingId)
+          .eq('buyer_id', userId)
+          .eq('status', 'pending')
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (existing) {
+          return res.status(200).json({ success: true, data: existing, existing: true });
+        }
+      }
+      throw error;
+    }
 
     // Create notification for seller
     try {
