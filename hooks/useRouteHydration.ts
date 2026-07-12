@@ -73,7 +73,9 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
         if (userId) {
           try {
             const fetched = await fetchDecks(userId, { includeShared: true });
-            const mapped = (fetched || []).map((d: any) => ({
+            const mapped = (fetched || [])
+              .filter((d: any) => d && d.id)
+              .map((d: any) => ({
               id: d.id,
               name: d.name,
               description: d.description,

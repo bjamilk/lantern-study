@@ -61,6 +61,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const isLoading = isInitialLoading;
+  const validDecks = decks.filter((deck): deck is Deck => Boolean(deck?.id && deck?.name));
 
   const handleAIGenerate = () => {
     openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.');
@@ -130,7 +131,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         <div className="shrink-0 px-4 md:px-6 py-4 border-b border-lantern-border bg-lantern-surface">
           <ScreenHeader
             title="Flashcard Decks"
-            subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''} · ${flashcards.length} card${flashcards.length !== 1 ? 's' : ''} total`}
+            subtitle={`${validDecks.length} deck${validDecks.length !== 1 ? 's' : ''} · ${flashcards.length} card${flashcards.length !== 1 ? 's' : ''} total`}
             icon={<RectangleStackIcon className="w-6 h-6" />}
             actions={headerActions}
           />
@@ -146,10 +147,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
           </div>
-        ) : decks.length > 0 ? (
+        ) : validDecks.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {decks.map((deck, index) => {
-              if (!deck) return null;
+            {validDecks.map((deck, index) => {
               const { newCards, dueCards, totalCards } = getDeckStats(deck.id);
               const hasDueCards = dueCards > 0;
               const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];

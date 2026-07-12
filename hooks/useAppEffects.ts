@@ -716,7 +716,9 @@ export function useAppEffects({
                 const decksResult = results[4];
                 const flashcardsResult = results[5];
                 if (decksResult.status === 'fulfilled') {
-                    setDecks(decksResult.value.map((d: any) => ({
+                    setDecks((decksResult.value || [])
+                        .filter((d: any) => d && d.id)
+                        .map((d: any) => ({
                         id: d.id,
                         name: d.name,
                         description: d.description,

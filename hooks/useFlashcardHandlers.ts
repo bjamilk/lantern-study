@@ -599,7 +599,9 @@ export function useFlashcardHandlers() {
         const newDeck = importResult.deck || importResult;
         const insertedCards = importResult.flashcards || [];
         const fetchedDecks = await fetchDecks(currentUser!.id, { includeShared: true });
-        setDecks(fetchedDecks.map((d: any) => ({
+        setDecks(fetchedDecks
+            .filter((d: any) => d && d.id)
+            .map((d: any) => ({
             id: d.id,
             name: d.name,
             description: d.description,

@@ -9,6 +9,14 @@
 import { create } from 'zustand';
 import { Deck, Flashcard, SrsData } from '../types';
 
+function isValidDeck(deck: Deck | null | undefined): deck is Deck {
+  return Boolean(deck && typeof deck.id === 'string' && deck.id && typeof deck.name === 'string');
+}
+
+function sanitizeDecks(decks: Deck[]): Deck[] {
+  return decks.filter(isValidDeck);
+}
+
 // storage keys mirror mobile keys for simplicity
 const WEB_DECKS_KEY = 'lantern_decks';
 const WEB_FLASHCARDS_KEY = 'lantern_flashcards';
@@ -72,10 +80,10 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   offlineDeckIds: [],
   
   // State Management - Decks
-  setDecks: (decks) => set({ decks }),
+  setDecks: (decks) => set({ decks: sanitizeDecks(decks) }),
   
   updateDecks: (updater) => set((state) => ({
-    decks: updater(state.decks),
+    decks: sanitizeDecks(updater(state.decks)),
   })),
   
   addDeck: (deck) => set((state) => ({

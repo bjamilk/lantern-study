@@ -955,8 +955,9 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
     }
 
     const result = await response.json();
-    console.log('Fetched decks count:', result.data.length);
-    return result.data;
+    const data = Array.isArray(result.data) ? result.data : [];
+    console.log('Fetched decks count:', data.length);
+    return data.filter((d: any) => d && d.id);
   } catch (error) {
     console.error('Error fetching decks:', error);
     throw error;
