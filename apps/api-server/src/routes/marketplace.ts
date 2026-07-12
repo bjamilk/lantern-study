@@ -951,6 +951,10 @@ router.put(
       return res.status(404).json({ success: false, error: 'Offer not found' });
     }
 
+    if (offer.buyer_id !== userId && offer.seller_id !== userId) {
+      return res.status(404).json({ success: false, error: 'Offer not found' });
+    }
+
     // Authorization checks
     if (action === 'withdraw' && offer.buyer_id !== userId) {
       return res.status(403).json({ success: false, error: 'Only the buyer can withdraw an offer' });
