@@ -8,6 +8,7 @@ import {
   buildFlashcardReviewQueue,
   getTodayStudyCounts,
   isNewFlashcard,
+  normalizeUserSettings,
 } from '@lantern/shared/settings';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
