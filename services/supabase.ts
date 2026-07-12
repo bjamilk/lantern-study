@@ -120,10 +120,15 @@ export function clearAllClientAuthStorage(): void {
   }
 }
 
-/** Merge cookie credentials for BFF auth when enabled. */
+/** Merge cookie credentials + CSRF header for BFF auth when enabled. */
 export function withApiCredentials(init: RequestInit = {}): RequestInit {
-  if (!isCookieAuthEnabled()) return init;
-  return { ...init, credentials: 'include' };
+  const headers = {
+    'X-Requested-With': 'LanternStudy',
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  const next = { ...init, headers };
+  if (!isCookieAuthEnabled()) return next;
+  return { ...next, credentials: 'include' };
 }
 
 /** Server-side session invalidation + Supabase global sign-out + local cleanup. */
@@ -303,11 +308,13 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
     if (refreshed?.access_token) {
       token = refreshed.access_token;
       _cachedAccessToken = token;
-      if (refreshed.refresh_token) {
+      if (refreshed?.access_token) {
+        token = refreshed.access_token;
+        _cachedAccessToken = token;
         try {
           await supabase.auth.setSession({
             access_token: refreshed.access_token,
-            refresh_token: refreshed.refresh_token,
+            refresh_token: refreshed.refresh_token || 'cookie-managed',
           });
         } catch {
           // ignore — memory cache is enough for API calls
@@ -352,6 +359,7 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   if (token) {
     return {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'LanternStudy',
       'Authorization': `Bearer ${token}`,
     };
   }
@@ -359,6 +367,7 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   console.warn('No session token found for authenticated request');
   return {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'LanternStudy',
   };
 };
 

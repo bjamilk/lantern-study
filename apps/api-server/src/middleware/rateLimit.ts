@@ -138,6 +138,7 @@ let _dataExportRateLimit: RateLimitRequestHandler | null = null;
 let _contactFormRateLimit: RateLimitRequestHandler | null = null;
 let _searchRateLimit: RateLimitRequestHandler | null = null;
 let _usernameCheckRateLimit: RateLimitRequestHandler | null = null;
+let _storageBurstRateLimit: RateLimitRequestHandler | null = null;
 let _authLoginRateLimit: RateLimitRequestHandler | null = null;
 let _authSessionRateLimit: RateLimitRequestHandler | null = null;
 
@@ -265,6 +266,19 @@ function buildAllLimiters(): void {
     redisPrefix: 'upload',
   });
 
+  const storageBurstMax = parseInt(process.env.STORAGE_BURST_MAX || String(prodOrDev(30, 500)), 10);
+  _storageBurstRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: storageBurstMax,
+    message: 'Too many storage requests. Please wait before trying again.',
+    keyScope: 'user',
+    redisPrefix: 'storage',
+    skip: (req) => {
+      if (skipHealthPaths(req)) return true;
+      return !(req as AuthenticatedRequest).user?.id;
+    },
+  });
+
   _adminRateLimit = isProduction()
     ? createScopedRateLimit({
         windowMs: 60 * 1000,
@@ -346,6 +360,10 @@ export const aiPostBurstRateLimit: RequestHandler = (req, res, next) => {
 
 export const uploadBurstRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_uploadBurstRateLimit, 'uploadBurstRateLimit')(req, res, next);
+};
+
+export const storageBurstRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_storageBurstRateLimit, 'storageBurstRateLimit')(req, res, next);
 };
 
 export const adminRateLimit: RequestHandler = (req, res, next) => {

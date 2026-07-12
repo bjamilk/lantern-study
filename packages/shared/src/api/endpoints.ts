@@ -1,4 +1,5 @@
 import type { ApiClient } from './client';
+import { createIdempotencyKey } from './idempotency';
 import {
   listingsCacheKey,
   marketplaceCategoryAnalyticsCache,
@@ -1441,11 +1442,14 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/marketplace/offers?role=${role}`, {}, 5000),
 
-    buyNowListing: (listingId: string, couponCode?: string) =>
+    buyNowListing: (listingId: string, couponCode?: string, idempotencyKey?: string) =>
       apiRequest<{ order: import('../types').MarketplaceOrder }>(
         `/marketplace/listings/${listingId}/buy-now`,
         {
           method: 'POST',
+          headers: {
+            'Idempotency-Key': idempotencyKey || createIdempotencyKey('buy-now'),
+          },
           body: JSON.stringify(couponCode ? { couponCode } : {}),
         }
       ),

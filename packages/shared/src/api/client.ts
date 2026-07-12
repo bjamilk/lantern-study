@@ -59,7 +59,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       {
         ...options,
         credentials: options.credentials ?? config.credentials ?? 'same-origin',
-        headers: { ...headers, ...options.headers },
+        headers: {
+          'X-Requested-With': 'LanternStudy',
+          ...headers,
+          ...options.headers,
+        },
       },
       timeoutMs
     );
@@ -131,7 +135,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       {
         ...options,
         credentials: options.credentials ?? config.credentials ?? 'same-origin',
-        headers: { ...headers, ...options.headers },
+        headers: {
+          'X-Requested-With': 'LanternStudy',
+          ...headers,
+          ...options.headers,
+        },
       },
       timeoutMs
     );

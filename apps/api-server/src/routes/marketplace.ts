@@ -1448,11 +1448,13 @@ router.get(
       .order('created_at', { ascending: false });
 
     const listings = allListings || [];
-    const activeListings = listings.filter(l => l.status === 'active');
-    const soldListings = listings.filter(l => l.status === 'sold');
+    const isOwner = req.user?.id === userId;
+    const visibleListings = isOwner ? listings : listings.filter((l) => l.status === 'active');
+    const activeListings = visibleListings.filter((l) => l.status === 'active');
+    const soldListings = isOwner ? listings.filter((l) => l.status === 'sold') : visibleListings.filter((l) => l.status === 'sold');
 
     // Get all reviews across this seller's listings
-    const listingIds = listings.map(l => l.id);
+    const listingIds = visibleListings.map((l) => l.id);
     let allReviews: any[] = [];
     if (listingIds.length > 0) {
       const { data: reviews } = await supabaseService.getClient()
@@ -1483,7 +1485,7 @@ router.get(
       totalInquiries = count || 0;
     }
 
-    const totalViews = listings.reduce((sum, l) => sum + (l.views_count || 0), 0);
+    const totalViews = visibleListings.reduce((sum, l) => sum + (l.views_count || 0), 0);
     const avgRating = allReviews.length > 0
       ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
       : 0;
@@ -1491,13 +1493,13 @@ router.get(
     // Add listing title to reviews for display
     const reviewsWithTitle = allReviews.slice(0, 10).map(r => ({
       ...r,
-      listing_title: listings.find(l => l.id === r.listing_id)?.title || 'Unknown listing',
+      listing_title: visibleListings.find(l => l.id === r.listing_id)?.title || 'Unknown listing',
     }));
 
     const responseData = {
         user: profile,
         stats: {
-          totalListings: listings.length,
+          totalListings: visibleListings.length,
           activeListings: activeListings.length,
           soldListings: soldListings.length,
           totalViews,

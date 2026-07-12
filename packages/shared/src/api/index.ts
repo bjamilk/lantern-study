@@ -1,4 +1,5 @@
 export { createApiClient, type ApiClient, type ApiClientConfig } from './client';
+export { createIdempotencyKey } from './idempotency';
 export {
   RateLimitError,
   parseRetryAfterMs,

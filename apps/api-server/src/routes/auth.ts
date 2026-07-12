@@ -45,35 +45,36 @@ function extractBearerToken(req: AuthenticatedRequest): string | null {
   return readAccessCookie((req as any).cookies || {});
 }
 
-function serializeSession(session: {
+type SessionPayload = {
   access_token: string;
   refresh_token: string;
   expires_in?: number;
   expires_at?: number;
   token_type?: string;
   user: unknown;
-}) {
-  return {
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
+};
+
+/** Never expose refresh_token in JSON — HttpOnly cookies only. */
+function serializeClientSession(
+  session: SessionPayload,
+  options?: { includeAccessToken?: boolean }
+) {
+  const payload: Record<string, unknown> = {
     expires_in: session.expires_in,
     expires_at: session.expires_at,
     token_type: session.token_type,
     user: session.user,
   };
+  if (options?.includeAccessToken) {
+    payload.access_token = session.access_token;
+  }
+  return payload;
 }
 
-async function applySessionCookies(res: Response, session: {
-  access_token: string;
-  refresh_token: string;
-  expires_in?: number;
-  expires_at?: number;
-  token_type?: string;
-  user: unknown;
-}) {
+async function applySessionCookies(res: Response, session: SessionPayload) {
   const expiresIn = session.expires_in ?? Math.max(60, (session.expires_at ?? 0) - Math.floor(Date.now() / 1000));
   setAuthCookies(res, session.access_token, session.refresh_token, expiresIn);
-  return serializeSession(session);
+  return serializeClientSession(session);
 }
 
 /** POST /api/v1/auth/login */
@@ -141,7 +142,8 @@ router.post(
       return res.status(401).json({ success: false, error: 'Session expired', code: 'SESSION_REVOKED' });
     }
 
-    const session = await applySessionCookies(res, data.session);
+    await applySessionCookies(res, data.session);
+    const session = serializeClientSession(data.session, { includeAccessToken: true });
     res.json({ success: true, data: { session, user: data.user } });
   })
 );
@@ -164,7 +166,8 @@ router.get(
         clearAuthCookies(res);
         return res.status(401).json({ success: false, error: 'Session expired', code: 'SESSION_REVOKED' });
       }
-      const session = await applySessionCookies(res, data.session);
+      await applySessionCookies(res, data.session);
+      const session = serializeClientSession(data.session, { includeAccessToken: true });
       return res.json({ success: true, data: { session, user: data.user } });
     }
 
@@ -178,10 +181,14 @@ router.get(
       success: true,
       data: {
         user: verified.user,
-        session: {
-          access_token: accessToken,
-          user: verified.user,
-        },
+        session: serializeClientSession(
+          {
+            access_token: accessToken,
+            refresh_token: '',
+            user: verified.user,
+          },
+          { includeAccessToken: true }
+        ),
       },
     });
   })

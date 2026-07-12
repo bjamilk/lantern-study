@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { assertPdfMagicBytes } from '../utils/fileValidation';
 
 const NOTE_FILES_BUCKET = 'note-files';
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -334,6 +335,7 @@ export function assertFileSize(buffer: Buffer, maxBytes: number, label: string):
 
 export function assertPdfSize(buffer: Buffer): void {
   assertFileSize(buffer, MAX_PDF_BYTES, 'PDF');
+  assertPdfMagicBytes(buffer);
 }
 
 /** PPTX is ZIP-based; truncated uploads break LibreOffice conversion. Legacy .ppt is not ZIP. */

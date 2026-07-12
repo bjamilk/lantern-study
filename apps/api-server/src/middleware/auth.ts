@@ -338,6 +338,7 @@ export const optionalAuthMiddleware = async (
     if (apiKeyService.isApiKeyFormat(credential)) {
       const validation = await apiKeyService.validateKey(credential);
       if (validation.isValid && validation.userId) {
+        if (await rejectIfBanned(validation.userId, res)) return;
         attachUser(req, {
           id: validation.userId,
           permissions: validation.permissions || ['read'],
@@ -356,9 +357,16 @@ export const optionalAuthMiddleware = async (
     if (supabaseService) {
       const supabaseResult = await supabaseService.verifySupabaseToken(credential);
       if (supabaseResult.isValid && supabaseResult.user) {
+        if (await isTokenIssuedBeforeUserCutoff(credential, supabaseResult.user.id)) {
+          next();
+          return;
+        }
+        if (await rejectIfBanned(supabaseResult.user.id, res)) return;
+        if (await rejectIfDeactivated(supabaseResult.user.id, req, res)) return;
         attachUser(req, {
           id: supabaseResult.user.id,
           permissions: ['read', 'write'],
+          isAdmin: supabaseResult.user.app_metadata?.is_platform_admin === true,
           credentialType: 'jwt',
         });
       }

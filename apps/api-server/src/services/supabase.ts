@@ -15,6 +15,7 @@ import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
 import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
+import { assertImageMagicBytes, clampSignedUrlTtl } from '../utils/fileValidation';
 
 type UserStats = typeof initialUserStats;
 
@@ -108,9 +109,10 @@ export class SupabaseService {
     path: string,
     expiresInSeconds = 60 * 60 * 24
   ): Promise<string> {
+    const ttl = clampSignedUrlTtl(expiresInSeconds);
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUrl(path, expiresInSeconds);
+      .createSignedUrl(path, ttl);
     if (error || !data?.signedUrl) {
       throw new Error(error?.message || 'Failed to create signed URL');
     }
@@ -473,6 +475,16 @@ export class SupabaseService {
 
       return data;
     }, { ttl: 600 }); // Cache for 10 minutes
+  }
+
+  async isProfileVisibleToViewer(viewerId: string, targetId: string): Promise<boolean> {
+    if (viewerId === targetId) return true;
+    const { data, error } = await this.supabase.rpc('profile_visible_to_viewer', {
+      viewer_id: viewerId,
+      target_id: targetId,
+    });
+    if (error) throw error;
+    return data === true;
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
@@ -2110,6 +2122,7 @@ export class SupabaseService {
     const filePath = `${ownerPrefix}${folderSegment}${timestamp}-${safeName}`;
 
     const buffer = Buffer.from(params.base64Data, 'base64');
+    assertImageMagicBytes(buffer, params.contentType);
 
     const attemptUpload = async () => {
       return this.supabase.storage

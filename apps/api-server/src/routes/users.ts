@@ -231,6 +231,16 @@ router.get(
     const isOwner = requestingUserId === userId;
     const isAdmin = await isLivePlatformAdmin(requestingUserId);
 
+    if (!isOwner && !isAdmin) {
+      const visible = await supabaseService.isProfileVisibleToViewer(requestingUserId, userId);
+      if (!visible) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+        });
+      }
+    }
+
     logger.debug('Fetching user', { userId, requestingUserId, isOwner, isAdmin });
 
     const cacheKey = `user:${userId}`;

@@ -37,9 +37,21 @@ export const memoryAuthStorage: SupportedStorage = {
   },
 };
 
+function normalizeMemorySession(session: Partial<Session> | null): Session | null {
+  if (!session?.access_token || !session.user) return null;
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token || 'cookie-managed',
+    expires_in: session.expires_in,
+    expires_at: session.expires_at,
+    token_type: session.token_type || 'bearer',
+    user: session.user,
+  } as Session;
+}
+
 export function applyMemorySession(session: Session | null): void {
-  memorySession = session;
-  setCachedAuthToken(session?.access_token ?? null, session?.user?.id ?? null);
+  memorySession = normalizeMemorySession(session);
+  setCachedAuthToken(memorySession?.access_token ?? null, memorySession?.user?.id ?? null);
 }
 
 export async function cookieAuthFetch(
@@ -51,6 +63,7 @@ export async function cookieAuthFetch(
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      'X-Requested-With': 'LanternStudy',
       ...(init.headers || {}),
     },
   });
@@ -68,9 +81,8 @@ export async function loginViaCookieBff(
   if (!response.ok) {
     return { session: null, error: body.error || body.message || 'Login failed' };
   }
-  const session = body.data?.session as Session | undefined;
-  if (session) applyMemorySession(session);
-  return { session: session ?? null };
+  const session = (await refreshCookieSession()) ?? (await fetchCookieSession());
+  return { session };
 }
 
 export async function refreshCookieSession(): Promise<Session | null> {
@@ -105,9 +117,8 @@ export async function exchangeCookieSession(session: Session): Promise<Session |
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) return session;
-  const next = body.data?.session as Session | undefined;
-  if (next) applyMemorySession(next);
-  return next ?? session;
+  const hydrated = (await refreshCookieSession()) ?? (await fetchCookieSession());
+  return hydrated ?? session;
 }
 
 export async function logoutCookieSession(): Promise<void> {

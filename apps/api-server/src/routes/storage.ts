@@ -1,7 +1,9 @@
 import { Router, type Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { authenticatedRateLimit, storageBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { clampSignedUrlTtl } from '../utils/fileValidation';
 import type { AuthenticatedRequest } from '../types';
 import type { SupabaseService } from '../services/supabase';
 
@@ -13,10 +15,16 @@ export function initializeStorageRoutes(supabase: SupabaseService): void {
   supabaseService = supabase;
 }
 
+const storageRateLimits: import('express').RequestHandler[] = [
+  authenticatedRateLimit,
+  storageBurstRateLimit,
+];
+
 /** POST /api/v1/storage/signed-url — mint a fresh signed read URL */
 router.post(
   '/signed-url',
   authMiddleware,
+  ...storageRateLimits,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -31,11 +39,10 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const signedUrl = await supabaseService.createSignedStorageUrl(
-      bucket,
-      path,
+    const ttl = clampSignedUrlTtl(
       typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined
     );
+    const signedUrl = await supabaseService.createSignedStorageUrl(bucket, path, ttl);
 
     res.json({ success: true, data: { signedUrl, bucket, path } });
   })
@@ -45,6 +52,7 @@ router.post(
 router.post(
   '/signed-urls',
   optionalAuthMiddleware,
+  ...storageRateLimits,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user?.id ?? null;
     const { items, expiresInSeconds } = req.body || {};
@@ -55,7 +63,9 @@ router.post(
       return res.status(400).json({ success: false, error: 'Maximum 40 items per request' });
     }
 
-    const ttl = typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined;
+    const ttl = clampSignedUrlTtl(
+      typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined
+    );
     const signed = await Promise.all(
       items.map(async (item: { bucket?: string; path?: string; url?: string }) => {
         const resolved = supabaseService.resolveStorageReference(item.bucket, item.path, item.url);
