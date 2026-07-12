@@ -69,18 +69,18 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="create-group-modal-title" maxWidthClass="max-w-md">
         <div className="flex justify-between items-center mb-4">
-          <h2 id="create-group-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">{modalTitle}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Close modal">
+          <h2 id="create-group-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">{modalTitle}</h2>
+          <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text" aria-label="Close modal">
             <XCircleIcon className="w-6 h-6" />
           </button>
         </div>
         {parentPath.length > 0 && (
-          <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Parent hierarchy:</p>
-            <p className="text-sm text-gray-700 dark:text-gray-300">
+          <div className="mb-4 p-2 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md">
+            <p className="text-xs text-lantern-text-secondary mb-1">Parent hierarchy:</p>
+            <p className="text-sm text-lantern-text">
               {parentPath.map((name, index) => (
                 <span key={index}>
-                  {index > 0 && <span className="mx-1 text-gray-400">→</span>}
+                  {index > 0 && <span className="mx-1 text-lantern-text-tertiary">→</span>}
                   <span className={index === parentPath.length - 1 ? 'font-semibold' : ''}>{name}</span>
                 </span>
               ))}
@@ -89,7 +89,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         )}
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="groupName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="groupName" className="block text-sm font-medium text-lantern-text mb-1">
               {parentId ? 'Sub-group Name' : 'Group Name'} <span className="text-red-500">*</span>
             </label>
             <input
@@ -97,13 +97,13 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               id="groupName"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               placeholder={parentId ? "e.g., Chapter 1 Discussions" : "e.g., Organic Chemistry Finals Prep"}
               required
             />
           </div>
           <div className="mb-4">
-            <label htmlFor="groupDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="groupDescription" className="block text-sm font-medium text-lantern-text mb-1">
               Description (Optional)
             </label>
             <textarea
@@ -111,12 +111,12 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               placeholder="A brief description of the group's purpose"
             />
           </div>
           <div className="mb-6">
-            <label htmlFor="memberEmails" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="memberEmails" className="block text-sm font-medium text-lantern-text mb-1">
               Invite Members by Email (Optional)
             </label>
             <input
@@ -124,22 +124,22 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               id="memberEmails"
               value={memberEmails}
               onChange={(e) => setMemberEmails(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               placeholder="email1@example.com, email2@example.com"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Comma-separated email addresses. Invited members can access this {parentId ? 'sub-group' : 'group'}.</p>
+            <p className="text-xs text-lantern-text-secondary mt-1">Comma-separated email addresses. Invited members can access this {parentId ? 'sub-group' : 'group'}.</p>
           </div>
           <div className="flex justify-end space-x-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+              className="px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary hover:bg-lantern-background-secondary border border-lantern-border rounded-md dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary dark:border-lantern-border dark:hover:bg-lantern-border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-border"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary disabled:opacity-50"
               disabled={!name.trim()}
             >
               {parentId ? 'Create Sub-group' : 'Create Group'}

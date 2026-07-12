@@ -167,17 +167,17 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         case 'details':
             return (
                  <form onSubmit={handleDetailsSubmit} className="space-y-4">
-                    <div className="mb-6 pb-6 border-b border-gray-200 dark:border-gray-700">
-                        <h3 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-3">Group Avatar</h3>
+                    <div className="mb-6 pb-6 border-b border-lantern-border">
+                        <h3 className="text-md font-medium text-lantern-text mb-3">Group Avatar</h3>
                         <div className="flex items-start space-x-4">
                             <img 
                                 src={avatarPreviewUrl || group.avatarUrl || `https://ui-avatars.com/api/?name=${group.name.replace(/\s/g, '+')}&background=random&color=fff&size=100`} 
                                 alt={`${group.name} avatar`}
-                                className="w-20 h-20 rounded-full object-cover border-2 border-gray-300 dark:border-gray-500 flex-shrink-0"
+                                className="w-20 h-20 rounded-full object-cover border-2 border-lantern-border dark:border-lantern-border flex-shrink-0"
                                 onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}
                             />
                             <div className="flex-grow">
-                                <button type="button" onClick={() => avatarFileRef.current?.click()} className="w-full sm:w-auto mb-2 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 border border-blue-300 dark:border-blue-700 rounded-md shadow-sm flex items-center justify-center">
+                                <button type="button" onClick={() => avatarFileRef.current?.click()} className="w-full sm:w-auto mb-2 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 border border-lantern-primary/30 dark:border-blue-700 rounded-md shadow-sm flex items-center justify-center">
                                     <ArrowUpOnSquareIcon className="w-4 h-4 mr-1.5" />
                                     {selectedAvatarFile ? 'Change Image' : 'Upload Image'}
                                 </button>
@@ -185,7 +185,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                 
                                 {selectedAvatarFile && (
                                     <div className="mt-2 space-y-2">
-                                        <p className="text-xs text-gray-600 dark:text-gray-400 truncate">Preview: <span className="font-medium">{selectedAvatarFile.name}</span></p>
+                                        <p className="text-xs text-lantern-text-secondary truncate">Preview: <span className="font-medium">{selectedAvatarFile.name}</span></p>
                                         <div className="flex items-center space-x-2">
                                             <button type="button" onClick={handleSaveAvatar} className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 border border-transparent rounded-md shadow-sm flex items-center">
                                                 <CheckCircleIcon className="w-4 h-4 mr-1.5" /> Save Avatar
@@ -196,17 +196,17 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                         </div>
                                     </div>
                                 )}
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Max file size: 2MB.</p>
+                                <p className="text-xs text-lantern-text-secondary mt-2">Max file size: 2MB.</p>
                             </div>
                         </div>
                     </div>
                     <div>
-                        <label htmlFor="groupInfoName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Group Name</label>
-                        <input type="text" id="groupInfoName" value={name} onChange={handleNameChange} className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md" required />
+                        <label htmlFor="groupInfoName" className="block text-sm font-medium text-lantern-text mb-1">Group Name</label>
+                        <input type="text" id="groupInfoName" value={name} onChange={handleNameChange} className="w-full p-2 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-md" required />
                     </div>
                     <div>
-                        <label htmlFor="groupInfoDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                        <textarea id="groupInfoDescription" value={description} onChange={handleDescriptionChange} rows={3} className="w-full p-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md" />
+                        <label htmlFor="groupInfoDescription" className="block text-sm font-medium text-lantern-text mb-1">Description</label>
+                        <textarea id="groupInfoDescription" value={description} onChange={handleDescriptionChange} rows={3} className="w-full p-2 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-md" />
                     </div>
                     {detailsChanged && <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">Save Changes</button>}
                 </form>
@@ -222,20 +222,20 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                         />
                      )}
                      {isCurrentUserAdmin && (
-                        <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg">
+                        <div className="p-4 bg-lantern-background dark:bg-lantern-surface-secondary/50 border border-lantern-border dark:border-lantern-border rounded-lg">
                            <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>
                         </div>
                      )}
 
                      {isCurrentUserAdmin && group.pendingMembers && group.pendingMembers.length > 0 && (
                         <div>
-                             <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-2">Pending Join Requests ({group.pendingMembers.length})</h3>
+                             <h3 className="font-semibold text-lantern-text dark:text-lantern-text mb-2">Pending Join Requests ({group.pendingMembers.length})</h3>
                             <div className="space-y-2">
                             {group.pendingMembers.map(member => (
                                 <div key={member.id} className="flex items-center justify-between p-2 bg-yellow-50 dark:bg-yellow-900/30 border-l-4 border-yellow-400 rounded">
                                     <div className="flex items-center">
                                         <img src={member.avatarUrl} alt={member.name} className="w-8 h-8 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{member.name}</span>
+                                        <span className="text-sm font-medium text-lantern-text dark:text-lantern-text">{member.name}</span>
                                     </div>
                                     <div className="flex space-x-2">
                                         <button onClick={() => onApproveMember(group.id, member.id)} className="p-1.5 bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 rounded-full hover:bg-green-200 dark:hover:bg-green-700"><CheckCircleIcon className="w-5 h-5"/></button>
@@ -248,15 +248,15 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                      )}
 
                      <div>
-                        <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-2">Members ({(group.members || []).length})</h3>
+                        <h3 className="font-semibold text-lantern-text dark:text-lantern-text mb-2">Members ({(group.members || []).length})</h3>
                         <div className="space-y-2">
                             {(group.members || []).map(member => (
-                                <div key={member.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <div key={member.id} className="flex items-center justify-between p-2 rounded hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50">
                                     <div className="flex items-center">
                                         <img src={member.avatarUrl} alt={member.name} className="w-8 h-8 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{member.name}</span>
-                                        {group.adminIds?.includes(member.id) && <ShieldCheckIcon className="w-4 h-4 text-blue-500 dark:text-blue-400 ml-2" title="Admin"/>}
-                                        {member.id === currentUser.id && <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">(You)</span>}
+                                        <span className="text-sm font-medium text-lantern-text dark:text-lantern-text">{member.name}</span>
+                                        {group.adminIds?.includes(member.id) && <ShieldCheckIcon className="w-4 h-4 text-lantern-primary dark:text-blue-400 ml-2" title="Admin"/>}
+                                        {member.id === currentUser.id && <span className="text-xs text-lantern-text-secondary ml-2">(You)</span>}
                                     </div>
                                     <div className="flex items-center space-x-1">
                                         {member.id !== currentUser.id && (
@@ -274,7 +274,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                             </>
                                         )}
                                         {member.id !== currentUser.id && (
-                                             <button onClick={() => onInitiateDm(member.id)} className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full" title="Message"><ChatBubbleLeftRightIcon className="w-5 h-5"/></button>
+                                             <button onClick={() => onInitiateDm(member.id)} className="p-1.5 text-lantern-text-secondary dark:text-lantern-text-tertiary hover:bg-lantern-background-secondary dark:hover:bg-lantern-border rounded-full" title="Message"><ChatBubbleLeftRightIcon className="w-5 h-5"/></button>
                                         )}
                                     </div>
                                 </div>
@@ -283,17 +283,17 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                      </div>
                      {isCurrentUserAdmin && hasPendingInvites && (
                         <div>
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-2">Pending Invitations ({pendingEmailInvites.length + pendingPhoneInvites.length})</h3>
+                            <h3 className="font-semibold text-lantern-text dark:text-lantern-text mb-2">Pending Invitations ({pendingEmailInvites.length + pendingPhoneInvites.length})</h3>
                              <div className="space-y-2">
                                 {pendingEmailInvites.map(email => (
-                                    <div key={email} className="flex items-center justify-between p-2 rounded bg-gray-100 dark:bg-gray-700">
-                                        <span className="text-sm text-gray-600 dark:text-gray-300 italic">{email}</span>
+                                    <div key={email} className="flex items-center justify-between p-2 rounded bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
+                                        <span className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary italic">{email}</span>
                                         <button onClick={() => onRevokeInvitation(group.id, email)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Revoke</button>
                                     </div>
                                 ))}
                                 {pendingPhoneInvites.map(phone => (
-                                    <div key={phone} className="flex items-center justify-between p-2 rounded bg-gray-100 dark:bg-gray-700">
-                                        <span className="text-sm text-gray-600 dark:text-gray-300 italic">{phone}</span>
+                                    <div key={phone} className="flex items-center justify-between p-2 rounded bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
+                                        <span className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary italic">{phone}</span>
                                         <button onClick={() => onRevokePhoneInvitation(group.id, phone)} className="text-xs text-red-600 dark:text-red-400 hover:underline">Revoke</button>
                                     </div>
                                 ))}
@@ -324,7 +324,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                          </div>
                     </div>
                 ) : (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Only group admins can perform these actions.</p>
+                    <p className="text-sm text-lantern-text-secondary">Only group admins can perform these actions.</p>
                 )
             );
       }

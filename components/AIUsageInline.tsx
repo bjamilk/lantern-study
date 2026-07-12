@@ -46,7 +46,7 @@ const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => 
         </svg>
         <span className="font-medium">{remaining} left</span>
       </span>
-      <span className="text-[10px] text-gray-500 dark:text-gray-400 pl-4">{resetLabel}</span>
+      <span className="text-[10px] text-lantern-text-secondary pl-4">{resetLabel}</span>
     </span>
   );
 };

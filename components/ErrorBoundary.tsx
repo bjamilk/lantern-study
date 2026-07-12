@@ -63,10 +63,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <div className="min-h-[200px] flex flex-col items-center justify-center p-6 text-center">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          <h2 className="text-lg font-semibold text-lantern-text mb-2">
             {shouldReload ? 'New version available' : 'Something went wrong'}
           </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 max-w-md">
+          <p className="text-sm text-lantern-text-secondary mb-4 max-w-md">
             {shouldReload
               ? 'The app was updated. Reload to get the latest version and continue.'
               : this.state.error?.message || 'An unexpected error occurred.'}
@@ -74,7 +74,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             onClick={shouldReload ? this.handleReload : this.handleRetry}
-            className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+            className="px-4 py-2 rounded-lg bg-lantern-primary text-white text-sm hover:bg-lantern-primary-dark"
           >
             {shouldReload ? 'Reload' : 'Try again'}
           </button>

@@ -154,7 +154,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           {card.imageUrl && !showAnswer && (
             <img src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
-          <p className="text-lg md:text-xl text-slate-800 dark:text-slate-100">{showAnswer ? card.back : card.front}</p>
+          <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
         </div>
       );
     }
@@ -164,11 +164,11 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-blue-600 dark:text-blue-400">$1</strong>');
-        return <div className="text-lg md:text-xl text-slate-800 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: revealedText }} />;
+        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary dark:text-blue-400">$1</strong>');
+        return <div className="text-lg md:text-xl text-lantern-text" dangerouslySetInnerHTML={{ __html: revealedText }} />;
       } else {
-        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-slate-200 dark:bg-slate-600 rounded text-slate-800 dark:text-slate-200">[...]</span>');
-        return <div className="text-lg md:text-xl text-slate-800 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: hiddenText }} />;
+        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-border rounded text-lantern-text">[...]</span>');
+        return <div className="text-lg md:text-xl text-lantern-text" dangerouslySetInnerHTML={{ __html: hiddenText }} />;
       }
     }
 
@@ -177,7 +177,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       const overlayTransition = 'transition-opacity duration-500 ease-out';
       return (
         <div className="flex flex-col items-center gap-3">
-          {card.front ? <p className="text-lg md:text-xl text-slate-800 dark:text-slate-100">{card.front}</p> : null}
+          {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
               <img
@@ -250,20 +250,20 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
               ))}
             </div>
           ) : (
-            <div className="text-sm text-slate-500 dark:text-slate-400">No image provided.</div>
+            <div className="text-sm text-lantern-text-secondary">No image provided.</div>
           )}
         </div>
       );
     }
 
-    return <p className="text-lg md:text-xl text-slate-800 dark:text-slate-100">{card.front}</p>;
+    return <p className="text-lg md:text-xl text-lantern-text">{card.front}</p>;
   };
 
   if (isSessionComplete) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-slate-100 dark:bg-slate-900">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-lantern-background">
         <h2 className="text-2xl font-bold text-green-500 dark:text-green-400">Session Complete!</h2>
-        <p className="text-slate-600 dark:text-slate-400 mt-2">You've reviewed all due cards for this deck. Great work!</p>
+        <p className="text-lantern-text-secondary mt-2">You've reviewed all due cards for this deck. Great work!</p>
         <button
           onClick={onEndSession}
           className="mt-6 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center font-semibold transition-colors"
@@ -283,14 +283,14 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           <button
             onClick={handlePreviousCard}
             disabled={!canGoBack}
-            className="px-3 py-1 text-sm font-medium rounded-full border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors"
           >
             Prev
           </button>
           <button
             onClick={handleNextCard}
             disabled={!canGoForward}
-            className="px-3 py-1 text-sm font-medium rounded-full border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors"
           >
             Next
           </button>
@@ -363,20 +363,20 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           </div>
         )}
       </div>
-      <div className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-xl shadow-inner border border-slate-200 dark:border-slate-700">
+      <div className="mt-6 p-4 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Comments</h3>
-          <span className="text-xs text-slate-400">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
+          <h3 className="text-sm font-semibold text-lantern-text">Comments</h3>
+          <span className="text-xs text-lantern-text-tertiary">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
         </div>
 
         {comments.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">No comments yet. Add one to start a discussion.</p>
+          <p className="text-sm text-lantern-text-secondary">No comments yet. Add one to start a discussion.</p>
         ) : (
           <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
             {comments.map((c) => (
-              <div key={c.id} className="rounded-lg bg-slate-50 dark:bg-slate-900 p-3">
-                <p className="text-sm text-slate-700 dark:text-slate-200">{c.comment}</p>
-                <div className="text-xs text-slate-400 mt-1">{new Date((c as any).created_at || (c as any).createdAt).toLocaleString()}</div>
+              <div key={c.id} className="rounded-lg bg-lantern-background p-3">
+                <p className="text-sm text-lantern-text">{c.comment}</p>
+                <div className="text-xs text-lantern-text-tertiary mt-1">{new Date((c as any).created_at || (c as any).createdAt).toLocaleString()}</div>
               </div>
             ))}
           </div>
@@ -388,12 +388,12 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             placeholder="Add a comment..."
-            className="flex-1 p-2 border border-slate-300 dark:border-slate-700 rounded-md bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="flex-1 p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
           />
           <button
             onClick={handleSubmitComment}
             disabled={isSubmittingComment || !newComment.trim()}
-            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold transition-colors"
+            className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold transition-colors"
           >
             {isSubmittingComment ? 'Adding...' : 'Add'}
           </button>
@@ -401,7 +401,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       </div>
 
       <div className="flex-shrink-0 text-center pb-4">
-        <button onClick={onEndSession} className="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:underline transition-colors">End Session Early</button>
+        <button onClick={onEndSession} className="text-sm text-lantern-text-secondary hover:text-lantern-text hover:underline transition-colors">End Session Early</button>
       </div>
     </div>
   );

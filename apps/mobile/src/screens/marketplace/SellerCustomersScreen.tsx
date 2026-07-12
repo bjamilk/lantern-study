@@ -61,7 +61,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 py-3 flex-row items-center">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
@@ -72,7 +72,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
             setCampaignBuyerIds(undefined);
             setShowCampaign(true);
           }}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600"
+          className="px-3 py-1.5 rounded-lg bg-lantern-primary"
         >
           <Text className="text-xs font-semibold text-white">Campaign</Text>
         </Pressable>
@@ -88,12 +88,12 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
             <Pressable
               onPress={() => setSegment(item.id)}
               className={`mr-2 px-3 py-1.5 rounded-full ${
-                segment === item.id ? 'bg-indigo-600' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
+                segment === item.id ? 'bg-lantern-primary' : 'bg-lantern-surface border border-lantern-border'
               }`}
             >
               <Text
                 className={`text-xs font-medium ${
-                  segment === item.id ? 'text-white' : 'text-slate-600 dark:text-slate-300'
+                  segment === item.id ? 'text-white' : 'text-lantern-text-secondary'
                 }`}
               >
                 {item.label}
@@ -110,19 +110,19 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
           data={buyers}
           keyExtractor={item => item.buyerId}
           contentContainerStyle={{ padding: 16, gap: 12 }}
-          ListEmptyComponent={<Text className="text-center text-slate-500 mt-12">No customers yet</Text>}
+          ListEmptyComponent={<Text className="text-center text-lantern-text-secondary mt-12">No customers yet</Text>}
           renderItem={({ item }) => (
-            <View className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <View className="p-4 rounded-xl bg-lantern-surface border border-lantern-border">
               <View className="flex-row justify-between items-start">
                 <View className="flex-1">
-                  <Text className="font-semibold text-slate-900 dark:text-slate-100">{item.name}</Text>
-                  <Text className="text-xs text-slate-500 mt-1">
+                  <Text className="font-semibold text-lantern-text">{item.name}</Text>
+                  <Text className="text-xs text-lantern-text-secondary mt-1">
                     Last active {new Date(item.lastInteractionAt).toLocaleDateString()}
                   </Text>
                 </View>
                 <View className="items-end">
                   <Text className="text-sm">{item.completedPurchases} purchases</Text>
-                  <Text className="text-sm text-indigo-600">{formatPrice(item.totalSpent)} spent</Text>
+                  <Text className="text-sm text-lantern-primary">{formatPrice(item.totalSpent)} spent</Text>
                 </View>
               </View>
               {(item.openInquiry || item.openOrder) && (
@@ -133,8 +133,8 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
               {item.segments && item.segments.length > 0 ? (
                 <View className="flex-row flex-wrap gap-1 mt-2">
                   {item.segments.map(s => (
-                    <View key={s} className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950">
-                      <Text className="text-[10px] text-indigo-700 dark:text-indigo-300">
+                    <View key={s} className="px-2 py-0.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background">
+                      <Text className="text-[10px] text-lantern-primary">
                         {SEGMENT_LABELS[s as SellerCustomerSegment] || s}
                       </Text>
                     </View>
@@ -144,18 +144,18 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
               <View className="flex-row gap-2 mt-3">
                 <Pressable
                   onPress={() => openDm(item.buyerId)}
-                  className="flex-1 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 items-center"
+                  className="flex-1 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center"
                 >
-                  <Text className="text-xs font-semibold text-slate-700 dark:text-slate-200">Message</Text>
+                  <Text className="text-xs font-semibold text-lantern-text">Message</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
                     setCampaignBuyerIds([item.buyerId]);
                     setShowCampaign(true);
                   }}
-                  className="flex-1 py-2 rounded-lg bg-indigo-100 dark:bg-indigo-950 items-center"
+                  className="flex-1 py-2 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-background items-center"
                 >
-                  <Text className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Campaign</Text>
+                  <Text className="text-xs font-semibold text-lantern-primary">Campaign</Text>
                 </Pressable>
               </View>
             </View>

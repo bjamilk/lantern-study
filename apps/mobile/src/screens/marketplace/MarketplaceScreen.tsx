@@ -294,7 +294,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     <View>
       {recentListings.length > 0 && !showFavoritesOnly ? (
         <View className="px-2 pt-3">
-          <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2 px-1">
+          <Text className="text-sm font-semibold text-lantern-text mb-2 px-1">
             Recently viewed
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -302,10 +302,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               <Pressable
                 key={item.id}
                 onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
-                className="w-28 mr-2 rounded-xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
               >
                 <ListingImage uri={item.images?.[0]} className="w-full h-20" />
-                <Text numberOfLines={2} className="text-[10px] p-1.5 text-slate-700 dark:text-slate-200">
+                <Text numberOfLines={2} className="text-[10px] p-1.5 text-lantern-text">
                   {item.title}
                 </Text>
               </Pressable>
@@ -382,25 +382,25 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">
           <Pressable
             onPress={() => setShowCategories(v => !v)}
-            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700"
+            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
           >
-            <Text className="text-[11px] font-medium text-slate-600 dark:text-slate-300">{activeCategoryLabel}</Text>
+            <Text className="text-[11px] font-medium text-lantern-text-secondary">{activeCategoryLabel}</Text>
             <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
           </Pressable>
           <Pressable
             onPress={() => setShowSavedSearches(v => !v)}
-            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700"
+            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
           >
             <Ionicons name="bookmark-outline" size={14} color="#64748b" />
-            <Text className="text-[11px] text-slate-600 dark:text-slate-300">Saved</Text>
+            <Text className="text-[11px] text-lantern-text-secondary">Saved</Text>
             {savedSearchNewMatches > 0 ? (
-              <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-indigo-600">
+              <View className="ml-0.5 px-1.5 py-0.5 rounded-full bg-lantern-primary">
                 <Text className="text-[9px] font-bold text-white">{savedSearchNewMatches}</Text>
               </View>
             ) : null}
           </Pressable>
-          <Pressable onPress={handleSaveSearch} className="px-2 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
-            <Text className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Save search</Text>
+          <Pressable onPress={handleSaveSearch} className="px-2 py-1 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40">
+            <Text className="text-[11px] font-medium text-lantern-primary">Save search</Text>
           </Pressable>
         </View>
 
@@ -412,21 +412,21 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 onChangeText={setMinPrice}
                 placeholder="Min ₦"
                 keyboardType="numeric"
-                className="flex-1 p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+                className="flex-1 p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
               />
               <TextInput
                 value={maxPrice}
                 onChangeText={setMaxPrice}
                 placeholder="Max ₦"
                 keyboardType="numeric"
-                className="flex-1 p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+                className="flex-1 p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
               />
             </View>
             <TextInput
               value={locationFilter}
               onChangeText={setLocationFilter}
               placeholder="Location filter"
-              className="p-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm text-slate-900 dark:text-slate-100"
+              className="p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
             />
             <View className="flex-row gap-2">
               <Pressable
@@ -434,17 +434,17 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   setSortBy('created_at');
                   setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
                 }}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700"
+                className="px-3 py-1.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
               >
-                <Text className="text-xs text-slate-600 dark:text-slate-300">
+                <Text className="text-xs text-lantern-text-secondary">
                   Date {sortOrder === 'desc' ? '↓' : '↑'}
                 </Text>
               </Pressable>
               <Pressable
                 onPress={() => setSortBy(sortBy === 'price' ? 'created_at' : 'price')}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700"
+                className="px-3 py-1.5 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
               >
-                <Text className="text-xs text-slate-600 dark:text-slate-300">
+                <Text className="text-xs text-lantern-text-secondary">
                   Sort: {sortBy === 'price' ? 'Price' : 'Newest'}
                 </Text>
               </Pressable>
@@ -456,19 +456,19 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <View className="px-3 pb-3 flex-row flex-wrap gap-2">
             <Pressable
               onPress={() => setSelectedCategory(null)}
-              className={`px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200 dark:border-slate-600'}`}
+              className={`px-3 py-1.5 rounded-full border ${!selectedCategory ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'}`}
             >
-              <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-slate-600'}`}>All</Text>
+              <Text className={`text-xs font-medium ${!selectedCategory ? 'text-white' : 'text-lantern-text-secondary'}`}>All</Text>
             </Pressable>
             {categories.map(cat => (
               <Pressable
                 key={cat.id}
                 onPress={() => setSelectedCategory(cat.id as MarketplaceCategory)}
                 className={`px-3 py-1.5 rounded-full border ${
-                  selectedCategory === cat.id ? 'bg-indigo-600 border-indigo-600' : 'border-slate-200 dark:border-slate-600'
+                  selectedCategory === cat.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
                 }`}
               >
-                <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-slate-600'}`}>
+                <Text className={`text-xs font-medium ${selectedCategory === cat.id ? 'text-white' : 'text-lantern-text-secondary'}`}>
                   {cat.name}
                 </Text>
               </Pressable>
@@ -479,9 +479,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         {showSavedSearches && savedSearches.length > 0 ? (
           <View className="px-3 pb-3">
             {savedSearches.map(s => (
-              <View key={s.id} className="flex-row items-center justify-between py-2 border-b border-slate-100 dark:border-slate-700">
+              <View key={s.id} className="flex-row items-center justify-between py-2 border-b border-lantern-border">
                 <Pressable className="flex-1" onPress={() => applySavedSearch(s.filters)}>
-                  <Text className="text-sm text-slate-800 dark:text-slate-100">{s.name}</Text>
+                  <Text className="text-sm text-lantern-text">{s.name}</Text>
                 </Pressable>
                 <Pressable onPress={() => void deleteSavedSearch(s.id)}>
                   <Ionicons name="trash-outline" size={16} color="#94a3b8" />
@@ -496,7 +496,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
         <View className="flex-1 flex-row flex-wrap p-2">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <View key={i} className="w-1/2 p-1">
-              <View className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <View className="rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface">
                 <Skeleton className="h-28 w-full rounded-none" />
                 <View className="p-2 gap-2">
                   <Skeleton className="h-3 w-3/4" />
@@ -525,7 +525,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <Ionicons name="bag-outline" size={48} color="#cbd5e1" />
-              <Text className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-4">No listings found</Text>
+              <Text className="text-lg font-semibold text-lantern-text mt-4">No listings found</Text>
               <Button className="mt-4" onPress={() => navigation.navigate('CreateListing')}>
                 Create Listing
               </Button>

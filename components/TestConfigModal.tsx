@@ -305,11 +305,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
   const questionAvailabilityHint = (
     <>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      <p className="mt-1 text-xs text-lantern-text-secondary">
         Only group-verified questions are included. Pending and rejected questions stay in chat but are not used in tests.
       </p>
       {(questionStatusBreakdown.verified + questionStatusBreakdown.pending + questionStatusBreakdown.rejected) > 0 && (
-        <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+        <p className="mt-0.5 text-xs text-lantern-text-tertiary">
           {questionStatusBreakdown.verified} verified · {questionStatusBreakdown.pending} pending · {questionStatusBreakdown.rejected} rejected
         </p>
       )}
@@ -338,7 +338,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               <AcademicCapIcon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
               <span className="truncate">Configure Study for "{group.name}"</span>
             </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">
+            <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text shrink-0">
               <XMarkIcon className="w-6 h-6" />
             </button>
           </div>
@@ -351,32 +351,32 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">No Timer</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— Take as long as you need</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Take as long as you need</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Instant Feedback</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— See answer after each question</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— See answer after each question</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Not Recorded</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— Practice without pressure</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Practice without pressure</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Pause Anytime</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— Take breaks when needed</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Take breaks when needed</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Review Explanations</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— Learn from each answer</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Learn from each answer</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Mark for Review</span>
-                <span className="ml-2 text-blue-500 dark:text-blue-400 text-xs">— Flag difficult questions</span>
+                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Flag difficult questions</span>
               </div>
             </div>
           </div>
@@ -387,7 +387,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
                 <label htmlFor="study-preset-select" className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
                 <div className="flex gap-2">
-                  <select id="study-preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-blue-300 dark:border-blue-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 focus:ring-blue-500 focus:border-blue-500">
+                  <select id="study-preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary">
                     <option value="" disabled>Select a preset...</option>
                     {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
@@ -397,10 +397,10 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             )}
 
             <div>
-              <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5 text-blue-500 dark:text-blue-400"/>
+              <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-lantern-text flex items-center">
+                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-primary dark:text-blue-400"/>
                 Number of Questions 
-                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">{`(${maxQuestions} available)`}</span>
+                <span className="ml-1 text-xs text-lantern-text-secondary">{`(${maxQuestions} available)`}</span>
               </label>
               {questionAvailabilityHint}
               <div className="flex items-center gap-4 mt-2">
@@ -418,7 +418,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                   type="number"
                   value={numberOfQuestions}
                   onChange={handleNumberChange}
-                  className="w-20 p-1 text-center border border-blue-300 dark:border-blue-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-20 p-1 text-center border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
                   disabled={maxQuestions === 0}
                 />
               </div>
@@ -431,17 +431,17 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               </h3>
               <div className="space-y-2">
                 <label className="flex items-center">
-                  <input type="checkbox" checked={useSpacedRepetition} onChange={e => setUseSpacedRepetition(e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-blue-300 focus:ring-blue-500" />
-                  <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">
+                  <input type="checkbox" checked={useSpacedRepetition} onChange={e => setUseSpacedRepetition(e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-primary/30 focus:ring-lantern-primary" />
+                  <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
                     <span className="font-medium text-blue-700 dark:text-blue-300">Spaced Repetition</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">(prioritize weak & unattempted questions)</span>
+                    <span className="text-xs text-lantern-text-secondary ml-1">(prioritize weak & unattempted questions)</span>
                   </span>
                 </label>
                 <label className="flex items-center">
-                  <input type="checkbox" checked={focusOnNew} onChange={e => setFocusOnNew(e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-blue-300 focus:ring-blue-500" />
-                  <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">
+                  <input type="checkbox" checked={focusOnNew} onChange={e => setFocusOnNew(e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-primary/30 focus:ring-lantern-primary" />
+                  <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
                     <span className="font-medium text-blue-700 dark:text-blue-300">Focus on New Questions</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">(prioritizes recent & unattempted)</span>
+                    <span className="text-xs text-lantern-text-secondary ml-1">(prioritizes recent & unattempted)</span>
                   </span>
                 </label>
               </div>
@@ -455,14 +455,14 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 </h3>
                 <div className="max-h-32 overflow-y-auto space-y-1">
                   <label className="flex items-center p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50">
-                    <input type="checkbox" onChange={handleSelectAllSubgroups} checked={selectedSubgroupIDs.length === availableSubgroups.length && availableSubgroups.length > 0} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500"/>
-                    <span className="ml-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Select All</span>
+                    <input type="checkbox" onChange={handleSelectAllSubgroups} checked={selectedSubgroupIDs.length === availableSubgroups.length && availableSubgroups.length > 0} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary"/>
+                    <span className="ml-2 text-sm font-semibold text-lantern-text dark:text-lantern-text">Select All</span>
                   </label>
                   {availableSubgroups.map(({ group: sub, level }) => (
                     <label key={sub.id} className="flex items-center p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50" style={{ marginLeft: `${level * 1}rem` }}>
-                      <input type="checkbox" checked={selectedSubgroupIDs.includes(sub.id)} onChange={() => handleSubgroupToggle(sub.id)} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500"/>
-                      <span className="ml-2 text-sm text-gray-600 dark:text-gray-300 flex items-center">
-                        {level > 0 && <span className="text-gray-400 dark:text-gray-500 mr-1">└</span>}
+                      <input type="checkbox" checked={selectedSubgroupIDs.includes(sub.id)} onChange={() => handleSubgroupToggle(sub.id)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary"/>
+                      <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary flex items-center">
+                        {level > 0 && <span className="text-lantern-text-tertiary mr-1">└</span>}
                         {sub.name}
                       </span>
                     </label>
@@ -474,13 +474,13 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {/* Filter by Question Type */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
               <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">(leave empty for all types)</span>
+                <ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all types)</span>
               </h3>
                 <div className="grid grid-cols-2 gap-2">
                 {TESTABLE_QUESTION_TYPES.map(type => (
                   <label key={type} className="flex items-center p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50">
-                    <input type="checkbox" checked={selectedQuestionTypes.includes(type)} onChange={e => handleQuestionTypeChange(type, e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500" />
-                    <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">{type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</span>
+                    <input type="checkbox" checked={selectedQuestionTypes.includes(type)} onChange={e => handleQuestionTypeChange(type, e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary" />
+                    <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">{type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</span>
                   </label>
                 ))}
               </div>
@@ -490,13 +490,13 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {uniqueTagsFromGroup.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
                 <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                  <TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">(leave empty for all tags)</span>
+                  <TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all tags)</span>
                 </h3>
                 <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
                   {uniqueTagsFromGroup.map(tag => (
                     <label key={tag} className="flex items-center p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50">
-                      <input type="checkbox" checked={selectedTagsInModal.includes(tag)} onChange={e => handleTagChange(tag, e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500" />
-                      <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">{tag}</span>
+                      <input type="checkbox" checked={selectedTagsInModal.includes(tag)} onChange={e => handleTagChange(tag, e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary" />
+                      <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">{tag}</span>
                     </label>
                   ))}
                 </div>
@@ -514,7 +514,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                   <BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset
                 </h3>
                 <div className="flex gap-2">
-                  <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-blue-300 dark:border-blue-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 focus:ring-blue-500 focus:border-blue-500"/>
+                  <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"/>
                   <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50">Save</button>
                 </div>
               </div>
@@ -527,14 +527,14 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               type="button"
               onClick={handleDownload}
               disabled={maxQuestions === 0 || numberOfQuestions < 1}
-              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900/70 border border-blue-300 dark:border-blue-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900/70 border border-lantern-primary/30 dark:border-blue-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
               <CloudArrowDownIcon className="w-5 h-5 mr-2" />
               Download for Offline
             </button>
             <div className="flex gap-3 w-full sm:w-auto">
-              <button type="button" onClick={onClose} className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">
+              <button type="button" onClick={onClose} className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary hover:bg-lantern-background-secondary border border-lantern-border rounded-md dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary dark:border-lantern-border dark:hover:bg-lantern-border">
                 Cancel
               </button>
               <button
@@ -572,7 +572,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             <Icon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
             <span className="truncate">{mode === 'test' ? `Configure Test for "${group.name}"` : getModalTitle()}</span>
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 shrink-0">
+          <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text shrink-0">
             <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
@@ -613,10 +613,10 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         
         <form onSubmit={handleSubmit} className="space-y-6">
           {mode !== 'game' && testPresets.length > 0 && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-              <label htmlFor="preset-select" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
+            <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+              <label htmlFor="preset-select" className="text-sm font-medium text-lantern-text flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
               <div className="flex gap-2">
-                <select id="preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-gray-300 dark:border-gray-500 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200">
+                <select id="preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text">
                   <option value="" disabled>Select a preset...</option>
                   {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -627,10 +627,10 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5 text-gray-500 dark:text-gray-400"/>
+              <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-lantern-text flex items-center">
+                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-text-secondary"/>
                 Number of Questions 
-                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">{`(${maxQuestions} available)`}</span>
+                <span className="ml-1 text-xs text-lantern-text-secondary">{`(${maxQuestions} available)`}</span>
               </label>
               {questionAvailabilityHint}
               <input
@@ -640,21 +640,21 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 max={maxQuestions}
                 value={numberOfQuestions}
                 onChange={handleNumberChange}
-                className="w-full mt-1 h-2 bg-gray-200 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer"
+                className="w-full mt-1 h-2 bg-lantern-background-secondary dark:bg-lantern-border rounded-lg appearance-none cursor-pointer"
                 disabled={maxQuestions === 0}
               />
               <input
                 type="number"
                 value={numberOfQuestions}
                 onChange={handleNumberChange}
-                className="w-20 mt-2 p-1 text-center border border-gray-300 dark:border-gray-500 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"
+                className="w-20 mt-2 p-1 text-center border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"
                 disabled={maxQuestions === 0}
               />
             </div>
             {mode === 'test' && (
               <div>
-                <label htmlFor="timerDuration" className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                    <ClockIcon className="w-5 h-5 mr-1.5 text-gray-500 dark:text-gray-400"/>
+                <label htmlFor="timerDuration" className="block text-sm font-medium text-lantern-text flex items-center">
+                    <ClockIcon className="w-5 h-5 mr-1.5 text-lantern-text-secondary"/>
                     Timer (minutes)
                 </label>
                 <input
@@ -666,7 +666,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                     setSelectedTimerSeconds(isNaN(val) ? 0 : val * 60);
                   }}
                   min="1"
-                  className="w-full mt-1 p-2 border border-gray-300 dark:border-gray-500 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"
+                  className="w-full mt-1 p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"
                   required
                 />
               </div>
@@ -674,34 +674,34 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           </div>
           
           {mode !== 'game' && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Special Learning Modes</h3>
+            <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+                <h3 className="text-sm font-medium text-lantern-text mb-2">Special Learning Modes</h3>
                 <div className="space-y-2">
                     <label className="flex items-center">
-                        <input type="checkbox" checked={useSpacedRepetition} onChange={e => setUseSpacedRepetition(e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500" />
-                        <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">Spaced Repetition <span className="text-xs text-gray-500 dark:text-gray-400">(prioritize weak & unattempted questions)</span></span>
+                        <input type="checkbox" checked={useSpacedRepetition} onChange={e => setUseSpacedRepetition(e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary" />
+                        <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">Spaced Repetition <span className="text-xs text-lantern-text-secondary">(prioritize weak & unattempted questions)</span></span>
                     </label>
                     <label className="flex items-center">
-                        <input type="checkbox" checked={focusOnNew} onChange={e => setFocusOnNew(e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300 focus:ring-blue-500" />
-                        <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">Focus on New Questions <span className="text-xs text-gray-500 dark:text-gray-400">(prioritizes recent & unattempted)</span></span>
+                        <input type="checkbox" checked={focusOnNew} onChange={e => setFocusOnNew(e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary" />
+                        <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">Focus on New Questions <span className="text-xs text-lantern-text-secondary">(prioritizes recent & unattempted)</span></span>
                     </label>
                 </div>
             </div>
           )}
 
           {!useSpacedRepetition && !focusOnNew && mode !== 'game' && availableSubgroups.length > 0 && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center"><UsersIcon className="w-5 h-5 mr-1.5"/>Include Sub-groups</h3>
+            <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><UsersIcon className="w-5 h-5 mr-1.5"/>Include Sub-groups</h3>
                 <div className="max-h-40 overflow-y-auto space-y-1">
-                    <label className="flex items-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600/50">
-                        <input type="checkbox" onChange={handleSelectAllSubgroups} checked={selectedSubgroupIDs.length === availableSubgroups.length && availableSubgroups.length > 0} className="h-4 w-4 rounded text-blue-600 border-gray-300"/>
-                        <span className="ml-2 text-sm font-semibold text-gray-700 dark:text-gray-200">Select All Sub-groups</span>
+                    <label className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
+                        <input type="checkbox" onChange={handleSelectAllSubgroups} checked={selectedSubgroupIDs.length === availableSubgroups.length && availableSubgroups.length > 0} className="h-4 w-4 rounded text-lantern-primary border-lantern-border"/>
+                        <span className="ml-2 text-sm font-semibold text-lantern-text dark:text-lantern-text">Select All Sub-groups</span>
                     </label>
                     {availableSubgroups.map(({ group: sub, level }) => (
-                         <label key={sub.id} className="flex items-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600/50" style={{ marginLeft: `${level * 1}rem` }}>
-                            <input type="checkbox" checked={selectedSubgroupIDs.includes(sub.id)} onChange={() => handleSubgroupToggle(sub.id)} className="h-4 w-4 rounded text-blue-600 border-gray-300"/>
-                            <span className="ml-2 text-sm text-gray-600 dark:text-gray-300 flex items-center">
-                              {level > 0 && <span className="text-gray-400 dark:text-gray-500 mr-1">└</span>}
+                         <label key={sub.id} className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50" style={{ marginLeft: `${level * 1}rem` }}>
+                            <input type="checkbox" checked={selectedSubgroupIDs.includes(sub.id)} onChange={() => handleSubgroupToggle(sub.id)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border"/>
+                            <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary flex items-center">
+                              {level > 0 && <span className="text-lantern-text-tertiary mr-1">└</span>}
                               {sub.name}
                             </span>
                         </label>
@@ -712,26 +712,26 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
           {!useSpacedRepetition && !focusOnNew && (
             <>
-              <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center"><ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type</h3>
+              <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {TESTABLE_QUESTION_TYPES.map(type => (
-                    <label key={type} className="flex items-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600/50">
-                      <input type="checkbox" checked={selectedQuestionTypes.includes(type)} onChange={e => handleQuestionTypeChange(type, e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300" />
-                      <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">{type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</span>
+                    <label key={type} className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
+                      <input type="checkbox" checked={selectedQuestionTypes.includes(type)} onChange={e => handleQuestionTypeChange(type, e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border" />
+                      <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">{type.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}</span>
                     </label>
                   ))}
                 </div>
               </div>
               
               {uniqueTagsFromGroup.length > 0 && (
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center"><TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags</h3>
+                <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+                  <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                     {uniqueTagsFromGroup.map(tag => (
-                      <label key={tag} className="flex items-center p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600/50">
-                        <input type="checkbox" checked={selectedTagsInModal.includes(tag)} onChange={e => handleTagChange(tag, e.target.checked)} className="h-4 w-4 rounded text-blue-600 border-gray-300" />
-                        <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">{tag}</span>
+                      <label key={tag} className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
+                        <input type="checkbox" checked={selectedTagsInModal.includes(tag)} onChange={e => handleTagChange(tag, e.target.checked)} className="h-4 w-4 rounded text-lantern-primary border-lantern-border" />
+                        <span className="ml-2 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">{tag}</span>
                       </label>
                     ))}
                   </div>
@@ -745,10 +745,10 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
            </div>
 
           {mode !== 'game' && testPresets.length < 5 && (
-            <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md border dark:border-gray-600">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 flex items-center"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset</h3>
+            <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset</h3>
                 <div className="flex gap-2">
-                  <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-gray-300 dark:border-gray-500 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"/>
+                  <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"/>
                   <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className={`px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}`}>Save</button>
                 </div>
             </div>
@@ -756,7 +756,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         </form>
         </div>
 
-        <div className={`flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))] ${mode === 'test' ? 'border-purple-200 dark:border-purple-700' : 'border-gray-200 dark:border-gray-700'}`}>
+        <div className={`flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))] ${mode === 'test' ? 'border-purple-200 dark:border-purple-700' : 'border-lantern-border'}`}>
           {mode !== 'game' && (
               <button
                 type="button"
@@ -774,7 +774,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               <button
                 type="button"
                 onClick={() => onSoloPractice(getCurrentConfig())}
-                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-md disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-md disabled:opacity-50"
                 disabled={isSubmitDisabled()}
               >
                 Solo Practice

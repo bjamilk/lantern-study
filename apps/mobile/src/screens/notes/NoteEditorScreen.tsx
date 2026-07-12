@@ -425,7 +425,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
     return (
 
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center">
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
 
         <ActivityIndicator size="large" color="#6366f1" />
 
@@ -439,15 +439,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   return (
 
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
 
-      <View className="flex-row items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
 
         <Pressable
 
           onPress={() => navigation.goBack()}
 
-          className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
 
           accessibilityLabel="Back to notes"
 
@@ -467,19 +467,19 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           placeholderTextColor="#94a3b8"
 
-          className="flex-1 text-base font-semibold text-slate-900 dark:text-slate-100"
+          className="flex-1 text-base font-semibold text-lantern-text"
 
         />
 
         {isSaving ? (
 
-          <Text className="text-xs text-slate-400 shrink-0">Saving...</Text>
+          <Text className="text-xs text-lantern-text-tertiary shrink-0">Saving...</Text>
 
         ) : null}
 
         <Pressable
           onPress={() => setShowCollaborators(true)}
-          className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Manage collaborators"
         >
           <Ionicons name="people-outline" size={20} color="#6366f1" />
@@ -569,14 +569,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                     `https://www.youtube.com/watch?v=${selectedNote.youtubeVideoId}`
                 )
               }
-              className="mb-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-4 flex-row items-center gap-3"
+              className="mb-4 rounded-xl border border-lantern-border bg-lantern-background-secondary p-4 flex-row items-center gap-3"
             >
               <Ionicons name="logo-youtube" size={28} color="#ef4444" />
               <View className="flex-1">
-                <Text className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                <Text className="text-sm font-medium text-lantern-text">
                   Linked YouTube video
                 </Text>
-                <Text className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+                <Text className="text-xs text-lantern-primary mt-1">
                   Tap to open in YouTube
                 </Text>
               </View>
@@ -584,7 +584,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           ) : null}
 
           {isDocumentNote && !documentAttachment ? (
-            <Text className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            <Text className="text-sm text-lantern-text-secondary mb-4">
               {selectedNote?.sourceType === 'presentation'
                 ? 'Slide preview is unavailable, but AI can still use extracted text from your deck.'
                 : 'Document preview is unavailable.'}
@@ -594,7 +594,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           {isDocumentNote ? (
             <>
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
+              <Text className="text-sm font-semibold text-lantern-text mb-2">
                 Your notes
               </Text>
               <TextInput
@@ -604,7 +604,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 placeholderTextColor="#94a3b8"
                 multiline
                 textAlignVertical="top"
-                className="w-full min-h-[160px] p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-4"
+                className="w-full min-h-[160px] p-4 rounded-xl border border-lantern-border bg-lantern-surface text-sm leading-relaxed text-lantern-text mb-4"
               />
             </>
           ) : (
@@ -622,7 +622,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             textAlignVertical="top"
 
-            className="w-full min-h-[280px] p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-4"
+            className="w-full min-h-[280px] p-4 rounded-xl border border-lantern-border bg-lantern-surface text-sm leading-relaxed text-lantern-text mb-4"
 
           />
           )}
@@ -631,11 +631,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           {summary ? (
 
-            <Card className="mb-4 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20">
+            <Card className="mb-4 border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background/50 dark:bg-lantern-primary-background/20">
 
-              <Text className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-2">Summary</Text>
+              <Text className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Summary</Text>
 
-              <Text className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{summary}</Text>
+              <Text className="text-sm text-lantern-text leading-relaxed">{summary}</Text>
 
             </Card>
 
@@ -643,15 +643,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
-          <Card className="border-slate-200 dark:border-slate-700">
+          <Card className="border-lantern-border">
 
-            <Text className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
+            <Text className="text-sm font-semibold text-lantern-text mb-1">
 
               Summary & quiz
 
             </Text>
 
-            <Text className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+            <Text className="text-sm text-lantern-text-secondary mb-3">
 
               AI tools to turn this note into study materials.
 

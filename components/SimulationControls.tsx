@@ -58,7 +58,7 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
       zIndexClass="z-[80]"
       panelClassName="!p-0 rounded-2xl overflow-hidden max-h-[85vh] flex flex-col"
     >
-      <div className="bg-white dark:bg-slate-800 w-full overflow-hidden max-h-[85vh] flex flex-col">
+      <div className="bg-lantern-surface w-full overflow-hidden max-h-[85vh] flex flex-col">
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-4 flex justify-between items-center shrink-0">
           <h2 id="simulation-controls-title" className="text-lg font-bold text-white flex items-center gap-2">
             <LightBulbIcon className="w-5 h-5" aria-hidden /> Financial Toolkit
@@ -73,7 +73,7 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
           </button>
         </div>
 
-        <div className="flex border-b border-slate-200 dark:border-slate-700 px-4 shrink-0">
+        <div className="flex border-b border-lantern-border px-4 shrink-0">
           {[
             { key: 'tips' as const, label: '💡 Tips' },
             { key: 'simulator' as const, label: '📊 Simulator' },
@@ -84,7 +84,7 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
               type="button"
               onClick={() => setMode(t.key)}
               className={`min-h-[44px] px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-                mode === t.key ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-600'
+                mode === t.key ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-transparent text-lantern-text-tertiary hover:text-lantern-text-secondary'
               }`}
             >
               {t.label}
@@ -96,12 +96,12 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
           {mode === 'tips' && (
             <div className="space-y-3">
               {QUICK_TIPS.map((tip, i) => (
-                <div key={i} className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4">
+                <div key={i} className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-xl p-4">
                   <div className="flex items-start gap-3">
                     <span className="text-2xl" aria-hidden>{tip.icon}</span>
                     <div>
-                      <h4 className="font-medium text-sm text-slate-800 dark:text-slate-100">{tip.title}</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{tip.tip}</p>
+                      <h4 className="font-medium text-sm text-lantern-text">{tip.title}</h4>
+                      <p className="text-xs text-lantern-text-secondary mt-0.5 leading-relaxed">{tip.tip}</p>
                     </div>
                   </div>
                 </div>
@@ -111,18 +111,18 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
 
           {mode === 'simulator' && (
             <div className="space-y-4">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-lantern-text-secondary">
                 Enter your monthly income and adjust category percentages to plan your spending.
               </p>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Monthly Income (₦)</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Monthly Income (₦)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₦</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary">₦</span>
                   <input
                     type="number"
                     value={simIncome}
                     onChange={(e) => setSimIncome(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full min-h-[44px] p-2.5 pl-8 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                    className="w-full min-h-[44px] p-2.5 pl-8 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                     placeholder="e.g. 50000"
                   />
                 </div>
@@ -136,8 +136,8 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
               ].map(({ label, state, setter }) => (
                 <div key={label}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-slate-600 dark:text-slate-300">{label}</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">{state}% = ₦{(simIncomeVal * (Number(state) || 0) / 100).toLocaleString('en-NG')}</span>
+                    <span className="text-lantern-text-secondary">{label}</span>
+                    <span className="font-medium text-lantern-text">{state}% = ₦{(simIncomeVal * (Number(state) || 0) / 100).toLocaleString('en-NG')}</span>
                   </div>
                   <input
                     type="range"
@@ -145,22 +145,22 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
                     max="50"
                     value={Number(state) || 0}
                     onChange={(e) => setter(parseInt(e.target.value, 10))}
-                    className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-cyan-500"
+                    className="w-full h-2 bg-lantern-background-secondary rounded-full appearance-none cursor-pointer accent-cyan-500"
                     aria-label={label}
                   />
                 </div>
               ))}
 
-              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4 space-y-2">
+              <div className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Allocated</span>
+                  <span className="text-lantern-text-tertiary">Allocated</span>
                   <span className="font-semibold text-cyan-600 dark:text-cyan-400">{simResult.pctUsed.toFixed(0)}%</span>
                 </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2.5">
+                <div className="w-full bg-lantern-border rounded-full h-2.5">
                   <div className={`h-2.5 rounded-full transition-all ${simResult.remaining >= 0 ? 'bg-cyan-400' : 'bg-red-400'}`} style={{ width: `${Math.min(simResult.pctUsed, 100)}%` }} />
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Remaining for other expenses</span>
+                  <span className="text-lantern-text-tertiary">Remaining for other expenses</span>
                   <span className={`font-semibold ${simResult.remaining >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>₦{simResult.remaining.toLocaleString('en-NG')}</span>
                 </div>
               </div>
@@ -169,24 +169,24 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
 
           {mode === 'calculator' && (
             <div className="space-y-4">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-lantern-text-secondary">
                 See how your savings can grow with compound interest.
               </p>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Initial Amount (₦)</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Initial Amount (₦)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">₦</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary">₦</span>
                   <input
                     type="number"
                     value={calcAmount}
                     onChange={(e) => setCalcAmount(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    className="w-full min-h-[44px] p-2.5 pl-8 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                    className="w-full min-h-[44px] p-2.5 pl-8 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                     placeholder="10,000"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Annual Interest Rate (%)</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Annual Interest Rate (%)</label>
                 <input
                   type="number"
                   value={calcRate}
@@ -194,20 +194,20 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
                   min="0"
                   max="100"
                   step="0.5"
-                  className="w-full min-h-[44px] p-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                  className="w-full min-h-[44px] p-2.5 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                   placeholder="15"
                 />
-                <p className="text-xs text-slate-400 mt-0.5">Nigerian savings accounts: 4-6% | Fixed deposits: 10-18%</p>
+                <p className="text-xs text-lantern-text-tertiary mt-0.5">Nigerian savings accounts: 4-6% | Fixed deposits: 10-18%</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Duration (months)</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Duration (months)</label>
                 <input
                   type="number"
                   value={calcMonths}
                   onChange={(e) => setCalcMonths(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                   min="1"
                   max="120"
-                  className="w-full min-h-[44px] p-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                  className="w-full min-h-[44px] p-2.5 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                   placeholder="12"
                 />
               </div>
@@ -224,8 +224,8 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700 shrink-0">
-          <button type="button" onClick={onClose} className="w-full min-h-[44px] px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600">Close</button>
+        <div className="px-5 py-4 border-t border-lantern-border shrink-0">
+          <button type="button" onClick={onClose} className="w-full min-h-[44px] px-4 py-2.5 text-sm font-medium text-lantern-text bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-xl hover:bg-lantern-border">Close</button>
         </div>
       </div>
     </Modal>

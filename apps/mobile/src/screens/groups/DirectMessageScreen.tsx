@@ -95,18 +95,18 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   }, [navigation]);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top', 'bottom']}>
-      <View className="flex-row items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+      <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
         <Pressable
           onPress={handleBack}
-          className="p-2 rounded-lg active:bg-slate-100 dark:active:bg-slate-700"
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
         >
           <Ionicons name="arrow-back" size={22} color="#475569" />
         </Pressable>
-        <View className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/40 items-center justify-center">
+        <View className="w-9 h-9 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center">
           <Ionicons name="person" size={18} color="#6366f1" />
         </View>
-        <Text className="flex-1 text-base font-semibold text-slate-900 dark:text-slate-100" numberOfLines={1}>
+        <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={1}>
           {displayName}
         </Text>
       </View>
@@ -129,7 +129,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             contentContainerClassName="px-4 py-4 flex-grow"
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">
-                <Text className="text-sm text-slate-500 dark:text-slate-400">
+                <Text className="text-sm text-lantern-text-secondary">
                   Start a conversation with {displayName}
                 </Text>
               </View>
@@ -140,14 +140,14 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           />
         )}
 
-        <View className="flex-row items-end gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+        <View className="flex-row items-end gap-2 px-3 py-2 border-t border-lantern-border bg-lantern-surface">
           <TextInput
             value={text}
             onChangeText={setText}
             placeholder="Message..."
             placeholderTextColor="#94a3b8"
             multiline
-            className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100"
+            className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
           />
           <Button size="sm" loading={sending} disabled={!text.trim()} onPress={handleSend}>
             Send

@@ -133,9 +133,9 @@ export function NoteCollaboratorsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/50">
-        <View className="bg-white dark:bg-slate-900 rounded-t-2xl max-h-[85%]">
+        <View className="bg-lantern-surface rounded-t-2xl max-h-[85%]">
           <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
-            <Text className="text-lg font-semibold text-slate-900 dark:text-slate-100">Collaborators</Text>
+            <Text className="text-lg font-semibold text-lantern-text">Collaborators</Text>
             <Pressable onPress={onClose} className="p-2">
               <Ionicons name="close" size={22} color="#64748b" />
             </Pressable>
@@ -145,8 +145,8 @@ export function NoteCollaboratorsModal({
               <ActivityIndicator className="my-4" />
             ) : (
               collaborators.map((c) => (
-                <View key={c.userId} className="flex-row items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                  <Text className="text-sm text-slate-800 dark:text-slate-200">
+                <View key={c.userId} className="flex-row items-center justify-between py-2 border-b border-lantern-border dark:border-lantern-border">
+                  <Text className="text-sm text-lantern-text">
                     {c.user?.name || c.userId}
                   </Text>
                   {c.userId !== currentUserId ? (
@@ -154,18 +154,18 @@ export function NoteCollaboratorsModal({
                       <Ionicons name="trash-outline" size={18} color="#ef4444" />
                     </Pressable>
                   ) : (
-                    <Text className="text-xs text-slate-400">Owner</Text>
+                    <Text className="text-xs text-lantern-text-tertiary">Owner</Text>
                   )}
                 </View>
               ))
             )}
 
-            <Text className="text-sm font-medium text-slate-800 dark:text-slate-200 mt-4 mb-2">Invite by username</Text>
+            <Text className="text-sm font-medium text-lantern-text mt-4 mb-2">Invite by username</Text>
             <TextInput
               value={userQuery}
               onChangeText={setUserQuery}
               placeholder="Search users..."
-              className="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-lg px-3 py-2 mb-2 text-lantern-text"
             />
             {suggestions.map((u) => (
               <Pressable
@@ -176,7 +176,7 @@ export function NoteCollaboratorsModal({
                 }}
                 className="py-2"
               >
-                <Text className="text-sm text-slate-700 dark:text-slate-300">{u.name || u.id}</Text>
+                <Text className="text-sm text-lantern-text">{u.name || u.id}</Text>
               </Pressable>
             ))}
             <Button variant="primary" size="sm" loading={saving} onPress={() => void handleAdd()} className="mt-2 mb-4">
@@ -185,14 +185,14 @@ export function NoteCollaboratorsModal({
 
             {groups.length > 0 ? (
               <>
-                <Text className="text-sm font-medium text-slate-800 dark:text-slate-200 mb-2">Share to group</Text>
+                <Text className="text-sm font-medium text-lantern-text mb-2">Share to group</Text>
                 {groups.map((g) => (
                   <Pressable
                     key={g.id}
                     onPress={() => setShareGroupId(g.id)}
-                    className={`p-3 rounded-lg mb-1 ${shareGroupId === g.id ? 'bg-indigo-50 dark:bg-indigo-950/30' : ''}`}
+                    className={`p-3 rounded-lg mb-1 ${shareGroupId === g.id ? 'bg-lantern-primary-background dark:bg-lantern-primary-background' : ''}`}
                   >
-                    <Text className="text-sm text-slate-800 dark:text-slate-200">{g.name}</Text>
+                    <Text className="text-sm text-lantern-text">{g.name}</Text>
                   </Pressable>
                 ))}
                 <Button

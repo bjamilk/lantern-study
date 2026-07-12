@@ -41,7 +41,7 @@ const StarRating: React.FC<StarRatingProps> = ({
             aria-pressed={isFilled}
           >
             <StarIcon 
-              className={`${sizeClasses[size]} ${isFilled ? 'text-yellow-500' : 'text-gray-300 dark:text-gray-600'}`} 
+              className={`${sizeClasses[size]} ${isFilled ? 'text-yellow-500' : 'text-lantern-text-tertiary dark:text-lantern-text-secondary'}`} 
             />
           </button>
         );

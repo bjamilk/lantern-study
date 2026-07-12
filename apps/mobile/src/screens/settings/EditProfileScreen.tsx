@@ -148,7 +148,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center">
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center">
         <ActivityIndicator size="large" color="#6366f1" />
       </SafeAreaView>
     );
@@ -157,7 +157,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
   const initials = (name || user?.email || 'U').charAt(0).toUpperCase();
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader
         title="Edit Profile"
         right={
@@ -174,11 +174,11 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} className="w-24 h-24 rounded-full" />
               ) : (
-                <View className="w-24 h-24 rounded-full bg-indigo-500 items-center justify-center">
+                <View className="w-24 h-24 rounded-full bg-lantern-primary items-center justify-center">
                   <Text className="text-3xl font-bold text-white">{initials}</Text>
                 </View>
               )}
-              <View className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 items-center justify-center">
+              <View className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-lantern-surface dark:bg-lantern-surface-secondary border border-lantern-border items-center justify-center">
                 {uploadingAvatar ? (
                   <ActivityIndicator size="small" color="#6366f1" />
                 ) : (
@@ -186,34 +186,34 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
                 )}
               </View>
             </Pressable>
-            <Text className="text-xs text-slate-500 mt-2">Tap to change photo</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-2">Tap to change photo</Text>
           </View>
 
           <Card className="mb-4">
-            <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Profile</Text>
-            <Text className="text-xs text-slate-500 mb-1">Name</Text>
+            <Text className="text-sm font-semibold text-lantern-text mb-3">Profile</Text>
+            <Text className="text-xs text-lantern-text-secondary mb-1">Name</Text>
             <TextInput
               value={name}
               onChangeText={setName}
               placeholder="Your name"
               placeholderTextColor="#94a3b8"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-3"
+              className="border border-lantern-border rounded-xl px-3 py-2.5 text-lantern-text bg-lantern-surface mb-3"
             />
-            <Text className="text-xs text-slate-500 mb-1">Phone</Text>
+            <Text className="text-xs text-lantern-text-secondary mb-1">Phone</Text>
             <TextInput
               value={phone}
               onChangeText={setPhone}
               placeholder="Phone number"
               placeholderTextColor="#94a3b8"
               keyboardType="phone-pad"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-1"
+              className="border border-lantern-border rounded-xl px-3 py-2.5 text-lantern-text bg-lantern-surface mb-1"
             />
-            <Text className="text-xs text-slate-400 mt-1">{user?.email}</Text>
+            <Text className="text-xs text-lantern-text-tertiary mt-1">{user?.email}</Text>
           </Card>
 
           <Card className="mb-4">
             <Pressable onPress={() => setShowPasswordSection(v => !v)} className="flex-row items-center justify-between">
-              <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200">Change password</Text>
+              <Text className="text-sm font-semibold text-lantern-text">Change password</Text>
               <Ionicons name={showPasswordSection ? 'chevron-up' : 'chevron-down'} size={18} color="#94a3b8" />
             </Pressable>
             {showPasswordSection ? (
@@ -224,7 +224,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
                   placeholder="Current password"
                   placeholderTextColor="#94a3b8"
                   secureTextEntry
-                  className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
+                  className="border border-lantern-border rounded-xl px-3 py-2.5 text-lantern-text bg-lantern-surface"
                 />
                 <TextInput
                   value={newPassword}
@@ -232,7 +232,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
                   placeholder="New password"
                   placeholderTextColor="#94a3b8"
                   secureTextEntry
-                  className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
+                  className="border border-lantern-border rounded-xl px-3 py-2.5 text-lantern-text bg-lantern-surface"
                 />
                 <TextInput
                   value={confirmPassword}
@@ -240,7 +240,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
                   placeholder="Confirm new password"
                   placeholderTextColor="#94a3b8"
                   secureTextEntry
-                  className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900"
+                  className="border border-lantern-border rounded-xl px-3 py-2.5 text-lantern-text bg-lantern-surface"
                 />
                 <Button
                   size="sm"

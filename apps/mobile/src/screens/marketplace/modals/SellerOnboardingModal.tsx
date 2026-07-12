@@ -37,25 +37,25 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
       <View className="flex-1 justify-end bg-black/40">
-        <View className="bg-white dark:bg-slate-900 rounded-t-3xl p-5">
+        <View className="bg-lantern-surface rounded-t-3xl p-5">
           <View className="flex-row items-center gap-2 mb-2">
             <Ionicons name="rocket-outline" size={22} color="#6366f1" />
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100">Seller setup</Text>
+            <Text className="text-lg font-bold text-lantern-text">Seller setup</Text>
           </View>
           {!isLast ? (
             <>
-              <Text className="text-xs font-semibold text-indigo-600 mb-2">
+              <Text className="text-xs font-semibold text-lantern-primary mb-2">
                 Tip {step + 1} of {tips.length}
               </Text>
-              <Text className="text-slate-700 dark:text-slate-200 mb-4">{tips[step]}</Text>
+              <Text className="text-lantern-text mb-4">{tips[step]}</Text>
               <Button onPress={() => setStep(s => s + 1)}>Next</Button>
             </>
           ) : (
             <>
-              <Text className="text-center font-semibold text-slate-800 dark:text-slate-100 mb-2">
+              <Text className="text-center font-semibold text-lantern-text mb-2">
                 You&apos;re ready to sell
               </Text>
-              <Text className="text-center text-sm text-slate-500 mb-4">
+              <Text className="text-center text-sm text-lantern-text-secondary mb-4">
                 Complete setup to unlock 3 free boost credits. Current: {status.boostCredits}
               </Text>
               <Button loading={saving} onPress={() => void handleComplete()}>
@@ -64,7 +64,7 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
             </>
           )}
           <Pressable onPress={onDismiss} className="mt-3 py-2 items-center">
-            <Text className="text-sm text-slate-500">Later</Text>
+            <Text className="text-sm text-lantern-text-secondary">Later</Text>
           </Pressable>
         </View>
       </View>

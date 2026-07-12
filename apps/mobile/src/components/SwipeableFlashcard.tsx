@@ -214,12 +214,12 @@ export function SwipeableFlashcard({
 
         <View style={styles.flipContainer}>
           <Animated.View style={[styles.face, frontFaceStyle]}>
-            <Card className="min-h-[260px] items-center justify-center border-indigo-100 dark:border-indigo-900/50">
+            <Card className="min-h-[260px] items-center justify-center border-lantern-primary/20 dark:border-lantern-primary/30/50">
               <Text style={styles.sideLabel}>Question</Text>
               {isImageOcclusion ? (
                 <View style={styles.occlusionWrap}>
                   {front ? (
-                    <Text className="text-base font-medium text-slate-900 dark:text-slate-100 text-center px-2 mb-3">
+                    <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
                       {front}
                     </Text>
                   ) : null}
@@ -227,7 +227,7 @@ export function SwipeableFlashcard({
                 </View>
               ) : (
                 <>
-                  <Text className="text-xl font-medium text-slate-900 dark:text-slate-100 text-center px-2">
+                  <Text className="text-xl font-medium text-lantern-text text-center px-2">
                     {front}
                   </Text>
                   <Text style={styles.hintText}>Tap to reveal answer</Text>
@@ -237,19 +237,19 @@ export function SwipeableFlashcard({
           </Animated.View>
 
           <Animated.View style={[styles.face, styles.faceBack, backFaceStyle]}>
-            <Card className="min-h-[260px] items-center justify-center border-indigo-100 dark:border-indigo-900/50">
+            <Card className="min-h-[260px] items-center justify-center border-lantern-primary/20 dark:border-lantern-primary/30/50">
               <Text style={styles.sideLabel}>Answer</Text>
               {isImageOcclusion ? (
                 <View style={styles.occlusionWrap}>
                   {front ? (
-                    <Text className="text-base font-medium text-slate-900 dark:text-slate-100 text-center px-2 mb-3">
+                    <Text className="text-base font-medium text-lantern-text text-center px-2 mb-3">
                       {front}
                     </Text>
                   ) : null}
                   <ImageOcclusionView card={card} showAnswer />
                 </View>
               ) : (
-                <Text className="text-xl font-medium text-slate-900 dark:text-slate-100 text-center px-2">
+                <Text className="text-xl font-medium text-lantern-text text-center px-2">
                   {back || front}
                 </Text>
               )}

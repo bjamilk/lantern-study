@@ -48,29 +48,29 @@ export function OnboardingScreen({ onComplete }: Props) {
   };
 
   return (
-    <SafeAreaView className={`flex-1 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
+    <SafeAreaView className={`flex-1 ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
       <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
         {step === 'welcome' && (
           <View className="items-center">
-            <View className="w-16 h-16 rounded-2xl bg-indigo-500 items-center justify-center mb-4">
+            <View className="w-16 h-16 rounded-2xl bg-lantern-primary items-center justify-center mb-4">
               <Ionicons name="sparkles" size={32} color="#fff" />
             </View>
-            <Text className={`text-2xl font-bold text-center mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <Text className={`text-2xl font-bold text-center mb-2 ${isDark ? 'text-white' : 'text-lantern-text'}`}>
               Welcome to Lantern Study
             </Text>
-            <Text className={`text-center mb-8 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+            <Text className={`text-center mb-8 ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               Flashcards, notes, tests, and AI — all in one place. Set up in under a minute.
             </Text>
             <Button fullWidth onPress={() => setStep('goal')}>Get started</Button>
             <Pressable onPress={() => void finish(true)} className="mt-4 py-2">
-              <Text className={isDark ? 'text-slate-500' : 'text-slate-400'}>Skip for now</Text>
+              <Text className={isDark ? 'text-lantern-text-secondary' : 'text-lantern-text-tertiary'}>Skip for now</Text>
             </Pressable>
           </View>
         )}
 
         {step === 'goal' && (
           <View>
-            <Text className={`text-xl font-bold mb-4 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <Text className={`text-xl font-bold mb-4 ${isDark ? 'text-white' : 'text-lantern-text'}`}>
               What&apos;s your main goal?
             </Text>
             {GOALS.map(g => (
@@ -79,14 +79,14 @@ export function OnboardingScreen({ onComplete }: Props) {
                 onPress={() => setStudyGoal(g.id)}
                 className={`flex-row items-center gap-3 p-4 rounded-2xl mb-2 border ${
                   studyGoal === g.id
-                    ? 'bg-indigo-600/30 border-indigo-500'
+                    ? 'bg-lantern-primary/30 border-lantern-primary'
                     : isDark
-                      ? 'bg-slate-800 border-slate-700'
-                      : 'bg-white border-slate-200'
+                      ? 'bg-lantern-surface border-lantern-border'
+                      : 'bg-lantern-surface border-lantern-border'
                 }`}
               >
                 <Text className="text-2xl">{g.icon}</Text>
-                <Text className={`font-medium flex-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>{g.label}</Text>
+                <Text className={`font-medium flex-1 ${isDark ? 'text-white' : 'text-lantern-text'}`}>{g.label}</Text>
               </Pressable>
             ))}
             <View className="mt-6">
@@ -97,10 +97,10 @@ export function OnboardingScreen({ onComplete }: Props) {
 
         {step === 'streak' && (
           <View>
-            <Text className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <Text className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-lantern-text'}`}>
               Pick a streak target
             </Text>
-            <Text className={`mb-4 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+            <Text className={`mb-4 ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               Stay consistent — we&apos;ll help you track it.
             </Text>
             <View className="flex-row gap-3 mb-6">
@@ -110,16 +110,16 @@ export function OnboardingScreen({ onComplete }: Props) {
                   onPress={() => setStreakTarget(n)}
                   className={`flex-1 py-4 rounded-2xl items-center border ${
                     streakTarget === n
-                      ? 'bg-indigo-600 border-indigo-500'
+                      ? 'bg-lantern-primary border-lantern-primary'
                       : isDark
-                        ? 'bg-slate-800 border-slate-700'
-                        : 'bg-white border-slate-200'
+                        ? 'bg-lantern-surface border-lantern-border'
+                        : 'bg-lantern-surface border-lantern-border'
                   }`}
                 >
-                  <Text className={`font-bold text-lg ${streakTarget === n || isDark ? 'text-white' : 'text-slate-900'}`}>
+                  <Text className={`font-bold text-lg ${streakTarget === n || isDark ? 'text-white' : 'text-lantern-text'}`}>
                     {n}
                   </Text>
-                  <Text className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>days</Text>
+                  <Text className={`text-xs ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>days</Text>
                 </Pressable>
               ))}
             </View>

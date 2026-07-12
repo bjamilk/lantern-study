@@ -150,23 +150,23 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
         {/* Search input — always visible at top */}
         <div className="relative mb-3 flex-shrink-0">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+            <MagnifyingGlassIcon className="h-5 w-5 text-lantern-text-tertiary" />
           </div>
           <input
             ref={searchInputRef}
             type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 p-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pl-10 p-2.5 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary"
             placeholder="Search by name or @username"
           />
         </div>
 
         {/* Search results area — scrollable middle */}
-        <div className="flex-1 overflow-y-auto border dark:border-gray-700 rounded-lg min-h-0">
+        <div className="flex-1 overflow-y-auto border dark:border-lantern-border rounded-lg min-h-0">
           {isSearching && (
             <div className="p-8 flex justify-center">
-              <svg className="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <svg className="animate-spin h-6 w-6 text-lantern-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
@@ -179,11 +179,11 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
           {!isSearching && !searchError && searchTerm.length < 2 && (
             <div className="p-8 text-center">
-              <AtSymbolIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <AtSymbolIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
+              <p className="text-sm text-lantern-text-secondary">
                 Type at least 2 characters to search for users
               </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <p className="text-xs text-lantern-text-tertiary mt-1">
                 Search by name or @username
               </p>
             </div>
@@ -191,11 +191,11 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
           {!isSearching && !searchError && searchTerm.length >= 2 && searchResults.length === 0 && (
             <div className="p-8 text-center">
-              <UsersIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <UsersIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
+              <p className="text-sm text-lantern-text-secondary">
                 No users found matching "{searchTerm}"
               </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 max-w-xs mx-auto">
+              <p className="text-xs text-lantern-text-tertiary mt-2 max-w-xs mx-auto">
                 They may need to set a username in Settings, or their profile may be private.
                 Try the invite link below instead.
               </p>
@@ -203,7 +203,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
           )}
 
           {!isSearching && searchResults.length > 0 && (
-            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+            <ul className="divide-y divide-lantern-border">
               {searchResults.map(user => {
                 const isSelected = selectedUserIds.includes(user.id);
                 return (
@@ -211,20 +211,20 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
                     <button
                       type="button"
                       onClick={() => handleUserToggle(user.id)}
-                      className={`w-full p-3 flex items-center text-left transition-colors ${isSelected ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                      className={`w-full p-3 flex items-center text-left transition-colors ${isSelected ? '' : 'hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50'}`}
                     >
                       <div className="relative">
                         <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
                         {isSelected && (
-                          <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-gray-800">
+                          <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-lantern-border">
                             <CheckIcon className="w-3 h-3 text-white"/>
                           </div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
+                        <p className="font-medium text-lantern-text truncate">{user.name}</p>
                         {user.username && (
-                          <p className="text-sm text-blue-600 dark:text-blue-400">@{user.username}</p>
+                          <p className="text-sm text-lantern-primary dark:text-blue-400">@{user.username}</p>
                         )}
                       </div>
                     </button>
@@ -237,22 +237,22 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
         {/* Invite link section — always visible at bottom */}
         {inviteLink && (
-          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-            <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
-              <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          <div className="mt-3 pt-3 border-t border-lantern-border flex-shrink-0">
+            <div className="flex items-center text-xs text-lantern-text-secondary mb-2">
+              <div className="flex-1 border-t border-lantern-border"></div>
               <span className="px-3 uppercase tracking-wider font-medium">or share invite link</span>
-              <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+              <div className="flex-1 border-t border-lantern-border"></div>
             </div>
             <GroupInviteLinkPanel inviteLink={inviteLink} groupName={group.name} compact />
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex justify-end space-x-3 pt-4 mt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <div className="flex justify-end space-x-3 pt-4 mt-3 border-t border-lantern-border flex-shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary dark:bg-lantern-surface-secondary hover:bg-lantern-background-secondary dark:hover:bg-lantern-border border border-lantern-border rounded-lg"
           >
             {selectedUserIds.length > 0 ? 'Cancel' : 'Done'}
           </button>

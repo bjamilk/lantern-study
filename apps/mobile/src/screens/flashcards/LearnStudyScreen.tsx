@@ -92,8 +92,8 @@ export function LearnStudyScreen({ navigation, route }: Props) {
 
   if (!eligible.length) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">No cards to learn</Text>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to learn</Text>
         <Button onPress={() => navigation.goBack()}>Back</Button>
       </SafeAreaView>
     );
@@ -101,9 +101,9 @@ export function LearnStudyScreen({ navigation, route }: Props) {
 
   if (isDone) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
         <Text className="text-2xl font-bold text-violet-600 dark:text-violet-400 mb-2">Learn complete</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
           {deckName} · {mastered} card{mastered !== 1 ? 's' : ''} mastered
         </Text>
         <Button onPress={() => navigation.goBack()}>Done</Button>
@@ -114,7 +114,7 @@ export function LearnStudyScreen({ navigation, route }: Props) {
   const { front } = getCardDisplayText(current);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -126,20 +126,20 @@ export function LearnStudyScreen({ navigation, route }: Props) {
 
       <ScrollView contentContainerClassName="px-4 pb-8 flex-grow justify-center">
         <Card className="mb-4 border-violet-100 dark:border-violet-900/40">
-          <Text className="text-xs uppercase tracking-wide text-slate-400 mb-2">Question</Text>
-          <Text className="text-lg font-medium text-slate-900 dark:text-slate-100">{front}</Text>
+          <Text className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-2">Question</Text>
+          <Text className="text-lg font-medium text-lantern-text">{front}</Text>
         </Card>
 
-        <Text className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3">Pick the answer</Text>
+        <Text className="text-sm font-semibold text-lantern-text-secondary mb-3">Pick the answer</Text>
 
         <View className="gap-2">
           {options.map(option => {
             const { back } = getCardDisplayText(current);
-            let optionClass = 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
+            let optionClass = 'bg-lantern-surface border-lantern-border';
             if (feedback && option === back) {
               optionClass = 'bg-emerald-100 dark:bg-emerald-900/30 border-emerald-400 dark:border-emerald-600';
             } else if (feedback === 'wrong' && option !== back) {
-              optionClass = 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 opacity-60';
+              optionClass = 'bg-lantern-surface border-lantern-border opacity-60';
             }
 
             return (
@@ -149,7 +149,7 @@ export function LearnStudyScreen({ navigation, route }: Props) {
                 disabled={!!feedback}
                 className={`rounded-2xl border px-4 py-3 active:opacity-90 ${optionClass}`}
               >
-                <Text className="text-sm text-slate-800 dark:text-slate-100">{option}</Text>
+                <Text className="text-sm text-lantern-text">{option}</Text>
               </Pressable>
             );
           })}

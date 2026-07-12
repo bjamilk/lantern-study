@@ -734,7 +734,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <FunnelIcon className="w-4 h-4" />
               <span className="hidden sm:inline">Filters</span>
               {activeFilterCount > 0 && (
-                <span className="ml-1 w-4 h-4 bg-white text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
+                <span className="ml-1 w-4 h-4 bg-lantern-surface text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
                   {activeFilterCount}
                 </span>
               )}

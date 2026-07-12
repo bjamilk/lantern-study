@@ -46,9 +46,9 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) =>
 
   return (
     <div className="min-h-screen bg-lantern-background text-lantern-text">
-      <header className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+      <header className="border-b border-lantern-border dark:border-lantern-border bg-lantern-surface/80 dark:bg-lantern-background/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <a href="/" className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+          <a href="/" className="text-sm font-medium text-lantern-primary hover:underline">
             ← Back to Lantern Study
           </a>
           <nav className="flex gap-3 text-xs sm:text-sm">

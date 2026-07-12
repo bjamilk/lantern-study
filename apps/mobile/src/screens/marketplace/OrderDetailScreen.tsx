@@ -109,14 +109,14 @@ export function OrderDetailScreen({
 
   if (loading || !order) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center bg-slate-50">
+      <SafeAreaView className="flex-1 items-center justify-center bg-lantern-background">
         {loading ? <ActivityIndicator /> : <Text>Order not found</Text>}
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 py-3 flex-row items-center">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
@@ -126,9 +126,9 @@ export function OrderDetailScreen({
         </Text>
       </View>
       <ScrollView className="px-4 pb-8" contentContainerStyle={{ gap: 16 }}>
-        <View className="p-4 rounded-xl bg-white dark:bg-slate-800">
-          <Text className="text-2xl font-bold text-indigo-600">{formatPrice(Number(order.amount))}</Text>
-          <Text className="text-slate-500 capitalize mt-1">{order.status.replace(/_/g, ' ')}</Text>
+        <View className="p-4 rounded-xl bg-lantern-surface">
+          <Text className="text-2xl font-bold text-lantern-primary">{formatPrice(Number(order.amount))}</Text>
+          <Text className="text-lantern-text-secondary capitalize mt-1">{order.status.replace(/_/g, ' ')}</Text>
           {order.discount_amount ? (
             <Text className="text-sm text-emerald-600 mt-1">
               Discount: {formatPrice(Number(order.discount_amount))}
@@ -137,25 +137,25 @@ export function OrderDetailScreen({
         </View>
 
         {order.status !== 'cancelled' && order.status !== 'pending_payment' ? (
-          <View className="p-4 rounded-xl bg-white dark:bg-slate-800">
-            <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-3">Progress</Text>
+          <View className="p-4 rounded-xl bg-lantern-surface">
+            <Text className="text-sm font-semibold text-lantern-text mb-3">Progress</Text>
             <View className="flex-row gap-2 mb-3">
               {STEPS.map((step, i) => (
                 <View
                   key={step}
                   className={`flex-1 h-2 rounded-full ${
-                    stepIndex > i ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700'
+                    stepIndex > i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
                   }`}
                 />
               ))}
             </View>
-            <Text className="text-sm text-slate-600 dark:text-slate-300">
+            <Text className="text-sm text-lantern-text-secondary">
               Paid {order.created_at ? '✓' : '—'}
             </Text>
-            <Text className="text-sm text-slate-600 dark:text-slate-300">
+            <Text className="text-sm text-lantern-text-secondary">
               Ready for pickup {order.seller_confirmed_at ? '✓' : '—'}
             </Text>
-            <Text className="text-sm text-slate-600 dark:text-slate-300">
+            <Text className="text-sm text-lantern-text-secondary">
               Completed {order.completed_at ? '✓' : '—'}
             </Text>
           </View>

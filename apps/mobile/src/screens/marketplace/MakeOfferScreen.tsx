@@ -70,7 +70,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -79,40 +79,40 @@ export function MakeOfferScreen({ navigation, route }: Props) {
           <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={22} color="#64748b" />
           </Pressable>
-          <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">Make an Offer</Text>
+          <Text className="text-xl font-bold text-lantern-text">Make an Offer</Text>
         </View>
 
         <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 32 }}>
           {listing ? (
             <Card className="mb-4">
-              <Text className="text-xs text-slate-500 dark:text-slate-400 mb-1">Making an offer on</Text>
-              <Text className="text-base font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+              <Text className="text-xs text-lantern-text-secondary mb-1">Making an offer on</Text>
+              <Text className="text-base font-semibold text-lantern-text" numberOfLines={2}>
                 {listing.title}
               </Text>
-              <Text className="text-lg font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+              <Text className="text-lg font-bold text-lantern-primary mt-1">
                 {formatPrice(listing.price)}
               </Text>
             </Card>
           ) : null}
 
-          <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Your offer (₦) *</Text>
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Your offer (₦) *</Text>
           <TextInput
             value={amount}
             onChangeText={setAmount}
             placeholder="Enter amount"
             placeholderTextColor="#94a3b8"
             keyboardType="numeric"
-            className="p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-lg font-semibold mb-1"
+            className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text text-lg font-semibold mb-1"
           />
           {listing?.price && percentage > 0 ? (
-            <Text className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+            <Text className="text-xs text-lantern-text-secondary mb-4">
               {percentage}% of asking price
             </Text>
           ) : (
             <View className="mb-4" />
           )}
 
-          <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Message (optional)</Text>
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Message (optional)</Text>
           <TextInput
             value={message}
             onChangeText={setMessage}
@@ -121,7 +121,7 @@ export function MakeOfferScreen({ navigation, route }: Props) {
             multiline
             numberOfLines={4}
             textAlignVertical="top"
-            className="min-h-[100px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 mb-6"
+            className="min-h-[100px] p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-6"
           />
 
           <Button fullWidth loading={isLoading} onPress={handleSubmit}>

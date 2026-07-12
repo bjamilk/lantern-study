@@ -103,24 +103,24 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       zIndexClass="z-[60]"
       panelClassName="!p-0 rounded-2xl overflow-hidden"
     >
-      <div className={`w-full ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
+      <div className={`w-full ${isDark ? 'bg-lantern-surface' : 'bg-lantern-surface'}`}>
         {step === 'welcome' && (
           <div className="p-8 text-center">
-            <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/40 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <SparklesIcon className="w-8 h-8 text-indigo-600" />
+            <div className="w-16 h-16 bg-lantern-primary-background dark:bg-lantern-primary-dark/40 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <SparklesIcon className="w-8 h-8 text-lantern-primary" />
             </div>
-            <h2 className="text-2xl font-bold mb-2 text-slate-900 dark:text-slate-100">Welcome to Lantern Study</h2>
-            <p className="text-slate-500 dark:text-slate-400 mb-6">Flashcards, notes, tests, and AI — all in one place. Let's set you up in 60 seconds.</p>
+            <h2 className="text-2xl font-bold mb-2 text-lantern-text">Welcome to Lantern Study</h2>
+            <p className="text-lantern-text-secondary mb-6">Flashcards, notes, tests, and AI — all in one place. Let's set you up in 60 seconds.</p>
             <Button onClick={() => setStep('goal')} className="w-full mb-2">
               Get started <ArrowRightIcon className="w-4 h-4 ml-1" />
             </Button>
-            <button onClick={onSkip} className="text-sm text-slate-400 hover:text-slate-600">Skip for now</button>
+            <button onClick={onSkip} className="text-sm text-lantern-text-tertiary hover:text-lantern-text-secondary">Skip for now</button>
           </div>
         )}
 
         {step === 'goal' && (
           <div className="p-6">
-            <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-slate-100">What's your main goal?</h2>
+            <h2 className="text-xl font-bold mb-4 text-lantern-text">What's your main goal?</h2>
             <div className="space-y-2 mb-6">
               {GOALS.map((g) => (
                 <button
@@ -128,12 +128,12 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                   onClick={() => setStudyGoal(g.id)}
                   className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${
                     studyGoal === g.id
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                      : 'border-slate-200 dark:border-slate-600 hover:border-indigo-300'
+                      ? 'border-lantern-primary bg-lantern-primary-background'
+                      : 'border-lantern-border hover:border-lantern-primary/30'
                   }`}
                 >
                   <span className="text-2xl">{g.icon}</span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">{g.label}</span>
+                  <span className="font-medium text-lantern-text">{g.label}</span>
                 </button>
               ))}
             </div>
@@ -145,23 +145,23 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <div className="p-6">
             {demoProcessing ? (
               <div className="py-8 text-center">
-                <div className="animate-spin w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="font-medium text-slate-800 dark:text-slate-100">{DEMO_STAGES[demoStage]}</p>
-                <p className="text-sm text-slate-500 mt-2">Turning sample notes into study materials…</p>
+                <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" />
+                <p className="font-medium text-lantern-text">{DEMO_STAGES[demoStage]}</p>
+                <p className="text-sm text-lantern-text-secondary mt-2">Turning sample notes into study materials…</p>
               </div>
             ) : (
               <>
-                <h2 className="text-xl font-bold mb-2 text-slate-900 dark:text-slate-100">See it in action</h2>
-                <p className="text-sm text-slate-500 mb-4">
+                <h2 className="text-xl font-bold mb-2 text-lantern-text">See it in action</h2>
+                <p className="text-sm text-lantern-text-secondary mb-4">
                   Try a sample biology note — we'll generate flashcards and quiz questions instantly.
                 </p>
-                <div className={`text-xs p-3 rounded-lg mb-4 max-h-32 overflow-y-auto ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-50 text-slate-600'}`}>
+                <div className={`text-xs p-3 rounded-lg mb-4 max-h-32 overflow-y-auto ${isDark ? 'bg-lantern-surface-secondary text-lantern-text-tertiary' : 'bg-lantern-background text-lantern-text-secondary'}`}>
                   {DEMO_SAMPLE_TEXT.slice(0, 200)}…
                 </div>
                 <Button onClick={() => void handleTryDemo()} className="w-full mb-2">
                   Try sample demo
                 </Button>
-                <button onClick={() => setStep('starter')} className="w-full text-sm text-slate-400">Use my own notes instead</button>
+                <button onClick={() => setStep('starter')} className="w-full text-sm text-lantern-text-tertiary">Use my own notes instead</button>
               </>
             )}
           </div>
@@ -169,19 +169,19 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
         {step === 'starter' && (
           <div className="p-6">
-            <h2 className="text-xl font-bold mb-2 text-slate-900 dark:text-slate-100">Paste something to study</h2>
-            <p className="text-sm text-slate-500 mb-4">We'll generate your first flashcards automatically (optional).</p>
+            <h2 className="text-xl font-bold mb-2 text-lantern-text">Paste something to study</h2>
+            <p className="text-sm text-lantern-text-secondary mb-4">We'll generate your first flashcards automatically (optional).</p>
             <textarea
               value={starterNotes}
               onChange={(e) => setStarterNotes(e.target.value)}
               placeholder="Paste notes, a definition list, or any study material..."
               rows={5}
-              className={`w-full px-3 py-2 rounded-lg border mb-4 text-sm ${isDark ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border-slate-300'}`}
+              className={`w-full px-3 py-2 rounded-lg border mb-4 text-sm ${isDark ? 'bg-lantern-surface-secondary border-lantern-border text-lantern-text' : 'bg-lantern-background border-lantern-border'}`}
             />
             <Button onClick={handleStarter} disabled={loading} className="w-full mb-2">
               {loading ? 'Generating...' : starterNotes.trim() ? 'Generate flashcards & continue' : "Skip — I'll add cards later"}
             </Button>
-            <button onClick={() => setStep('streak')} className="w-full text-sm text-slate-400">Skip this step</button>
+            <button onClick={() => setStep('streak')} className="w-full text-sm text-lantern-text-tertiary">Skip this step</button>
           </div>
         )}
 
@@ -189,9 +189,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
           <div className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <FireIcon className="w-6 h-6 text-orange-500" />
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Commit to a streak</h2>
+              <h2 className="text-xl font-bold text-lantern-text">Commit to a streak</h2>
             </div>
-            <p className="text-sm text-slate-500 mb-4">Students with 7-day streaks are 3× more likely to keep studying.</p>
+            <p className="text-sm text-lantern-text-secondary mb-4">Students with 7-day streaks are 3× more likely to keep studying.</p>
             <div className="flex gap-3 mb-6">
               {STREAK_TARGETS.map((t) => (
                 <button
@@ -200,7 +200,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                   className={`flex-1 py-4 rounded-xl border-2 font-bold text-lg transition-colors ${
                     streakTarget === t
                       ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-600'
-                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                      : 'border-lantern-border text-lantern-text-secondary'
                   }`}
                 >
                   {t} days
@@ -215,9 +215,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
         {step === 'done' && (
           <div className="p-8 text-center">
-            <AcademicCapIcon className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
+            <AcademicCapIcon className="w-12 h-12 text-lantern-primary mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">You're all set!</h2>
-            <p className="text-slate-500 mb-4">Your {streakTarget}-day streak starts today. Open your first deck in Learn mode!</p>
+            <p className="text-lantern-text-secondary mb-4">Your {streakTarget}-day streak starts today. Open your first deck in Learn mode!</p>
             {onOpenLearnMode ? (
               <Button onClick={() => { onOpenLearnMode(); onSkip(); }} className="w-full mb-2">Open Learn mode</Button>
             ) : null}

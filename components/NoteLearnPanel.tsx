@@ -56,21 +56,21 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   };
 
   return (
-    <div className={`rounded-xl border p-5 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-indigo-50 border-indigo-100'}`}>
-      <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-gray-100' : 'text-indigo-900'}`}>
-        <SparklesIcon className="w-5 h-5 text-indigo-500" />
+    <div className={`rounded-xl border p-5 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-primary-background border-lantern-primary/20'}`}>
+      <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-lantern-text' : 'text-lantern-primary-dark'}`}>
+        <SparklesIcon className="w-5 h-5 text-lantern-primary" />
         Learn from this note
       </h3>
 
       {note.summary && (
-        <div className={`mb-5 p-4 rounded-lg text-sm leading-relaxed ${isDark ? 'bg-gray-900 text-gray-300' : 'bg-white text-gray-700'}`}>
-          <p className="font-medium mb-1 text-indigo-500">Smart Notes</p>
+        <div className={`mb-5 p-4 rounded-lg text-sm leading-relaxed ${isDark ? 'bg-lantern-background text-lantern-text-tertiary' : 'bg-lantern-surface text-lantern-text'}`}>
+          <p className="font-medium mb-1 text-lantern-primary">Smart Notes</p>
           <p className="whitespace-pre-wrap">{note.summary}</p>
         </div>
       )}
 
       {!canGenerateStudyMaterials && (
-        <p className={`text-xs mb-3 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+        <p className={`text-xs mb-3 ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
           Need {MIN_NOTE_STUDY_CONTENT_CHARS}+ characters — add notes or wait for import/extraction.
         </p>
       )}
@@ -80,7 +80,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           type="button"
           disabled={isBusy || smartNoting || contentLength < 30}
           onClick={handleSmartNote}
-          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-lantern-primary text-white hover:bg-lantern-primary-dark disabled:opacity-50"
         >
           {smartNoting ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
           Smart Note
@@ -89,7 +89,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           type="button"
           disabled={isBusy}
           onClick={onChatWithNote}
-          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
           <ChatBubbleLeftRightIcon className="w-4 h-4" />
           Chat
@@ -103,7 +103,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
               ? undefined
               : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
           }
-          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
           <RectangleStackIcon className="w-4 h-4" />
           Flashcards
@@ -117,7 +117,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
               ? undefined
               : `Add at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content`
           }
-          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' : 'bg-white text-gray-800 hover:bg-gray-50 border border-gray-200'}`}
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
           <QuestionMarkCircleIcon className="w-4 h-4" />
           Practice test

@@ -121,12 +121,12 @@ export function AICompanionPanel({ context }: Props) {
   return (
     <Modal visible={isOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
       <SafeAreaView
-        className={`flex-1 ${theme === 'dark' ? 'bg-slate-900' : 'bg-white'}`}
+        className={`flex-1 ${theme === 'dark' ? 'bg-lantern-background' : 'bg-lantern-surface'}`}
         edges={['top', 'bottom']}
       >
-        <View className="flex-row items-center px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+        <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
           <Ionicons name="sparkles" size={22} color="#6366f1" />
-          <Text className="flex-1 ml-2 text-lg font-bold text-slate-900 dark:text-white">Lantern AI</Text>
+          <Text className="flex-1 ml-2 text-lg font-bold text-lantern-text dark:text-white">Lantern AI</Text>
           <Pressable onPress={() => void clearHistory()} className="p-2 mr-1">
             <Ionicons name="trash-outline" size={20} color="#94a3b8" />
           </Pressable>
@@ -149,13 +149,13 @@ export function AICompanionPanel({ context }: Props) {
             isLoadingHistory ? (
               <View className="py-8 items-center gap-2">
                 <ActivityIndicator color="#6366f1" />
-                <Text className="text-slate-500 dark:text-slate-400 text-center">
+                <Text className="text-lantern-text-secondary text-center">
                   Loading conversation…
                 </Text>
               </View>
             ) : (
             <View className="py-8">
-              <Text className="text-slate-500 dark:text-slate-400 text-center mb-4">
+              <Text className="text-lantern-text-secondary text-center mb-4">
                 Ask anything about your study plan, flashcards, or tests.
               </Text>
               <View className="flex-row flex-wrap gap-2 justify-center">
@@ -163,9 +163,9 @@ export function AICompanionPanel({ context }: Props) {
                   <Pressable
                     key={p}
                     onPress={() => void handleSend(p)}
-                    className="px-3 py-2 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800"
+                    className="px-3 py-2 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background/50 border border-lantern-primary/30 dark:border-lantern-primary/30"
                   >
-                    <Text className="text-xs text-indigo-700 dark:text-indigo-300">{p}</Text>
+                    <Text className="text-xs text-lantern-primary">{p}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -179,11 +179,11 @@ export function AICompanionPanel({ context }: Props) {
                 <View
                   className={`px-4 py-3 rounded-2xl ${
                     isUser
-                      ? 'bg-indigo-600 rounded-br-sm'
-                      : 'bg-slate-100 dark:bg-slate-800 rounded-bl-sm'
+                      ? 'bg-lantern-primary rounded-br-sm'
+                      : 'bg-lantern-background-secondary rounded-bl-sm'
                   }`}
                 >
-                  <Text className={isUser ? 'text-white' : 'text-slate-900 dark:text-slate-100'}>
+                  <Text className={isUser ? 'text-white' : 'text-lantern-text'}>
                     {item.content}
                   </Text>
                 </View>
@@ -206,14 +206,14 @@ export function AICompanionPanel({ context }: Props) {
         ) : null}
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View className="flex-row items-end gap-2 px-4 py-3 border-t border-slate-200 dark:border-slate-700">
+          <View className="flex-row items-end gap-2 px-4 py-3 border-t border-lantern-border">
             <TextInput
               value={input}
               onChangeText={setInput}
               placeholder="Ask Lantern AI..."
               placeholderTextColor="#94a3b8"
               multiline
-              className="flex-1 max-h-24 bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-3 text-slate-900 dark:text-white"
+              className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
             />
             <Button size="sm" disabled={!input.trim() || isBusy} onPress={() => void handleSend()}>
               Send

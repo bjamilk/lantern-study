@@ -116,20 +116,20 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
 
               {activeSplits.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Active Splits</h3>
+                  <h3 className="text-xs font-semibold uppercase text-lantern-text-tertiary tracking-wider">Active Splits</h3>
                   {activeSplits.map(split => {
                     const paidCount = split.participants.filter(p => p.paid).length;
                     const cat = STUDENT_EXPENSE_CATEGORIES.find(c => c.id === split.category);
                     return (
-                      <div key={split.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4">
+                      <div key={split.id} className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-xl p-4">
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <h4 className="font-medium text-sm text-slate-800 dark:text-slate-100">
+                            <h4 className="font-medium text-sm text-lantern-text">
                               {cat?.icon || '📦'} {split.title}
                             </h4>
-                            <p className="text-xs text-slate-400">₦{split.totalAmount.toLocaleString('en-NG')} total &middot; {split.participants.length} people</p>
+                            <p className="text-xs text-lantern-text-tertiary">₦{split.totalAmount.toLocaleString('en-NG')} total &middot; {split.participants.length} people</p>
                           </div>
-                          <button onClick={() => removeExpenseSplit(split.id)} className="text-slate-300 hover:text-red-500 text-xs">✕</button>
+                          <button onClick={() => removeExpenseSplit(split.id)} className="text-lantern-text-tertiary hover:text-red-500 text-xs">✕</button>
                         </div>
                         <div className="space-y-1.5">
                           {split.participants.map((p, i) => (
@@ -137,15 +137,15 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
                               <div className="flex items-center gap-2">
                                 <button onClick={() => togglePaid(split.id, i)}
                                   className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
-                                    p.paid ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-slate-500'
+                                    p.paid ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-lantern-border dark:border-lantern-border'
                                   }`}>
                                   {p.paid && <span className="text-xs">✓</span>}
                                 </button>
-                                <span className={`text-sm ${p.paid ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>
+                                <span className={`text-sm ${p.paid ? 'text-lantern-text-tertiary line-through' : 'text-lantern-text'}`}>
                                   {p.userName} {p.userId === currentUserId ? '(you)' : ''}
                                 </span>
                               </div>
-                              <span className={`text-sm font-medium ${p.paid ? 'text-emerald-500' : 'text-slate-600 dark:text-slate-400'}`}>
+                              <span className={`text-sm font-medium ${p.paid ? 'text-emerald-500' : 'text-lantern-text-secondary'}`}>
                                 ₦{p.amount.toLocaleString('en-NG')}
                               </span>
                             </div>
@@ -153,10 +153,10 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
                         </div>
                         <div className="flex gap-1 mt-3">
                           {split.participants.map((p, i) => (
-                            <div key={i} className={`flex-1 h-1.5 rounded-full ${p.paid ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-600'}`} />
+                            <div key={i} className={`flex-1 h-1.5 rounded-full ${p.paid ? 'bg-emerald-400' : 'bg-lantern-border'}`} />
                           ))}
                         </div>
-                        <p className="text-xs text-slate-400 mt-1">{paidCount}/{split.participants.length} paid</p>
+                        <p className="text-xs text-lantern-text-tertiary mt-1">{paidCount}/{split.participants.length} paid</p>
                       </div>
                     );
                   })}
@@ -165,7 +165,7 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
 
               {settledSplits.length > 0 && (
                 <div className="space-y-3 mt-4">
-                  <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Settled</h3>
+                  <h3 className="text-xs font-semibold uppercase text-lantern-text-tertiary tracking-wider">Settled</h3>
                   {settledSplits.slice(0, 3).map(split => {
                     const cat = STUDENT_EXPENSE_CATEGORIES.find(c => c.id === split.category);
                     return (
@@ -185,7 +185,7 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
               {expenseSplits.length === 0 && (
                 <div className="text-center py-6">
                   <div className="text-4xl mb-2">🤝</div>
-                  <p className="text-slate-400 text-sm">Split rent, food, data, or any shared expense with roommates or friends!</p>
+                  <p className="text-lantern-text-tertiary text-sm">Split rent, food, data, or any shared expense with roommates or friends!</p>
                 </div>
               )}
             </div>
@@ -195,31 +195,31 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
           {mode === 'create' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">What are you splitting?</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">What are you splitting?</label>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required
-                  className="w-full p-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                  className="w-full p-2.5 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-purple-400 focus:border-transparent"
                   placeholder="e.g. Monthly rent, Data subscription, Cooking gas" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Total Amount (₦)</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Total Amount (₦)</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold">₦</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary font-semibold">₦</span>
                   <input type="number" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value === '' ? '' : parseFloat(e.target.value))} required min="1"
-                    className="w-full p-2.5 pl-8 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-lg font-semibold focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                    className="w-full p-2.5 pl-8 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-lg font-semibold focus:ring-2 focus:ring-purple-400 focus:border-transparent"
                     placeholder="0" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Category</label>
+                <label className="block text-sm font-medium text-lantern-text mb-1">Category</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)}
-                  className="w-full p-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-purple-400 focus:border-transparent">
+                  className="w-full p-2.5 border border-lantern-border rounded-xl bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text focus:ring-2 focus:ring-purple-400 focus:border-transparent">
                   {STUDENT_EXPENSE_CATEGORIES.map(cat => (
                     <option key={cat.id} value={cat.id}>{cat.icon} {cat.label}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block text-sm font-medium text-lantern-text mb-1">
                   Split with (you + {participants.filter(p => p.name.trim()).length} others)
                 </label>
                 <div className="space-y-2">
@@ -229,10 +229,10 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
                   {participants.map((p, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input type="text" value={p.name} onChange={(e) => handleParticipantName(i, e.target.value)}
-                        className="flex-1 p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                        className="flex-1 p-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent"
                         placeholder="Name of person" />
                       {participants.length > 1 && (
-                        <button onClick={() => handleRemoveParticipant(i)} className="text-slate-300 hover:text-red-500">
+                        <button onClick={() => handleRemoveParticipant(i)} className="text-lantern-text-tertiary hover:text-red-500">
                           <TrashIcon className="w-4 h-4" />
                         </button>
                       )}
@@ -244,13 +244,13 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
                   </button>
                 </div>
                 {totalAmount && participants.filter(p => p.name.trim()).length > 0 && (
-                  <p className="text-xs text-slate-400 mt-2">
+                  <p className="text-xs text-lantern-text-tertiary mt-2">
                     Each person pays: ₦{(Number(totalAmount) / (participants.filter(p => p.name.trim()).length + 1)).toLocaleString('en-NG', { maximumFractionDigits: 2 })}
                   </p>
                 )}
               </div>
               <div className="flex gap-3 pt-1">
-                <button onClick={() => setMode('list')} className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600">Back</button>
+                <button onClick={() => setMode('list')} className="flex-1 px-4 py-2.5 text-sm font-medium text-lantern-text bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-xl hover:bg-lantern-border">Back</button>
                 <button onClick={handleCreate} disabled={!title.trim() || !totalAmount || participants.filter(p => p.name.trim()).length === 0}
                   className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-purple-500 hover:bg-purple-600 rounded-xl shadow-sm disabled:opacity-40">
                   Create Split

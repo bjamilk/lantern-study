@@ -795,9 +795,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     <LanternIcon size={40} />
                     <span>Lantern Study</span>
                 </div>
-                <p className="mt-4 text-slate-600 dark:text-slate-300">Study smarter — built for slow connections and offline learning.</p>
+                <p className="mt-4 text-lantern-text-secondary">Study smarter — built for slow connections and offline learning.</p>
             </div>
-            <div className="mt-8 text-sm text-slate-500 dark:text-slate-400">
+            <div className="mt-8 text-sm text-lantern-text-secondary">
                 <p>"An investment in knowledge pays the best interest."</p>
                 <p className="font-semibold mt-1">- Benjamin Franklin</p>
             </div>
@@ -835,8 +835,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             <div>
                                 <label htmlFor="verifyEmail" className="sr-only">Email address</label>
                                 <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-slate-400" /></div>
-                                    <input id="verifyEmail" name="verifyEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Email address"/>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                    <input id="verifyEmail" name="verifyEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
                                 </div>
                             </div>
                             <div>
@@ -850,7 +850,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                     maxLength={6}
                                     value={otpCode}
                                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                    className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center text-2xl tracking-widest font-mono"
+                                    className="w-full px-4 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-center text-2xl tracking-widest font-mono"
                                     placeholder="000000"
                                 />
                             </div>
@@ -865,15 +865,15 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                         <div className="w-1/2">
                                             <label htmlFor="firstName" className="sr-only">First Name</label>
                                             <div className="relative">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-slate-400" /></div>
-                                                <input id="firstName" name="firstName" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="First Name"/>
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                                <input id="firstName" name="firstName" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="First Name"/>
                                             </div>
                                         </div>
                                         <div className="w-1/2">
                                             <label htmlFor="lastName" className="sr-only">Last Name</label>
                                             <div className="relative">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-slate-400" /></div>
-                                                <input id="lastName" name="lastName" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Last Name"/>
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                                <input id="lastName" name="lastName" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Last Name"/>
                                             </div>
                                         </div>
                                     </div>
@@ -881,7 +881,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                         <label htmlFor="username" className="sr-only">Username</label>
                                         <div className="relative">
                                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <span className="text-slate-400 font-medium">@</span>
+                                                <span className="text-lantern-text-tertiary font-medium">@</span>
                                             </div>
                                             <input 
                                                 id="username" 
@@ -890,17 +890,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                                 autoComplete="username" 
                                                 value={username} 
                                                 onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
-                                                className={`w-full pl-8 pr-10 py-2.5 border rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                                                className={`w-full pl-8 pr-10 py-2.5 border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 ${
                                                     usernameError ? 'border-red-500 focus:ring-red-500' : 
                                                     usernameAvailable === true ? 'border-green-500 focus:ring-green-500' : 
-                                                    'border-slate-300 dark:border-slate-600 focus:ring-indigo-500'
+                                                    'border-lantern-border focus:ring-lantern-primary'
                                                 }`}
                                                 placeholder="username"
                                                 maxLength={20}
                                             />
                                             <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                                                 {checkingUsername && (
-                                                    <svg className="animate-spin h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <svg className="animate-spin h-5 w-5 text-lantern-text-tertiary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                                     </svg>
@@ -926,7 +926,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                             <select
                                                 value={countryCode}
                                                 onChange={(e) => setCountryCode(e.target.value)}
-                                                className="w-24 px-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-l-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                className="w-24 px-3 py-2.5 border border-lantern-border rounded-l-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
                                             >
                                                 {countryCodes.map((country) => (
                                                     <option key={country.code} value={country.code}>
@@ -935,8 +935,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                                 ))}
                                             </select>
                                             <div className="relative flex-1">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><PhoneIcon className="h-5 w-5 text-slate-400" /></div>
-                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border-l-0 border border-slate-300 dark:border-slate-600 rounded-r-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Phone Number"/>
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><PhoneIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Phone Number"/>
                                             </div>
                                         </div>
                                     </div>
@@ -946,17 +946,17 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             <div>
                                 <label htmlFor="email" className="sr-only">Email address</label>
                                 <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-slate-400" /></div>
-                                    <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Email address"/>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                    <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
                                 </div>
                             </div>
                             
                             <div>
                                 <label htmlFor="password" className="sr-only">Password</label>
                                 <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-slate-400" /></div>
-                                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Password"/>
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                    <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Password"/>
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
                                 </div>
                             </div>
 
@@ -964,9 +964,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 <div>
                                     <label htmlFor="confirmPassword" className="sr-only">Confirm Password</label>
                                     <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-slate-400" /></div>
-                                        <input id="confirmPassword" name="confirmPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Confirm Password"/>
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                        <input id="confirmPassword" name="confirmPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Confirm Password"/>
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none"><span className="sr-only">Toggle password visibility</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
                                     </div>
                                 </div>
                             )}
@@ -977,8 +977,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         <div>
                             <label htmlFor="resetEmail" className="sr-only">Email address</label>
                             <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-slate-400" /></div>
-                                <input id="resetEmail" name="resetEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Email address"/>
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                <input id="resetEmail" name="resetEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
                             </div>
                         </div>
                     )}
@@ -1025,7 +1025,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             type="button"
                             onClick={handleResendConfirmation}
                             disabled={resendCooldown > 0 || resendLoading}
-                            className="w-full text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 disabled:text-slate-400 disabled:cursor-not-allowed"
+                            className="w-full text-sm font-medium text-lantern-primary hover:text-lantern-primary disabled:text-lantern-text-tertiary disabled:cursor-not-allowed"
                         >
                             {resendLoading
                               ? 'Sending…'
@@ -1040,7 +1040,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             type="button"
                             onClick={handleResendResetEmail}
                             disabled={resendCooldown > 0 || resendLoading}
-                            className="w-full text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 disabled:text-slate-400 disabled:cursor-not-allowed"
+                            className="w-full text-sm font-medium text-lantern-primary hover:text-lantern-primary disabled:text-lantern-text-tertiary disabled:cursor-not-allowed"
                         >
                             {resendLoading
                               ? 'Sending…'
@@ -1051,13 +1051,13 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     )}
 
                     {authView === 'signup' && (
-                        <p className="text-xs text-center text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-center text-lantern-text-secondary">
                             By signing up, you agree to our{' '}
-                            <a href={LEGAL_PATHS.terms} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                            <a href={LEGAL_PATHS.terms} target="_blank" rel="noopener noreferrer" className="text-lantern-primary hover:underline">
                                 Terms of Service
                             </a>{' '}
                             and{' '}
-                            <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">
+                            <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="text-lantern-primary hover:underline">
                                 Privacy Policy
                             </a>
                             .
@@ -1067,7 +1067,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                 {isVerifyEmailView && (
                     <div className="mt-4 text-center">
-                        <button onClick={backToLogin} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                        <button onClick={backToLogin} className="text-sm text-lantern-primary hover:text-lantern-primary">
                             ← Back to Sign In
                         </button>
                     </div>
@@ -1075,7 +1075,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                 {isLoginView && (
                     <div className="mt-4 text-center">
-                        <button onClick={showForgotPassword} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                        <button onClick={showForgotPassword} className="text-sm text-lantern-primary hover:text-lantern-primary">
                             Forgot your password?
                         </button>
                     </div>
@@ -1083,7 +1083,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                 {isForgotPasswordView && (
                     <div className="mt-4 text-center">
-                        <button onClick={backToLogin} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                        <button onClick={backToLogin} className="text-sm text-lantern-primary hover:text-lantern-primary">
                             ← Back to Sign In
                         </button>
                     </div>
@@ -1092,8 +1092,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 {!isForgotPasswordView && !isVerifyEmailView && (
                     <>
                         <div className="relative my-6">
-                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-300 dark:border-slate-600" /></div>
-                            <div className="relative flex justify-center text-sm"><span className="px-2 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400">Or continue with</span></div>
+                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-lantern-border" /></div>
+                            <div className="relative flex justify-center text-sm"><span className="px-2 bg-lantern-surface text-lantern-text-secondary">Or continue with</span></div>
                         </div>
                         
                         <div className="grid grid-cols-2 gap-3">
@@ -1101,11 +1101,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 type="button" 
                                 onClick={() => handleSocialLogin('google')} 
                                 disabled={socialLoading !== null}
-                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm bg-white dark:bg-slate-700 text-sm font-medium text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-lantern-border rounded-lg shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary text-sm font-medium text-lantern-text-secondary dark:text-lantern-text-tertiary hover:bg-lantern-background dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                             >
                                 <span className="sr-only">Sign in with Google</span>
                                 {socialLoading === 'google' ? (
-                                    <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin h-5 w-5 text-lantern-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
@@ -1117,11 +1117,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 type="button" 
                                 onClick={() => handleSocialLogin('apple')} 
                                 disabled={socialLoading !== null}
-                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm bg-white dark:bg-slate-700 text-sm font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                className="w-full inline-flex justify-center items-center py-2.5 px-4 border border-lantern-border rounded-lg shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary text-sm font-medium text-lantern-text hover:bg-lantern-background dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                             >
                                 <span className="sr-only">Sign in with Apple</span>
                                 {socialLoading === 'apple' ? (
-                                    <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin h-5 w-5 text-lantern-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
@@ -1131,7 +1131,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             </button>
                         </div>
                         
-                        <p className="mt-4 text-xs text-center text-slate-500 dark:text-slate-400">
+                        <p className="mt-4 text-xs text-center text-lantern-text-secondary">
                             Google and Apple sign-in require OAuth configuration in Supabase Dashboard
                         </p>
                     </>
@@ -1139,7 +1139,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                 <div className="mt-8 text-sm text-center">
                     {!isForgotPasswordView && !isVerifyEmailView && (
-                        <button onClick={toggleView} className="font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500">
+                        <button onClick={toggleView} className="font-medium text-lantern-primary hover:text-lantern-primary">
                             {isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
                         </button>
                     )}

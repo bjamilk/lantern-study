@@ -71,7 +71,7 @@ function FlashcardPreview({ card, onPress }: { card: Flashcard; onPress: () => v
     <Pressable onPress={onPress}>
       <Card className="mb-2 py-3 active:opacity-90">
       <View className="flex-row items-center justify-between gap-2">
-        <Text className="flex-1 text-sm text-slate-800 dark:text-slate-100" numberOfLines={2}>
+        <Text className="flex-1 text-sm text-lantern-text" numberOfLines={2}>
           {front}
         </Text>
         <View style={{ backgroundColor: `${status.color}22` }} className="px-2 py-0.5 rounded-full">
@@ -244,7 +244,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const hasCards = cards.length > 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader
         title={deckName}
         subtitle={deck?.description}
@@ -270,20 +270,20 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         <Card>
           <View className="flex-row flex-wrap gap-3">
             <View className="items-center flex-1 min-w-[22%]">
-              <Text className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{stats.total}</Text>
-              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Total</Text>
+              <Text className="text-xl font-bold text-lantern-primary">{stats.total}</Text>
+              <Text className="text-[11px] text-lantern-text-secondary">Total</Text>
             </View>
             <View className="items-center flex-1 min-w-[22%]">
               <Text className="text-xl font-bold text-amber-600 dark:text-amber-400">{stats.dueCards}</Text>
-              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Due</Text>
+              <Text className="text-[11px] text-lantern-text-secondary">Due</Text>
               </View>
             <View className="items-center flex-1 min-w-[22%]">
               <Text className="text-xl font-bold text-violet-600 dark:text-violet-400">{stats.newCards}</Text>
-              <Text className="text-[11px] text-slate-500 dark:text-slate-400">New</Text>
+              <Text className="text-[11px] text-lantern-text-secondary">New</Text>
             </View>
             <View className="items-center flex-1 min-w-[22%]">
               <Text className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{stats.mastered}</Text>
-              <Text className="text-[11px] text-slate-500 dark:text-slate-400">Mastered</Text>
+              <Text className="text-[11px] text-lantern-text-secondary">Mastered</Text>
             </View>
           </View>
         </Card>
@@ -292,7 +292,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           <StudyButton
             label="Review"
             subtitle="Spaced repetition"
-            colorClass="bg-indigo-500"
+            colorClass="bg-lantern-primary"
             disabled={!hasCards}
             onPress={() => navigateStudy('FlashcardReview')}
           />
@@ -331,7 +331,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
             <Button size="sm" variant="secondary" loading={exporting} onPress={() => void handleExportJson()}>
               Export JSON
             </Button>
-            <Text className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 px-1">
+            <Text className="text-[10px] text-lantern-text-secondary mt-1 px-1">
               Full backup (images + progress)
             </Text>
           </View>
@@ -339,7 +339,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
             <Button size="sm" variant="secondary" loading={exporting} onPress={() => void handleExportCsv()}>
               Export CSV
             </Button>
-            <Text className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 px-1">
+            <Text className="text-[10px] text-lantern-text-secondary mt-1 px-1">
               Spreadsheet (front/back only)
             </Text>
           </View>
@@ -350,7 +350,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       </View>
 
       <View className="px-4 pb-2">
-        <Text className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <Text className="text-sm font-semibold text-lantern-text">
           Cards ({cards.length})
         </Text>
       </View>
@@ -366,7 +366,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           contentContainerClassName="px-4 pb-8"
           ListEmptyComponent={
             <View className="items-center py-10">
-              <Text className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              <Text className="text-sm text-lantern-text-secondary mb-4">
                 No flashcards in this deck yet.
               </Text>
               <Button onPress={openCreateCard}>Add first card</Button>

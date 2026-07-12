@@ -92,7 +92,7 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900">
+    <SafeAreaView className="flex-1 bg-lantern-background">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
@@ -100,8 +100,8 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
         <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
-            <Text className="text-2xl font-bold text-slate-900 dark:text-white">Verify your email</Text>
-            <Text className="text-slate-500 dark:text-slate-400 mt-2 text-center">
+            <Text className="text-2xl font-bold text-lantern-text dark:text-white">Verify your email</Text>
+            <Text className="text-lantern-text-secondary mt-2 text-center">
               Enter the 6-digit code sent to {email}
             </Text>
           </View>
@@ -127,7 +127,7 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
             maxLength={6}
             placeholder="000000"
             placeholderTextColor="#94a3b8"
-            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-4 text-slate-900 dark:text-white text-center text-2xl tracking-widest font-mono mb-4"
+            className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-4 text-lantern-text dark:text-white text-center text-2xl tracking-widest font-mono mb-4"
           />
 
           <Button fullWidth loading={loading} onPress={handleVerify}>

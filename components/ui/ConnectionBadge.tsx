@@ -30,7 +30,7 @@ const stateStyles: Record<string, string> = {
   offline: 'bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 border-amber-200 dark:border-amber-800',
   syncing: 'bg-lantern-primary-background text-lantern-primary-dark border-lantern-primary/30',
   lowData: 'bg-lantern-accent-background text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800',
-  stale: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+  stale: 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-surface dark:text-lantern-text-tertiary border-lantern-border',
 };
 
 export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({

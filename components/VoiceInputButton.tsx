@@ -89,10 +89,10 @@ const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({ onTranscriptUpdate,
             type="button"
             onClick={handleToggleListening}
             disabled={disabled}
-            className={`flex-shrink-0 p-2 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`flex-shrink-0 p-2 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-lantern-surface disabled:opacity-50 disabled:cursor-not-allowed ${
                 isListening
                     ? 'bg-red-500 text-white animate-pulse focus:ring-red-400'
-                    : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500 focus:ring-blue-500'
+                    : 'bg-lantern-background-secondary dark:bg-lantern-border text-lantern-text-secondary dark:text-lantern-text-tertiary hover:bg-lantern-border dark:hover:bg-lantern-border focus:ring-lantern-primary'
             } ${className}`}
             aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
             title={isListening ? 'Stop voice input' : 'Start voice input'}

@@ -412,22 +412,22 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   };
 
   return (
-    <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <div className={`shrink-0 flex items-center gap-1.5 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 border-b min-w-0 ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+    <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
+      <div className={`shrink-0 flex items-center gap-1.5 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 border-b min-w-0 ${isDark ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-surface'}`}>
         <button
           type="button"
           onClick={onBack}
           aria-label="Back to notes"
-          className="shrink-0 p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="shrink-0 p-1.5 sm:p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary"
         >
           <ArrowLeftIcon className="w-5 h-5" />
         </button>
         <input
           value={title}
           onChange={e => handleTitleChange(e.target.value)}
-          className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-gray-100' : 'text-gray-900'}`}
+          className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}
         />
-        {isSaving && <span className="hidden sm:inline text-xs text-gray-400 shrink-0">Saving...</span>}
+        {isSaving && <span className="hidden sm:inline text-xs text-lantern-text-tertiary shrink-0">Saving...</span>}
         <Button variant="secondary" size="sm" onClick={handleShareGroup} aria-label="Share with group" className="shrink-0 px-2 sm:px-3">
           <ShareIcon className="w-4 h-4" />
         </Button>
@@ -448,7 +448,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 sm:p-4 space-y-3">
           <div
             className={`sticky top-0 z-10 flex flex-wrap gap-2 py-2 -mt-2 lg:static lg:mt-0 lg:py-0 ${
-              isDark ? 'bg-gray-900' : 'bg-gray-50'
+              isDark ? 'bg-lantern-background' : 'bg-lantern-background'
             }`}
           >
             {!recording ? (
@@ -480,13 +480,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             )}
             {transcribing && (
               <>
-                <span className="text-xs sm:text-sm text-gray-400 self-center">Transcribing...</span>
+                <span className="text-xs sm:text-sm text-lantern-text-tertiary self-center">Transcribing...</span>
                 <Button size="sm" variant="ghost" onClick={cancelTranscription}>
                   Cancel
                 </Button>
               </>
             )}
-            {isSaving && <span className="sm:hidden text-xs text-gray-400 self-center">Saving...</span>}
+            {isSaving && <span className="sm:hidden text-xs text-lantern-text-tertiary self-center">Saving...</span>}
           </div>
 
           {note.youtubeVideoId && (
@@ -500,7 +500,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           {showPreviewBanner && (
             <div
               className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
-                isDark ? 'border-indigo-800/50 bg-indigo-950/30 text-indigo-200' : 'border-indigo-200 bg-indigo-50 text-indigo-900'
+                isDark ? 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-light' : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-dark'
               }`}
               role="status"
             >
@@ -511,7 +511,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 {presentationAttachment && (
                   <button
                     type="button"
-                    className="text-indigo-500 underline text-left text-xs"
+                    className="text-lantern-primary underline text-left text-xs"
                     onClick={() => void handleDownloadOriginalSlides()}
                   >
                     Download original slides ({presentationAttachment.fileName || 'presentation'})
@@ -520,7 +520,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               </div>
               <button
                 type="button"
-                className={`shrink-0 text-xs underline ${isDark ? 'text-indigo-300' : 'text-indigo-700'}`}
+                className={`shrink-0 text-xs underline ${isDark ? 'text-lantern-primary-light' : 'text-lantern-primary'}`}
                 onClick={() => setPreviewBannerDismissed(true)}
               >
                 Dismiss
@@ -529,7 +529,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           )}
 
           {isDocumentNote && !documentAttachment && !showPreviewBanner && (
-            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-lantern-border text-lantern-text-tertiary' : 'border-lantern-border text-lantern-text-secondary'}`}>
               <p>
                 {previewError ||
                   (note.sourceType === 'presentation'
@@ -540,7 +540,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               {note.sourceType === 'presentation' && presentationAttachment && (
                 <button
                   type="button"
-                  className="text-indigo-500 underline text-left block"
+                  className="text-lantern-primary underline text-left block"
                   onClick={() => void handleDownloadOriginalSlides()}
                 >
                   Download original slides
@@ -556,7 +556,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
           {isDocumentNote ? (
             <div>
-              <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+              <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
                 Your notes
               </h4>
               <textarea
@@ -564,7 +564,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 onChange={e => handleBodyChange(e.target.value)}
                 placeholder="Add your own notes on top of this document..."
                 className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
-                  isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+                  isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
                 }`}
               />
             </div>
@@ -574,20 +574,20 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             onChange={e => handleBodyChange(e.target.value)}
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
-              isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+              isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
             }`}
           />
           )}
 
-          <div className={`rounded-xl border p-3 sm:p-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-            <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+          <div className={`rounded-xl border p-3 sm:p-4 ${isDark ? 'border-lantern-border' : 'border-lantern-border'}`}>
+            <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
               Discussion ({comments.length})
             </h4>
             <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
               {comments.map(c => (
-                <div key={c.id} className={`text-sm p-2 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
-                  <p className={isDark ? 'text-gray-200' : 'text-gray-800'}>{c.comment}</p>
-                  <p className="text-xs text-gray-400 mt-1">{new Date(c.createdAt).toLocaleString()}</p>
+                <div key={c.id} className={`text-sm p-2 rounded-lg ${isDark ? 'bg-lantern-surface' : 'bg-lantern-background'}`}>
+                  <p className={isDark ? 'text-lantern-text' : 'text-lantern-text'}>{c.comment}</p>
+                  <p className="text-xs text-lantern-text-tertiary mt-1">{new Date(c.createdAt).toLocaleString()}</p>
                 </div>
               ))}
             </div>
@@ -596,7 +596,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 value={commentText}
                 onChange={e => setCommentText(e.target.value)}
                 placeholder="Add a comment for collaborators..."
-                className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : 'bg-white border-gray-200'}`}
+                className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border'}`}
               />
               <Button
                 size="sm"
@@ -613,7 +613,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           </div>
         </div>
 
-        <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-6 lg:pb-6 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-white'}`}>
+        <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-6 lg:pb-6 ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
           <NoteLearnPanel
             note={{ ...note, title, body }}
             studyContentLength={studyContentLength}

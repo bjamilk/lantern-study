@@ -44,9 +44,9 @@ export default function SavingsGoalsScreen() {
       <ScreenHeader title="Savings goals" onBack={() => navigation.goBack()} />
       <ScrollView contentContainerClassName="px-4 pb-8 gap-3">
         <Card className="p-4 gap-3">
-          <Text className="font-semibold text-slate-900 dark:text-white">New goal</Text>
-          <TextInput value={name} onChangeText={setName} placeholder="Goal name" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
-          <TextInput value={target} onChangeText={setTarget} placeholder="Target amount" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
+          <Text className="font-semibold text-lantern-text dark:text-white">New goal</Text>
+          <TextInput value={name} onChangeText={setName} placeholder="Goal name" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
+          <TextInput value={target} onChangeText={setTarget} placeholder="Target amount" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
           <Button onPress={() => void handleAdd()}>Add goal</Button>
         </Card>
         {savingsGoals.map((goal: SavingsGoal) => {
@@ -55,8 +55,8 @@ export default function SavingsGoalsScreen() {
             <Card key={goal.id} className="p-4">
               <View className="flex-row justify-between items-start">
                 <View className="flex-1">
-                  <Text className="font-semibold text-slate-900 dark:text-white">{goal.name}</Text>
-                  <Text className="text-sm text-slate-500 mt-1">
+                  <Text className="font-semibold text-lantern-text dark:text-white">{goal.name}</Text>
+                  <Text className="text-sm text-lantern-text-secondary mt-1">
                     {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
                   </Text>
                 </View>
@@ -64,12 +64,12 @@ export default function SavingsGoalsScreen() {
                   <Ionicons name="trash-outline" size={20} color="#ef4444" />
                 </Pressable>
               </View>
-              <View className="h-2 bg-slate-100 dark:bg-slate-700 rounded-full mt-3 overflow-hidden">
+              <View className="h-2 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full mt-3 overflow-hidden">
                 <View className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
               </View>
               {contributeId === goal.id ? (
                 <View className="flex-row gap-2 mt-3">
-                  <TextInput value={contributeAmount} onChangeText={setContributeAmount} placeholder="Amount" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="flex-1 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-slate-900 dark:text-white" />
+                  <TextInput value={contributeAmount} onChangeText={setContributeAmount} placeholder="Amount" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="flex-1 border border-lantern-border rounded-xl px-3 py-2 text-lantern-text dark:text-white" />
                   <Button size="sm" onPress={() => void handleContribute(goal.id)}>Add</Button>
                 </View>
               ) : (

@@ -140,7 +140,7 @@ export function getNotificationMeta(
         label: 'Listing',
         webColorClass: 'text-lantern-primary-light bg-lantern-primary-background',
         mobileIconColor: '#6366f1',
-        mobileBgClass: 'bg-indigo-50 dark:bg-indigo-950/30',
+        mobileBgClass: 'bg-lantern-primary-background dark:bg-lantern-primary-background',
       };
     case 'dm':
       return {

@@ -174,21 +174,21 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   };
 
   return (
-    <div className="h-screen flex flex-col flex-1 overflow-y-auto p-4 md:p-6 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-      <div className="mb-6 pb-4 border-b border-slate-300 dark:border-slate-700">
-        <button onClick={onBack} className="flex items-center text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline mb-4">
+    <div className="h-screen flex flex-col flex-1 overflow-y-auto p-4 md:p-6 bg-lantern-background text-lantern-text">
+      <div className="mb-6 pb-4 border-b border-lantern-border dark:border-lantern-border">
+        <button onClick={onBack} className="flex items-center text-sm font-semibold text-lantern-primary hover:underline mb-4">
           <ArrowUturnLeftIcon className="w-5 h-5 mr-1.5" />
           Back to All Decks
         </button>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100">{deck.name}</h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{deck.description || 'No description.'}</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-lantern-text">{deck.name}</h1>
+                <p className="text-sm text-lantern-text-secondary mt-1">{deck.description || 'No description.'}</p>
             </div>
             <div className="flex space-x-2 mt-3 sm:mt-0 flex-wrap gap-2">
-                <button onClick={() => onOpenEditDeck(deck)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-md flex items-center text-sm shadow"><PencilIcon className="w-4 h-4 mr-1.5" /> Edit</button>
+                <button onClick={() => onOpenEditDeck(deck)} className="px-3 py-2 bg-lantern-background-secondary hover:bg-lantern-border dark:bg-lantern-surface-secondary dark:hover:bg-lantern-border text-lantern-text rounded-md flex items-center text-sm shadow"><PencilIcon className="w-4 h-4 mr-1.5" /> Edit</button>
                 {deck.isShared && (
-                  <button onClick={() => setIsCollaboratorsModalOpen(true)} className="px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md flex items-center text-sm shadow">
+                  <button onClick={() => setIsCollaboratorsModalOpen(true)} className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary text-white rounded-md flex items-center text-sm shadow">
                     <UserGroupIcon className="w-4 h-4 mr-1.5" /> Collaborators
                   </button>
                 )}
@@ -241,7 +241,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             icon={<ClockIcon className="w-5 h-5" />}
             label="Timed Cram"
             subtitle="Beat the clock"
-            colorClass="bg-indigo-500 hover:bg-indigo-600 w-full"
+            colorClass="bg-lantern-primary hover:bg-lantern-primary w-full"
             className="w-full"
           />
           <p className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wide px-1 mt-4 mb-2">Deck actions</p>
@@ -267,7 +267,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             icon={<ArrowDownTrayIcon className="w-5 h-5" />}
             label="Export JSON"
             subtitle="Full backup"
-            colorClass="bg-slate-600 hover:bg-slate-700 ring-1 ring-inset ring-white/10 w-full"
+            colorClass="bg-lantern-border hover:bg-lantern-surface-secondary ring-1 ring-inset ring-white/10 w-full"
             className="w-full"
           />
           <DeckActionButton
@@ -275,7 +275,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             icon={<ArrowDownTrayIcon className="w-5 h-5" />}
             label="Export CSV"
             subtitle="Spreadsheet export"
-            colorClass="bg-slate-500 hover:bg-slate-600 w-full"
+            colorClass="bg-lantern-border hover:bg-lantern-border w-full"
             className="w-full"
           />
           <div className="mt-4 p-3 rounded-xl bg-lantern-background-secondary border border-lantern-border text-xs space-y-1">
@@ -325,7 +325,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           icon={<ClockIcon className="w-5 h-5" />}
           label="Timed Cram"
           subtitle="Beat the clock"
-          colorClass="bg-indigo-500 hover:bg-indigo-600"
+          colorClass="bg-lantern-primary hover:bg-lantern-primary"
         />
         <DeckActionButton
           onClick={() => onOpenCreateFlashcard(deck.id)}
@@ -347,58 +347,58 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           icon={<ArrowDownTrayIcon className="w-5 h-5" />}
           label="Export JSON"
           subtitle="Full backup (images + progress)"
-          colorClass="bg-slate-600 hover:bg-slate-700 ring-1 ring-inset ring-white/10"
+          colorClass="bg-lantern-border hover:bg-lantern-surface-secondary ring-1 ring-inset ring-white/10"
         />
         <DeckActionButton
           onClick={() => onExportDeck(deck.id, 'csv')}
           icon={<ArrowDownTrayIcon className="w-5 h-5" />}
           label="Export CSV"
           subtitle="Spreadsheet (front/back only)"
-          colorClass="bg-slate-500 hover:bg-slate-600"
+          colorClass="bg-lantern-border hover:bg-lantern-border"
         />
       </div>
 
-      <h2 className="text-xl font-semibold mb-3 text-slate-700 dark:text-slate-300">
+      <h2 className="text-xl font-semibold mb-3 text-lantern-text">
         Flashcards in this Deck ({cardsInDeck.length})
         {hasMore && (
-          <span className="ml-3 text-sm text-slate-500 dark:text-slate-400">(showing first {CARDS_PER_PAGE}, load more below)</span>
+          <span className="ml-3 text-sm text-lantern-text-secondary">(showing first {CARDS_PER_PAGE}, load more below)</span>
         )}
       </h2>
       
       <div className="flex-1 overflow-y-auto max-h-[calc(100vh-260px)]">
         {cardsInDeck.length > 0 && (
-          <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+          <div className="mb-4 p-4 bg-lantern-background-secondary rounded-lg">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div className="text-center">
-                <div className="font-semibold text-blue-600">{newCards}</div>
-                <div className="text-slate-500 dark:text-slate-400">New Cards</div>
+                <div className="font-semibold text-lantern-primary">{newCards}</div>
+                <div className="text-lantern-text-secondary">New Cards</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-green-600">{dueCards}</div>
-                <div className="text-slate-500 dark:text-slate-400">Due Today</div>
+                <div className="text-lantern-text-secondary">Due Today</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-purple-600">{reviewedCards.length}</div>
-                <div className="text-slate-500 dark:text-slate-400">Reviewed</div>
+                <div className="text-lantern-text-secondary">Reviewed</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-orange-600">{avgEaseFactor.toFixed(2)}</div>
-                <div className="text-slate-500 dark:text-slate-400">Avg Ease</div>
+                <div className="text-lantern-text-secondary">Avg Ease</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-red-600">{leechCards}</div>
-                <div className="text-slate-500 dark:text-slate-400">Leeches</div>
+                <div className="text-lantern-text-secondary">Leeches</div>
               </div>
             </div>
           </div>
         )}
         
         {cardsInDeck.length > 0 ? (
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md overflow-hidden">
-            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+          <div className="bg-lantern-surface rounded-lg shadow-md overflow-hidden">
+            <ul className="divide-y divide-lantern-border">
             {cardsInDeck.map(card => (
-              <li key={card.id} className="p-4 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                <div className="text-sm text-slate-800 dark:text-slate-200 flex-grow pr-4 truncate" title={getCardPreview(card)}>
+              <li key={card.id} className="p-4 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50">
+                <div className="text-sm text-lantern-text flex-grow pr-4 truncate" title={getCardPreview(card)}>
                   <MarkdownRenderer content={getCardPreview(card)} />
                 </div>
                 <div className="flex space-x-2 flex-shrink-0">
@@ -419,19 +419,19 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                       <SparklesIcon className={`w-5 h-5 ${enhancingCardId === card.id ? 'animate-pulse' : ''}`} />
                     </button>
                   )}
-                  <button onClick={() => onOpenEditFlashcard(card)} className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-md"><PencilIcon className="w-5 h-5"/></button>
-                  <button onClick={() => { void confirmDialog({ title: 'Delete flashcard?', message: 'Are you sure you want to delete this flashcard?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeleteFlashcard(card.id); }); }} className="p-1.5 text-slate-500 hover:text-red-600 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                  <button onClick={() => onOpenEditFlashcard(card)} className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary rounded-md"><PencilIcon className="w-5 h-5"/></button>
+                  <button onClick={() => { void confirmDialog({ title: 'Delete flashcard?', message: 'Are you sure you want to delete this flashcard?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeleteFlashcard(card.id); }); }} className="p-1.5 text-lantern-text-secondary hover:text-red-600 rounded-md"><TrashIcon className="w-5 h-5"/></button>
                 </div>
               </li>
             ))}
           </ul>
 
           {onLoadMoreCards && hasMore && (
-            <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-center">
+            <div className="p-4 border-t border-lantern-border flex justify-center">
               <button
                 onClick={handleLoadMore}
                 disabled={isLoadingMore}
-                className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md shadow-sm disabled:opacity-50"
+                className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary text-white rounded-md shadow-sm disabled:opacity-50"
               >
                 {isLoadingMore ? 'Loading…' : 'Load more cards'}
               </button>
@@ -439,9 +439,9 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           )}
         </div>
       ) : (
-        <div className="text-center py-10 bg-white dark:bg-slate-800 rounded-lg shadow">
-          <p className="text-slate-500 dark:text-slate-400">This deck is empty.</p>
-          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Add some cards to start studying!</p>
+        <div className="text-center py-10 bg-lantern-surface rounded-lg shadow">
+          <p className="text-lantern-text-secondary">This deck is empty.</p>
+          <p className="text-sm text-lantern-text-tertiary mt-1">Add some cards to start studying!</p>
         </div>
       )}
       </div>

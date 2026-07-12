@@ -133,11 +133,11 @@ export default function CollaboratorsModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View className="flex-1 bg-black/50 justify-end">
-        <View className="bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85%] min-h-[50%]">
-          <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+        <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]">
+          <View className="flex-row items-center justify-between px-5 py-4 border-b border-lantern-border dark:border-lantern-border">
             <View className="flex-row items-center gap-2">
               <Ionicons name="people-outline" size={22} color="#6366f1" />
-              <Text className="text-lg font-bold text-slate-900 dark:text-slate-100">Collaborators</Text>
+              <Text className="text-lg font-bold text-lantern-text">Collaborators</Text>
             </View>
             <Pressable onPress={onClose} className="p-2">
               <Ionicons name="close" size={24} color="#94a3b8" />
@@ -153,13 +153,13 @@ export default function CollaboratorsModal({
               }}
               placeholder="Search users by name or @username"
               placeholderTextColor="#94a3b8"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800 mb-2"
+              className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text bg-lantern-background-secondary mb-2"
             />
 
             {isSearching ? <ActivityIndicator className="mb-2" color="#6366f1" /> : null}
 
             {userSuggestions.length > 0 ? (
-              <View className="mb-3 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <View className="mb-3 rounded-xl border border-lantern-border overflow-hidden">
                 {userSuggestions.map(u => (
                   <Pressable
                     key={u.id}
@@ -168,13 +168,13 @@ export default function CollaboratorsModal({
                       setUserQuery(u.username ? `@${u.username}` : u.name || u.id);
                       setUserSuggestions([]);
                     }}
-                    className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900"
+                    className="px-3 py-2.5 border-b border-lantern-border dark:border-lantern-border bg-lantern-surface"
                   >
-                    <Text className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <Text className="text-sm font-medium text-lantern-text">
                       {u.name || u.username || u.id}
                     </Text>
                     {u.username ? (
-                      <Text className="text-xs text-indigo-600 dark:text-indigo-400">@{u.username}</Text>
+                      <Text className="text-xs text-lantern-primary">@{u.username}</Text>
                     ) : null}
                   </Pressable>
                 ))}
@@ -188,11 +188,11 @@ export default function CollaboratorsModal({
                   onPress={() => setNewRoleId(role)}
                   className={`px-3 py-1.5 rounded-full border ${
                     newRole === role
-                      ? 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-400'
-                      : 'border-slate-200 dark:border-slate-600'
+                      ? 'bg-lantern-primary-background dark:bg-lantern-primary-dark/40 border-lantern-primary'
+                      : 'border-lantern-border'
                   }`}
                 >
-                  <Text className="text-xs capitalize text-slate-700 dark:text-slate-300">{role}</Text>
+                  <Text className="text-xs capitalize text-lantern-text">{role}</Text>
                 </Pressable>
               ))}
             </View>
@@ -210,15 +210,15 @@ export default function CollaboratorsModal({
               keyExtractor={item => item.userId}
               contentContainerClassName="px-5 py-4"
               ListEmptyComponent={
-                <Text className="text-sm text-slate-500 dark:text-slate-400 py-4">No collaborators yet.</Text>
+                <Text className="text-sm text-lantern-text-secondary py-4">No collaborators yet.</Text>
               }
               renderItem={({ item }) => (
-                <View className="flex-row items-center justify-between p-3 mb-2 rounded-xl bg-slate-50 dark:bg-slate-800">
+                <View className="flex-row items-center justify-between p-3 mb-2 rounded-xl bg-lantern-background-secondary">
                   <View className="flex-1 pr-3">
-                    <Text className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <Text className="text-sm font-semibold text-lantern-text">
                       {item.profile?.name || item.userId}
                     </Text>
-                    <Text className="text-xs text-slate-500 capitalize">{item.role}</Text>
+                    <Text className="text-xs text-lantern-text-secondary capitalize">{item.role}</Text>
                   </View>
                   {item.userId !== currentUserId ? (
                     <Pressable onPress={() => handleRemove(item.userId)} className="p-2">

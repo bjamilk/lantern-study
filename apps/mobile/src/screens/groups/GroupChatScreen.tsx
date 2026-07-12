@@ -84,8 +84,8 @@ function ChatDateSeparator({ label }: { label: string }) {
   if (!label) return null;
   return (
     <View className="items-center my-3">
-      <View className="px-3 py-1 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
-        <Text className="text-[11px] font-medium text-slate-600 dark:text-slate-300">{label}</Text>
+      <View className="px-3 py-1 rounded-full bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/80">
+        <Text className="text-[11px] font-medium text-lantern-text-secondary">{label}</Text>
       </View>
     </View>
   );
@@ -383,7 +383,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [isAdmin, summarizing, colors.warning]);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top', 'bottom']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       <GroupChatHeader
         displayName={displayName}
         memberCount={memberCount}
@@ -420,7 +420,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             }
             ListEmptyComponent={
               <View className="flex-1 items-center justify-center py-16">
-                <Text className="text-sm text-slate-500">No messages yet. Say hello!</Text>
+                <Text className="text-sm text-lantern-text-secondary">No messages yet. Say hello!</Text>
               </View>
             }
             renderItem={({ item, index }) => {

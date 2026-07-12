@@ -46,16 +46,16 @@ export function SocialAuthButtons({ disabled = false }: Props) {
   return (
     <View className="mt-6">
       <View className="flex-row items-center mb-4">
-        <View className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-        <Text className="mx-3 text-sm text-slate-500 dark:text-slate-400">Or continue with</Text>
-        <View className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+        <View className="flex-1 h-px bg-lantern-background-secondary" />
+        <Text className="mx-3 text-sm text-lantern-text-secondary">Or continue with</Text>
+        <View className="flex-1 h-px bg-lantern-background-secondary" />
       </View>
 
       <View className={`flex-row gap-3 ${appleAvailable ? '' : 'justify-center'}`}>
         <Pressable
           onPress={() => void runGoogle()}
           disabled={busy}
-          className={`flex-1 flex-row items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 ${
+          className={`flex-1 flex-row items-center justify-center gap-2 py-3 rounded-xl border border-lantern-border bg-lantern-surface ${
             busy ? 'opacity-50' : ''
           } ${!appleAvailable ? 'max-w-xs' : ''}`}
         >
@@ -64,7 +64,7 @@ export function SocialAuthButtons({ disabled = false }: Props) {
           ) : (
             <>
               <Ionicons name="logo-google" size={20} color="#4285F4" />
-              <Text className="text-sm font-medium text-slate-700 dark:text-slate-200">Google</Text>
+              <Text className="text-sm font-medium text-lantern-text">Google</Text>
             </>
           )}
         </Pressable>
@@ -72,7 +72,7 @@ export function SocialAuthButtons({ disabled = false }: Props) {
         {appleAvailable ? (
           <View className="flex-1" style={{ opacity: busy ? 0.5 : 1 }} pointerEvents={busy ? 'none' : 'auto'}>
             {loading('apple') ? (
-              <View className="h-12 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-600">
+              <View className="h-12 items-center justify-center rounded-xl border border-lantern-border">
                 <ActivityIndicator size="small" color="#6366f1" />
               </View>
             ) : (

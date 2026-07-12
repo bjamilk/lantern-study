@@ -92,18 +92,18 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
 
   return (
     <div
-      className={`rounded-xl border overflow-hidden ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} ${className}`}
+      className={`rounded-xl border overflow-hidden ${isDark ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-surface'} ${className}`}
     >
-      <div className={`flex items-center justify-between px-3 py-2 border-b text-sm ${isDark ? 'border-gray-700 text-gray-200' : 'border-gray-100 text-gray-700'}`}>
+      <div className={`flex items-center justify-between px-3 py-2 border-b text-sm ${isDark ? 'border-lantern-border text-lantern-text' : 'border-lantern-border text-lantern-text'}`}>
         <span className="font-medium truncate">
           {attachment.fileName || 'Document'}
         </span>
         {numPages > 0 && (
-          <span className="text-xs text-gray-400 shrink-0 ml-2">{numPages} pages</span>
+          <span className="text-xs text-lantern-text-tertiary shrink-0 ml-2">{numPages} pages</span>
         )}
       </div>
       <div className="max-h-[min(70vh,720px)] overflow-y-auto p-3">
-        {loading && <p className="text-sm text-gray-400 py-8 text-center">Loading document...</p>}
+        {loading && <p className="text-sm text-lantern-text-tertiary py-8 text-center">Loading document...</p>}
         {error && (
           <div className="text-sm text-center py-6 space-y-2">
             <p className="text-red-500">{error}</p>
@@ -112,7 +112,7 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
                 href={openUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-indigo-500 underline"
+                className="text-lantern-primary underline"
               >
                 Open PDF in new tab
               </a>

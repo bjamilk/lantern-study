@@ -8,7 +8,7 @@ export interface AIDisclaimerProps {
 
 export const AIDisclaimer: React.FC<AIDisclaimerProps> = ({ className = '', compact = false }) => (
   <p
-    className={`text-xs text-slate-500 dark:text-slate-400 ${className}`}
+    className={`text-xs text-lantern-text-secondary ${className}`}
     role="note"
     aria-label="AI disclaimer"
   >
@@ -18,7 +18,7 @@ export const AIDisclaimer: React.FC<AIDisclaimerProps> = ({ className = '', comp
       <>
         Content is <strong className="font-medium">AI-generated</strong> and may be inaccurate. It is not
         professional advice. Review before use.{' '}
-        <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-600 dark:hover:text-indigo-400">
+        <a href={LEGAL_PATHS.privacy} target="_blank" rel="noopener noreferrer" className="underline hover:text-lantern-primary">
           Privacy Policy
         </a>
       </>

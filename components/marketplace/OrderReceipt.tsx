@@ -81,7 +81,7 @@ const OrderReceipt: React.FC<OrderReceiptProps> = ({ order }) => (
   <button
     type="button"
     onClick={() => printOrderReceipt(order)}
-    className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+    className="text-sm font-semibold text-lantern-primary hover:underline"
   >
     Download / print receipt
   </button>

@@ -41,12 +41,12 @@ export default function WalletScreen() {
           </Text>
         </Card>
 
-        <Text className="text-xs font-semibold uppercase text-slate-400 mb-2 px-1">How to earn</Text>
+        <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary mb-2 px-1">How to earn</Text>
         <Card className="p-4 mb-4">
           {EARN_WAYS.map((row) => (
-            <View key={row.action} className="flex-row items-center py-2 border-b border-slate-100 dark:border-slate-700 last:border-b-0">
+            <View key={row.action} className="flex-row items-center py-2 border-b border-lantern-border last:border-b-0">
               <Text className="text-lg mr-3">{row.icon}</Text>
-              <Text className="flex-1 text-sm text-slate-700 dark:text-slate-200">{row.action}</Text>
+              <Text className="flex-1 text-sm text-lantern-text">{row.action}</Text>
               <Text className="text-xs font-bold text-emerald-600">{row.coins}</Text>
             </View>
           ))}

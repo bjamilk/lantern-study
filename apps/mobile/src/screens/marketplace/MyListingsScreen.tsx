@@ -168,42 +168,42 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       <View className="px-4 pb-2 flex-row flex-wrap gap-2">
         {sellerStats ? (
           <>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Sold listings</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Sold listings</Text>
               <Text className="font-bold">{sellerStats.sold_listings ?? 0}</Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Completed sales</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Completed sales</Text>
               <Text className="font-bold">
                 {sellerStats.completed_orders ?? analytics?.completedSalesCount ?? 0}
               </Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Views</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Views</Text>
               <Text className="font-bold">{sellerStats.total_views ?? 0}</Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Inquiries</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Inquiries</Text>
               <Text className="font-bold">{sellerStats.total_inquiries ?? 0}</Text>
             </View>
           </>
         ) : null}
         {analytics ? (
           <>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Revenue (30d)</Text>
-              <Text className="font-bold text-indigo-600">{formatPrice(analytics.revenue30d)}</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Revenue (30d)</Text>
+              <Text className="font-bold text-lantern-primary">{formatPrice(analytics.revenue30d)}</Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">View-to-sale</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">View-to-sale</Text>
               <Text className="font-bold">{analytics.conversionRate}%</Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Pending orders</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Pending orders</Text>
               <Text className="font-bold">{analytics.pendingOrders}</Text>
             </View>
-            <View className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800">
-              <Text className="text-xs text-slate-500">Offer accept rate</Text>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Offer accept rate</Text>
               <Text className="font-bold">{analytics.offerAcceptRate}%</Text>
             </View>
           </>
@@ -218,38 +218,38 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             </Text>
           </View>
         ) : null}
-        <Pressable onPress={() => navigation.navigate('Orders')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
-          <Text className="text-xs font-semibold text-indigo-700">Orders</Text>
+        <Pressable onPress={() => navigation.navigate('Orders')} className="px-3 py-1.5 rounded-lg bg-lantern-primary-background">
+          <Text className="text-xs font-semibold text-lantern-primary">Orders</Text>
         </Pressable>
-        <Pressable onPress={() => navigation.navigate('Inquiries')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
-          <Text className="text-xs font-semibold text-indigo-700">Inquiries</Text>
+        <Pressable onPress={() => navigation.navigate('Inquiries')} className="px-3 py-1.5 rounded-lg bg-lantern-primary-background">
+          <Text className="text-xs font-semibold text-lantern-primary">Inquiries</Text>
         </Pressable>
-        <Pressable onPress={() => navigation.navigate('SellerCustomers')} className="px-3 py-1.5 rounded-lg bg-indigo-100">
-          <Text className="text-xs font-semibold text-indigo-700">Customers</Text>
+        <Pressable onPress={() => navigation.navigate('SellerCustomers')} className="px-3 py-1.5 rounded-lg bg-lantern-primary-background">
+          <Text className="text-xs font-semibold text-lantern-primary">Customers</Text>
         </Pressable>
-        <Pressable onPress={() => setShowCoupons(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
-          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Coupons</Text>
+        <Pressable onPress={() => setShowCoupons(true)} className="px-3 py-1.5 rounded-lg border border-lantern-border">
+          <Text className="text-xs font-semibold text-lantern-text">Coupons</Text>
         </Pressable>
-        <Pressable onPress={() => setShowBundle(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
-          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bundle</Text>
+        <Pressable onPress={() => setShowBundle(true)} className="px-3 py-1.5 rounded-lg border border-lantern-border">
+          <Text className="text-xs font-semibold text-lantern-text">Bundle</Text>
         </Pressable>
-        <Pressable onPress={() => setShowCampaign(true)} className="px-3 py-1.5 rounded-lg border border-slate-300">
-          <Text className="text-xs font-semibold text-slate-700 dark:text-slate-300">Campaign</Text>
+        <Pressable onPress={() => setShowCampaign(true)} className="px-3 py-1.5 rounded-lg border border-lantern-border">
+          <Text className="text-xs font-semibold text-lantern-text">Campaign</Text>
         </Pressable>
       </View>
 
       {analytics && showAnalytics ? (
         <View className="px-4 pb-3">
           {analytics.salesByWeek.length > 0 ? (
-            <View className="p-3 mb-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <Text className="text-xs font-semibold text-slate-500 mb-2">Weekly sales</Text>
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Weekly sales</Text>
               <View className="flex-row items-end gap-1 h-16">
                 {analytics.salesByWeek.map(week => {
                   const height = Math.max(4, (week.revenue / weeklyMax) * 100);
                   return (
                     <View
                       key={week.weekStart}
-                      className="flex-1 bg-indigo-500/80 rounded-t"
+                      className="flex-1 bg-lantern-primary/80 rounded-t"
                       style={{ height: `${height}%` }}
                     />
                   );
@@ -259,8 +259,8 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
           ) : null}
 
           {analytics.inquiryToSaleRate != null ? (
-            <View className="p-3 mb-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <Text className="text-xs text-slate-500">Inquiry → sale rate</Text>
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs text-lantern-text-secondary">Inquiry → sale rate</Text>
               <Text className="text-lg font-bold">{analytics.inquiryToSaleRate}%</Text>
             </View>
           ) : null}
@@ -292,16 +292,16 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             </View>
           ) : null}
 
-          <View className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-            <Text className="text-xs font-semibold text-slate-500 mb-2">Seller preferences</Text>
+          <View className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+            <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Seller preferences</Text>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-slate-700 dark:text-slate-300 flex-1 mr-2">
+              <Text className="text-sm text-lantern-text flex-1 mr-2">
                 Require payment proof before marking paid
               </Text>
               <Switch value={requirePaymentConfirmation} onValueChange={setRequirePaymentConfirmation} />
             </View>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-slate-700 dark:text-slate-300 flex-1 mr-2">Offer hall dropoff</Text>
+              <Text className="text-sm text-lantern-text flex-1 mr-2">Offer hall dropoff</Text>
               <Switch value={hallDropoffEnabled} onValueChange={setHallDropoffEnabled} />
             </View>
             <TextInput
@@ -310,7 +310,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               placeholder="Hall dropoff min amount (₦)"
               keyboardType="numeric"
               placeholderTextColor="#94a3b8"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-lantern-text"
             />
             <Button loading={savingPrefs} onPress={() => void savePreferences()}>
               Save preferences
@@ -320,7 +320,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
       ) : null}
 
       <Pressable onPress={() => setShowAnalytics(v => !v)} className="px-4 pb-2">
-        <Text className="text-xs font-semibold text-indigo-600">
+        <Text className="text-xs font-semibold text-lantern-primary">
           {showAnalytics ? 'Hide analytics' : 'Show analytics & preferences'}
         </Text>
       </Pressable>
@@ -331,14 +331,14 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             key={tab.id}
             onPress={() => setActiveTab(tab.id)}
             className={`flex-1 py-2.5 items-center border-b-2 ${
-              activeTab === tab.id ? 'border-indigo-600' : 'border-transparent'
+              activeTab === tab.id ? 'border-lantern-primary' : 'border-transparent'
             }`}
           >
             <Text
               className={`text-sm font-medium ${
                 activeTab === tab.id
-                  ? 'text-indigo-600 dark:text-indigo-400'
-                  : 'text-slate-500 dark:text-slate-400'
+                  ? 'text-lantern-primary'
+                  : 'text-lantern-text-secondary'
               }`}
             >
               {tab.label} ({tabCounts[tab.id]})
@@ -350,14 +350,14 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <View className="flex-row items-center flex-1">
           <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
             <Ionicons name="arrow-back" size={22} color="#64748b" />
           </Pressable>
           <View className="flex-1">
-            <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">My Listings</Text>
+            <Text className="text-xl font-bold text-lantern-text">My Listings</Text>
             {boostCredits != null ? (
               <Text className="text-xs text-amber-700 dark:text-amber-400">{boostCredits} boost credits</Text>
             ) : null}
@@ -365,7 +365,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
         </View>
         <Pressable
           onPress={() => navigation.navigate('CreateListing')}
-          className="p-2 rounded-xl bg-indigo-600"
+          className="p-2 rounded-xl bg-lantern-primary"
         >
           <Ionicons name="add" size={20} color="#fff" />
         </Pressable>
@@ -385,7 +385,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
           ListEmptyComponent={
             <View className="items-center py-16">
               <Ionicons name="storefront-outline" size={48} color="#cbd5e1" />
-              <Text className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-4">
+              <Text className="text-lg font-semibold text-lantern-text mt-4">
                 No {activeTab} listings
               </Text>
               <Button className="mt-6" onPress={() => navigation.navigate('CreateListing')}>
@@ -398,28 +398,28 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             return (
               <Pressable
                 onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
-                className="flex-row bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden mb-3"
+                className="flex-row bg-lantern-surface rounded-2xl border border-lantern-border overflow-hidden mb-3"
               >
                 <View className="w-24 h-24">
                   <ListingImage uri={item.images?.[0]} className="w-full h-full" />
                 </View>
                 <View className="flex-1 p-3">
-                  <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+                  <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
                     {item.title}
                   </Text>
-                  <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                  <Text className="text-sm font-bold text-lantern-primary mt-1">
                     {formatPrice(item.price)}
                   </Text>
-                  <Text className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{category.name}</Text>
+                  <Text className="text-xs text-lantern-text-secondary mt-0.5">{category.name}</Text>
                   <View className="flex-row items-center flex-wrap gap-2 mt-2">
-                    <Text className="text-xs text-slate-400">{item.views_count ?? 0} views</Text>
+                    <Text className="text-xs text-lantern-text-tertiary">{item.views_count ?? 0} views</Text>
                     <Pressable
                       onPress={e => {
                         e.stopPropagation?.();
                         navigation.navigate('EditListing', { listingId: item.id });
                       }}
                     >
-                      <Text className="text-xs font-medium text-indigo-600">Edit</Text>
+                      <Text className="text-xs font-medium text-lantern-primary">Edit</Text>
                     </Pressable>
                     {activeTab === 'active' ? (
                       <>
@@ -437,7 +437,7 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
                             void handleStatusChange(item.id, 'inactive');
                           }}
                         >
-                          <Text className="text-xs font-medium text-slate-600">Deactivate</Text>
+                          <Text className="text-xs font-medium text-lantern-text-secondary">Deactivate</Text>
                         </Pressable>
                       </>
                     ) : null}

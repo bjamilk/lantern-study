@@ -316,7 +316,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   if (isLoading && !listing) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
         <ActivityIndicator size="large" color="#6366f1" />
       </SafeAreaView>
     );
@@ -324,8 +324,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   if (!listing) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Listing not found</Text>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-4">Listing not found</Text>
         <Button onPress={() => navigation.goBack()}>Go Back</Button>
       </SafeAreaView>
     );
@@ -336,7 +336,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-2 flex-row items-center justify-between">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
@@ -363,7 +363,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 140 }}>
-        <View className="aspect-[16/10] bg-slate-100 dark:bg-slate-800 mx-4 rounded-2xl overflow-hidden">
+        <View className="aspect-[16/10] bg-lantern-background-secondary mx-4 rounded-2xl overflow-hidden">
           {images.length ? (
             <>
               <ListingImage uri={images[imageIndex]} className="w-full h-full" />
@@ -373,7 +373,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                     <Pressable
                       key={i}
                       onPress={() => setImageIndex(i)}
-                      className={`w-2 h-2 rounded-full ${i === imageIndex ? 'bg-white' : 'bg-white/50'}`}
+                      className={`w-2 h-2 rounded-full ${i === imageIndex ? 'bg-lantern-surface' : 'bg-lantern-surface/50'}`}
                     />
                   ))}
                 </View>
@@ -386,19 +386,19 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
         <View className="px-4 pt-4">
           {category ? (
-            <Text className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-1">
+            <Text className="text-xs font-medium text-lantern-primary mb-1">
               {category.name}
             </Text>
           ) : null}
-          <Text className="text-2xl font-bold text-slate-900 dark:text-slate-100">{listing.title}</Text>
+          <Text className="text-2xl font-bold text-lantern-text">{listing.title}</Text>
           {listing.promo_label ? (
             <Text className="text-xs font-semibold text-amber-600 mt-1">{listing.promo_label}</Text>
           ) : null}
           <View className="flex-row items-center flex-wrap gap-2 mt-2">
             {pricing?.onSale && listing.price ? (
-              <Text className="text-lg text-slate-400 line-through">{formatPrice(listing.price)}</Text>
+              <Text className="text-lg text-lantern-text-tertiary line-through">{formatPrice(listing.price)}</Text>
             ) : null}
-            <Text className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+            <Text className="text-2xl font-bold text-lantern-primary">
               {formatPrice(pricing?.effective ?? listing.price)}
             </Text>
             {listing.quantity != null ? (
@@ -421,7 +421,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           {listing.location ? (
             <View className="flex-row items-center gap-1.5 mt-3">
               <Ionicons name="location-outline" size={16} color="#64748b" />
-              <Text className="text-sm text-slate-600 dark:text-slate-400">{listing.location}</Text>
+              <Text className="text-sm text-lantern-text-secondary">{listing.location}</Text>
             </View>
           ) : null}
 
@@ -432,10 +432,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           ) : null}
 
           {listing.listing_kind === 'bundle' && listing.bundle_items && listing.bundle_items.length > 0 ? (
-            <View className="mt-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40">
-              <Text className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-2">Bundle includes</Text>
+            <View className="mt-3 p-3 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30">
+              <Text className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Bundle includes</Text>
               {listing.bundle_items.map((item, idx) => (
-                <Text key={item.listing_id || idx} className="text-sm text-indigo-800 dark:text-indigo-300">
+                <Text key={item.listing_id || idx} className="text-sm text-lantern-primary-dark dark:text-lantern-primary-light">
                   • {item.title}
                   {item.price != null ? ` (${formatPrice(Number(item.price))})` : ''}
                 </Text>
@@ -445,9 +445,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
           {own && negotiationHistory.length > 0 ? (
             <Card className="mt-3">
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Offer activity</Text>
+              <Text className="text-sm font-semibold text-lantern-text mb-2">Offer activity</Text>
               {negotiationHistory.slice(0, 5).map(event => (
-                <Text key={event.id} className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+                <Text key={event.id} className="text-xs text-lantern-text-secondary mb-1">
                   {event.status || 'offer'}
                   {event.amount != null ? ` · ${formatPrice(event.amount)}` : ''}
                 </Text>
@@ -461,14 +461,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 sellerId: listing.seller_id || listing.user_id,
               })
             }
-            className="flex-row items-center gap-3 mt-4 p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+            className="flex-row items-center gap-3 mt-4 p-3 rounded-2xl bg-lantern-surface border border-lantern-border"
           >
             <Avatar name={listing.seller?.name || 'Anonymous Seller'} size={44} />
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              <Text className="text-sm font-semibold text-lantern-text">
                 {listing.seller?.name || 'Anonymous Seller'}
               </Text>
-              <Text className="text-xs text-slate-500 dark:text-slate-400">
+              <Text className="text-xs text-lantern-text-secondary">
                 {reviews.length > 0
                   ? `${avgRating.toFixed(1)} · ${reviews.length} review${reviews.length === 1 ? '' : 's'}`
                   : 'View seller profile'}
@@ -478,37 +478,37 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           </Pressable>
 
           <Card className="mt-4">
-            <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Description</Text>
-            <Text className="text-sm text-slate-600 dark:text-slate-300 leading-5">
+            <Text className="text-sm font-semibold text-lantern-text mb-2">Description</Text>
+            <Text className="text-sm text-lantern-text-secondary leading-5">
               {listing.description?.trim() || 'No description provided.'}
             </Text>
           </Card>
 
           <Card className="mt-4">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">Reviews</Text>
+              <Text className="text-sm font-semibold text-lantern-text">Reviews</Text>
               {!own && user?.id && listing.status === 'active' ? (
                 <Pressable onPress={() => setShowReview(true)}>
-                  <Text className="text-sm font-semibold text-indigo-600">Write review</Text>
+                  <Text className="text-sm font-semibold text-lantern-primary">Write review</Text>
                 </Pressable>
               ) : null}
             </View>
             {reviews.length === 0 ? (
-              <Text className="text-sm text-slate-500 dark:text-slate-400">No reviews yet.</Text>
+              <Text className="text-sm text-lantern-text-secondary">No reviews yet.</Text>
             ) : (
               reviews.map(review => (
                 <View
                   key={review.id}
-                  className="py-3 border-t border-slate-100 dark:border-slate-700 first:border-t-0 first:pt-0"
+                  className="py-3 border-t border-lantern-border first:border-t-0 first:pt-0"
                 >
                   <View className="flex-row items-center justify-between mb-1">
-                    <Text className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                    <Text className="text-sm font-medium text-lantern-text">
                       {review.reviewer?.name || 'User'}
                     </Text>
                     <StarRow rating={review.rating} />
                   </View>
                   {review.comment ? (
-                    <Text className="text-sm text-slate-600 dark:text-slate-300">{review.comment}</Text>
+                    <Text className="text-sm text-lantern-text-secondary">{review.comment}</Text>
                   ) : null}
                 </View>
               ))
@@ -517,7 +517,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
           {similarListings.length > 0 ? (
             <View className="mt-4">
-              <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-3">
+              <Text className="text-sm font-semibold text-lantern-text mb-3">
                 You might also like
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -525,14 +525,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                   <Pressable
                     key={item.id}
                     onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
-                    className="w-40 mr-3 rounded-xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                    className="w-40 mr-3 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
                   >
                     <ListingImage uri={item.images?.[0]} className="w-full h-24" />
                     <View className="p-2">
-                      <Text numberOfLines={2} className="text-xs font-medium text-slate-800 dark:text-slate-100">
+                      <Text numberOfLines={2} className="text-xs font-medium text-lantern-text">
                         {item.title}
                       </Text>
-                      <Text className="text-xs font-semibold text-indigo-600 mt-1">
+                      <Text className="text-xs font-semibold text-lantern-primary mt-1">
                         {formatPrice(item.price)}
                       </Text>
                     </View>
@@ -544,10 +544,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
           <View className="flex-row gap-4 mt-4">
             {listing.views_count != null ? (
-              <Text className="text-xs text-slate-500 dark:text-slate-400">{listing.views_count} views</Text>
+              <Text className="text-xs text-lantern-text-secondary">{listing.views_count} views</Text>
             ) : null}
             {listing.favorites_count != null ? (
-              <Text className="text-xs text-slate-500 dark:text-slate-400">
+              <Text className="text-xs text-lantern-text-secondary">
                 {listing.favorites_count} favorites
               </Text>
             ) : null}
@@ -556,7 +556,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       </ScrollView>
 
       {!own && listing.status === 'active' ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
           {listing.price && listing.price > 0 ? (
             <View className="flex-row gap-2 mb-2">
               <TextInput
@@ -564,7 +564,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 onChangeText={setCouponCode}
                 placeholder="Coupon code"
                 autoCapitalize="characters"
-                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-sm"
+                className="flex-1 px-3 py-2 rounded-xl border border-lantern-border text-lantern-text text-sm"
                 placeholderTextColor="#94a3b8"
               />
               <Button
@@ -602,7 +602,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       ) : null}
 
       {own && listing.status === 'active' ? (
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3 bg-lantern-surface border-t border-lantern-border">
           <View className="flex-row gap-2 mb-2">
             <Button
               variant="secondary"
@@ -628,8 +628,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       <Modal visible={showContact} transparent animationType="slide" onRequestClose={() => setShowContact(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Contact Seller</Text>
+          <View className="bg-lantern-surface rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-lantern-text mb-3">Contact Seller</Text>
             <TextInput
               value={contactMessage}
               onChangeText={setContactMessage}
@@ -637,7 +637,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               placeholderTextColor="#94a3b8"
               multiline
               numberOfLines={4}
-              className="min-h-[100px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
+              className="min-h-[100px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-4"
               textAlignVertical="top"
             />
             <View className="flex-row gap-3">
@@ -654,8 +654,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Write a review</Text>
+          <View className="bg-lantern-surface rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-lantern-text mb-3">Write a review</Text>
             <View className="flex-row gap-2 mb-4">
               {[1, 2, 3, 4, 5].map(i => (
                 <Pressable key={i} onPress={() => setReviewRating(i)}>
@@ -669,7 +669,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               placeholder="Share your experience (optional)"
               placeholderTextColor="#94a3b8"
               multiline
-              className="min-h-[80px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
+              className="min-h-[80px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-4"
               textAlignVertical="top"
             />
             <View className="flex-row gap-3">
@@ -686,8 +686,8 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
       <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
         <View className="flex-1 justify-end bg-black/40">
-          <View className="bg-white dark:bg-slate-800 rounded-t-3xl p-5">
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Report listing</Text>
+          <View className="bg-lantern-surface rounded-t-3xl p-5">
+            <Text className="text-lg font-bold text-lantern-text mb-3">Report listing</Text>
             <View className="flex-row flex-wrap gap-2 mb-4">
               {REPORT_REASONS.map(reason => (
                 <Pressable
@@ -696,10 +696,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                   className={`px-3 py-1.5 rounded-full border ${
                     reportReason === reason
                       ? 'bg-red-600 border-red-600'
-                      : 'border-slate-200 dark:border-slate-600'
+                      : 'border-lantern-border'
                   }`}
                 >
-                  <Text className={`text-xs capitalize ${reportReason === reason ? 'text-white' : 'text-slate-600'}`}>
+                  <Text className={`text-xs capitalize ${reportReason === reason ? 'text-white' : 'text-lantern-text-secondary'}`}>
                     {reason.replace(/_/g, ' ')}
                   </Text>
                 </Pressable>
@@ -711,7 +711,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               placeholder="Additional details (optional)"
               placeholderTextColor="#94a3b8"
               multiline
-              className="min-h-[80px] p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-4"
+              className="min-h-[80px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-4"
               textAlignVertical="top"
             />
             <View className="flex-row gap-3">

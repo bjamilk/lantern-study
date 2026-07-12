@@ -48,13 +48,13 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
-        <View className="bg-white dark:bg-slate-900 rounded-t-3xl max-h-[85%]">
-          <View className="flex-row items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+        <View className="bg-lantern-surface rounded-t-3xl max-h-[85%]">
+          <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Message customers</Text>
-            <Pressable onPress={onClose}><Text className="text-indigo-600 font-semibold">Close</Text></Pressable>
+            <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
           <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
-            <Text className="text-sm text-slate-500 mb-3">
+            <Text className="text-sm text-lantern-text-secondary mb-3">
               Sends an in-app notification and DM to up to 25 customers.
             </Text>
             {!defaultBuyerIds?.length ? (
@@ -64,10 +64,10 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
                     key={s.id || 'all'}
                     onPress={() => setSegment(s.id)}
                     className={`px-3 py-1.5 rounded-full border ${
-                      segment === s.id ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-slate-600'
+                      segment === s.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
                     }`}
                   >
-                    <Text className={`text-xs ${segment === s.id ? 'text-white font-semibold' : 'text-slate-600'}`}>
+                    <Text className={`text-xs ${segment === s.id ? 'text-white font-semibold' : 'text-lantern-text-secondary'}`}>
                       {s.label}
                     </Text>
                   </Pressable>
@@ -80,7 +80,7 @@ export function SellerCampaignModal({ visible, onClose, defaultBuyerIds }: Props
               placeholder="New arrivals, price drops, exam-season bundles..."
               multiline
               numberOfLines={4}
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-3 min-h-[100px] text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-xl px-3 py-2 mb-3 min-h-[100px] text-lantern-text"
               placeholderTextColor="#94a3b8"
               textAlignVertical="top"
             />

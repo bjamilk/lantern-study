@@ -32,7 +32,7 @@ export function ListingImage({ uri, className = 'w-full h-full', icon = 'bag-out
 
   if (!src || failed) {
     return (
-      <View className={`${className} items-center justify-center bg-slate-100 dark:bg-slate-700`}>
+      <View className={`${className} items-center justify-center bg-lantern-background-secondary dark:bg-lantern-surface-secondary`}>
         <Ionicons name={icon} size={28} color="#94a3b8" />
       </View>
     );

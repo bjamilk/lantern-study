@@ -119,20 +119,20 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
       maxWidthClass="max-w-sm"
       zIndexClass="z-50"
       backdropClassName="bg-black/20 md:hidden"
-      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}
+      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
       loading={isBusy}
       closeOnBackdrop={!isBusy}
     >
 
         {/* Header */}
         <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
-          ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-indigo-50'}`}>
-          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-indigo-600 flex-shrink-0">
+          ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-primary-background'}`}>
+          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-lantern-primary flex-shrink-0">
             <SparklesIcon className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p id="ai-companion-title" className="font-semibold text-sm text-indigo-700 dark:text-indigo-300">Lantern</p>
-            <p className={`text-xs truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-primary">Lantern</p>
+            <p className={`text-xs truncate ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
             </p>
           </div>
@@ -140,7 +140,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <button
               onClick={() => setShowClearConfirm(true)}
               title="Clear conversation"
-              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
               <TrashIcon className="w-4 h-4" />
             </button>
@@ -148,7 +148,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               onClick={close}
               title="Close"
               aria-label="Close AI companion"
-              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-200 text-slate-500'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -177,7 +177,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
           {isLoadingHistory && (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500 dark:text-slate-400">
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-lantern-text-secondary">
               <TypingDots />
               <span>Loading conversation…</span>
             </div>
@@ -200,11 +200,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
           {/* Typing indicator (non-streaming fallback) */}
           {isLoading && !isStreaming && (
             <div className="flex items-start gap-2">
-              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 flex-shrink-0 mt-0.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lantern-primary flex-shrink-0 mt-0.5">
                 <SparklesIcon className="w-4 h-4 text-white" />
               </div>
               <div className={`px-3 py-2 rounded-2xl rounded-tl-none max-w-[80%]
-                ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                ${theme === 'dark' ? 'bg-lantern-surface-secondary' : 'bg-lantern-background-secondary'}`}>
                 <TypingDots />
               </div>
             </div>
@@ -215,9 +215,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
 
         {/* Input area */}
         <div className={`px-4 py-3 border-t flex-shrink-0
-          ${theme === 'dark' ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+          ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
           <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
-            ${theme === 'dark' ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-300'}`}>
+            ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>
             <textarea
               ref={inputRef}
               value={input}
@@ -226,7 +226,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               placeholder="Ask Lantern anything…"
               rows={1}
               className={`flex-1 resize-none bg-transparent text-sm outline-none max-h-24 leading-relaxed
-                placeholder:text-slate-400 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}
+                placeholder:text-lantern-text-tertiary ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}
               style={{ height: 'auto' }}
               onInput={e => {
                 const t = e.currentTarget;
@@ -238,12 +238,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || isBusy}
-              className="flex-shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+              className="flex-shrink-0 p-1.5 rounded-lg bg-lantern-primary text-white disabled:opacity-40 hover:bg-lantern-primary-dark transition-colors"
             >
               <PaperAirplaneIcon className="w-4 h-4" />
             </button>
           </div>
-          <div className={`mt-1.5 text-center ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
+          <div className={`mt-1.5 text-center ${theme === 'dark' ? 'text-lantern-text-secondary' : 'text-lantern-text-tertiary'}`}>
             <AIDisclaimer compact />
           </div>
         </div>
@@ -274,17 +274,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
   return (
     <div className={`flex items-start gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
       {!isUser && (
-        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 flex-shrink-0 mt-0.5">
+        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lantern-primary flex-shrink-0 mt-0.5">
           <SparklesIcon className="w-4 h-4 text-white" />
         </div>
       )}
       <div className={`flex flex-col gap-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
         <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
           ${isUser
-            ? 'bg-indigo-600 text-white rounded-tr-none'
+            ? 'bg-lantern-primary text-white rounded-tr-none'
             : theme === 'dark'
-              ? 'bg-slate-700 text-white rounded-tl-none'
-              : 'bg-slate-100 text-slate-900 rounded-tl-none'
+              ? 'bg-lantern-surface-secondary text-white rounded-tl-none'
+              : 'bg-lantern-background-secondary text-lantern-text rounded-tl-none'
           }`}>
           {message.content}
           {isStreaming && (
@@ -300,8 +300,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
                 onClick={() => onAction(action)}
                 className={`text-xs px-3 py-1 rounded-full border font-medium transition-colors
                   ${theme === 'dark'
-                    ? 'border-indigo-400 text-indigo-300 hover:bg-indigo-900'
-                    : 'border-indigo-400 text-indigo-600 hover:bg-indigo-50'
+                    ? 'border-lantern-primary text-lantern-primary-light hover:bg-lantern-primary-dark'
+                    : 'border-lantern-primary text-lantern-primary hover:bg-lantern-primary-background'
                   }`}
               >
                 → {action.label}
@@ -319,7 +319,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
               className={`p-1 rounded transition-colors disabled:cursor-default
                 ${feedback === 'up'
                   ? 'text-green-500'
-                  : theme === 'dark' ? 'text-slate-500 hover:text-green-400' : 'text-slate-400 hover:text-green-500'
+                  : theme === 'dark' ? 'text-lantern-text-secondary hover:text-green-400' : 'text-lantern-text-tertiary hover:text-green-500'
                 }`}
             >
               {feedback === 'up' ? <ThumbUpSolid className="w-3.5 h-3.5" /> : <HandThumbUpIcon className="w-3.5 h-3.5" />}
@@ -331,7 +331,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
               className={`p-1 rounded transition-colors disabled:cursor-default
                 ${feedback === 'down'
                   ? 'text-red-500'
-                  : theme === 'dark' ? 'text-slate-500 hover:text-red-400' : 'text-slate-400 hover:text-red-500'
+                  : theme === 'dark' ? 'text-lantern-text-secondary hover:text-red-400' : 'text-lantern-text-tertiary hover:text-red-500'
                 }`}
             >
               {feedback === 'down' ? <ThumbDownSolid className="w-3.5 h-3.5" /> : <HandThumbDownIcon className="w-3.5 h-3.5" />}
@@ -345,12 +345,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
 
 const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: string) => void }> = ({ theme, onQuickPrompt }) => (
   <div className="flex flex-col items-center gap-4 py-6 text-center">
-    <div className="flex items-center justify-center w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900">
-      <SparklesIcon className="w-8 h-8 text-indigo-600 dark:text-indigo-300" />
+    <div className="flex items-center justify-center w-14 h-14 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark">
+      <SparklesIcon className="w-8 h-8 text-lantern-primary" />
     </div>
     <div>
-      <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>Hi, I'm Lantern!</p>
-      <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+      <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>Hi, I'm Lantern!</p>
+      <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
         Your personal AI study companion. Ask me anything.
       </p>
     </div>
@@ -361,8 +361,8 @@ const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: stri
           onClick={() => onQuickPrompt(p)}
           className={`text-xs px-3 py-1.5 rounded-full border transition-colors
             ${theme === 'dark'
-              ? 'border-slate-600 text-slate-300 hover:bg-slate-700'
-              : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+              ? 'border-lantern-border text-lantern-text-tertiary hover:bg-lantern-surface-secondary'
+              : 'border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary'
             }`}
         >
           {p}
@@ -377,7 +377,7 @@ const TypingDots: React.FC = () => (
     {[0, 1, 2].map(i => (
       <span
         key={i}
-        className="w-2 h-2 rounded-full bg-slate-400 animate-bounce"
+        className="w-2 h-2 rounded-full bg-lantern-border animate-bounce"
         style={{ animationDelay: `${i * 150}ms`, animationDuration: '800ms' }}
       />
     ))}

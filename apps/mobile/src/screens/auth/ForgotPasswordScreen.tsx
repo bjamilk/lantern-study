@@ -69,7 +69,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900">
+    <SafeAreaView className="flex-1 bg-lantern-background">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
@@ -77,8 +77,8 @@ export function ForgotPasswordScreen({ navigation }: Props) {
         <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
-            <Text className="text-2xl font-bold text-slate-900 dark:text-white">Reset password</Text>
-            <Text className="text-slate-500 dark:text-slate-400 mt-2 text-center">
+            <Text className="text-2xl font-bold text-lantern-text dark:text-white">Reset password</Text>
+            <Text className="text-lantern-text-secondary mt-2 text-center">
               Enter your email and we will send a reset link.
             </Text>
           </View>
@@ -98,7 +98,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
           ) : null}
 
           <View className="mb-4">
-            <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</Text>
+            <Text className="text-sm font-medium text-lantern-text mb-1.5">Email</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
@@ -106,7 +106,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
               keyboardType="email-address"
               placeholder="you@university.edu"
               placeholderTextColor="#94a3b8"
-              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
+              className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white"
             />
           </View>
 

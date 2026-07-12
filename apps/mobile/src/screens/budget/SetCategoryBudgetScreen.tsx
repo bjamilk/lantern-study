@@ -43,26 +43,26 @@ export default function SetCategoryBudgetScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title="Category budgets" onBack={() => navigation.goBack()} subtitle="Monthly limits per category" />
       <ScrollView contentContainerClassName="px-4 pb-8 gap-3">
         {EXPENSE_CATEGORIES.map(cat => (
           <Card key={cat.id} className="p-3 flex-row items-center gap-3">
             <Text className="text-lg">{cat.icon}</Text>
-            <Text className="flex-1 font-medium text-slate-800 dark:text-slate-200">{cat.label}</Text>
+            <Text className="flex-1 font-medium text-lantern-text">{cat.label}</Text>
             <TextInput
               value={amounts[cat.id] || ''}
               onChangeText={v => setAmounts(prev => ({ ...prev, [cat.id]: v }))}
               placeholder="₦0"
               keyboardType="decimal-pad"
               placeholderTextColor="#94a3b8"
-              className="w-24 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-right text-slate-900 dark:text-white"
+              className="w-24 border border-lantern-border rounded-lg px-3 py-2 text-right text-lantern-text dark:text-white"
             />
           </Card>
         ))}
         <Button onPress={() => void save()}>Save category plan</Button>
         {budget?.targetAmount ? (
-          <Text className="text-center text-xs text-slate-500">Overall budget: {formatCurrency(budget.targetAmount)}</Text>
+          <Text className="text-center text-xs text-lantern-text-secondary">Overall budget: {formatCurrency(budget.targetAmount)}</Text>
         ) : null}
       </ScrollView>
     </SafeAreaView>

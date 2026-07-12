@@ -80,7 +80,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900">
+    <SafeAreaView className="flex-1 bg-lantern-background">
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
@@ -88,8 +88,8 @@ export function ResetPasswordScreen({ navigation }: Props) {
         <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
-            <Text className="text-2xl font-bold text-slate-900 dark:text-white">Set new password</Text>
-            <Text className="text-slate-500 dark:text-slate-400 mt-2 text-center">
+            <Text className="text-2xl font-bold text-lantern-text dark:text-white">Set new password</Text>
+            <Text className="text-lantern-text-secondary mt-2 text-center">
               {sessionReady
                 ? 'Choose a strong password for your account.'
                 : 'Open the reset link from your email, or paste the link in your browser to return here.'}
@@ -112,7 +112,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
 
           <View className="gap-3 mb-4">
             <View>
-              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">New password</Text>
+              <Text className="text-sm font-medium text-lantern-text mb-1.5">New password</Text>
               <View className="relative">
                 <TextInput
                   value={password}
@@ -120,7 +120,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
                   secureTextEntry={!showPassword}
                   placeholder="••••••••"
                   placeholderTextColor="#94a3b8"
-                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 pr-12 text-slate-900 dark:text-white"
+                  className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 pr-12 text-lantern-text dark:text-white"
                 />
                 <Pressable onPress={() => setShowPassword((v) => !v)} className="absolute right-3 top-3">
                   <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#94a3b8" />
@@ -128,14 +128,14 @@ export function ResetPasswordScreen({ navigation }: Props) {
               </View>
             </View>
             <View>
-              <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Confirm password</Text>
+              <Text className="text-sm font-medium text-lantern-text mb-1.5">Confirm password</Text>
               <TextInput
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showPassword}
                 placeholder="••••••••"
                 placeholderTextColor="#94a3b8"
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white"
+                className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white"
               />
             </View>
           </View>

@@ -132,7 +132,7 @@ const SellerCouponsPanel: React.FC<SellerCouponsPanelProps> = ({ onClose }) => {
                   {coupon.max_uses != null ? `/${coupon.max_uses}` : ''} used
                 </p>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${coupon.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+              <span className={`text-xs px-2 py-1 rounded-full ${coupon.active ? 'bg-emerald-100 text-emerald-700' : 'bg-lantern-background-secondary text-lantern-text-secondary'}`}>
                 {coupon.active ? 'Active' : 'Inactive'}
               </span>
             </div>

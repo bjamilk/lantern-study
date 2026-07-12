@@ -33,11 +33,11 @@ export const Toggle: React.FC<ToggleProps> = ({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={`relative shrink-0 w-11 h-6 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary ${
-          checked ? 'bg-lantern-primary' : 'bg-slate-300 dark:bg-slate-600'
+          checked ? 'bg-lantern-primary' : 'bg-lantern-border'
         } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-lantern-surface rounded-full shadow transition-transform ${
             checked ? 'translate-x-5' : 'translate-x-0'
           }`}
         />

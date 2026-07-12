@@ -34,9 +34,9 @@ describe('getActivityHeatLevel', () => {
 
 describe('getActivityHeatTailwindClass', () => {
   it('maps each level to distinct light and dark classes', () => {
-    expect(getActivityHeatTailwindClass(0, 'light')).toBe('bg-gray-200');
+    expect(getActivityHeatTailwindClass(0, 'light')).toBe('bg-lantern-background-secondary');
     expect(getActivityHeatTailwindClass(1, 'light')).toBe('bg-green-200');
-    expect(getActivityHeatTailwindClass(0, 'dark')).toBe('bg-slate-700');
+    expect(getActivityHeatTailwindClass(0, 'dark')).toBe('bg-lantern-surface-secondary');
     expect(getActivityHeatTailwindClass(4, 'dark')).toBe('bg-green-400');
   });
 });

@@ -222,17 +222,17 @@ export function AccountLifecycleModals({
     <>
       <Modal visible={deleteOpen} animationType="slide" transparent onRequestClose={handleCloseDelete}>
         <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white dark:bg-slate-900 rounded-t-2xl max-h-[85%]">
+          <View className="bg-lantern-surface rounded-t-2xl max-h-[85%]">
             <ScrollView contentContainerClassName="p-5 pb-8">
-              <Text className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
+              <Text className="text-lg font-semibold text-lantern-text mb-2">
                 Delete or pause account
               </Text>
               {deleteStep === 'warn' ? (
                 <>
-                  <Text className="text-sm text-slate-600 dark:text-slate-400 mb-3">{ACCOUNT_EXPORT_COPY.summary}</Text>
-                  <Text className="text-sm font-medium text-slate-800 dark:text-slate-200 mb-2">You will lose:</Text>
+                  <Text className="text-sm text-lantern-text-secondary mb-3">{ACCOUNT_EXPORT_COPY.summary}</Text>
+                  <Text className="text-sm font-medium text-lantern-text mb-2">You will lose:</Text>
                   {ACCOUNT_DATA_LOSS_ITEMS.map((item) => (
-                    <Text key={item} className="text-sm text-slate-600 dark:text-slate-400 mb-1">
+                    <Text key={item} className="text-sm text-lantern-text-secondary mb-1">
                       • {item}
                     </Text>
                   ))}
@@ -246,17 +246,17 @@ export function AccountLifecycleModals({
                 <>
                   <Pressable
                     onPress={() => setDeleteChoice('pause')}
-                    className={`p-3 rounded-xl border mb-2 ${deleteChoice === 'pause' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700'}`}
+                    className={`p-3 rounded-xl border mb-2 ${deleteChoice === 'pause' ? 'border-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary-background' : 'border-lantern-border'}`}
                   >
-                    <Text className="font-medium text-slate-900 dark:text-slate-100">Pause for {ACCOUNT_DELETION_GRACE_DAYS} days</Text>
-                    <Text className="text-sm text-slate-500 mt-1">Reactivate anytime before permanent deletion.</Text>
+                    <Text className="font-medium text-lantern-text">Pause for {ACCOUNT_DELETION_GRACE_DAYS} days</Text>
+                    <Text className="text-sm text-lantern-text-secondary mt-1">Reactivate anytime before permanent deletion.</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setDeleteChoice('immediate')}
-                    className={`p-3 rounded-xl border mb-4 ${deleteChoice === 'immediate' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-slate-200 dark:border-slate-700'}`}
+                    className={`p-3 rounded-xl border mb-4 ${deleteChoice === 'immediate' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-lantern-border'}`}
                   >
-                    <Text className="font-medium text-slate-900 dark:text-slate-100">Delete immediately</Text>
-                    <Text className="text-sm text-slate-500 mt-1">Requires password. Cannot be undone.</Text>
+                    <Text className="font-medium text-lantern-text">Delete immediately</Text>
+                    <Text className="text-sm text-lantern-text-secondary mt-1">Requires password. Cannot be undone.</Text>
                   </Pressable>
                   <View className="flex-row gap-2">
                     <Button variant="secondary" onPress={() => setDeleteStep('warn')}>Back</Button>
@@ -268,14 +268,14 @@ export function AccountLifecycleModals({
                 <>
                   {deleteChoice === 'immediate' ? (
                     <>
-                      <Text className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+                      <Text className="text-sm text-lantern-text-secondary mb-2">
                         Type {ACCOUNT_DELETE_CONFIRM_TEXT} to confirm, then enter your password.
                       </Text>
                       <TextInput
                         value={confirmText}
                         onChangeText={setConfirmText}
                         placeholder={ACCOUNT_DELETE_CONFIRM_TEXT}
-                        className="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+                        className="border border-lantern-border rounded-lg px-3 py-2 mb-2 text-lantern-text"
                         autoCapitalize="characters"
                       />
                       <TextInput
@@ -283,11 +283,11 @@ export function AccountLifecycleModals({
                         onChangeText={setPassword}
                         placeholder="Account password"
                         secureTextEntry
-                        className="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-3 text-slate-900 dark:text-slate-100"
+                        className="border border-lantern-border rounded-lg px-3 py-2 mb-3 text-lantern-text"
                       />
                     </>
                   ) : (
-                    <Text className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    <Text className="text-sm text-lantern-text-secondary mb-4">
                       Your account will be paused and scheduled for deletion in {ACCOUNT_DELETION_GRACE_DAYS} days.
                     </Text>
                   )}
@@ -317,9 +317,9 @@ export function AccountLifecycleModals({
 
       <Modal visible={importOpen} animationType="slide" transparent onRequestClose={onCloseImport}>
         <View className="flex-1 justify-end bg-black/50">
-          <View className="bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8">
-            <Text className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">Import backup</Text>
-            <Text className="text-sm text-slate-600 dark:text-slate-400 mb-3">{ACCOUNT_EXPORT_COPY.restoreHint}</Text>
+          <View className="bg-lantern-surface rounded-t-2xl p-5 pb-8">
+            <Text className="text-lg font-semibold text-lantern-text mb-2">Import backup</Text>
+            <Text className="text-sm text-lantern-text-secondary mb-3">{ACCOUNT_EXPORT_COPY.restoreHint}</Text>
             <Button variant="secondary" onPress={() => void pickImportFile()} className="mb-2">
               {importFileName ? importFileName : 'Choose JSON backup'}
             </Button>
@@ -328,7 +328,7 @@ export function AccountLifecycleModals({
               onChangeText={setImportPassword}
               placeholder="Account password"
               secureTextEntry
-              className="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-3 text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-lg px-3 py-2 mb-3 text-lantern-text"
             />
             {error ? <Text className="text-sm text-red-500 mb-2">{error}</Text> : null}
             <View className="flex-row gap-2">

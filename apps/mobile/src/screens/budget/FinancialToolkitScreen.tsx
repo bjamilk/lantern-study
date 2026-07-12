@@ -53,9 +53,9 @@ export default function FinancialToolkitScreen() {
   }, [calcAmount, calcRate, calcMonths]);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title="Financial toolkit" onBack={() => navigation.goBack()} subtitle="Tips, simulator & calculator" />
-      <View className="flex-row border-b border-slate-200 dark:border-slate-700 px-2">
+      <View className="flex-row border-b border-lantern-border px-2">
         {([
           { key: 'tips' as const, label: '💡 Tips' },
           { key: 'simulator' as const, label: '📊 Simulator' },
@@ -65,7 +65,7 @@ export default function FinancialToolkitScreen() {
             key={tab.key}
             onPress={() => setMode(tab.key)}
             className={`flex-1 text-center py-3 text-xs font-semibold ${
-              mode === tab.key ? 'text-cyan-600 border-b-2 border-cyan-500' : 'text-slate-400'
+              mode === tab.key ? 'text-cyan-600 border-b-2 border-cyan-500' : 'text-lantern-text-tertiary'
             }`}
           >
             {tab.label}
@@ -75,11 +75,11 @@ export default function FinancialToolkitScreen() {
       <ScrollView contentContainerClassName="px-4 pb-8 gap-3 pt-3">
         <View className="flex-row gap-3">
           <Card className="flex-1 items-center py-3">
-            <Text className="text-xs text-slate-500">Income</Text>
+            <Text className="text-xs text-lantern-text-secondary">Income</Text>
             <Text className="text-base font-bold text-emerald-600">{formatCurrency(monthlyIncome)}</Text>
           </Card>
           <Card className="flex-1 items-center py-3">
-            <Text className="text-xs text-slate-500">Expenses</Text>
+            <Text className="text-xs text-lantern-text-secondary">Expenses</Text>
             <Text className="text-base font-bold text-red-500">{formatCurrency(monthlyExpenses)}</Text>
           </Card>
         </View>
@@ -88,22 +88,22 @@ export default function FinancialToolkitScreen() {
           <Card key={i} className="p-4 flex-row gap-3">
             <Text className="text-2xl">{tip.icon}</Text>
             <View className="flex-1">
-              <Text className="font-semibold text-slate-900 dark:text-white">{tip.title}</Text>
-              <Text className="text-sm text-slate-500 mt-1 leading-5">{tip.tip}</Text>
+              <Text className="font-semibold text-lantern-text dark:text-white">{tip.title}</Text>
+              <Text className="text-sm text-lantern-text-secondary mt-1 leading-5">{tip.tip}</Text>
             </View>
           </Card>
         ))}
 
         {mode === 'simulator' && (
           <Card className="p-4 gap-4">
-            <Text className="text-sm text-slate-500">Enter monthly income and adjust category percentages.</Text>
+            <Text className="text-sm text-lantern-text-secondary">Enter monthly income and adjust category percentages.</Text>
             <TextInput
               value={simIncome}
               onChangeText={setSimIncome}
               placeholder="Monthly income (₦)"
               keyboardType="decimal-pad"
               placeholderTextColor="#94a3b8"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800"
+              className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface"
             />
             {[
               { label: '🍔 Food', value: simFood, set: setSimFood },
@@ -113,8 +113,8 @@ export default function FinancialToolkitScreen() {
             ].map(row => (
               <View key={row.label}>
                 <View className="flex-row justify-between mb-1">
-                  <Text className="text-sm text-slate-600 dark:text-slate-300">{row.label}</Text>
-                  <Text className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  <Text className="text-sm text-lantern-text-secondary">{row.label}</Text>
+                  <Text className="text-sm font-medium text-lantern-text">
                     {row.value}% = {formatCurrency(simIncomeVal * row.value / 100)}
                   </Text>
                 </View>
@@ -129,8 +129,8 @@ export default function FinancialToolkitScreen() {
                 />
               </View>
             ))}
-            <View className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-3">
-              <Text className="text-sm text-slate-500">Allocated: {simResult.pctUsed.toFixed(0)}%</Text>
+            <View className="bg-lantern-background-secondary dark:bg-lantern-surface-secondary/50 rounded-xl p-3">
+              <Text className="text-sm text-lantern-text-secondary">Allocated: {simResult.pctUsed.toFixed(0)}%</Text>
               <Text className={`text-sm font-semibold mt-1 ${simResult.remaining >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 Remaining: {formatCurrency(simResult.remaining)}
               </Text>
@@ -140,14 +140,14 @@ export default function FinancialToolkitScreen() {
 
         {mode === 'calculator' && (
           <Card className="p-4 gap-3">
-            <Text className="text-sm text-slate-500">Compound savings calculator</Text>
-            <TextInput value={calcAmount} onChangeText={setCalcAmount} placeholder="Starting amount (₦)" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
-            <TextInput value={calcRate} onChangeText={setCalcRate} placeholder="Annual rate (%)" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
-            <TextInput value={calcMonths} onChangeText={setCalcMonths} placeholder="Months" keyboardType="number-pad" placeholderTextColor="#94a3b8" className="border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800" />
+            <Text className="text-sm text-lantern-text-secondary">Compound savings calculator</Text>
+            <TextInput value={calcAmount} onChangeText={setCalcAmount} placeholder="Starting amount (₦)" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
+            <TextInput value={calcRate} onChangeText={setCalcRate} placeholder="Annual rate (%)" keyboardType="decimal-pad" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
+            <TextInput value={calcMonths} onChangeText={setCalcMonths} placeholder="Months" keyboardType="number-pad" placeholderTextColor="#94a3b8" className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text dark:text-white bg-lantern-surface" />
             <View className="bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-4 mt-2">
-              <Text className="text-sm text-slate-500">Projected total</Text>
+              <Text className="text-sm text-lantern-text-secondary">Projected total</Text>
               <Text className="text-2xl font-bold text-cyan-600">{formatCurrency(calcResult.total)}</Text>
-              <Text className="text-sm text-slate-500 mt-1">Interest earned: {formatCurrency(calcResult.interest)}</Text>
+              <Text className="text-sm text-lantern-text-secondary mt-1">Interest earned: {formatCurrency(calcResult.interest)}</Text>
             </View>
           </Card>
         )}

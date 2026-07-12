@@ -104,7 +104,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => sidebarProps.onResumeSession(sessionAppMode)}
-                                className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition-colors"
+                                className="px-3 py-1 bg-lantern-surface/20 hover:bg-lantern-surface/30 rounded-lg text-sm font-semibold transition-colors"
                             >
                                 Resume
                             </button>
@@ -168,17 +168,17 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                     </div>
                 ) : activeUploadJob ? (
                     <div
-                        className="shrink-0 px-3 py-2 md:px-4 border-b border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/40"
+                        className="shrink-0 px-3 py-2 md:px-4 border-b border-lantern-primary/30 bg-lantern-primary-background dark:border-lantern-primary/30 dark:bg-lantern-primary-background"
                         role="status"
                         aria-live="polite"
                     >
                         <div className="flex items-center gap-3 min-w-0 max-w-full">
-                            <ArrowPathIcon className="w-5 h-5 text-indigo-500 shrink-0 animate-spin" />
+                            <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                <p className="text-sm font-medium text-lantern-text truncate">
                                     {activeUploadJob.label}
                                 </p>
-                                <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                                <p className="text-xs text-lantern-text-secondary truncate mt-0.5">
                                     {activeUploadJob.fileName}
                                 </p>
                             </div>
@@ -202,10 +202,10 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                             <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                            <p className="text-sm font-medium text-lantern-text truncate">
                                 {job.status === 'failed' ? 'Upload failed' : 'Upload complete'}
                             </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate mt-0.5">
+                            <p className="text-xs text-lantern-text-secondary truncate mt-0.5">
                                 {job.fileName}
                                 {job.error ? ` — ${job.error}` : ''}
                             </p>
@@ -213,7 +213,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         <button
                             type="button"
                             onClick={() => dismissUploadJob(job.id)}
-                            className="shrink-0 p-1 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-white/60 dark:text-gray-400 dark:hover:text-gray-100"
+                            className="shrink-0 p-1 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface/60 dark:text-lantern-text-tertiary dark:hover:text-lantern-text"
                             aria-label="Dismiss upload notification"
                         >
                             <XMarkIcon className="w-5 h-5" />

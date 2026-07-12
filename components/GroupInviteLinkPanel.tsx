@@ -59,22 +59,22 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
 
   return (
     <div
-      className={`rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 ${
+      className={`rounded-lg border border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background ${
         compact ? 'p-3 space-y-2' : 'p-4 space-y-3'
       }`}
     >
       <div className="flex items-center gap-2">
-        <LinkIcon className="w-4 h-4 text-indigo-700 dark:text-indigo-300 shrink-0" />
-        <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+        <LinkIcon className="w-4 h-4 text-lantern-primary shrink-0" />
+        <h3 className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light">
           Invite link
         </h3>
       </div>
-      <p className="text-xs text-indigo-800/80 dark:text-indigo-200/80">
+      <p className="text-xs text-lantern-primary-dark/80 dark:text-lantern-primary-light/80">
         Anyone with this link can request to join your group.
       </p>
-      <div className="rounded-md border border-indigo-100 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 overflow-x-auto">
+      <div className="rounded-md border border-lantern-primary/20 dark:border-lantern-border bg-lantern-surface px-3 py-2 overflow-x-auto">
         <code
-          className="block text-xs font-mono text-slate-700 dark:text-slate-200 whitespace-nowrap select-all"
+          className="block text-xs font-mono text-lantern-text whitespace-nowrap select-all"
           title={inviteLink}
         >
           {inviteLink}
@@ -84,7 +84,7 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
         <button
           type="button"
           onClick={() => void handleCopy()}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md"
         >
           {copied ? (
             <>
@@ -101,7 +101,7 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
         <button
           type="button"
           onClick={() => void handleShare()}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-200 bg-white dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-slate-700 border border-indigo-200 dark:border-slate-600 rounded-md"
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-lantern-primary dark:text-lantern-primary-light bg-lantern-surface hover:bg-lantern-primary-background dark:hover:bg-lantern-surface-secondary border border-lantern-primary/30 dark:border-lantern-border rounded-md"
         >
           <ArrowUpOnSquareIcon className="w-4 h-4" />
           {canNativeShare ? 'Share' : 'Copy to share'}

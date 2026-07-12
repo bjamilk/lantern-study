@@ -42,12 +42,12 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
 
   if (!questsLoaded) {
     return (
-      <div className={`rounded-xl border p-4 animate-pulse ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-        <div className="h-5 w-32 bg-slate-200 dark:bg-slate-700 rounded mb-3" />
+      <div className={`rounded-xl border p-4 animate-pulse ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
+        <div className="h-5 w-32 bg-lantern-background-secondary rounded mb-3" />
         <div className="space-y-2">
-          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
-          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
-          <div className="h-8 bg-slate-100 dark:bg-slate-700 rounded" />
+          <div className="h-8 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded" />
+          <div className="h-8 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded" />
+          <div className="h-8 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded" />
         </div>
       </div>
     );
@@ -57,20 +57,20 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
 
   if (quests.length === 0) {
     return (
-      <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+      <div className={`rounded-xl border p-4 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="font-semibold text-slate-900 dark:text-slate-100">Daily Quests</h3>
+          <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
           <div className="flex items-center gap-2 text-sm">
             <FireIcon className="w-4 h-4 text-orange-500" />
             <span className="font-bold text-orange-600">{streak} day streak</span>
           </div>
         </div>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Quests unavailable right now.</p>
+        <p className="text-sm text-lantern-text-secondary mb-3">Quests unavailable right now.</p>
         {onRefresh && (
           <button
             type="button"
             onClick={onRefresh}
-            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+            className="text-sm text-lantern-primary hover:underline"
           >
             Refresh quests
           </button>
@@ -80,14 +80,14 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
   }
 
   return (
-    <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+    <div className={`rounded-xl border p-4 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-slate-900 dark:text-slate-100">Daily Quests</h3>
+        <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
         <div className="flex items-center gap-2 text-sm">
           <FireIcon className="w-4 h-4 text-orange-500" />
           <span className="font-bold text-orange-600">{streak} day streak</span>
           {streakFreezes > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600" title="Streak freezes available">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-lantern-primary" title="Streak freezes available">
               ❄ {streakFreezes}
             </span>
           )}
@@ -102,7 +102,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
           )}
         </div>
       </div>
-      <p className="text-xs text-slate-500 mb-3">{completedCount}/{quests.length} completed today</p>
+      <p className="text-xs text-lantern-text-secondary mb-3">{completedCount}/{quests.length} completed today</p>
       <div className="space-y-2">
         {quests.map((quest) => {
           const pct = Math.min(100, (quest.progressCount / quest.targetCount) * 100);
@@ -111,18 +111,18 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
               {quest.completed ? (
                 <CheckCircleIcon className="w-5 h-5 text-emerald-500 flex-shrink-0" />
               ) : (
-                <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex-shrink-0" />
+                <div className="w-5 h-5 rounded-full border-2 border-lantern-border flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between text-sm mb-0.5">
-                  <span className={quest.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}>
+                  <span className={quest.completed ? 'text-lantern-text-tertiary line-through' : 'text-lantern-text'}>
                     {QUEST_LABELS[quest.questType] || quest.questType}
                   </span>
-                  <span className="text-xs text-slate-400">{quest.progressCount}/{quest.targetCount}</span>
+                  <span className="text-xs text-lantern-text-tertiary">{quest.progressCount}/{quest.targetCount}</span>
                 </div>
-                <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${quest.completed ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                    className={`h-full rounded-full transition-all ${quest.completed ? 'bg-emerald-500' : 'bg-lantern-primary'}`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>

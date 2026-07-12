@@ -581,7 +581,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         {isLoadingMore && (
           <div className="flex justify-center py-2" aria-live="polite">
-            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
             <span className="sr-only">Loading older messages</span>
           </div>
         )}
@@ -612,11 +612,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <React.Fragment key={msg.id}>
               {showDateSeparator && (
                 <div className="flex items-center gap-3 py-2">
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500 whitespace-nowrap px-2">
+                  <div className="flex-1 h-px bg-lantern-background-secondary" />
+                  <span className="text-xs font-medium text-lantern-text-tertiary whitespace-nowrap px-2">
                     {formatDateLabel(msgDate)}
                   </span>
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                  <div className="flex-1 h-px bg-lantern-background-secondary" />
                 </div>
               )}
               <MessageItem
@@ -638,18 +638,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div className="flex flex-col items-center justify-center py-16 text-center">
             {awaitingMessages ? (
               <>
-                <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">Loading messages…</p>
+                <div className="w-10 h-10 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin mb-4" />
+                <p className="text-sm text-lantern-text-secondary">Loading messages…</p>
               </>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
-                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                <div className="w-16 h-16 rounded-2xl bg-lantern-background-secondary/60 dark:bg-lantern-surface flex items-center justify-center mb-4">
+                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-lantern-text-tertiary" />
                 </div>
-                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <h3 className="text-base font-semibold text-lantern-text mb-1">
                   {isArchived ? 'This group is archived' : 'No messages yet'}
                 </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+                <p className="text-sm text-lantern-text-secondary max-w-xs">
                   {isArchived
                     ? 'Unarchive the group to resume the conversation.'
                     : `Be the first to send a message in ${name}!`}
@@ -674,9 +674,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </button>
         </div>
       ) : (
-        <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
+        <div className="flex-shrink-0 pb-16 md:pb-0 bg-lantern-surface relative z-20 border-t border-lantern-border">
           {typingLabels.length > 0 && (
-            <p className="px-4 py-1 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
+            <p className="px-4 py-1 text-xs text-lantern-text-tertiary" aria-live="polite">
               {typingLabels.length === 1
                 ? `${typingLabels[0]} is typing…`
                 : `${typingLabels.slice(0, 2).join(' and ')} are typing…`}
@@ -711,10 +711,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 src={resolveAvatarSrc(avatarUrl, lowDataMode)}
                 size="md"
                 localOnly={lowDataMode}
-                className="ring-2 ring-white dark:ring-slate-700"
+                className="ring-2 ring-white dark:ring-lantern-border"
               />
               {isGroup && !isArchived && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-slate-800 rounded-full" aria-label="Active group" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Active group" />
               )}
             </div>
             <div className="min-w-0">
@@ -892,7 +892,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </div>
         </div>
         {isGroup && !isArchived && (
-          <div className="flex items-center gap-4 px-4 md:px-6 py-2 bg-slate-100/80 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-4 px-4 md:px-6 py-2 bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/50 border-b border-lantern-border/60 dark:border-lantern-border/60 text-xs text-lantern-text-secondary">
             <span className="flex items-center gap-1">
               <UserGroupIcon className="w-3.5 h-3.5" />
               {memberCountText || 'Group'}
@@ -919,40 +919,40 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           aria-label="Marketplace conversation"
           className="flex flex-col flex-1 min-h-0"
         >
-          <div className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex-shrink-0 bg-lantern-surface border-b border-lantern-border px-4 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                 <img
                   src={normalizeStorageUrl(inquiry.listing.images[0])}
                   alt={inquiry.listing.title}
-                  className="w-12 h-12 rounded-lg object-cover bg-slate-100 dark:bg-slate-700 flex-shrink-0 border border-slate-200 dark:border-slate-600"
+                  className="w-12 h-12 rounded-lg object-cover bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0 border border-lantern-border"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               ) : (
-                <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 border border-slate-200 dark:border-slate-600">
-                  <ShoppingBagIcon className="w-6 h-6 text-slate-400" />
+                <div className="w-12 h-12 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center flex-shrink-0 border border-lantern-border">
+                  <ShoppingBagIcon className="w-6 h-6 text-lantern-text-tertiary" />
                 </div>
               )}
               <div className="min-w-0">
-                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate leading-snug">
+                <h4 className="text-sm font-semibold text-lantern-text truncate leading-snug">
                   {inquiry.listing?.title}
                 </h4>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                  <span className="text-sm font-bold text-lantern-primary">
                     {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
                   </span>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
                     inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
                     inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                    inquiry.status === 'closed' ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400' :
-                    'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
+                    'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light'
                   }`}>
                     {inquiry.status}
                   </span>
                 </div>
               </div>
             </div>
-            <TabList className="bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 !border-solid">
+            <TabList className="bg-lantern-background p-0.5 rounded-lg border border-lantern-border !border-solid">
               <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-2 !rounded-md">
                 Chat
               </Tab>
@@ -968,8 +968,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </div>
 
           {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
-            <div className="flex-shrink-0 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900 flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-medium text-indigo-800 dark:text-indigo-200">
+            <div className="flex-shrink-0 px-4 py-2 bg-lantern-primary-background dark:bg-lantern-primary-background border-b border-lantern-primary/20 dark:border-lantern-primary/30 flex flex-wrap gap-2 items-center">
+              <span className="text-xs font-medium text-lantern-primary-dark dark:text-lantern-primary-light">
                 Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
               </span>
               {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
@@ -977,7 +977,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <button
                     type="button"
                     disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md bg-indigo-600 text-white"
+                    className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white"
                     onClick={async () => {
                       setOrderActionLoading(true);
                       try {
@@ -992,7 +992,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <button
                     type="button"
                     disabled={orderActionLoading}
-                    className="text-xs px-2 py-1 rounded-md border border-indigo-600 text-indigo-700 dark:text-indigo-300"
+                    className="text-xs px-2 py-1 rounded-md border border-lantern-primary text-lantern-primary"
                     onClick={async () => {
                       setOrderActionLoading(true);
                       try {
@@ -1030,44 +1030,44 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {chatPanelContent}
           </TabPanel>
 
-          <TabPanel value="offers" className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-y-auto p-4 md:p-6 min-h-0">
+          <TabPanel value="offers" className="flex-1 flex flex-col bg-lantern-background overflow-y-auto p-4 md:p-6 min-h-0">
             {/* Listing Card */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                 <img
                   src={normalizeStorageUrl(inquiry.listing.images[0])}
                   alt={inquiry.listing.title}
-                  className="w-full sm:w-32 h-32 rounded-xl object-cover bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex-shrink-0"
+                  className="w-full sm:w-32 h-32 rounded-xl object-cover bg-lantern-background-secondary dark:bg-lantern-surface-secondary border border-lantern-border flex-shrink-0"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               ) : (
-                <div className="w-full sm:w-32 h-32 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center border border-slate-200 dark:border-slate-600 flex-shrink-0">
-                  <ShoppingBagIcon className="w-10 h-10 text-slate-400" />
+                <div className="w-full sm:w-32 h-32 rounded-xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center border border-lantern-border flex-shrink-0">
+                  <ShoppingBagIcon className="w-10 h-10 text-lantern-text-tertiary" />
                 </div>
               )}
               <div className="flex-1 flex flex-col justify-between min-w-0">
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 line-clamp-2">
+                    <h3 className="text-base font-bold text-lantern-text line-clamp-2">
                       {inquiry.listing?.title}
                     </h3>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase flex-shrink-0 ${
                       inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
                       inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                      inquiry.status === 'closed' ? 'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400' :
-                      'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'
+                      inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
+                      'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light'
                     }`}>
                       {inquiry.status}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 capitalize font-medium">
+                  <p className="text-xs text-lantern-text-secondary mt-1 capitalize font-medium">
                     Category: {inquiry.listing?.category || 'academic'}
                   </p>
                 </div>
                 
                 <div className="flex items-baseline gap-2 mt-4">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Asking Price:</span>
-                  <span className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400">
+                  <span className="text-xs text-lantern-text-secondary">Asking Price:</span>
+                  <span className="text-lg font-extrabold text-lantern-primary">
                     {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
                   </span>
                 </div>
@@ -1075,27 +1075,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
 
             {/* Active Offer Section */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200/60 dark:border-slate-700/60 shadow-sm mb-6">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-1.5">
+            <div className="bg-lantern-surface rounded-2xl p-5 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm mb-6">
+              <h3 className="text-sm font-bold text-lantern-text mb-4 flex items-center gap-1.5">
                 <CurrencyDollarIcon className="w-5 h-5 text-emerald-500" />
                 Active Offer
               </h3>
               
               {activeOffer ? (
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-slate-50 dark:bg-slate-700/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 gap-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-lantern-background dark:bg-lantern-surface-secondary/40 rounded-xl border border-lantern-border/60 dark:border-lantern-border/60 gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 dark:text-slate-400">Offered Amount:</span>
-                        <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                        <span className="text-xs text-lantern-text-secondary">Offered Amount:</span>
+                        <span className="text-lg font-bold text-lantern-text">
                           ₦{activeOffer.amount.toLocaleString()}
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">
+                      <p className="text-[11px] text-lantern-text-tertiary mt-0.5 font-medium">
                         Submitted on {new Date(activeOffer.created_at).toLocaleDateString()}
                       </p>
                       {activeOffer.message && (
-                        <p className="text-xs italic text-slate-500 dark:text-slate-400 mt-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700/50">
+                        <p className="text-xs italic text-lantern-text-secondary mt-2 bg-lantern-surface p-2 rounded-lg border border-lantern-border/50">
                           "{activeOffer.message}"
                         </p>
                       )}
@@ -1104,10 +1104,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     <div className="flex-shrink-0">
                       <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${
                         activeOffer.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                        activeOffer.status === 'countered' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300' :
+                        activeOffer.status === 'countered' ? 'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light' :
                         activeOffer.status === 'accepted' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
                         activeOffer.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' :
-                        'bg-slate-100 text-slate-800 dark:bg-slate-900/40 dark:text-slate-400'
+                        'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary'
                       }`}>
                         Offer {activeOffer.status}
                       </span>
@@ -1125,7 +1125,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           <button
                             disabled={offerLoading}
                             onClick={() => handleRespond('withdraw')}
-                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                           >
                             {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
                           </button>
@@ -1135,14 +1135,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Accept Counter
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('decline')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Decline Counter
                             </button>
@@ -1157,21 +1157,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Accept Offer
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('decline')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Decline Offer
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Counter Offer
                             </button>
@@ -1179,8 +1179,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         )}
                         
                         {showCounterInput && (
-                          <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <div className="flex flex-col gap-2 p-3 bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-xl border border-lantern-border">
+                            <label className="text-xs font-bold text-lantern-text">
                               Counter Offer Amount (₦)
                             </label>
                             <div className="flex gap-2">
@@ -1189,19 +1189,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                                 value={counterValue}
                                 onChange={(e) => setCounterValue(e.target.value)}
                                 placeholder="Enter counter amount"
-                                className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-semibold"
+                                className="flex-1 px-3 py-1.5 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface text-lantern-text text-sm font-semibold"
                               />
                               <button
                                 disabled={offerLoading || !counterValue || parseFloat(counterValue) <= 0}
                                 onClick={() => handleRespond('counter', parseFloat(counterValue))}
-                                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-lg transition-colors"
+                                className="px-4 py-1.5 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-lg transition-colors"
                               >
                                 Send Counter
                               </button>
                               <button
                                 disabled={offerLoading}
                                 onClick={() => setShowCounterInput(false)}
-                                className="px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 text-xs font-bold rounded-lg transition-colors hover:bg-slate-50"
+                                className="px-3 py-1.5 bg-lantern-surface text-lantern-text border border-lantern-border text-xs font-bold rounded-lg transition-colors hover:bg-lantern-background"
                               >
                                 Cancel
                               </button>
@@ -1214,7 +1214,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-6 text-center">
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-4 font-medium">
+                  <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
                     There are no active offers in negotiation.
                   </p>
                   {currentUser.id === inquiry.buyer_id && (
@@ -1231,43 +1231,43 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </div>
 
             {/* Negotiation History Timeline */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex-1">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4">
+            <div className="bg-lantern-surface rounded-2xl p-5 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm flex-1">
+              <h3 className="text-sm font-bold text-lantern-text mb-4">
                 Negotiation History
               </h3>
               
               {offerHistory.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-8">
+                <p className="text-xs text-lantern-text-tertiary text-center py-8">
                   No previous offers or counter-offers recorded.
                 </p>
               ) : (
-                <div className="relative border-l border-slate-200 dark:border-slate-700 ml-3 pl-5 space-y-6">
+                <div className="relative border-l border-lantern-border ml-3 pl-5 space-y-6">
                   {offerHistory.map((offer) => {
                     return (
                       <div key={offer.id} className="relative">
                         {/* Dot indicator */}
-                        <span className={`absolute -left-[26px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-800 ${
+                        <span className={`absolute -left-[26px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-lantern-border ${
                           offer.status === 'accepted' ? 'bg-emerald-500' :
                           offer.status === 'declined' ? 'bg-red-500' :
-                          offer.status === 'withdrawn' ? 'bg-slate-400' :
+                          offer.status === 'withdrawn' ? 'bg-lantern-border' :
                           offer.status === 'countered' ? 'bg-amber-500' :
-                          'bg-indigo-500'
+                          'bg-lantern-primary'
                         }`} />
                         
                         <div>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            <span className="text-xs font-bold text-lantern-text">
                               ₦{offer.amount.toLocaleString()}
                             </span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                            <span className="text-[10px] text-lantern-text-tertiary font-medium">
                               {new Date(offer.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          <p className="text-xs text-lantern-text-secondary mt-1">
                             {offer.buyer_id === currentUser.id ? 'You' : 'Buyer'} offered ₦{offer.amount.toLocaleString()} ({offer.status})
                           </p>
                           {offer.message && (
-                            <p className="text-xs italic text-slate-400 dark:text-slate-500 mt-1">
+                            <p className="text-xs italic text-lantern-text-tertiary mt-1">
                               "{offer.message}"
                             </p>
                           )}

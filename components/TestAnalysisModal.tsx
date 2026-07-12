@@ -275,7 +275,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                             <ClockIcon className="w-5 h-5 mr-2 text-lantern-primary" aria-hidden />
                             Time Spent per Question
                         </h3>
-                        <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-300">
+                        <div className="mb-3 flex flex-wrap gap-3 text-xs text-lantern-text-secondary">
                             <div className="inline-flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-sm bg-green-500"></span>
                                 Correct

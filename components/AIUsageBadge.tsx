@@ -64,13 +64,13 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
             </svg>
             <div className="flex-1 min-w-0">
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5">
                 <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
               </div>
             </div>
             <span className={`text-[10px] font-bold ${textColor} flex-shrink-0`}>{remaining}</span>
           </div>
-          <p className="text-[9px] leading-tight text-gray-500 dark:text-gray-400 break-words">{resetLabel}</p>
+          <p className="text-[9px] leading-tight text-lantern-text-secondary break-words">{resetLabel}</p>
         </div>
       </div>
     );
@@ -87,10 +87,10 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
         </div>
         <span className={`text-xs font-bold ${textColor}`}>{remaining}/{usage.limit}</span>
       </div>
-      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+      <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5">
         <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">{resetLabel}</p>
+      <p className="text-[10px] text-lantern-text-secondary mt-1">{resetLabel}</p>
       {remaining === 0 && <p className="text-[10px] text-red-600 dark:text-red-400 mt-1 font-medium">Daily limit reached</p>}
     </div>
   );

@@ -44,8 +44,8 @@ export function DailyQuizWidget({
   if (!dailyQuiz) {
     return (
       <Card className="mb-4 p-4">
-        <Text className="font-semibold text-slate-900 dark:text-slate-100 mb-2">Daily quiz</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+        <Text className="font-semibold text-lantern-text mb-2">Daily quiz</Text>
+        <Text className="text-sm text-lantern-text-secondary mb-3">
           Quick questions from your notes to reinforce learning.
         </Text>
         <View className="flex-row flex-wrap gap-2 mb-3">
@@ -55,11 +55,11 @@ export function DailyQuizWidget({
               onPress={() => onStudyGoalChange(goal)}
               className={`px-3 py-1.5 rounded-full border ${
                 studyGoal === goal
-                  ? 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-400'
-                  : 'border-slate-200 dark:border-slate-600'
+                  ? 'bg-lantern-primary-background dark:bg-lantern-primary-dark/40 border-lantern-primary'
+                  : 'border-lantern-border'
               }`}
             >
-              <Text className="text-xs text-slate-700 dark:text-slate-300">{GOAL_LABELS[goal]}</Text>
+              <Text className="text-xs text-lantern-text">{GOAL_LABELS[goal]}</Text>
             </Pressable>
           ))}
         </View>
@@ -77,7 +77,7 @@ export function DailyQuizWidget({
           <Ionicons name="checkmark-circle" size={22} color="#10b981" />
           <Text className="font-semibold text-emerald-700 dark:text-emerald-300">Daily quiz complete!</Text>
         </View>
-        <Text className="text-sm text-slate-600 dark:text-slate-400 mt-2">Come back tomorrow for a new set.</Text>
+        <Text className="text-sm text-lantern-text-secondary mt-2">Come back tomorrow for a new set.</Text>
       </Card>
     );
   }
@@ -105,19 +105,19 @@ export function DailyQuizWidget({
   return (
     <Card className="mb-4 p-4">
       <View className="flex-row items-center justify-between mb-2">
-        <Text className="font-semibold text-slate-900 dark:text-slate-100">Daily quiz</Text>
-        <Text className="text-xs text-slate-500">{progress}% · Q{currentIndex + 1}/{dailyQuiz.questions.length}</Text>
+        <Text className="font-semibold text-lantern-text">Daily quiz</Text>
+        <Text className="text-xs text-lantern-text-secondary">{progress}% · Q{currentIndex + 1}/{dailyQuiz.questions.length}</Text>
       </View>
-      <Text className="text-sm text-slate-800 dark:text-slate-200 mb-3">{question.text}</Text>
+      <Text className="text-sm text-lantern-text mb-3">{question.text}</Text>
       <View className="gap-2">
         {(question.options || []).map(opt => (
           <Pressable
             key={opt}
             onPress={() => handleSelect(opt)}
             disabled={!!alreadyAnswered}
-            className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800"
+            className="px-3 py-2.5 rounded-xl border border-lantern-border bg-lantern-background-secondary"
           >
-            <Text className="text-sm text-slate-800 dark:text-slate-100">{opt}</Text>
+            <Text className="text-sm text-lantern-text">{opt}</Text>
           </Pressable>
         ))}
       </View>

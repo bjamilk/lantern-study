@@ -65,7 +65,7 @@ export function Drawer({
         aria-modal="true"
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
-        className={`fixed top-0 ${sideClass} h-full w-full ${maxWidthClass} flex flex-col bg-white shadow-2xl transition-transform duration-300 dark:bg-gray-800 ${panelClassName}`}
+        className={`fixed top-0 ${sideClass} h-full w-full ${maxWidthClass} flex flex-col bg-lantern-surface shadow-2xl transition-transform duration-300 dark:bg-lantern-surface ${panelClassName}`}
       >
         {children}
       </div>

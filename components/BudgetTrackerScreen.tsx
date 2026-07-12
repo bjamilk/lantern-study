@@ -195,7 +195,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+    <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
       {awardToast && (
         <div className="shrink-0 bg-emerald-600 text-white text-sm px-4 py-2 flex justify-between items-center">
           <span>{awardToast}</span>
@@ -269,28 +269,28 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
         <TabPanel value="overview" className="space-y-6">
             {/* Budget Progress */}
             {budgetLimit > 0 ? (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
+              <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-slate-700 dark:text-slate-200">Monthly Budget</h3>
+                  <h3 className="font-semibold text-lantern-text">Monthly Budget</h3>
                   {onOpenSetMonthlyPlan && (
-                    <button onClick={onOpenSetMonthlyPlan} className="text-xs text-indigo-500 hover:underline">Category Budgets</button>
+                    <button onClick={onOpenSetMonthlyPlan} className="text-xs text-lantern-primary hover:underline">Category Budgets</button>
                   )}
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">₦{monthlyExpenses.toLocaleString('en-NG')}</span>
-                  <span className="text-slate-400">/ ₦{budgetLimit.toLocaleString('en-NG')}</span>
+                  <span className="text-2xl font-bold text-lantern-text">₦{monthlyExpenses.toLocaleString('en-NG')}</span>
+                  <span className="text-lantern-text-tertiary">/ ₦{budgetLimit.toLocaleString('en-NG')}</span>
                 </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mt-3 overflow-hidden">
+                <div className="w-full bg-lantern-background-secondary rounded-full h-3 mt-3 overflow-hidden">
                   <div className={`h-3 rounded-full bg-gradient-to-r ${getProgressColor()} transition-all duration-500`} style={{ width: `${Math.min(budgetProgress, 100)}%` }} />
                 </div>
-                <p className="text-sm mt-2 text-slate-500 dark:text-slate-400">
+                <p className="text-sm mt-2 text-lantern-text-secondary">
                   {budgetProgress <= 100
                     ? `₦${(budgetLimit - monthlyExpenses).toLocaleString('en-NG')} remaining`
                     : `⚠️ ₦${(monthlyExpenses - budgetLimit).toLocaleString('en-NG')} over budget!`}
                 </p>
                 {/* Category budget bars */}
                 {budget?.categoryBudgets && Object.keys(budget.categoryBudgets).length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 space-y-2">
+                  <div className="mt-4 pt-4 border-t border-lantern-border space-y-2">
                     {Object.entries(budget.categoryBudgets).slice(0, 5).map(([catId, limit]) => {
                       const spent = monthlyTransactions.filter(t => t.type === TransactionType.EXPENSE && t.category === catId).reduce((s, t) => s + t.amount, 0);
                       const cat = getCategoryInfo(catId, TransactionType.EXPENSE);
@@ -299,10 +299,10 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                         <div key={catId}>
                           <div className="flex justify-between text-xs">
                             <span>{cat.icon} {cat.label}</span>
-                            <span className={pct > 100 ? 'text-red-500 font-medium' : 'text-slate-400'}>₦{spent.toLocaleString('en-NG')} / ₦{limit.toLocaleString('en-NG')}</span>
+                            <span className={pct > 100 ? 'text-red-500 font-medium' : 'text-lantern-text-tertiary'}>₦{spent.toLocaleString('en-NG')} / ₦{limit.toLocaleString('en-NG')}</span>
                           </div>
-                          <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 mt-1">
-                            <div className={`h-1.5 rounded-full ${pct > 100 ? 'bg-red-500' : 'bg-indigo-400'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                          <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5 mt-1">
+                            <div className={`h-1.5 rounded-full ${pct > 100 ? 'bg-red-500' : 'bg-lantern-primary-light'}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                           </div>
                         </div>
                       );
@@ -311,10 +311,10 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 )}
               </div>
             ) : (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm text-center">
+              <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm text-center">
                 <div className="text-4xl mb-2">💰</div>
-                <p className="text-slate-500 dark:text-slate-400">No budget set for this month</p>
-                <button onClick={onOpenSetBudget} className="mt-2 text-indigo-500 font-semibold hover:underline text-sm">Set your monthly budget</button>
+                <p className="text-lantern-text-secondary">No budget set for this month</p>
+                <button onClick={onOpenSetBudget} className="mt-2 text-lantern-primary font-semibold hover:underline text-sm">Set your monthly budget</button>
               </div>
             )}
 
@@ -329,18 +329,18 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
             {/* Spending by Category */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
-                <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-4">Spending Breakdown</h3>
+              <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
+                <h3 className="font-semibold text-lantern-text mb-4">Spending Breakdown</h3>
                 {expenseByCategory.length > 0 ? (
                   <div className="h-56">
                     <canvas ref={chartRef} />
                   </div>
                 ) : (
-                  <p className="text-center text-sm text-slate-400 py-8">No expenses yet this month</p>
+                  <p className="text-center text-sm text-lantern-text-tertiary py-8">No expenses yet this month</p>
                 )}
               </div>
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
-                <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3">Top Categories</h3>
+              <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
+                <h3 className="font-semibold text-lantern-text mb-3">Top Categories</h3>
                 {expenseByCategory.length > 0 ? (
                   <div className="space-y-3">
                     {expenseByCategory.slice(0, 6).map((cat) => {
@@ -350,11 +350,11 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                           <span className="text-xl">{cat.icon}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between text-sm">
-                              <span className="truncate font-medium text-slate-700 dark:text-slate-300">{cat.label}</span>
-                              <span className="text-slate-500 dark:text-slate-400 ml-2">₦{cat.amount.toLocaleString('en-NG')}</span>
+                              <span className="truncate font-medium text-lantern-text">{cat.label}</span>
+                              <span className="text-lantern-text-secondary ml-2">₦{cat.amount.toLocaleString('en-NG')}</span>
                             </div>
-                            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 mt-1">
-                              <div className="h-1.5 rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
+                            <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5 mt-1">
+                              <div className="h-1.5 rounded-full bg-lantern-primary-light" style={{ width: `${pct}%` }} />
                             </div>
                           </div>
                         </div>
@@ -362,33 +362,33 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                     })}
                   </div>
                 ) : (
-                  <p className="text-center text-sm text-slate-400 py-8">No data yet</p>
+                  <p className="text-center text-sm text-lantern-text-tertiary py-8">No data yet</p>
                 )}
               </div>
             </div>
 
             {/* Savings Goals preview */}
             {savingsGoals.length > 0 && (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
+              <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold text-slate-700 dark:text-slate-200">Savings Goals</h3>
-                  <button onClick={() => setActiveTab('goals')} className="text-xs text-indigo-500 hover:underline">View All</button>
+                  <h3 className="font-semibold text-lantern-text">Savings Goals</h3>
+                  <button onClick={() => setActiveTab('goals')} className="text-xs text-lantern-primary hover:underline">View All</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {savingsGoals.slice(0, 2).map(goal => {
                     const pct = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
                     return (
-                      <div key={goal.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-3">
+                      <div key={goal.id} className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-xl p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-xl">{goal.icon}</span>
-                          <span className="font-medium text-sm text-slate-700 dark:text-slate-300">{goal.name}</span>
+                          <span className="font-medium text-sm text-lantern-text">{goal.name}</span>
                           {goal.completedAt && <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full">Done!</span>}
                         </div>
-                        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                        <div className="flex justify-between text-xs text-lantern-text-secondary mb-1">
                           <span>₦{goal.currentAmount.toLocaleString('en-NG')}</span>
                           <span>₦{goal.targetAmount.toLocaleString('en-NG')}</span>
                         </div>
-                        <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2">
+                        <div className="w-full bg-lantern-border rounded-full h-2">
                           <div className="h-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
                         </div>
                       </div>
@@ -402,13 +402,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
         <TabPanel value="transactions" className="space-y-4">
             {/* Filter + Actions */}
             <div className="flex flex-wrap gap-2 items-center justify-between">
-              <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-xl p-1 shadow-sm">
+              <div className="flex gap-1 bg-lantern-surface rounded-xl p-1 shadow-sm">
                 {(['all', 'income', 'expense'] as const).map(f => (
                   <button key={f} onClick={() => setTxFilter(f)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                       txFilter === f
-                        ? 'bg-indigo-500 text-white'
-                        : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        ? 'bg-lantern-primary text-white'
+                        : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'
                     }`}>
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                   </button>
@@ -425,13 +425,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             </div>
 
             {/* Transaction List */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-lantern-surface rounded-2xl shadow-sm overflow-hidden">
               {filteredTransactions.length > 0 ? (
-                <ul className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                <ul className="divide-y divide-lantern-border">
                   {filteredTransactions.map(t => {
                     const cat = getCategoryInfo(t.category, t.type);
                     return (
-                      <li key={t.id} className="px-4 py-3 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                      <li key={t.id} className="px-4 py-3 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/30 transition-colors">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
                             t.type === TransactionType.INCOME
@@ -441,15 +441,15 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                             {cat.icon}
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium text-sm text-slate-800 dark:text-slate-100 truncate">{t.description}</p>
-                            <p className="text-xs text-slate-400">{cat.label} &middot; {new Date(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</p>
+                            <p className="font-medium text-sm text-lantern-text truncate">{t.description}</p>
+                            <p className="text-xs text-lantern-text-tertiary">{cat.label} &middot; {new Date(t.date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className={`font-semibold text-sm ${t.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-red-500'}`}>
                             {t.type === TransactionType.INCOME ? '+' : '-'}₦{t.amount.toLocaleString('en-NG')}
                           </span>
-                          <button onClick={() => onDeleteTransaction(t.id)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+                          <button onClick={() => onDeleteTransaction(t.id)} className="text-lantern-text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors">
                             <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
@@ -460,7 +460,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               ) : (
                 <div className="text-center py-12">
                   <div className="text-4xl mb-2">📭</div>
-                  <p className="text-slate-400 text-sm">No {txFilter !== 'all' ? txFilter : ''} transactions this month</p>
+                  <p className="text-lantern-text-tertiary text-sm">No {txFilter !== 'all' ? txFilter : ''} transactions this month</p>
                 </div>
               )}
             </div>
@@ -468,9 +468,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
         <TabPanel value="goals" className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Savings Goals</h3>
+              <h3 className="text-lg font-semibold text-lantern-text">Savings Goals</h3>
               {onOpenSavingsGoal && (
-                <button onClick={onOpenSavingsGoal} className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-indigo-600">
+                <button onClick={onOpenSavingsGoal} className="bg-lantern-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-lantern-primary">
                   <PlusCircleIcon className="w-4 h-4" /> New Goal
                 </button>
               )}
@@ -481,13 +481,13 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 {savingsGoals.map(goal => {
                   const pct = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
                   return (
-                    <div key={goal.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
+                    <div key={goal.id} className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
                       <div className="flex items-center gap-3 mb-3">
                         <span className="text-3xl">{goal.icon}</span>
                         <div>
-                          <h4 className="font-semibold text-slate-800 dark:text-slate-100">{goal.name}</h4>
+                          <h4 className="font-semibold text-lantern-text">{goal.name}</h4>
                           {goal.deadline && (
-                            <p className="text-xs text-slate-400">
+                            <p className="text-xs text-lantern-text-tertiary">
                               Due {new Date(goal.deadline).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </p>
                           )}
@@ -497,24 +497,24 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                         )}
                       </div>
                       <div className="flex justify-between text-sm mb-2">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">₦{goal.currentAmount.toLocaleString('en-NG')}</span>
-                        <span className="text-slate-400">₦{goal.targetAmount.toLocaleString('en-NG')}</span>
+                        <span className="font-medium text-lantern-text">₦{goal.currentAmount.toLocaleString('en-NG')}</span>
+                        <span className="text-lantern-text-tertiary">₦{goal.targetAmount.toLocaleString('en-NG')}</span>
                       </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3">
+                      <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-3">
                         <div className="h-3 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>
-                      <p className="text-xs text-slate-400 mt-2">{pct.toFixed(0)}% saved</p>
+                      <p className="text-xs text-lantern-text-tertiary mt-2">{pct.toFixed(0)}% saved</p>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 shadow-sm text-center">
+              <div className="bg-lantern-surface rounded-2xl p-8 shadow-sm text-center">
                 <div className="text-5xl mb-3">🎯</div>
-                <h4 className="font-semibold text-slate-700 dark:text-slate-200 mb-1">No savings goals yet</h4>
-                <p className="text-sm text-slate-400 mb-3">Set a goal to save for something special — a new phone, textbooks, or a trip!</p>
+                <h4 className="font-semibold text-lantern-text mb-1">No savings goals yet</h4>
+                <p className="text-sm text-lantern-text-tertiary mb-3">Set a goal to save for something special — a new phone, textbooks, or a trip!</p>
                 {onOpenSavingsGoal && (
-                  <button onClick={onOpenSavingsGoal} className="bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-600">
+                  <button onClick={onOpenSavingsGoal} className="bg-lantern-primary text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-lantern-primary">
                     Create Your First Goal
                   </button>
                 )}
@@ -524,23 +524,23 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             {/* Active Expense Splits */}
             {expenseSplits.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-3">Expense Splits</h3>
+                <h3 className="text-lg font-semibold text-lantern-text mb-3">Expense Splits</h3>
                 <div className="space-y-3">
                   {expenseSplits.filter(s => s.status === 'active').map(split => (
-                    <div key={split.id} className="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm">
+                    <div key={split.id} className="bg-lantern-surface rounded-2xl p-4 shadow-sm">
                       <div className="flex justify-between items-center mb-2">
                         <div>
-                          <h4 className="font-medium text-slate-800 dark:text-slate-100">{split.title}</h4>
-                          <p className="text-xs text-slate-400">{split.participants.length} people &middot; ₦{split.totalAmount.toLocaleString('en-NG')} total</p>
+                          <h4 className="font-medium text-lantern-text">{split.title}</h4>
+                          <p className="text-xs text-lantern-text-tertiary">{split.participants.length} people &middot; ₦{split.totalAmount.toLocaleString('en-NG')} total</p>
                         </div>
                         <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs px-2 py-1 rounded-full font-medium">Active</span>
                       </div>
                       <div className="flex gap-1 mt-2">
                         {split.participants.map(p => (
-                          <div key={p.userId} className={`flex-1 h-2 rounded-full ${p.paid ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-600'}`} title={`${p.userName}: ${p.paid ? 'Paid' : 'Unpaid'}`} />
+                          <div key={p.userId} className={`flex-1 h-2 rounded-full ${p.paid ? 'bg-emerald-400' : 'bg-lantern-border'}`} title={`${p.userName}: ${p.paid ? 'Paid' : 'Unpaid'}`} />
                         ))}
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-xs text-lantern-text-tertiary mt-1">
                         {split.participants.filter(p => p.paid).length}/{split.participants.length} paid
                       </p>
                     </div>
@@ -552,33 +552,33 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
         <TabPanel value="insights" className="space-y-6">
             {/* Spending Trend */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
-              <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                <ArrowTrendingUpIcon className="w-5 h-5 text-indigo-500" /> Spending Summary
+            <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
+              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
+                <ArrowTrendingUpIcon className="w-5 h-5 text-lantern-primary" /> Spending Summary
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-slate-800 dark:text-slate-100">{monthlyTransactions.length}</p>
-                  <p className="text-xs text-slate-400">Transactions</p>
+                  <p className="text-2xl font-bold text-lantern-text">{monthlyTransactions.length}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Transactions</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-red-500">₦{monthlyExpenses > 0 ? Math.round(monthlyExpenses / Math.max(monthlyTransactions.filter(t => t.type === TransactionType.EXPENSE).length, 1)).toLocaleString('en-NG') : '0'}</p>
-                  <p className="text-xs text-slate-400">Avg Expense</p>
+                  <p className="text-xs text-lantern-text-tertiary">Avg Expense</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-indigo-500">{expenseByCategory.length}</p>
-                  <p className="text-xs text-slate-400">Categories</p>
+                  <p className="text-2xl font-bold text-lantern-primary">{expenseByCategory.length}</p>
+                  <p className="text-xs text-lantern-text-tertiary">Categories</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-amber-500">{savingsGoals.filter(g => !g.completedAt).length}</p>
-                  <p className="text-xs text-slate-400">Active Goals</p>
+                  <p className="text-xs text-lantern-text-tertiary">Active Goals</p>
                 </div>
               </div>
             </div>
 
             {/* Top category this month */}
             {expenseByCategory.length > 0 && (
-              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-5 text-white">
+              <div className="bg-gradient-to-r from-lantern-primary to-purple-600 rounded-2xl p-5 text-white">
                 <p className="text-white/70 text-xs mb-1">Biggest expense category</p>
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{expenseByCategory[0].icon}</span>
@@ -603,17 +603,17 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
 
             {/* Financial Tips */}
             <div>
-              <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+              <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
                 <LightBulbIcon className="w-5 h-5 text-amber-500" /> Money Tips for Students
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {FINANCIAL_TIPS.map(tip => (
-                  <div key={tip.id} className="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div key={tip.id} className="bg-lantern-surface rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-start gap-3">
                       <span className="text-2xl">{tip.icon}</span>
                       <div>
-                        <h4 className="font-medium text-sm text-slate-800 dark:text-slate-100">{tip.title}</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{tip.content}</p>
+                        <h4 className="font-medium text-sm text-lantern-text">{tip.title}</h4>
+                        <p className="text-xs text-lantern-text-secondary mt-0.5 leading-relaxed">{tip.content}</p>
                       </div>
                     </div>
                   </div>

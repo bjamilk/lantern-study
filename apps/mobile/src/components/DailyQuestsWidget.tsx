@@ -23,13 +23,13 @@ export function DailyQuestsWidget({ quests, streak }: Props) {
   return (
     <Card className="mb-4 p-4">
       <View className="flex-row items-center justify-between mb-3">
-        <Text className="font-semibold text-slate-900 dark:text-slate-100">Daily Quests</Text>
+        <Text className="font-semibold text-lantern-text">Daily Quests</Text>
         <View className="flex-row items-center gap-1">
           <Ionicons name="flame" size={16} color="#f97316" />
           <Text className="text-sm font-bold text-orange-600">{streak} day streak</Text>
         </View>
       </View>
-      <Text className="text-xs text-slate-500 mb-3">
+      <Text className="text-xs text-lantern-text-secondary mb-3">
         {completedCount}/{quests.length} completed today
       </Text>
       <View className="gap-3">
@@ -45,18 +45,18 @@ export function DailyQuestsWidget({ quests, streak }: Props) {
               <View className="flex-1">
                 <View className="flex-row justify-between mb-1">
                   <Text
-                    className={`text-sm ${quest.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}
+                    className={`text-sm ${quest.completed ? 'text-lantern-text-tertiary line-through' : 'text-lantern-text'}`}
                     numberOfLines={1}
                   >
                     {QUEST_LABELS[quest.quest_type] || quest.quest_type}
                   </Text>
-                  <Text className="text-xs text-slate-400">
+                  <Text className="text-xs text-lantern-text-tertiary">
                     {quest.progress_count}/{quest.target_count}
                   </Text>
                 </View>
-                <View className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                <View className="h-1.5 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full overflow-hidden">
                   <View
-                    className={`h-full rounded-full ${quest.completed ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                    className={`h-full rounded-full ${quest.completed ? 'bg-emerald-500' : 'bg-lantern-primary'}`}
                     style={{ width: `${pct}%` }}
                   />
                 </View>

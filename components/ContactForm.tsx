@@ -87,7 +87,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4" noValidate>
       <p className="text-sm text-lantern-text-secondary">
         Send a message below and we will reply by email. You can also reach us directly at{' '}
-        <a href={buildSupportMailtoUrl()} className="text-indigo-600 dark:text-indigo-400 underline">
+        <a href={buildSupportMailtoUrl()} className="text-lantern-primary underline">
           {SUPPORT_EMAIL}
         </a>
         .
@@ -196,7 +196,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       {showMailtoFallback && (
         <a
           href={mailtoUrl}
-          className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-200 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 rounded-md"
+          className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2 text-sm font-medium text-lantern-primary dark:text-lantern-primary-light bg-lantern-primary-background hover:bg-lantern-primary-background dark:hover:bg-lantern-primary-dark/50 border border-lantern-primary/30 dark:border-lantern-primary/30 rounded-md"
         >
           Open in email app ({SUPPORT_EMAIL})
         </a>

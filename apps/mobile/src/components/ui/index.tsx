@@ -107,7 +107,7 @@ export function ScreenHeader({
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
         <Text className="text-2xl font-bold text-lantern-text tracking-tight">{title}</Text>
-        {subtitle ? <Text className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</Text> : null}
+        {subtitle ? <Text className="text-sm text-lantern-text-secondary mt-0.5">{subtitle}</Text> : null}
       </View>
       {right}
     </View>
@@ -119,9 +119,9 @@ export function Avatar({ name, size = 40 }: { name?: string; size?: number }) {
   return (
     <View
       style={{ width: size, height: size }}
-      className="rounded-full bg-indigo-100 dark:bg-indigo-900/40 items-center justify-center"
+      className="rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center"
     >
-      <Text className="font-semibold text-indigo-600 dark:text-indigo-300">{initial}</Text>
+      <Text className="font-semibold text-lantern-primary">{initial}</Text>
     </View>
   );
 }
@@ -136,12 +136,12 @@ export function Badge({ count }: { count: number }) {
 }
 
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <View className={`rounded-xl bg-slate-200 dark:bg-slate-700 animate-pulse ${className}`} />;
+  return <View className={`rounded-xl bg-lantern-background-secondary animate-pulse ${className}`} />;
 }
 
 export function SkeletonCard() {
   return (
-    <View className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 mb-3">
+    <View className="bg-lantern-surface rounded-2xl border border-lantern-border p-4 mb-3">
       <Skeleton className="h-4 w-2/3 mb-3" />
       <Skeleton className="h-3 w-full mb-2" />
       <Skeleton className="h-3 w-5/6" />
@@ -152,7 +152,7 @@ export function SkeletonCard() {
 const toastBg: Record<string, string> = {
   success: 'bg-emerald-600',
   error: 'bg-red-600',
-  info: 'bg-indigo-600',
+  info: 'bg-lantern-primary',
 };
 
 export function ToastHost() {
@@ -182,16 +182,16 @@ export function ConfirmSheetHost() {
   return (
     <Modal transparent animationType="fade" visible={open} onRequestClose={handleCancel}>
       <View className="flex-1 bg-black/50 justify-end">
-        <View className="bg-white dark:bg-slate-800 rounded-t-3xl px-5 pt-5 pb-8">
-          <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{options.title}</Text>
-          <Text className="text-sm text-slate-600 dark:text-slate-300 mb-5">{options.message}</Text>
+        <View className="bg-lantern-surface rounded-t-3xl px-5 pt-5 pb-8">
+          <Text className="text-lg font-bold text-lantern-text mb-2">{options.title}</Text>
+          <Text className="text-sm text-lantern-text-secondary mb-5">{options.message}</Text>
           <View className="flex-row gap-3">
-            <Pressable onPress={handleCancel} className="flex-1 py-3 rounded-2xl bg-slate-100 dark:bg-slate-700 items-center">
-              <Text className="font-semibold text-slate-800 dark:text-slate-100">{options.cancelLabel || 'Cancel'}</Text>
+            <Pressable onPress={handleCancel} className="flex-1 py-3 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center">
+              <Text className="font-semibold text-lantern-text">{options.cancelLabel || 'Cancel'}</Text>
             </Pressable>
             <Pressable
               onPress={handleConfirm}
-              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-indigo-500'}`}
+              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-lantern-primary'}`}
             >
               <Text className="font-semibold text-white">{options.confirmLabel || 'Confirm'}</Text>
             </Pressable>

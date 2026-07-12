@@ -13,7 +13,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   width,
   height,
 }) => {
-  const base = 'animate-pulse bg-lantern-background-secondary dark:bg-slate-700';
+  const base = 'animate-pulse bg-lantern-background-secondary dark:bg-lantern-surface-secondary';
   const shape =
     variant === 'circular'
       ? 'rounded-full'

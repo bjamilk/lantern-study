@@ -119,11 +119,11 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       case 'negotiating':
         return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300';
       case 'closed':
-        return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+        return 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary';
       case 'purchased':
         return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
       default:
-        return 'bg-slate-100 text-slate-700';
+        return 'bg-lantern-background-secondary text-lantern-text';
     }
   };
 
@@ -143,9 +143,9 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
   };
 
   const inquiryStatusFilters = (
-    <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-2 sm:py-3">
+    <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-2 sm:py-3">
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-        <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 flex-shrink-0">Status:</span>
+        <span className="text-xs sm:text-sm text-lantern-text-secondary flex-shrink-0">Status:</span>
         <div className="flex gap-1.5 sm:gap-2">
           {['', 'open', 'negotiating', 'closed', 'purchased'].map((status) => (
             <button
@@ -153,8 +153,8 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
               onClick={() => setStatusFilter(status)}
               className={`flex-shrink-0 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-full transition-colors ${
                 statusFilter === status
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                  ? 'bg-lantern-primary text-white'
+                  : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-background-secondary'
               }`}
             >
               {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'All'}
@@ -167,15 +167,15 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
 
   const inquiriesPanelBody = loading ? (
     <div className="flex items-center justify-center py-12">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lantern-primary"></div>
     </div>
   ) : inquiries.length === 0 ? (
     <div className="text-center py-12">
-      <ChatBubbleLeftIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-      <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+      <ChatBubbleLeftIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
+      <h3 className="text-xl font-semibold text-lantern-text mb-2">
         No inquiries {statusFilter ? `with status "${statusFilter}"` : ''}
       </h3>
-      <p className="text-slate-600 dark:text-slate-400">
+      <p className="text-lantern-text-secondary">
         {activeTab === 'seller'
           ? "You haven't received any inquiries yet."
           : "You haven't made any inquiries yet."}
@@ -186,12 +186,12 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       {inquiries.map(inquiry => (
         <div
           key={inquiry.id}
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"
+          className="bg-lantern-surface rounded-xl shadow-sm border border-lantern-border overflow-hidden"
         >
           <div className="flex flex-col md:flex-row">
             <div
               onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
-              className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-slate-100 dark:bg-slate-700 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+              className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
             >
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
                 <img
@@ -202,7 +202,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <ShoppingBagIcon className="w-12 h-12 text-slate-400" />
+                  <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
                 </div>
               )}
             </div>
@@ -215,16 +215,16 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                   </span>
                   <h3
                     onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
-                    className="text-lg font-semibold text-slate-800 dark:text-slate-200 hover:text-indigo-600 cursor-pointer"
+                    className="text-lg font-semibold text-lantern-text hover:text-lantern-primary cursor-pointer"
                   >
                     {inquiry.listing?.title || 'Listing unavailable'}
                   </h3>
                   {inquiry.listing?.price && (
-                    <p className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                    <p className="text-lantern-primary font-semibold">
                       ₦{inquiry.listing.price.toLocaleString()}
                     </p>
                   )}
-                  <div className="flex items-center mt-3 text-sm text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center mt-3 text-sm text-lantern-text-secondary">
                     <UserCircleIcon className="w-5 h-5 mr-2" />
                     <span>
                       {activeTab === 'seller'
@@ -233,18 +233,18 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                     </span>
                   </div>
                   {inquiry.initial_message && (
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 line-clamp-2 italic">
+                    <p className="text-sm text-lantern-text-secondary mt-2 line-clamp-2 italic">
                       "{inquiry.initial_message}"
                     </p>
                   )}
-                  <p className="text-xs text-slate-500 mt-2">
+                  <p className="text-xs text-lantern-text-secondary mt-2">
                     {new Date(inquiry.created_at).toLocaleDateString()} at {new Date(inquiry.created_at).toLocaleTimeString()}
                   </p>
                 </div>
                 <div className="flex flex-row sm:flex-col gap-2 mt-3 sm:mt-0 sm:ml-4">
                   <button
                     onClick={() => handleOpenConversation(inquiry)}
-                    className="px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors"
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors"
                   >
                     <ChatBubbleLeftIcon className="w-4 h-4 mr-1 sm:mr-2" />
                     Chat
@@ -261,7 +261,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                   {inquiry.status !== 'purchased' && inquiry.status !== 'closed' && (
                     <button
                       onClick={() => handleStatusUpdate(inquiry.id, 'closed')}
-                      className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                      className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary rounded-lg text-xs sm:text-sm font-medium transition-colors"
                     >
                       Close
                     </button>
@@ -276,22 +276,22 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
   );
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col bg-lantern-background">
       {/* Header */}
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
+      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 sm:py-4">
         <div className="flex items-center">
           <button
             onClick={onBack}
-            className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex-shrink-0"
+            className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0"
           >
-            <ArrowLeftIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-slate-200 flex items-center">
-              <ChatBubbleLeftIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-indigo-600 flex-shrink-0" />
+            <h1 className="text-lg sm:text-2xl font-bold text-lantern-text flex items-center">
+              <ChatBubbleLeftIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-lantern-primary flex-shrink-0" />
               Inquiries
             </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
+            <p className="text-lantern-text-secondary mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
               {activeTab === 'seller' 
                 ? 'Manage inquiries from potential buyers'
                 : activeTab === 'buyer'
@@ -304,7 +304,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'seller' | 'buyer' | 'offers')} aria-label="Inquiry views" className="flex-1 flex flex-col min-h-0">
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6">
+      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6">
           <TabList className="space-x-0.5 sm:space-x-1 !border-0">
             <Tab value="seller" index={0} className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold">
               <span className="sm:hidden">Received</span>
@@ -338,13 +338,13 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
       <TabPanel value="offers" className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lantern-primary"></div>
             </div>
           ) : offers.length === 0 ? (
             <div className="text-center py-12">
-              <CurrencyDollarIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-              <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">No offers yet</h3>
-              <p className="text-slate-600 dark:text-slate-400">
+              <CurrencyDollarIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
+              <h3 className="text-xl font-semibold text-lantern-text mb-2">No offers yet</h3>
+              <p className="text-lantern-text-secondary">
                 Price offers you've sent or received will appear here.
               </p>
             </div>
@@ -358,13 +358,13 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                 return (
                   <div
                     key={offer.id}
-                    className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"
+                    className="bg-lantern-surface rounded-xl shadow-sm border border-lantern-border overflow-hidden"
                   >
                     <div className="flex flex-col md:flex-row">
                       {/* Listing Preview */}
                       <div
                         onClick={() => offer.listing && handleViewListing(offer.listing.id)}
-                        className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-slate-100 dark:bg-slate-700 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                        className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
                       >
                         {offer.listing?.images && (offer.listing.images as any[]).length > 0 ? (
                           <img
@@ -375,7 +375,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <ShoppingBagIcon className="w-12 h-12 text-slate-400" />
+                            <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
                           </div>
                         )}
                       </div>
@@ -391,17 +391,17 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                               offer.status === 'declined' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
                               offer.status === 'countered' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' :
                               offer.status === 'expired' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' :
-                              offer.status === 'withdrawn' ? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
-                              'bg-slate-100 text-slate-700'
+                              offer.status === 'withdrawn' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary' :
+                              'bg-lantern-background-secondary text-lantern-text'
                             }`}>
                               {isExpired ? 'Expired' : offer.status}
                             </span>
-                            <span className="ml-2 text-xs text-slate-400">{isBuyer ? 'You offered' : 'Received from'} {otherParty?.name || 'Unknown'}</span>
+                            <span className="ml-2 text-xs text-lantern-text-tertiary">{isBuyer ? 'You offered' : 'Received from'} {otherParty?.name || 'Unknown'}</span>
 
                             {/* Listing Title */}
                             <h3
                               onClick={() => offer.listing && handleViewListing(offer.listing.id)}
-                              className="text-lg font-semibold text-slate-800 dark:text-slate-200 hover:text-indigo-600 cursor-pointer"
+                              className="text-lg font-semibold text-lantern-text hover:text-lantern-primary cursor-pointer"
                             >
                               {offer.listing?.title || 'Listing unavailable'}
                             </h3>
@@ -412,7 +412,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                 ₦{Number(offer.amount).toLocaleString()}
                               </span>
                               {offer.listing?.price && (
-                                <span className="text-sm text-slate-400 line-through">
+                                <span className="text-sm text-lantern-text-tertiary line-through">
                                   ₦{Number(offer.listing.price).toLocaleString()}
                                 </span>
                               )}
@@ -420,7 +420,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
 
                             {/* Message */}
                             {offer.message && (
-                              <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 italic">"{offer.message}"</p>
+                              <p className="text-sm text-lantern-text-secondary mt-2 italic">"{offer.message}"</p>
                             )}
 
                             {offer.parent_offer_id && (
@@ -437,7 +437,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                               </p>
                             )}
 
-                            <p className="text-xs text-slate-500 mt-2">
+                            <p className="text-xs text-lantern-text-secondary mt-2">
                               {new Date(offer.created_at).toLocaleDateString()} at {new Date(offer.created_at).toLocaleTimeString()}
                             </p>
                           </div>
@@ -469,7 +469,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                       placeholder="Counter ₦"
                                       value={counterAmounts[offer.id] || ''}
                                       onChange={(e) => setCounterAmounts(prev => ({ ...prev, [offer.id]: e.target.value }))}
-                                      className="w-20 sm:w-24 px-2 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                                      className="w-20 sm:w-24 px-2 py-1.5 sm:py-2 border border-lantern-border rounded-lg text-xs bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
                                     />
                                     <button
                                       onClick={() => handleOfferAction(offer.id, 'counter')}
@@ -484,7 +484,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                 <button
                                   onClick={() => handleOfferAction(offer.id, 'withdraw')}
                                   disabled={respondingTo === offer.id}
-                                  className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs sm:text-sm font-medium transition-colors disabled:opacity-50"
+                                  className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary rounded-lg text-xs sm:text-sm font-medium transition-colors disabled:opacity-50"
                                 >
                                   Withdraw
                                 </button>

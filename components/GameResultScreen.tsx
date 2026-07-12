@@ -120,19 +120,19 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
   };
 
   return (
-    <div className="relative flex-1 flex flex-col p-4 md:p-6 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 overflow-y-auto items-center justify-center min-h-screen">
+    <div className="relative flex-1 flex flex-col p-4 md:p-6 bg-lantern-background text-lantern-text overflow-y-auto items-center justify-center min-h-screen">
       {/* Background Confetti Canvas */}
       {isWinner && !isDraw && (
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />
       )}
 
-      <div className="w-full max-w-2xl bg-white dark:bg-slate-800 p-6 md:p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 text-center z-10">
+      <div className="w-full max-w-2xl bg-lantern-surface p-6 md:p-8 rounded-2xl shadow-xl border border-lantern-border text-center z-10">
         
         {/* Animated Headline */}
         <h1 className={`text-4xl md:text-5xl font-extrabold tracking-tight mb-2 ${getResultColor()}`}>
           {getResultText()}
         </h1>
-        <p className="text-slate-600 dark:text-slate-450 text-md md:text-lg mb-8 font-medium">
+        <p className="text-lantern-text-secondary dark:text-lantern-text-secondary text-md md:text-lg mb-8 font-medium">
           {getResultSubtitle()}
         </p>
 
@@ -144,7 +144,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
               {/* User Pedestal */}
               <div className="flex flex-col items-center w-28">
                 <div className="relative mb-2">
-                  <div className="w-14 h-14 rounded-full border-4 border-indigo-400 overflow-hidden bg-slate-100 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full border-4 border-lantern-primary overflow-hidden bg-lantern-background-secondary flex items-center justify-center">
                     <img 
                       src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=6366f1&color=fff&size=56`} 
                       alt={currentUser.name} 
@@ -153,7 +153,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                     />
                   </div>
                 </div>
-                <div className="bg-gradient-to-t from-indigo-500 to-indigo-400 w-full h-36 rounded-t-xl flex flex-col justify-between p-3 text-white shadow-md">
+                <div className="bg-gradient-to-t from-lantern-primary to-lantern-primary-light w-full h-36 rounded-t-xl flex flex-col justify-between p-3 text-white shadow-md">
                   <span className="font-extrabold text-2xl">1</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{currentUser.name}</span>
@@ -165,7 +165,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
               {/* Opponent Pedestal */}
               <div className="flex flex-col items-center w-28">
                 <div className="relative mb-2">
-                  <div className="w-14 h-14 rounded-full border-4 border-indigo-400 overflow-hidden bg-slate-100 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full border-4 border-lantern-primary overflow-hidden bg-lantern-background-secondary flex items-center justify-center">
                     <img 
                       src={opponent.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(opponent.name)}&background=ef4444&color=fff&size=56`} 
                       alt={opponent.name} 
@@ -174,7 +174,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                     />
                   </div>
                 </div>
-                <div className="bg-gradient-to-t from-indigo-500 to-indigo-400 w-full h-36 rounded-t-xl flex flex-col justify-between p-3 text-white shadow-md">
+                <div className="bg-gradient-to-t from-lantern-primary to-lantern-primary-light w-full h-36 rounded-t-xl flex flex-col justify-between p-3 text-white shadow-md">
                   <span className="font-extrabold text-2xl">1</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{opponent.name}</span>
@@ -189,7 +189,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
               {/* 2nd Place (Loser) Pedestal */}
               <div className="flex flex-col items-center w-26">
                 <div className="relative mb-2">
-                  <div className="w-12 h-12 rounded-full border-4 border-slate-300 overflow-hidden bg-slate-100 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full border-4 border-lantern-border overflow-hidden bg-lantern-background-secondary flex items-center justify-center">
                     <img 
                       src={(!isWinner ? currentUser : opponent).avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent((!isWinner ? currentUser : opponent).name)}&background=cbd5e1&color=334155&size=48`} 
                       alt={(!isWinner ? currentUser : opponent).name} 
@@ -198,7 +198,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                     />
                   </div>
                 </div>
-                <div className="bg-gradient-to-t from-slate-400 to-slate-300 w-full h-32 rounded-t-xl flex flex-col justify-between p-3 text-slate-800 shadow-md">
+                <div className="bg-gradient-to-t from-lantern-border to-lantern-background-secondary w-full h-32 rounded-t-xl flex flex-col justify-between p-3 text-lantern-text shadow-md">
                   <span className="font-extrabold text-xl">2</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{(!isWinner ? currentUser : opponent).name}</span>
@@ -211,7 +211,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
               <div className="flex flex-col items-center w-28">
                 <div className="relative mb-2">
                   <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-2xl animate-bounce">👑</span>
-                  <div className="w-16 h-16 rounded-full border-4 border-amber-400 overflow-hidden bg-slate-105 flex items-center justify-center ring-4 ring-amber-350 animate-pulse">
+                  <div className="w-16 h-16 rounded-full border-4 border-amber-400 overflow-hidden bg-lantern-background-secondary flex items-center justify-center ring-4 ring-amber-400 animate-pulse">
                     <img 
                       src={(isWinner ? currentUser : opponent).avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent((isWinner ? currentUser : opponent).name)}&background=f59e0b&color=fff&size=64`} 
                       alt={(isWinner ? currentUser : opponent).name} 
@@ -233,13 +233,13 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
         </div>
 
         {/* Detailed Game Stats Grid */}
-        <div className="grid grid-cols-2 gap-6 border-t border-b border-slate-200 dark:border-slate-700 py-6 mb-8 text-left text-sm font-medium">
+        <div className="grid grid-cols-2 gap-6 border-t border-b border-lantern-border py-6 mb-8 text-left text-sm font-medium">
           {/* Your Stats */}
           <div className="space-y-3">
-            <h3 className="font-bold text-md text-blue-600 dark:text-blue-400 flex items-center">
+            <h3 className="font-bold text-md text-lantern-primary dark:text-blue-400 flex items-center">
               <span>{currentUser.name} (You)</span>
             </h3>
-            <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
+            <ul className="space-y-1.5 text-lantern-text-secondary">
               <li><span className="font-bold">Correct Answers:</span> {session.userCorrectAnswers || 0} / {session.questions.length}</li>
               <li><span className="font-bold">Total Points:</span> {session.userScore} pts</li>
               <li><span className="font-bold">Total Time:</span> {session.userTime.toFixed(1)}s</li>
@@ -249,10 +249,10 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
 
           {/* Opponent Stats */}
           <div className="space-y-3">
-            <h3 className="font-bold text-md text-slate-700 dark:text-slate-300">
+            <h3 className="font-bold text-md text-lantern-text">
               <span>{opponent.name}</span>
             </h3>
-            <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
+            <ul className="space-y-1.5 text-lantern-text-secondary">
               <li><span className="font-bold">Correct Answers:</span> {session.opponentCorrectAnswers || 0} / {session.questions.length}</li>
               <li><span className="font-bold">Total Points:</span> {session.opponentScore} pts</li>
               <li><span className="font-bold">Total Time:</span> {session.opponentTime.toFixed(1)}s</li>
@@ -272,7 +272,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
           </button>
           <button
             onClick={onExit}
-            className="w-full sm:w-auto px-6 py-3.5 bg-slate-500 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
+            className="w-full sm:w-auto px-6 py-3.5 bg-lantern-border hover:bg-lantern-border text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
           >
             <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-2" />
             Exit Game

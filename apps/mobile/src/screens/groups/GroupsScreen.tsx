@@ -241,7 +241,7 @@ export function GroupsScreen({ navigation }: Props) {
   };
     
     return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader
         title="Chats"
         subtitle={`${groups.length} group${groups.length !== 1 ? 's' : ''}`}
@@ -274,13 +274,13 @@ export function GroupsScreen({ navigation }: Props) {
           }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
-              <View className="w-16 h-16 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 items-center justify-center mb-4">
+              <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center mb-4">
                 <Ionicons name="people" size={32} color="#6366f1" />
               </View>
-              <Text className="text-base font-semibold text-slate-700 dark:text-slate-200 mb-1">
+              <Text className="text-base font-semibold text-lantern-text mb-1">
                 No conversations yet
               </Text>
-              <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+              <Text className="text-sm text-lantern-text-secondary text-center mb-6">
                 Join or create a group to start collaborating.
               </Text>
               <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>

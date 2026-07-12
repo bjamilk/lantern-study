@@ -78,7 +78,7 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
   if (!current && phase !== 'done') {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <p className="text-slate-500">No cards available for Learn mode.</p>
+        <p className="text-lantern-text-secondary">No cards available for Learn mode.</p>
         <Button onClick={onExit} className="ml-4">Exit</Button>
       </div>
     );
@@ -86,30 +86,30 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
 
   if (phase === 'done') {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center p-8 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
+      <div className={`flex-1 flex flex-col items-center justify-center p-8 ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
         <CheckCircleIcon className="w-16 h-16 text-emerald-500 mb-4" />
         <h2 className="text-2xl font-bold mb-2">Session complete!</h2>
-        <p className="text-slate-500 mb-6">Mastered {mastered} of {total} cards</p>
+        <p className="text-lantern-text-secondary mb-6">Mastered {mastered} of {total} cards</p>
         <Button onClick={onExit}>Done</Button>
       </div>
     );
   }
 
   return (
-    <div className={`flex-1 flex flex-col ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+    <div className={`flex-1 flex flex-col ${isDark ? 'bg-lantern-background text-lantern-text' : 'bg-lantern-background text-lantern-text'}`}>
+      <div className="flex items-center justify-between p-4 border-b border-lantern-border">
         <div>
           <h1 className="font-bold">Learn — {deckName}</h1>
-          <p className="text-sm text-slate-500">{progress}/{total} mastered</p>
+          <p className="text-sm text-lantern-text-secondary">{progress}/{total} mastered</p>
         </div>
-        <button onClick={onExit} className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+        <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <XMarkIcon className="w-5 h-5" />
         </button>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center p-6 max-w-lg mx-auto w-full">
-        <div className={`w-full p-6 rounded-2xl border mb-6 text-center ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
-          <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">Question</p>
+        <div className={`w-full p-6 rounded-2xl border mb-6 text-center ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-surface border-lantern-border shadow-sm'}`}>
+          <p className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-2">Question</p>
           <p className="text-xl font-semibold">{current?.front || current?.clozeText}</p>
         </div>
 
@@ -124,14 +124,14 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
                   feedback === 'correct' && opt === (current?.back || current?.clozeText)
                     ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                     : feedback === 'wrong'
-                    ? 'border-slate-200 dark:border-slate-600 opacity-60'
-                    : `${isDark ? 'border-slate-600 bg-slate-800 hover:border-indigo-400' : 'border-slate-200 bg-white hover:border-indigo-300'}`
+                    ? 'border-lantern-border opacity-60'
+                    : `${isDark ? 'border-lantern-border bg-lantern-surface hover:border-lantern-primary' : 'border-lantern-border bg-lantern-surface hover:border-lantern-primary/30'}`
                 }`}
               >
                 {opt}
               </button>
             ))}
-            <button onClick={() => setPhase('typed')} className="w-full text-sm text-indigo-500 mt-2">
+            <button onClick={() => setPhase('typed')} className="w-full text-sm text-lantern-primary mt-2">
               Switch to typed answer →
             </button>
           </div>
@@ -145,13 +145,13 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
               onChange={(e) => setTypedAnswer(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleTypedSubmit()}
               placeholder="Type your answer..."
-              className={`w-full px-4 py-3 rounded-xl border text-lg ${isDark ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-300'}`}
+              className={`w-full px-4 py-3 rounded-xl border text-lg ${isDark ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}
               autoFocus
             />
             <Button onClick={handleTypedSubmit} disabled={!typedAnswer.trim()} className="w-full">
               Check answer
             </Button>
-            <button onClick={() => setPhase('mcq')} className="w-full text-sm text-slate-400">
+            <button onClick={() => setPhase('mcq')} className="w-full text-sm text-lantern-text-tertiary">
               ← Back to multiple choice
             </button>
           </div>

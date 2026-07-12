@@ -667,19 +667,19 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
 
         <div className="overflow-y-auto flex-1 px-6 py-4 bg-lantern-surface">
         {decks.length === 0 ? (
-            <div className="text-center p-4 border-2 border-dashed rounded-lg border-gray-300 dark:border-gray-600">
-                <p className="text-gray-600 dark:text-gray-400">You need to create a deck first before adding flashcards.</p>
+            <div className="text-center p-4 border-2 border-dashed rounded-lg border-lantern-border">
+                <p className="text-lantern-text-secondary">You need to create a deck first before adding flashcards.</p>
             </div>
         ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="cardType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Card Type</label>
+                    <label htmlFor="cardType" className="block text-sm font-medium text-lantern-text mb-1">Card Type</label>
                     <select
                       id="cardType"
                       value={type}
                       onChange={e => setType(e.target.value as FlashcardType)}
-                      className="w-full p-2 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600 border-gray-300 text-gray-900 dark:text-gray-200"
+                      className="w-full p-2 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text"
                     >
                       <option value={FlashcardType.BASIC}>Basic</option>
                       <option value={FlashcardType.CLOZE}>Cloze</option>
@@ -690,8 +690,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                 {type === FlashcardType.BASIC ? (
                     <>
                         <div>
-                            <label htmlFor="cardFront" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Front</label>
-                            <div className="mt-2 flex flex-wrap gap-2 items-center text-xs text-gray-600 dark:text-gray-400">
+                            <label htmlFor="cardFront" className="block text-sm font-medium text-lantern-text">Front</label>
+                            <div className="mt-2 flex flex-wrap gap-2 items-center text-xs text-lantern-text-secondary">
                               <button
                                 type="button"
                                 onClick={() => fileInputRef.current?.click()}
@@ -714,10 +714,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                             </div>
                             {imageUrl && (
                               <div className="mt-2">
-                                <div className="text-xs text-gray-500 dark:text-gray-400">Preview:</div>
+                                <div className="text-xs text-lantern-text-secondary">Preview:</div>
                                 <div
                                   ref={imageContainerRef}
-                                  className="relative mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair select-none touch-none"
+                                  className="relative mt-1 w-full rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
                                   onMouseDown={handlePointerDown}
                                   onMouseMove={handlePointerMove}
                                   onMouseUp={handleFinishDrawing}
@@ -824,13 +824,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
 
                                 {type === FlashcardType.IMAGE_OCCLUSION && (
                                   <div className="mt-2">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-lantern-text-secondary">
                                       <div>
                                         <span className="font-medium">Mask type:</span>
                                         <select
                                           value={occlusionType}
                                           onChange={e => setOcclusionType(e.target.value as OcclusionType)}
-                                          className="ml-2 px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"
+                                          className="ml-2 px-2 py-1 rounded-md border border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"
                                         >
                                           <option value="rectangles">Rectangle</option>
                                           <option value="circles">Circle</option>
@@ -839,13 +839,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                         </select>
                                       </div>
                                       <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">Click+drag to draw. Drag shape to move, drag near edge to resize.</span>
-                                        <button type="button" onClick={clearOcclusions} className="text-blue-600 dark:text-blue-400 hover:underline">Clear</button>
+                                        <span className="text-xs text-lantern-text-secondary">Click+drag to draw. Drag shape to move, drag near edge to resize.</span>
+                                        <button type="button" onClick={clearOcclusions} className="text-lantern-primary dark:text-blue-400 hover:underline">Clear</button>
                                       </div>
                                     </div>
 
                                     {occlusionData?.type === 'rectangles' && occlusionData.rectangles?.length ? (
-                                      <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                      <div className="mt-2 space-y-1 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                         {occlusionData.rectangles.map((rect, idx) => (
                                           <div key={idx} className="flex justify-between items-center">
                                             <span>Box {idx + 1}</span>
@@ -862,7 +862,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                     ) : null}
 
                                     {occlusionData?.type === 'circles' && occlusionData.circles?.length ? (
-                                      <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                      <div className="mt-2 space-y-1 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                         {occlusionData.circles.map((circle, idx) => (
                                           <div key={idx} className="flex justify-between items-center">
                                             <span>Circle {idx + 1}</span>
@@ -879,14 +879,14 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                     ) : null}
 
                                     {occlusionData?.type === 'freeform' && occlusionData.freeform?.points?.length ? (
-                                      <div className="mt-2 text-xs text-gray-600 dark:text-gray-300 flex justify-between items-center">
+                                      <div className="mt-2 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary flex justify-between items-center">
                                         <span>Freeform mask</span>
                                         <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('freeform'))} className="text-red-600 dark:text-red-400 hover:underline">Clear</button>
                                       </div>
                                     ) : null}
 
                                     {occlusionData?.type === 'blur' && occlusionData.blur ? (
-                                      <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                                      <div className="mt-2 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                         <div className="flex justify-between items-center">
                                           <span>Blur masks</span>
                                           <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('blur'))} className="text-red-600 dark:text-red-400 hover:underline">Clear</button>
@@ -897,13 +897,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                               <button
                                                 type="button"
                                                 onClick={() => setActiveShapeIndex(idx)}
-                                                className={`text-left flex-1 text-xs ${activeShapeIndex === idx ? 'font-semibold text-blue-600 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300'}`}
+                                                className={`text-left flex-1 text-xs ${activeShapeIndex === idx ? 'font-semibold text-lantern-primary dark:text-blue-300' : 'text-lantern-text-secondary dark:text-lantern-text-tertiary'}`}
                                               >
                                                 Blur {idx + 1}
                                               </button>
                                               <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.radius * 100)}%</span>
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.opacity * 100)}%</span>
+                                                <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
+                                                <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
                                                 <button
                                                   type="button"
                                                   onClick={() => removeOcclusionShape(idx)}
@@ -916,7 +916,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                           ))}
                                         </div>
                                         {activeShapeIndex !== null && occlusionData.blur[activeShapeIndex] && (
-                                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                             <div className="flex items-center gap-2">
                                               <span className="font-medium">Radius</span>
                                               <input
@@ -951,11 +951,11 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                 )}
                               </div>
                             )}
-                            <textarea ref={frontRef} id="cardFront" value={front} onChange={e => setFront(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600 border-gray-300 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" placeholder="Enter the front text for the flashcard"/>
+                            <textarea ref={frontRef} id="cardFront" value={front} onChange={e => setFront(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" placeholder="Enter the front text for the flashcard"/>
                         </div>
                         <div>
-                            <label htmlFor="cardBack" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Back</label>
-                            <textarea ref={backRef} id="cardBack" value={back} onChange={e => setBack(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600 border-gray-300 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" placeholder="Enter the back text for the flashcard"/>
+                            <label htmlFor="cardBack" className="block text-sm font-medium text-lantern-text">Back</label>
+                            <textarea ref={backRef} id="cardBack" value={back} onChange={e => setBack(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" placeholder="Enter the back text for the flashcard"/>
                         </div>
                         {onEnhanceFlashcard && front.trim() && back.trim() && (
                           <button
@@ -980,9 +980,9 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                     </>
                 ) : type === FlashcardType.IMAGE_OCCLUSION ? (
                     <div>
-                        <label htmlFor="cardFront" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Prompt</label>
-                        <textarea ref={frontRef} id="cardFront" value={front} onChange={e => setFront(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600 border-gray-300 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" placeholder="Optional hint or prompt for this image" />
-                        <div className="mt-2 flex flex-wrap gap-2 items-center text-xs text-gray-600 dark:text-gray-400">
+                        <label htmlFor="cardFront" className="block text-sm font-medium text-lantern-text">Prompt</label>
+                        <textarea ref={frontRef} id="cardFront" value={front} onChange={e => setFront(e.target.value)} rows={3} className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" placeholder="Optional hint or prompt for this image" />
+                        <div className="mt-2 flex flex-wrap gap-2 items-center text-xs text-lantern-text-secondary">
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -1005,10 +1005,10 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                         </div>
                         {imageUrl && (
                           <div className="mt-2">
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Preview:</div>
+                            <div className="text-xs text-lantern-text-secondary">Preview:</div>
                             <div
                               ref={imageContainerRef}
-                              className="relative mt-1 w-full rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden cursor-crosshair select-none touch-none"
+                              className="relative mt-1 w-full rounded-md border border-lantern-border overflow-hidden cursor-crosshair select-none touch-none"
                               onMouseDown={handlePointerDown}
                               onMouseMove={handlePointerMove}
                               onMouseUp={handleFinishDrawing}
@@ -1113,13 +1113,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                             </div>
 
                             <div className="mt-2">
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-lantern-text-secondary">
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium">Mask type:</span>
                                   <select
                                     value={occlusionType}
                                     onChange={e => setOcclusionType(e.target.value as OcclusionType)}
-                                    className="ml-2 px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"
+                                    className="ml-2 px-2 py-1 rounded-md border border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"
                                   >
                                     <option value="rectangles">Rectangle</option>
                                     <option value="circles">Circle</option>
@@ -1128,16 +1128,16 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   </select>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  <span className="text-xs text-lantern-text-secondary">
                                     {occlusionType === 'freeform'
                                       ? 'Click+drag to trace each area. Release to save the shape.'
                                       : 'Click+drag to draw. Drag shape to move, drag near edge to resize.'}
                                   </span>
-                                  <button type="button" onClick={clearOcclusions} className="text-blue-600 dark:text-blue-400 hover:underline">Clear</button>
+                                  <button type="button" onClick={clearOcclusions} className="text-lantern-primary dark:text-blue-400 hover:underline">Clear</button>
                                 </div>
                               </div>
 
-                              <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                              <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-lantern-text-secondary">
                                 <div className="flex items-center gap-2">
                                   <label className="font-medium">Snap to grid</label>
                                   <input
@@ -1152,7 +1152,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                   <select
                                     value={gridSize}
                                     onChange={e => setGridSize(parseFloat(e.target.value))}
-                                    className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200"
+                                    className="px-2 py-1 rounded-md border border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"
                                   >
                                     <option value={0.05}>5%</option>
                                     <option value={0.025}>2.5%</option>
@@ -1163,7 +1163,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               </div>
 
                               {occlusionType === 'blur' && (
-                                <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-lantern-text-secondary">
                                   <div className="flex items-center gap-2">
                                     <span className="font-medium">Blur radius</span>
                                     <input
@@ -1194,7 +1194,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               )}
 
                               {occlusionData?.type === 'rectangles' && occlusionData.rectangles?.length ? (
-                                <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                <div className="mt-2 space-y-1 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                   {occlusionData.rectangles.map((rect, idx) => (
                                     <div key={idx} className="flex justify-between items-center">
                                       <span>Box {idx + 1}</span>
@@ -1211,7 +1211,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               ) : null}
 
                               {occlusionData?.type === 'circles' && occlusionData.circles?.length ? (
-                                <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                <div className="mt-2 space-y-1 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                   {occlusionData.circles.map((circle, idx) => (
                                     <div key={idx} className="flex justify-between items-center">
                                       <span>Circle {idx + 1}</span>
@@ -1228,7 +1228,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               ) : null}
 
                               {occlusionData?.type === 'freeform' && getFreeformPaths(occlusionData).length ? (
-                                <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                <div className="mt-2 space-y-1 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                   {getFreeformPaths(occlusionData).map((_, idx) => (
                                     <div key={idx} className="flex justify-between items-center">
                                       <span>Freeform {idx + 1}</span>
@@ -1245,7 +1245,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               ) : null}
 
                               {occlusionData?.type === 'blur' && getBlurRegions(occlusionData).length ? (
-                                <div className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                                <div className="mt-2 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                   <div className="flex justify-between items-center">
                                     <span>Blur masks ({getBlurRegions(occlusionData).length})</span>
                                     <button type="button" onClick={() => setOcclusionData(getEmptyOcclusionData('blur'))} className="text-red-600 dark:text-red-400 hover:underline">Clear all</button>
@@ -1256,13 +1256,13 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                         <button
                                           type="button"
                                           onClick={() => setActiveShapeIndex(idx)}
-                                          className={`text-left flex-1 text-xs ${activeShapeIndex === idx ? 'font-semibold text-blue-600 dark:text-blue-300' : 'text-gray-600 dark:text-gray-300'}`}
+                                          className={`text-left flex-1 text-xs ${activeShapeIndex === idx ? 'font-semibold text-lantern-primary dark:text-blue-300' : 'text-lantern-text-secondary dark:text-lantern-text-tertiary'}`}
                                         >
                                           Blur {idx + 1}
                                         </button>
                                         <div className="flex items-center gap-2">
-                                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.radius * 100)}%</span>
-                                          <span className="text-[10px] text-gray-500 dark:text-gray-400">{Math.round(blur.opacity * 100)}%</span>
+                                          <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
+                                          <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
                                           <button
                                             type="button"
                                             onClick={() => removeOcclusionShape(idx)}
@@ -1275,7 +1275,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                     ))}
                                   </div>
                                   {activeShapeIndex !== null && occlusionData.blur?.[activeShapeIndex] && (
-                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-lantern-text-secondary dark:text-lantern-text-tertiary">
                                       <div className="flex items-center gap-2">
                                         <span className="font-medium">Radius</span>
                                         <input
@@ -1312,8 +1312,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                     </div>
                 ) : (
                     <div>
-                        <label htmlFor="cardCloze" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Cloze Text</label>
-                        <textarea id="cardCloze" value={clozeText} onChange={e => setClozeText(e.target.value)} rows={4} className="w-full p-2 mt-1 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600 border-gray-300 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" placeholder="e.g., The powerhouse of the cell is the {{c1::mitochondria}}."/>
+                        <label htmlFor="cardCloze" className="block text-sm font-medium text-lantern-text">Cloze Text</label>
+                        <textarea id="cardCloze" value={clozeText} onChange={e => setClozeText(e.target.value)} rows={4} className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" placeholder="e.g., The powerhouse of the cell is the {{c1::mitochondria}}."/>
                         <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md">
                             <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start">
                                 <InformationCircleIcon className="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" />
@@ -1324,7 +1324,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                 )}
               
                 <div className="flex justify-end space-x-3 pt-2">
-                    <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600">Cancel</button>
+                    <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary border border-lantern-border rounded-md dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary dark:border-lantern-border hover:bg-lantern-background-secondary dark:hover:bg-lantern-border">Cancel</button>
                     <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md shadow-sm dark:bg-green-500 dark:hover:bg-green-600">{isEditing ? 'Save Changes' : 'Create Card'}</button>
                 </div>
             </form>

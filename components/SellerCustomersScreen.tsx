@@ -39,9 +39,9 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
   }, [segment]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center gap-3 p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+    <div className="flex flex-col h-full bg-lantern-background">
+      <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
+        <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <ArrowLeftIcon className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold flex-1">Customers</h1>
@@ -51,11 +51,11 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
         </Button>
       </div>
 
-      <div className="px-4 py-2 flex gap-2 overflow-x-auto border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="px-4 py-2 flex gap-2 overflow-x-auto border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
         <button
           type="button"
           onClick={() => setSegment('')}
-          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${!segment ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}
+          className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${!segment ? 'bg-lantern-primary text-white' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
         >
           All
         </button>
@@ -64,7 +64,7 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
             key={key}
             type="button"
             onClick={() => setSegment(key)}
-            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${segment === key ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}
+            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${segment === key ? 'bg-lantern-primary text-white' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'}`}
           >
             {SEGMENT_LABELS[key]}
           </button>
@@ -72,9 +72,9 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {loading && <p className="text-sm text-gray-500">Loading...</p>}
+        {loading && <p className="text-sm text-lantern-text-secondary">Loading...</p>}
         {!loading && buyers.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-lantern-text-secondary">
             <UserGroupIcon className="w-12 h-12 mx-auto mb-2 opacity-40" />
             <p>No customer history yet</p>
           </div>
@@ -82,12 +82,12 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
         {buyers.map((buyer) => (
           <div
             key={buyer.buyerId}
-            className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+            className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border"
           >
             <div className="flex justify-between items-start">
               <div>
                 <p className="font-medium">{buyer.name}</p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-lantern-text-secondary mt-1">
                   Last active {new Date(buyer.lastInteractionAt).toLocaleDateString()}
                 </p>
               </div>
@@ -106,7 +106,7 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
             {buyer.segments && buyer.segments.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {buyer.segments.map((s) => (
-                  <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                  <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-background dark:text-lantern-primary-light">
                     {SEGMENT_LABELS[s as SellerCustomerSegment] || s}
                   </span>
                 ))}

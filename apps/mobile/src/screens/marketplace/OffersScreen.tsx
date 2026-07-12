@@ -81,16 +81,16 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
     return (
       <Pressable
         onPress={() => navigation.navigate('ListingDetail', { listingId: item.listing_id })}
-        className="mx-4 mb-3 p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+        className="mx-4 mb-3 p-4 rounded-2xl bg-lantern-surface border border-lantern-border"
       >
-        <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <Text className="text-sm font-semibold text-lantern-text">
           {formatPrice(item.amount)}
         </Text>
-        <Text className="text-xs text-slate-500 dark:text-slate-400 mt-1 capitalize">
+        <Text className="text-xs text-lantern-text-secondary mt-1 capitalize">
           Status: {item.status}
         </Text>
         {item.message ? (
-          <Text className="text-sm text-slate-600 dark:text-slate-300 mt-2">{item.message}</Text>
+          <Text className="text-sm text-lantern-text-secondary mt-2">{item.message}</Text>
         ) : null}
         {pending ? (
           <View className="flex-row flex-wrap gap-2 mt-3">
@@ -118,22 +118,22 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">Offers</Text>
+        <Text className="text-xl font-bold text-lantern-text">Offers</Text>
       </View>
 
-      <View className="flex-row mx-4 mb-3 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+      <View className="flex-row mx-4 mb-3 p-1 rounded-xl bg-lantern-background-secondary/70 dark:bg-lantern-surface">
         {(['seller', 'buyer'] as Tab[]).map(t => (
           <Pressable
             key={t}
             onPress={() => setTab(t)}
-            className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-white dark:bg-slate-700' : ''}`}
+            className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-lantern-surface dark:bg-lantern-surface-secondary' : ''}`}
           >
-            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-indigo-600' : 'text-slate-500'}`}>
+            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
               {t === 'seller' ? 'Received' : 'Sent'}
             </Text>
           </Pressable>
@@ -149,7 +149,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           renderItem={renderOffer}
           contentContainerStyle={{ paddingBottom: 24 }}
           ListEmptyComponent={
-            <Text className="text-center text-slate-500 dark:text-slate-400 mt-12 px-6">
+            <Text className="text-center text-lantern-text-secondary mt-12 px-6">
               No {tab === 'seller' ? 'received' : 'sent'} offers yet.
             </Text>
           }
@@ -157,13 +157,13 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
       )}
 
       {counterOfferId ? (
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
-          <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Counter amount (₦)</Text>
+        <View className="absolute bottom-0 left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border">
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Counter amount (₦)</Text>
           <TextInput
             value={counterAmount}
             onChangeText={setCounterAmount}
             keyboardType="numeric"
-            className="p-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 mb-3"
+            className="p-3 rounded-xl border border-lantern-border text-lantern-text mb-3"
           />
           <View className="flex-row gap-2">
             <Button variant="secondary" className="flex-1" onPress={() => setCounterOfferId(null)}>

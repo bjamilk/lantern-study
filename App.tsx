@@ -671,9 +671,9 @@ export const App: React.FC = () => {
     }, [modals.notification, currentUser, setNotifications]);
 
     if (isAuthLoading || (currentUser && routeHydrating)) return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-8">
+        <div className="min-h-screen bg-lantern-background flex flex-col items-center justify-center gap-8">
             <img src="/lantern-icon-v2.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-400" />
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lantern-primary" />
         </div>
     );
     if (isPasswordRecovery) {
@@ -1278,8 +1278,8 @@ export const App: React.FC = () => {
     return (
         <ErrorBoundary>
         <Suspense fallback={
-            <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-200 border-t-indigo-600" />
+            <div className="flex-1 flex items-center justify-center bg-lantern-background">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-lantern-primary/30 border-t-lantern-primary" />
             </div>
         }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}

@@ -118,8 +118,8 @@ export function CramSessionScreen({ navigation, route }: Props) {
 
   if (!queue.length && !allCards.length) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">No cards to cram</Text>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2">No cards to cram</Text>
         <Button onPress={() => navigation.goBack()}>Back</Button>
       </SafeAreaView>
     );
@@ -127,10 +127,10 @@ export function CramSessionScreen({ navigation, route }: Props) {
 
   if (isComplete) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
         <Text className="text-2xl font-bold text-amber-600 dark:text-amber-400 mb-2">Cram complete</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-1">{deckName}</Text>
-        <Text className="text-base text-slate-700 dark:text-slate-200 mb-6">
+        <Text className="text-sm text-lantern-text-secondary text-center mb-1">{deckName}</Text>
+        <Text className="text-base text-lantern-text mb-6">
           {correct} correct · {incorrect} incorrect
         </Text>
         {missedCards.length > 0 ? (
@@ -146,7 +146,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
   const { front, back } = getCardDisplayText(currentCard!);
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
@@ -156,7 +156,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
             Cram · {index + 1}/{queue.length}
           </Text>
           {timedMinutes > 0 ? (
-            <Text className={`text-xs ${timeRemaining < 60 ? 'text-red-500' : 'text-slate-500'}`}>
+            <Text className={`text-xs ${timeRemaining < 60 ? 'text-red-500' : 'text-lantern-text-secondary'}`}>
               {formatTime(timeRemaining)}
             </Text>
           ) : null}
@@ -166,10 +166,10 @@ export function CramSessionScreen({ navigation, route }: Props) {
       <View className="flex-1 px-4 justify-center">
         <Pressable onPress={() => { hapticSelection(); setShowBack(v => !v); }} className="active:opacity-95">
           <Card className="min-h-[220px] items-center justify-center border-amber-100 dark:border-amber-900/40">
-            <Text className="text-xs uppercase tracking-wide text-slate-400 mb-3">
+            <Text className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-3">
               {showBack ? 'Answer' : 'Question'}
             </Text>
-            <Text className="text-xl font-medium text-slate-900 dark:text-slate-100 text-center px-2">
+            <Text className="text-xl font-medium text-lantern-text text-center px-2">
               {showBack ? back || front : front}
             </Text>
             {!showBack ? (

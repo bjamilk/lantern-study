@@ -18,7 +18,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoId, title = 'YouTube v
 
   if (!safeVideoId) {
     return (
-      <div className="aspect-video w-full rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-sm text-slate-500">
+      <div className="aspect-video w-full rounded-xl bg-lantern-background-secondary dark:bg-lantern-surface flex items-center justify-center text-sm text-lantern-text-secondary">
         Invalid YouTube video
       </div>
     );

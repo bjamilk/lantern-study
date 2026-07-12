@@ -673,7 +673,7 @@ function MainTabs() {
 
   return (
 
-    <View className="flex-1 bg-lantern-background dark:bg-slate-900">
+    <View className="flex-1 bg-lantern-background dark:bg-lantern-background">
 
       <Tab.Navigator
         tabBar={props => <CustomTabBar {...props} />}

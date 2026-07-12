@@ -105,22 +105,22 @@ const Calculator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       : display;
 
   return (
-    <div className="bg-slate-900 rounded-2xl p-3 w-full max-w-[260px] shadow-2xl border border-slate-700">
+    <div className="bg-lantern-background rounded-2xl p-3 w-full max-w-[260px] shadow-2xl border border-lantern-border">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider pl-1">
+        <span className="text-lantern-text-tertiary text-xs font-semibold uppercase tracking-wider pl-1">
           Calculator
         </span>
         <button
           onClick={onClose}
-          className="text-slate-500 hover:text-slate-300 p-1 rounded-lg transition-colors"
+          className="text-lantern-text-secondary hover:text-lantern-text-tertiary p-1 rounded-lg transition-colors"
         >
           <XMarkIcon className="w-4 h-4" />
         </button>
       </div>
 
       {/* Display */}
-      <div className="bg-slate-800 rounded-xl px-4 py-3 mb-3 text-right min-h-[68px] flex flex-col justify-end">
-        <div className="text-slate-500 text-xs min-h-[18px]">
+      <div className="bg-lantern-surface rounded-xl px-4 py-3 mb-3 text-right min-h-[68px] flex flex-col justify-end">
+        <div className="text-lantern-text-secondary text-xs min-h-[18px]">
           {prevValue !== null ? `${prevValue} ${operator}` : ''}
         </div>
         <div className="text-white text-3xl font-light tracking-tight overflow-hidden">
@@ -131,47 +131,47 @@ const Calculator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       {/* Buttons */}
       <div className="grid grid-cols-4 gap-1.5">
         {/* Row 1 */}
-        <button onClick={clear} className={`${btn} bg-slate-500 hover:bg-slate-400 text-white`}>C</button>
-        <button onClick={toggleSign} className={`${btn} bg-slate-500 hover:bg-slate-400 text-white`}>±</button>
-        <button onClick={percentage} className={`${btn} bg-slate-500 hover:bg-slate-400 text-white`}>%</button>
+        <button onClick={clear} className={`${btn} bg-lantern-border hover:bg-lantern-border text-white`}>C</button>
+        <button onClick={toggleSign} className={`${btn} bg-lantern-border hover:bg-lantern-border text-white`}>±</button>
+        <button onClick={percentage} className={`${btn} bg-lantern-border hover:bg-lantern-border text-white`}>%</button>
         <button
           onClick={() => handleOperator('÷')}
-          className={`${btn} ${isActiveOp('÷') ? 'bg-white text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
+          className={`${btn} ${isActiveOp('÷') ? 'bg-lantern-surface text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
         >÷</button>
 
         {/* Row 2 */}
         {['7', '8', '9'].map(d => (
-          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>{d}</button>
+          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-lantern-surface-secondary hover:bg-lantern-border text-white`}>{d}</button>
         ))}
         <button
           onClick={() => handleOperator('×')}
-          className={`${btn} ${isActiveOp('×') ? 'bg-white text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
+          className={`${btn} ${isActiveOp('×') ? 'bg-lantern-surface text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
         >×</button>
 
         {/* Row 3 */}
         {['4', '5', '6'].map(d => (
-          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>{d}</button>
+          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-lantern-surface-secondary hover:bg-lantern-border text-white`}>{d}</button>
         ))}
         <button
           onClick={() => handleOperator('−')}
-          className={`${btn} ${isActiveOp('−') ? 'bg-white text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
+          className={`${btn} ${isActiveOp('−') ? 'bg-lantern-surface text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
         >−</button>
 
         {/* Row 4 */}
         {['1', '2', '3'].map(d => (
-          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>{d}</button>
+          <button key={d} onClick={() => inputDigit(d)} className={`${btn} bg-lantern-surface-secondary hover:bg-lantern-border text-white`}>{d}</button>
         ))}
         <button
           onClick={() => handleOperator('+')}
-          className={`${btn} ${isActiveOp('+') ? 'bg-white text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
+          className={`${btn} ${isActiveOp('+') ? 'bg-lantern-surface text-orange-500' : 'bg-orange-500 hover:bg-orange-400 text-white'}`}
         >+</button>
 
         {/* Row 5 */}
         <button
           onClick={() => inputDigit('0')}
-          className={`${btn} col-span-2 bg-slate-700 hover:bg-slate-600 text-white justify-start px-5`}
+          className={`${btn} col-span-2 bg-lantern-surface-secondary hover:bg-lantern-border text-white justify-start px-5`}
         >0</button>
-        <button onClick={inputDecimal} className={`${btn} bg-slate-700 hover:bg-slate-600 text-white`}>.</button>
+        <button onClick={inputDecimal} className={`${btn} bg-lantern-surface-secondary hover:bg-lantern-border text-white`}>.</button>
         <button onClick={equals} className={`${btn} bg-orange-500 hover:bg-orange-400 text-white`}>=</button>
       </div>
     </div>
@@ -197,8 +197,8 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
   return (
     <div className="mb-2 sm:mb-4 space-y-2">
       {/* ── Tool Buttons ── */}
-      <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-3 sm:py-2 shadow-sm">
-        <span className="hidden sm:inline text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mr-1 select-none">
+      <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-lantern-surface border border-lantern-border rounded-lg sm:rounded-xl px-2 py-1.5 sm:px-3 sm:py-2 shadow-sm">
+        <span className="hidden sm:inline text-[10px] font-bold text-lantern-text-tertiary uppercase tracking-widest mr-1 select-none">
           Tools
         </span>
 
@@ -209,7 +209,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             activeTool === 'highlight'
               ? 'bg-yellow-100 dark:bg-yellow-900/40 border-yellow-400 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 shadow-sm'
-              : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
+              : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           {/* Highlighter pen icon */}
@@ -233,7 +233,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             activeTool === 'strikeout'
               ? 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 shadow-sm'
-              : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
+              : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           {/* Strikeout text icon */}
@@ -252,7 +252,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             showCalculator
               ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-400 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 shadow-sm'
-              : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
+              : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -274,8 +274,8 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           title="Open scratch note for this question"
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             showNote
-              ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-700 dark:text-blue-300 shadow-sm'
-              : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
+              ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-lantern-primary/30 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -297,7 +297,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
             isMarked
               ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-400 dark:border-orange-600 text-orange-700 dark:text-orange-300 shadow-sm'
-              : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600'
+              : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
           }`}
         >
           <svg
@@ -367,7 +367,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             {note.trim() && (
               <button
                 onClick={() => onNoteChange('')}
-                className="text-xs text-blue-400 hover:text-blue-600 dark:hover:text-blue-200 transition-colors"
+                className="text-xs text-blue-400 hover:text-lantern-primary dark:hover:text-blue-200 transition-colors"
               >
                 Clear
               </button>
@@ -378,7 +378,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             onChange={e => onNoteChange(e.target.value)}
             placeholder="Jot down your thought process for this question..."
             rows={3}
-            className="w-full p-2.5 text-sm bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 rounded-lg text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+            className="w-full p-2.5 text-sm bg-lantern-surface border border-blue-200 dark:border-blue-700 rounded-lg text-lantern-text placeholder:text-lantern-text-tertiary dark:placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
           />
         </div>
       )}

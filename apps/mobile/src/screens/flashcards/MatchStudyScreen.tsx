@@ -118,9 +118,9 @@ export function MatchStudyScreen({ navigation, route }: Props) {
 
   if (!basicCards.length) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Need more basic cards</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2">Need more basic cards</Text>
+        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
           Match mode needs at least one front/back pair.
         </Text>
         <Button onPress={() => navigation.goBack()}>Back</Button>
@@ -130,9 +130,9 @@ export function MatchStudyScreen({ navigation, route }: Props) {
 
   if (isComplete) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
         <Text className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mb-2">All matched!</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+        <Text className="text-sm text-lantern-text-secondary mb-6">
           {deckName} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
         </Text>
         <Button onPress={() => navigation.goBack()}>Done</Button>
@@ -141,14 +141,14 @@ export function MatchStudyScreen({ navigation, route }: Props) {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
         </Button>
         <View className="items-end">
           <Text className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{deckName}</Text>
-          <Text className="text-xs text-slate-500 dark:text-slate-400">
+          <Text className="text-xs text-lantern-text-secondary">
             {matchedPairs}/{totalPairs} pairs · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
           </Text>
         </View>
@@ -161,10 +161,10 @@ export function MatchStudyScreen({ navigation, route }: Props) {
             const isWrong = wrongPair.includes(tile.id);
             const isMatched = tile.matched;
 
-            let tileClass = 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
+            let tileClass = 'bg-lantern-surface border-lantern-border';
             if (isMatched) tileClass = 'bg-emerald-100 dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-700';
             else if (isWrong) tileClass = 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
-            else if (isSelected) tileClass = 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-400 dark:border-indigo-600';
+            else if (isSelected) tileClass = 'bg-lantern-primary-background dark:bg-lantern-primary-dark/40 border-lantern-primary dark:border-lantern-primary';
 
             return (
               <Pressable
@@ -174,7 +174,7 @@ export function MatchStudyScreen({ navigation, route }: Props) {
                 className={`w-[47%] min-h-[88px] rounded-2xl border p-3 items-center justify-center active:opacity-90 ${tileClass}`}
               >
                 <Text
-                  className={`text-xs text-center font-medium ${tile.side === 'front' ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}
+                  className={`text-xs text-center font-medium ${tile.side === 'front' ? 'text-lantern-primary' : 'text-lantern-text'}`}
                   numberOfLines={4}
                 >
                   {tile.text}

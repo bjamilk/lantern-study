@@ -69,17 +69,17 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end bg-black/40">
-        <View className="bg-white dark:bg-slate-900 rounded-t-3xl max-h-[90%]">
-          <View className="flex-row items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+        <View className="bg-lantern-surface rounded-t-3xl max-h-[90%]">
+          <View className="flex-row items-center justify-between p-4 border-b border-lantern-border">
             <Text className="text-lg font-bold">Create bundle</Text>
-            <Pressable onPress={onClose}><Text className="text-indigo-600 font-semibold">Close</Text></Pressable>
+            <Pressable onPress={onClose}><Text className="text-lantern-primary font-semibold">Close</Text></Pressable>
           </View>
           <ScrollView className="p-4" contentContainerStyle={{ paddingBottom: 24 }}>
             <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Bundle title"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-lantern-text"
               placeholderTextColor="#94a3b8"
             />
             <TextInput
@@ -87,22 +87,22 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
               onChangeText={setDescription}
               placeholder="Description (optional)"
               multiline
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-2 min-h-[60px] text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-xl px-3 py-2 mb-2 min-h-[60px] text-lantern-text"
               placeholderTextColor="#94a3b8"
             />
-            <Text className="text-xs text-slate-500 mb-2">Select listings (min 2)</Text>
+            <Text className="text-xs text-lantern-text-secondary mb-2">Select listings (min 2)</Text>
             {activeListings.map(l => (
               <Pressable
                 key={l.id}
                 onPress={() => toggle(l.id)}
                 className={`flex-row items-center justify-between p-3 mb-2 rounded-xl border ${
-                  selected.has(l.id) ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30' : 'border-slate-200 dark:border-slate-700'
+                  selected.has(l.id) ? 'border-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary-background' : 'border-lantern-border'
                 }`}
               >
-                <Text className="flex-1 text-sm font-medium text-slate-800 dark:text-slate-100" numberOfLines={1}>
+                <Text className="flex-1 text-sm font-medium text-lantern-text" numberOfLines={1}>
                   {l.title}
                 </Text>
-                <Text className="text-sm text-indigo-600">{formatPrice(l.price)}</Text>
+                <Text className="text-sm text-lantern-primary">{formatPrice(l.price)}</Text>
               </Pressable>
             ))}
             <TextInput
@@ -110,7 +110,7 @@ export function CreateBundleModal({ visible, listings, onClose, onCreated }: Pro
               onChangeText={setPrice}
               placeholder={suggestedPrice ? `Suggested ${formatPrice(suggestedPrice)}` : 'Bundle price'}
               keyboardType="numeric"
-              className="border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 mb-2 text-slate-900 dark:text-slate-100"
+              className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-lantern-text"
               placeholderTextColor="#94a3b8"
             />
             {error ? <Text className="text-sm text-red-600 mb-2">{error}</Text> : null}

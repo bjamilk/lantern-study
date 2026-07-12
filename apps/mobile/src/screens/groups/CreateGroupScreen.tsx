@@ -49,8 +49,8 @@ function PermissionToggle({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <View className="flex-row items-center justify-between py-3 border-b border-slate-100 dark:border-slate-700">
-      <Text className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1 pr-3">{label}</Text>
+    <View className="flex-row items-center justify-between py-3 border-b border-lantern-border">
+      <Text className="text-sm font-medium text-lantern-text flex-1 pr-3">{label}</Text>
       <Switch value={enabled} onValueChange={onChange} trackColor={{ true: '#6366f1' }} />
     </View>
   );
@@ -60,7 +60,7 @@ function StepFooter({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <View
-      className="px-4 pt-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+      className="px-4 pt-2 border-t border-lantern-border dark:border-lantern-border bg-lantern-background"
       style={{ paddingBottom: Math.max(insets.bottom, 16) }}
     >
       {children}
@@ -228,7 +228,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
   if (step === 'select_members') {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top', 'bottom']}>
+      <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
         <ScreenHeader
           title={isSubGroup ? 'New Sub-group' : 'New Group'}
           subtitle={
@@ -246,7 +246,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         />
 
         <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled">
-          <View className="flex-row items-center border border-slate-200 dark:border-slate-600 rounded-2xl px-3 bg-white dark:bg-slate-800 mt-2 mb-3">
+          <View className="flex-row items-center border border-lantern-border rounded-2xl px-3 bg-lantern-surface mt-2 mb-3">
             <Ionicons name="search" size={18} color="#94a3b8" />
             <TextInput
               value={searchTerm}
@@ -254,7 +254,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
               placeholder="Search by @username or name..."
               placeholderTextColor="#94a3b8"
               autoFocus
-              className="flex-1 py-3 px-2 text-slate-900 dark:text-slate-100"
+              className="flex-1 py-3 px-2 text-lantern-text"
             />
           </View>
 
@@ -265,7 +265,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           {!isSearching && searchTerm.length >= 2 && searchResults.length === 0 ? (
             <View className="items-center py-8">
               <Ionicons name="people-outline" size={40} color="#94a3b8" />
-              <Text className="text-sm text-slate-500 dark:text-slate-400 mt-2 text-center">
+              <Text className="text-sm text-lantern-text-secondary mt-2 text-center">
                 No users found matching &quot;{searchTerm}&quot;
               </Text>
             </View>
@@ -275,15 +275,15 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             <Pressable
               key={u.id}
               onPress={() => handleUserSelect(u)}
-              className="flex-row items-center p-3 mb-2 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 active:opacity-90"
+              className="flex-row items-center p-3 mb-2 rounded-2xl bg-lantern-surface border border-lantern-border active:opacity-90"
             >
               <Avatar name={u.name} size={40} />
               <View className="flex-1 ml-3 min-w-0">
-                <Text className="font-semibold text-slate-900 dark:text-slate-100" numberOfLines={1}>
+                <Text className="font-semibold text-lantern-text" numberOfLines={1}>
                   {u.name}
                 </Text>
                 {u.username ? (
-                  <Text className="text-sm text-indigo-600 dark:text-indigo-400">@{u.username}</Text>
+                  <Text className="text-sm text-lantern-primary">@{u.username}</Text>
                 ) : null}
               </View>
               <Ionicons name="add-circle-outline" size={22} color="#6366f1" />
@@ -291,8 +291,8 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           ))}
 
           {selectedUsers.length > 0 ? (
-            <View className="mt-4 p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 mb-4">
-              <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+            <View className="mt-4 p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
+              <Text className="text-sm font-semibold text-lantern-text mb-3">
                 Selected ({selectedUsers.length})
               </Text>
               <View className="flex-row flex-wrap gap-2">
@@ -300,9 +300,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                   <Pressable
                     key={u.id}
                     onPress={() => handleUserRemove(u.id)}
-                    className="flex-row items-center bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1.5 rounded-full"
+                    className="flex-row items-center bg-lantern-primary-background dark:bg-lantern-primary-dark/40 px-3 py-1.5 rounded-full"
                   >
-                    <Text className="text-sm text-indigo-800 dark:text-indigo-200 mr-1">
+                    <Text className="text-sm text-lantern-primary-dark dark:text-lantern-primary-light mr-1">
                       {u.username ? `@${u.username}` : u.name}
                     </Text>
                     <Ionicons name="close" size={14} color="#6366f1" />
@@ -311,9 +311,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
               </View>
             </View>
           ) : (
-            <View className="mt-4 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 mb-4">
-              <Text className="font-medium text-indigo-800 dark:text-indigo-200">Invite link after creation</Text>
-              <Text className="text-sm text-indigo-600 dark:text-indigo-300 mt-1">
+            <View className="mt-4 p-4 rounded-2xl bg-lantern-primary-background mb-4">
+              <Text className="font-medium text-lantern-primary-dark dark:text-lantern-primary-light">Invite link after creation</Text>
+              <Text className="text-sm text-lantern-primary mt-1">
                 Share an invite link once the group is created.
               </Text>
             </View>
@@ -328,7 +328,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           ) : (
             <Pressable
               onPress={() => setStep('group_details')}
-              className="w-full py-3 bg-slate-600 dark:bg-slate-700 rounded-2xl items-center active:opacity-90"
+              className="w-full py-3 bg-lantern-border dark:bg-lantern-surface-secondary rounded-2xl items-center active:opacity-90"
             >
               <Text className="font-semibold text-sm text-white">Skip - Create Group Without Members</Text>
             </Pressable>
@@ -339,7 +339,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top', 'bottom']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
       <ScreenHeader
         title={isSubGroup ? 'Sub-group Details' : 'Group Details'}
         subtitle={
@@ -359,7 +359,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           <Pressable
             onPress={handlePickAvatar}
             disabled={pickingAvatar}
-            className="relative w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-700 items-center justify-center mb-4 overflow-hidden active:opacity-90"
+            className="relative w-24 h-24 rounded-full bg-lantern-background-secondary items-center justify-center mb-4 overflow-hidden active:opacity-90"
           >
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} className="w-full h-full" />
@@ -379,7 +379,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             onChangeText={setGroupName}
             placeholder={isSubGroup ? 'Sub-group name (required)' : 'Group name (required)'}
             placeholderTextColor="#94a3b8"
-            className="w-full text-center text-lg font-semibold border-b-2 border-slate-200 dark:border-slate-600 py-2 text-slate-900 dark:text-slate-100 mb-3"
+            className="w-full text-center text-lg font-semibold border-b-2 border-lantern-border py-2 text-lantern-text mb-3"
           />
           <TextInput
             value={groupDescription}
@@ -388,12 +388,12 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             placeholderTextColor="#94a3b8"
             multiline
             numberOfLines={2}
-            className="w-full text-center text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800"
+            className="w-full text-center text-sm border border-lantern-border rounded-xl px-3 py-2 text-lantern-text bg-lantern-surface"
           />
         </View>
 
-        <View className="p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 mb-4">
-          <Text className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Member permissions</Text>
+        <View className="p-4 rounded-2xl bg-lantern-surface border border-lantern-border mb-4">
+          <Text className="font-semibold text-lantern-text mb-2">Member permissions</Text>
           <PermissionToggle
             label="Send messages"
             enabled={permissions.canSendMessages}

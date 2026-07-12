@@ -384,7 +384,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
   
   const renderMCQOptions = (isMultipleType: boolean) => (
     <div className="mb-4 space-y-3">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Answer Options (select correct one/ones)</label>
+      <label className="block text-sm font-medium text-lantern-text mb-1">Answer Options (select correct one/ones)</label>
       {state.options.map((option, index) => (
         <div key={option.id} className="flex items-center space-x-2">
           <input
@@ -393,7 +393,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             name={isMultipleType ? `option-check-${option.id}` : "correctAnswerSingle"}
             checked={state.correctAnswerIdsSelected.includes(option.id)}
             onChange={() => handleMcqCorrectAnswerChange(option.id, isMultipleType)}
-            className={`h-4 w-4 ${isMultipleType ? 'rounded' : 'rounded-full'} text-blue-600 border-gray-300 dark:border-gray-500 focus:ring-blue-500`}
+            className={`h-4 w-4 ${isMultipleType ? 'rounded' : 'rounded-full'} text-lantern-primary border-lantern-border dark:border-lantern-border focus:ring-lantern-primary`}
           />
           <div className="flex-1 relative">
             <input
@@ -401,7 +401,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
               value={option.text}
               onChange={(e) => handleOptionTextChange(option.id, e.target.value)}
               placeholder={`Option ${index + 1}`}
-              className="w-full p-2 pr-10 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+              className="w-full p-2 pr-10 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               required
             />
             <VoiceInputButton
@@ -417,7 +417,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
         </div>
       ))}
       {state.options.length < 6 && (
-        <button type="button" onClick={handleAddOption} className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center">
+        <button type="button" onClick={handleAddOption} className="mt-2 text-sm text-lantern-primary hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center">
           <PlusCircleIcon className="w-5 h-5 mr-1" /> Add Option
         </button>
       )}
@@ -444,19 +444,19 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
       panelClassName="max-h-[90vh] overflow-y-auto"
     >
         <div className="flex justify-between items-center mb-4">
-          <h2 id="question-modal-title" className="text-xl font-semibold text-gray-800 dark:text-gray-100">Add Question to <span className="text-blue-600 dark:text-blue-400">{groupName}</span></h2>
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Close modal">
+          <h2 id="question-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">Add Question to <span className="text-lantern-primary dark:text-blue-400">{groupName}</span></h2>
+          <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:hover:text-lantern-text" aria-label="Close modal">
              <XCircleIcon className="w-6 h-6" />
           </button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="questionType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Question Type</label>
+            <label htmlFor="questionType" className="block text-sm font-medium text-lantern-text mb-1">Question Type</label>
             <select
               id="questionType"
               value={state.questionType}
               onChange={(e) => handleQuestionTypeChange(e.target.value as QuestionType)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200"
+              className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text"
             >
               <option value={QuestionType.MULTIPLE_CHOICE_SINGLE}>Multiple Choice (Single Answer)</option>
               <option value={QuestionType.MULTIPLE_CHOICE_MULTIPLE}>Multiple Choice (Multiple Answers)</option>
@@ -468,14 +468,14 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
           </div>
 
           <div className="mb-4">
-            <label htmlFor="questionStem" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Question Stem / Title</label>
+            <label htmlFor="questionStem" className="block text-sm font-medium text-lantern-text mb-1">Question Stem / Title</label>
             <div className="relative">
                 <textarea
                 id="questionStem"
                 value={state.stem}
                 onChange={(e) => handleFieldChange('stem', e.target.value)}
                 rows={3}
-                className="w-full p-2 pr-12 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+                className="w-full p-2 pr-12 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
                 placeholder={state.questionType === QuestionType.FILL_IN_THE_BLANK ? "Enter question, use '___' for blanks..." : "Enter the main body of your question..."}
                 required
                 />
@@ -490,16 +490,16 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
           </div>
           
           <div className="mb-4">
-            <label htmlFor="questionImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Attach Image (Optional)</label>
+            <label htmlFor="questionImage" className="block text-sm font-medium text-lantern-text mb-1">Attach Image (Optional)</label>
             <div className="mt-1 flex items-center space-x-2">
-              <label className="flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
-                <PhotoIcon className="w-5 h-5 mr-2 text-gray-500 dark:text-gray-400" />
+              <label className="flex items-center px-3 py-2 border border-lantern-border rounded-md shadow-sm text-sm font-medium text-lantern-text bg-lantern-surface dark:bg-lantern-surface-secondary hover:bg-lantern-background dark:hover:bg-lantern-border cursor-pointer">
+                <PhotoIcon className="w-5 h-5 mr-2 text-lantern-text-secondary" />
                 <span>Choose Image</span>
                 <input id="questionImage" name="questionImage" type="file" accept="image/*" onChange={handleImageChange} className="sr-only" />
               </label>
               {state.imagePreviewUrl && state.questionType !== QuestionType.DIAGRAM_LABELING && (
                 <div className="relative group">
-                  <img src={state.imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-md border border-gray-300 dark:border-gray-600" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  <img src={state.imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-md border border-lantern-border" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                   <button
                     type="button"
                     onClick={handleRemoveImage}
@@ -511,12 +511,12 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                 </div>
               )}
             </div>
-            {state.selectedImageFile && state.questionType !== QuestionType.DIAGRAM_LABELING && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Selected: {state.selectedImageFile.name}</p>}
+            {state.selectedImageFile && state.questionType !== QuestionType.DIAGRAM_LABELING && <p className="text-xs text-lantern-text-secondary mt-1">Selected: {state.selectedImageFile.name}</p>}
           </div>
 
           <div className="mb-4">
-            <label htmlFor="questionTags" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
-              <TagIcon className="w-5 h-5 mr-1 text-gray-500 dark:text-gray-400" />
+            <label htmlFor="questionTags" className="block text-sm font-medium text-lantern-text mb-1 flex items-center">
+              <TagIcon className="w-5 h-5 mr-1 text-lantern-text-secondary" />
               Tags (Optional, comma-separated)
             </label>
             <input
@@ -524,15 +524,15 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
               id="questionTags"
               value={state.tagsInput}
               onChange={(e) => handleFieldChange('tagsInput', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+              className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
               placeholder="e.g., biology, mitosis, chapter3"
             />
           </div>
           
           {showTypeSpecificFields && (
-            <div className="my-4 p-3 border-t border-b border-gray-200 dark:border-gray-700">
-                <div className="mb-3 p-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-md">
-                    <p className="text-xs text-indigo-700 dark:text-indigo-300 flex items-start">
+            <div className="my-4 p-3 border-t border-b border-lantern-border">
+                <div className="mb-3 p-2 bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30 rounded-md">
+                    <p className="text-xs text-lantern-primary flex items-start">
                         <InformationCircleIcon className="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" />
                         <span>Define correct answers/criteria below. This information will be used to score the question in tests and study mode (where applicable).</span>
                     </p>
@@ -543,15 +543,15 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
 
                 {state.questionType === QuestionType.TRUE_FALSE && (
                     <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Correct Answer</label>
+                    <label className="block text-sm font-medium text-lantern-text mb-1">Correct Answer</label>
                     <div className="flex space-x-4">
                         <label className="flex items-center">
-                        <input type="radio" name="trueFalseAnswer" value="true" checked={state.correctAnswerIdsSelected.includes('true')} onChange={() => handleMcqCorrectAnswerChange('true', false)} className="h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-500 focus:ring-blue-500" />
-                        <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">True</span>
+                        <input type="radio" name="trueFalseAnswer" value="true" checked={state.correctAnswerIdsSelected.includes('true')} onChange={() => handleMcqCorrectAnswerChange('true', false)} className="h-4 w-4 text-lantern-primary border-lantern-border dark:border-lantern-border focus:ring-lantern-primary" />
+                        <span className="ml-2 text-sm text-lantern-text">True</span>
                         </label>
                         <label className="flex items-center">
-                        <input type="radio" name="trueFalseAnswer" value="false" checked={state.correctAnswerIdsSelected.includes('false')} onChange={() => handleMcqCorrectAnswerChange('false', false)} className="h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-500 focus:ring-blue-500" />
-                        <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">False</span>
+                        <input type="radio" name="trueFalseAnswer" value="false" checked={state.correctAnswerIdsSelected.includes('false')} onChange={() => handleMcqCorrectAnswerChange('false', false)} className="h-4 w-4 text-lantern-primary border-lantern-border dark:border-lantern-border focus:ring-lantern-primary" />
+                        <span className="ml-2 text-sm text-lantern-text">False</span>
                         </label>
                     </div>
                     </div>
@@ -559,13 +559,13 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
 
                 {state.questionType === QuestionType.FILL_IN_THE_BLANK && (
                     <div className="mb-4">
-                    <label htmlFor="acceptableAnswers" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Acceptable Answer(s) (comma-separated)</label>
+                    <label htmlFor="acceptableAnswers" className="block text-sm font-medium text-lantern-text mb-1">Acceptable Answer(s) (comma-separated)</label>
                     <textarea
                         id="acceptableAnswers"
                         value={state.acceptableAnswersInput}
                         onChange={(e) => handleFieldChange('acceptableAnswersInput', e.target.value)}
                         rows={2}
-                        className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+                        className="w-full p-2 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
                         placeholder="e.g., Paris, paris"
                         required
                     />
@@ -573,37 +573,37 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                 )}
 
                 {state.questionType === QuestionType.MATCHING && (
-                    <div className="mb-4 space-y-4 p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                    <div className="mb-4 space-y-4 p-3 border border-lantern-border rounded-md bg-lantern-background dark:bg-lantern-surface-secondary/50">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Prompt Items</label>
+                        <label className="block text-sm font-medium text-lantern-text mb-1">Prompt Items</label>
                         {state.promptItems.map((item, index) => (
                         <div key={item.id} className="flex items-center space-x-2 mb-2">
-                            <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('prompt', item.id, e.target.value)} placeholder={`Prompt ${index + 1}`} className="flex-1 p-2 border border-gray-300 rounded-md shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" required/>
+                            <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('prompt', item.id, e.target.value)} placeholder={`Prompt ${index + 1}`} className="flex-1 p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" required/>
                             {state.promptItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('prompt', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Prompt</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-lantern-primary dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Prompt</button>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Answer Items</label>
+                        <label className="block text-sm font-medium text-lantern-text mb-1">Answer Items</label>
                         {state.answerItems.map((item, index) => (
                         <div key={item.id} className="flex items-center space-x-2 mb-2">
-                            <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('answer', item.id, e.target.value)} placeholder={`Answer ${index + 1}`} className="flex-1 p-2 border border-gray-300 rounded-md shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400" required/>
+                            <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('answer', item.id, e.target.value)} placeholder={`Answer ${index + 1}`} className="flex-1 p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" required/>
                             {state.answerItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('answer', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Answer</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-lantern-primary dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Answer</button>
                     </div>
                     {state.promptItems.length > 0 && state.answerItems.length > 0 && state.promptItems.some(p => p.text.trim()) && state.answerItems.some(a => a.text.trim()) && (
                         <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Define Correct Matches</label>
+                        <label className="block text-sm font-medium text-lantern-text mb-2">Define Correct Matches</label>
                         {state.promptItems.map(promptItem => (
                             <div key={promptItem.id} className="flex items-center space-x-2 mb-2">
-                            <span className="w-1/3 truncate text-sm text-gray-600 dark:text-gray-400" title={promptItem.text || `Prompt ${promptItem.id.substring(0,4)}`}>{promptItem.text || `Prompt (empty)`}:</span>
+                            <span className="w-1/3 truncate text-sm text-lantern-text-secondary" title={promptItem.text || `Prompt ${promptItem.id.substring(0,4)}`}>{promptItem.text || `Prompt (empty)`}:</span>
                             <select 
                                 value={state.matchSelections[promptItem.id] || ""}
                                 onChange={e => handleMatchSelectionChange(promptItem.id, e.target.value)}
-                                className="flex-1 p-2 border border-gray-300 rounded-md shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200"
+                                className="flex-1 p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text"
                                 required
                             >
                                 <option value="">Select matching answer...</option>
@@ -618,13 +618,13 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                     </div>
                 )}
                  {state.questionType === QuestionType.DIAGRAM_LABELING && (
-                    <div className="mb-4 space-y-4 p-3 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                    <div className="mb-4 space-y-4 p-3 border border-lantern-border rounded-md bg-lantern-background dark:bg-lantern-surface-secondary/50">
                         {!state.imagePreviewUrl ? (
-                            <p className="text-center text-gray-500 dark:text-gray-400">Please upload an image first to add labels.</p>
+                            <p className="text-center text-lantern-text-secondary">Please upload an image first to add labels.</p>
                         ) : (
                             <div>
-                                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Click on the image to add a label pin. Drag pins to reposition.</p>
-                                <div ref={imageContainerRef} onClick={handleImageClick} className="relative w-full cursor-crosshair border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md overflow-hidden">
+                                <p className="text-sm font-medium text-lantern-text mb-2">Click on the image to add a label pin. Drag pins to reposition.</p>
+                                <div ref={imageContainerRef} onClick={handleImageClick} className="relative w-full cursor-crosshair border-2 border-dashed border-lantern-border rounded-md overflow-hidden">
                                     <img src={state.imagePreviewUrl} alt="Diagram preview" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                                     {state.diagramLabels.map((label, index) => (
                                         <div 
@@ -640,7 +640,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                                     ))}
                                 </div>
                                 <div className="mt-4">
-                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Labels</label>
+                                     <label className="block text-sm font-medium text-lantern-text mb-1">Labels</label>
                                      {state.diagramLabels.map((label, index) => (
                                          <div key={label.id} className="flex items-center space-x-2 mb-2">
                                              <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-red-600 text-white font-bold text-xs rounded-full">{index+1}</span>
@@ -649,7 +649,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                                                  value={label.text}
                                                  onChange={e => dispatch({type: 'UPDATE_DIAGRAM_LABEL_TEXT', id: label.id, text: e.target.value})}
                                                  placeholder={`Label text for pin ${index+1}`}
-                                                 className="flex-grow p-2 border border-gray-300 rounded-md shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200"
+                                                 className="flex-grow p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text"
                                                  required
                                              />
                                              <button type="button" onClick={() => dispatch({type: 'REMOVE_DIAGRAM_LABEL', id: label.id})} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>
@@ -665,14 +665,14 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
 
 
           <div className="mb-6">
-            <label htmlFor="explanation" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Explanation</label>
+            <label htmlFor="explanation" className="block text-sm font-medium text-lantern-text mb-1">Explanation</label>
             <div className="relative">
                 <textarea
                 id="explanation"
                 value={state.explanation}
                 onChange={(e) => handleFieldChange('explanation', e.target.value)}
                 rows={3}
-                className="w-full p-2 pr-12 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 shadow-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-900 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400"
+                className="w-full p-2 pr-12 border border-lantern-border rounded-md focus:ring-lantern-primary focus:border-lantern-primary shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary"
                 placeholder="Provide a detailed explanation for the answer(s)..."
                 required
                 />
@@ -687,13 +687,13 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 dark:focus:ring-gray-500"
+              className="px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary dark:bg-lantern-surface-secondary hover:bg-lantern-background-secondary dark:hover:bg-lantern-border border border-lantern-border dark:border-lantern-border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-border dark:focus:ring-lantern-border"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-blue-400 disabled:opacity-50"
+              className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary dark:focus:ring-blue-400 disabled:opacity-50"
               disabled={!isFormValid() || isSubmitting}
             >
               {isSubmitting && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />}

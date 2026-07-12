@@ -140,27 +140,27 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
       case 'purchased':
         return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
       default:
-        return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
+        return 'bg-lantern-background-secondary text-lantern-text-secondary dark:bg-lantern-surface-secondary dark:text-lantern-text-tertiary';
     }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-slate-900 dark:text-slate-100">Inquiries</Text>
+        <Text className="text-xl font-bold text-lantern-text">Inquiries</Text>
       </View>
 
-      <View className="flex-row mx-4 mb-3 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+      <View className="flex-row mx-4 mb-3 p-1 rounded-xl bg-lantern-background-secondary/70 dark:bg-lantern-surface">
         {(['seller', 'buyer'] as Tab[]).map(t => (
           <Pressable
             key={t}
             onPress={() => setTab(t)}
-            className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-white dark:bg-slate-700' : ''}`}
+            className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-lantern-surface dark:bg-lantern-surface-secondary' : ''}`}
           >
-            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-indigo-600' : 'text-slate-500'}`}>
+            <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
               {t === 'seller' ? 'Received' : 'Sent'}
             </Text>
           </Pressable>
@@ -178,13 +178,13 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
               onPress={() => setStatusFilter(item.id)}
               className={`mr-2 px-3 py-1.5 rounded-full ${
                 statusFilter === item.id
-                  ? 'bg-indigo-600'
-                  : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700'
+                  ? 'bg-lantern-primary'
+                  : 'bg-lantern-surface border border-lantern-border'
               }`}
             >
               <Text
                 className={`text-xs font-medium ${
-                  statusFilter === item.id ? 'text-white' : 'text-slate-600 dark:text-slate-300'
+                  statusFilter === item.id ? 'text-white' : 'text-lantern-text-secondary'
                 }`}
               >
                 {item.label}
@@ -207,30 +207,30 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <Ionicons name="chatbubbles-outline" size={48} color="#cbd5e1" />
-              <Text className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-4">No inquiries yet</Text>
+              <Text className="text-lg font-semibold text-lantern-text mt-4">No inquiries yet</Text>
             </View>
           }
           renderItem={({ item }) => (
             <Pressable
               onPress={() => openChat(item)}
-              className="flex-row bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden mb-3"
+              className="flex-row bg-lantern-surface rounded-2xl border border-lantern-border overflow-hidden mb-3"
             >
               <View className="w-24 h-24">
                 <ListingImage uri={item.listingImage} className="w-full h-full" />
               </View>
               <View className="flex-1 p-3">
                 <View className="flex-row items-center justify-between gap-2">
-                  <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex-1" numberOfLines={1}>
+                  <Text className="text-sm font-semibold text-lantern-text flex-1" numberOfLines={1}>
                     {item.listingTitle}
                   </Text>
                   <View className={`px-2 py-0.5 rounded-full ${statusColor(item.status)}`}>
                     <Text className="text-[10px] font-medium capitalize">{item.status}</Text>
                   </View>
                 </View>
-                <Text className="text-sm text-slate-600 dark:text-slate-300 mt-2" numberOfLines={2}>
+                <Text className="text-sm text-lantern-text-secondary mt-2" numberOfLines={2}>
                   {item.initial_message}
                 </Text>
-                <Text className="text-xs text-slate-400 mt-2">{timeAgo(item.created_at)}</Text>
+                <Text className="text-xs text-lantern-text-tertiary mt-2">{timeAgo(item.created_at)}</Text>
                 {tab === 'seller' && item.status !== 'purchased' && item.status !== 'closed' ? (
                   <View className="flex-row flex-wrap gap-2 mt-2">
                     {item.status === 'open' ? (
@@ -258,9 +258,9 @@ export function InquiriesScreen({ navigation }: { navigation: NavigationProp }) 
                         e.stopPropagation?.();
                         handleStatus(item, 'closed');
                       }}
-                      className="px-2 py-1 rounded-md bg-slate-100"
+                      className="px-2 py-1 rounded-md bg-lantern-background-secondary"
                     >
-                      <Text className="text-[10px] font-medium text-slate-700">Close</Text>
+                      <Text className="text-[10px] font-medium text-lantern-text">Close</Text>
                     </Pressable>
                   </View>
                 ) : null}

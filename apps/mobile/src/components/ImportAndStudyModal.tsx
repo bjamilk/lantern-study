@@ -114,11 +114,11 @@ export default function ImportAndStudyModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <View className="flex-1 bg-black/50 justify-center px-4">
-        <View className="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden">
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+        <View className="bg-lantern-surface rounded-2xl overflow-hidden">
+          <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">
             <View className="flex-row items-center gap-2">
               <Ionicons name="sparkles" size={18} color="#8b5cf6" />
-              <Text className="text-lg font-bold text-slate-900 dark:text-slate-100">Import & Study</Text>
+              <Text className="text-lg font-bold text-lantern-text">Import & Study</Text>
             </View>
             <Pressable onPress={handleClose} className="p-1">
               <Ionicons name="close" size={22} color="#94a3b8" />
@@ -128,7 +128,7 @@ export default function ImportAndStudyModal({
           <View className="p-4">
             {step === 'input' ? (
               <>
-                <Text className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+                <Text className="text-sm text-lantern-text-secondary mb-3">
                   Paste lecture notes to create study materials.
                 </Text>
 
@@ -139,17 +139,17 @@ export default function ImportAndStudyModal({
                   placeholderTextColor="#94a3b8"
                   multiline
                   textAlignVertical="top"
-                  className="min-h-[100px] border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-900 mb-3"
+                  className="min-h-[100px] border border-lantern-border rounded-xl px-3 py-2 text-sm text-lantern-text bg-lantern-background mb-3"
                 />
 
                 <View className="flex-row gap-4 mb-3">
                   <View className="flex-row items-center gap-2">
                     <Switch value={generateCards} onValueChange={setGenerateCards} />
-                    <Text className="text-sm text-slate-600 dark:text-slate-300">Flashcards</Text>
+                    <Text className="text-sm text-lantern-text-secondary">Flashcards</Text>
                   </View>
                   <View className="flex-row items-center gap-2">
                     <Switch value={generateQuiz} onValueChange={setGenerateQuiz} />
-                    <Text className="text-sm text-slate-600 dark:text-slate-300">Quiz</Text>
+                    <Text className="text-sm text-lantern-text-secondary">Quiz</Text>
                   </View>
                 </View>
 
@@ -164,7 +164,7 @@ export default function ImportAndStudyModal({
             {step === 'processing' ? (
               <View className="items-center py-8">
                 <ActivityIndicator size="large" color="#6366f1" />
-                <Text className="font-medium text-slate-800 dark:text-slate-100 mt-4">
+                <Text className="font-medium text-lantern-text mt-4">
                   Creating study materials...
                 </Text>
               </View>
@@ -173,13 +173,13 @@ export default function ImportAndStudyModal({
             {step === 'done' && result ? (
               <View className="items-center py-4 gap-3">
                 <Ionicons name="checkmark-circle" size={48} color="#22c55e" />
-                <Text className="font-semibold text-slate-900 dark:text-slate-100">{result.noteTitle} ready!</Text>
+                <Text className="font-semibold text-lantern-text">{result.noteTitle} ready!</Text>
                 <View className="flex-row gap-3">
                   {result.flashcardCount ? (
-                    <Text className="text-sm text-slate-500">{result.flashcardCount} flashcards</Text>
+                    <Text className="text-sm text-lantern-text-secondary">{result.flashcardCount} flashcards</Text>
                   ) : null}
                   {result.quizQuestionCount ? (
-                    <Text className="text-sm text-slate-500">{result.quizQuestionCount} quiz Qs</Text>
+                    <Text className="text-sm text-lantern-text-secondary">{result.quizQuestionCount} quiz Qs</Text>
                   ) : null}
                 </View>
                 <Button

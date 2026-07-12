@@ -86,21 +86,21 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
 
   if (basicCards.length < 2) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center p-8 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
-        <p className="text-slate-500 mb-4">Need at least 2 basic flashcards for Match mode.</p>
+      <div className={`flex-1 flex flex-col items-center justify-center p-8 ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
+        <p className="text-lantern-text-secondary mb-4">Need at least 2 basic flashcards for Match mode.</p>
         <Button onClick={onExit}>Go back</Button>
       </div>
     );
   }
 
   return (
-    <div className={`flex-1 flex flex-col ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+    <div className={`flex-1 flex flex-col ${isDark ? 'bg-lantern-background text-lantern-text' : 'bg-lantern-background text-lantern-text'}`}>
+      <div className="flex items-center justify-between p-4 border-b border-lantern-border">
         <div>
           <h1 className="font-bold text-lg">Match — {deckName}</h1>
-          <p className="text-sm text-slate-500">{matchedCount}/{totalPairs} pairs · <ClockIcon className="w-3 h-3 inline" /> {formatTime(elapsed)}</p>
+          <p className="text-sm text-lantern-text-secondary">{matchedCount}/{totalPairs} pairs · <ClockIcon className="w-3 h-3 inline" /> {formatTime(elapsed)}</p>
         </div>
-        <button onClick={onExit} className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700">
+        <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <XMarkIcon className="w-5 h-5" />
         </button>
       </div>
@@ -109,7 +109,7 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <div className="text-5xl mb-4">🎉</div>
           <h2 className="text-2xl font-bold mb-2">All matched!</h2>
-          <p className="text-slate-500 mb-6">Completed in {formatTime(elapsed)}</p>
+          <p className="text-lantern-text-secondary mb-6">Completed in {formatTime(elapsed)}</p>
           <Button onClick={onExit}>Done</Button>
         </div>
       ) : (
@@ -128,8 +128,8 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
                     : isWrong
                     ? 'border-red-500 bg-red-50 dark:bg-red-900/20 shake'
                     : isSelected
-                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
-                    : `${isDark ? 'border-slate-600 bg-slate-800 hover:border-indigo-400' : 'border-slate-200 bg-white hover:border-indigo-300'}`
+                    ? 'border-lantern-primary bg-lantern-primary-background'
+                    : `${isDark ? 'border-lantern-border bg-lantern-surface hover:border-lantern-primary' : 'border-lantern-border bg-lantern-surface hover:border-lantern-primary/30'}`
                 }`}
               >
                 {tile.text}

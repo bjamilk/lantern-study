@@ -45,26 +45,26 @@ export default function CreateFlashcardModal({
       <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={onClose}>
         <Pressable onPress={e => e.stopPropagation?.()}>
           <Card className="border-0 shadow-lg">
-            <Text className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">
+            <Text className="text-lg font-bold text-lantern-text mb-4">
               {editingFlashcard ? 'Edit Flashcard' : 'New Flashcard'}
             </Text>
-            <Text className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Front</Text>
+            <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Front</Text>
             <TextInput
               value={front}
               onChangeText={setFront}
               placeholder="Question or term"
               placeholderTextColor="#94a3b8"
               multiline
-              className="border border-slate-200 dark:border-slate-600 rounded-2xl px-4 py-3 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-3 min-h-[72px]"
+              className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-3 min-h-[72px]"
             />
-            <Text className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Back</Text>
+            <Text className="text-xs font-medium text-lantern-text-secondary mb-1">Back</Text>
             <TextInput
               value={back}
               onChangeText={setBack}
               placeholder="Answer or definition"
               placeholderTextColor="#94a3b8"
               multiline
-              className="border border-slate-200 dark:border-slate-600 rounded-2xl px-4 py-3 text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 mb-4 min-h-[72px]"
+              className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-4 min-h-[72px]"
             />
             <View className="flex-row gap-2">
               <Button variant="secondary" className="flex-1" onPress={onClose}>

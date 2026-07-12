@@ -26,7 +26,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ColorsThemeProvider>
-      <View className={`flex-1 ${isDark ? 'dark' : ''} bg-lantern-background dark:bg-slate-900`}>
+      <View className={`flex-1 ${isDark ? 'dark' : ''} bg-lantern-background dark:bg-lantern-background`}>
         {children}
       </View>
     </ColorsThemeProvider>

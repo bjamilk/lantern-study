@@ -354,10 +354,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <div className="flex-1 flex items-center justify-center bg-lantern-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-200 border-t-indigo-600 mx-auto mb-3"></div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Loading listing...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-lantern-primary/30 border-t-lantern-primary mx-auto mb-3"></div>
+          <p className="text-sm text-lantern-text-secondary">Loading listing...</p>
         </div>
       </div>
     );
@@ -365,16 +365,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   if (!listing) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 p-6">
+      <div className="flex-1 flex flex-col items-center justify-center bg-lantern-background p-6">
         <div className="text-center">
-          <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <ExclamationTriangleIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+          <div className="w-16 h-16 bg-lantern-background-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ExclamationTriangleIcon className="w-8 h-8 text-lantern-text-tertiary" />
           </div>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-1">Listing not found</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 max-w-sm">The listing you're looking for doesn't exist or has been removed.</p>
+          <h2 className="text-lg font-semibold text-lantern-text mb-1">Listing not found</h2>
+          <p className="text-sm text-lantern-text-secondary mb-5 max-w-sm">The listing you're looking for doesn't exist or has been removed.</p>
           <button
             onClick={onBack}
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold flex items-center gap-2 mx-auto transition-colors duration-150 text-sm shadow-sm"
+            className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-2 mx-auto transition-colors duration-150 text-sm shadow-sm"
           >
             <ArrowLeftIcon className="w-4 h-4" />
             Go Back
@@ -391,16 +391,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const pricing = listing ? resolveListingDisplayPrice(listing) : null;
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-slate-900 overflow-y-auto">
+    <div className="flex-1 bg-lantern-background overflow-y-auto">
       <div className="px-3 sm:px-4 md:px-6 pt-3">
         <MarketplaceComplianceBanner />
       </div>
       {/* Header */}
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-2.5 sm:py-3">
+      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-2.5 sm:py-3">
         <div className="flex items-center justify-between">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 sm:gap-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium transition-colors duration-150 px-2 py-1.5 -ml-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+            className="flex items-center gap-1.5 sm:gap-2 text-sm text-lantern-text-secondary hover:text-lantern-text font-medium transition-colors duration-150 px-2 py-1.5 -ml-2 rounded-lg hover:bg-lantern-background-secondary"
           >
             <ArrowLeftIcon className="w-4 h-4" />
             <span className="hidden sm:inline">Back to Marketplace</span>
@@ -411,13 +411,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             {!guestMode && (
             <button
               onClick={toggleFavorite}
-              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="p-2 rounded-lg hover:bg-lantern-background-secondary transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
               aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
             >
               {isFavorited ? (
                 <HeartSolidIcon className="w-5 h-5 text-red-500" />
               ) : (
-                <HeartIcon className="w-5 h-5 text-slate-400" />
+                <HeartIcon className="w-5 h-5 text-lantern-text-tertiary" />
               )}
             </button>
             )}
@@ -436,7 +436,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   });
                 }
               }}
-              className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="p-2 rounded-lg text-lantern-text-tertiary hover:text-lantern-text-secondary dark:hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
               aria-label="Share listing"
             >
               <ShareIcon className="w-5 h-5" />
@@ -444,7 +444,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             {!guestMode && (
             <button
               onClick={() => setShowReportForm(true)}
-              className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="p-2 rounded-lg text-lantern-text-tertiary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               aria-label="Report listing"
             >
               <FlagIcon className="w-5 h-5" />
@@ -458,7 +458,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
           {/* Images Section */}
           <div className="space-y-3">
-            <div className="relative bg-slate-100 dark:bg-slate-700/50 rounded-2xl overflow-hidden ring-1 ring-slate-200/60 dark:ring-slate-700/60">
+            <div className="relative bg-lantern-background-secondary dark:bg-lantern-surface-secondary/50 rounded-2xl overflow-hidden ring-1 ring-lantern-border/60">
               {listing.images && listing.images.length > 0 ? (
                 <>
                   <img
@@ -471,14 +471,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     <>
                       <button
                         onClick={prevImage}
-                        className="absolute left-3 top-1/2 transform -translate-y-1/2 p-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl hover:bg-white dark:hover:bg-slate-700 transition-colors duration-150 shadow-sm"
+                        className="absolute left-3 top-1/2 transform -translate-y-1/2 p-2 bg-lantern-surface/80 dark:bg-lantern-surface/80 backdrop-blur-sm rounded-xl hover:bg-lantern-surface dark:hover:bg-lantern-surface-secondary transition-colors duration-150 shadow-sm"
                         aria-label="Previous image"
                       >
                         <ArrowLeftIcon className="w-4 h-4" />
                       </button>
                       <button
                         onClick={nextImage}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl hover:bg-white dark:hover:bg-slate-700 transition-colors duration-150 shadow-sm"
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-lantern-surface/80 dark:bg-lantern-surface/80 backdrop-blur-sm rounded-xl hover:bg-lantern-surface dark:hover:bg-lantern-surface-secondary transition-colors duration-150 shadow-sm"
                         aria-label="Next image"
                       >
                         <ArrowLeftIcon className="w-4 h-4 rotate-180" />
@@ -489,7 +489,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                             key={index}
                             onClick={() => setCurrentImageIndex(index)}
                             className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                              index === currentImageIndex ? 'bg-white w-5' : 'bg-white/50 hover:bg-white/70'
+                              index === currentImageIndex ? 'bg-lantern-surface w-5' : 'bg-lantern-surface/50 hover:bg-lantern-surface/70'
                             }`}
                             aria-label={`View image ${index + 1}`}
                           />
@@ -501,8 +501,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               ) : (
                 <div className="w-full h-56 sm:h-72 md:h-96 flex items-center justify-center">
                   <div className="text-center">
-                    <ShoppingBagIcon className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                    <p className="text-sm text-slate-400 dark:text-slate-500">No images available</p>
+                    <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+                    <p className="text-sm text-lantern-text-tertiary">No images available</p>
                   </div>
                 </div>
               )}
@@ -517,8 +517,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     onClick={() => setCurrentImageIndex(index)}
                     className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden ring-2 transition-all duration-150 ${
                       index === currentImageIndex
-                        ? 'ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900'
-                        : 'ring-transparent hover:ring-slate-300 dark:hover:ring-slate-600'
+                        ? 'ring-lantern-primary ring-offset-2 dark:ring-offset-lantern-background'
+                        : 'ring-transparent hover:ring-lantern-border'
                     }`}
                     aria-label={`Select image ${index + 1}`}
                   >
@@ -533,17 +533,17 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           <div className="space-y-4 sm:space-y-5">
             {/* Title and Price */}
             <div>
-              <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2 sm:mb-3">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-lantern-text mb-2 sm:mb-3">
                 {listing.title}
               </h1>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   {pricing?.onSale ? (
                     <>
-                      <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                      <span className="text-2xl font-bold text-lantern-primary">
                         ₦{pricing.effective.toLocaleString()}
                       </span>
-                      <span className="text-lg text-slate-400 line-through">
+                      <span className="text-lg text-lantern-text-tertiary line-through">
                         ₦{pricing.base.toLocaleString()}
                       </span>
                       {listing.promo_label && (
@@ -554,7 +554,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       <SaleCountdown saleEndsAt={listing.sale_ends_at} />
                     </>
                   ) : (
-                    <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                    <span className="text-2xl font-bold text-lantern-primary">
                       {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
                     </span>
                   )}
@@ -569,22 +569,22 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       {listing.quantity > 0 ? `${listing.quantity} left` : 'Sold out'}
                     </span>
                   )}
-                  <div className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-1 text-sm text-lantern-text-secondary">
                     <StarIcon className="w-4 h-4 text-amber-400 fill-current" />
                     <span className="font-semibold">{averageRating.toFixed(1)}</span>
-                    <span className="text-slate-400">({reviews.length})</span>
+                    <span className="text-lantern-text-tertiary">({reviews.length})</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Meta Information */}
-            <div className="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              <span className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+            <div className="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm text-lantern-text-secondary">
+              <span className="flex items-center gap-1 bg-lantern-background-secondary px-2.5 py-1 rounded-lg">
                 <MapPinIcon className="w-3.5 h-3.5" />
                 {listing.location || 'Not specified'}
               </span>
-              <span className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+              <span className="flex items-center gap-1 bg-lantern-background-secondary px-2.5 py-1 rounded-lg">
                 <ClockIcon className="w-3.5 h-3.5" />
                 {new Date(listing.created_at).toLocaleDateString()}
               </span>
@@ -597,9 +597,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             )}
 
             {listing.listing_kind === 'bundle' && listing.bundle_items && listing.bundle_items.length > 0 && (
-              <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40">
-                <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-2">Bundle includes</h3>
-                <ul className="space-y-1 text-sm text-indigo-800 dark:text-indigo-300">
+              <div className="p-3 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30">
+                <h3 className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light mb-2">Bundle includes</h3>
+                <ul className="space-y-1 text-sm text-lantern-primary-dark dark:text-lantern-primary-light">
                   {listing.bundle_items.map((item, idx) => (
                     <li key={item.listing_id || idx}>
                       • {item.title}
@@ -612,8 +612,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
             {/* Description */}
             <div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1.5 uppercase tracking-wide">Description</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              <h3 className="text-sm font-semibold text-lantern-text mb-1.5 uppercase tracking-wide">Description</h3>
+              <p className="text-sm text-lantern-text-secondary leading-relaxed">
                 {listing.description || 'No description provided.'}
               </p>
             </div>
@@ -621,60 +621,60 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             {/* Category-Specific Details */}
             {listing.category_specific_fields && Object.keys(listing.category_specific_fields).filter(k => k !== 'parentCategory').length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2 uppercase tracking-wide">Details</h3>
+                <h3 className="text-sm font-semibold text-lantern-text mb-2 uppercase tracking-wide">Details</h3>
                 <div className="grid grid-cols-2 gap-2">
                   {listing.category_specific_fields.condition && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Condition</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 capitalize">{listing.category_specific_fields.condition}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Condition</span>
+                      <p className="text-sm font-medium text-lantern-text capitalize">{listing.category_specific_fields.condition}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.courseCode && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Course Code</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.courseCode}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Course Code</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.courseCode}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.year && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Year</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.year}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Year</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.year}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.semester && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Semester</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.semester}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Semester</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.semester}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.isbn && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">ISBN</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.isbn}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">ISBN</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.isbn}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.edition && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Edition</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.edition}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Edition</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.edition}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.bedrooms != null && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Bedrooms</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.bedrooms}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Bedrooms</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.bedrooms}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.furnished != null && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Furnished</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.furnished ? 'Yes' : 'No'}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Furnished</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.furnished ? 'Yes' : 'No'}</p>
                     </div>
                   )}
                   {listing.category_specific_fields.distanceToCampus && (
-                    <div className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Distance to Campus</span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{listing.category_specific_fields.distanceToCampus}</p>
+                    <div className="bg-lantern-background-secondary rounded-lg px-3 py-2">
+                      <span className="text-xs text-lantern-text-secondary">Distance to Campus</span>
+                      <p className="text-sm font-medium text-lantern-text">{listing.category_specific_fields.distanceToCampus}</p>
                     </div>
                   )}
                 </div>
@@ -682,20 +682,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             )}
 
             {/* Seller Information */}
-            <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 ring-1 ring-slate-200/60 dark:ring-slate-700/60">
-              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase tracking-wide">Seller</h3>
+            <div className="bg-lantern-background-secondary/50 rounded-xl p-4 ring-1 ring-lantern-border/60">
+              <h3 className="text-xs font-semibold text-lantern-text-secondary mb-3 uppercase tracking-wide">Seller</h3>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
-                  <UserIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                <div className="w-10 h-10 bg-lantern-primary-background dark:bg-lantern-primary-dark/30 rounded-xl flex items-center justify-center">
+                  <UserIcon className="w-5 h-5 text-lantern-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <button
                     onClick={() => onNavigate('SellerProfile', { userId: listing.user_id || listing.seller_id })}
-                    className="font-semibold text-sm text-indigo-600 dark:text-indigo-400 hover:underline truncate block text-left"
+                    className="font-semibold text-sm text-lantern-primary hover:underline truncate block text-left"
                   >
                     {listing.seller?.name || listing.profiles?.name || 'Anonymous Seller'}
                   </button>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <div className="flex items-center gap-2 text-xs text-lantern-text-secondary">
                     {averageRating > 0 && (
                       <span className="flex items-center gap-0.5">
                         <StarIcon className="w-3 h-3 text-amber-400 fill-current" />
@@ -707,7 +707,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </div>
               </div>
               {/* Seller since */}
-              <div className="mt-2.5 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <div className="mt-2.5 pt-2.5 border-t border-lantern-border/60 dark:border-lantern-border/60 flex items-center gap-3 text-xs text-lantern-text-secondary">
                 <span className="flex items-center gap-1">
                   <ClockIcon className="w-3 h-3" />
                   Listed {new Date(listing.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -723,16 +723,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
             {/* Owner Management Panel */}
             {isOwner && (
-              <div className="bg-indigo-50 dark:bg-indigo-950/40 rounded-xl ring-1 ring-indigo-200 dark:ring-indigo-700/50 overflow-hidden">
+              <div className="bg-lantern-primary-background rounded-xl ring-1 ring-lantern-primary/20 dark:ring-lantern-primary/30 overflow-hidden">
                 {/* Header row */}
                 <div className="flex items-center gap-2 px-3 py-2.5">
-                  <span className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded-md">YOU</span>
-                  <span className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">This is your listing</span>
+                  <span className="px-2 py-0.5 bg-lantern-primary text-white text-[10px] font-bold rounded-md">YOU</span>
+                  <span className="text-xs text-lantern-primary font-medium">This is your listing</span>
                 </div>
 
                 {/* Stats row */}
                 {sellerStats && (
-                  <div className="flex items-center gap-4 px-3 pb-2 text-xs text-indigo-600 dark:text-indigo-400">
+                  <div className="flex items-center gap-4 px-3 pb-2 text-xs text-lantern-primary">
                     <span className="flex items-center gap-1">
                       <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
                       {sellerStats.totalListings} published
@@ -754,7 +754,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 <div className="flex items-center gap-2 px-3 pb-3">
                   <button
                     onClick={(e) => { e.stopPropagation(); onNavigate('EditMarketplaceListing', { listing }); }}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
                   >
                     <PencilSquareIcon className="w-3.5 h-3.5" />
                     Edit Listing
@@ -762,7 +762,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <button
                     onClick={(e) => { e.stopPropagation(); handleBoostListing(); }}
                     disabled={boostingListing}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 text-xs font-semibold rounded-lg ring-1 ring-indigo-200 dark:ring-indigo-700 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-surface text-lantern-primary text-xs font-semibold rounded-lg ring-1 ring-lantern-primary/20 dark:ring-lantern-primary/30 hover:bg-lantern-primary-background transition-colors"
                   >
                     {boostingListing ? 'Boosting...' : 'Boost Listing'}
                   </button>
@@ -770,10 +770,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
                 {negotiationHistory.length > 0 && (
                   <div className="px-3 pb-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300 mb-1.5">Negotiation Timeline</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-lantern-primary mb-1.5">Negotiation Timeline</p>
                     <div className="max-h-24 overflow-y-auto space-y-1.5">
                       {negotiationHistory.slice(-5).map((offer: any) => (
-                        <div key={offer.id} className="text-[11px] text-indigo-700 dark:text-indigo-300 bg-white/70 dark:bg-slate-800/70 rounded-md px-2 py-1">
+                        <div key={offer.id} className="text-[11px] text-lantern-primary bg-lantern-surface/70 dark:bg-lantern-surface/70 rounded-md px-2 py-1">
                           {new Date(offer.created_at).toLocaleDateString()} · ₦{Number(offer.amount || 0).toLocaleString()} · {offer.status}
                           {offer.parent_offer_id ? ' · counter' : ' · initial'}
                         </div>
@@ -789,7 +789,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {!isOwner && (
                 <button
                   onClick={handleContactSeller}
-                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                 >
                   <ChatBubbleLeftIcon className="w-4 h-4" />
                   Contact Seller
@@ -811,8 +811,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </button>
               )}
               {!isOwner && listing.price && listing.price > 0 && (
-                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
-                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Have a coupon?</p>
+                <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
+                  <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -828,7 +828,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       type="button"
                       onClick={() => void handleApplyCoupon()}
                       disabled={validatingCoupon || !couponCode.trim()}
-                      className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-semibold"
+                      className="px-3 py-2 rounded-lg bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white text-xs font-semibold"
                     >
                       {validatingCoupon ? 'Checking…' : 'Apply'}
                     </button>
@@ -845,7 +845,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 <button
                   onClick={handleBuyNow}
                   disabled={buyingNow}
-                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-indigo-700 hover:bg-indigo-800 disabled:bg-indigo-400 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary-dark hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                 >
                   <CheckBadgeIcon className="w-4 h-4" />
                   {buyingNow
@@ -858,15 +858,15 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
         </div>
 
         {/* Reviews Section */}
-        <div className="mt-5 sm:mt-8 bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-slate-200/60 dark:ring-slate-700/60">
+        <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
           <div className="flex items-center justify-between mb-4 sm:mb-5">
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200">Reviews</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</p>
+              <h2 className="text-base sm:text-lg font-bold text-lantern-text">Reviews</h2>
+              <p className="text-sm text-lantern-text-secondary">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</p>
             </div>
             <button
               onClick={() => setShowReviewForm(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold flex items-center gap-1.5 transition-colors duration-150 text-sm shadow-sm"
+              className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-1.5 transition-colors duration-150 text-sm shadow-sm"
             >
               <StarIcon className="w-4 h-4" />
               Write Review
@@ -875,22 +875,22 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
           {reviews.length === 0 ? (
             <div className="flex flex-col items-center py-10">
-              <div className="w-14 h-14 bg-slate-100 dark:bg-slate-700 rounded-2xl flex items-center justify-center mb-3">
-                <StarIcon className="w-7 h-7 text-slate-300 dark:text-slate-600" />
+              <div className="w-14 h-14 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-2xl flex items-center justify-center mb-3">
+                <StarIcon className="w-7 h-7 text-lantern-text-tertiary" />
               </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">No reviews yet. Be the first to leave one!</p>
+              <p className="text-sm text-lantern-text-secondary">No reviews yet. Be the first to leave one!</p>
             </div>
           ) : (
             <div className="space-y-3">
               {reviews.map(review => (
-                <div key={review.id} className="border-b border-slate-100 dark:border-slate-700 pb-3 last:border-b-0 last:pb-0">
+                <div key={review.id} className="border-b border-lantern-border pb-3 last:border-b-0 last:pb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <UserIcon className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                      <div className="w-8 h-8 bg-lantern-primary-background dark:bg-lantern-primary-dark/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <UserIcon className="w-4 h-4 text-lantern-primary" />
                       </div>
                       <div>
-                        <p className="font-semibold text-sm text-slate-800 dark:text-slate-200">
+                        <p className="font-semibold text-sm text-lantern-text">
                           {review.reviewer?.name || 'Anonymous'}
                         </p>
                         <div className="flex items-center gap-0.5">
@@ -898,19 +898,19 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                             <StarSolidIcon
                               key={i}
                               className={`w-3 h-3 ${
-                                i < review.rating ? 'text-amber-400' : 'text-slate-200 dark:text-slate-600'
+                                i < review.rating ? 'text-amber-400' : 'text-lantern-text-secondary dark:text-lantern-text-secondary'
                               }`}
                             />
                           ))}
                         </div>
                       </div>
                     </div>
-                    <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">
+                    <span className="text-xs text-lantern-text-tertiary flex-shrink-0">
                       {new Date(review.created_at).toLocaleDateString()}
                     </span>
                   </div>
                   {review.comment && (
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 ml-[42px]">
+                    <p className="text-sm text-lantern-text-secondary mt-2 ml-[42px]">
                       {review.comment}
                     </p>
                   )}
@@ -922,27 +922,27 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
         {/* Similar Listings */}
         {similarListings.length > 0 && (
-          <div className="mt-5 sm:mt-8 bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-slate-200/60 dark:ring-slate-700/60">
-            <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-200 mb-3 sm:mb-4">You Might Also Like</h2>
+          <div className="mt-5 sm:mt-8 bg-lantern-surface rounded-2xl p-4 sm:p-5 md:p-6 ring-1 ring-lantern-border/60">
+            <h2 className="text-base sm:text-lg font-bold text-lantern-text mb-3 sm:mb-4">You Might Also Like</h2>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
               {similarListings.map(item => (
                 <button
                   key={item.id}
                   onClick={() => onNavigate('MarketplaceListingDetail', { listingId: item.id })}
-                  className="bg-slate-50 dark:bg-slate-700/50 rounded-xl overflow-hidden ring-1 ring-slate-200/60 dark:ring-slate-700/60 hover:ring-indigo-300/60 dark:hover:ring-indigo-600/40 transition-all text-left group"
+                  className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-xl overflow-hidden ring-1 ring-lantern-border/60 hover:ring-lantern-primary/30 dark:hover:ring-lantern-primary/40 transition-all text-left group"
                 >
-                  <div className="aspect-[4/3] bg-slate-100 dark:bg-slate-700">
+                  <div className="aspect-[4/3] bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
                     {item.images && item.images.length > 0 ? (
                       <img src={item.images[0]} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+                        <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
                       </div>
                     )}
                   </div>
                   <div className="p-2.5">
-                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{item.title}</p>
-                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">{item.price ? `₦${item.price.toLocaleString()}` : 'Free'}</p>
+                    <p className="text-xs font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary dark:group-hover:text-lantern-primary-light transition-colors">{item.title}</p>
+                    <p className="text-sm font-bold text-lantern-primary mt-0.5">{item.price ? `₦${item.price.toLocaleString()}` : 'Free'}</p>
                   </div>
                 </button>
               ))}
@@ -961,12 +961,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           panelClassName="!p-0 overflow-hidden rounded-xl"
         >
           <div className="w-full">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 id="listing-review-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Write a Review</h3>
+            <div className="flex items-center justify-between p-6 border-b border-lantern-border">
+              <h3 id="listing-review-title" className="text-lg font-bold text-lantern-text">Write a Review</h3>
               <button
                 type="button"
                 onClick={() => setShowReviewForm(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200"
                 aria-label="Close review form"
               >
                 <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
@@ -975,7 +975,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Rating
                 </label>
                 <div className="flex space-x-1">
@@ -984,7 +984,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       key={num}
                       onClick={() => setReviewForm(prev => ({ ...prev, rating: num }))}
                       className={`p-1 transition-colors duration-200 ${
-                        num <= reviewForm.rating ? 'text-yellow-400' : 'text-slate-300 dark:text-slate-600'
+                        num <= reviewForm.rating ? 'text-yellow-400' : 'text-lantern-text-tertiary'
                       }`}
                     >
                       <StarSolidIcon className="w-6 h-6" />
@@ -994,7 +994,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Comment
                 </label>
                 <textarea
@@ -1002,20 +1002,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   onChange={(e) => setReviewForm(prev => ({ ...prev, comment: e.target.value }))}
                   placeholder="Share your experience with this listing..."
                   rows={4}
-                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 resize-none"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
                 />
               </div>
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   onClick={() => setShowReviewForm(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold transition-colors duration-200"
+                  className="px-4 py-2 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary font-semibold transition-colors duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleAddReview}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors duration-200"
+                  className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold transition-colors duration-200"
                 >
                   Submit Review
                 </button>
@@ -1035,12 +1035,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           panelClassName="!p-0 overflow-hidden rounded-xl"
         >
           <div className="w-full">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 id="listing-report-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Report Listing</h3>
+            <div className="flex items-center justify-between p-6 border-b border-lantern-border">
+              <h3 id="listing-report-title" className="text-lg font-bold text-lantern-text">Report Listing</h3>
               <button
                 type="button"
                 onClick={() => setShowReportForm(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200"
                 aria-label="Close report form"
               >
                 <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
@@ -1049,13 +1049,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Reason for report
                 </label>
                 <select
                   value={reportForm.reason}
                   onChange={(e) => setReportForm(prev => ({ ...prev, reason: e.target.value }))}
-                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
                 >
                   <option value="">Select a reason</option>
                   <option value="spam">Spam or misleading</option>
@@ -1068,7 +1068,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Additional details
                 </label>
                 <textarea
@@ -1076,14 +1076,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   onChange={(e) => setReportForm(prev => ({ ...prev, details: e.target.value }))}
                   placeholder="Provide more information about the issue..."
                   rows={3}
-                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 resize-none"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
                 />
               </div>
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   onClick={() => setShowReportForm(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold transition-colors duration-200"
+                  className="px-4 py-2 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary font-semibold transition-colors duration-200"
                 >
                   Cancel
                 </button>
@@ -1111,13 +1111,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           panelClassName="!p-0 overflow-hidden rounded-xl"
         >
           <div className="w-full">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-              <h3 id="listing-contact-title" className="text-lg font-bold text-slate-800 dark:text-slate-200">Contact Seller</h3>
+            <div className="flex items-center justify-between p-6 border-b border-lantern-border">
+              <h3 id="listing-contact-title" className="text-lg font-bold text-lantern-text">Contact Seller</h3>
               <button
                 type="button"
                 onClick={() => setShowContactForm(false)}
                 disabled={contactLoading}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200 disabled:opacity-50"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200 disabled:opacity-50"
                 aria-label="Close contact form"
               >
                 <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
@@ -1125,20 +1125,20 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4">
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+              <div className="bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-lg p-4">
+                <p className="text-sm text-lantern-text-secondary mb-2">
                   Inquiring about:
                 </p>
-                <p className="font-semibold text-slate-800 dark:text-slate-200">
+                <p className="font-semibold text-lantern-text">
                   {listing?.title}
                 </p>
-                <p className="text-indigo-600 dark:text-indigo-400 font-medium">
+                <p className="text-lantern-primary font-medium">
                   {listing?.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Quick Inquiries
                 </label>
                 <div className="flex flex-wrap gap-2 mb-3">
@@ -1151,7 +1151,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       key={preset}
                       type="button"
                       onClick={() => setContactMessage(preset)}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 dark:bg-slate-700 dark:hover:bg-indigo-900/30 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 rounded-full text-xs font-medium border border-slate-200 dark:border-slate-600 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all"
+                      className="px-3 py-1.5 bg-lantern-background-secondary hover:bg-lantern-primary-background dark:bg-lantern-surface-secondary dark:hover:bg-lantern-primary-dark/30 text-lantern-text hover:text-lantern-primary dark:text-lantern-text-tertiary dark:hover:text-lantern-primary-light rounded-full text-xs font-medium border border-lantern-border hover:border-lantern-primary/30 dark:hover:border-lantern-primary/30 transition-all"
                     >
                       {preset}
                     </button>
@@ -1160,7 +1160,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                <label className="block text-sm font-semibold text-lantern-text mb-2">
                   Your Message
                 </label>
                 <textarea
@@ -1168,21 +1168,21 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   onChange={(e) => setContactMessage(e.target.value)}
                   placeholder="Hi, I'm interested in this item. Is it still available?"
                   rows={4}
-                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 resize-none"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
                 />
               </div>
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   onClick={() => setShowContactForm(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold transition-colors duration-200"
+                  className="px-4 py-2 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary font-semibold transition-colors duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSendInquiry}
                   disabled={!contactMessage.trim() || contactLoading}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors duration-200 flex items-center"
+                  className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white rounded-lg font-semibold transition-colors duration-200 flex items-center"
                 >
                   {contactLoading ? (
                     <>

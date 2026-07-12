@@ -136,9 +136,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   if (!sessionTotal && deckCards.length === 0) {
     if (isLoading) {
       return (
-        <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-          <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Loading cards…</Text>
-          <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+        <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+          <Text className="text-lg font-semibold text-lantern-text mb-2">Loading cards…</Text>
+          <Text className="text-sm text-lantern-text-secondary text-center mb-6">
             Preparing your review session.
           </Text>
           <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
@@ -147,9 +147,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     }
 
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Nothing to review</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2">Nothing to review</Text>
+        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
           Add cards to this deck or come back when cards are due.
         </Text>
         <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
@@ -159,9 +159,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
 
   if (isComplete) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-2">Session complete</Text>
-        <Text className="text-sm text-slate-500 dark:text-slate-400 text-center mb-6">
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
+        <Text className="text-2xl font-bold text-lantern-primary mb-2">Session complete</Text>
+        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
           You reviewed {sessionTotal} card{sessionTotal !== 1 ? 's' : ''} in {deckName}.
         </Text>
         <Button onPress={() => navigation.goBack()}>Done</Button>
@@ -173,25 +173,25 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
         </Button>
-        <Text className="text-sm font-medium text-slate-600 dark:text-slate-300">
+        <Text className="text-sm font-medium text-lantern-text-secondary">
           {progress} / {sessionTotal}
         </Text>
       </View>
 
-      <View className="h-1 mx-4 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden mb-2">
+      <View className="h-1 mx-4 rounded-full bg-lantern-background-secondary overflow-hidden mb-2">
         <View
-          className="h-full bg-indigo-500 rounded-full"
+          className="h-full bg-lantern-primary rounded-full"
           style={{ width: `${(progress / sessionTotal) * 100}%` }}
         />
       </View>
 
       {index === 0 && !showBack ? (
-        <Text className="text-xs text-center text-slate-500 dark:text-slate-400 px-6 mb-3">
+        <Text className="text-xs text-center text-lantern-text-secondary px-6 mb-3">
           Tap to flip · Swipe to grade (left Again, right Good, up Easy, down Hard)
         </Text>
       ) : null}
@@ -199,7 +199,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
       <View className="flex-1 px-4 justify-center">
         {nextCard ? (
           <View className="absolute left-4 right-4 top-1/2 -mt-32 opacity-30 scale-95">
-            <View className="min-h-[260px] rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+            <View className="min-h-[260px] rounded-2xl bg-lantern-surface border border-lantern-border" />
           </View>
         ) : null}
 

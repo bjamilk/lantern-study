@@ -423,14 +423,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       panelClassName="!p-0 max-h-[90vh] overflow-y-auto rounded-xl"
     >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between p-6 border-b border-lantern-border">
           <div className="flex items-center">
             {category === 'academic' ? (
-              <AcademicCapIcon className="w-6 h-6 text-indigo-600 mr-3" aria-hidden />
+              <AcademicCapIcon className="w-6 h-6 text-lantern-primary mr-3" aria-hidden />
             ) : (
-              <BriefcaseIcon className="w-6 h-6 text-indigo-600 mr-3" aria-hidden />
+              <BriefcaseIcon className="w-6 h-6 text-lantern-primary mr-3" aria-hidden />
             )}
-            <h2 id="create-listing-title" className="text-xl font-bold text-slate-800 dark:text-slate-200">
+            <h2 id="create-listing-title" className="text-xl font-bold text-lantern-text">
               Create {category === 'academic' ? 'Academic' : 'Student Life'} Listing
             </h2>
           </div>
@@ -438,10 +438,10 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             type="button"
             onClick={onClose}
             disabled={loading || uploadingImages}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200 disabled:opacity-50"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200 disabled:opacity-50"
             aria-label="Close create listing dialog"
           >
-            <XMarkIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" aria-hidden />
+            <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" aria-hidden />
           </button>
         </div>
 
@@ -449,7 +449,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Title */}
           <div>
-            <label htmlFor="listing-title" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="listing-title" className="block text-sm font-semibold text-lantern-text mb-2">
               Title *
             </label>
             <input
@@ -459,13 +459,13 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
               required
               placeholder="Enter an engaging title for your listing"
-              className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
+              className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
             />
           </div>
 
           {/* Category */}
           <div>
-            <p id="listing-category-label" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+            <p id="listing-category-label" className="block text-sm font-semibold text-lantern-text mb-3">
               Category *
             </p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3" role="radiogroup" aria-labelledby="listing-category-label">
@@ -478,11 +478,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     onClick={() => setFormData(prev => ({ ...prev, subcategory: subcat.id }))}
                     className={`p-3 border rounded-lg text-left transition-all duration-200 ${
                       formData.subcategory === subcat.id
-                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                        : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                        ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
+                        : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
                     }`}
                   >
-                    <IconComponent className="w-5 h-5 mb-2 text-slate-500 dark:text-slate-400" />
+                    <IconComponent className="w-5 h-5 mb-2 text-lantern-text-secondary" />
                     <span className="text-sm font-medium">{subcat.name}</span>
                   </button>
                 );
@@ -493,11 +493,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 onClick={() => setFormData(prev => ({ ...prev, subcategory: 'other' }))}
                 className={`p-3 border rounded-lg text-left transition-all duration-200 ${
                   formData.subcategory === 'other'
-                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                    : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
+                    : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
                 }`}
               >
-                <PlusIcon className="w-5 h-5 mb-2 text-slate-500 dark:text-slate-400" />
+                <PlusIcon className="w-5 h-5 mb-2 text-lantern-text-secondary" />
                 <span className="text-sm font-medium">Other</span>
               </button>
             </div>
@@ -510,11 +510,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                   value={customCategory}
                   onChange={(e) => setCustomCategory(e.target.value)}
                   placeholder="Enter your custom category name"
-                  className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
                 />
                 {existingCustomCategories.length > 0 && (
                   <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Or choose an existing custom category:</p>
+                    <p className="text-xs text-lantern-text-secondary mb-1">Or choose an existing custom category:</p>
                     <div className="flex flex-wrap gap-2">
                       {existingCustomCategories
                         .filter(cat => !customCategory || cat.name.toLowerCase().includes(customCategory.toLowerCase()))
@@ -526,8 +526,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                             onClick={() => setCustomCategory(cat.name)}
                             className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
                               customCategory === cat.name
-                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                                : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-indigo-400 hover:text-indigo-600'
+                                ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
+                                : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-primary hover:text-lantern-primary'
                             }`}
                           >
                             {cat.name}
@@ -543,19 +543,19 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           {/* Category-Specific Fields */}
           {formData.subcategory && getCategoryFields(formData.subcategory).length > 0 && (
-            <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-4 space-y-4">
-              <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            <div className="bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-lg p-4 space-y-4">
+              <h4 className="text-sm font-semibold text-lantern-text">
                 Additional Details
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {getCategoryFields(formData.subcategory).includes('condition') && (
                   <div>
-                    <label htmlFor="listing-condition" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Condition</label>
+                    <label htmlFor="listing-condition" className="block text-xs font-medium text-lantern-text-secondary mb-1">Condition</label>
                     <select
                       id="listing-condition"
                       value={formData.condition}
                       onChange={(e) => setFormData(prev => ({ ...prev, condition: e.target.value as any }))}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     >
                       <option value="">Select condition</option>
                       <option value="new">New</option>
@@ -567,64 +567,64 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('isbn') && (
                   <div>
-                    <label htmlFor="listing-isbn" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">ISBN</label>
+                    <label htmlFor="listing-isbn" className="block text-xs font-medium text-lantern-text-secondary mb-1">ISBN</label>
                     <input
                       id="listing-isbn"
                       type="text"
                       value={formData.isbn}
                       onChange={(e) => setFormData(prev => ({ ...prev, isbn: e.target.value }))}
                       placeholder="e.g. 978-0-13-468599-1"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('edition') && (
                   <div>
-                    <label htmlFor="listing-edition" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Edition</label>
+                    <label htmlFor="listing-edition" className="block text-xs font-medium text-lantern-text-secondary mb-1">Edition</label>
                     <input
                       id="listing-edition"
                       type="text"
                       value={formData.edition}
                       onChange={(e) => setFormData(prev => ({ ...prev, edition: e.target.value }))}
                       placeholder="e.g. 4th Edition"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('courseCode') && (
                   <div>
-                    <label htmlFor="listing-course-code" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Course Code</label>
+                    <label htmlFor="listing-course-code" className="block text-xs font-medium text-lantern-text-secondary mb-1">Course Code</label>
                     <input
                       id="listing-course-code"
                       type="text"
                       value={formData.courseCode}
                       onChange={(e) => setFormData(prev => ({ ...prev, courseCode: e.target.value }))}
                       placeholder="e.g. CSC 201"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('year') && (
                   <div>
-                    <label htmlFor="listing-year" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Year</label>
+                    <label htmlFor="listing-year" className="block text-xs font-medium text-lantern-text-secondary mb-1">Year</label>
                     <input
                       id="listing-year"
                       type="text"
                       value={formData.year}
                       onChange={(e) => setFormData(prev => ({ ...prev, year: e.target.value }))}
                       placeholder="e.g. 2025"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('semester') && (
                   <div>
-                    <label htmlFor="listing-semester" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Semester</label>
+                    <label htmlFor="listing-semester" className="block text-xs font-medium text-lantern-text-secondary mb-1">Semester</label>
                     <select
                       id="listing-semester"
                       value={formData.semester}
                       onChange={(e) => setFormData(prev => ({ ...prev, semester: e.target.value as any }))}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     >
                       <option value="">Select semester</option>
                       <option value="1st">1st Semester</option>
@@ -634,7 +634,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('bedrooms') && (
                   <div>
-                    <label htmlFor="listing-bedrooms" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Bedrooms</label>
+                    <label htmlFor="listing-bedrooms" className="block text-xs font-medium text-lantern-text-secondary mb-1">Bedrooms</label>
                     <input
                       id="listing-bedrooms"
                       type="number"
@@ -642,18 +642,18 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                       onChange={(e) => setFormData(prev => ({ ...prev, bedrooms: e.target.value }))}
                       placeholder="e.g. 2"
                       min="0"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
                 {getCategoryFields(formData.subcategory).includes('furnished') && (
                   <div>
-                    <label htmlFor="listing-furnished" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Furnished</label>
+                    <label htmlFor="listing-furnished" className="block text-xs font-medium text-lantern-text-secondary mb-1">Furnished</label>
                     <select
                       id="listing-furnished"
                       value={formData.furnished}
                       onChange={(e) => setFormData(prev => ({ ...prev, furnished: e.target.value as any }))}
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     >
                       <option value="">Select</option>
                       <option value="yes">Yes</option>
@@ -663,14 +663,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('distanceToCampus') && (
                   <div>
-                    <label htmlFor="listing-distance" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Distance to Campus</label>
+                    <label htmlFor="listing-distance" className="block text-xs font-medium text-lantern-text-secondary mb-1">Distance to Campus</label>
                     <input
                       id="listing-distance"
                       type="text"
                       value={formData.distanceToCampus}
                       onChange={(e) => setFormData(prev => ({ ...prev, distanceToCampus: e.target.value }))}
                       placeholder="e.g. 5 min walk"
-                      className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3 py-2 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text text-sm focus:ring-2 focus:ring-lantern-primary"
                     />
                   </div>
                 )}
@@ -681,14 +681,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           {/* Description */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label htmlFor="listing-description" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              <label htmlFor="listing-description" className="text-sm font-semibold text-lantern-text">
                 Description
               </label>
               <button
                 type="button"
                 onClick={handleGenerateDescription}
                 disabled={isGeneratingDesc || !formData.title.trim()}
-                className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-lantern-border disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
                 title={formData.title.trim() ? 'Generate description with AI' : 'Enter a title first'}
               >
                 <SparklesIcon className="w-3.5 h-3.5" />
@@ -701,14 +701,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Provide detailed information about your listing..."
               rows={4}
-              className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 resize-none"
+              className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary resize-none"
             />
           </div>
 
           {/* Price and Location */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="listing-price" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-price" className="block text-sm font-semibold text-lantern-text mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-1" />
                 Price (₦)
               </label>
@@ -720,13 +720,13 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 placeholder="0.00"
                 step="0.01"
                 min="0"
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty for free items</p>
+              <p className="text-xs text-lantern-text-secondary mt-1">Leave empty for free items</p>
             </div>
 
             <div>
-              <label htmlFor="listing-quantity" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-quantity" className="block text-sm font-semibold text-lantern-text mb-2">
                 Quantity in stock
               </label>
               <input
@@ -736,13 +736,13 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
                 placeholder="Unlimited"
                 min="0"
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave empty for one-of-a-kind items</p>
+              <p className="text-xs text-lantern-text-secondary mt-1">Leave empty for one-of-a-kind items</p>
             </div>
 
             <div>
-              <label htmlFor="listing-campus" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-campus" className="block text-sm font-semibold text-lantern-text mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-1" />
                 Campus <span className="text-red-500">*</span>
               </label>
@@ -750,7 +750,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 id="listing-campus"
                 value={formData.campusId}
                 onChange={(e) => setFormData(prev => ({ ...prev, campusId: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
                 required
               >
                 <option value="">Select campus</option>
@@ -763,7 +763,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             </div>
 
             <div>
-              <label htmlFor="listing-location" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-location" className="block text-sm font-semibold text-lantern-text mb-2">
                 Meetup detail (optional)
               </label>
               <input
@@ -772,11 +772,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 value={formData.location}
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                 placeholder="Faculty gate, hall, landmark…"
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
               />
             </div>
 
-            <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <label className="flex items-start gap-2 text-sm text-lantern-text-secondary">
               <input
                 type="checkbox"
                 checked={formData.complianceConfirmed}
@@ -789,53 +789,53 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="listing-sale-price" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale price (₦)</label>
+              <label htmlFor="listing-sale-price" className="block text-sm font-semibold text-lantern-text mb-2">Sale price (₦)</label>
               <input
                 id="listing-sale-price"
                 type="number"
                 value={formData.salePrice}
                 onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary"
               />
             </div>
             <div>
-              <label htmlFor="listing-sale-ends" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale ends</label>
+              <label htmlFor="listing-sale-ends" className="block text-sm font-semibold text-lantern-text mb-2">Sale ends</label>
               <input
                 id="listing-sale-ends"
                 type="datetime-local"
                 value={formData.saleEndsAt}
                 onChange={(e) => setFormData(prev => ({ ...prev, saleEndsAt: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary"
               />
             </div>
             <div>
-              <label htmlFor="listing-promo-label" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Promo label</label>
+              <label htmlFor="listing-promo-label" className="block text-sm font-semibold text-lantern-text mb-2">Promo label</label>
               <input
                 id="listing-promo-label"
                 type="text"
                 value={formData.promoLabel}
                 onChange={(e) => setFormData(prev => ({ ...prev, promoLabel: e.target.value }))}
                 placeholder="Exam week"
-                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700"
+                className="w-full px-4 py-3 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary"
               />
             </div>
           </div>
 
           {/* Images */}
           <div>
-            <label htmlFor="listing-images" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="listing-images" className="block text-sm font-semibold text-lantern-text mb-2">
               <PhotoIcon className="w-4 h-4 inline mr-1" />
               Images
             </label>
             <div className="space-y-3">
               <div className="flex items-center justify-center w-full">
-                <label htmlFor="listing-images" className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors duration-200">
+                <label htmlFor="listing-images" className="flex flex-col items-center justify-center w-full h-32 border-2 border-lantern-border border-dashed rounded-lg cursor-pointer bg-lantern-background-secondary/50 hover:bg-lantern-background-secondary/50 transition-colors duration-200">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <PhotoIcon className="w-8 h-8 mb-3 text-slate-400 dark:text-slate-500" />
-                    <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">
+                    <PhotoIcon className="w-8 h-8 mb-3 text-lantern-text-tertiary" />
+                    <p className="mb-2 text-sm text-lantern-text-secondary">
                       <span className="font-semibold">Click to upload</span> or drag and drop
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-lantern-text-secondary">
                       PNG, JPG, GIF up to 5MB each
                     </p>
                   </div>
@@ -858,7 +858,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                       <img
                         src={image.preview}
                         alt={`Preview ${index + 1}`}
-                        className="w-full h-24 object-cover rounded-lg border border-slate-200 dark:border-slate-600"
+                        className="w-full h-24 object-cover rounded-lg border border-lantern-border"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                       <button
@@ -881,18 +881,18 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-lantern-border">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-3 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold transition-colors duration-200"
+              className="px-6 py-3 border border-lantern-border text-lantern-text rounded-lg hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary font-semibold transition-colors duration-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || uploadingImages || !formData.title.trim() || !formData.subcategory}
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center transition-colors duration-200"
+              className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center transition-colors duration-200"
             >
               {uploadingImages ? (
                 <>

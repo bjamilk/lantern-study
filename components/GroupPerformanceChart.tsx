@@ -21,7 +21,7 @@ interface GroupPerformanceChartProps {
 
 const COLORS = {
     light: [
-        'rgba(79, 70, 229, 0.8)',   // indigo-600
+        'rgba(79, 70, 229, 0.8)',   // lantern-primary
         'rgba(225, 29, 72, 0.8)',   // rose-600
         'rgba(13, 148, 136, 0.8)',  // teal-600
         'rgba(245, 158, 11, 0.8)',  // amber-600
@@ -29,7 +29,7 @@ const COLORS = {
         'rgba(192, 38, 211, 0.8)',  // fuchsia-600
     ],
     dark: [
-        'rgba(99, 102, 241, 0.8)',  // indigo-500
+        'rgba(99, 102, 241, 0.8)',  // lantern-primary-light
         'rgba(251, 113, 133, 0.8)', // rose-400
         'rgba(45, 212, 191, 0.8)',  // teal-400
         'rgba(252, 211, 77, 0.8)',  // amber-400
@@ -55,7 +55,7 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
       const ctx = chartRef.current.getContext('2d');
       if (ctx) {
         const gridColor = theme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-        const ticksColor = theme === 'dark' ? '#94a3b8' : '#475569'; // slate-400 and slate-600
+        const ticksColor = theme === 'dark' ? '#94a3b8' : '#475569'; // lantern-text-tertiary / lantern-text-secondary
         const tooltipBackgroundColor = theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)';
         const tooltipTitleColor = theme === 'dark' ? '#f1f5f9' : '#1e293b';
         const tooltipBodyColor = theme === 'dark' ? '#e2e8f0' : '#334155';
@@ -189,14 +189,14 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
 
   if (datasets.length === 0 || datasets.every(d => d.data.length === 0)) {
      return (
-        <div className="text-center py-6 px-4 text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-md mt-3">
+        <div className="text-center py-6 px-4 text-sm text-lantern-text-secondary bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md mt-3">
             <p>No test data available for this view.</p>
         </div>
         );
   }
 
   return (
-    <div className="h-60 md:h-64 my-2 p-2 bg-slate-50 dark:bg-slate-800/30 rounded-lg shadow-inner">
+    <div className="h-60 md:h-64 my-2 p-2 bg-lantern-background-secondary/30 rounded-lg shadow-inner">
       <canvas ref={chartRef}></canvas>
     </div>
   );

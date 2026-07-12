@@ -101,9 +101,9 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
       : '');
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-4">
-      <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
+    <div className="min-h-screen flex items-center justify-center bg-lantern-background p-4">
+      <div className="w-full max-w-md bg-lantern-surface rounded-2xl shadow-xl border border-lantern-border overflow-hidden">
+        <div className="bg-gradient-to-r from-lantern-primary to-purple-600 px-6 py-4">
           <h1 className="text-lg font-bold text-white">Group invitation</h1>
           <p className="text-sm text-white/80">Choose whether to join this group</p>
         </div>
@@ -111,7 +111,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
         <div className="p-6">
           {loading && (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-200 border-t-indigo-600" />
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-lantern-primary/30 border-t-lantern-primary" />
             </div>
           )}
 
@@ -121,7 +121,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
               <button
                 type="button"
                 onClick={handleDecline}
-                className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text text-sm font-medium"
               >
                 Go to dashboard
               </button>
@@ -131,12 +131,12 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
           {!loading && preview && !error && (
             <div className="space-y-6">
               <div className="flex flex-col items-center text-center">
-                <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-100 dark:border-indigo-800" />
-                <h2 className="mt-3 text-xl font-semibold text-slate-900 dark:text-slate-100">{preview.name}</h2>
+                <img src={avatar} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-lantern-primary/20 dark:border-lantern-primary/30" />
+                <h2 className="mt-3 text-xl font-semibold text-lantern-text">{preview.name}</h2>
                 {preview.description ? (
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{preview.description}</p>
+                  <p className="mt-1 text-sm text-lantern-text-secondary">{preview.description}</p>
                 ) : null}
-                <p className="mt-2 text-xs text-slate-400 flex items-center gap-1">
+                <p className="mt-2 text-xs text-lantern-text-tertiary flex items-center gap-1">
                   <UsersIcon className="w-4 h-4" />
                   {preview.memberCount} member{preview.memberCount === 1 ? '' : 's'}
                 </p>
@@ -150,7 +150,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
                   type="button"
                   onClick={handleDecline}
                   disabled={joining}
-                  className="flex-1 py-3 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-semibold flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  className="flex-1 py-3 rounded-xl border border-lantern-border text-lantern-text font-semibold flex items-center justify-center gap-2 hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary"
                 >
                   <XMarkIcon className="w-5 h-5" />
                   Decline
@@ -159,7 +159,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
                   type="button"
                   onClick={() => void handleAccept()}
                   disabled={joining}
-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 py-3 rounded-xl bg-lantern-primary hover:bg-lantern-primary-dark text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <CheckIcon className="w-5 h-5" />
                   {joining ? 'Joining…' : preview.alreadyMember ? 'Open group' : 'Accept'}

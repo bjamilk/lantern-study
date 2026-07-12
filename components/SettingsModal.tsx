@@ -235,68 +235,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                         <div className="flex flex-col gap-1.5">
                             <button type="button" onClick={() => avatarInputRef.current?.click()}
-                                className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline text-left">Change profile picture</button>
+                                className="text-sm font-medium text-lantern-primary dark:text-blue-400 hover:underline text-left">Change profile picture</button>
                             <button type="button" onClick={handleRemoveAvatar}
-                                className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 text-left">Remove photo</button>
+                                className="text-sm text-lantern-text-secondary hover:text-red-500 dark:hover:text-red-400 text-left">Remove photo</button>
                         </div>
                     </div>
                     <form onSubmit={handleProfileSave} className="space-y-4">
                         <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                            <label htmlFor="name" className="block text-sm font-medium text-lantern-text">Full Name</label>
                             <input type="text" name="name" id="name" value={profileData.name} onChange={handleProfileChange}
-                                className="mt-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200" />
+                                className="mt-1 w-full p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                         </div>
                         <div>
-                            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email Address</label>
+                            <label htmlFor="email" className="block text-sm font-medium text-lantern-text">Email Address</label>
                             <input type="email" name="email" id="email" value={currentUser.email || ''} disabled
-                                className="mt-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700/50 cursor-not-allowed text-gray-500 dark:text-gray-400" />
+                                className="mt-1 w-full p-2 border border-lantern-border rounded-md bg-lantern-background-secondary dark:bg-lantern-surface-secondary/50 cursor-not-allowed text-lantern-text-secondary" />
                         </div>
                          <div>
-                            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                            <label htmlFor="phone" className="block text-sm font-medium text-lantern-text">Phone Number</label>
                             <input type="tel" name="phone" id="phone" value={profileData.phone} onChange={handleProfileChange}
-                                className="mt-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200" />
+                                className="mt-1 w-full p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                         </div>
                         {isProfileDirty && (
                             <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm">Save Changes</button>
                         )}
                     </form>
-                     <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                         <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Change Password</h3>
+                     <div className="border-t border-lantern-border pt-6">
+                         <h3 className="text-lg font-semibold text-lantern-text dark:text-lantern-text">Change Password</h3>
                          {!showPasswordChange ? (
-                             <button onClick={() => setShowPasswordChange(true)} className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">Change your password</button>
+                             <button onClick={() => setShowPasswordChange(true)} className="mt-2 text-sm text-lantern-primary dark:text-blue-400 hover:underline">Change your password</button>
                          ) : (
                              <form onSubmit={handlePasswordChange} className="mt-4 space-y-4">
                                 <div>
-                                    <label htmlFor="current" className="block text-sm font-medium text-gray-800 dark:text-gray-300">Current Password</label>
+                                    <label htmlFor="current" className="block text-sm font-medium text-lantern-text dark:text-lantern-text-tertiary">Current Password</label>
                                     <div className="relative mt-1">
                                         <input type={showCurrentPass ? 'text' : 'password'} id="current" value={passwordData.current}
                                             onChange={e => setPasswordData(p => ({ ...p, current: e.target.value }))} required
-                                            className="w-full p-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200" />
-                                        <button type="button" onClick={() => setShowCurrentPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                                            className="w-full p-2 pr-10 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
+                                        <button type="button" onClick={() => setShowCurrentPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary">
                                             {showCurrentPass ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
                                         </button>
                                     </div>
                                 </div>
                                 <div>
-                                    <label htmlFor="newPass" className="block text-sm font-medium text-gray-800 dark:text-gray-300">New Password</label>
+                                    <label htmlFor="newPass" className="block text-sm font-medium text-lantern-text dark:text-lantern-text-tertiary">New Password</label>
                                     <div className="relative mt-1">
                                         <input type={showNewPass ? 'text' : 'password'} id="newPass" value={passwordData.newPass}
                                             onChange={e => setPasswordData(p => ({ ...p, newPass: e.target.value }))} required
-                                            className="w-full p-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200" />
-                                        <button type="button" onClick={() => setShowNewPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400">
+                                            className="w-full p-2 pr-10 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
+                                        <button type="button" onClick={() => setShowNewPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary">
                                             {showNewPass ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
                                         </button>
                                     </div>
                                 </div>
                                 <div>
-                                    <label htmlFor="confirmPass" className="block text-sm font-medium text-gray-800 dark:text-gray-300">Confirm New Password</label>
+                                    <label htmlFor="confirmPass" className="block text-sm font-medium text-lantern-text dark:text-lantern-text-tertiary">Confirm New Password</label>
                                     <input type="password" id="confirmPass" value={passwordData.confirmPass}
                                         onChange={e => setPasswordData(p => ({ ...p, confirmPass: e.target.value }))} required
-                                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200" />
+                                        className="w-full p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                                 </div>
                                 <div className="flex items-center space-x-2">
                                     <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">Update Password</button>
-                                    <button type="button" onClick={() => setShowPasswordChange(false)} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-600 rounded-md">Cancel</button>
+                                    <button type="button" onClick={() => setShowPasswordChange(false)} className="px-4 py-2 text-sm font-medium text-lantern-text dark:text-lantern-text bg-lantern-background-secondary dark:bg-lantern-border rounded-md">Cancel</button>
                                 </div>
                              </form>
                          )}
@@ -512,7 +512,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <h4 className="font-medium text-lantern-text mb-1">Contact us</h4>
                         <p className="text-sm text-lantern-text-secondary mb-3">
                             Questions or issues? Use the form below or email{' '}
-                            <a href="mailto:support@lanternstudy.com" className="text-indigo-600 dark:text-indigo-400 underline">
+                            <a href="mailto:support@lanternstudy.com" className="text-lantern-primary underline">
                                 support@lanternstudy.com
                             </a>
                             .
@@ -534,7 +534,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             case 'account': return (
                  <div>
                      <h3 className="text-lg font-semibold text-lantern-text">Account Actions</h3>
-                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                     <p className="text-sm text-lantern-text-secondary mb-4">
                          Export a signed backup, import it into a new account later, or manage account deletion.
                      </p>
                      <p className="text-xs text-lantern-text-secondary mb-4">{ACCOUNT_EXPORT_COPY.limitations}</p>
@@ -552,7 +552,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             }
                         }}
                         disabled={exporting || accountActionLoading}
-                        className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-200 dark:border-indigo-800 disabled:opacity-60"
+                        className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background rounded-md border border-lantern-primary/30 dark:bg-lantern-primary-dark/30 dark:text-lantern-primary-light dark:border-lantern-primary/30 disabled:opacity-60"
                      >
                         <CloudArrowDownIcon className="w-5 h-5 mr-2" />
                          {exporting ? 'Exporting…' : 'Export my data (JSON)'}
@@ -571,7 +571,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <a href={LEGAL_PATHS.terms} target="_blank" rel="noopener noreferrer" className="underline">Terms</a>
                         <a href={LEGAL_PATHS.cookies} target="_blank" rel="noopener noreferrer" className="underline">Cookies</a>
                      </div>
-                    <button onClick={onLogout} className="w-full flex items-center justify-center p-3 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600">
+                    <button onClick={onLogout} className="w-full flex items-center justify-center p-3 text-sm font-medium text-lantern-text bg-lantern-background-secondary hover:bg-lantern-background-secondary rounded-md border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-border">
                         <ArrowRightOnRectangleIcon className="w-5 h-5 mr-2" />
                          Logout
                      </button>

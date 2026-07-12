@@ -95,18 +95,18 @@ export function SellerProfileScreen({ navigation, route }: Props) {
 
   if (isLoading && !profile) {
     return (
-      <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900 items-center justify-center" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
         <ActivityIndicator size="large" color="#6366f1" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50 dark:bg-slate-900" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <LinearGradient colors={['#4f46e5', '#6366f1', '#7c3aed']} className="px-4 pt-2 pb-5">
         <Pressable onPress={() => navigation.goBack()} className="flex-row items-center gap-1 mb-4">
           <Ionicons name="arrow-back" size={18} color="#e0e7ff" />
-          <Text className="text-sm font-medium text-indigo-100">Back</Text>
+          <Text className="text-sm font-medium text-lantern-primary-light">Back</Text>
         </Pressable>
 
         <View className="flex-row items-center gap-4">
@@ -118,13 +118,13 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             {profile?.average_rating != null && profile.average_rating > 0 ? (
               <View className="flex-row items-center gap-1 mt-1">
                 <Ionicons name="star" size={14} color="#fbbf24" />
-                <Text className="text-sm text-indigo-100">
+                <Text className="text-sm text-lantern-primary-light">
                   {profile.average_rating.toFixed(1)}
                   {profile.review_count ? ` (${profile.review_count} reviews)` : ''}
                 </Text>
               </View>
             ) : (
-              <Text className="text-sm text-indigo-200 mt-1">No ratings yet</Text>
+              <Text className="text-sm text-lantern-primary-light mt-1">No ratings yet</Text>
             )}
           </View>
         </View>
@@ -135,15 +135,15 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             { label: 'Sold', value: profile?.sold_listings ?? 0 },
             { label: 'Total', value: profile?.total_listings ?? 0 },
           ].map(stat => (
-            <View key={stat.label} className="flex-1 bg-white/15 rounded-xl p-3 items-center">
+            <View key={stat.label} className="flex-1 bg-lantern-surface/15 rounded-xl p-3 items-center">
               <Text className="text-lg font-bold text-white">{stat.value}</Text>
-              <Text className="text-xs text-indigo-100">{stat.label}</Text>
+              <Text className="text-xs text-lantern-primary-light">{stat.label}</Text>
             </View>
           ))}
         </View>
       </LinearGradient>
 
-      <Text className="text-sm font-semibold text-slate-700 dark:text-slate-300 px-4 pt-4 pb-2">
+      <Text className="text-sm font-semibold text-lantern-text px-4 pt-4 pb-2">
         Listings
       </Text>
 
@@ -162,22 +162,22 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           ListEmptyComponent={
             <View className="items-center py-12">
               <Ionicons name="bag-outline" size={40} color="#cbd5e1" />
-              <Text className="text-sm text-slate-500 dark:text-slate-400 mt-3">No active listings</Text>
+              <Text className="text-sm text-lantern-text-secondary mt-3">No active listings</Text>
             </View>
           }
           renderItem={({ item }) => (
             <Pressable
               onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
-              className="flex-1 m-1.5 rounded-2xl overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+              className="flex-1 m-1.5 rounded-2xl overflow-hidden bg-lantern-surface border border-lantern-border"
             >
               <View className="aspect-[4/3]">
                 <ListingImage uri={item.images?.[0]} className="w-full h-full" />
               </View>
               <View className="p-2.5">
-                <Text className="text-sm font-semibold text-slate-800 dark:text-slate-100" numberOfLines={2}>
+                <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
                   {item.title}
                 </Text>
-                <Text className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-1">
+                <Text className="text-sm font-bold text-lantern-primary mt-1">
                   {formatPrice(item.price)}
                 </Text>
               </View>

@@ -426,12 +426,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                       setChatsSectionExpanded(true);
                       onToggleExpand();
                     }}
-                    className="relative group w-14 h-14 flex items-center justify-center rounded-2xl hover:bg-slate-200/60 dark:hover:bg-slate-800/60"
+                    className="relative group w-14 h-14 flex items-center justify-center rounded-2xl hover:bg-lantern-background-secondary/60 dark:hover:bg-lantern-surface/60"
                     title="Chats"
                   >
-                    <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-600 dark:text-slate-300" />
+                    <ChatBubbleLeftRightIcon className="w-8 h-8 text-lantern-text-secondary" />
                     {showChatsHeaderBadge && (
-                      <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-100 dark:border-slate-900">
+                      <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-lantern-border dark:border-lantern-border">
                         {formatUnreadBadgeCount(totalUnreadChatCount)}
                       </span>
                     )}
@@ -464,12 +464,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                           className={selectedChatId === group.id ? 'ring-4 ring-lantern-primary rounded-2xl' : ''}
                         />
                         {(group.unreadCount ?? 0) > 0 && (
-                            <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-slate-100 dark:border-slate-900">
+                            <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-lantern-border dark:border-lantern-border">
                             {formatUnreadBadgeCount(group.unreadCount ?? 0)}
                             </span>
                         )}
                         {hasSubgroups && (
-                          <span className="absolute bottom-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
+                          <span className="absolute bottom-1 right-1 w-2 h-2 bg-lantern-primary rounded-full" />
                         )}
                     </button>
                     );
@@ -516,7 +516,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {showText && (
               <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate block">{currentUser.name}</span>
+                  <span className="text-sm font-medium text-lantern-text truncate block">{currentUser.name}</span>
                   <div className="flex items-center text-xs text-yellow-400" title={`${currentUser.points} Points`}>
                       <SparklesIcon className="w-4 h-4 mr-1 text-yellow-500"/>
                       {currentUser.points}
@@ -528,17 +528,17 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className={`${showText ? 'flex flex-wrap gap-0.5 px-2 pb-1' : 'grid grid-cols-2 gap-0.5 mt-1'}`}>
               <button
                   onClick={onToggleTheme}
-                  className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="p-2 text-lantern-text-secondary hover:text-lantern-text dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-lantern-primary"
                   title="Toggle Theme"
               >
                   {theme === 'light' ? <MoonIcon className="w-6 h-6" /> : <SunIcon className="w-6 h-6" />}
               </button>
               <button
                   onClick={toggleLowDataMode}
-                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${
                     lowDataMode
                       ? 'text-amber-500 dark:text-amber-400 hover:text-amber-600 dark:hover:text-amber-300'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      : 'text-lantern-text-secondary hover:text-lantern-text dark:hover:text-white'
                   }`}
                   title={lowDataMode ? 'Low-Data Mode: ON — click to disable' : 'Low-Data Mode: OFF — click to enable'}
               >
@@ -546,10 +546,10 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                   onClick={onToggleCompanion}
-                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors ${
+                  className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${
                     isCompanionOpen
-                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/50'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                      ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary-dark/50'
+                      : 'text-lantern-text-secondary hover:text-lantern-primary'
                   }`}
                   title="Lantern AI Companion"
               >
@@ -557,14 +557,14 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                   onClick={onOpenSettingsModal}
-                  className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="p-2 text-lantern-text-secondary hover:text-lantern-text dark:hover:text-white rounded-full focus:outline-none focus:ring-2 focus:ring-lantern-primary"
                   title="Settings"
               >
                   <Cog6ToothIcon className="w-6 h-6" />
               </button>
               <button
                   onClick={onLogout}
-                  className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="p-2 text-lantern-text-secondary hover:text-red-500 dark:hover:text-red-400 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500"
                   title="Logout"
               >
                   <ArrowLeftOnRectangleIcon className="w-6 h-6" />

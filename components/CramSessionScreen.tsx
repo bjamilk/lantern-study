@@ -91,7 +91,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
           {card.imageUrl && !showAnswer && (
             <img src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
-          <p className="text-lg md:text-xl text-gray-800 dark:text-gray-200">{showAnswer ? card.back : card.front}</p>
+          <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
         </div>
       );
     }
@@ -100,10 +100,10 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-blue-600 dark:text-blue-400">$1</strong>');
+        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary dark:text-blue-400">$1</strong>');
         return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: revealedText }} />;
       } else {
-        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded">[...]</span>');
+        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-background-secondary dark:bg-lantern-border rounded">[...]</span>');
         return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: hiddenText }} />;
       }
     }
@@ -114,7 +114,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
 
       return (
         <div className="flex flex-col items-center gap-3">
-          {card.front ? <p className="text-lg md:text-xl text-gray-800 dark:text-gray-200">{card.front}</p> : null}
+          {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
               <img
@@ -187,21 +187,21 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
               ))}
             </div>
           ) : (
-            <div className="text-sm text-gray-500 dark:text-gray-400">No image provided.</div>
+            <div className="text-sm text-lantern-text-secondary">No image provided.</div>
           )}
         </div>
       );
     }
 
     // Unknown type
-    return <p className="text-lg md:text-xl text-gray-800 dark:text-gray-200">{card.front}</p>;
+    return <p className="text-lg md:text-xl text-lantern-text">{card.front}</p>;
   };
 
   if (isSessionComplete) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <h2 className="text-2xl font-bold text-purple-500">Cram Session Complete!</h2>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">You reviewed {session.cardQueue.length} cards.</p>
+        <p className="text-lantern-text-secondary mt-2">You reviewed {session.cardQueue.length} cards.</p>
         <div className="my-6 text-xl">
             <p>Correct: <span className="font-bold text-green-500">{correctCount}</span></p>
             <p>Incorrect: <span className="font-bold text-red-500">{incorrectCards.length}</span></p>
@@ -227,35 +227,35 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
   }
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-100 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background-secondary dark:bg-lantern-background">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h1 className="text-xl font-semibold text-purple-600 dark:text-purple-400">Cramming: {session.deck.name}</h1>
           {timeLeft !== null && (
-            <div className="mt-1 text-sm font-medium text-gray-500 dark:text-gray-400">
+            <div className="mt-1 text-sm font-medium text-lantern-text-secondary">
               Time left: <span className={isTimeLow ? 'text-rose-600 dark:text-rose-400' : ''}>{formatTime(timeLeft)}</span>
             </div>
           )}
         </div>
-        <span className="text-sm font-medium text-gray-500 dark:text-gray-400 bg-gray-200 dark:bg-gray-700 px-3 py-1 rounded-full">
+        <span className="text-sm font-medium text-lantern-text-secondary bg-lantern-background-secondary dark:bg-lantern-surface-secondary px-3 py-1 rounded-full">
           {currentIndex + 1} / {session.cardQueue.length}
         </span>
       </div>
 
       <div className="flex-1 flex flex-col justify-center items-center">
-        <div className="w-full max-w-2xl min-h-[300px] bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 flex flex-col justify-between">
+        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface dark:bg-lantern-surface rounded-xl shadow-lg p-6 flex flex-col justify-between">
           <div className="text-center flex-grow flex flex-col justify-center items-center">
             {renderCardContent(currentCard, false)}
             
             {isAnswerShown && (
               <>
-                <hr className="w-1/4 my-4 border-gray-300 dark:border-gray-600" />
+                <hr className="w-1/4 my-4 border-lantern-border" />
                 {renderCardContent(currentCard, true)}
               </>
             )}
           </div>
 
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="mt-6 pt-4 border-t border-lantern-border">
             {!isAnswerShown ? (
               <button
                 onClick={() => setIsAnswerShown(true)}
@@ -294,7 +294,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
         </div>
       </div>
       <div className="flex-shrink-0 text-center pb-4">
-        <button onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })} className="text-sm text-gray-500 dark:text-gray-400 hover:underline">End Cram Session</button>
+        <button onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })} className="text-sm text-lantern-text-secondary hover:underline">End Cram Session</button>
       </div>
     </div>
   );

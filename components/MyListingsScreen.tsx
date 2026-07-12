@@ -191,23 +191,23 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
+    <div className="flex-1 flex flex-col bg-lantern-background">
       {/* Header */}
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-3 sm:py-4">
+      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 sm:py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center min-w-0">
             <button
               onClick={onBack}
-              className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex-shrink-0"
+              className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0"
             >
-              <ArrowLeftIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+              <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
             </button>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-slate-200 flex items-center">
-                <ShoppingBagIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-indigo-600 flex-shrink-0" />
+              <h1 className="text-lg sm:text-2xl font-bold text-lantern-text flex items-center">
+                <ShoppingBagIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-lantern-primary flex-shrink-0" />
                 My Listings
               </h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
+              <p className="text-lantern-text-secondary mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
                 Manage your marketplace listings
                 {boostCredits != null && (
                   <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-xs font-semibold">
@@ -220,21 +220,21 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => onNavigate('MarketplaceOrders')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
             >
               <ShoppingBagIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">Orders</span>
             </button>
             <button
               onClick={() => onNavigate('SellerCustomers')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
             >
               <ChartBarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               Customers
             </button>
             <button
               onClick={() => setShowCampaign(true)}
-              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
             >
               Campaign
             </button>
@@ -243,19 +243,19 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                 setBundleListings(await fetchMyListings('active'));
                 setShowBundleModal(true);
               }}
-              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
             >
               Bundle
             </button>
             <button
               onClick={() => setShowCoupons(true)}
-              className="hidden lg:flex px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold"
+              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
             >
               Coupons
             </button>
             <button
               onClick={() => onNavigate('MarketplaceInquiries')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
             >
               <ChatBubbleLeftIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">Inquiries & Offers</span>
@@ -264,30 +264,30 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             <div className="relative">
               <button
                 onClick={() => setShowCategoryPicker(!showCategoryPicker)}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm"
               >
                 <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-2" />
                 <span className="hidden sm:inline">New Listing</span>
               </button>
               {showCategoryPicker && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-lantern-surface rounded-lg shadow-xl border border-lantern-border z-50 overflow-hidden">
                   <div className="p-2">
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 px-3 py-2">Select Category</p>
+                    <p className="text-xs font-medium text-lantern-text-secondary px-3 py-2">Select Category</p>
                     <button
                       onClick={() => {
                         setShowCategoryPicker(false);
                         onNavigate('CreateMarketplaceListing', { category: 'academic' });
                       }}
-                      className="w-full flex items-center px-3 py-3 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                      className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors"
                     >
-                      <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg flex items-center justify-center mr-3">
-                        <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <div className="w-10 h-10 bg-lantern-primary-background dark:bg-lantern-primary-dark/40 rounded-lg flex items-center justify-center mr-3">
+                        <svg className="w-5 h-5 text-lantern-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}/>
                         </svg>
                       </div>
                       <div className="text-left">
-                        <p className="font-medium text-slate-800 dark:text-slate-200">Academic Marketplace</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Textbooks, notes, past questions</p>
+                        <p className="font-medium text-lantern-text">Academic Marketplace</p>
+                        <p className="text-xs text-lantern-text-secondary">Textbooks, notes, past questions</p>
                       </div>
                     </button>
                     <button
@@ -295,7 +295,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                         setShowCategoryPicker(false);
                         onNavigate('CreateMarketplaceListing', { category: 'student-life' });
                       }}
-                      className="w-full flex items-center px-3 py-3 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                      className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors"
                     >
                       <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center mr-3">
                         <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -303,8 +303,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                         </svg>
                       </div>
                       <div className="text-left">
-                        <p className="font-medium text-slate-800 dark:text-slate-200">Student Life & Gigs</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Services, accommodation, events</p>
+                        <p className="font-medium text-lantern-text">Student Life & Gigs</p>
+                        <p className="text-xs text-lantern-text-secondary">Services, accommodation, events</p>
                       </div>
                     </button>
                   </div>
@@ -330,26 +330,26 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       {analytics && (
         <div className="px-3 sm:px-4 md:px-6 pb-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-3">
-            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs text-slate-500">Revenue (30d)</p>
-              <p className="text-lg font-bold text-indigo-600">₦{analytics.revenue30d.toLocaleString()}</p>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Revenue (30d)</p>
+              <p className="text-lg font-bold text-lantern-primary">₦{analytics.revenue30d.toLocaleString()}</p>
             </div>
-            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs text-slate-500">View-to-sale rate</p>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">View-to-sale rate</p>
               <p className="text-lg font-bold">{analytics.conversionRate}%</p>
             </div>
-            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs text-slate-500">Pending orders</p>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Pending orders</p>
               <p className="text-lg font-bold">{analytics.pendingOrders}</p>
             </div>
-            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs text-slate-500">Offer accept rate</p>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Offer accept rate</p>
               <p className="text-lg font-bold">{analytics.offerAcceptRate}%</p>
             </div>
           </div>
           {analytics.salesByWeek.length > 0 && (
-            <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
                 <ChartBarIcon className="w-4 h-4" /> Weekly sales
               </p>
               <div className="flex items-end gap-1 h-16">
@@ -359,7 +359,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   return (
                     <div
                       key={week.weekStart}
-                      className="flex-1 bg-indigo-500/80 rounded-t"
+                      className="flex-1 bg-lantern-primary/80 rounded-t"
                       style={{ height: `${height}%` }}
                       title={`₦${week.revenue} · ${week.count} sales`}
                     />
@@ -372,8 +372,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           {(analytics.salesBySource?.length || analytics.inquiryToSaleRate != null) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
               {analytics.salesBySource && analytics.salesBySource.length > 0 && (
-                <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs font-semibold text-slate-500 mb-2">Sales by channel</p>
+                <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+                  <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Sales by channel</p>
                   <div className="space-y-1">
                     {analytics.salesBySource.map((row) => (
                       <div key={row.source} className="flex justify-between text-sm">
@@ -385,8 +385,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                 </div>
               )}
               {analytics.inquiryToSaleRate != null && (
-                <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500">Inquiry → sale rate</p>
+                <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+                  <p className="text-xs text-lantern-text-secondary">Inquiry → sale rate</p>
                   <p className="text-lg font-bold">{analytics.inquiryToSaleRate}%</p>
                 </div>
               )}
@@ -422,8 +422,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             </div>
           )}
 
-          <div className="mt-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
-            <p className="text-xs font-semibold text-slate-500 mb-1">Seller preferences</p>
+          <div className="mt-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border space-y-3">
+            <p className="text-xs font-semibold text-lantern-text-secondary mb-1">Seller preferences</p>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -432,7 +432,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               />
               Require payment proof before marking orders paid
             </label>
-            <p className="text-xs font-semibold text-slate-500 mb-2">Hall dropoff threshold</p>
+            <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Hall dropoff threshold</p>
             <label className="flex items-center gap-2 text-sm mb-2">
               <input
                 type="checkbox"
@@ -464,7 +464,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                     setSavingPrefs(false);
                   }
                 }}
-                className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
+                className="px-3 py-2 rounded-lg bg-lantern-primary text-white text-sm font-semibold disabled:opacity-50"
               >
                 Save
               </button>
@@ -473,7 +473,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 flex flex-col flex-1 min-h-0">
+      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 flex flex-col flex-1 min-h-0">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'active' | 'sold' | 'inactive')} aria-label="Listing status" className="flex flex-col flex-1 min-h-0">
           <TabList className="space-x-0.5 sm:space-x-1 !border-0">
             {(['active', 'sold', 'inactive'] as const).map((tab, index) => (
@@ -494,15 +494,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           <TabPanel key={tab} value={tab}>
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lantern-primary"></div>
           </div>
         ) : listings.length === 0 ? (
           <div className="text-center py-12">
-            <ShoppingBagIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-            <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+            <ShoppingBagIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
+            <h3 className="text-xl font-semibold text-lantern-text mb-2">
               No {activeTab} listings
             </h3>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">
+            <p className="text-lantern-text-secondary mb-6">
               {activeTab === 'active' 
                 ? "Create your first listing to start selling!"
                 : `You don't have any ${activeTab} listings yet.`
@@ -512,7 +512,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
                   onClick={() => onNavigate('CreateMarketplaceListing', { category: 'academic' })}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold inline-flex items-center justify-center"
+                  className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold inline-flex items-center justify-center"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}/>
@@ -536,11 +536,11 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             {listings.map(listing => (
               <div
                 key={listing.id}
-                className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-md transition-shadow"
+                className="bg-lantern-surface rounded-xl shadow-sm border border-lantern-border overflow-hidden hover:shadow-md transition-shadow"
               >
                 <div className="flex flex-col md:flex-row">
                   {/* Image */}
-                  <div className="w-full md:w-48 h-32 md:h-auto bg-slate-100 dark:bg-slate-700 flex-shrink-0">
+                  <div className="w-full md:w-48 h-32 md:h-auto bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0">
                     {listing.images && listing.images.length > 0 ? (
                       <img
                         src={listing.images[0]}
@@ -550,7 +550,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-12 h-12 text-slate-400" />
+                        <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
                       </div>
                     )}
                   </div>
@@ -559,13 +559,13 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   <div className="flex-1 p-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block px-2 py-1 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 rounded-full mb-2">
+                        <span className="inline-block px-2 py-1 text-xs font-medium bg-lantern-primary-background dark:bg-lantern-primary-dark/40 text-lantern-primary rounded-full mb-2">
                           {getCategoryName(listing.category)}
                         </span>
-                        <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                        <h3 className="text-lg font-semibold text-lantern-text">
                           {listing.title}
                         </h3>
-                        <p className="text-slate-600 dark:text-slate-400 text-sm line-clamp-1 mt-1">
+                        <p className="text-lantern-text-secondary text-sm line-clamp-1 mt-1">
                           {listing.description}
                         </p>
                       </div>
@@ -574,9 +574,9 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                       <Menu open={actionMenuOpen === listing.id} onOpenChange={(open) => setActionMenuOpen(open ? listing.id : null)}>
                         <MenuTrigger
                           aria-label={`Actions for ${listing.title}`}
-                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                          className="p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                         >
-                          <EllipsisVerticalIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                          <EllipsisVerticalIcon className="w-5 h-5 text-lantern-text-secondary" />
                         </MenuTrigger>
                         <MenuContent align="end" className="w-48">
                           <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
@@ -588,7 +588,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                             </MenuItem>
                           )}
                           {listing.status !== 'sold' && (
-                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'sold')} icon={<ShoppingBagIcon className="w-4 h-4" />} className="text-blue-600">
+                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'sold')} icon={<ShoppingBagIcon className="w-4 h-4" />} className="text-lantern-primary">
                               Mark as Sold
                             </MenuItem>
                           )}
@@ -606,12 +606,12 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                     </div>
 
                     {/* Stats Row */}
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 md:gap-6 mt-3 sm:mt-4 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                      <span className="font-semibold text-base sm:text-lg text-indigo-600 dark:text-indigo-400">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 md:gap-6 mt-3 sm:mt-4 text-xs sm:text-sm text-lantern-text-secondary">
+                      <span className="font-semibold text-base sm:text-lg text-lantern-primary">
                         {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
                       </span>
                       {listing.quantity != null && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary">
                           {listing.quantity > 0 ? `${listing.quantity} in stock` : 'Out of stock'}
                         </span>
                       )}
@@ -627,7 +627,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                         <ChatBubbleLeftIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
                         {listing.inquiries_count || 0}<span className="hidden sm:inline">&nbsp;inquiries</span>
                       </span>
-                      <span className="text-slate-500 hidden sm:inline">
+                      <span className="text-lantern-text-secondary hidden sm:inline">
                         {new Date(listing.created_at).toLocaleDateString()}
                       </span>
                     </div>
@@ -681,21 +681,21 @@ const StatCard: React.FC<{
   color: string;
 }> = ({ icon: Icon, label, value, color }) => {
   const colorClasses: Record<string, string> = {
-    indigo: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400',
+    indigo: 'bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-dark/40 dark:text-lantern-primary-light',
     green: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400',
-    blue: 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400',
+    blue: 'bg-blue-100 text-lantern-primary dark:bg-blue-900/40 dark:text-blue-400',
     purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400',
     orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400',
     red: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400',
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl p-2.5 sm:p-4 border border-slate-200 dark:border-slate-700">
+    <div className="bg-lantern-surface rounded-xl p-2.5 sm:p-4 border border-lantern-border">
       <div className={`w-7 h-7 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center ${colorClasses[color]} mb-1.5 sm:mb-3`}>
         <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
       </div>
-      <p className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-slate-200">{value}</p>
-      <p className="text-[10px] sm:text-sm text-slate-600 dark:text-slate-400 leading-tight">{label}</p>
+      <p className="text-lg sm:text-2xl font-bold text-lantern-text">{value}</p>
+      <p className="text-[10px] sm:text-sm text-lantern-text-secondary leading-tight">{label}</p>
     </div>
   );
 };

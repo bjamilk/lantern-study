@@ -29,7 +29,7 @@ export function DmBubble({ message, isOwn, senderName }: DmBubbleProps) {
 
         <View
           className={`px-3.5 py-2.5 rounded-2xl max-w-full shadow-sm ${
-            isOwn ? 'rounded-br-md' : 'rounded-bl-md border border-slate-200 dark:border-slate-700'
+            isOwn ? 'rounded-br-md' : 'rounded-bl-md border border-lantern-border'
           }`}
           style={isOwn ? { backgroundColor: colors.primary } : { backgroundColor: colors.card }}
         >

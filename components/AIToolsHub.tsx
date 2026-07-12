@@ -235,7 +235,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                   )}
                   {tool.action === 'chat' && (
                     <button type="button" disabled={tool.disabled} onClick={() => openWithMessage('Help me create a study plan from my notes and flashcards.')} className="text-left w-full disabled:opacity-50">
-                      <tool.icon className="w-7 h-7 text-indigo-600 mb-2" />
+                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                     </button>

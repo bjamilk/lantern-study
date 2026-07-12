@@ -105,14 +105,14 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
 
   if (loading) {
     return (
-      <div className="p-8 text-center text-gray-500">Loading order...</div>
+      <div className="p-8 text-center text-lantern-text-secondary">Loading order...</div>
     );
   }
 
   if (!order) {
     return (
       <div className="p-8 text-center">
-        <p className="text-gray-500 mb-4">Order not found</p>
+        <p className="text-lantern-text-secondary mb-4">Order not found</p>
         <Button onClick={onBack}>Go back</Button>
       </div>
     );
@@ -121,40 +121,40 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
   const stepIndex = order.status === 'completed' ? 3 : STEPS.indexOf(order.status);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center gap-3 p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+    <div className="flex flex-col h-full bg-lantern-background">
+      <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
+        <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <ArrowLeftIcon className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-semibold flex-1 truncate">{order.listing?.title || 'Order'}</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border">
           <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
             ₦{Number(order.amount).toLocaleString()}
           </p>
-          <p className="text-sm text-gray-500 mt-1 capitalize">{order.status.replace(/_/g, ' ')}</p>
+          <p className="text-sm text-lantern-text-secondary mt-1 capitalize">{order.status.replace(/_/g, ' ')}</p>
           {order.status === 'completed' && order.completed_at && (
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-lantern-text-tertiary mt-2">
               Completed {new Date(order.completed_at).toLocaleString()}
             </p>
           )}
         </div>
 
-        <div className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border">
           <h2 className="text-sm font-semibold mb-3">Progress</h2>
           <div className="flex gap-2">
             {STEPS.map((step, i) => (
               <div
                 key={step}
                 className={`flex-1 h-2 rounded-full ${
-                  stepIndex > i ? 'bg-purple-500' : 'bg-gray-200 dark:bg-gray-700'
+                  stepIndex > i ? 'bg-purple-500' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
                 }`}
               />
             ))}
           </div>
-          <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <ul className="mt-3 space-y-1 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
             <li>Paid {order.created_at ? '✓' : ''}</li>
             <li>Ready for pickup {order.seller_confirmed_at ? '✓' : '—'}</li>
             <li>Completed {order.completed_at ? '✓' : '—'}</li>
@@ -189,7 +189,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
               </div>
             )}
             {isBuyer && !order.payment_proof_url && (
-              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-800 text-sm font-medium cursor-pointer">
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-lantern-surface border border-amber-300 dark:border-amber-800 text-sm font-medium cursor-pointer">
                 <input
                   type="file"
                   accept="image/*"
@@ -262,12 +262,12 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         )}
 
         {order.status === 'completed' && (
-          <div className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 space-y-3">
+          <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
               <CheckCircleIcon className="w-5 h-5 text-green-500" />
               Receipt
             </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
+            <p className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
               You paid ₦{Number(order.amount).toLocaleString()} for {order.listing?.title}.
             </p>
             <OrderReceipt order={order} />
@@ -275,11 +275,11 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         )}
 
         {order.status === 'completed' && isBuyer && !reviewSubmitted && (
-          <div className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 space-y-3">
+          <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border space-y-3">
             <h2 className="font-semibold">Leave a review</h2>
             <label className="text-sm font-medium">Rate this seller</label>
             <select
-              className="mt-1 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent p-2"
+              className="mt-1 w-full rounded-lg border border-lantern-border bg-transparent p-2"
               value={reviewRating}
               onChange={(e) => setReviewRating(Number(e.target.value))}
             >
@@ -288,7 +288,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
               ))}
             </select>
             <textarea
-              className="mt-2 w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-transparent p-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-lantern-border bg-transparent p-2 text-sm"
               placeholder="Optional comment"
               value={reviewComment}
               onChange={(e) => setReviewComment(e.target.value)}

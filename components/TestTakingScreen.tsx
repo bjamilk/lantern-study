@@ -453,7 +453,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     return question.options.map((opt, optIdx) => {
       const displayLetter = String.fromCharCode(65 + optIdx); // A, B, C …
       const displayText = stripPrefix(opt.text);
-      let optionClasses = "p-2 sm:p-3 border rounded-lg hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700/70 transition-colors text-slate-800 dark:text-slate-200";
+      let optionClasses = "p-2 sm:p-3 border rounded-lg hover:bg-lantern-background-secondary dark:border-lantern-border dark:hover:bg-lantern-surface-secondary/70 transition-colors text-lantern-text";
       let icon = null;
       const isSelected = currentSelections.includes(opt.id);
       const isCorrectOption = question.correctAnswerIds?.includes(opt.id);
@@ -462,7 +462,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
       if (!isStudyModeAnswered) {
           optionClasses += activeTool === 'strikeout' ? " cursor-pointer" : " cursor-pointer";
           if (isSelected && !isStruckOut) {
-            optionClasses = `${optionClasses} bg-indigo-100 dark:bg-indigo-900/60 border-indigo-500 dark:border-indigo-600 ring-2 ring-indigo-400 dark:ring-indigo-500`; 
+            optionClasses = `${optionClasses} bg-lantern-primary-background dark:bg-lantern-primary-dark/60 border-lantern-primary dark:border-lantern-primary ring-2 ring-lantern-primary dark:ring-lantern-primary`; 
           }
           if (isStruckOut) {
             optionClasses = `${optionClasses} opacity-40 dark:opacity-30 border-red-300 dark:border-red-700`;
@@ -499,7 +499,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           tabIndex={isStudyModeAnswered ? -1 : 0} 
           onKeyDown={isStudyModeAnswered ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && handleClick()}
         >
-          {isMultiChoice && <input type="checkbox" checked={isSelected} readOnly className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 mr-2 sm:mr-3" />}
+          {isMultiChoice && <input type="checkbox" checked={isSelected} readOnly className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary mr-2 sm:mr-3" />}
           <span className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-current flex items-center justify-center text-[10px] sm:text-xs font-bold mr-2 sm:mr-3 select-none">
             {displayLetter}
           </span>
@@ -519,7 +519,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     : (session.isOffline ? '📚 Offline Study' : '📚 Study Session');
   const headerIcon = mode === 'test' ? 
     <QuestionMarkCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-purple-600 dark:text-purple-400" /> : 
-    <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-blue-600 dark:text-blue-400" />;
+    <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary dark:text-blue-400" />;
 
   const isCurrentBookmarked = userAnswer?.isBookmarked || false;
   const BookmarkToggleIcon = isCurrentBookmarked ? BookmarkSolidIcon : BookmarkOutlineIcon;
@@ -543,9 +543,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     const finalSubmitAction = session.isOffline ? onSubmitOfflineTest : onSubmitTest;
 
     return (
-        <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 p-4 md:p-6">
+        <div className="flex-1 flex flex-col bg-lantern-background text-lantern-text p-4 md:p-6">
             <div className="flex justify-between items-center mb-4">
-                <h1 className="text-2xl md:text-3xl font-semibold text-slate-800 dark:text-slate-100">Review Your Answers</h1>
+                <h1 className="text-2xl md:text-3xl font-semibold text-lantern-text">Review Your Answers</h1>
                 {timeLeftDisplay && (
                     <div className={`flex items-center text-sm font-medium px-3 py-1 rounded-full transition-colors ${isTimeLow ? 'text-white bg-red-600 animate-pulse' : 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50'}`}>
                         <ClockIcon className="w-5 h-5 mr-1.5" />
@@ -555,21 +555,21 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 text-center">
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Answered</p>
+                <div className="bg-lantern-surface p-4 rounded-lg shadow">
+                    <p className="text-sm text-lantern-text-secondary">Answered</p>
                     <p className="text-2xl font-bold text-green-500">{answeredCount}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Skipped</p>
+                <div className="bg-lantern-surface p-4 rounded-lg shadow">
+                    <p className="text-sm text-lantern-text-secondary">Skipped</p>
                     <p className="text-2xl font-bold text-yellow-500">{skippedCount}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Bookmarked</p>
-                    <p className="text-2xl font-bold text-indigo-500">{bookmarkedCount}</p>
+                <div className="bg-lantern-surface p-4 rounded-lg shadow">
+                    <p className="text-sm text-lantern-text-secondary">Bookmarked</p>
+                    <p className="text-2xl font-bold text-lantern-primary">{bookmarkedCount}</p>
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow mb-6 flex-grow overflow-y-auto">
+            <div className="bg-lantern-surface p-4 rounded-lg shadow mb-6 flex-grow overflow-y-auto">
                 <h2 className="text-lg font-semibold mb-3">Questions</h2>
                 <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
                     {session.questions.map((q, index) => {
@@ -577,19 +577,19 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                         const isAnswered = answerRecord && ((answerRecord.selectedOptionIds && answerRecord.selectedOptionIds.length > 0) || (answerRecord.fillText && answerRecord.fillText.trim() !== "") || (answerRecord.matchingAnswers && answerRecord.matchingAnswers.length > 0) || (answerRecord.diagramAnswers && answerRecord.diagramAnswers.length > 0));
                         const isBookmarked = !!answerRecord?.isBookmarked;
 
-                        let buttonClasses = "h-10 w-10 text-sm font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-800";
+                        let buttonClasses = "h-10 w-10 text-sm font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-lantern-surface";
                         if (isAnswered) {
                             buttonClasses += " bg-green-500 text-white hover:bg-green-600";
                         } else {
-                            buttonClasses += " bg-slate-300 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-400 dark:hover:bg-slate-600";
+                            buttonClasses += " bg-lantern-border dark:bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border dark:hover:bg-lantern-border";
                         }
                         if (isBookmarked) {
-                            buttonClasses += " ring-2 ring-indigo-500 dark:ring-indigo-400";
+                            buttonClasses += " ring-2 ring-lantern-primary dark:ring-lantern-primary";
                         }
 
                         return (
                             <button key={q.id} onClick={() => handleQuestionSelect(index)} className={buttonClasses} aria-label={`Go to question ${q.questionNumber}`}>
-                                {isBookmarked && <BookmarkSolidIcon className="w-3 h-3 absolute top-1 right-1 text-indigo-500 dark:text-indigo-400"/>}
+                                {isBookmarked && <BookmarkSolidIcon className="w-3 h-3 absolute top-1 right-1 text-lantern-primary"/>}
                                 {q.questionNumber}
                             </button>
                         );
@@ -606,7 +606,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             </div>
 
             <div className="flex-shrink-0 flex justify-between items-center">
-                <button onClick={() => setIsReviewMode(false)} className="px-6 py-3 bg-slate-500 hover:bg-slate-600 text-white rounded-md flex items-center">
+                <button onClick={() => setIsReviewMode(false)} className="px-6 py-3 bg-lantern-border hover:bg-lantern-border text-white rounded-md flex items-center">
                     <ArrowLeftIcon className="w-5 h-5 mr-2" />
                     Return to Test
                 </button>
@@ -625,9 +625,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
   if (!currentQuestion) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-lantern-background text-lantern-text">
         <p>Error: Question not found. This should not happen.</p>
-        {onEndSession && <button onClick={onEndSession} className="mt-4 px-4 py-2 bg-slate-500 hover:bg-slate-600 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-md">End Session</button>}
+        {onEndSession && <button onClick={onEndSession} className="mt-4 px-4 py-2 bg-lantern-border hover:bg-lantern-border dark:bg-lantern-surface-secondary dark:hover:bg-lantern-border text-white rounded-md">End Session</button>}
       </div>
     );
   }
@@ -648,15 +648,15 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   // Mode-specific theme colors
   const modeTheme = mode === 'study' 
     ? { 
-        bgGradient: 'bg-gradient-to-b from-blue-50 to-slate-100 dark:from-blue-950/30 dark:to-slate-900',
+        bgGradient: 'bg-gradient-to-b from-lantern-primary-background to-lantern-background dark:from-lantern-primary-background dark:to-lantern-background',
         headerBorder: 'border-blue-200 dark:border-blue-800',
         infoBanner: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700',
         infoBannerText: 'text-blue-800 dark:text-blue-200',
-        infoBannerSubtext: 'text-blue-600 dark:text-blue-400',
+        infoBannerSubtext: 'text-lantern-primary dark:text-blue-400',
         navPalette: 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800'
       }
     : { 
-        bgGradient: 'bg-gradient-to-b from-purple-50 to-slate-100 dark:from-purple-950/30 dark:to-slate-900',
+        bgGradient: 'bg-gradient-to-b from-lantern-primary-background to-lantern-background dark:from-lantern-primary-background dark:to-lantern-background',
         headerBorder: 'border-purple-200 dark:border-purple-800',
         infoBanner: 'bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700',
         infoBannerText: 'text-purple-800 dark:text-purple-200',
@@ -665,7 +665,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
       };
 
   return (
-    <div className={`flex-1 flex flex-col ${modeTheme.bgGradient} text-slate-800 dark:text-slate-200 relative`}>
+    <div className={`flex-1 flex flex-col ${modeTheme.bgGradient} text-lantern-text relative`}>
 
       {/* ── Answer Streak Badge (study mode) ── */}
       {mode === 'study' && showStreakBadge && answerStreak >= 3 && (
@@ -726,7 +726,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               <div className="flex items-center shrink-0 gap-1 sm:gap-2">
                 <button 
                     onClick={onPauseSession}
-                    className="p-1.5 sm:p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
+                    className="p-1.5 sm:p-2 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary text-lantern-text-secondary"
                     aria-label="Pause Session"
                     title="Pause & Exit Session"
                 >
@@ -742,7 +742,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 </button>
               </div>
           </div>
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1 pl-0 sm:pl-14">
+          <p className="text-xs sm:text-sm text-lantern-text-secondary mt-1 pl-0 sm:pl-14">
             Question {session.currentQuestionIndex + 1} of {totalQuestions}
           </p>
         </div>
@@ -773,14 +773,14 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           }
         />
 
-        <div className="bg-white dark:bg-slate-800 p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-3 sm:mb-6">
+        <div className="bg-lantern-surface p-3 sm:p-4 md:p-6 rounded-lg shadow-md mb-3 sm:mb-6">
             <div className="flex justify-between items-start mb-1 gap-2">
-                <h2 id={`question-stem-${currentQuestion.id}`} className="text-base sm:text-lg md:text-xl font-semibold text-slate-900 dark:text-slate-100">
+                <h2 id={`question-stem-${currentQuestion.id}`} className="text-base sm:text-lg md:text-xl font-semibold text-lantern-text">
                     Question {currentQuestion.questionNumber}:
                 </h2>
                 <button
                     onClick={() => onToggleBookmark(currentQuestion.id)}
-                    className={`p-1 sm:p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 ${isCurrentBookmarked ? 'text-yellow-500 dark:text-yellow-400' : 'text-slate-500 dark:text-slate-400'}`}
+                    className={`p-1 sm:p-1.5 rounded-md hover:bg-lantern-background-secondary shrink-0 ${isCurrentBookmarked ? 'text-yellow-500 dark:text-yellow-400' : 'text-lantern-text-secondary'}`}
                     aria-label={isCurrentBookmarked ? 'Remove bookmark' : 'Add bookmark'}
                     title={isCurrentBookmarked ? 'Remove bookmark' : 'Add bookmark'}
                 >
@@ -789,7 +789,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             </div>
             <p
               ref={questionStemRef}
-              className={`text-sm sm:text-md md:text-lg mb-3 sm:mb-4 whitespace-pre-wrap text-slate-800 dark:text-slate-200 ${activeTool === 'highlight' ? 'cursor-text select-text' : ''}`}
+              className={`text-sm sm:text-md md:text-lg mb-3 sm:mb-4 whitespace-pre-wrap text-lantern-text ${activeTool === 'highlight' ? 'cursor-text select-text' : ''}`}
               onMouseUp={activeTool === 'highlight' ? handleHighlightSelection : undefined}
             >
               {renderHighlightedText(
@@ -797,16 +797,16 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 highlights[currentQuestion.id] || []
               )}
             </p>
-             {currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE && <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">(Select all that apply)</p>}
-             {currentQuestion.questionType === QuestionType.MATCHING && <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">(Match each prompt to the correct answer)</p>}
-             {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">(Select the correct label for each pin from the dropdown menu)</p>}
+             {currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE && <p className="text-xs text-lantern-text-secondary mb-4">(Select all that apply)</p>}
+             {currentQuestion.questionType === QuestionType.MATCHING && <p className="text-xs text-lantern-text-secondary mb-4">(Match each prompt to the correct answer)</p>}
+             {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && <p className="text-xs text-lantern-text-secondary mb-4">(Select the correct label for each pin from the dropdown menu)</p>}
 
             {currentQuestion.imageUrl && currentQuestion.questionType !== QuestionType.DIAGRAM_LABELING && (
                 <div className="my-3 w-full max-w-xl mx-auto">
                     <img 
                         src={currentQuestion.imageUrl}
                         alt="Question visual" 
-                        className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-slate-300 dark:border-slate-600 shadow"
+                        className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-lantern-border shadow"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                 </div>
@@ -820,7 +820,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                   onChange={handleFillTextChange}
                   onBlur={handleFillTextChange} // Ensures answer is saved in test mode if user clicks away
                   placeholder="Type your answer here..."
-                  className="w-full p-3 pr-12 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 focus:border-transparent transition bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 disabled:bg-slate-200 dark:disabled:bg-slate-700/50"
+                  className="w-full p-3 pr-12 border border-lantern-border rounded-lg shadow-sm focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:border-transparent transition bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text disabled:bg-lantern-background-secondary dark:disabled:bg-lantern-surface-secondary/50"
                   disabled={isStudyModeAnswered}
                   aria-label="Answer input for fill-in-the-blank question"
                 />
@@ -864,13 +864,13 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                         return (
                             <div key={prompt.id} className={`p-3 border rounded-lg ${promptFeedbackClass}`}>
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                    <p className="flex-1 font-medium text-slate-800 dark:text-slate-200">{prompt.text}</p>
+                                    <p className="flex-1 font-medium text-lantern-text">{prompt.text}</p>
                                     <div className="flex-shrink-0 w-full sm:w-1/2 md:w-5/12">
                                         <select
                                             value={matchSelections[prompt.id] || ""}
                                             onChange={e => handleMatchSelect(prompt.id, e.target.value)}
                                             disabled={isStudyModeAnswered}
-                                            className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-200 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-70 disabled:cursor-not-allowed"
+                                            className="w-full p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary disabled:opacity-70 disabled:cursor-not-allowed"
                                         >
                                             <option value="" disabled>Select a match...</option>
                                             {(shuffledAnswers as MatchingItem[]).map(ans => (
@@ -893,7 +893,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
             {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && (
               <div className="mt-4">
-                  <div className="relative w-full max-w-xl mx-auto border-2 border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden">
+                  <div className="relative w-full max-w-xl mx-auto border-2 border-lantern-border rounded-lg overflow-hidden">
                       <img src={currentQuestion.imageUrl} alt="Diagram to label" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       {currentQuestion.diagramLabels?.map((label, index) => (
                           <div 
@@ -911,7 +911,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                       {currentQuestion.diagramLabels?.map((label, index) => {
                           const userSelectionId = diagramSelections[label.id];
                           const isCorrect = userSelectionId === label.id;
-                          let dropdownFeedbackClass = 'border-slate-300 dark:border-slate-600';
+                          let dropdownFeedbackClass = 'border-lantern-border';
                           if (isStudyModeAnswered) {
                             dropdownFeedbackClass = isCorrect ? 'border-green-500 bg-green-50 dark:bg-green-900/30' : 'border-red-500 bg-red-50 dark:bg-red-900/30';
                           }
@@ -922,7 +922,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                                     value={userSelectionId || ''}
                                     onChange={(e) => handleDiagramLabelSelect(label.id, e.target.value)}
                                     disabled={isStudyModeAnswered}
-                                    className={`w-full p-2 border rounded-md shadow-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-200 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-70 ${dropdownFeedbackClass}`}
+                                    className={`w-full p-2 border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary disabled:opacity-70 ${dropdownFeedbackClass}`}
                                 >
                                     <option value="" disabled>Select a label...</option>
                                     {(shuffledAnswers as DiagramLabel[]).map(opt => (
@@ -970,11 +970,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     {userAnswer.isCorrect ? 'Correct!' : 'Incorrect.'}
                   </h3>
                   {currentQuestion.questionType === QuestionType.FILL_IN_THE_BLANK && !userAnswer.isCorrect && (
-                    <p className="text-sm text-slate-700 dark:text-slate-300 mt-1">
+                    <p className="text-sm text-lantern-text mt-1">
                       Correct answer(s): <span className="font-semibold">{currentQuestion.acceptableAnswers?.join(', ')}</span>
                     </p>
                   )}
-                  <p className="text-sm text-slate-700 dark:text-slate-300 mt-1 whitespace-pre-wrap">{currentQuestion.explanation}</p>
+                  <p className="text-sm text-lantern-text mt-1 whitespace-pre-wrap">{currentQuestion.explanation}</p>
               </div>
             )}
         </div>
@@ -983,7 +983,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             <button
             onClick={() => onChangeQuestion(session.currentQuestionIndex - 1)}
             disabled={session.currentQuestionIndex === 0}
-            className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-lantern-background-secondary text-lantern-text rounded-md hover:bg-lantern-border dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
             <ChevronLeftIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-1" />
             <span className="hidden sm:inline">Previous</span>
@@ -993,7 +993,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             <button
                 onClick={handleInitiateSubmit}
                 disabled={isSubmittingTest}
-                className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm text-white rounded-md focus:ring-2 focus:ring-indigo-400 dark:focus:ring-indigo-500 focus:ring-offset-2 ${isSubmittingTest ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'}`}
+                className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 ${isSubmittingTest ? 'bg-lantern-primary-light cursor-not-allowed' : 'bg-lantern-primary hover:bg-lantern-primary-dark dark:bg-lantern-primary dark:hover:bg-lantern-primary'}`}
             >
                 <span className="hidden sm:inline">Review & Submit Test</span>
                 <span className="sm:hidden">Submit</span>
@@ -1026,7 +1026,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 <button
                     onClick={() => onChangeQuestion(session.currentQuestionIndex + 1)}
                     disabled={session.currentQuestionIndex === totalQuestions - 1}
-                    className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-lantern-primary hover:bg-lantern-primary dark:bg-lantern-primary dark:hover:bg-lantern-primary-dark text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
                     <span className="hidden sm:inline">Next Question</span>
                     <span className="sm:hidden">Next</span>
@@ -1038,7 +1038,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
       <div 
         ref={paletteRef}
-        className="flex-shrink-0 bg-slate-200 dark:bg-slate-800 p-1.5 sm:p-2 md:p-3 border-t border-slate-300 dark:border-slate-700 shadow-md overflow-x-auto"
+        className="flex-shrink-0 bg-lantern-background-secondary dark:bg-lantern-surface p-1.5 sm:p-2 md:p-3 border-t border-lantern-border dark:border-lantern-border shadow-md overflow-x-auto"
         role="toolbar" 
         aria-label="Question navigation"
       >
@@ -1055,7 +1055,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             const isBookmarked = !!answerRecord?.isBookmarked;
             const isMarkedQ = markedQuestions.includes(q.id);
 
-            let buttonClasses = "min-w-[28px] sm:min-w-[36px] md:min-w-[40px] h-7 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-slate-800";
+            let buttonClasses = "min-w-[28px] sm:min-w-[36px] md:min-w-[40px] h-7 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-lantern-surface";
             let title = `Go to Question ${q.questionNumber}`;
             if (isBookmarked) title += " (Bookmarked)";
             if (isMarkedQ) title += " (Flagged)";
@@ -1064,11 +1064,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
 
             if (isCurrent) {
-              buttonClasses += " bg-indigo-500 dark:bg-indigo-400 text-white ring-2 ring-indigo-600 dark:ring-indigo-300 shadow-lg sm:scale-105";
+              buttonClasses += " bg-lantern-primary dark:bg-lantern-primary-light text-white ring-2 ring-lantern-primary dark:ring-lantern-primary-light shadow-lg sm:scale-105";
             } else if (isAnswered) {
               buttonClasses += " bg-green-200 dark:bg-green-700/80 text-green-800 dark:text-green-100 hover:bg-green-300 dark:hover:bg-green-600";
             } else {
-              buttonClasses += " bg-slate-300 dark:bg-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-400 dark:hover:bg-slate-500";
+              buttonClasses += " bg-lantern-border text-lantern-text hover:bg-lantern-border dark:hover:bg-lantern-border";
             }
             if (isBookmarked && !isCurrent) { 
                  buttonClasses += " border-2 border-yellow-500 dark:border-yellow-400";
