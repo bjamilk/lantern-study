@@ -103,6 +103,72 @@ export async function fetchCookieSession(): Promise<Session | null> {
   return session ?? null;
 }
 
+export type CookieSessionResolveResult =
+  | { ok: true; session: Session }
+  | { ok: false; reason: 'revoked' | 'missing' | 'network' };
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Restore cookie session with retries; distinguishes auth failure from transient errors. */
+export async function restoreCookieSession(
+  maxAttempts = 3
+): Promise<CookieSessionResolveResult> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const sessionResponse = await cookieAuthFetch('/session', { method: 'GET' });
+
+      if (sessionResponse.status === 401 || sessionResponse.status === 403) {
+        const refreshResponse = await cookieAuthFetch('/refresh', { method: 'POST' });
+        if (refreshResponse.status === 401 || refreshResponse.status === 403) {
+          return { ok: false, reason: 'revoked' };
+        }
+        if (!refreshResponse.ok) {
+          if (attempt < maxAttempts - 1) {
+            await delay(250 * (attempt + 1));
+            continue;
+          }
+          return { ok: false, reason: 'network' };
+        }
+        const refreshBody = await refreshResponse.json().catch(() => ({}));
+        const refreshed = normalizeMemorySession(refreshBody.data?.session);
+        if (refreshed) {
+          applyMemorySession(refreshed);
+          return { ok: true, session: refreshed };
+        }
+        return { ok: false, reason: 'missing' };
+      }
+
+      if (!sessionResponse.ok) {
+        if (attempt < maxAttempts - 1) {
+          await delay(250 * (attempt + 1));
+          continue;
+        }
+        return { ok: false, reason: 'network' };
+      }
+
+      const body = await sessionResponse.json().catch(() => ({}));
+      const session = normalizeMemorySession(body.data?.session);
+      if (session) {
+        applyMemorySession(session);
+        return { ok: true, session };
+      }
+
+      const refreshed = await refreshCookieSession();
+      if (refreshed) {
+        return { ok: true, session: refreshed };
+      }
+      return { ok: false, reason: 'missing' };
+    } catch {
+      if (attempt < maxAttempts - 1) {
+        await delay(250 * (attempt + 1));
+        continue;
+      }
+      return { ok: false, reason: 'network' };
+    }
+  }
+  return { ok: false, reason: 'network' };
+}
+
 export async function exchangeCookieSession(session: Session): Promise<Session | null> {
   const response = await cookieAuthFetch('/exchange', {
     method: 'POST',

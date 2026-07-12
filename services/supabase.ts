@@ -26,6 +26,8 @@ import {
   refreshCookieSession,
   fetchCookieSession,
   logoutCookieSession,
+  restoreCookieSession,
+  type CookieSessionResolveResult,
 } from './authCookieSession'
 
 // Use shared config for URLs
@@ -293,6 +295,60 @@ export const bootstrapAuthFromStorage = (): { token: string; userId: string } | 
   setCachedAuthToken(token, userId);
   return { token, userId };
 };
+
+export type SessionResolveFailure = CookieSessionResolveResult extends { ok: false; reason: infer R }
+  ? R
+  : never;
+
+export type SessionResolveResult =
+  | { ok: true; session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']> }
+  | { ok: false; reason: SessionResolveFailure };
+
+/** Restore the client session from cookies or local tokens without signing out on transient errors. */
+export async function resolveClientSession(): Promise<SessionResolveResult> {
+  if (isCookieAuthEnabled()) {
+    return restoreCookieSession();
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user) {
+    if (session.access_token) {
+      setCachedAuthToken(session.access_token, session.user.id);
+    }
+    return { ok: true, session };
+  }
+
+  if (!getTokenFromLocalStorage()) {
+    return { ok: false, reason: 'missing' };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (data?.session?.user) {
+      setCachedAuthToken(data.session.access_token, data.session.user.id);
+      return { ok: true, session: data.session };
+    }
+    if (error && (error.status === 401 || /invalid|expired|refresh/i.test(error.message))) {
+      return { ok: false, reason: 'revoked' };
+    }
+    return { ok: false, reason: 'network' };
+  } catch {
+    return { ok: false, reason: 'network' };
+  }
+}
+
+export async function clearClientAuthSession(): Promise<void> {
+  if (isCookieAuthEnabled()) {
+    await logoutCookieSession();
+  } else {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
+  }
+  setCachedAuthToken(null, null);
+}
 
 const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
   try {

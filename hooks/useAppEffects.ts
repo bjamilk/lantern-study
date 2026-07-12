@@ -30,12 +30,13 @@ import {
     readPersistedAuthUser,
     shouldRefreshStoredSession,
     sendPresenceHeartbeat,
+    resolveClientSession,
+    clearClientAuthSession,
 } from '../services/supabase';
 import {
     isCookieAuthEnabled,
-    fetchCookieSession,
-    refreshCookieSession,
     exchangeCookieSession,
+    refreshCookieSession,
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
 import { mapMessageFromApi, computeStudyStreak } from '@lantern/shared/utils';
@@ -267,45 +268,45 @@ export function useAppEffects({
             if (!user || user.id !== boot.userId) return false;
 
             setAuthTokenReady(true);
-            setAuthLoading(false);
             return true;
         };
 
         const syncSessionInBackground = async (hadFastBoot: boolean) => {
             try {
-                let session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'] = null;
-
-                if (isCookieAuthEnabled()) {
-                    const cookieSession =
-                        (await fetchCookieSession()) ??
-                        (await refreshCookieSession());
-                    if (cookieSession?.access_token && cookieSession.refresh_token) {
-                        await supabase.auth.setSession({
-                            access_token: cookieSession.access_token,
-                            refresh_token: cookieSession.refresh_token,
-                        });
-                        const { data } = await supabase.auth.getSession();
-                        session = data.session;
-                    }
-                } else {
-                    const { data: { session: storedSession }, error: sessionError } = await supabase.auth.getSession();
-                    if (sessionError) {
-                        console.error('[Auth] getSession error:', sessionError);
-                    }
-                    session = storedSession;
-                }
-
+                const resolved = await resolveClientSession();
                 if (!isMounted) return;
 
-                if (!session?.user) {
-                    if (hadFastBoot || useAuthStore.getState().currentUser) {
+                if (!resolved.ok) {
+                    const hasCachedUser = Boolean(
+                        useAuthStore.getState().currentUser || readPersistedAuthUser()?.id
+                    );
+                    if (resolved.reason === 'network' && hasCachedUser) {
+                        console.warn(
+                            '[Auth] Session restore inconclusive (network) — keeping cached user'
+                        );
+                        if (hadFastBoot || bootstrapAuthFromStorage()) {
+                            setAuthTokenReady(true);
+                        }
+                        return;
+                    }
+                    if (
+                        hasCachedUser &&
+                        (resolved.reason === 'revoked' || resolved.reason === 'missing')
+                    ) {
                         console.warn('[Auth] No active session — clearing stale cached user');
-                        await supabase.auth.signOut();
+                        await clearClientAuthSession();
                         setCurrentUser(null);
                         setAuthTokenReady(false);
                     }
-                    setAuthLoading(false);
                     return;
+                }
+
+                const session = resolved.session;
+                if (isCookieAuthEnabled()) {
+                    await supabase.auth.setSession({
+                        access_token: session.access_token,
+                        refresh_token: session.refresh_token,
+                    });
                 }
 
                 if (session.access_token) {
@@ -342,19 +343,7 @@ export function useAppEffects({
                     useAuthStore.getState().currentUser ??
                     (readPersistedAuthUser() as unknown as User | null);
 
-                if (!hadFastBoot) {
-                    if (cached && cached.id === session.user.id) {
-                        setCurrentUser({
-                            ...cached,
-                            email: authUser.email || cached.email,
-                            isAdmin: resolvePlatformAdmin(
-                                authUser,
-                                cached.settings as Record<string, unknown>
-                            ),
-                        });
-                        setAuthLoading(false);
-                    }
-                } else if (cached && cached.id === session.user.id) {
+                if (cached && cached.id === session.user.id) {
                     setCurrentUser({
                         ...cached,
                         email: authUser.email || cached.email,
@@ -368,9 +357,6 @@ export function useAppEffects({
                 try {
                     const profile = await fetchUserProfile(session.user.id);
                     if (!isMounted || !profile) {
-                        if (!hadFastBoot && !useAuthStore.getState().currentUser) {
-                            setAuthLoading(false);
-                        }
                         return;
                     }
 
@@ -378,11 +364,10 @@ export function useAppEffects({
                         profile.settings?.is_banned === true ||
                         profile.settings?.account_status === 'banned';
                     if (isBanned) {
-                        await supabase.auth.signOut();
+                        await clearClientAuthSession();
                         if (isMounted) {
                             setCurrentUser(null);
                             setAuthTokenReady(false);
-                            setAuthLoading(false);
                         }
                         return;
                     }
@@ -422,50 +407,16 @@ export function useAppEffects({
                                 existingUser.settings as Record<string, unknown>
                             ),
                         });
-                    } else if (!hadFastBoot) {
+                    } else {
                         console.warn('[Auth] Profile fetch failed:', profileErr.message);
                     }
                 }
-
-                if (!hadFastBoot) {
-                    const hasToken = await ensureAuthTokenReady();
-                    if (!hasToken && useAuthStore.getState().currentUser) {
-                        await supabase.auth.signOut();
-                        if (isMounted) {
-                            setCurrentUser(null);
-                            setAuthTokenReady(false);
-                        }
-                    }
-                    if (isMounted) setAuthLoading(false);
-                }
             } catch (error: any) {
-                console.log('Session validation failed:', error.message);
-                const isConnectionError =
-                    error.message?.includes('timeout') ||
-                    error.message?.includes('Fetch') ||
-                    error.message?.includes('Network');
-                if (!isConnectionError && !hadFastBoot) {
-                    Object.keys(localStorage).forEach((key) => {
-                        if (
-                            key.startsWith('sb-') ||
-                            key.includes('supabase') ||
-                            key === 'auth-storage' ||
-                            key === 'auth-storage-v2'
-                        ) {
-                            localStorage.removeItem(key);
-                        }
-                    });
-                    try {
-                        await supabase.auth.signOut();
-                    } catch {
-                        // ignore
-                    }
-                    if (isMounted) {
-                        setCurrentUser(null);
-                        setAuthTokenReady(false);
-                    }
+                console.warn('[Auth] Session validation failed:', error?.message || error);
+            } finally {
+                if (isMounted) {
+                    setAuthLoading(false);
                 }
-                if (isMounted) setAuthLoading(false);
             }
         };
 

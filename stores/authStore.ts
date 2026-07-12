@@ -35,18 +35,18 @@ function getInitialAuthState(): {
     return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
   }
   const boot = bootstrapAuthFromStorage();
-  if (!boot) {
-    return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
-  }
   const persisted = readPersistedAuthUser();
-  if (!persisted?.id || persisted.id !== boot.userId) {
-    return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
+  if (persisted?.id) {
+    if (boot && persisted.id !== boot.userId) {
+      return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
+    }
+    return {
+      currentUser: persisted as unknown as User,
+      isAuthenticated: true,
+      isAuthLoading: true,
+    };
   }
-  return {
-    currentUser: persisted as unknown as User,
-    isAuthenticated: true,
-    isAuthLoading: false,
-  };
+  return { currentUser: null, isAuthenticated: false, isAuthLoading: true };
 }
 
 const initialAuthState = getInitialAuthState();
