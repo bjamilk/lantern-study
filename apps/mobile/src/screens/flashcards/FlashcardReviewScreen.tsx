@@ -55,8 +55,6 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
   const today = getTodayStudyCounts(activityDays);
   return buildFlashcardReviewQueue(cards, {
     srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
-    dailyCardGoal: settings.study.dailyCardGoal,
-    cardsReviewedToday: today.flashcards,
     newCardsIntroducedToday: today.newFlashcards,
   });
 }

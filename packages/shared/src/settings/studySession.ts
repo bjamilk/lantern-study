@@ -32,21 +32,15 @@ export function getTodayStudyCounts(activityDays: StudyActivityDay[]): TodayStud
 
 export interface BuildReviewQueueOptions {
   srsNewCardsPerDay: number;
-  dailyCardGoal: number;
   /** From synced study_activity for today */
-  cardsReviewedToday?: number;
   newCardsIntroducedToday?: number;
 }
 
-/** Build an SRS review queue respecting daily limits and new-card caps. */
+/** Build an SRS review queue respecting new-card caps (daily goal is progress-only). */
 export function buildFlashcardReviewQueue<T extends FlashcardLike>(
   cards: T[],
   options: BuildReviewQueueOptions
 ): T[] {
-  const reviewedToday = options.cardsReviewedToday ?? 0;
-  const remainingDaily = Math.max(0, options.dailyCardGoal - reviewedToday);
-  if (remainingDaily === 0) return [];
-
   const due = sortCardsByDueDate(
     getCardsDue(cards).filter((c) => !isNewFlashcard(c))
   );
@@ -55,10 +49,10 @@ export function buildFlashcardReviewQueue<T extends FlashcardLike>(
   const newLimit = Math.max(0, options.srsNewCardsPerDay - newIntroducedToday);
   const newSlice = newCards.slice(0, newLimit);
 
-  return [...due, ...newSlice].slice(0, remainingDaily);
+  return [...due, ...newSlice];
 }
 
-/** Cards still due for review (any deck), excluding daily cap exhaustion. */
+/** Cards still due for review (any deck). */
 export function countReviewableCards<T extends FlashcardLike>(
   cards: T[],
   options: BuildReviewQueueOptions

@@ -398,17 +398,11 @@ export function useFlashcardHandlers() {
 
         const cardQueue = buildFlashcardReviewQueue(cardsInDeck, {
             srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
-            dailyCardGoal: settings.study.dailyCardGoal,
-            cardsReviewedToday: today.flashcards,
             newCardsIntroducedToday: today.newFlashcards,
         });
 
         if (cardQueue.length === 0) {
-            if (today.flashcards >= settings.study.dailyCardGoal && settings.study.dailyCardGoal > 0) {
-                alert("You've reached your daily card goal. Great work!");
-            } else {
-                alert("No new or due cards in this deck to review right now.");
-            }
+            alert("No new or due cards in this deck to review right now.");
             return;
         }
         setActiveReviewSession({ deck, cardQueue });
