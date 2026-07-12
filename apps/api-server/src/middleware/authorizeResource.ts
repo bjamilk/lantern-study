@@ -6,6 +6,7 @@ import { asyncHandler } from './errorHandler';
 import { SupabaseService } from '../services/supabase';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 
 let supabaseService: SupabaseService | null = null;
 
@@ -55,7 +56,8 @@ export function requireGroupAdmin(groupIdParam = 'groupId') {
     const isAdmin =
       group.adminIds?.includes(userId) ||
       (group.permissions && (group.permissions as Record<string, { admin?: boolean }>)[userId]?.admin);
-    if (!isAdmin && !req.user?.isAdmin) {
+    const liveAdmin = await isLivePlatformAdmin(userId);
+    if (!isAdmin && !liveAdmin) {
       denyAccess(res, 'Only group admins can perform this action');
       return;
     }
@@ -76,7 +78,8 @@ export function requireDeckAccess(
       return;
     }
     const allowed = await requireService().verifyDeckAccess(userId, deckId, level);
-    if (!allowed && !req.user?.isAdmin) {
+    const liveAdmin = await isLivePlatformAdmin(userId);
+    if (!allowed && !liveAdmin) {
       denyAccess(res, 'Deck not found or access denied');
       return;
     }
@@ -95,7 +98,8 @@ export function requireNoteAccess(noteIdParam = 'noteId') {
     }
     try {
       const note = await requireService().getNote(noteId, userId);
-      if (!note && !req.user?.isAdmin) {
+      const liveAdmin = await isLivePlatformAdmin(userId);
+      if (!note && !liveAdmin) {
         denyAccess(res, 'Note not found or access denied');
         return;
       }
@@ -117,7 +121,8 @@ export function requireTestOwner(testIdParam = 'testId') {
       return;
     }
     const test = await requireService().getTestById(testId, userId);
-    if (!test && !req.user?.isAdmin) {
+    const liveAdmin = await isLivePlatformAdmin(userId);
+    if (!test && !liveAdmin) {
       res.status(404).json({ success: false, error: 'Test not found or access denied' });
       return;
     }

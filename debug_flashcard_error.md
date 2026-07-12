@@ -1,38 +1,15 @@
-# Flashcard Menu Error Debugging
+# Flashcard Menu Error — Resolved
 
-## Problem
-Error: "Cannot read properties of null (reading 'id')" in FlashcardsScreen.tsx when trying to access `deck.id`
+## Original problem
+Error: "Cannot read properties of null (reading 'id')" in FlashcardsScreen when accessing `deck.id`.
 
-## Debugging Steps Added
+## Root cause (inferred)
+Null or malformed deck entries could enter client state from cached AsyncStorage or unfiltered API responses. The API `getDecks` path returns valid rows; corruption was client-side defensive gap on mobile.
 
-1. **FlashcardsScreen.tsx**: Added console.log to check each deck object and null check
-2. **App.tsx**: Added console.log to check raw data from database and mapped decks
+## Fixes applied
+- **Web:** `sanitizeDecks` in `stores/flashcardStore.ts`; `fetchDecks` filters null entries in `services/supabase.ts`
+- **Mobile:** `sanitizeDecks` parity in `apps/mobile/src/stores/flashcardStore.ts` (fetch + cache load)
+- **API:** `getDecks` filters rows missing `id` before returning
 
-## Instructions for User
-
-Please follow these steps to help diagnose the issue:
-
-1. **Open the app** and navigate to the Flashcards section
-2. **Open browser DevTools** (F12 or Ctrl+Shift+I)
-3. **Go to the Console tab**
-4. **Navigate to Flashcards** - you should see console logs
-5. **Copy all the console output** and paste it here
-
-The logs will show:
-- Raw data returned from the database
-- Mapped deck objects
-- Individual deck processing in the component
-
-This will help identify if:
-- The database is returning null values
-- The mapping is creating null values
-- There's some other issue with the data flow
-
-## Expected Console Output
-```
-Raw fetchedDecks from database: [...]
-Mapped decks: [...]
-Processing deck: {id: "...", name: "...", ...}
-```
-
-If you see any `null` values or errors in the console, please copy them exactly.
+## Status
+Mitigated in web, mobile, and API layers. If the error recurs, capture network response from `GET /api/v1/decks` and AsyncStorage `lantern_decks` contents.

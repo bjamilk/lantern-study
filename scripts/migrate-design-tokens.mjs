@@ -379,15 +379,31 @@ function migrateContent(content) {
   let next = content;
   let total = 0;
   for (const [from, to] of REPLACEMENTS) {
-    if (!next.includes(from)) continue;
-    const parts = next.split(from);
-    const count = parts.length - 1;
-    if (count > 0) {
-      next = parts.join(to);
-      total += count;
-    }
+    const pattern = new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    const matches = next.match(pattern);
+    if (!matches?.length) continue;
+    next = next.replace(pattern, to);
+    total += matches.length;
   }
   return { content: next, replacements: total };
+}
+
+const FORBIDDEN_PATTERNS = [
+  { label: 'background0 corruption', regex: /lantern-background0|background0/ },
+  { label: 'broken translate token', regex: /translate-lantern-/ },
+];
+
+function scanForbiddenPatterns(files) {
+  const hits = [];
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const { label, regex } of FORBIDDEN_PATTERNS) {
+      if (regex.test(content)) {
+        hits.push({ file: path.relative(ROOT, file), label });
+      }
+    }
+  }
+  return hits;
 }
 
 function main() {
@@ -429,6 +445,13 @@ function main() {
     console.log(`\n${remaining.length} files still contain slate/indigo/gray classes:`);
     remaining.slice(0, 40).forEach((f) => console.log(`  - ${f}`));
     if (remaining.length > 40) console.log(`  ... and ${remaining.length - 40} more`);
+  }
+
+  const forbidden = scanForbiddenPatterns(files);
+  if (forbidden.length > 0) {
+    console.error(`\nForbidden token patterns detected (${forbidden.length}):`);
+    forbidden.slice(0, 20).forEach((hit) => console.error(`  - ${hit.file}: ${hit.label}`));
+    if (CHECK_ONLY) process.exit(1);
   }
 }
 

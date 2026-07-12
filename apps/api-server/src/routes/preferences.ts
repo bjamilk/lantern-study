@@ -31,7 +31,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId } = req.params;
 
-    if (rejectMismatchedUserId(req, res, userId)) return;
+    if (await rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Fetching user preferences', { userId, requestingUserId: req.user?.id });
 
@@ -68,7 +68,7 @@ router.post(
       });
     }
 
-    if (rejectMismatchedUserId(req, res, userId)) return;
+    if (await rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Saving user preferences', { userId, theme, requestingUserId: req.user?.id });
 

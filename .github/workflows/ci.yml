@@ -21,6 +21,7 @@ jobs:
       - run: npm run build:web
       - run: npm run typecheck --workspace=@lantern/api-server --if-present
       - run: npm run typecheck --workspace=@lantern/web --if-present
+      - run: node scripts/migrate-design-tokens.mjs --check
 
   secret-scan:
     runs-on: ubuntu-latest

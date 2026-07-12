@@ -1,0 +1,58 @@
+name: Security regression
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  security-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Supabase credentials
+        id: creds
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ] || [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ] || [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping security regression: Supabase secrets not configured in repo."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write ephemeral .env for PoC scripts
+        if: steps.creds.outputs.skip != 'true'
+        shell: bash
+        run: |
+          cat > .env <<EOF
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+          EOF
+          mkdir -p apps/api-server
+          cat > apps/api-server/.env <<EOF
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EOF
+
+      - name: F-01 marketplace offers PoC
+        if: steps.creds.outputs.skip != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f01-marketplace-offers.ps1
+
+      - name: F-02 profile avatar IDOR PoC
+        if: steps.creds.outputs.skip != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f02-profile-avatar-idor.ps1
+
+      - name: Auth-02 marketplace inquiries PoC
+        if: steps.creds.outputs.skip != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-auth02-marketplace-inquiries.ps1
+
+      - name: RLS privilege battery
+        if: steps.creds.outputs.skip != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-rls-privileges.ps1

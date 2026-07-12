@@ -70,15 +70,16 @@ describe('applyPublicRateLimits', () => {
     expect(authenticatedRateLimit).not.toHaveBeenCalled();
   });
 
-  it('uses publicWriteRateLimit for anonymous public write', async () => {
+  it('skips public write limiter when no public write routes are registered', async () => {
     const req = mockReq({
       method: 'POST',
       baseUrl: '/api/v1/user-stats',
       path: '/',
     });
     await runMiddleware(req);
-    expect(publicWriteRateLimit).toHaveBeenCalledTimes(1);
+    expect(publicWriteRateLimit).not.toHaveBeenCalled();
     expect(publicReadRateLimit).not.toHaveBeenCalled();
+    expect(authenticatedRateLimit).not.toHaveBeenCalled();
   });
 
   it('skips limiters for non-public routes', async () => {

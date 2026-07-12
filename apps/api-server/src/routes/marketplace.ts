@@ -10,6 +10,7 @@ import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
+import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 
 const router = Router();
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
@@ -260,7 +261,8 @@ router.put(
       });
     }
 
-    if (listing.user_id !== userId && !req.user?.isAdmin) {
+    const liveAdmin = userId ? await isLivePlatformAdmin(userId) : false;
+    if (listing.user_id !== userId && !liveAdmin) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -320,7 +322,8 @@ router.delete(
       });
     }
 
-    if (listing.user_id !== userId && !req.user?.isAdmin) {
+    const liveAdmin = userId ? await isLivePlatformAdmin(userId) : false;
+    if (listing.user_id !== userId && !liveAdmin) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
@@ -790,9 +793,10 @@ router.put(
         data: inquiry,
       });
     } catch (error: any) {
-      res.status(403).json({
+      const statusCode = error?.statusCode === 404 || error?.message === 'Inquiry not found' ? 404 : 403;
+      res.status(statusCode).json({
         success: false,
-        error: clientErrorMessage(error),
+        error: statusCode === 404 ? 'Inquiry not found' : clientErrorMessage(error),
       });
     }
   })
@@ -819,7 +823,7 @@ router.get(
       && inquiry.seller_id !== userId
       && listingOwnerId !== userId
     ) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
+      return res.status(404).json({ success: false, error: 'Inquiry not found' });
     }
 
     res.json({

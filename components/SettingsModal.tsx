@@ -419,6 +419,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                  <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-lantern-text">Privacy</h3>
                     <p className="text-sm text-lantern-text-secondary">Control who can see your profile and activity.</p>
+                    <p className="text-sm rounded-lg border border-lantern-border bg-lantern-background-secondary p-3 text-lantern-text-secondary">
+                      New accounts are <strong className="text-lantern-text">public</strong> by default so classmates can find you. Change profile visibility below anytime.
+                    </p>
                     <div>
                       <label className="block text-sm font-medium text-lantern-text mb-1">Profile visibility</label>
                         <select value={privacy.profileVisibility}

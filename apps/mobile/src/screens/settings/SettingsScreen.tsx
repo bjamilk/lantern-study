@@ -1173,6 +1173,10 @@ export default function SettingsScreen() {
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            <Text style={[styles.optionDescription, modalTheme.optionDescription, { marginBottom: 12 }]}>
+              New accounts are public by default so classmates can find you. Pick who can see your profile.
+            </Text>
             
             {(['public', 'groups', 'private'] as const).map((option) => (
               <TouchableOpacity

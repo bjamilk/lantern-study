@@ -11,6 +11,7 @@ import {
 } from '../services/accountLifecycle';
 import { isAccessTokenDenied, isTokenIssuedBeforeUserCutoff } from '../services/tokenDenylist';
 import { readAccessCookie } from '../utils/authCookies';
+import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { createRequestContext, type RequestContext } from '../services/dataLoaders';
 import { AuthenticatedRequest } from '../types';
@@ -55,7 +56,8 @@ async function rejectIfDeactivated(
   req: AuthenticatedRequest,
   res: Response
 ): Promise<boolean> {
-  if (req.user?.isAdmin || !supabaseService) return false;
+  if (!supabaseService) return false;
+  if (await isLivePlatformAdmin(userId)) return false;
   if (isDeactivatedLifecycleRoute(req.method, req.path, userId)) return false;
 
   const row = await getAccountLifecycle(supabaseService, userId);

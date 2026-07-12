@@ -91,6 +91,8 @@ $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $password = 'Password123!'
 $userIds = @()
 $groupId = $null
+$inquiryListingId = $null
+$inquiryThreadId = $null
 
 Write-Host "Supabase: $SupabaseUrl" -ForegroundColor Cyan
 
@@ -200,7 +202,53 @@ try {
   $activityBlocked = $activityInsert.status -in 401, 403
   Write-Host "study_activity direct write blocked: $activityBlocked (expect True) status=$($activityInsert.status)"
 
-  $passed = $escalationBlocked -and $auditBlocked -and $platformBlocked -and $milestoneBlocked -and $memberBlocked -and $adminAllowed -and $walletBlocked -and $pointsBlocked -and $selfJoinBlocked -and $activityBlocked
+  # 10) marketplace_inquiries client writes blocked (Auth-02)
+  $inquiryListingId = [guid]::NewGuid().ToString()
+  $inquiryId = [guid]::NewGuid().ToString()
+  $inquiryThreadId = (@($userA.id, $userB.id) | Sort-Object) -join '-'
+  $inquiryThreadId = (@($userA.id, $userB.id) | Sort-Object) -join '-'
+  Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_listings' -Headers $script:AdminHeaders -Body @{
+    id = $inquiryListingId
+    user_id = $userB.id
+    title = "RLS verify inquiry $ts"
+    description = 'ephemeral'
+    price = 500
+    category = 'books'
+    status = 'active'
+    images = @()
+  } -PreferMinimal | Out-Null
+  Invoke-Supabase -Method POST -Path '/rest/v1/dm_threads' -Headers $script:AdminHeaders -Body @{
+    id = $inquiryThreadId
+    participant_ids = @($userA.id, $userB.id)
+    participants = @(
+      @{ id = $userA.id; name = $userA.user_metadata.name },
+      @{ id = $userB.id; name = $userB.user_metadata.name }
+    )
+  } -PreferMinimal | Out-Null
+  Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_inquiries' -Headers $script:AdminHeaders -Body @{
+    id = $inquiryId
+    listing_id = $inquiryListingId
+    buyer_id = $userA.id
+    seller_id = $userB.id
+    dm_thread_id = $inquiryThreadId
+    status = 'open'
+    initial_message = 'seed'
+  } -PreferMinimal | Out-Null
+  $inquiryInsert = Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_inquiries' -Headers $headersA -Body @{
+    listing_id = $inquiryListingId
+    buyer_id = $userA.id
+    seller_id = $userB.id
+    dm_thread_id = $inquiryThreadId
+    status = 'open'
+    initial_message = 'exploit'
+  }
+  $inquiryUpdate = Invoke-Supabase -Method PATCH -Path "/rest/v1/marketplace_inquiries?id=eq.$inquiryId" -Headers $headersA -Body @{ status = 'purchased' }
+  $inquiryInsertBlocked = $inquiryInsert.status -in 401, 403
+  $inquiryUpdateBlocked = $inquiryUpdate.status -in 401, 403
+  Write-Host "marketplace_inquiries INSERT blocked: $inquiryInsertBlocked (expect True) status=$($inquiryInsert.status)"
+  Write-Host "marketplace_inquiries UPDATE blocked: $inquiryUpdateBlocked (expect True) status=$($inquiryUpdate.status)"
+
+  $passed = $escalationBlocked -and $auditBlocked -and $platformBlocked -and $milestoneBlocked -and $memberBlocked -and $adminAllowed -and $walletBlocked -and $pointsBlocked -and $selfJoinBlocked -and $activityBlocked -and $inquiryInsertBlocked -and $inquiryUpdateBlocked
   $result = [ordered]@{
     profiles_escalation_blocked = $escalationBlocked
     admin_audit_log_blocked = $auditBlocked
@@ -212,6 +260,8 @@ try {
     profiles_points_escalation_blocked = $pointsBlocked
     group_self_join_blocked = $selfJoinBlocked
     study_activity_write_blocked = $activityBlocked
+    marketplace_inquiries_insert_blocked = $inquiryInsertBlocked
+    marketplace_inquiries_update_blocked = $inquiryUpdateBlocked
     all_passed = $passed
   }
   $result | ConvertTo-Json
@@ -221,5 +271,12 @@ finally {
   foreach ($id in $userIds) { Remove-AuthUser -Id $id }
   if ($groupId) {
     Invoke-Supabase -Method DELETE -Path "/rest/v1/groups?id=eq.$groupId" -Headers $script:AdminHeaders | Out-Null
+  }
+  if ($inquiryListingId) {
+    Invoke-Supabase -Method DELETE -Path "/rest/v1/marketplace_inquiries?listing_id=eq.$inquiryListingId" -Headers $script:AdminHeaders | Out-Null
+    Invoke-Supabase -Method DELETE -Path "/rest/v1/marketplace_listings?id=eq.$inquiryListingId" -Headers $script:AdminHeaders | Out-Null
+  }
+  if ($inquiryThreadId) {
+    Invoke-Supabase -Method DELETE -Path "/rest/v1/dm_threads?id=eq.$inquiryThreadId" -Headers $script:AdminHeaders | Out-Null
   }
 }

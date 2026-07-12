@@ -54,7 +54,16 @@ function flushScheduledSave(saveFn: () => Promise<void>) {
 // Demo mode flag - matches authStore
 const DEMO_MODE = false;
 
-function mapDeckFromApi(data: any): Deck {
+function isValidDeck(deck: Deck | null | undefined): deck is Deck {
+  return Boolean(deck && typeof deck.id === 'string' && deck.id && typeof deck.name === 'string');
+}
+
+function sanitizeDecks(decks: Deck[]): Deck[] {
+  return decks.filter(isValidDeck);
+}
+
+function mapDeckFromApi(data: any): Deck | null {
+  if (!data || typeof data.id !== 'string' || !data.id) return null;
   return {
     id: data.id,
     name: data.name,
@@ -244,7 +253,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       ]);
       
       if (decksJson) {
-        set({ decks: JSON.parse(decksJson) });
+        set({ decks: sanitizeDecks(JSON.parse(decksJson)) });
       }
       if (flashcardsJson) {
         const parsed = JSON.parse(flashcardsJson) as Record<string, any[]>;
@@ -290,7 +299,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       try {
         const rawDecks = await api.fetchDecks(userId, { includeShared: true });
         const decks = enrichDecksWithStats(
-          (rawDecks || []).map(mapDeckFromApi),
+          sanitizeDecks((rawDecks || []).map(mapDeckFromApi).filter((d): d is Deck => d !== null)),
           get().flashcards
         );
         set({ decks, isLoading: false, error: null });

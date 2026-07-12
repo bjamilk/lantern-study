@@ -98,19 +98,26 @@ function logResult(label, result) {
 async function main() {
   console.log(`Notifying search engines for ${siteUrl}\n`);
 
-  console.log('Sitemap pings:');
-  for (const sitemapUrl of sitemapUrls) {
-    const google = await pingSitemap(
-      'https://www.google.com/ping?sitemap=',
-      sitemapUrl,
-    );
-    logResult(`Google ← ${sitemapUrl}`, google);
+  const pingSitemaps = process.env.PING_SITEMAP === 'true';
+  if (pingSitemaps) {
+    console.log('Sitemap pings (deprecated — set PING_SITEMAP=true to enable):');
+    for (const sitemapUrl of sitemapUrls) {
+      const google = await pingSitemap(
+        'https://www.google.com/ping?sitemap=',
+        sitemapUrl,
+      );
+      logResult(`Google ← ${sitemapUrl}`, google);
 
-    const bing = await pingSitemap(
-      'https://www.bing.com/ping?sitemap=',
-      sitemapUrl,
-    );
-    logResult(`Bing ← ${sitemapUrl}`, bing);
+      const bing = await pingSitemap(
+        'https://www.bing.com/ping?sitemap=',
+        sitemapUrl,
+      );
+      logResult(`Bing ← ${sitemapUrl}`, bing);
+    }
+  } else {
+    console.log('Sitemap pings skipped (deprecated). Submit sitemaps in Google Search Console.');
+    console.log(`  ${siteUrl}/sitemap.xml`);
+    console.log(`  ${siteUrl}/sitemap/marketplace.xml`);
   }
 
   console.log('\nIndexNow (priority URLs):');

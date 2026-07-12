@@ -28,7 +28,7 @@ router.get(
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
-    if (rejectMismatchedUserId(req, res, userId)) return;
+    if (await rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Fetching user question stats', { userId });
 
@@ -54,7 +54,7 @@ router.post(
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId, questionId, correctAttempts, incorrectAttempts, lastAttempted } = req.body;
-    if (rejectMismatchedUserId(req, res, userId)) return;
+    if (await rejectMismatchedUserId(req, res, userId)) return;
 
     logger.debug('Upserting user question stat', { userId, questionId });
 

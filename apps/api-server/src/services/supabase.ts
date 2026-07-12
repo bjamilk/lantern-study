@@ -167,7 +167,8 @@ export class SupabaseService {
     }
 
     if (bucket === 'profile-avatars') {
-      return !!userId;
+      if (!userId) return false;
+      return this.isProfileVisibleToViewer(userId, ownerId);
     }
 
     return false;
@@ -1779,7 +1780,8 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    const decks = (data || []) as unknown as Array<{ id: string; [key: string]: unknown }>;
+    const decks = ((data || []) as unknown as Array<{ id: string; [key: string]: unknown }>)
+      .filter((d) => d && typeof d.id === 'string' && d.id);
     const deckIds = decks.map(d => d.id);
     const cardCountByDeck: Record<string, number> = {};
 
@@ -6027,7 +6029,9 @@ export class SupabaseService {
       .single();
 
     if (!inquiry || (inquiry.buyer_id !== userId && inquiry.seller_id !== userId)) {
-      throw new Error('Unauthorized');
+      const err = new Error('Inquiry not found');
+      (err as Error & { statusCode?: number }).statusCode = 404;
+      throw err;
     }
 
     const { data, error } = await this.supabase

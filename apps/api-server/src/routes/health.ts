@@ -6,6 +6,9 @@ const router = Router();
 const startTime = Date.now();
 
 router.get('/health', (req: Request, res: Response) => {
+  if (isProductionEnv()) {
+    return res.status(200).json({ status: 'ok' });
+  }
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../types';
+import { isLivePlatformAdmin } from './platformAdminAuth';
 
 /** Returns authenticated user ID or sends 401 and returns null. */
 export function requireAuthUserId(req: AuthenticatedRequest, res: Response): string | null {
@@ -11,20 +12,23 @@ export function requireAuthUserId(req: AuthenticatedRequest, res: Response): str
   return id;
 }
 
-/** Reject if client-supplied userId differs from JWT (unless admin). Returns true if rejected. */
-export function rejectMismatchedUserId(
+/** Reject if client-supplied userId differs from JWT (unless live platform admin). Returns true if rejected. */
+export async function rejectMismatchedUserId(
   req: AuthenticatedRequest,
   res: Response,
   clientUserId?: string | null
-): boolean {
+): Promise<boolean> {
   const authUserId = req.user?.id;
   if (!authUserId) {
     res.status(401).json({ success: false, error: 'Authentication required' });
     return true;
   }
-  if (clientUserId && clientUserId !== authUserId && !req.user?.isAdmin) {
-    res.status(403).json({ success: false, error: 'Forbidden' });
-    return true;
+  if (clientUserId && clientUserId !== authUserId) {
+    const liveAdmin = await isLivePlatformAdmin(authUserId);
+    if (!liveAdmin) {
+      res.status(403).json({ success: false, error: 'Forbidden' });
+      return true;
+    }
   }
   return false;
 }

@@ -42,8 +42,5 @@ export function isPublicReadRequest(req: Request): boolean {
 }
 
 export function isPublicWriteRequest(req: Request): boolean {
-  const method = req.method.toUpperCase();
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
-  if (req.baseUrl?.endsWith('/user-stats')) return true;
   return false;
 }
