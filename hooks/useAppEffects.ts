@@ -21,6 +21,7 @@ import {
     fetchUserBudget, saveUserBudget,
     syncBudgetTransactionsToCloud,
     fetchPendingSyncResults, savePendingSyncResult,
+    syncPendingResultsToCloud,
     markAllNotificationsAsRead, deleteAllNotifications,
     fetchUserProfile, createUserProfile,
     fetchUserSettings,
@@ -870,7 +871,21 @@ export function useAppEffects({
 
             // Sync pending results (non-critical, fire-and-forget)
             if (!cancelled && pendingSyncResults.length > 0) {
-                fetchPendingSyncResults(currentUser.id).then(() => {
+                const localPending = useTestStore.getState().pendingSyncResults;
+                const cloudFormatted = localPending.map(result => ({
+                    id: result.id,
+                    resultData: result,
+                    createdAt: result.session?.endTime
+                        ? new Date(result.session.endTime).toISOString()
+                        : new Date().toISOString(),
+                    synced: false,
+                }));
+                syncPendingResultsToCloud(currentUser.id, cloudFormatted).then((merged) => {
+                    if (cancelled) return;
+                    const mergedResults = merged
+                        .filter(row => !row.synced)
+                        .map(row => row.resultData);
+                    setPendingSyncResults(mergedResults);
                     console.log('[Pending Results Sync] Synced');
                 }).catch(error => {
                     console.error('[Pending Results Sync] Error:', error);
@@ -1007,7 +1022,9 @@ export function useAppEffects({
                             sender_id: string;
                             text: string;
                             timestamp: string;
+                            client_message_id?: string;
                         };
+                        if (raw.sender_id === currentUser.id) return;
                         const message: DirectMessage = {
                             id: raw.id,
                             threadId: raw.thread_id,
@@ -1018,6 +1035,16 @@ export function useAppEffects({
                         updateDirectMessages(prev => {
                             const existing = prev[thread.id] || [];
                             if (existing.some(m => m.id === message.id)) return prev;
+                            if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
+                                return {
+                                    ...prev,
+                                    [thread.id]: existing.map(m =>
+                                        m.id === raw.client_message_id
+                                            ? { ...m, ...message, id: message.id }
+                                            : m
+                                    ),
+                                };
+                            }
                             return { ...prev, [thread.id]: [...existing, message] };
                         });
                         updateDmThreads(prev => prev.map(t => {
@@ -1058,9 +1085,40 @@ export function useAppEffects({
                 },
                 (payload) => {
                     const mapped = mapMessageFromApi(payload.new);
+                    const raw = payload.new as {
+                        sender_id?: string;
+                        client_message_id?: string;
+                        content?: string;
+                        text?: string;
+                    };
                     updateMessages(prev => {
                         const existing = prev[groupId] || [];
-                        if (existing.some(m => m.id === mapped.id)) return prev;
+                        if (existing.some(m => m.id === mapped.id)) {
+                            return {
+                                ...prev,
+                                [groupId]: existing.map(m =>
+                                    m.id === mapped.id ? { ...m, ...mapped } : m
+                                ),
+                            };
+                        }
+                        if (raw.sender_id === currentUser.id) {
+                            const clientMessageId = raw.client_message_id;
+                            if (clientMessageId && existing.some(m => m.id === clientMessageId)) {
+                                return {
+                                    ...prev,
+                                    [groupId]: existing.map(m =>
+                                        m.id === clientMessageId
+                                            ? { ...m, ...mapped, id: mapped.id, sender: mapped.sender?.id ? mapped.sender : m.sender }
+                                            : m
+                                    ),
+                                };
+                            }
+                            const rawContent = raw.content || raw.text || mapped.text || '';
+                            const hasOptimistic = existing.some(
+                                m => m.sender?.id === currentUser.id && m.text === rawContent && m.id !== mapped.id
+                            );
+                            if (hasOptimistic) return prev;
+                        }
                         return { ...prev, [groupId]: [...existing, mapped] };
                     });
                 }

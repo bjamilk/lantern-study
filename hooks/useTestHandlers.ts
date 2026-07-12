@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode, TestConfig, TestQuestion, UserAnswerRecord, TestSessionData, StudySessionData, TestResult, UserStats, UserQuestionStats, Message } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -39,6 +39,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         userQuestionStats, setUserQuestionStats, updateTestResults,
         addPendingSyncResult,
     } = useTestStore();
+
+    const isSubmittingTestRef = useRef(false);
+    const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
     const handleTestSubmit = useCallback((config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
         if (activeTestSession || activeStudySession) {
@@ -275,8 +278,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
 
     const handleSubmitTest = useCallback(async () => {
-        if (!activeTestSession || !currentUser) return;
-    
+        if (!activeTestSession || !currentUser || isSubmittingTestRef.current) return;
+        isSubmittingTestRef.current = true;
+        setIsSubmittingTest(true);
+
         const finalUserAnswers: Record<string, UserAnswerRecord> = {};
         let correctAnswersCount = 0;
         
@@ -460,6 +465,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         } catch (error) {
             console.error('Error saving test result:', error);
             alert('Failed to save test result. Please try again.');
+        } finally {
+            isSubmittingTestRef.current = false;
+            setIsSubmittingTest(false);
         }
     }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification]);
     
@@ -550,5 +558,6 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         handleResumeSession,
         handleRetakeTest,
         handlePracticeFailedQuestions,
+        isSubmittingTest,
     };
 }

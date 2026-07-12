@@ -17,6 +17,7 @@ interface TestTakingScreenProps {
   onToggleBookmark: (questionId: string) => void;
   onSubmitTest?: () => void;
   onSubmitOfflineTest?: () => void;
+  isSubmittingTest?: boolean;
   onEndSession?: () => void;
   onPauseSession: () => void;
   onCancelSession: () => void;
@@ -48,6 +49,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   onToggleBookmark,
   onSubmitTest,
   onSubmitOfflineTest,
+  isSubmittingTest = false,
   onEndSession,
   onPauseSession,
   onCancelSession,
@@ -608,8 +610,12 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     <ArrowLeftIcon className="w-5 h-5 mr-2" />
                     Return to Test
                 </button>
-                <button onClick={finalSubmitAction} className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center font-semibold">
-                    Confirm & Submit Test <CheckCircleSolid className="w-5 h-5 ml-2" />
+                <button
+                    onClick={finalSubmitAction}
+                    disabled={isSubmittingTest}
+                    className={`px-6 py-3 text-white rounded-md flex items-center font-semibold ${isSubmittingTest ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                    {isSubmittingTest ? 'Submitting...' : 'Confirm & Submit Test'} <CheckCircleSolid className="w-5 h-5 ml-2" />
                 </button>
             </div>
         </div>
@@ -986,7 +992,8 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             {mode === 'test' && session.currentQuestionIndex === totalQuestions - 1 && (
             <button
                 onClick={handleInitiateSubmit}
-                className="px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 text-white rounded-md focus:ring-2 focus:ring-indigo-400 dark:focus:ring-indigo-500 focus:ring-offset-2"
+                disabled={isSubmittingTest}
+                className={`px-3 py-1.5 sm:px-6 sm:py-2 text-xs sm:text-sm text-white rounded-md focus:ring-2 focus:ring-indigo-400 dark:focus:ring-indigo-500 focus:ring-offset-2 ${isSubmittingTest ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600'}`}
             >
                 <span className="hidden sm:inline">Review & Submit Test</span>
                 <span className="sm:hidden">Submit</span>

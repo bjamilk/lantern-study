@@ -515,6 +515,7 @@ export default function TestTakingScreen() {
   const [feedbackResult, setFeedbackResult] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const questionViewStartTimeRef = useRef<number | null>(null);
 
   // Get mode from active test
@@ -659,7 +660,8 @@ export default function TestTakingScreen() {
   }, [activeTest, currentQuestion]);
 
   const finalizeSubmit = useCallback(async () => {
-    if (!activeTest) return;
+    if (!activeTest || submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const attempt = await submitTest(userId, {
@@ -670,6 +672,7 @@ export default function TestTakingScreen() {
       setShowReviewModal(false);
       navigation.replace('TestResults', { attemptId: attempt.id });
     } catch {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   }, [activeTest, submitTest, userId, isOffline, groupName, groupId, navigation]);
@@ -1092,10 +1095,11 @@ export default function TestTakingScreen() {
                 <Text style={styles.reviewCancelText}>Continue Test</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.reviewSubmitButton}
+                style={[styles.reviewSubmitButton, isSubmitting && { opacity: 0.6 }]}
+                disabled={isSubmitting}
                 onPress={() => void finalizeSubmit()}
               >
-                <Text style={styles.reviewSubmitText}>Submit Test</Text>
+                <Text style={styles.reviewSubmitText}>{isSubmitting ? 'Submitting...' : 'Submit Test'}</Text>
               </TouchableOpacity>
             </View>
           </View>

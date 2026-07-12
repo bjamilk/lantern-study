@@ -53,8 +53,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-// Helper function to fetch with timeout
-const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number = 8000): Promise<Response> => {
+// Helper function to fetch with timeout and optional 401 retry
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = 8000,
+  allowRetry = true
+): Promise<Response> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
@@ -64,6 +69,49 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: nu
       signal: controller.signal
     });
     clearTimeout(timeoutId);
+
+    if (response.status === 401 && allowRetry) {
+      let authCode: string | undefined;
+      try {
+        const clone = response.clone();
+        const body = (await clone.json().catch(() => ({}))) as { code?: string };
+        authCode = body.code;
+      } catch {
+        authCode = undefined;
+      }
+      if (authCode !== 'SESSION_REVOKED' && authCode !== 'ACCOUNT_BANNED' && authCode !== 'ACCOUNT_DEACTIVATED') {
+        let refreshed = false;
+        if (cookieAuthEnabled) {
+          const session = await refreshCookieSession();
+          if (session?.access_token) {
+            _cachedAccessToken = session.access_token;
+            refreshed = true;
+          }
+        } else {
+          try {
+            const { data } = await supabase.auth.refreshSession();
+            if (data.session?.access_token) {
+              _cachedAccessToken = data.session.access_token;
+              refreshed = true;
+            }
+          } catch {
+            // ignore refresh failure
+          }
+        }
+        if (refreshed) {
+          const headers = await getAuthHeaders();
+          const retryOptions: RequestInit = {
+            ...options,
+            headers: {
+              ...(options.headers as Record<string, string> | undefined),
+              ...headers,
+            },
+          };
+          return fetchWithTimeout(url, retryOptions, timeoutMs, false);
+        }
+      }
+    }
+
     return response;
   } catch (error: any) {
     clearTimeout(timeoutId);

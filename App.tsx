@@ -247,7 +247,8 @@ export const App: React.FC = () => {
         handleTestSubmit, handleUpdateAnswer, handleChangeQuestion,
         handleToggleBookmark, handleSubmitTest, handleEndStudySession,
         handleCancelActiveSession, handlePauseSession, handleResumeSession,
-        handleRetakeTest, handlePracticeFailedQuestions
+        handleRetakeTest, handlePracticeFailedQuestions,
+        isSubmittingTest,
     } = useTestHandlers({ addNotification });
     const {
         handleSendChallenge,
@@ -874,7 +875,7 @@ export const App: React.FC = () => {
                     onUpdateAnswer={handleUpdateAnswer} onChangeQuestion={handleChangeQuestion}
                     onToggleBookmark={handleToggleBookmark} onSubmitTest={handleSubmitTest}
                     onSubmitOfflineTest={handleSubmitTest} onPauseSession={handlePauseSession}
-                    onCancelSession={handleCancelActiveSession} />;
+                    onCancelSession={handleCancelActiveSession} isSubmittingTest={isSubmittingTest} />;
             case AppMode.STUDY_ACTIVE:
                 if (!activeStudySession) return null;
                 return <TestTakingScreen mode="study" session={activeStudySession}

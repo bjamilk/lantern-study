@@ -287,7 +287,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
         
         const otherUserId = thread.participantIds.find(id => id !== currentUser.id);
-        if (!otherUserId) return;
+        if (!otherUserId) {
+            sendingThreadIds.delete(threadId);
+            return;
+        }
         
         const clientMessageId = uuidv4();
         const optimisticMessage: DirectMessage = {
