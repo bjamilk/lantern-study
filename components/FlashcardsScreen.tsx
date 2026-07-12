@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Deck, Flashcard } from '../types';
 import {
   RectangleStackIcon,
@@ -15,7 +15,7 @@ import {
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
-import { SkeletonCard, ScreenHeader, Button, EmptyState } from './ui';
+import { SkeletonCard, ScreenHeader, Button, EmptyState, Menu, MenuTrigger, MenuContent, MenuItem } from './ui';
 
 interface FlashcardsScreenProps {
   decks: Deck[];
@@ -59,24 +59,10 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const openWithMessage = useCompanionStore(s => s.openWithMessage);
   const { lowDataMode } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const isLoading = isInitialLoading;
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    if (menuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [menuOpen]);
-
   const handleAIGenerate = () => {
-    setMenuOpen(false);
     openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.');
   };
 
@@ -112,27 +98,18 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         <PlusCircleIcon className="w-4 h-4" />
         New deck
       </Button>
-      <div className="relative" ref={menuRef}>
-        <Button variant="secondary" size="sm" onClick={() => setMenuOpen(v => !v)} aria-label="More actions">
+      <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+        <MenuTrigger aria-label="More actions" className="inline-flex items-center justify-center rounded-lantern px-3 py-2 text-sm font-medium bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border/40">
           <EllipsisVerticalIcon className="w-4 h-4" />
-        </Button>
-        {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-lantern-border bg-lantern-surface shadow-lg z-20 py-1">
-            <button type="button" onClick={() => { setMenuOpen(false); onOpenCreateFlashcard(); }} className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary">
-              New card
-            </button>
-            <button type="button" onClick={handleAIGenerate} disabled={lowDataMode} className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50">
-              {lowDataMode ? 'AI Generate (Wi‑Fi)' : 'AI Generate'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMenuOpen(false); importInputRef.current?.click(); }}
-              className="w-full text-left px-4 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary"
-            >
-              Import deck
-            </button>
-          </div>
-        )}
+        </MenuTrigger>
+        <MenuContent align="end">
+          <MenuItem onSelect={onOpenCreateFlashcard}>New card</MenuItem>
+          <MenuItem onSelect={handleAIGenerate} disabled={lowDataMode}>
+            {lowDataMode ? 'AI Generate (Wi‑Fi)' : 'AI Generate'}
+          </MenuItem>
+          <MenuItem onSelect={() => importInputRef.current?.click()}>Import deck</MenuItem>
+        </MenuContent>
+      </Menu>
         <input
           ref={importInputRef}
           type="file"
@@ -144,7 +121,6 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
             e.target.value = '';
           }}
         />
-      </div>
     </div>
   );
 

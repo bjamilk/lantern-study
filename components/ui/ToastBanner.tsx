@@ -36,11 +36,14 @@ export const ToastBanner: React.FC<ToastBannerProps> = ({
 
   if (!toast) return null;
 
+  const isUrgent = toast.type === 'error';
+  const livePoliteness = isUrgent ? 'assertive' : 'polite';
+
   return (
     <div
       className={`fixed bottom-6 left-1/2 z-[100] flex max-w-md -translate-x-1/2 items-center gap-3 rounded-lg px-4 py-3 shadow-lg ${typeStyles[toast.type]}`}
-      role="alert"
-      aria-live="assertive"
+      role={isUrgent ? 'alert' : 'status'}
+      aria-live={livePoliteness}
     >
       <span className="flex-1 text-sm font-medium">{toast.message}</span>
       <button

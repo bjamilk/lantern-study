@@ -449,10 +449,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Title */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="listing-title" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
               Title *
             </label>
             <input
+              id="listing-title"
               type="text"
               value={formData.title}
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
@@ -464,10 +465,10 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+            <p id="listing-category-label" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
               Category *
-            </label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3" role="radiogroup" aria-labelledby="listing-category-label">
               {subcategories.map(subcat => {
                 const IconComponent = subcat.icon;
                 return (
@@ -695,11 +696,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           {/* Price and Location */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-price" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-1" />
                 Price (₦)
               </label>
               <input
+                id="listing-price"
                 type="number"
                 value={formData.price}
                 onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
@@ -712,10 +714,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-quantity" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Quantity in stock
               </label>
               <input
+                id="listing-quantity"
                 type="number"
                 value={formData.quantity}
                 onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}

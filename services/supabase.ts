@@ -425,7 +425,6 @@ export async function ensureAuthTokenReady(): Promise<boolean> {
   return Boolean(headers.Authorization);
 };
 
-/** Mint a signed read URL for a private storage object via the API BFF. */
 export async function fetchSignedStorageUrl(
   bucket: string,
   path: string,
@@ -450,6 +449,32 @@ export async function fetchSignedStorageUrl(
   }
   return body.data.signedUrl;
 }
+
+export const uploadProfileAvatar = async (
+  userId: string,
+  fileName: string,
+  base64Data: string,
+  contentType: string
+): Promise<{ url: string; path: string; avatarUrl: string }> => {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/api/v1/users/${userId}/avatar`,
+    withApiCredentials({
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, base64Data, contentType }),
+    }),
+    15000
+  );
+  const body = await response.json().catch(() => ({} as { error?: string; message?: string; data?: { url: string; path: string; avatarUrl: string } }));
+  if (!response.ok) {
+    throw new Error(body.error || body.message || 'Failed to upload avatar');
+  }
+  if (!body.data?.avatarUrl) {
+    throw new Error('Avatar upload response missing avatarUrl');
+  }
+  return body.data;
+};
 
 const getRequiredAuthHeaders = async (): Promise<Record<string, string>> => {
   const headers = await getAuthHeaders();

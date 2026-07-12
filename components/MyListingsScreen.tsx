@@ -31,7 +31,7 @@ import {
   ArrowLeftIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
-import { Tabs, TabList, Tab } from './ui';
+import { Tabs, TabList, Tab, TabPanel } from './ui';
 
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -220,14 +220,14 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => onNavigate('MarketplaceOrders')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
             >
               <ShoppingBagIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">Orders</span>
             </button>
             <button
               onClick={() => onNavigate('SellerCustomers')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
             >
               <ChartBarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               Customers
@@ -255,7 +255,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             </button>
             <button
               onClick={() => onNavigate('MarketplaceInquiries')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-350 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-750 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
             >
               <ChatBubbleLeftIcon className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">Inquiries & Offers</span>
@@ -473,9 +473,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6">
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'active' | 'sold' | 'inactive')} aria-label="Listing status">
+      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 flex flex-col flex-1 min-h-0">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'active' | 'sold' | 'inactive')} aria-label="Listing status" className="flex flex-col flex-1 min-h-0">
           <TabList className="space-x-0.5 sm:space-x-1 !border-0">
             {(['active', 'sold', 'inactive'] as const).map((tab, index) => (
               <Tab
@@ -488,11 +487,11 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               </Tab>
             ))}
           </TabList>
-        </Tabs>
-      </div>
 
       {/* Content */}
       <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
+        {(['active', 'sold', 'inactive'] as const).map((tab) => (
+          <TabPanel key={tab} value={tab}>
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -661,6 +660,10 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             ))}
           </div>
         )}
+          </TabPanel>
+        ))}
+      </div>
+        </Tabs>
       </div>
 
       {/* Click outside to close menu */}

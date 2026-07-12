@@ -5,6 +5,7 @@ export const PRIVATE_STORAGE_BUCKETS = [
   'marketplace-images',
   'question-images',
   'note-files',
+  'profile-avatars',
 ] as const;
 
 export type PrivateStorageBucket = (typeof PRIVATE_STORAGE_BUCKETS)[number];

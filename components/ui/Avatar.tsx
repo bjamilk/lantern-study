@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { avatarColorFromSeed, initialsFromName } from '@lantern/shared/design';
+import { useResolvedAvatarSrc } from '../../hooks/useResolvedAvatarSrc';
 
 interface AvatarProps {
   name: string;
@@ -27,12 +28,13 @@ export const Avatar: React.FC<AvatarProps> = ({
 }) => {
   const initials = useMemo(() => initialsFromName(name), [name]);
   const bgColor = useMemo(() => avatarColorFromSeed(name || '?'), [name]);
-  const showImage = src && !localOnly;
+  const resolvedSrc = useResolvedAvatarSrc(localOnly ? null : src);
+  const showImage = resolvedSrc && !localOnly;
 
   if (showImage) {
     return (
       <img
-        src={src}
+        src={resolvedSrc}
         alt={name}
         loading="lazy"
         className={`${sizeClasses[size]} rounded-full object-cover shrink-0 ${className}`}

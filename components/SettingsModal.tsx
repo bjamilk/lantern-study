@@ -14,7 +14,7 @@ import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
-import { fetchMarketplaceCampuses } from '../services/supabase';
+import { fetchMarketplaceCampuses, uploadProfileAvatar } from '../services/supabase';
 import { CloudArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import {
     type UserSettings,
@@ -142,7 +142,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file) return;
+        if (!file || !currentUser) return;
         if (!file.type.startsWith('image/')) {
             useToastStore.getState().showToast('Please select an image file.', 'error');
             return;
@@ -154,11 +154,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 quality: 0.7,
                 outputType: 'base64'
             }) as string;
-            setAvatarPreview(base64);
-            onUpdateAvatar(base64);
+            const base64Data = base64.includes(',') ? base64.split(',')[1]! : base64;
+            const uploaded = await uploadProfileAvatar(
+                currentUser.id,
+                file.name,
+                base64Data,
+                file.type
+            );
+            setAvatarPreview(uploaded.url);
+            onUpdateAvatar(uploaded.avatarUrl);
         } catch (error) {
-            console.error('Error compressing avatar:', error);
-            useToastStore.getState().showToast('Failed to process image.', 'error');
+            console.error('Error uploading avatar:', error);
+            useToastStore.getState().showToast('Failed to upload avatar.', 'error');
         } finally {
             e.target.value = '';
         }
@@ -598,6 +605,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             maxWidthClass="max-w-3xl"
             zIndexClass="z-[80]"
             panelClassName="!p-0 h-[90vh] md:h-[75vh] flex flex-col overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
+            focusContentKey={activeTab}
         >
             <Tabs
                 value={activeTab}
@@ -610,7 +618,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="w-full md:w-1/3 bg-lantern-background-secondary border-b md:border-b-0 md:border-r border-lantern-border p-4 flex-shrink-0">
                     <div className="flex justify-between items-center mb-2 md:mb-6">
                         <h2 id="settings-modal-title" className="text-xl font-bold text-lantern-text">Settings</h2>
-                        <button onClick={onClose} className="md:hidden text-lantern-text-secondary" aria-label="Close settings">
+                        <button onClick={onClose} className="md:hidden flex min-h-[44px] min-w-[44px] items-center justify-center text-lantern-text-secondary" aria-label="Close settings">
                             <XCircleIcon className="w-6 h-6" />
                         </button>
                     </div>

@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef } from 'react';
 
 interface UseMenuKeyboardOptions {
   open: boolean;
-  itemCount: number;
   onOpenChange: (open: boolean) => void;
   orientation?: 'vertical' | 'horizontal';
 }
 
+function getRegisteredItems(refs: Array<HTMLButtonElement | null>): HTMLButtonElement[] {
+  return refs.filter((el): el is HTMLButtonElement => !!el && !el.disabled);
+}
+
 export function useMenuKeyboard({
   open,
-  itemCount,
   onOpenChange,
   orientation = 'vertical',
 }: UseMenuKeyboardOptions) {
@@ -26,10 +28,12 @@ export function useMenuKeyboard({
   }, []);
 
   const focusItem = useCallback((index: number) => {
-    const clamped = Math.max(0, Math.min(itemCount - 1, index));
+    const items = getRegisteredItems(itemRefs.current);
+    if (!items.length) return;
+    const clamped = Math.max(0, Math.min(items.length - 1, index));
     activeIndexRef.current = clamped;
-    itemRefs.current[clamped]?.focus();
-  }, [itemCount]);
+    items[clamped]?.focus();
+  }, []);
 
   const closeMenu = useCallback(() => {
     onOpenChange(false);
@@ -38,6 +42,8 @@ export function useMenuKeyboard({
 
   const handleMenuKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      const items = getRegisteredItems(itemRefs.current);
+      const itemCount = items.length;
       if (!open || itemCount === 0) return;
       const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft';
       const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight';
@@ -71,7 +77,7 @@ export function useMenuKeyboard({
         focusItem((activeIndexRef.current + 1) % itemCount);
       }
     },
-    [closeMenu, focusItem, itemCount, open, orientation]
+    [closeMenu, focusItem, open, orientation]
   );
 
   useEffect(() => {

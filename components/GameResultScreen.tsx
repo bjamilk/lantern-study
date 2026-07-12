@@ -239,7 +239,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
             <h3 className="font-bold text-md text-blue-600 dark:text-blue-400 flex items-center">
               <span>{currentUser.name} (You)</span>
             </h3>
-            <ul className="space-y-1.5 text-slate-650 dark:text-slate-350">
+            <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
               <li><span className="font-bold">Correct Answers:</span> {session.userCorrectAnswers || 0} / {session.questions.length}</li>
               <li><span className="font-bold">Total Points:</span> {session.userScore} pts</li>
               <li><span className="font-bold">Total Time:</span> {session.userTime.toFixed(1)}s</li>
@@ -252,7 +252,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
             <h3 className="font-bold text-md text-slate-700 dark:text-slate-300">
               <span>{opponent.name}</span>
             </h3>
-            <ul className="space-y-1.5 text-slate-650 dark:text-slate-350">
+            <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
               <li><span className="font-bold">Correct Answers:</span> {session.opponentCorrectAnswers || 0} / {session.questions.length}</li>
               <li><span className="font-bold">Total Points:</span> {session.opponentScore} pts</li>
               <li><span className="font-bold">Total Time:</span> {session.opponentTime.toFixed(1)}s</li>

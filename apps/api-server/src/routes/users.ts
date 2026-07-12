@@ -28,6 +28,8 @@ import {
 import { importAccountArchive } from '../services/accountImport';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
 
+const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 const NON_ADMIN_UPDATABLE_FIELDS = new Set([
   'name',
   'phoneNumber',
@@ -394,6 +396,58 @@ router.put(
   })
 );
 
+// POST /api/v1/users/:userId/avatar - Upload profile avatar to private storage
+router.post(
+  '/:userId/avatar',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const requestingUserId = requireAuthUserId(req, res);
+    if (!requestingUserId) return;
+
+    const { userId } = req.params;
+    if (!(await isSelfOrLivePlatformAdmin(req, userId))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { fileName, base64Data, contentType } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    if (!contentType || !ALLOWED_AVATAR_TYPES.includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+
+    const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+    if (estimatedBytes > 2 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Avatar exceeds 2 MB limit' });
+    }
+
+    const uploaded = await supabaseService.uploadProfileAvatar({
+      fileName,
+      base64Data,
+      contentType,
+      userId,
+    });
+
+    const updatedUser = await supabaseService.updateUser(userId, { avatarUrl: uploaded.avatarUrl });
+    await cacheService.delete(`user:${userId}`);
+    await cacheService.deletePattern('users:list:*');
+
+    res.json({
+      success: true,
+      data: {
+        ...uploaded,
+        user: updatedUser,
+      },
+    });
+  })
+);
+
 // PUT /api/v1/users/:userId - Update user
 router.put(
   '/:userId',
@@ -422,6 +476,14 @@ router.put(
       updateData = Object.fromEntries(
         Object.entries(updateData).filter(([key]) => NON_ADMIN_UPDATABLE_FIELDS.has(key))
       );
+    }
+
+    const avatarField = updateData.avatarUrl ?? updateData.avatar_url;
+    if (typeof avatarField === 'string' && avatarField.startsWith('data:')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Upload avatars via POST /users/:userId/avatar instead of embedding base64.',
+      });
     }
 
     logger.debug('Updating user', { userId, updateData, requestingUserId });

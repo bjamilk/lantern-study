@@ -7,6 +7,7 @@ interface TabsContextValue {
   value: string;
   onValueChange: (value: string) => void;
   baseId: string;
+  ariaLabel?: string;
   variant: TabsVariant;
   orientation: 'horizontal' | 'vertical';
   getTabIndex: (index: number) => number;
@@ -74,6 +75,7 @@ export function Tabs({
       value,
       onValueChange,
       baseId,
+      ariaLabel,
       variant,
       orientation,
       getTabIndex,
@@ -82,13 +84,12 @@ export function Tabs({
       registerTabIndex,
       getTabIndexForValue,
     }),
-    [baseId, getTabIndex, getTabIndexForValue, handleKeyDown, onValueChange, orientation, registerItem, registerTabIndex, value, variant]
+    [ariaLabel, baseId, getTabIndex, getTabIndexForValue, handleKeyDown, onValueChange, orientation, registerItem, registerTabIndex, value, variant]
   );
 
   return (
     <TabsContext.Provider value={context}>
       <div className={className} data-tabs-root>
-        {ariaLabel ? <span className="sr-only">{ariaLabel}</span> : null}
         {children}
       </div>
     </TabsContext.Provider>
@@ -116,7 +117,7 @@ export function TabList({
   return (
     <div
       role="tablist"
-      aria-label={undefined}
+      aria-label={ctx.ariaLabel}
       aria-orientation={ctx.orientation}
       className={`flex ${ctx.orientation === 'vertical' ? 'flex-col' : 'flex-row'} ${variantClass} ${className}`}
     >

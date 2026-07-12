@@ -635,7 +635,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             value="academic"
             index={0}
             icon={<AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-1.5 sm:!py-2.5 !text-[11px] sm:!text-sm !min-h-0 border-b-2 border-transparent"
+            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
           >
             Academic
           </Tab>
@@ -643,7 +643,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             value="student-life"
             index={1}
             icon={<BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-1.5 sm:!py-2.5 !text-[11px] sm:!text-sm !min-h-0 border-b-2 border-transparent"
+            className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
           >
             Student Life
           </Tab>

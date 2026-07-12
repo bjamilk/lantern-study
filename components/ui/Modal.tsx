@@ -12,6 +12,8 @@ export interface ModalProps {
   ariaDescribedBy?: string;
   maxWidthClass?: string;
   loading?: boolean;
+  /** Re-run focus trap when modal inner content changes (e.g. tab panels). */
+  focusContentKey?: string;
   closeOnBackdrop?: boolean;
   panelClassName?: string;
   /** Override stacking when nested above other modals (e.g. z-[80], z-[90]). */
@@ -37,6 +39,7 @@ export function Modal({
   ariaDescribedBy,
   maxWidthClass = 'max-w-md',
   loading = false,
+  focusContentKey,
   closeOnBackdrop = true,
   panelClassName = '',
   zIndexClass = 'z-50',
@@ -47,7 +50,7 @@ export function Modal({
 }: ModalProps) {
   const stackLayerClass = useModalStackLayer(isOpen);
   const resolvedZIndexClass = zIndexClass === 'z-50' ? stackLayerClass : zIndexClass;
-  const dialogRef = useModalFocusTrap(isOpen, onClose, { loading });
+  const dialogRef = useModalFocusTrap(isOpen, onClose, { loading, contentKey: focusContentKey });
 
   useEffect(() => {
     if (!isOpen) return;

@@ -166,6 +166,10 @@ export class SupabaseService {
       return !!userId && ownerId === userId;
     }
 
+    if (bucket === 'profile-avatars') {
+      return !!userId;
+    }
+
     return false;
   }
 
@@ -2159,6 +2163,44 @@ export class SupabaseService {
       url: signedUrl,
       path: filePath,
     };
+  }
+
+  async uploadProfileAvatar(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+  }): Promise<{ url: string; path: string; avatarUrl: string }> {
+    const bucket = 'profile-avatars';
+    const ext = params.contentType === 'image/png'
+      ? 'png'
+      : params.contentType === 'image/webp'
+        ? 'webp'
+        : params.contentType === 'image/gif'
+          ? 'gif'
+          : 'jpg';
+    const filePath = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/avatar.${ext}`;
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    assertImageMagicBytes(buffer, params.contentType);
+
+    const { error } = await this.supabase.storage
+      .from(bucket)
+      .upload(filePath, buffer, {
+        contentType: params.contentType,
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (error) {
+      logger.error('Error uploading profile avatar:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
+    const base = process.env.SUPABASE_URL?.replace(/\/$/, '') || '';
+    const avatarUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
+
+    return { url: signedUrl, path: filePath, avatarUrl };
   }
 
   // Offline bundle persistence

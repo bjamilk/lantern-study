@@ -6,7 +6,7 @@ import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
-import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, TabList, Tab } from './ui';
+import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
@@ -837,13 +837,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 aria-label="Marketplace conversation"
               >
               <TabList className="bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 !border-solid">
-                <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-1.5 !min-h-0 !rounded-md">
+                <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-2 !rounded-md">
                   Chat
                 </Tab>
                 <Tab
                   value="offers"
                   index={1}
-                  className="!text-xs !font-semibold !px-3 !py-1.5 !min-h-0 !rounded-md"
+                  className="!text-xs !font-semibold !px-3 !py-2 !rounded-md"
                   badge={activeOffer ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : undefined}
                 >
                   Offers
@@ -1130,7 +1130,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           <button
                             disabled={offerLoading}
                             onClick={() => handleRespond('withdraw')}
-                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                           >
                             {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
                           </button>
@@ -1140,14 +1140,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Accept Counter
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('decline')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Decline Counter
                             </button>
@@ -1162,21 +1162,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Accept Offer
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => handleRespond('decline')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Decline Offer
                             </button>
                             <button
                               disabled={offerLoading}
                               onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-350 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
                               Counter Offer
                             </button>

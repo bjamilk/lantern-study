@@ -9,7 +9,7 @@ import {
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
-import { FeatureHero, StatChip, Tabs, TabList, Tab } from './ui';
+import { FeatureHero, StatChip, Tabs, TabList, Tab, TabPanel } from './ui';
 import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
 import { featureAccents } from '@lantern/shared/design';
 
@@ -250,7 +250,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
       </div>
 
       {/* ─── TAB BAR ─── */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as BudgetTab)} aria-label="Budget sections" className="shrink-0">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as BudgetTab)} aria-label="Budget sections" className="shrink-0 flex flex-col flex-1 min-h-0">
       <TabList className="bg-lantern-surface border-b border-lantern-border px-4 gap-1 overflow-x-auto !border-solid">
         {tabs.map((t, index) => (
           <Tab
@@ -264,12 +264,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
           </Tab>
         ))}
       </TabList>
-      </Tabs>
 
       <div className="p-4 md:p-6 flex-1 min-h-0 overflow-y-auto">
-        {/* ═══ OVERVIEW TAB ═══ */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
+        <TabPanel value="overview" className="space-y-6">
             {/* Budget Progress */}
             {budgetLimit > 0 ? (
               <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
@@ -400,12 +397,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </TabPanel>
 
-        {/* ═══ TRANSACTIONS TAB ═══ */}
-        {activeTab === 'transactions' && (
-          <div className="space-y-4">
+        <TabPanel value="transactions" className="space-y-4">
             {/* Filter + Actions */}
             <div className="flex flex-wrap gap-2 items-center justify-between">
               <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-xl p-1 shadow-sm">
@@ -470,12 +464,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 </div>
               )}
             </div>
-          </div>
-        )}
+        </TabPanel>
 
-        {/* ═══ GOALS TAB ═══ */}
-        {activeTab === 'goals' && (
-          <div className="space-y-4">
+        <TabPanel value="goals" className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Savings Goals</h3>
               {onOpenSavingsGoal && (
@@ -557,12 +548,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 </div>
               </div>
             )}
-          </div>
-        )}
+        </TabPanel>
 
-        {/* ═══ INSIGHTS TAB ═══ */}
-        {activeTab === 'insights' && (
-          <div className="space-y-6">
+        <TabPanel value="insights" className="space-y-6">
             {/* Spending Trend */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm">
               <h3 className="font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
@@ -632,9 +620,9 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 ))}
               </div>
             </div>
-          </div>
-        )}
+        </TabPanel>
       </div>
+      </Tabs>
     </div>
   );
 };

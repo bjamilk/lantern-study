@@ -42,7 +42,6 @@ export function Menu({
 
   const { registerItem, setTrigger, handleMenuKeyDown, closeMenu } = useMenuKeyboard({
     open,
-    itemCount: 32,
     onOpenChange: setOpen,
   });
 
@@ -160,7 +159,7 @@ export function MenuItem({
         onSelect?.();
         ctx.closeMenu();
       }}
-      className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors ${
+      className={`w-full text-left px-4 py-2.5 min-h-[44px] text-sm flex items-center gap-2.5 transition-colors ${
         destructive
           ? 'text-lantern-error hover:bg-lantern-error/10'
           : 'text-lantern-text hover:bg-lantern-background-secondary'
