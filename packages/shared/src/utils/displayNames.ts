@@ -7,6 +7,40 @@ export function formatChatSenderLabel(user: {
   return raw.startsWith('@') ? raw : `@${raw}`;
 }
 
+export interface DashboardNameInput {
+  firstName?: string | null;
+  first_name?: string | null;
+  name?: string | null;
+  username?: string | null;
+}
+
+/** First name for dashboard greeting — never uses @username. */
+export function getDashboardFirstName(
+  user: DashboardNameInput,
+  fallback = 'Student'
+): string {
+  const explicitFirst = (user.firstName || user.first_name)?.trim();
+  if (explicitFirst) {
+    return explicitFirst.split(/\s+/)[0] || fallback;
+  }
+
+  const fullName = user.name?.trim();
+  if (fullName) {
+    const username = user.username?.trim().toLowerCase();
+    const normalizedName = fullName.toLowerCase();
+    const looksLikeUsername =
+      Boolean(username) &&
+      (normalizedName === username || normalizedName === `@${username}`);
+
+    if (!looksLikeUsername) {
+      const firstWord = fullName.split(/\s+/)[0];
+      if (firstWord) return firstWord;
+    }
+  }
+
+  return fallback;
+}
+
 type ChatMemberRef = { id: string; username?: string | null };
 
 /** Resolve @username for group chat from sender profile and/or loaded group members. */

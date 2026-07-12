@@ -43,6 +43,7 @@ interface AuthState {
   user: User | null;
   session: Session | null;
   profileName: string | null;
+  profileFirstName: string | null;
   isLoading: boolean;
   isInitialized: boolean;
   isPasswordRecovery: boolean;
@@ -66,6 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
   profileName: null,
+  profileFirstName: null,
   isLoading: false,
   isInitialized: false,
   isPasswordRecovery: false,
@@ -75,10 +77,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshProfileName: async (userId: string) => {
     try {
       const profile = await fetchUserProfile(userId);
-      const name = profile.name?.trim();
-      if (name) {
-        set({ profileName: name });
-      }
+      const p = profile as { name?: string; first_name?: string; firstName?: string };
+      const name = p.name?.trim();
+      const firstName = (p.first_name || p.firstName)?.trim();
+      set({
+        ...(name ? { profileName: name } : {}),
+        ...(firstName ? { profileFirstName: firstName } : {}),
+      });
     } catch (error) {
       console.warn('[Auth] Failed to refresh profile name:', error);
     }
@@ -106,8 +111,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       if (session) {
         let profileName: string | null = null;
+        let profileFirstName: string | null = null;
         try {
-          profileName = await ensureUserProfile(session.user);
+          const profile = await ensureUserProfile(session.user);
+          profileName = profile.displayName;
+          profileFirstName = profile.firstName ?? null;
         } catch (profileError) {
           console.warn('[Auth] Failed to ensure user profile:', profileError);
         }
@@ -116,6 +124,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           user: session.user,
           session,
           profileName,
+          profileFirstName,
           isInitialized: true,
           isLoading: false,
         });
@@ -124,6 +133,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           user: null,
           session: null,
           profileName: null,
+          profileFirstName: null,
           isInitialized: true,
           isLoading: false,
         });
@@ -139,7 +149,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         if (event === 'SIGNED_OUT') {
-          set({ user: null, session: null, profileName: null, isPasswordRecovery: false });
+          set({ user: null, session: null, profileName: null, profileFirstName: null, isPasswordRecovery: false });
           return;
         }
         
@@ -151,7 +161,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ user: session.user, session });
           void get().refreshProfileName(session.user.id);
         } else {
-          set({ user: null, session: null, profileName: null, isPasswordRecovery: false });
+          set({ user: null, session: null, profileName: null, profileFirstName: null, isPasswordRecovery: false });
         }
       });
     } catch (error: any) {
@@ -200,14 +210,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { user, session } = await signInWithEmail(email, password);
 
       let profileName: string | null = null;
+      let profileFirstName: string | null = null;
       if (user) {
-        profileName = await ensureUserProfile(user);
+        const profile = await ensureUserProfile(user);
+        profileName = profile.displayName;
+        profileFirstName = profile.firstName ?? null;
       }
       
       set({ 
         user,
         session,
         profileName,
+        profileFirstName,
         isLoading: false,
       });
     } catch (error: any) {
@@ -229,8 +243,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const { user, session } = await signInWithGoogleOAuth();
-      const profileName = await ensureUserProfile(user);
-      set({ user, session, profileName, isLoading: false });
+      const profile = await ensureUserProfile(user);
+      set({
+        user,
+        session,
+        profileName: profile.displayName,
+        profileFirstName: profile.firstName ?? null,
+        isLoading: false,
+      });
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Failed to sign in with Google';
@@ -246,8 +266,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       const { user, session } = await signInWithAppleNative();
-      const profileName = await ensureUserProfile(user);
-      set({ user, session, profileName, isLoading: false });
+      const profile = await ensureUserProfile(user);
+      set({
+        user,
+        session,
+        profileName: profile.displayName,
+        profileFirstName: profile.firstName ?? null,
+        isLoading: false,
+      });
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Failed to sign in with Apple';
@@ -286,8 +312,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { user, session } = await signUpWithEmail(email, password, name);
 
       let profileName: string | null = null;
+      let profileFirstName: string | null = null;
       if (user) {
-        profileName = await ensureUserProfile(user);
+        const profile = await ensureUserProfile(user);
+        profileName = profile.displayName;
+        profileFirstName = profile.firstName ?? null;
       }
       
       // Note: Depending on Supabase settings, user might need to verify email
@@ -295,6 +324,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user,
         session,
         profileName,
+        profileFirstName,
         isLoading: false,
       });
     } catch (error: any) {
@@ -372,6 +402,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         session: null,
         profileName: null,
+        profileFirstName: null,
         isLoading: false,
       });
     }

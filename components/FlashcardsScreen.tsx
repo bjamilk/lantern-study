@@ -27,7 +27,7 @@ interface FlashcardsScreenProps {
   onImportDeck: (file: File) => void;
   onStartStudy?: () => void;
   onStudyDeck?: (deck: Deck) => void;
-  onOfflineToggle?: (deck: Deck, isOffline: boolean) => void;
+  onOfflineToggle?: (deck: Deck, enable: boolean) => void;
   onExportDeck?: (deckId: string, format: 'json' | 'csv') => void;
   embedded?: boolean;
 }
@@ -55,7 +55,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   onExportDeck,
   embedded = false,
 }) => {
-  const { isDeckOffline, markDeckOffline, unmarkDeckOffline } = useFlashcardStore();
+  const { isDeckOffline } = useFlashcardStore();
   const openWithMessage = useCompanionStore(s => s.openWithMessage);
   const { lowDataMode } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -77,14 +77,8 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
 
   const handleOfflineToggle = (e: React.MouseEvent, deck: Deck) => {
     e.stopPropagation();
-    const offline = isDeckOffline(deck.id);
-    if (offline) {
-      unmarkDeckOffline(deck.id);
-      onOfflineToggle?.(deck, false);
-    } else {
-      markDeckOffline(deck.id);
-      onOfflineToggle?.(deck, true);
-    }
+    const enable = !isDeckOffline(deck.id);
+    onOfflineToggle?.(deck, enable);
   };
 
   const headerActions = (

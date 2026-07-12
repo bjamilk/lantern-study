@@ -6,6 +6,7 @@ export * from './testHelpers';
 export * from './apiMappers';
 export * from './deckFormats';
 export * from './fsrs';
+export * from './offlineReview';
 export * from './flashcardGeneration';
 export * from './occlusionHelpers';
 export * from './activity';

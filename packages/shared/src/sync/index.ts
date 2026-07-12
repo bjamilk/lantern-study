@@ -13,6 +13,7 @@ export type SyncOperationType = 'create' | 'update' | 'delete';
 
 export type SyncEntityType = 
   | 'flashcard' 
+  | 'flashcard_review'
   | 'deck' 
   | 'test_result' 
   | 'message' 

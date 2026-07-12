@@ -50,6 +50,7 @@ import {
   requestWebNotificationPermission,
   showWebNotification,
 } from '../utils/webNotifications';
+import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
 import { useToastStore } from '../stores/toastStore';
 import {
   INITIAL_BOOTSTRAP_LOAD_STATE,
@@ -112,6 +113,7 @@ export function useAppEffects({
         theme, setTheme, setAppMode,
         openModal, lowDataMode, setLowDataMode,
         selectedChat,
+        isOnline,
     } = useUIStore();
 
     const [dailyQuests, setDailyQuests] = useState<any[]>([]);
@@ -1339,6 +1341,28 @@ export function useAppEffects({
             return () => clearInterval(interval);
         }
     }, [currentUser, flashcards, checkForDueCardsAndNotify, lowDataMode]);
+
+    // Auto-sync queued flashcard reviews when back online
+    useEffect(() => {
+        if (!currentUser?.id || !isOnline) return;
+        const pending = useFlashcardStore.getState().pendingFlashcardReviews;
+        if (pending.length === 0) return;
+
+        let cancelled = false;
+        syncPendingFlashcardReviews()
+            .then(({ synced }) => {
+                if (!cancelled && synced > 0) {
+                    console.log(`[FlashcardReviewSync] Auto-synced ${synced} review(s)`);
+                }
+            })
+            .catch((error) => {
+                console.error('[FlashcardReviewSync] Auto-sync error:', error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser?.id, isOnline]);
 
     return {
         refreshDashboardGamification,

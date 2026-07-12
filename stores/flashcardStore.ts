@@ -7,7 +7,9 @@
  * and then state updated through the store methods.
  */
 import { create } from 'zustand';
-import { Deck, Flashcard, SrsData } from '../types';
+import type { PendingFlashcardReview } from '@lantern/shared/utils/offlineReview';
+import { createPendingFlashcardReview } from '@lantern/shared/utils/offlineReview';
+import { Deck, Flashcard } from '../types';
 
 function isValidDeck(deck: Deck | null | undefined): deck is Deck {
   return Boolean(deck && typeof deck.id === 'string' && deck.id && typeof deck.name === 'string');
@@ -21,6 +23,17 @@ function sanitizeDecks(decks: Deck[]): Deck[] {
 const WEB_DECKS_KEY = 'lantern_decks';
 const WEB_FLASHCARDS_KEY = 'lantern_flashcards';
 const WEB_OFFLINE_KEY = 'lantern_offline_decks';
+const WEB_PENDING_REVIEWS_KEY = 'lantern_pending_flashcard_reviews';
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const json = localStorage.getItem(key);
+    if (!json) return fallback;
+    return JSON.parse(json) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 interface FlashcardState {
   // State
@@ -32,6 +45,7 @@ interface FlashcardState {
 
   // offline-related IDs
   offlineDeckIds: string[];
+  pendingFlashcardReviews: PendingFlashcardReview[];
   
   // Actions - State Management
   setDecks: (decks: Deck[]) => void;
@@ -68,6 +82,10 @@ interface FlashcardState {
   markDeckOffline: (deckId: string) => void;
   unmarkDeckOffline: (deckId: string) => void;
   loadOfflineFromStorage: () => void;
+  queueFlashcardReview: (flashcardId: string, deckId: string, rating: PendingFlashcardReview['rating']) => void;
+  removePendingReviews: (ids: string[]) => void;
+  clearPendingReviews: () => void;
+  setPendingFlashcardReviews: (reviews: PendingFlashcardReview[]) => void;
 }
 
 export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
@@ -78,6 +96,7 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   isLoading: false,
   error: null,
   offlineDeckIds: [],
+  pendingFlashcardReviews: [],
   
   // State Management - Decks
   setDecks: (decks) => set({ decks: sanitizeDecks(decks) }),
@@ -179,14 +198,45 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     isLoading: false,
     error: null,
     offlineDeckIds: [],
+    pendingFlashcardReviews: [],
   }),
+
+  loadFromStorage: () => {
+    try {
+      const decks = readJson<Deck[]>(WEB_DECKS_KEY, []);
+      const flashcards = readJson<Flashcard[]>(WEB_FLASHCARDS_KEY, []);
+      const offlineDeckIds = readJson<string[]>(WEB_OFFLINE_KEY, []);
+      const pendingFlashcardReviews = readJson<PendingFlashcardReview[]>(WEB_PENDING_REVIEWS_KEY, []);
+      set({
+        decks: sanitizeDecks(decks),
+        flashcards: Array.isArray(flashcards) ? flashcards : [],
+        offlineDeckIds: Array.isArray(offlineDeckIds) ? offlineDeckIds : [],
+        pendingFlashcardReviews: Array.isArray(pendingFlashcardReviews) ? pendingFlashcardReviews : [],
+      });
+      get().calculateDueCardsCount();
+    } catch (e) {
+      console.warn('Could not load flashcard data from storage', e);
+    }
+  },
+
+  saveToStorage: () => {
+    const { decks, flashcards, offlineDeckIds, pendingFlashcardReviews } = get();
+    try {
+      localStorage.setItem(WEB_DECKS_KEY, JSON.stringify(decks));
+      localStorage.setItem(WEB_FLASHCARDS_KEY, JSON.stringify(flashcards));
+      localStorage.setItem(WEB_OFFLINE_KEY, JSON.stringify(offlineDeckIds));
+      localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(pendingFlashcardReviews));
+    } catch (e) {
+      console.warn('Could not save flashcard data to storage', e);
+    }
+  },
 
   // offline helper implementations (web)
   loadOfflineFromStorage: () => {
     try {
-      const json = localStorage.getItem('lantern_offline_decks');
-      if (json) {
-        set({ offlineDeckIds: JSON.parse(json) });
+      const offlineDeckIds = readJson<string[]>(WEB_OFFLINE_KEY, []);
+      if (offlineDeckIds.length > 0) {
+        set({ offlineDeckIds });
       }
     } catch (e) {
       console.warn('Could not load offline decks from storage', e);
@@ -199,7 +249,7 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     set(state => {
       const newIds = Array.from(new Set([...state.offlineDeckIds, deckId]));
       try {
-        localStorage.setItem('lantern_offline_decks', JSON.stringify(newIds));
+        localStorage.setItem(WEB_OFFLINE_KEY, JSON.stringify(newIds));
       } catch {}
       return { offlineDeckIds: newIds };
     });
@@ -208,10 +258,47 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
     set(state => {
       const newIds = state.offlineDeckIds.filter(id => id !== deckId);
       try {
-        localStorage.setItem('lantern_offline_decks', JSON.stringify(newIds));
+        localStorage.setItem(WEB_OFFLINE_KEY, JSON.stringify(newIds));
       } catch {}
       return { offlineDeckIds: newIds };
     });
+  },
+
+  queueFlashcardReview: (flashcardId, deckId, rating) => {
+    const entry = createPendingFlashcardReview(flashcardId, deckId, rating);
+    set(state => {
+      const pendingFlashcardReviews = [...state.pendingFlashcardReviews, entry];
+      try {
+        localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(pendingFlashcardReviews));
+      } catch {}
+      return { pendingFlashcardReviews };
+    });
+  },
+
+  removePendingReviews: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    set(state => {
+      const pendingFlashcardReviews = state.pendingFlashcardReviews.filter(r => !idSet.has(r.id));
+      try {
+        localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(pendingFlashcardReviews));
+      } catch {}
+      return { pendingFlashcardReviews };
+    });
+  },
+
+  clearPendingReviews: () => {
+    try {
+      localStorage.removeItem(WEB_PENDING_REVIEWS_KEY);
+    } catch {}
+    set({ pendingFlashcardReviews: [] });
+  },
+
+  setPendingFlashcardReviews: (reviews) => {
+    try {
+      localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(reviews));
+    } catch {}
+    set({ pendingFlashcardReviews: reviews });
   },
 }));
 
@@ -222,4 +309,7 @@ webStore.subscribe(state => state.decks, decks => {
 });
 webStore.subscribe(state => state.flashcards, flashcards => {
   try { localStorage.setItem(WEB_FLASHCARDS_KEY, JSON.stringify(flashcards)); } catch {}
+});
+webStore.subscribe(state => state.pendingFlashcardReviews, pending => {
+  try { localStorage.setItem(WEB_PENDING_REVIEWS_KEY, JSON.stringify(pending)); } catch {}
 });

@@ -206,6 +206,20 @@ class SyncService {
       }
     });
 
+    // Flashcard review handler (offline SRS replay)
+    this.queue.registerHandler('flashcard_review', async (op: SyncOperation) => {
+      try {
+        if (op.operation === 'create') {
+          const rating = op.data.rating as 'again' | 'hard' | 'good' | 'easy';
+          await api.reviewFlashcard(op.entityId, rating);
+        }
+        return true;
+      } catch (error) {
+        console.error('[SyncHandler:flashcard_review] Error:', error);
+        return false;
+      }
+    });
+
     // Deck handler
     this.queue.registerHandler('deck', async (op: SyncOperation) => {
       try {

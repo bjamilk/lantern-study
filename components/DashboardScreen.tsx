@@ -10,7 +10,7 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { checkAnswerIsCorrect } from '../utils/helpers';
@@ -738,7 +738,11 @@ export default function DashboardScreen({
       
       {/* ═══════════════ HERO ═══════════════ */}
       <DashboardHero
-        userName={currentUser.firstName || currentUser.name}
+        userName={getDashboardFirstName({
+          firstName: currentUser.firstName,
+          name: currentUser.name,
+          username: currentUser.username,
+        })}
         streak={displayStreak}
         points={currentUser.points}
         xpLevel={xpInfo.level}

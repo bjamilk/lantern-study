@@ -6,8 +6,10 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashcardType, type Flashcard as SharedFlashcard } from '@lantern/shared';
 import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
+import { applyLocalFlashcardReview } from '@lantern/shared/utils/offlineReview';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import { useSettingsStore } from './settingsStore';
 import { getDeckCardStats, groupFlashcardsByDeck } from '../utils/flashcardHelpers';
 
 export interface Deck {
@@ -586,25 +588,68 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     rating: 'again' | 'hard' | 'good' | 'easy',
     userId: string
   ) => {
+    const state = get();
+    const card = (state.flashcards[deckId] || []).find(c => c.id === flashcardId);
+    if (!card) {
+      throw new Error('Flashcard not found');
+    }
+
+    const studySettings = useSettingsStore.getState().settings.study;
+    const locallyUpdated = applyLocalFlashcardReview(card, rating, studySettings);
+
+    set(current => {
+      const flashcards = {
+        ...current.flashcards,
+        [deckId]: (current.flashcards[deckId] || []).map(c =>
+          c.id === flashcardId ? locallyUpdated : c
+        ),
+      };
+      return {
+        flashcards,
+        decks: enrichDecksWithStats(current.decks, flashcards),
+      };
+    });
+    flushScheduledSave(() => get().saveToStorage());
+
+    const isOnline = syncService.getStatus().isOnline;
+    const useOfflinePath = !isOnline || get().isDeckOffline(deckId);
+
+    if (useOfflinePath) {
+      await syncService.queueOperation(
+        'flashcard_review',
+        flashcardId,
+        'create',
+        { rating, deckId },
+        userId
+      );
+      return;
+    }
+
     try {
       const updated = await api.reviewFlashcard(flashcardId, rating);
       const mapped = mapFlashcardFromApi(updated);
-      set(state => {
+      set(current => {
         const flashcards = {
-          ...state.flashcards,
-          [deckId]: (state.flashcards[deckId] || []).map(c =>
+          ...current.flashcards,
+          [deckId]: (current.flashcards[deckId] || []).map(c =>
             c.id === flashcardId ? mapped : c
           ),
         };
         return {
           flashcards,
-          decks: enrichDecksWithStats(state.decks, flashcards),
+          decks: enrichDecksWithStats(current.decks, flashcards),
         };
       });
       flushScheduledSave(() => get().saveToStorage());
     } catch (error: any) {
       console.error('Failed to review flashcard on server:', error);
-      throw error;
+      await syncService.queueOperation(
+        'flashcard_review',
+        flashcardId,
+        'create',
+        { rating, deckId },
+        userId
+      );
     }
   },
   

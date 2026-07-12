@@ -158,7 +158,7 @@ export const App: React.FC = () => {
         });
     }, []);
     const { studyGoal, dailyQuiz, dailyQuizProgress, setStudyGoal, setDailyQuiz, answerDailyQuestion, completeDailyQuiz, getDailyQuizForToday, getQuizForNote } = useStudyGoalsStore();
-    const { decks, flashcards, dueCardsCount } = useFlashcardStore();
+    const { decks, flashcards, dueCardsCount, offlineDeckIds, pendingFlashcardReviews } = useFlashcardStore();
     const { transactions, budget } = useBudgetStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
 
@@ -166,7 +166,7 @@ export const App: React.FC = () => {
     useEffect(() => {
         const store = useFlashcardStore.getState();
         store.loadOfflineFromStorage();
-        store.loadFromStorage?.();
+        store.loadFromStorage();
     }, []);
 
     const {
@@ -269,7 +269,7 @@ export const App: React.FC = () => {
         handleGenerateFlashcards,
         handleGenerateFlashcardsFromTestResult,
         handleStartReview, handleStartCram, handleCramAnswer, handleCramIncorrect, handleEndCramSession,
-        handleUpdateSrsData, handleResetDeckStatistics,
+        handleUpdateSrsData, handleToggleDeckOffline, handleResetDeckStatistics,
         handleExportDeck, handleImportDeck,
         handleStartMatch, handleStartLearn, handleEndStudyMode,
         handleLoadMoreFlashcards
@@ -321,7 +321,7 @@ export const App: React.FC = () => {
     });
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction } = useBudgetHandlers();
-    const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
+    const { handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
     const handleChallengeNotification = React.useCallback(async (type: string, challengeId: string) => {
         if (type === 'challenge_result') {
             void handleStartChallengePlay(challengeId);
@@ -827,8 +827,9 @@ export const App: React.FC = () => {
             onImportDeck={handleImportDeck}
             onStartStudy={handleFlashcardStudy}
             onStudyDeck={handleStudyDeck}
-            onOfflineToggle={(_deck, isOffline) => {
-                showToast(isOffline ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
+            onOfflineToggle={async (deck, enable) => {
+                await handleToggleDeckOffline(deck, enable);
+                showToast(enable ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
             }}
             onExportDeck={handleExportDeck}
         />
@@ -925,7 +926,7 @@ export const App: React.FC = () => {
                     serverStreak={serverStreak}
                     streakFreezes={streakFreezes}
                     onPurchaseStreakFreeze={handlePurchaseStreakFreeze}
-                    dueCardsCount={dueCardsCount} flashcards={flashcards} pendingSyncCount={pendingSyncResults.length}
+                    dueCardsCount={dueCardsCount} flashcards={flashcards} pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
                     unreadNotificationCount={notifications.filter(n => !n.read).length}
                     onOpenQuickTest={handleOpenQuickTest} onOpenQuickStudy={handleOpenQuickStudy}
                     onGetStudyRecommendations={handleAIStudyRecommendations}
@@ -1108,9 +1109,13 @@ export const App: React.FC = () => {
                     theme={theme}
                 />;
             case AppMode.OFFLINE_MODE:
-                return <OfflineModeScreen offlineBundles={offlineBundles} pendingSyncResultsCount={pendingSyncResults.length}
+                return <OfflineModeScreen offlineBundles={offlineBundles}
+                    offlineDecks={decks.filter(d => offlineDeckIds.includes(d.id))}
+                    pendingSyncResultsCount={pendingSyncResults.length}
+                    pendingFlashcardReviewsCount={pendingFlashcardReviews.length}
                     onStartOfflineSession={handleStartOfflineSession} onDeleteBundle={handleDeleteBundle}
-                    onSyncPendingResults={handleSyncResults} onImportBundle={handleImportBundle}
+                    onSyncPendingResults={handleSyncResults} onSyncFlashcardReviews={handleSyncFlashcardReviews}
+                    onImportBundle={handleImportBundle}
                     onRenameBundle={handleRenameBundle} isOnline={isOnline} />;
             case AppMode.BUDGET_TRACKER:
                 return <BudgetTrackerScreen currentUser={currentUser}
@@ -1259,7 +1264,7 @@ export const App: React.FC = () => {
         onNavigateToBudgetTracker: handleNavigateToBudgetTracker,
         onNavigateToMarketplace: () => navigateTo(AppMode.MARKETPLACE),
         onNavigateToAdmin: () => navigateTo(AppMode.ADMIN),
-        pendingSyncCount: pendingSyncResults.length, isOnline,
+        pendingSyncCount: pendingSyncResults.length + pendingFlashcardReviews.length, isOnline,
         onSyncPendingResults: handleSyncResults,
         onUpdateCurrentUserAvatar: handleUpdateCurrentUserAvatar,
         onOpenSettingsModal: () => openModal('settings'),

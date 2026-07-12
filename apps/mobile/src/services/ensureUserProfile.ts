@@ -11,11 +11,17 @@ function isMissingProfileError(error: unknown): boolean {
   );
 }
 
-/** Ensures a profiles row exists so deck/flashcard API calls can succeed. Returns profile display name. */
-export async function ensureUserProfile(user: User): Promise<string> {
+/** Ensures a profiles row exists so deck/flashcard API calls can succeed. */
+export async function ensureUserProfile(user: User): Promise<{
+  displayName: string;
+  firstName?: string;
+}> {
   try {
     const profile = await fetchUserProfile(user.id);
-    return profile.name?.trim() || resolveFallbackName(user);
+    return {
+      displayName: profile.name?.trim() || resolveFallbackName(user),
+      firstName: resolveProfileFirstName(profile, user),
+    };
   } catch (error: unknown) {
     if (!isMissingProfileError(error)) {
       throw error;
@@ -23,8 +29,26 @@ export async function ensureUserProfile(user: User): Promise<string> {
 
     const name = resolveFallbackName(user);
     await createUserProfile({ id: user.id, name });
-    return name;
+    return {
+      displayName: name,
+      firstName: resolveProfileFirstName(null, user),
+    };
   }
+}
+
+function resolveProfileFirstName(
+  profile: { first_name?: string; firstName?: string } | null,
+  user: User
+): string | undefined {
+  const fromProfile = profile?.first_name || profile?.firstName;
+  if (typeof fromProfile === 'string' && fromProfile.trim()) {
+    return fromProfile.trim();
+  }
+  const fromMeta = user.user_metadata?.first_name;
+  if (typeof fromMeta === 'string' && fromMeta.trim()) {
+    return fromMeta.trim();
+  }
+  return undefined;
 }
 
 function resolveFallbackName(user: User): string {

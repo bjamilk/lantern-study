@@ -332,24 +332,6 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 trackQuestProgress('complete_test');
                 trackStudyActivity('test', 1);
                 addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
-                // Post-test debrief via Lantern companion
-                const _tagStats: Record<string, { correct: number; total: number }> = {};
-                finalSessionData.questions.forEach(q => {
-                    const isCorrect = finalUserAnswers[q.id]?.isCorrect ?? false;
-                    (q.tags?.length ? q.tags : ['General']).forEach(tag => {
-                        if (!_tagStats[tag]) _tagStats[tag] = { correct: 0, total: 0 };
-                        _tagStats[tag].total++;
-                        if (isCorrect) _tagStats[tag].correct++;
-                    });
-                });
-                const _weakTags = Object.entries(_tagStats)
-                    .filter(([, s]) => s.total >= 2 && s.correct / s.total < 0.6)
-                    .sort((a, b) => a[1].correct / a[1].total - b[1].correct / b[1].total)
-                    .map(([tag]) => tag).slice(0, 3);
-                const _debriefMsg = `I just finished a test: ${Math.round(score)}% (${correctAnswersCount}/${result.totalQuestions} correct)${_weakTags.length ? `. I struggled with: ${_weakTags.join(', ')}` : ''}. Give me a quick debrief and next steps.`;
-                const _companion = useCompanionStore.getState();
-                _companion.open();
-                _companion.sendMessage(_debriefMsg, { weakTopics: _weakTags, recentTestSummary: `${Math.round(score)}% on ${result.totalQuestions} questions` });
             } else {
                 // ── ONLINE PATH ───────────────────────────────────────────
                 const sessionData = {

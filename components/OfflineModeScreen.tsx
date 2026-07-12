@@ -1,7 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { OfflineSessionBundle } from '../types';
+import { OfflineSessionBundle, Deck } from '../types';
 import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import { syncCopy, featureAccents } from '@lantern/shared/design';
 import { useUIStore } from '../stores/uiStore';
@@ -11,10 +11,13 @@ import { OfflineBundleCard } from './offline/OfflineBundleCard';
 
 interface OfflineModeScreenProps {
   offlineBundles: OfflineSessionBundle[];
+  offlineDecks: Deck[];
   pendingSyncResultsCount: number;
+  pendingFlashcardReviewsCount: number;
   onStartOfflineSession: (bundleId: string, mode: 'test' | 'study') => void;
   onDeleteBundle: (bundleId: string) => void;
   onSyncPendingResults: () => void;
+  onSyncFlashcardReviews: () => void;
   onImportBundle: (bundle: OfflineSessionBundle) => string | null;
   onRenameBundle: (bundleId: string, newName: string) => void;
   isOnline: boolean;
@@ -22,10 +25,13 @@ interface OfflineModeScreenProps {
 
 const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
   offlineBundles,
+  offlineDecks,
   pendingSyncResultsCount,
+  pendingFlashcardReviewsCount,
   onStartOfflineSession,
   onDeleteBundle,
   onSyncPendingResults,
+  onSyncFlashcardReviews,
   onImportBundle,
   onRenameBundle,
   isOnline,
@@ -84,6 +90,8 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
     reader.readAsText(file);
   };
 
+  const totalPendingSync = pendingSyncResultsCount + pendingFlashcardReviewsCount;
+
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background text-lantern-text overflow-y-auto">
       <FeatureHero
@@ -116,7 +124,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
           <ConnectionBadge
             isOnline={isOnline}
             lowDataMode={lowDataMode}
-            pendingSyncCount={pendingSyncResultsCount}
+            pendingSyncCount={totalPendingSync}
           />
           {lowDataMode ? (
             <span className="text-xs text-lantern-text-secondary">{syncCopy.savedLocally}</span>
@@ -133,11 +141,11 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
 
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-3 text-lantern-text">Sync Status</h2>
-        <div className="bg-lantern-surface border border-lantern-border p-4 rounded-lantern-xl shadow-lantern">
+        <div className="bg-lantern-surface border border-lantern-border p-4 rounded-lantern-xl shadow-lantern space-y-4">
           {pendingSyncResultsCount > 0 ? (
             <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
               <p className="text-lantern-accent mb-0">
-                {syncCopy.pendingSync(pendingSyncResultsCount)}
+                {syncCopy.pendingSync(pendingSyncResultsCount)} (test results)
               </p>
               <button
                 type="button"
@@ -146,19 +154,54 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                 className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               >
                 <ArrowPathIcon className="w-5 h-5 mr-2" />
-                Sync Now
+                Sync Test Results
               </button>
             </div>
           ) : (
-            <p className="text-lantern-success">All offline results are synced!</p>
+            <p className="text-lantern-success">All offline test results are synced!</p>
           )}
-          {!isOnline && pendingSyncResultsCount > 0 && (
-            <p className="text-xs text-lantern-text-secondary mt-2">
-              Connect to the internet to sync your pending results.
+          {pendingFlashcardReviewsCount > 0 ? (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+              <p className="text-lantern-accent mb-0">
+                {pendingFlashcardReviewsCount} flashcard review{pendingFlashcardReviewsCount !== 1 ? 's' : ''} waiting to sync
+              </p>
+              <button
+                type="button"
+                onClick={onSyncFlashcardReviews}
+                disabled={!isOnline}
+                className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                <ArrowPathIcon className="w-5 h-5 mr-2" />
+                Sync Flashcard Reviews
+              </button>
+            </div>
+          ) : (
+            <p className="text-lantern-success">All flashcard reviews are synced!</p>
+          )}
+          {!isOnline && totalPendingSync > 0 && (
+            <p className="text-xs text-lantern-text-secondary">
+              Connect to the internet to sync your pending activity.
             </p>
           )}
         </div>
       </section>
+
+      {offlineDecks.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-lg font-semibold mb-3 text-lantern-text">Downloaded Flashcard Decks</h2>
+          <div className="space-y-2">
+            {offlineDecks.map(deck => (
+              <div
+                key={deck.id}
+                className="flex items-center justify-between p-3 bg-lantern-surface border border-lantern-border rounded-lantern"
+              >
+                <span className="font-medium text-lantern-text truncate">{deck.name}</span>
+                <span className="text-xs text-lantern-text-secondary shrink-0 ml-2">Available offline</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="text-lg font-semibold mb-3 text-lantern-text">Downloaded Test Bundles</h2>

@@ -58,7 +58,7 @@ import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../serv
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
 import { featureAccents } from '@lantern/shared/design';
-import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
 
@@ -130,6 +130,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
+  const profileFirstName = useAuthStore(s => s.profileFirstName);
 
   const { decks, fetchDecks } = useFlashcardStore();
 
@@ -181,12 +182,15 @@ export function DashboardScreen({ navigation }: Props) {
 
   const dueCount = useMemo(() => decks.reduce((s, d) => s + (d.due_count || 0), 0), [decks]);
 
-  const displayName = (
-    profileName ||
-    user?.user_metadata?.name ||
-    user?.email?.split('@')[0] ||
-    'Student'
-  ).split(' ')[0];
+  const displayName = useMemo(
+    () =>
+      getDashboardFirstName({
+        firstName: profileFirstName || (user?.user_metadata?.first_name as string | undefined),
+        name: profileName || (user?.user_metadata?.name as string | undefined),
+        username: user?.user_metadata?.username as string | undefined,
+      }),
+    [profileFirstName, profileName, user]
+  );
 
   const todayQuiz = getDailyQuizForToday() ?? dailyQuiz;
 

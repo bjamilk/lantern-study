@@ -16,6 +16,8 @@ import {
     markPendingSyncResultAsSynced,
 } from '../services/supabase';
 import { formatActivityLocalDate } from '@lantern/shared/utils';
+import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
+import { useFlashcardStore } from '../stores/flashcardStore';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UseOfflineHandlersParams {
@@ -179,11 +181,10 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
 
     const handleStartOfflineSession = useCallback((bundleId: string, mode: 'test' | 'study') => {
         console.log('[Offline] start session bundleId=', bundleId, 'mode=', mode);
-        alert(`[Offline] starting bundle ${bundleId} mode ${mode}`);
         const bundle = offlineBundles.find(b => b.bundleId === bundleId);
         if (!bundle) {
-            alert("Error: Could not find the offline test bundle.");
             console.warn('[Offline] missing bundle', bundleId, offlineBundles);
+            addNotification('Could not find the offline test bundle.');
             return;
         }
         console.log('[Offline] launching bundle', bundle);
@@ -232,7 +233,32 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
                 setAppMode(AppMode.STUDY_ACTIVE);
             }, 0);
         }
-    }, [offlineBundles, setActiveTestSession, setActiveStudySession, setAppMode]);
+    }, [offlineBundles, setActiveTestSession, setActiveStudySession, setAppMode, addNotification]);
+
+    const handleSyncFlashcardReviews = useCallback(async () => {
+        if (!isOnline) {
+            alert('You must be online to sync flashcard reviews.');
+            return;
+        }
+        const pendingCount = useFlashcardStore.getState().pendingFlashcardReviews.length;
+        if (pendingCount === 0) return;
+
+        try {
+            const { synced, remaining } = await syncPendingFlashcardReviews();
+            if (synced === 0 && remaining > 0) {
+                alert('Failed to sync flashcard reviews. Please try again.');
+                return;
+            }
+            if (remaining === 0) {
+                addNotification(`${synced} flashcard review(s) synced successfully!`);
+            } else if (synced > 0) {
+                addNotification(`Synced ${synced} of ${synced + remaining} flashcard review(s). Retry to sync the rest.`);
+            }
+        } catch (error) {
+            console.error('Error syncing flashcard reviews:', error);
+            alert('Failed to sync flashcard reviews. Please try again.');
+        }
+    }, [isOnline, addNotification]);
 
     const handleDeleteBundle = useCallback((bundleId: string) => {
         if (window.confirm("Are you sure you want to delete this downloaded test bundle?")) {
@@ -405,6 +431,7 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         handleStartOfflineSession,
         handleDeleteBundle,
         handleSyncResults,
+        handleSyncFlashcardReviews,
         handleImportBundle,
         handleRenameBundle,
     };
