@@ -789,8 +789,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale price (₦)</label>
+              <label htmlFor="listing-sale-price" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale price (₦)</label>
               <input
+                id="listing-sale-price"
                 type="number"
                 value={formData.salePrice}
                 onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
@@ -798,8 +799,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale ends</label>
+              <label htmlFor="listing-sale-ends" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Sale ends</label>
               <input
+                id="listing-sale-ends"
                 type="datetime-local"
                 value={formData.saleEndsAt}
                 onChange={(e) => setFormData(prev => ({ ...prev, saleEndsAt: e.target.value }))}
@@ -807,8 +809,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Promo label</label>
+              <label htmlFor="listing-promo-label" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Promo label</label>
               <input
+                id="listing-promo-label"
                 type="text"
                 value={formData.promoLabel}
                 onChange={(e) => setFormData(prev => ({ ...prev, promoLabel: e.target.value }))}
@@ -820,13 +823,13 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           {/* Images */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+            <label htmlFor="listing-images" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
               <PhotoIcon className="w-4 h-4 inline mr-1" />
               Images
             </label>
             <div className="space-y-3">
               <div className="flex items-center justify-center w-full">
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors duration-200">
+                <label htmlFor="listing-images" className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 dark:border-slate-600 border-dashed rounded-lg cursor-pointer bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors duration-200">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
                     <PhotoIcon className="w-8 h-8 mb-3 text-slate-400 dark:text-slate-500" />
                     <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">
@@ -837,6 +840,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     </p>
                   </div>
                   <input
+                    id="listing-images"
                     type="file"
                     multiple
                     accept="image/*"
