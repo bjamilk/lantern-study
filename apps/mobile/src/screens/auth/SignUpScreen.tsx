@@ -24,6 +24,7 @@ import { supabase } from '../../services/supabase';
 import { useTheme } from '../../theme';
 import { LanternLogo } from '../../components/LanternLogo';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type SignUpScreenProps = NativeStackScreenProps<AuthStackParamList, 'SignUp'>;
@@ -143,6 +144,7 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
   const { signUp, isLoading: authLoading, error: authError } = useAuthStore();
+  const cookieNoticeInset = useCookieNoticeBottomInset();
 
   const validateEmail = (emailStr: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr);
   const validateUsernameFormat = (usernameStr: string) => /^[a-z0-9_]{3,20}$/.test(usernameStr.toLowerCase());
@@ -325,7 +327,7 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 24 + cookieNoticeInset }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

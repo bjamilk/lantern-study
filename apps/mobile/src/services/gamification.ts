@@ -2,6 +2,15 @@ import type { ActivityType, StudyActivityDay } from '@lantern/shared';
 import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
 import { getAuthHeaders, API_BASE_URL } from './supabase';
 
+function normalizeStudyActivityDay(row: Record<string, unknown>): StudyActivityDay {
+  const breakdown = (row.breakdown as StudyActivityDay['breakdown']) || undefined;
+  return {
+    date: String(row.date || row.activity_date || ''),
+    count: Number(row.count) || 0,
+    ...(breakdown ? { breakdown } : {}),
+  };
+}
+
 async function gamificationRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/api/v1/gamification${path}`, {
@@ -57,8 +66,10 @@ export const recordStudyActivity = (type: ActivityType, amount = 1) =>
     }),
   });
 
-export const fetchStudyActivity = (days = ACTIVITY_DAYS) =>
-  gamificationRequest<StudyActivityDay[]>(`/activity?days=${days}`);
+export const fetchStudyActivity = async (days = ACTIVITY_DAYS) => {
+  const raw = await gamificationRequest<Record<string, unknown>[]>(`/activity?days=${days}`);
+  return (raw || []).map(normalizeStudyActivityDay).filter((day) => Boolean(day.date));
+};
 
 export function trackStudyActivity(type: ActivityType, amount = 1): void {
   recordStudyActivity(type, amount)
@@ -68,6 +79,16 @@ export function trackStudyActivity(type: ActivityType, amount = 1): void {
           useBudgetStore.setState({ walletBalance: result.walletBalance });
         });
       }
+      return fetchStudyActivity().then((days) => ({ days, result }));
+    })
+    .then(({ days }) => {
+      if (!Array.isArray(days) || days.length === 0) return;
+      void import('../stores/statsStore').then(({ useStatsStore }) => {
+        const current = useStatsStore.getState().stats;
+        if (current) {
+          useStatsStore.setState({ stats: { ...current, activityDays: days } });
+        }
+      });
     })
     .catch(() => {});
 }

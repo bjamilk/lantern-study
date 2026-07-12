@@ -17,6 +17,7 @@ import { isEmailNotConfirmedError } from '@lantern/shared';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
 import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -26,6 +27,7 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { signIn, signInAsDemo, isLoading, error, clearError } = useAuthStore();
+  const cookieNoticeInset = useCookieNoticeBottomInset();
 
   const onSubmit = async () => {
     clearError();
@@ -44,7 +46,10 @@ export function LoginScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
       >
-        <ScrollView contentContainerClassName="flex-grow px-6 py-8 justify-center">
+        <ScrollView
+          contentContainerClassName="flex-grow px-6 py-8 justify-center"
+          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
+        >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
             <Text className="text-3xl font-bold text-lantern-text tracking-tight">Lantern Study</Text>

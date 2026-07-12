@@ -37,6 +37,14 @@ const HEAT_HEX_COLORS: Record<ActivityHeatLevel, string> = {
   4: '#16a34a',
 };
 
+const HEAT_HEX_DARK: Record<ActivityHeatLevel, string> = {
+  0: '#334155',
+  1: '#14532d',
+  2: '#15803d',
+  3: '#22c55e',
+  4: '#4ade80',
+};
+
 export function getActivityHeatTailwindClass(
   level: ActivityHeatLevel,
   theme: 'light' | 'dark'
@@ -44,8 +52,18 @@ export function getActivityHeatTailwindClass(
   return theme === 'dark' ? HEAT_TAILWIND_DARK[level] : HEAT_TAILWIND_LIGHT[level];
 }
 
-export function getActivityHeatHexColor(level: ActivityHeatLevel): string {
-  return HEAT_HEX_COLORS[level];
+export function getActivityHeatHexColor(
+  level: ActivityHeatLevel,
+  theme: 'light' | 'dark' = 'light'
+): string {
+  return theme === 'dark' ? HEAT_HEX_DARK[level] : HEAT_HEX_COLORS[level];
+}
+
+export function getActivityHeatHexColorForCount(
+  count: number,
+  theme: 'light' | 'dark' = 'light'
+): string {
+  return getActivityHeatHexColor(getActivityHeatLevel(count), theme);
 }
 
 export function getActivityHeatColorForCount(

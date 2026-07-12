@@ -58,7 +58,7 @@ import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../serv
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
 import { featureAccents } from '@lantern/shared/design';
-import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityHeatmapGrid, getActivityHeatHexColorForCount, getActivityHeatHexColor, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
 
@@ -104,7 +104,12 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
             {week.map(day => (
               <View
                 key={day.date}
-                className={`w-3 h-3 rounded-sm ${getActivityHeatColorForCount(day.count, theme)}`}
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: getActivityHeatHexColorForCount(day.count, theme),
+                }}
               />
             ))}
           </View>
@@ -115,7 +120,12 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
         {legendLevels.map(level => (
           <View
             key={level}
-            className={`w-3 h-3 rounded-sm ${getActivityHeatTailwindClass(level, theme)}`}
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: 2,
+              backgroundColor: getActivityHeatHexColor(level, theme),
+            }}
           />
         ))}
         <Text className="text-xs text-lantern-text-tertiary">More</Text>
