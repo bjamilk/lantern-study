@@ -517,44 +517,51 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
 
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 w-full max-w-full bg-lantern-background">
-      <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-3 space-y-3 bg-lantern-background">
-        <FeatureHero
-          title="Admin Console"
-          subtitle="Platform oversight and moderation"
-          accentColor={featureAccents.admin}
-          icon={<ShieldCheckIcon className="w-6 h-6" />}
-          actions={
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>
-                Refresh
-              </Button>
-              <Button variant="primary" size="sm" onClick={onBackToDashboard}>
-                Back to Dashboard
-              </Button>
-            </div>
-          }
-        />
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as AdminTab)}
+        aria-label="Admin sections"
+        variant="pills"
+        className="flex flex-col flex-1 min-h-0 min-w-0"
+      >
+        <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-2 space-y-3 bg-lantern-background">
+          <FeatureHero
+            title="Admin Console"
+            subtitle="Platform oversight and moderation"
+            accentColor={featureAccents.admin}
+            icon={<ShieldCheckIcon className="w-6 h-6" />}
+            actions={
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>
+                  Refresh
+                </Button>
+                <Button variant="primary" size="sm" onClick={onBackToDashboard}>
+                  Back to Dashboard
+                </Button>
+              </div>
+            }
+          />
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} aria-label="Admin sections" variant="pills" className="flex flex-col flex-1 min-h-0">
-        <TabList className="overflow-x-auto pb-1 scrollbar-thin shrink-0 !border-0">
-          {ADMIN_TABS.map((tab, index) => (
-            <Tab
-              key={tab.id}
-              value={tab.id}
-              index={index}
-              className="shrink-0 !rounded-full !px-4 !py-2 !min-h-[44px]"
-              style={activeTab === tab.id ? { borderBottomWidth: 2, borderBottomColor: featureAccents.admin } : undefined}
-            >
-              {tab.label}
-            </Tab>
-          ))}
-        </TabList>
+          <TabList className="overflow-x-auto pb-1 scrollbar-thin shrink-0 !border-0">
+            {ADMIN_TABS.map((tab, index) => (
+              <Tab
+                key={tab.id}
+                value={tab.id}
+                index={index}
+                className="shrink-0 !rounded-full !px-4 !py-2 !min-h-[44px]"
+                style={activeTab === tab.id ? { borderBottomWidth: 2, borderBottomColor: featureAccents.admin } : undefined}
+              >
+                {tab.label}
+              </Tab>
+            ))}
+          </TabList>
 
-        {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
-        {error && <p className="text-sm text-lantern-error">{error}</p>}
-        {success && <p className="text-sm text-lantern-success">{success}</p>}
+          {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
+          {error && <p className="text-sm text-lantern-error">{error}</p>}
+          {success && <p className="text-sm text-lantern-success">{success}</p>}
+        </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-4 pb-20 md:pb-6 space-y-4">
       <TabPanel value="overview">
         <AdminOverview
           stats={stats}
@@ -655,8 +662,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
         <AdminAudit entries={auditEntries} />
       </TabPanel>
       </div>
-        </Tabs>
-      </div>
+      </Tabs>
 
       <UserDetailDrawer userId={selectedUserId} onClose={() => setSelectedUserId(null)} onUpdated={() => loadUsers(true)} />
 

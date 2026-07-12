@@ -1292,7 +1292,7 @@ export const App: React.FC = () => {
             }
             onNavigate={handleShellNavigate}>
             <div className={`shrink-0 ${
-                appMode === AppMode.CREATE_GROUP
+                appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
                     : appMode === AppMode.CHAT && selectedChat
                         ? 'hidden md:block'

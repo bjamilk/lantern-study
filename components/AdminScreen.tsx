@@ -6,7 +6,7 @@ interface AdminScreenProps {
 }
 
 const AdminScreen: React.FC<AdminScreenProps> = ({ onBackToDashboard }) => (
-  <div className="flex flex-1 flex-col min-h-0 w-full">
+  <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden w-full">
     <AdminShell onBackToDashboard={onBackToDashboard} />
   </div>
 );
