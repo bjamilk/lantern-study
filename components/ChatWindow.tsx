@@ -576,6 +576,123 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const questionCount = visibleMessages.filter(m => m.questionType).length;
 
+  const chatPanelContent = (
+    <>
+      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+        {isLoadingMore && (
+          <div className="flex justify-center py-2" aria-live="polite">
+            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+            <span className="sr-only">Loading older messages</span>
+          </div>
+        )}
+        {visibleMessages.map((msg, idx) => {
+          const msgDate = new Date(msg.timestamp);
+          const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
+          const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
+          const showDateSeparator = !prevDate
+            || msgDate.toDateString() !== prevDate.toDateString();
+          const isGroupedWithPrevious =
+            !!prevMsg &&
+            !showDateSeparator &&
+            prevMsg.sender?.id === msg.sender?.id &&
+            msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
+
+          const formatDateLabel = (d: Date) => {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+          };
+
+          return (
+            <React.Fragment key={msg.id}>
+              {showDateSeparator && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                  <span className="text-xs font-medium text-slate-400 dark:text-slate-500 whitespace-nowrap px-2">
+                    {formatDateLabel(msgDate)}
+                  </span>
+                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                </div>
+              )}
+              <MessageItem
+                message={msg}
+                isCurrentUserMessage={msg.sender?.id === currentUser.id}
+                currentUserVote={userVotes[msg.id]}
+                onVoteQuestion={onVoteQuestion}
+                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                group={group}
+                currentUser={currentUser}
+                isGroupedWithPrevious={isGroupedWithPrevious}
+              />
+            </React.Fragment>
+          );
+        })}
+        <div ref={messagesEndRef} />
+        {visibleMessages.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            {awaitingMessages ? (
+              <>
+                <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading messages…</p>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
+                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {isArchived ? 'This group is archived' : 'No messages yet'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+                  {isArchived
+                    ? 'Unarchive the group to resume the conversation.'
+                    : `Be the first to send a message in ${name}!`}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isArchived ? (
+        <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
+          <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <p className="text-sm text-amber-800 dark:text-amber-300">
+            This group is archived.
+          </p>
+          <button
+            onClick={() => onToggleArchiveGroup(group!.id)}
+            className="text-sm font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline underline-offset-2 transition-colors duration-150"
+          >
+            Unarchive
+          </button>
+        </div>
+      ) : (
+        <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
+          {typingLabels.length > 0 && (
+            <p className="px-4 py-1 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
+              {typingLabels.length === 1
+                ? `${typingLabels[0]} is typing…`
+                : `${typingLabels.slice(0, 2).join(' and ')} are typing…`}
+            </p>
+          )}
+          <MessageInputBar
+            onSendMessage={onSendMessage}
+            onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
+            onAIQuery={isGroup ? onAIQuery : undefined}
+            onTyping={broadcastTyping}
+          />
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background">
       {/* Header — fixed at top */}
@@ -792,9 +909,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             )}
           </div>
         )}
-        
-        {/* Marketplace Sticky Banner */}
-        {chat.chatType === 'dm' && inquiry && (
+      </div>
+
+      {chat.chatType === 'dm' && inquiry ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as 'chat' | 'offers')}
+          variant="segmented"
+          aria-label="Marketplace conversation"
+          className="flex flex-col flex-1 min-h-0"
+        >
           <div className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
@@ -828,214 +952,85 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               </div>
             </div>
-            
-            <div className="flex items-center gap-2">
-              <Tabs
-                value={activeTab}
-                onValueChange={(value) => setActiveTab(value as 'chat' | 'offers')}
-                variant="segmented"
-                aria-label="Marketplace conversation"
+            <TabList className="bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 !border-solid">
+              <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-2 !rounded-md">
+                Chat
+              </Tab>
+              <Tab
+                value="offers"
+                index={1}
+                className="!text-xs !font-semibold !px-3 !py-2 !rounded-md"
+                badge={activeOffer ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : undefined}
               >
-              <TabList className="bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 !border-solid">
-                <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-2 !rounded-md">
-                  Chat
-                </Tab>
-                <Tab
-                  value="offers"
-                  index={1}
-                  className="!text-xs !font-semibold !px-3 !py-2 !rounded-md"
-                  badge={activeOffer ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : undefined}
-                >
-                  Offers
-                </Tab>
-              </TabList>
-              </Tabs>
-            </div>
+                Offers
+              </Tab>
+            </TabList>
           </div>
-        )}
 
-        {chat.chatType === 'dm' && inquiry && activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
-          <div className="flex-shrink-0 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900 flex flex-wrap gap-2 items-center">
-            <span className="text-xs font-medium text-indigo-800 dark:text-indigo-200">
-              Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
-            </span>
-            {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
-              <>
+          {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
+            <div className="flex-shrink-0 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900 flex flex-wrap gap-2 items-center">
+              <span className="text-xs font-medium text-indigo-800 dark:text-indigo-200">
+                Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
+              </span>
+              {currentUser.id === inquiry.seller_id && ['paid', 'pending_payment'].includes(activeOrder.status) && (
+                <>
+                  <button
+                    type="button"
+                    disabled={orderActionLoading}
+                    className="text-xs px-2 py-1 rounded-md bg-indigo-600 text-white"
+                    onClick={async () => {
+                      setOrderActionLoading(true);
+                      try {
+                        const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
+                        setActiveOrder(updated);
+                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
+                      finally { setOrderActionLoading(false); }
+                    }}
+                  >
+                    Mark ready
+                  </button>
+                  <button
+                    type="button"
+                    disabled={orderActionLoading}
+                    className="text-xs px-2 py-1 rounded-md border border-indigo-600 text-indigo-700 dark:text-indigo-300"
+                    onClick={async () => {
+                      setOrderActionLoading(true);
+                      try {
+                        await requestOrderPayment(activeOrder.id);
+                        useToastStore.getState().showToast('Payment request sent', 'success');
+                      } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
+                      finally { setOrderActionLoading(false); }
+                    }}
+                  >
+                    Request payment
+                  </button>
+                </>
+              )}
+              {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
                 <button
                   type="button"
                   disabled={orderActionLoading}
-                  className="text-xs px-2 py-1 rounded-md bg-indigo-600 text-white"
+                  className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white"
                   onClick={async () => {
                     setOrderActionLoading(true);
                     try {
-                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
+                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'confirm_received' });
                       setActiveOrder(updated);
                     } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
                     finally { setOrderActionLoading(false); }
                   }}
                 >
-                  Mark ready
+                  Confirm received
                 </button>
-                <button
-                  type="button"
-                  disabled={orderActionLoading}
-                  className="text-xs px-2 py-1 rounded-md border border-indigo-600 text-indigo-700 dark:text-indigo-300"
-                  onClick={async () => {
-                    setOrderActionLoading(true);
-                    try {
-                      await requestOrderPayment(activeOrder.id);
-                      useToastStore.getState().showToast('Payment request sent', 'success');
-                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                    finally { setOrderActionLoading(false); }
-                  }}
-                >
-                  Request payment
-                </button>
-              </>
-            )}
-            {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
-              <button
-                type="button"
-                disabled={orderActionLoading}
-                className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white"
-                onClick={async () => {
-                  setOrderActionLoading(true);
-                  try {
-                    const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'confirm_received' });
-                    setActiveOrder(updated);
-                  } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                  finally { setOrderActionLoading(false); }
-                }}
-              >
-                Confirm received
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {activeTab === 'chat' ? (
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          {/* Messages area — scrolls independently */}
-          <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-            {isLoadingMore && (
-              <div className="flex justify-center py-2" aria-live="polite">
-                <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                <span className="sr-only">Loading older messages</span>
-              </div>
-            )}
-            {visibleMessages.map((msg, idx) => {
-              // Date separator logic
-              const msgDate = new Date(msg.timestamp);
-              const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
-              const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
-              const showDateSeparator = !prevDate
-                || msgDate.toDateString() !== prevDate.toDateString();
-              const isGroupedWithPrevious =
-                !!prevMsg &&
-                !showDateSeparator &&
-                prevMsg.sender?.id === msg.sender?.id &&
-                msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
-
-              const formatDateLabel = (d: Date) => {
-                const now = new Date();
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-                if (diffDays === 0) return 'Today';
-                if (diffDays === 1) return 'Yesterday';
-                if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
-                return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-              };
-
-              return (
-                <React.Fragment key={msg.id}>
-                  {showDateSeparator && (
-                    <div className="flex items-center gap-3 py-2">
-                      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                      <span className="text-xs font-medium text-slate-400 dark:text-slate-500 whitespace-nowrap px-2">
-                        {formatDateLabel(msgDate)}
-                      </span>
-                      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                    </div>
-                  )}
-                  <MessageItem
-                    message={msg}
-                    isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                    currentUserVote={userVotes[msg.id]}
-                    onVoteQuestion={onVoteQuestion}
-                    onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
-                    currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                    group={group}
-                    currentUser={currentUser}
-                    isGroupedWithPrevious={isGroupedWithPrevious}
-                  />
-                </React.Fragment>
-              );
-            })}
-            <div ref={messagesEndRef} />
-            {visibleMessages.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                {awaitingMessages ? (
-                  <>
-                    <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Loading messages…</p>
-                  </>
-                ) : (
-                  <>
-                <div className="w-16 h-16 rounded-2xl bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center mb-4">
-                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
-                </div>
-                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  {isArchived ? 'This group is archived' : 'No messages yet'}
-                </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
-                  {isArchived
-                    ? 'Unarchive the group to resume the conversation.'
-                    : `Be the first to send a message in ${name}!`}
-                </p>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          {isArchived ? (
-            <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
-              <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <p className="text-sm text-amber-800 dark:text-amber-300">
-                This group is archived.
-              </p>
-              <button
-                onClick={() => onToggleArchiveGroup(group!.id)}
-                className="text-sm font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline underline-offset-2 transition-colors duration-150"
-              >
-                Unarchive
-              </button>
-            </div>
-          ) : (
-            <div className="flex-shrink-0 pb-16 md:pb-0 bg-white dark:bg-slate-800 relative z-20 border-t border-slate-200 dark:border-slate-700">
-              {typingLabels.length > 0 && (
-                <p className="px-4 py-1 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">
-                  {typingLabels.length === 1
-                    ? `${typingLabels[0]} is typing…`
-                    : `${typingLabels.slice(0, 2).join(' and ')} are typing…`}
-                </p>
               )}
-              <MessageInputBar
-                onSendMessage={onSendMessage}
-                onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
-                onAIQuery={isGroup ? onAIQuery : undefined}
-                onTyping={broadcastTyping}
-              />
             </div>
           )}
-        </div>
-      ) : (
-        /* Offers Tab panel */
-        inquiry && (
-          <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-y-auto p-4 md:p-6">
+
+          <TabPanel value="chat" className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {chatPanelContent}
+          </TabPanel>
+
+          <TabPanel value="offers" className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-900 overflow-y-auto p-4 md:p-6 min-h-0">
             {/* Listing Card */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200/60 dark:border-slate-700/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
               {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
@@ -1283,11 +1278,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
               )}
             </div>
-          </div>
-        )
+          </TabPanel>
+        </Tabs>
+      ) : (
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {chatPanelContent}
+        </div>
       )}
 
-      {/* Offer Modal */}
       {showMakeOfferModal && inquiry && inquiry.listing && (
         <MakeOfferModal
           isOpen={showMakeOfferModal}

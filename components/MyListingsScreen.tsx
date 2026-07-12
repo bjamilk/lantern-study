@@ -31,7 +31,7 @@ import {
   ArrowLeftIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
-import { Tabs, TabList, Tab, TabPanel } from './ui';
+import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
 
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -571,61 +571,38 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                       </div>
 
                       {/* Actions Menu */}
-                      <div className="relative">
-                        <button
-                          onClick={() => setActionMenuOpen(actionMenuOpen === listing.id ? null : listing.id)}
-                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                      <Menu open={actionMenuOpen === listing.id} onOpenChange={(open) => setActionMenuOpen(open ? listing.id : null)}>
+                        <MenuTrigger
+                          aria-label={`Actions for ${listing.title}`}
+                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
                         >
                           <EllipsisVerticalIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                        </button>
-
-                        {actionMenuOpen === listing.id && (
-                          <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-10">
-                            <button
-                              onClick={() => handleEdit(listing)}
-                              className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center"
-                            >
-                              <PencilIcon className="w-4 h-4 mr-2" />
-                              Edit Listing
-                            </button>
-                            {listing.status !== 'active' && (
-                              <button
-                                onClick={() => handleStatusChange(listing.id, 'active')}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center text-green-600"
-                              >
-                                <CheckCircleIcon className="w-4 h-4 mr-2" />
-                                Mark Active
-                              </button>
-                            )}
-                            {listing.status !== 'sold' && (
-                              <button
-                                onClick={() => handleStatusChange(listing.id, 'sold')}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center text-blue-600"
-                              >
-                                <ShoppingBagIcon className="w-4 h-4 mr-2" />
-                                Mark as Sold
-                              </button>
-                            )}
-                            {listing.status !== 'inactive' && (
-                              <button
-                                onClick={() => handleStatusChange(listing.id, 'inactive')}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center text-orange-600"
-                              >
-                                <XCircleIcon className="w-4 h-4 mr-2" />
-                                Deactivate
-                              </button>
-                            )}
-                            <hr className="my-1 border-slate-200 dark:border-slate-700" />
-                            <button
-                              onClick={() => handleDelete(listing.id)}
-                              className="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center text-red-600"
-                            >
-                              <TrashIcon className="w-4 h-4 mr-2" />
-                              Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                        </MenuTrigger>
+                        <MenuContent align="end" className="w-48">
+                          <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
+                            Edit Listing
+                          </MenuItem>
+                          {listing.status !== 'active' && (
+                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'active')} icon={<CheckCircleIcon className="w-4 h-4" />} className="text-green-600">
+                              Mark Active
+                            </MenuItem>
+                          )}
+                          {listing.status !== 'sold' && (
+                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'sold')} icon={<ShoppingBagIcon className="w-4 h-4" />} className="text-blue-600">
+                              Mark as Sold
+                            </MenuItem>
+                          )}
+                          {listing.status !== 'inactive' && (
+                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'inactive')} icon={<XCircleIcon className="w-4 h-4" />} className="text-orange-600">
+                              Deactivate
+                            </MenuItem>
+                          )}
+                          <MenuSeparator />
+                          <MenuItem onSelect={() => handleDelete(listing.id)} icon={<TrashIcon className="w-4 h-4" />} className="text-red-600">
+                            Delete
+                          </MenuItem>
+                        </MenuContent>
+                      </Menu>
                     </div>
 
                     {/* Stats Row */}
@@ -666,15 +643,6 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
         </Tabs>
       </div>
 
-      {/* Click outside to close menu */}
-      {actionMenuOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 z-0 cursor-default bg-transparent"
-          aria-label="Close listing actions menu"
-          onClick={() => setActionMenuOpen(null)}
-        />
-      )}
 
       {showBundleModal && (
         <CreateBundleModal

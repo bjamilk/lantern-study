@@ -503,7 +503,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             </div>
             {formData.subcategory === 'other' && (
               <div className="mt-3 space-y-2">
+                <label htmlFor="listing-custom-category" className="sr-only">Custom category name</label>
                 <input
+                  id="listing-custom-category"
                   type="text"
                   value={customCategory}
                   onChange={(e) => setCustomCategory(e.target.value)}
@@ -548,8 +550,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {getCategoryFields(formData.subcategory).includes('condition') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Condition</label>
+                    <label htmlFor="listing-condition" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Condition</label>
                     <select
+                      id="listing-condition"
                       value={formData.condition}
                       onChange={(e) => setFormData(prev => ({ ...prev, condition: e.target.value as any }))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -564,8 +567,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('isbn') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">ISBN</label>
+                    <label htmlFor="listing-isbn" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">ISBN</label>
                     <input
+                      id="listing-isbn"
                       type="text"
                       value={formData.isbn}
                       onChange={(e) => setFormData(prev => ({ ...prev, isbn: e.target.value }))}
@@ -576,8 +580,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('edition') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Edition</label>
+                    <label htmlFor="listing-edition" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Edition</label>
                     <input
+                      id="listing-edition"
                       type="text"
                       value={formData.edition}
                       onChange={(e) => setFormData(prev => ({ ...prev, edition: e.target.value }))}
@@ -588,8 +593,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('courseCode') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Course Code</label>
+                    <label htmlFor="listing-course-code" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Course Code</label>
                     <input
+                      id="listing-course-code"
                       type="text"
                       value={formData.courseCode}
                       onChange={(e) => setFormData(prev => ({ ...prev, courseCode: e.target.value }))}
@@ -600,8 +606,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('year') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Year</label>
+                    <label htmlFor="listing-year" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Year</label>
                     <input
+                      id="listing-year"
                       type="text"
                       value={formData.year}
                       onChange={(e) => setFormData(prev => ({ ...prev, year: e.target.value }))}
@@ -612,8 +619,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('semester') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Semester</label>
+                    <label htmlFor="listing-semester" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Semester</label>
                     <select
+                      id="listing-semester"
                       value={formData.semester}
                       onChange={(e) => setFormData(prev => ({ ...prev, semester: e.target.value as any }))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -626,8 +634,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('bedrooms') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Bedrooms</label>
+                    <label htmlFor="listing-bedrooms" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Bedrooms</label>
                     <input
+                      id="listing-bedrooms"
                       type="number"
                       value={formData.bedrooms}
                       onChange={(e) => setFormData(prev => ({ ...prev, bedrooms: e.target.value }))}
@@ -639,8 +648,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('furnished') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Furnished</label>
+                    <label htmlFor="listing-furnished" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Furnished</label>
                     <select
+                      id="listing-furnished"
                       value={formData.furnished}
                       onChange={(e) => setFormData(prev => ({ ...prev, furnished: e.target.value as any }))}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -653,8 +663,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 )}
                 {getCategoryFields(formData.subcategory).includes('distanceToCampus') && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Distance to Campus</label>
+                    <label htmlFor="listing-distance" className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Distance to Campus</label>
                     <input
+                      id="listing-distance"
                       type="text"
                       value={formData.distanceToCampus}
                       onChange={(e) => setFormData(prev => ({ ...prev, distanceToCampus: e.target.value }))}
@@ -670,7 +681,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           {/* Description */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              <label htmlFor="listing-description" className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Description
               </label>
               <button
@@ -685,6 +696,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               </button>
             </div>
             <textarea
+              id="listing-description"
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Provide detailed information about your listing..."
@@ -730,11 +742,12 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-campus" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-1" />
                 Campus <span className="text-red-500">*</span>
               </label>
               <select
+                id="listing-campus"
                 value={formData.campusId}
                 onChange={(e) => setFormData(prev => ({ ...prev, campusId: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
@@ -750,10 +763,11 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label htmlFor="listing-location" className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Meetup detail (optional)
               </label>
               <input
+                id="listing-location"
                 type="text"
                 value={formData.location}
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}

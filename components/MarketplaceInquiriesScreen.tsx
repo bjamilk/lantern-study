@@ -15,7 +15,7 @@ import {
   ChevronRightIcon,
   CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
-import { Tabs, TabList, Tab } from './ui';
+import { Tabs, TabList, Tab, TabPanel } from './ui';
 
 interface MarketplaceInquiriesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -142,6 +142,139 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
     }
   };
 
+  const inquiryStatusFilters = (
+    <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-2 sm:py-3">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 flex-shrink-0">Status:</span>
+        <div className="flex gap-1.5 sm:gap-2">
+          {['', 'open', 'negotiating', 'closed', 'purchased'].map((status) => (
+            <button
+              key={status || 'all'}
+              onClick={() => setStatusFilter(status)}
+              className={`flex-shrink-0 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-full transition-colors ${
+                statusFilter === status
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'All'}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const inquiriesPanelBody = loading ? (
+    <div className="flex items-center justify-center py-12">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    </div>
+  ) : inquiries.length === 0 ? (
+    <div className="text-center py-12">
+      <ChatBubbleLeftIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
+      <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
+        No inquiries {statusFilter ? `with status "${statusFilter}"` : ''}
+      </h3>
+      <p className="text-slate-600 dark:text-slate-400">
+        {activeTab === 'seller'
+          ? "You haven't received any inquiries yet."
+          : "You haven't made any inquiries yet."}
+      </p>
+    </div>
+  ) : (
+    <div className="space-y-4">
+      {inquiries.map(inquiry => (
+        <div
+          key={inquiry.id}
+          className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"
+        >
+          <div className="flex flex-col md:flex-row">
+            <div
+              onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
+              className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-slate-100 dark:bg-slate-700 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+            >
+              {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
+                <img
+                  src={normalizeStorageUrl(inquiry.listing.images[0])}
+                  alt={inquiry.listing?.title}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <ShoppingBagIcon className="w-12 h-12 text-slate-400" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
+                <div className="flex-1 min-w-0">
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full mb-2 ${getStatusColor(inquiry.status)}`}>
+                    {getStatusIcon(inquiry.status)}
+                    {inquiry.status}
+                  </span>
+                  <h3
+                    onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
+                    className="text-lg font-semibold text-slate-800 dark:text-slate-200 hover:text-indigo-600 cursor-pointer"
+                  >
+                    {inquiry.listing?.title || 'Listing unavailable'}
+                  </h3>
+                  {inquiry.listing?.price && (
+                    <p className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                      ₦{inquiry.listing.price.toLocaleString()}
+                    </p>
+                  )}
+                  <div className="flex items-center mt-3 text-sm text-slate-600 dark:text-slate-400">
+                    <UserCircleIcon className="w-5 h-5 mr-2" />
+                    <span>
+                      {activeTab === 'seller'
+                        ? `From: ${inquiry.buyer?.name || 'Unknown'}`
+                        : `Seller: ${inquiry.seller?.name || 'Unknown'}`}
+                    </span>
+                  </div>
+                  {inquiry.initial_message && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 line-clamp-2 italic">
+                      "{inquiry.initial_message}"
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-2">
+                    {new Date(inquiry.created_at).toLocaleDateString()} at {new Date(inquiry.created_at).toLocaleTimeString()}
+                  </p>
+                </div>
+                <div className="flex flex-row sm:flex-col gap-2 mt-3 sm:mt-0 sm:ml-4">
+                  <button
+                    onClick={() => handleOpenConversation(inquiry)}
+                    className="px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors"
+                  >
+                    <ChatBubbleLeftIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                    Chat
+                    <ChevronRightIcon className="w-4 h-4 ml-1 hidden sm:block" />
+                  </button>
+                  {activeTab === 'seller' && inquiry.status === 'open' && (
+                    <button
+                      onClick={() => handleStatusUpdate(inquiry.id, 'negotiating')}
+                      className="px-3 sm:px-4 py-1.5 sm:py-2 border border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                    >
+                      <span className="hidden sm:inline">Mark </span>Negotiating
+                    </button>
+                  )}
+                  {inquiry.status !== 'purchased' && inquiry.status !== 'closed' && (
+                    <button
+                      onClick={() => handleStatusUpdate(inquiry.id, 'closed')}
+                      className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                    >
+                      Close
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-900">
       {/* Header */}
@@ -170,9 +303,8 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
         </div>
       </div>
 
-      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'seller' | 'buyer' | 'offers')} aria-label="Inquiry views" className="flex-1 flex flex-col min-h-0">
       <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6">
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'seller' | 'buyer' | 'offers')} aria-label="Inquiry views">
           <TabList className="space-x-0.5 sm:space-x-1 !border-0">
             <Tab value="seller" index={0} className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold">
               <span className="sm:hidden">Received</span>
@@ -191,38 +323,20 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
               Offers
             </Tab>
           </TabList>
-        </Tabs>
       </div>
 
-      {/* Filters (inquiries only) */}
-      {activeTab !== 'offers' && (
-      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 sm:px-4 md:px-6 py-2 sm:py-3">
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-          <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 flex-shrink-0">Status:</span>
-          <div className="flex gap-1.5 sm:gap-2">
-            {['', 'open', 'negotiating', 'closed', 'purchased'].map((status) => (
-              <button
-                key={status || 'all'}
-                onClick={() => setStatusFilter(status)}
-                className={`flex-shrink-0 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-full transition-colors ${
-                  statusFilter === status
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                }`}
-              >
-                {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'All'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      )}
+      <TabPanel value="seller" className="flex-1 flex flex-col min-h-0">
+        {inquiryStatusFilters}
+        <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">{inquiriesPanelBody}</div>
+      </TabPanel>
 
-      {/* Content */}
-      <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
-        {activeTab === 'offers' ? (
-          /* Offers Tab Content */
-          loading ? (
+      <TabPanel value="buyer" className="flex-1 flex flex-col min-h-0">
+        {inquiryStatusFilters}
+        <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">{inquiriesPanelBody}</div>
+      </TabPanel>
+
+      <TabPanel value="offers" className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
+          {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
             </div>
@@ -384,140 +498,9 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                 );
               })}
             </div>
-          )
-        ) : (
-          /* Inquiries Tab Content */
-          loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-          </div>
-        ) : inquiries.length === 0 ? (
-          <div className="text-center py-12">
-            <ChatBubbleLeftIcon className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-            <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">
-              No inquiries {statusFilter ? `with status "${statusFilter}"` : ''}
-            </h3>
-            <p className="text-slate-600 dark:text-slate-400">
-              {activeTab === 'seller'
-                ? "You haven't received any inquiries yet."
-                : "You haven't made any inquiries yet."
-              }
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {inquiries.map(inquiry => (
-              <div
-                key={inquiry.id}
-                className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden"
-              >
-                <div className="flex flex-col md:flex-row">
-                  {/* Listing Preview */}
-                  <div 
-                    onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
-                    className="w-full md:w-48 h-28 sm:h-32 md:h-auto bg-slate-100 dark:bg-slate-700 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-                  >
-                    {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
-                      <img
-                        src={normalizeStorageUrl(inquiry.listing.images[0])}
-                        alt={inquiry.listing?.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-12 h-12 text-slate-400" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 p-3 sm:p-4">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
-                      <div className="flex-1 min-w-0">
-                        {/* Status Badge */}
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full mb-2 ${getStatusColor(inquiry.status)}`}>
-                          {getStatusIcon(inquiry.status)}
-                          {inquiry.status}
-                        </span>
-
-                        {/* Listing Title */}
-                        <h3 
-                          onClick={() => inquiry.listing && handleViewListing(inquiry.listing.id)}
-                          className="text-lg font-semibold text-slate-800 dark:text-slate-200 hover:text-indigo-600 cursor-pointer"
-                        >
-                          {inquiry.listing?.title || 'Listing unavailable'}
-                        </h3>
-
-                        {/* Price */}
-                        {inquiry.listing?.price && (
-                          <p className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                            ₦{inquiry.listing.price.toLocaleString()}
-                          </p>
-                        )}
-
-                        {/* Person Info */}
-                        <div className="flex items-center mt-3 text-sm text-slate-600 dark:text-slate-400">
-                          <UserCircleIcon className="w-5 h-5 mr-2" />
-                          <span>
-                            {activeTab === 'seller' 
-                              ? `From: ${inquiry.buyer?.name || 'Unknown'}`
-                              : `Seller: ${inquiry.seller?.name || 'Unknown'}`
-                            }
-                          </span>
-                        </div>
-
-                        {/* Initial Message */}
-                        {inquiry.initial_message && (
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 line-clamp-2 italic">
-                            "{inquiry.initial_message}"
-                          </p>
-                        )}
-
-                        {/* Date */}
-                        <p className="text-xs text-slate-500 mt-2">
-                          {new Date(inquiry.created_at).toLocaleDateString()} at {new Date(inquiry.created_at).toLocaleTimeString()}
-                        </p>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex flex-row sm:flex-col gap-2 mt-3 sm:mt-0 sm:ml-4">
-                        <button
-                          onClick={() => handleOpenConversation(inquiry)}
-                          className="px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors"
-                        >
-                          <ChatBubbleLeftIcon className="w-4 h-4 mr-1 sm:mr-2" />
-                          Chat
-                          <ChevronRightIcon className="w-4 h-4 ml-1 hidden sm:block" />
-                        </button>
-
-                        {activeTab === 'seller' && inquiry.status === 'open' && (
-                          <button
-                            onClick={() => handleStatusUpdate(inquiry.id, 'negotiating')}
-                            className="px-3 sm:px-4 py-1.5 sm:py-2 border border-yellow-500 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg text-xs sm:text-sm font-medium transition-colors"
-                          >
-                            <span className="hidden sm:inline">Mark </span>Negotiating
-                          </button>
-                        )}
-
-                        {inquiry.status !== 'purchased' && inquiry.status !== 'closed' && (
-                          <button
-                            onClick={() => handleStatusUpdate(inquiry.id, 'closed')}
-                            className="px-3 sm:px-4 py-1.5 sm:py-2 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-xs sm:text-sm font-medium transition-colors"
-                          >
-                            Close
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-        )}
-      </div>
+          )}
+      </TabPanel>
+      </Tabs>
     </div>
   );
 };

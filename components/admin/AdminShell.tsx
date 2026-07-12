@@ -30,7 +30,7 @@ import {
 } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { FeatureHero } from '../ui/FeatureHero';
-import { Tabs, TabList, Tab } from '../ui';
+import { Tabs, TabList, Tab, TabPanel } from '../ui';
 import { ShieldCheckIcon } from '@heroicons/react/24/outline';
 import { featureAccents } from '@lantern/shared/design';
 import { AdminAI } from './AdminAI';
@@ -535,7 +535,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           }
         />
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} aria-label="Admin sections" variant="pills">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdminTab)} aria-label="Admin sections" variant="pills" className="flex flex-col flex-1 min-h-0">
         <TabList className="overflow-x-auto pb-1 scrollbar-thin shrink-0 !border-0">
           {ADMIN_TABS.map((tab, index) => (
             <Tab
@@ -549,31 +549,32 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
             </Tab>
           ))}
         </TabList>
-        </Tabs>
 
         {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
         {error && <p className="text-sm text-lantern-error">{error}</p>}
         {success && <p className="text-sm text-lantern-success">{success}</p>}
-      </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-4">
-      {activeTab === 'overview' && (
+      <TabPanel value="overview">
         <AdminOverview
           stats={stats}
           activity={activity}
           onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
         />
-      )}
+        {auditEntries.length > 0 && (
+          <AdminAudit entries={auditEntries.slice(0, 8)} />
+        )}
+      </TabPanel>
 
-      {activeTab === 'analytics' && (
+      <TabPanel value="analytics">
         <AdminAnalyticsPanel
           analytics={analyticsData}
           periodDays={analyticsPeriodDays}
           onPeriodChange={setAnalyticsPeriodDays}
         />
-      )}
+      </TabPanel>
 
-      {activeTab === 'users' && (
+      <TabPanel value="users">
         <AdminUsers
           users={users}
           pagination={usersPagination}
@@ -586,9 +587,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onToggleBan={onToggleBan}
           onToggleAdmin={onTogglePlatformAdmin}
         />
-      )}
+      </TabPanel>
 
-      {activeTab === 'marketplace' && (
+      <TabPanel value="marketplace">
         <AdminMarketplace
           view={marketplaceView}
           onViewChange={setMarketplaceView}
@@ -612,9 +613,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           disputedOrdersTotal={disputedOrdersTotal}
           actionLoading={actionLoading}
         />
-      )}
+      </TabPanel>
 
-      {activeTab === 'reports' && (
+      <TabPanel value="reports">
         <AdminReports
           reports={reports}
           pagination={reportsPagination}
@@ -628,9 +629,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onResolve={onResolveReport}
           onBulkDismiss={onBulkDismissReports}
         />
-      )}
+      </TabPanel>
 
-      {activeTab === 'ai' && (
+      <TabPanel value="ai">
         <AdminAI
           analytics={aiAnalytics}
           usageByUser={aiUsageByUser}
@@ -640,21 +641,21 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           onResetQuota={onResetQuota}
           actionLoading={actionLoading}
         />
-      )}
+      </TabPanel>
 
-      {activeTab === 'communications' && (
+      <TabPanel value="communications">
         <AdminCommunications onSent={setSuccess} onError={setError} />
-      )}
+      </TabPanel>
 
-      {activeTab === 'moderation' && (
+      <TabPanel value="moderation">
         <AdminContentModeration onSuccess={setSuccess} onError={setError} />
-      )}
+      </TabPanel>
 
-      {activeTab === 'audit' && <AdminAudit entries={auditEntries} />}
-
-      {activeTab === 'overview' && auditEntries.length > 0 && (
-        <AdminAudit entries={auditEntries.slice(0, 8)} />
-      )}
+      <TabPanel value="audit">
+        <AdminAudit entries={auditEntries} />
+      </TabPanel>
+      </div>
+        </Tabs>
       </div>
 
       <UserDetailDrawer userId={selectedUserId} onClose={() => setSelectedUserId(null)} onUpdated={() => loadUsers(true)} />
