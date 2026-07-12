@@ -255,8 +255,7 @@ function Test-PagesUrl([string]$Url) {
 
 function Ensure-WebDist {
     $distPath = Join-Path $RepoRoot $OutputDir
-    if (Test-Path (Join-Path $distPath 'index.html')) { return $distPath }
-    Write-Step "dist/ not found - running npm run build:web ..."
+    Write-Step 'Running fresh web build (npm run build:web)...'
     Push-Location $RepoRoot
     try {
         npm run build:web

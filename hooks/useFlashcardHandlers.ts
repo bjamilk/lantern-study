@@ -8,8 +8,8 @@ import {
   buildFlashcardReviewQueue,
   getTodayStudyCounts,
   isNewFlashcard,
-  normalizeUserSettings,
 } from '@lantern/shared/settings';
+import { normalizeUserSettings } from '@lantern/shared/settings/userSettings';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { useTestStore } from '../stores/testStore';
