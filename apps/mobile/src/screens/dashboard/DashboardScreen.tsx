@@ -58,7 +58,7 @@ import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../serv
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
 import { featureAccents } from '@lantern/shared/design';
-import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityHeatmapGrid, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, type ActivityHeatLevel } from '@lantern/shared/utils';
 
 import { useTheme } from '../../theme';
 
@@ -312,7 +312,11 @@ export function DashboardScreen({ navigation }: Props) {
 
   const { isDark, colors } = useTheme();
 
-  const streak = serverStreak || stats?.currentStreak || 0;
+  const studyActivityStreak = useMemo(
+    () => computeStudyStreak(stats?.activityDays ?? []).current,
+    [stats?.activityDays]
+  );
+  const streak = Math.max(serverStreak, studyActivityStreak, stats?.currentStreak || 0);
 
   const level = stats?.userLevel;
 

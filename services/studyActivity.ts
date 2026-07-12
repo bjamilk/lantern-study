@@ -12,11 +12,15 @@ export function trackStudyActivity(type: ActivityType, amount = 1): void {
           console.info(`[Wallet] +${result.awarded} coins (balance ${result.walletBalance})`);
         }
       }
-      return fetchStudyActivity();
+      return fetchStudyActivity().then((days) => ({ days, result }));
     })
-    .then((days) => {
+    .then(({ days, result }) => {
       if (Array.isArray(days)) {
         useTestStore.getState().setStudyActivityDays(days);
+      }
+      const streak = result?.current_streak ?? result?.currentStreak;
+      if (typeof streak === 'number' && streak >= 0) {
+        window.dispatchEvent(new CustomEvent('lantern:streak-updated', { detail: { streak } }));
       }
     })
     .catch((err) => {

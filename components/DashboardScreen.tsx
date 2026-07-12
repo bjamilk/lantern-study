@@ -10,7 +10,7 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatColorForCount, getActivityHeatTailwindClass, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, type ActivityHeatLevel } from '@lantern/shared/utils';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { checkAnswerIsCorrect } from '../utils/helpers';
@@ -256,6 +256,12 @@ export default function DashboardScreen({
 
   // ── Gamification ──────────────────────────────────────────────────────────
   const { streakData, showDailyBonus, bonusXP, dismissBonus } = useLoginStreak();
+
+  const studyActivityStreak = useMemo(
+    () => computeStudyStreak(studyActivityDays).current,
+    [studyActivityDays]
+  );
+  const displayStreak = Math.max(serverStreak, studyActivityStreak);
   const xpInfo = useMemo(() => getXPLevel(currentUser.points), [currentUser.points]);
   const { lowDataMode } = useUIStore();
 
@@ -733,7 +739,7 @@ export default function DashboardScreen({
       {/* ═══════════════ HERO ═══════════════ */}
       <DashboardHero
         userName={currentUser.firstName || currentUser.name}
-        streak={serverStreak || streakData.streak}
+        streak={displayStreak}
         points={currentUser.points}
         xpLevel={xpInfo.level}
         xpTitle={xpInfo.title}
@@ -802,7 +808,7 @@ export default function DashboardScreen({
               completed: q.completed,
               rewardXp: (q as any).rewardXp ?? (q as any).reward_xp,
             }))}
-            streak={serverStreak || streakData.streak}
+            streak={displayStreak}
             streakFreezes={streakFreezes}
             onPurchaseStreakFreeze={onPurchaseStreakFreeze}
             questsLoaded={questsLoaded}

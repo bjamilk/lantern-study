@@ -33,7 +33,7 @@ export function loadLoginStreak(): LoginStreakData {
     const raw = localStorage.getItem(STREAK_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return { streak: 1, longestStreak: 1, lastLoginDate: todayStr(), bonusClaimedDate: null };
+  return { streak: 0, longestStreak: 0, lastLoginDate: null, bonusClaimedDate: null };
 }
 
 export function recordLoginAndGetStreak(): { data: LoginStreakData; isNewDay: boolean; bonusXP: number } {

@@ -38,7 +38,7 @@ import {
     exchangeCookieSession,
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
-import { mapMessageFromApi } from '@lantern/shared/utils';
+import { mapMessageFromApi, computeStudyStreak } from '@lantern/shared/utils';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
@@ -152,7 +152,10 @@ export function useAppEffects({
         }
 
         if (results[2].status === 'fulfilled') {
-            setStudyActivityDays(Array.isArray(results[2].value) ? results[2].value : []);
+            const days = Array.isArray(results[2].value) ? results[2].value : [];
+            setStudyActivityDays(days);
+            const computedStreak = computeStudyStreak(days).current;
+            setServerStreak((prev) => Math.max(prev, computedStreak));
         } else {
             console.warn('[Gamification] Study activity fetch failed:', results[2].reason);
         }
@@ -190,6 +193,17 @@ export function useAppEffects({
     }, [setCurrentUser, setStudyActivityDays]);
 
     useDailyStudyReminder(currentUser);
+
+    useEffect(() => {
+        const onStreakUpdated = (event: Event) => {
+            const streak = (event as CustomEvent<{ streak?: number }>).detail?.streak;
+            if (typeof streak === 'number' && streak >= 0) {
+                setServerStreak(streak);
+            }
+        };
+        window.addEventListener('lantern:streak-updated', onStreakUpdated);
+        return () => window.removeEventListener('lantern:streak-updated', onStreakUpdated);
+    }, []);
 
     const refreshDmThreadsForUser = useCallback(async (userId: string) => {
         const [fetchedThreads, dmUnreadCounts] = await Promise.all([

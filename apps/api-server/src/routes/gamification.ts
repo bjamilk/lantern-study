@@ -660,7 +660,16 @@ router.post(
       await cacheService.delete(`user:preferences:${userId}`);
     }
 
-    res.json({ success: true, data: { ...data, walletBalance, awarded } });
+    res.json({
+      success: true,
+      data: {
+        ...data,
+        walletBalance,
+        awarded,
+        current_streak: streak.current_streak,
+        longest_streak: streak.longest_streak,
+      },
+    });
   })
 );
 
