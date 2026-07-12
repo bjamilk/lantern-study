@@ -2,7 +2,6 @@ import {
   isQuestionTestable,
   shuffleArray,
   scoreDuelAnswers,
-  checkAndAwardBadges,
 } from '../utils/challengeScoring';
 import type { GroupChallenge, ChallengeConfig, ChallengeParticipant } from '../types/challenges';
 import type { User } from '../types';
@@ -446,33 +445,25 @@ export class ChallengeService {
   }
 
   private async awardWinner(winnerId: string): Promise<void> {
-    const raw = await this.supabaseService.getUserById(winnerId);
-    if (!raw) return;
+    await this.supabaseService.incrementUserStatsAndAwardBadges(winnerId, { gamesWon: 1 });
+  }
 
-    const row = raw as any;
-    const user: User = {
-      id: row.id,
-      name: row.name,
-      points: row.points || 0,
-      badges: row.badges || [],
-      stats: row.stats || {},
-      avatarUrl: row.avatar_url || row.avatarUrl,
-    };
-
-    const stats = { ...(user.stats || {}), gamesWon: (user.stats?.gamesWon || 0) + 1 };
-    const { updatedUser } = checkAndAwardBadges({ ...user, stats });
-    await this.supabaseService.updateUser(winnerId, {
-      stats: updatedUser.stats,
-      badges: updatedUser.badges,
-      points: updatedUser.points,
-    });
+  private async recordDuelActivity(challengerId: string, opponentId: string): Promise<void> {
+    await Promise.all([
+      this.supabaseService.recordStudyActivity(challengerId, 'game', 1).catch((err) => {
+        logger.warn('Failed to record duel activity for challenger', { challengerId, err });
+      }),
+      this.supabaseService.recordStudyActivity(opponentId, 'game', 1).catch((err) => {
+        logger.warn('Failed to record duel activity for opponent', { opponentId, err });
+      }),
+    ]);
   }
 
   async submitChallenge(
     challengeId: string,
     userId: string,
     answers: Record<string, any>
-  ): Promise<GroupChallenge> {
+  ): Promise<GroupChallenge & { gamification?: Awaited<ReturnType<SupabaseService['syncGamificationProgress']>> }> {
     const challenge = await this.getChallenge(challengeId, userId);
     if (!challenge) throw Object.assign(new Error('Challenge not found'), { statusCode: 404 });
     if (challenge.status !== 'accepted') {
@@ -542,6 +533,8 @@ export class ChallengeService {
         await this.awardWinner(winnerId);
       }
 
+      await this.recordDuelActivity(challenge.challengerId, challenge.opponentId);
+
       const [challengerProfile, opponentProfile] = await Promise.all([
         this.fetchProfileBasics(challenge.challengerId),
         this.fetchProfileBasics(challenge.opponentId),
@@ -567,7 +560,14 @@ export class ChallengeService {
       ]);
 
       await cacheService.deletePattern(`challenges:*`);
-      return this.mapChallenge(completed, userId);
+      const gamification = await this.supabaseService.syncGamificationProgress(userId).catch((err) => {
+        logger.warn('Failed to sync gamification after duel completion', { userId, err });
+        return undefined;
+      });
+      return {
+        ...this.mapChallenge(completed, userId),
+        ...(gamification ? { gamification } : {}),
+      };
     }
 
     // Notify opponent that user finished (optional lightweight notification)
@@ -615,6 +615,7 @@ export class ChallengeService {
     if (error) throw error;
 
     await this.awardWinner(winnerId);
+    await this.recordDuelActivity(challenge.challengerId, challenge.opponentId);
 
     const [quitterProfile, winnerProfile] = await Promise.all([
       this.fetchProfileBasics(userId),

@@ -20,6 +20,8 @@ import {
 } from '../services/challenges';
 import { hasValidSession } from '../services/supabase';
 import { trackStudyActivity } from '../services/studyActivity';
+import { syncGamificationProgress } from '../services/gamificationStreak';
+import { applyGamificationSync } from '../utils/applyGamificationSync';
 
 interface UseGameHandlersParams {
   addNotification: (message: string) => Promise<void>;
@@ -93,6 +95,17 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     setAppMode(AppMode.GAME_RESULTS);
   }, [setActiveGameSession, setAppMode]);
 
+  const refreshGamification = useCallback(async () => {
+    const user = useAuthStore.getState().currentUser;
+    if (!user) return;
+    try {
+      const synced = await syncGamificationProgress();
+      applyGamificationSync(user, synced, setCurrentUser, addNotification);
+    } catch (error) {
+      console.warn('[Gamification] Failed to refresh after duel:', error);
+    }
+  }, [setCurrentUser, addNotification]);
+
   const finalizeChallengeSubmit = useCallback(async (
     session: GameSession,
     answers: Record<string, UserAnswerRecord>
@@ -115,7 +128,12 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
         awaitingOpponent: updated.status === 'accepted' && !!updated.myParticipant?.finishedAt && !updated.opponentParticipant?.finishedAt,
       };
       setActiveGameSession(completedSession);
-      trackStudyActivity('game', 1);
+
+      if (updated.gamification) {
+        applyGamificationSync(currentUser, updated.gamification, setCurrentUser, addNotification);
+      } else if (updated.status === 'completed') {
+        await refreshGamification();
+      }
 
       if (updated.status === 'completed') {
         setAppMode(AppMode.GAME_RESULTS);
@@ -127,7 +145,7 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
       console.error('Failed to submit challenge:', error);
       alert('Failed to submit your duel answers. Please try again.');
     }
-  }, [currentUser, setActiveGameSession, setAppMode, addNotification, setCurrentUser]);
+  }, [currentUser, setActiveGameSession, setAppMode, addNotification, setCurrentUser, refreshGamification]);
 
   const handleSendChallenge = useCallback(async (
     config: Omit<TestConfig, 'questionIds' | 'groupId'>,
@@ -259,6 +277,7 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
           awaitingOpponent: false,
         });
         setAppMode(AppMode.GAME_RESULTS);
+        void refreshGamification();
       } catch (error) {
         console.error('Failed to poll challenge status:', error);
       }
@@ -278,6 +297,7 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     activeGameSession?.questions,
     setActiveGameSession,
     setAppMode,
+    refreshGamification,
   ]);
 
   const handleGameAnswer = useCallback((

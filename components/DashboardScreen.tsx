@@ -627,7 +627,7 @@ export default function DashboardScreen({
         if(!aEarned && bEarned) return 1;
         return 0;
     });
-  }, [currentUser.badges]);
+  }, [currentUser.badges, currentUser.stats]);
 
   const getQuestionTypeLabel = (type: QuestionType) => {
     const labels: Record<QuestionType, string> = {

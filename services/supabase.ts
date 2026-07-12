@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Group, UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
+import { mapUserFromApi } from '@lantern/shared/utils/apiMappers'
 import {
   listingsCacheKey,
   marketplaceCategoryAnalyticsCache,
@@ -1801,7 +1802,7 @@ export const fetchUserProfile = async (userId: string) => {
 
     const result = await response.json();
     console.log('Fetched user profile:', result.data);
-    return result.data;
+    return mapUserFromApi(result.data);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (!msg.includes('404') && !msg.includes('status: 404')) {

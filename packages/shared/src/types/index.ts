@@ -453,6 +453,12 @@ export interface GroupChallenge {
   participants?: ChallengeParticipant[];
   myParticipant?: ChallengeParticipant;
   opponentParticipant?: ChallengeParticipant;
+  gamification?: {
+    points: number;
+    badges: Badge[];
+    stats: UserStats;
+    awardedBadges?: Badge[];
+  };
 }
 
 export interface StudySessionData extends TestSessionData {}

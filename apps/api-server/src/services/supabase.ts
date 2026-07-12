@@ -11,6 +11,7 @@ import {
   MARKETPLACE_BUDGET_TYPES,
 } from '@lantern/shared/utils/server';
 import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
+import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
@@ -18,6 +19,13 @@ import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/u
 import { assertImageMagicBytes, clampSignedUrlTtl } from '../utils/fileValidation';
 
 type UserStats = typeof initialUserStats;
+
+type GamificationSyncResult = {
+  points: number;
+  badges: User['badges'];
+  stats: UserStats;
+  awardedBadges: User['badges'];
+};
 
 type ProfileSenderRow = {
   id?: string;
@@ -941,6 +949,10 @@ export class SupabaseService {
       await cacheService.invalidateUserCache(memberId);
     }
     await cacheService.deletePattern('groups:list:*');
+
+    await this.incrementUserStatsAndAwardBadges(userId, { groupsCreated: 1 }).catch((err) => {
+      logger.warn('Failed to increment groupsCreated gamification', { userId, err });
+    });
 
     // Transform snake_case to camelCase
     return {
@@ -4220,6 +4232,7 @@ export class SupabaseService {
   }
 
   private profileToGamificationUser(profile: Record<string, unknown>, statsOverride?: Partial<UserStats>): User {
+    const normalizedStats = mapUserStatsFromApi(profile.stats || {});
     return {
       id: String(profile.id),
       name: String(profile.name || ''),
@@ -4229,13 +4242,47 @@ export class SupabaseService {
       avatarUrl: String(profile.avatar_url || profile.avatarUrl || ''),
       points: Number(profile.points) || 0,
       badges: (profile.badges as User['badges']) || [],
-      stats: { ...initialUserStats, ...(profile.stats as UserStats), ...(statsOverride || {}) },
+      stats: { ...initialUserStats, ...normalizedStats, ...(statsOverride || {}) },
     } as User;
+  }
+
+  async incrementUserStatsAndAwardBadges(
+    userId: string,
+    increments: Partial<UserStats>
+  ): Promise<GamificationSyncResult> {
+    const profile = await this.getUserById(userId);
+    if (!profile) {
+      throw new Error('User not found');
+    }
+
+    const base = this.profileToGamificationUser(profile as unknown as Record<string, unknown>);
+    const stats = { ...base.stats };
+    for (const key of Object.keys(increments) as (keyof UserStats)[]) {
+      const delta = increments[key];
+      if (typeof delta === 'number' && delta !== 0) {
+        stats[key] = (stats[key] || 0) + delta;
+      }
+    }
+
+    const { updatedUser, awardedBadges } = checkAndAwardBadges({ ...base, stats });
+    await this.updateUser(userId, {
+      points: updatedUser.points,
+      badges: updatedUser.badges,
+      stats: updatedUser.stats,
+    });
+    await cacheService.delete(`user:${userId}`);
+
+    return {
+      points: updatedUser.points,
+      badges: updatedUser.badges,
+      stats: updatedUser.stats,
+      awardedBadges,
+    };
   }
 
   async syncGamificationProgress(
     userId: string
-  ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
+  ): Promise<GamificationSyncResult> {
     return this.syncGamificationProgressWithStats(userId, {});
   }
 
@@ -4246,7 +4293,7 @@ export class SupabaseService {
       stats?: Partial<UserStats>;
       activityDate?: string;
     } = {}
-  ): Promise<{ points: number; badges: User['badges']; stats: UserStats; awardedBadges: User['badges'] }> {
+  ): Promise<GamificationSyncResult> {
     const profile = await this.getUserById(userId);
     if (!profile) {
       throw new Error('User not found');
@@ -4260,6 +4307,7 @@ export class SupabaseService {
       badges: updatedUser.badges,
       stats: updatedUser.stats,
     });
+    await cacheService.delete(`user:${userId}`);
 
     return {
       points: updatedUser.points,
@@ -4280,8 +4328,7 @@ export class SupabaseService {
     }
 
     const stats = {
-      ...initialUserStats,
-      ...((profile.stats as UserStats) || {}),
+      ...this.profileToGamificationUser(profile as unknown as Record<string, unknown>).stats,
     };
     stats.testsCompleted = (stats.testsCompleted || 0) + 1;
     if (score >= 80) {
@@ -4589,6 +4636,10 @@ export class SupabaseService {
 
       // Invalidate cache
       await cacheService.invalidateGroupCache(groupId);
+
+      await this.incrementUserStatsAndAwardBadges(userId, { questionsCreated: 1 }).catch((err) => {
+        logger.warn('Failed to increment questionsCreated gamification', { userId, err });
+      });
 
       return data;
     } else {

@@ -40,6 +40,7 @@ import {
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
 import { mapMessageFromApi, computeStudyStreak } from '@lantern/shared/utils';
+import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
 import { saveBudgetExtras } from '../services/budgetExtrasSync';
@@ -245,7 +246,7 @@ export function useAppEffects({
             phoneNumber: (profile.phone as string) || '',
             points: (profile.points as number) || 0,
             badges: (profile.badges as User['badges']) || [],
-            stats: (profile.stats as User['stats']) || {},
+            stats: mapUserStatsFromApi(profile.stats || {}),
             settings: normalizeUserSettings(profile.settings),
             username: (profile.username as string) || undefined,
             firstName: (profile.first_name as string) || undefined,
