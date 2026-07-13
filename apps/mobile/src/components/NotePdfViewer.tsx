@@ -4,7 +4,7 @@ import { WebView } from 'react-native-webview';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
 import type { NoteAttachment } from '../services/notes';
-import { fetchNoteAttachmentUrl } from '../services/notes';
+import { refreshNoteAttachmentUrl } from '../services/notes';
 import { useTheme } from '../theme';
 
 interface NotePdfViewerProps {
@@ -44,7 +44,7 @@ export function NotePdfViewer({ noteId, attachment, height = 420 }: NotePdfViewe
 
     (async () => {
       try {
-        const result = await fetchNoteAttachmentUrl(noteId, attachment.id);
+        const result = await refreshNoteAttachmentUrl(noteId, attachment.id);
         if (cancelled) return;
         if (!result?.url) {
           throw new Error('Document URL unavailable');
