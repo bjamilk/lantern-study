@@ -1,35 +1,52 @@
-# Keep EAS Build archives small and free of junk that can corrupt builds.
-# (eas build uploads from apps/mobile; ignores must live here or at monorepo root.)
+# IMPORTANT: when .easignore exists, EAS uses it INSTEAD of .gitignore.
+# Keep both dependency ignores and local junk exclusions here.
 
-# Native / local build output
+# Dependencies & caches
+node_modules/
+.expo/
+.expo-*/
+.turbo/
+.metro-health-check*
+
+# Build outputs
+dist/
+web-build/
+coverage/
+
+# Native folders (local `expo prebuild` / run:android artifacts ~2GB)
 /android
 /ios
 .kotlin/
 
-# Bundles & caches
-.expo/
-.expo-*/
-dist/
-web-build/
-.turbo/
-
-# Local APKs accidentally checked into the mobile folder (were bloating the 497MB upload)
+# Local APKs / bundles that were bloating uploads to ~500MB
 *.apk
 *.aab
+**/*.apk
+**/*.aab
 
-# Env / secrets / local tooling
+# Env / secrets
 .env
 .env.*
 !.env.example
 
-# Tests / docs not needed for native compile
+# Tests (not needed for native compile)
 **/*.test.ts
 **/*.test.tsx
 **/__tests__/
-coverage/
+**/*.spec.ts
 
-# Misc
+# Tooling / scripts / logs
+scripts/
 *.log
 .DS_Store
 tmp/
-scripts/
+*.pem
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.tsbuildinfo
+npm-debug.*
+yarn-debug.*
+yarn-error.*
