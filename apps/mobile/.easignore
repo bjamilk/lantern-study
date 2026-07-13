@@ -1,0 +1,35 @@
+# Keep EAS Build archives small and free of junk that can corrupt builds.
+# (eas build uploads from apps/mobile; ignores must live here or at monorepo root.)
+
+# Native / local build output
+/android
+/ios
+.kotlin/
+
+# Bundles & caches
+.expo/
+.expo-*/
+dist/
+web-build/
+.turbo/
+
+# Local APKs accidentally checked into the mobile folder (were bloating the 497MB upload)
+*.apk
+*.aab
+
+# Env / secrets / local tooling
+.env
+.env.*
+!.env.example
+
+# Tests / docs not needed for native compile
+**/*.test.ts
+**/*.test.tsx
+**/__tests__/
+coverage/
+
+# Misc
+*.log
+.DS_Store
+tmp/
+scripts/

@@ -40,7 +40,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: IS_DEV_VARIANT ? 'Lantern Study Dev' : 'Lantern Study',
   slug: 'lantern-study',
-  version: '1.0.0',
+  version: '1.0.1',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
@@ -110,8 +110,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   updates: {
     url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
+    checkAutomatically: 'ON_LOAD',
     ...(IS_PRODUCTION_BUILD
-      ? { fallbackToCacheTimeout: 30000 }
+      ? {
+          // Prefer a quick launch; still fetch update asynchronously after boot.
+          fallbackToCacheTimeout: 0,
+        }
       : { enabled: false }),
   },
 

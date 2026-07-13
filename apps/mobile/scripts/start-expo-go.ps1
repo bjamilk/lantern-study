@@ -75,12 +75,26 @@ if ($lanIp) {
 
 # Warn if Metro port is busy (skip slow Get-NetTCPConnection when possible)
 
-$expoArgs = @('expo', 'start', '--port', '8081', '--go', '--offline')
+$expoArgs = @('expo', 'start', '--port', '8081', '--go')
 if ($Tunnel) {
+  # Tunnel needs network; --offline breaks ngrok and unsigned manifests.
   $expoArgs += '--tunnel'
   Write-Host "Starting Expo Go with tunnel (scan QR with Expo Go app on your phone)..."
 } else {
+  # Prefer online LAN so Expo can sign the development manifest (required by modern Expo Go).
+  $expoArgs += '--lan'
   Write-Host "Starting Expo Go on LAN (scan QR with Expo Go - same Wi-Fi as this PC)..."
+}
+
+# Prefer production cloud endpoints so physical devices do not hit unreachable localhost Supabase.
+if (-not $env:EXPO_PUBLIC_API_URL) {
+  $env:EXPO_PUBLIC_API_URL = 'https://lantern-study-api.onrender.com'
+}
+if (-not $env:EXPO_PUBLIC_SUPABASE_URL) {
+  $env:EXPO_PUBLIC_SUPABASE_URL = 'https://tiizkjhbrnaibaagmurl.supabase.co'
+}
+if (-not $env:EXPO_PUBLIC_SUPABASE_ANON_KEY -and (Test-Path $dotenvPath) -eq $false) {
+  Write-Host "WARNING: EXPO_PUBLIC_SUPABASE_ANON_KEY not set. Add it to apps/mobile/.env for cloud auth."
 }
 
 Write-Host ""

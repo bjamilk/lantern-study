@@ -847,6 +847,14 @@ function RootNavigatorInner() {
     }
   }, [isInitialized, user, onboardingChecked]);
 
+  // Never leave the native splash forever if auth/bootstrap stalls (looks like a broken install).
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void SplashScreen.hideAsync();
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
 
 
   if (!isInitialized || (user && !onboardingChecked && !isPasswordRecovery)) {

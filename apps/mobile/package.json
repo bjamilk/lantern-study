@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "start": "expo start --offline",
-    "start:go": "expo start --port 8081 --go --offline",
-    "start:go:tunnel": "expo start --port 8081 --go --tunnel --offline",
+    "start:go": "expo start --port 8081 --go --lan",
+    "start:go:tunnel": "expo start --port 8081 --go --tunnel",
     "start:go:script": "powershell -ExecutionPolicy Bypass -File ./scripts/start-expo-go.ps1",
     "start:go:tunnel:script": "powershell -ExecutionPolicy Bypass -File ./scripts/start-expo-go.ps1 -Tunnel",
     "start:offline": "expo start --offline",
