@@ -53,20 +53,30 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
   const settings = useSettingsStore.getState().settings;
   const activityDays = useStatsStore.getState().stats?.activityDays ?? [];
   const today = getTodayStudyCounts(activityDays);
-  return buildFlashcardReviewQueue(cards, {
+  const queue = buildFlashcardReviewQueue(cards, {
     srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
     newCardsIntroducedToday: today.newFlashcards,
   });
+  // If SRS caps leave an empty queue but the deck has cards, still allow study.
+  return queue.length > 0 ? queue : cards;
 }
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
-  const { reduceMotion } = useTheme();
+  const { reduceMotion, colors } = useTheme();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Review';
   const user = useAuthStore(s => s.user);
   const deckCards = useFlashcardStore(s => s.flashcards[deckId] ?? EMPTY_CARDS);
   const isLoading = useFlashcardStore(s => s.isLoading);
+  const fetchFlashcards = useFlashcardStore(s => s.fetchFlashcards);
   const reviewFlashcard = useFlashcardStore(s => s.reviewFlashcard);
+
+  useEffect(() => {
+    if (!deckId) return;
+    if (deckCards.length === 0) {
+      void fetchFlashcards(deckId);
+    }
+  }, [deckId, deckCards.length, fetchFlashcards]);
 
   const queueSnapshotRef = useRef<Flashcard[] | null>(null);
   if (!queueSnapshotRef.current && deckCards.length > 0) {
@@ -131,35 +141,49 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     [currentCard, user?.id, grading, reviewFlashcard, deckId]
   );
 
-  if (!sessionTotal && deckCards.length === 0) {
-    if (isLoading) {
-      return (
-        <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-          <Text className="text-lg font-semibold text-lantern-text mb-2">Loading cards…</Text>
-          <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-            Preparing your review session.
-          </Text>
-          <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
-        </SafeAreaView>
-      );
-    }
+  const shellStyle = { flex: 1, backgroundColor: colors.background };
 
+  if (!deckId) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-lg font-semibold text-lantern-text mb-2">Nothing to review</Text>
-        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
-          Add cards to this deck or come back when cards are due.
+      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
+          Deck not found
+        </Text>
+        <Button onPress={() => navigation.goBack()}>Go back</Button>
+      </SafeAreaView>
+    );
+  }
+
+  if (sessionTotal === 0) {
+    const stillLoading = isLoading || deckCards.length === 0;
+    return (
+      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+        <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
+          {stillLoading ? 'Loading cards…' : 'Nothing to review'}
+        </Text>
+        <Text
+          className="text-sm text-lantern-text-secondary text-center mb-6"
+          style={{ color: colors.textSecondary }}
+        >
+          {stillLoading
+            ? 'Preparing your review session.'
+            : 'Add cards to this deck or come back when cards are due.'}
         </Text>
         <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
       </SafeAreaView>
     );
   }
 
-  if (isComplete) {
+  if (isComplete || !currentCard) {
     return (
-      <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center px-6" edges={['top']}>
-        <Text className="text-2xl font-bold text-lantern-primary mb-2">Session complete</Text>
-        <Text className="text-sm text-lantern-text-secondary text-center mb-6">
+      <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
+        <Text className="text-2xl font-bold text-lantern-primary mb-2" style={{ color: colors.primary }}>
+          Session complete
+        </Text>
+        <Text
+          className="text-sm text-lantern-text-secondary text-center mb-6"
+          style={{ color: colors.textSecondary }}
+        >
           You reviewed {sessionTotal} card{sessionTotal !== 1 ? 's' : ''} in {deckName}.
         </Text>
         <Button onPress={() => navigation.goBack()}>Done</Button>
@@ -171,12 +195,12 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
 
   return (
-    <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+    <SafeAreaView style={shellStyle} edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center justify-between">
         <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
           Exit
         </Button>
-        <Text className="text-sm font-medium text-lantern-text-secondary">
+        <Text className="text-sm font-medium text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
           {progress} / {sessionTotal}
         </Text>
       </View>
@@ -184,12 +208,15 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
       <View className="h-1 mx-4 rounded-full bg-lantern-background-secondary overflow-hidden mb-2">
         <View
           className="h-full bg-lantern-primary rounded-full"
-          style={{ width: `${(progress / sessionTotal) * 100}%` }}
+          style={{ width: `${(progress / sessionTotal) * 100}%`, backgroundColor: colors.primary }}
         />
       </View>
 
       {index === 0 && !showBack ? (
-        <Text className="text-xs text-center text-lantern-text-secondary px-6 mb-3">
+        <Text
+          className="text-xs text-center text-lantern-text-secondary px-6 mb-3"
+          style={{ color: colors.textSecondary }}
+        >
           Tap to flip · Swipe to grade (left Again, right Good, up Easy, down Hard)
         </Text>
       ) : null}
@@ -197,7 +224,10 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
       <View className="flex-1 px-4 justify-center">
         {nextCard ? (
           <View className="absolute left-4 right-4 top-1/2 -mt-32 opacity-30 scale-95">
-            <View className="min-h-[260px] rounded-2xl bg-lantern-surface border border-lantern-border" />
+            <View
+              className="min-h-[260px] rounded-2xl bg-lantern-surface border border-lantern-border"
+              style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+            />
           </View>
         ) : null}
 

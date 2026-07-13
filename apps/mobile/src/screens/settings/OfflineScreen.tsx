@@ -46,14 +46,7 @@ export default function OfflineScreen() {
   const { colors } = useTheme();
   const network = useNetworkStatus();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
-  const connectionStatus = getConnectionStatus({
-    isOnline: network.isConnected,
-    lowDataMode,
-    pendingSyncCount: pendingResults.filter(r => !r.synced).length,
-    isSyncing,
-    lastSyncedAt: lastSyncAt,
-  });
-  
+
   // Download options modal state
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
@@ -65,7 +58,7 @@ export default function OfflineScreen() {
     includeExplanations: true,
     recentlyAddedDays: 0, // 0 = all questions
   });
-  
+
   const {
     downloadedTests,
     pendingResults,
@@ -80,6 +73,16 @@ export default function OfflineScreen() {
     clearAllOfflineData,
     downloadTest,
   } = useOfflineStore();
+
+  // Must run after useOfflineStore — earlier access caused a TDZ crash (blank screen).
+  const connectionStatus = getConnectionStatus({
+    isOnline: network.isConnected,
+    lowDataMode,
+    pendingSyncCount: pendingResults.filter(r => !r.synced).length,
+    isSyncing,
+    lastSyncedAt: lastSyncAt,
+  });
+
   const startQuestionSet = useTestStore(s => s.startQuestionSet);
 
   // flashcard offline data
