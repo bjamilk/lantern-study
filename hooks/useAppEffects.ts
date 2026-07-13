@@ -12,7 +12,7 @@ import { resolvePlatformAdmin } from '../utils/platformAdmin';
 import {
     supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
-    fetchDecks, fetchFlashcards,
+    fetchDecks, fetchAllFlashcards,
     fetchTestResults, fetchUserQuestionStats,
     fetchNotifications,
     fetchGroupUnreadCounts, fetchDMUnreadCounts, fetchDmThreads,
@@ -585,7 +585,7 @@ export function useAppEffects({
             // Phase 2: deferred heavy loads (paginated / background)
             const deferredResults = await Promise.allSettled([
                 fetchDecks(userId),
-                fetchFlashcards(undefined, userId, { page: 1, limit: 200 }),
+                fetchAllFlashcards(undefined, userId),
                 fetchTestResults(userId, { limit: 50 }),
                 fetchUserQuestionStats(userId),
                 fetchOfflineBundles(userId),
@@ -697,17 +697,8 @@ export function useAppEffects({
                 void useNotesStore.getState().loadNotes();
 
                 if (flashcardsResult.status === 'fulfilled') {
-                    setFlashcards(flashcardsResult.value.map((fc: any) => ({
-                        id: fc.id,
-                        deckId: fc.deck_id,
-                        type: fc.type,
-                        front: fc.front,
-                        back: fc.back,
-                        clozeText: fc.cloze_text,
-                        srsData: fc.srs_data,
-                        tags: fc.tags,
-                        createdAt: fc.created_at
-                    })));
+                    // Already normalized via fetchAllFlashcards → mapFlashcardsFromApi
+                    setFlashcards(flashcardsResult.value);
                 }
 
                 // --- [6] Test results ---

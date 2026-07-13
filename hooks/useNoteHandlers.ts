@@ -9,7 +9,7 @@ import { runNoteFileImport } from '../utils/runNoteFileImport';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateQuestions } from '../services/ai';
-import { createDeck, createFlashcard, fetchFlashcards } from '../services/supabase';
+import { createDeck, createFlashcard, fetchAllFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useToastStore } from '../stores/toastStore';
@@ -216,22 +216,7 @@ export function useNoteHandlers(currentUserId?: string) {
 
       const flashcardStore = useFlashcardStore.getState();
       flashcardStore.updateDecks((prev) => [...prev, deck]);
-      const fetchedFlashcards = await fetchFlashcards(undefined, currentUserId);
-      flashcardStore.setFlashcards(
-        fetchedFlashcards.map((fc: any) => ({
-          id: fc.id,
-          deckId: fc.deck_id,
-          type: fc.type,
-          front: fc.front,
-          back: fc.back,
-          clozeText: fc.cloze_text,
-          imageUrl: fc.image_url,
-          occlusionData: fc.occlusion_data,
-          srsData: fc.srs_data,
-          tags: fc.tags,
-          createdAt: fc.created_at,
-        }))
-      );
+      flashcardStore.setFlashcards(await fetchAllFlashcards(undefined, currentUserId));
 
       return { deck, count: generated.length };
     },

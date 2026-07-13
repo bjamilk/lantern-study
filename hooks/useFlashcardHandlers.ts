@@ -17,15 +17,17 @@ import { trackStudyActivity } from '../services/studyActivity';
 import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
-    createFlashcard, fetchFlashcards, updateFlashcard, reviewFlashcard, deleteFlashcard,
+    createFlashcard, fetchFlashcards, fetchAllFlashcards, updateFlashcard, reviewFlashcard, deleteFlashcard,
     resetDeckStatistics, exportDeck, importDeck, exportDeckCsv, importDeckCsv, importDeckApkg, fetchDecks
 } from '../services/supabase';
 import { aiGenerateFlashcards } from '../services/ai';
 import { buildFlashcardSourceFromTestResult } from '../utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { navigateForAppMode } from '../utils/appNavigation';
+import { mapFlashcardsFromApi } from '@lantern/shared/utils';
 
 const srsReviewInFlight = new Set<string>();
+const FLASHCARD_PAGE_SIZE = 100;
 
 export function useFlashcardHandlers() {
     const { currentUser } = useAuthStore();
@@ -48,31 +50,7 @@ export function useFlashcardHandlers() {
     const loadDeckFlashcards = useCallback(async (deckId: string) => {
         if (!currentUser) return;
         try {
-            const mapFetched = (fetched: any[]) => (fetched || []).map((fc: any) => ({
-                id: fc.id,
-                deckId: fc.deck_id,
-                type: fc.type,
-                front: fc.front,
-                back: fc.back,
-                clozeText: fc.cloze_text,
-                imageUrl: fc.image_url,
-                occlusionData: fc.occlusion_data,
-                srsData: fc.srs_data,
-                tags: fc.tags,
-                createdAt: fc.created_at
-            }));
-
-            let page = 1;
-            let allMapped: ReturnType<typeof mapFetched> = [];
-            let batchSize = 0;
-            do {
-                const fetched = await fetchFlashcards(deckId, currentUser.id, { page, limit: 500 });
-                const mapped = mapFetched(fetched);
-                batchSize = mapped.length;
-                allMapped = [...allMapped, ...mapped];
-                page += 1;
-            } while (batchSize === 500);
-
+            const allMapped = await fetchAllFlashcards(deckId, currentUser.id);
             updateFlashcards(prev => [
                 ...prev.filter(fc => fc.deckId !== deckId),
                 ...allMapped,
@@ -173,20 +151,7 @@ export function useFlashcardHandlers() {
                     srsData: data.srsData,
                     tags: data.tags
                 });
-                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
-                setFlashcards(fetchedFlashcards.map((fc: any) => ({
-                    id: fc.id,
-                    deckId: fc.deck_id,
-                    type: fc.type,
-                    front: fc.front,
-                    back: fc.back,
-                    clozeText: fc.cloze_text,
-                    imageUrl: fc.image_url,
-                    occlusionData: fc.occlusion_data,
-                    srsData: fc.srs_data,
-                    tags: fc.tags,
-                    createdAt: fc.created_at
-                })));
+                setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
             } else {
                 await createFlashcard({
                     deckId: data.deckId!,
@@ -200,20 +165,7 @@ export function useFlashcardHandlers() {
                     tags: data.tags,
                     userId: currentUser.id,
                 });
-                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
-                setFlashcards(fetchedFlashcards.map((fc: any) => ({
-                    id: fc.id,
-                    deckId: fc.deck_id,
-                    type: fc.type,
-                    front: fc.front,
-                    back: fc.back,
-                    clozeText: fc.cloze_text,
-                    imageUrl: fc.image_url,
-                    occlusionData: fc.occlusion_data,
-                    srsData: fc.srs_data,
-                    tags: fc.tags,
-                    createdAt: fc.created_at
-                })));
+                setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
             }
             closeModal('createFlashcard');
         } catch (error) {
@@ -315,20 +267,7 @@ export function useFlashcardHandlers() {
                 });
             }
 
-            const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
-            setFlashcards(fetchedFlashcards.map((fc: any) => ({
-                id: fc.id,
-                deckId: fc.deck_id,
-                type: fc.type,
-                front: fc.front,
-                back: fc.back,
-                clozeText: fc.cloze_text,
-                imageUrl: fc.image_url,
-                occlusionData: fc.occlusion_data,
-                srsData: fc.srs_data,
-                tags: fc.tags,
-                createdAt: fc.created_at
-            })));
+            setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
 
             alert(`Successfully generated ${cardsToCreate.length} flashcard(s)!`);
         } catch (error) {
@@ -388,22 +327,7 @@ export function useFlashcardHandlers() {
                     });
                 }
 
-                const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
-                setFlashcards(
-                    fetchedFlashcards.map((fc: any) => ({
-                        id: fc.id,
-                        deckId: fc.deck_id,
-                        type: fc.type,
-                        front: fc.front,
-                        back: fc.back,
-                        clozeText: fc.cloze_text,
-                        imageUrl: fc.image_url,
-                        occlusionData: fc.occlusion_data,
-                        srsData: fc.srs_data,
-                        tags: fc.tags,
-                        createdAt: fc.created_at,
-                    }))
-                );
+                setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
 
                 setSelectedDeck(newDeck);
                 setAppMode(AppMode.DECK_DETAIL);
@@ -542,21 +466,11 @@ export function useFlashcardHandlers() {
         }
     }, [currentUser, flashcards, updateFlashcards, isOnline, isDeckOffline, queueFlashcardReview]);
 
-    const handleLoadMoreFlashcards = useCallback(async (deckId: string, page: number, limit = 20) => {
+    const handleLoadMoreFlashcards = useCallback(async (deckId: string, page: number, limit = FLASHCARD_PAGE_SIZE) => {
         if (!currentUser) return 0;
         try {
             const fetched = await fetchFlashcards(deckId, currentUser.id, { page, limit });
-            const mapped = (fetched || []).map((fc: any) => ({
-                id: fc.id,
-                deckId: fc.deck_id,
-                type: fc.type,
-                front: fc.front,
-                back: fc.back,
-                clozeText: fc.cloze_text,
-                srsData: fc.srs_data,
-                tags: fc.tags,
-                createdAt: fc.created_at
-            }));
+            const mapped = mapFlashcardsFromApi(fetched || []);
 
             if (mapped.length > 0) {
                 updateFlashcards(prev => [...prev, ...mapped]);
@@ -665,40 +579,9 @@ export function useFlashcardHandlers() {
             userId: d.user_id || d.userId,
             isShared: d.is_shared || d.isShared,
         })));
-        if (insertedCards.length > 0) {
-            updateFlashcards(prev => [
-                ...prev,
-                ...insertedCards.map((fc: any) => ({
-                    id: fc.id,
-                    deckId: fc.deck_id,
-                    type: fc.type,
-                    front: fc.front,
-                    back: fc.back,
-                    clozeText: fc.cloze_text,
-                    imageUrl: fc.image_url,
-                    occlusionData: fc.occlusion_data,
-                    srsData: fc.srs_data,
-                    tags: fc.tags,
-                    createdAt: fc.created_at
-                }))
-            ]);
-        }
-        const fetchedFlashcardsResult = await fetchFlashcards(undefined, currentUser!.id);
-        setFlashcards(fetchedFlashcardsResult.map((fc: any) => ({
-            id: fc.id,
-            deckId: fc.deck_id,
-            type: fc.type,
-            front: fc.front,
-            back: fc.back,
-            clozeText: fc.cloze_text,
-            imageUrl: fc.image_url,
-            occlusionData: fc.occlusion_data,
-            srsData: fc.srs_data,
-            tags: fc.tags,
-            createdAt: fc.created_at
-        })));
+        setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
         alert(`Deck "${newDeck?.name || 'Unknown'}" imported successfully with ${insertedCards.length} cards!`);
-    }, [currentUser, setDecks, setFlashcards, updateFlashcards]);
+    }, [currentUser, setDecks, setFlashcards]);
 
     const handleImportDeck = useCallback(async (file: File) => {
         if (!currentUser) return;

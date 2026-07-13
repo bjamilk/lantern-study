@@ -21,7 +21,7 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
+import { fetchNotifications, fetchDecks, createDeck, createFlashcard, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile } from './services/supabase';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
 import { purchaseStreakFreeze } from './services/gamificationStreak';
@@ -552,21 +552,8 @@ export const App: React.FC = () => {
                             });
                         }
 
-                        const fetchedFlashcards = await fetchFlashcards(undefined, currentUser.id);
                         flashcardStore.setFlashcards(
-                            fetchedFlashcards.map((fc: any) => ({
-                                id: fc.id,
-                                deckId: fc.deck_id,
-                                type: fc.type,
-                                front: fc.front,
-                                back: fc.back,
-                                clozeText: fc.cloze_text,
-                                imageUrl: fc.image_url,
-                                occlusionData: fc.occlusion_data,
-                                srsData: fc.srs_data,
-                                tags: fc.tags,
-                                createdAt: fc.created_at,
-                            }))
+                            await fetchAllFlashcards(undefined, currentUser.id)
                         );
                         setSelectedDeck(newDeck);
                         setAppMode(AppMode.DECK_DETAIL);
@@ -1469,7 +1456,9 @@ export const App: React.FC = () => {
                                 for (const c of cards) {
                                     await createFlashcard({ deckId: deck.id, type: 'BASIC' as any, front: c.front, back: c.back, userId: currentUser.id });
                                 }
-                                await fetchFlashcards(undefined, currentUser.id);
+                                const allFlashcards = await fetchAllFlashcards(undefined, currentUser.id);
+                                useFlashcardStore.getState().setFlashcards(allFlashcards);
+                                useFlashcardStore.getState().updateDecks((prev) => [...prev, deck]);
                             }
                         }}
                         onOpenLearnMode={() => {

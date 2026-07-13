@@ -406,10 +406,11 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
 
     try {
       const cards = mergeCardsPreferPendingReviews(await fetchFlashcardPages());
+      // Full replace (not merge) so deleted cards/decks cannot inflate due counts.
       const grouped = groupFlashcardsByDeck(cards);
       set(state => ({
-        flashcards: { ...state.flashcards, ...grouped },
-        decks: enrichDecksWithStats(state.decks, { ...state.flashcards, ...grouped }),
+        flashcards: grouped,
+        decks: enrichDecksWithStats(state.decks, grouped),
         error: null,
       }));
       await get().saveToStorage();

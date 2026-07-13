@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { Group, UserQuestionStats } from '../types'
 import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
-import { mapUserFromApi } from '@lantern/shared/utils/apiMappers'
+import { mapUserFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils/apiMappers'
 import {
   listingsCacheKey,
   marketplaceCategoryAnalyticsCache,
@@ -1318,6 +1318,27 @@ export const fetchFlashcards = async (
     console.error('Error fetching flashcards:', error);
     throw error;
   }
+};
+
+/** API caps page size at 100 — paginate until all cards are loaded, then normalize SRS. */
+export const FLASHCARD_API_PAGE_SIZE = 100;
+
+export const fetchAllFlashcards = async (deckId?: string, userId?: string) => {
+  const collected: any[] = [];
+  let page = 1;
+
+  while (true) {
+    const batch = await fetchFlashcards(deckId, userId, {
+      page,
+      limit: FLASHCARD_API_PAGE_SIZE,
+    });
+    const rows = Array.isArray(batch) ? batch : [];
+    collected.push(...rows);
+    if (rows.length < FLASHCARD_API_PAGE_SIZE) break;
+    page += 1;
+  }
+
+  return mapFlashcardsFromApi(collected);
 };
 
 export const updateFlashcard = async (flashcardId: string, updates: {
