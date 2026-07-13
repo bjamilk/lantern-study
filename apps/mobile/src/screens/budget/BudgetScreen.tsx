@@ -27,6 +27,7 @@ import {
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { FeatureHero } from '../../components/ui';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { featureAccents } from '@lantern/shared/design';
 
 const { width } = Dimensions.get('window');
@@ -48,6 +49,7 @@ export default function BudgetScreen() {
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
   const [txFilter, setTxFilter] = useState<TxFilter>('all');
   const { colors } = useTheme();
+  const tabBarClearance = useTabBarClearance(16);
 
   const {
     transactions,
@@ -191,6 +193,7 @@ export default function BudgetScreen() {
 
       <ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -601,8 +604,6 @@ export default function BudgetScreen() {
           </>
         )}
 
-        {/* Bottom spacing for tab bar */}
-        <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>
   );

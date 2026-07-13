@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Question Modal
 // ===========================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useTheme } from '../theme';
+import { useTheme, ThemeScope } from '../theme';
 
 export type QuestionType = 
   | 'mcq-single'
@@ -117,7 +117,28 @@ export default function QuestionModal({
   const [diagramDescription, setDiagramDescription] = useState('');
   const [questionImage, setQuestionImage] = useState<QuestionImage | null>(null);
   const [diagramImage, setDiagramImage] = useState<QuestionImage | null>(null);
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+
+  const themed = useMemo(
+    () => ({
+      input: {
+        backgroundColor: colors.inputBackground,
+        borderColor: colors.border,
+        color: colors.text,
+      },
+      label: { color: colors.text },
+      hint: { color: colors.textSecondary },
+      imageUpload: {
+        backgroundColor: colors.inputBackground,
+        borderColor: colors.primary,
+      },
+      matchingArrow: { backgroundColor: `${colors.primary}20` },
+      diagramPreview: { backgroundColor: colors.inputBackground },
+      addOption: { borderColor: colors.primary },
+      progressTrack: { backgroundColor: colors.border },
+    }),
+    [colors]
+  );
 
   // Image picker function
   const pickImage = async (
@@ -545,9 +566,9 @@ export default function QuestionModal({
 
       {/* Question Stem */}
       <View style={styles.inputGroup}>
-        <Text style={[styles.inputLabel, { color: colors.text }]}>Question *</Text>
+        <Text style={[styles.inputLabel, themed.label]}>Question *</Text>
         <TextInput
-          style={[styles.input, styles.textArea, { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }]}
+          style={[styles.input, styles.textArea, themed.input]}
           placeholder="Enter your question here..."
           placeholderTextColor={colors.inputPlaceholder}
           value={stem}
@@ -557,7 +578,7 @@ export default function QuestionModal({
           textAlignVertical="top"
         />
         {questionType === 'fill-blank' && (
-          <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
+          <Text style={[styles.inputHint, themed.hint]}>
             Use _____ (underscores) to indicate the blank
           </Text>
         )}
@@ -566,7 +587,7 @@ export default function QuestionModal({
       {/* Question Image Upload */}
       {questionType !== 'diagram-labelling' && (
         <View style={styles.inputGroup}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>Question Image (Optional)</Text>
+          <Text style={[styles.inputLabel, themed.label]}>Question Image (Optional)</Text>
           {questionImage ? (
             <View style={styles.imagePreviewContainer}>
               <Image source={{ uri: questionImage.uri }} style={styles.imagePreview} />
@@ -574,16 +595,16 @@ export default function QuestionModal({
                 style={styles.removeImageButton}
                 onPress={() => removeImage('question')}
               >
-                <Ionicons name="close-circle" size={28} color="#ef4444" />
+                <Ionicons name="close-circle" size={28} color={colors.error} />
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.imageUploadButton, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}
+              style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('question')}
             >
-              <Ionicons name="camera" size={24} color="#6366f1" />
-              <Text style={styles.imageUploadText}>Add Image</Text>
+              <Ionicons name="camera" size={24} color={colors.primary} />
+              <Text style={[styles.imageUploadText, { color: colors.primary }]}>Add Image</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -592,8 +613,8 @@ export default function QuestionModal({
       {/* Answer Options for MCQ */}
       {['mcq-single', 'mcq-multiple', 'true-false'].includes(questionType) && (
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Answer Options *</Text>
-          <Text style={styles.inputHint}>
+          <Text style={[styles.inputLabel, themed.label]}>Answer Options *</Text>
+          <Text style={[styles.inputHint, themed.hint]}>
             {questionType === 'mcq-single' || questionType === 'true-false'
               ? 'Tap the circle to mark the correct answer'
               : 'Tap circles to mark all correct answers'}
@@ -612,13 +633,13 @@ export default function QuestionModal({
                   <Ionicons
                     name={option.isCorrect ? 'checkmark-circle' : 'ellipse-outline'}
                     size={24}
-                    color={option.isCorrect ? '#10b981' : '#6b7280'}
+                    color={option.isCorrect ? colors.success : colors.textSecondary}
                   />
                 </TouchableOpacity>
                 <TextInput
-                  style={styles.optionInput}
+                  style={[styles.optionInput, themed.input]}
                   placeholder={`Option ${index + 1}`}
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.inputPlaceholder}
                   value={option.text}
                   onChangeText={(text) => handleOptionChange(option.id, text)}
                   editable={questionType !== 'true-false'}
@@ -628,7 +649,7 @@ export default function QuestionModal({
                     style={styles.removeOption}
                     onPress={() => pickImage('option', option.id)}
                   >
-                    <Ionicons name="camera" size={20} color="#6366f1" />
+                    <Ionicons name="camera" size={20} color={colors.primary} />
                   </TouchableOpacity>
                 )}
                 {questionType !== 'true-false' && options.length > 2 && (
@@ -636,7 +657,7 @@ export default function QuestionModal({
                     style={styles.removeOption}
                     onPress={() => handleRemoveOption(option.id)}
                   >
-                    <Ionicons name="close-circle" size={22} color="#ef4444" />
+                    <Ionicons name="close-circle" size={22} color={colors.error} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -648,7 +669,7 @@ export default function QuestionModal({
                       style={styles.removeImageButton}
                       onPress={() => removeImage('option', option.id)}
                     >
-                      <Ionicons name="close-circle" size={24} color="#ef4444" />
+                      <Ionicons name="close-circle" size={24} color={colors.error} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -657,9 +678,9 @@ export default function QuestionModal({
           ))}
 
           {questionType !== 'true-false' && options.length < 8 && (
-            <TouchableOpacity style={styles.addOptionButton} onPress={handleAddOption}>
-              <Ionicons name="add-circle" size={20} color="#6366f1" />
-              <Text style={styles.addOptionText}>Add Option</Text>
+            <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddOption}>
+              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Option</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -668,11 +689,11 @@ export default function QuestionModal({
       {/* Correct Answer for Fill in Blank */}
       {questionType === 'fill-blank' && (
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Correct Answer *</Text>
+          <Text style={[styles.inputLabel, themed.label]}>Correct Answer *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, themed.input]}
             placeholder="Enter the correct answer"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={colors.inputPlaceholder}
             value={correctAnswer}
             onChangeText={setCorrectAnswer}
           />
@@ -682,8 +703,8 @@ export default function QuestionModal({
       {/* Matching Pairs */}
       {questionType === 'matching' && (
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Matching Pairs *</Text>
-          <Text style={styles.inputHint}>
+          <Text style={[styles.inputLabel, themed.label]}>Matching Pairs *</Text>
+          <Text style={[styles.inputHint, themed.hint]}>
             Enter items that should be matched together
           </Text>
 
@@ -691,19 +712,19 @@ export default function QuestionModal({
             <View key={pair.id} style={styles.matchingRow}>
               <View style={styles.matchingInputs}>
                 <TextInput
-                  style={styles.matchingInput}
+                  style={[styles.matchingInput, themed.input]}
                   placeholder={`Item ${index + 1}`}
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.inputPlaceholder}
                   value={pair.left}
                   onChangeText={(text) => handleMatchingPairChange(pair.id, 'left', text)}
                 />
-                <View style={styles.matchingArrow}>
-                  <Ionicons name="arrow-forward" size={18} color="#6366f1" />
+                <View style={[styles.matchingArrow, themed.matchingArrow]}>
+                  <Ionicons name="arrow-forward" size={18} color={colors.primary} />
                 </View>
                 <TextInput
-                  style={styles.matchingInput}
+                  style={[styles.matchingInput, themed.input]}
                   placeholder={`Match ${index + 1}`}
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={colors.inputPlaceholder}
                   value={pair.right}
                   onChangeText={(text) => handleMatchingPairChange(pair.id, 'right', text)}
                 />
@@ -713,16 +734,16 @@ export default function QuestionModal({
                   style={styles.removeOption}
                   onPress={() => handleRemoveMatchingPair(pair.id)}
                 >
-                  <Ionicons name="close-circle" size={22} color="#ef4444" />
+                  <Ionicons name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               )}
             </View>
           ))}
 
           {matchingPairs.length < 8 && (
-            <TouchableOpacity style={styles.addOptionButton} onPress={handleAddMatchingPair}>
-              <Ionicons name="add-circle" size={20} color="#6366f1" />
-              <Text style={styles.addOptionText}>Add Pair</Text>
+            <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddMatchingPair}>
+              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Pair</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -731,45 +752,48 @@ export default function QuestionModal({
       {/* Diagram Labelling */}
       {questionType === 'diagram-labelling' && (
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Diagram Image *</Text>
-          <Text style={styles.inputHint}>
+          <Text style={[styles.inputLabel, themed.label]}>Diagram Image *</Text>
+          <Text style={[styles.inputHint, themed.hint]}>
             Upload the diagram image that students will label
           </Text>
           
           {diagramImage ? (
             <View style={[styles.imagePreviewContainer, styles.diagramImageContainer]}>
-              <Image source={{ uri: diagramImage.uri }} style={styles.diagramImagePreview} />
+              <Image
+                source={{ uri: diagramImage.uri }}
+                style={[styles.diagramImagePreview, themed.diagramPreview]}
+              />
               <TouchableOpacity
                 style={styles.removeImageButton}
                 onPress={() => removeImage('diagram')}
               >
-                <Ionicons name="close-circle" size={28} color="#ef4444" />
+                <Ionicons name="close-circle" size={28} color={colors.error} />
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.imageUploadButton}
+              style={[styles.imageUploadButton, themed.imageUpload]}
               onPress={() => pickImage('diagram')}
             >
-              <Ionicons name="image" size={32} color="#6366f1" />
-              <Text style={styles.imageUploadText}>Upload Diagram</Text>
+              <Ionicons name="image" size={32} color={colors.primary} />
+              <Text style={[styles.imageUploadText, { color: colors.primary }]}>Upload Diagram</Text>
             </TouchableOpacity>
           )}
 
-          <Text style={[styles.inputLabel, { marginTop: 20 }]}>Labels *</Text>
-          <Text style={styles.inputHint}>
+          <Text style={[styles.inputLabel, themed.label, { marginTop: 20 }]}>Labels *</Text>
+          <Text style={[styles.inputHint, themed.hint]}>
             Enter the correct answer for each numbered label on the diagram
           </Text>
 
           {diagramLabels.map((label) => (
             <View key={label.id} style={styles.diagramLabelRow}>
-              <View style={styles.labelNumber}>
+              <View style={[styles.labelNumber, { backgroundColor: colors.primary }]}>
                 <Text style={styles.labelNumberText}>{label.labelNumber}</Text>
               </View>
               <TextInput
-                style={styles.labelInput}
+                style={[styles.labelInput, themed.input]}
                 placeholder={`Answer for label ${label.labelNumber}`}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.inputPlaceholder}
                 value={label.correctAnswer}
                 onChangeText={(text) => handleDiagramLabelChange(label.id, text)}
               />
@@ -778,16 +802,16 @@ export default function QuestionModal({
                   style={styles.removeOption}
                   onPress={() => handleRemoveDiagramLabel(label.id)}
                 >
-                  <Ionicons name="close-circle" size={22} color="#ef4444" />
+                  <Ionicons name="close-circle" size={22} color={colors.error} />
                 </TouchableOpacity>
               )}
             </View>
           ))}
 
           {diagramLabels.length < 10 && (
-            <TouchableOpacity style={styles.addOptionButton} onPress={handleAddDiagramLabel}>
-              <Ionicons name="add-circle" size={20} color="#6366f1" />
-              <Text style={styles.addOptionText}>Add Label</Text>
+            <TouchableOpacity style={[styles.addOptionButton, themed.addOption]} onPress={handleAddDiagramLabel}>
+              <Ionicons name="add-circle" size={20} color={colors.primary} />
+              <Text style={[styles.addOptionText, { color: colors.primary }]}>Add Label</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -795,11 +819,11 @@ export default function QuestionModal({
 
       {/* Explanation */}
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Explanation (Optional)</Text>
+        <Text style={[styles.inputLabel, themed.label]}>Explanation (Optional)</Text>
         <TextInput
-          style={[styles.input, styles.textArea]}
+          style={[styles.input, styles.textArea, themed.input]}
           placeholder="Why is this the correct answer?"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.inputPlaceholder}
           value={explanation}
           onChangeText={setExplanation}
           multiline
@@ -810,19 +834,19 @@ export default function QuestionModal({
 
       {/* Tags */}
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Tags (Optional)</Text>
+        <Text style={[styles.inputLabel, themed.label]}>Tags (Optional)</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, themed.input]}
           placeholder="e.g. Biology, Genetics, Chapter 5"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.inputPlaceholder}
           value={tags}
           onChangeText={setTags}
         />
-        <Text style={styles.inputHint}>Separate tags with commas</Text>
+        <Text style={[styles.inputHint, themed.hint]}>Separate tags with commas</Text>
       </View>
 
       {/* Submit Button */}
-      <TouchableOpacity style={styles.submitButton} onPress={validateAndSubmit}>
+      <TouchableOpacity style={[styles.submitButton, { backgroundColor: colors.success }]} onPress={validateAndSubmit}>
         <Ionicons name="send" size={20} color="#ffffff" />
         <Text style={styles.submitButtonText}>Submit Question</Text>
       </TouchableOpacity>
@@ -838,42 +862,49 @@ export default function QuestionModal({
       animationType="slide"
       onRequestClose={handleClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
+      <ThemeScope
+        style={[
+          styles.overlay,
+          { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.45)' },
+        ]}
       >
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <View style={styles.headerLeft}>
-              {step !== 'type' && (
-                <TouchableOpacity
-                  style={[styles.backButton, { backgroundColor: colors.background }]}
-                  onPress={() => setStep('type')}
-                >
-                  <Ionicons name="arrow-back" size={24} color={colors.text} />
-                </TouchableOpacity>
-              )}
-              <Text style={[styles.title, { color: colors.text }]}>Submit Question</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.overlayContent}
+        >
+          <View style={[styles.container, { backgroundColor: colors.card }]}>
+            {/* Header */}
+            <View style={[styles.header, { borderBottomColor: colors.border }]}>
+              <View style={styles.headerLeft}>
+                {step !== 'type' && (
+                  <TouchableOpacity
+                    style={[styles.backButton, { backgroundColor: colors.background }]}
+                    onPress={() => setStep('type')}
+                  >
+                    <Ionicons name="arrow-back" size={24} color={colors.text} />
+                  </TouchableOpacity>
+                )}
+                <Text style={[styles.title, { color: colors.text }]}>Submit Question</Text>
+              </View>
+              <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={handleClose}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={handleClose}>
-              <Ionicons name="close" size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
 
-          {/* Progress Indicator */}
-          <View style={styles.progressBar}>
-            <View style={[
-              styles.progressFill,
-              { width: step === 'type' ? '50%' : '100%' }
-            ]} />
-          </View>
+            {/* Progress Indicator */}
+            <View style={[styles.progressBar, themed.progressTrack]}>
+              <View style={[
+                styles.progressFill,
+                { width: step === 'type' ? '50%' : '100%', backgroundColor: colors.primary },
+              ]} />
+            </View>
 
-          {/* Content */}
-          {step === 'type' && renderTypeSelection()}
-          {step === 'content' && renderContentForm()}
-        </View>
-      </KeyboardAvoidingView>
+            {/* Content */}
+            {step === 'type' && renderTypeSelection()}
+            {step === 'content' && renderContentForm()}
+          </View>
+        </KeyboardAvoidingView>
+      </ThemeScope>
     </Modal>
   );
 }
@@ -881,11 +912,13 @@ export default function QuestionModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  overlayContent: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '92%',
@@ -910,26 +943,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
   progressBar: {
     height: 4,
-    backgroundColor: '#1e293b',
     marginHorizontal: 20,
     borderRadius: 2,
     marginBottom: 20,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#6366f1',
     borderRadius: 2,
   },
   stepContent: {
@@ -942,12 +971,10 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginBottom: 8,
   },
   stepDescription: {
     fontSize: 14,
-    color: '#9ca3af',
     marginBottom: 24,
   },
   typeGrid: {
@@ -958,7 +985,6 @@ const styles = StyleSheet.create({
   },
   typeCard: {
     width: '48%',
-    backgroundColor: '#1e293b',
     borderRadius: 14,
     padding: 14,
     alignItems: 'center',
@@ -972,7 +998,6 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
@@ -983,7 +1008,6 @@ const styles = StyleSheet.create({
   typeLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#ffffff',
     textAlign: 'center',
   },
   typeLabelSelected: {
@@ -995,22 +1019,17 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 8,
   },
   inputHint: {
     fontSize: 12,
-    color: '#9ca3af',
     marginTop: 6,
   },
   input: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
-    color: '#ffffff',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   textArea: {
     minHeight: 100,
@@ -1028,13 +1047,10 @@ const styles = StyleSheet.create({
   correctToggleActive: {},
   optionInput: {
     flex: 1,
-    backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
-    color: '#ffffff',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   removeOption: {
     padding: 4,
@@ -1046,13 +1062,11 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#6366f1',
     borderStyle: 'dashed',
     borderRadius: 10,
     marginTop: 4,
   },
   addOptionText: {
-    color: '#6366f1',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -1070,19 +1084,15 @@ const styles = StyleSheet.create({
   },
   matchingInput: {
     flex: 1,
-    backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 12,
     fontSize: 14,
-    color: '#ffffff',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   matchingArrow: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#6366f120',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1096,7 +1106,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1107,19 +1116,15 @@ const styles = StyleSheet.create({
   },
   labelInput: {
     flex: 1,
-    backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
-    color: '#ffffff',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10b981',
     padding: 16,
     borderRadius: 12,
     gap: 10,
@@ -1154,15 +1159,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#1e293b',
     borderWidth: 2,
-    borderColor: '#6366f1',
     borderStyle: 'dashed',
     borderRadius: 12,
     padding: 24,
   },
   imageUploadText: {
-    color: '#6366f1',
     fontSize: 16,
     fontWeight: '500',
   },
@@ -1200,7 +1202,6 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: 12,
     resizeMode: 'contain',
-    backgroundColor: '#1e293b',
   },
   matchingImagePreview: {
     width: 60,
@@ -1212,9 +1213,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 8,
-    backgroundColor: '#1e293b',
     borderWidth: 1,
-    borderColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
   },
