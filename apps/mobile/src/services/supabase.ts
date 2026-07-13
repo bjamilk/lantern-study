@@ -40,10 +40,41 @@ const isAndroidEmulator = () => {
   );
 };
 
+/** Cloud endpoints — public; used when preview/production builds must not use dev LAN URLs. */
+const PRODUCTION_ENDPOINTS = {
+  supabaseUrl: 'https://tiizkjhbrnaibaagmurl.supabase.co',
+  supabaseAnonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXpramhicm5haWJhYWdtdXJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjMyMjMsImV4cCI6MjA5NjQzOTIyM30.dzI3L5Blbao5DItW3xgMIUzAi9LBijZncFaNBLTMvoE',
+  apiUrl: 'https://lantern-study-api.onrender.com',
+} as const;
+
+const LOCAL_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+
+const appVariant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? 'development';
+const isDevRuntime = appVariant === 'development';
+
 const lanApiHost = Constants.expoConfig?.extra?.lanApiHost || '127.0.0.1';
 const emulatorApiHost = Constants.expoConfig?.extra?.emulatorApiHost || '10.0.2.2';
 const defaultHost = isAndroidEmulator() ? emulatorApiHost : lanApiHost;
-const isDevRuntime = (Constants.expoConfig?.extra?.appVariant || 'development') === 'development';
+
+function isLocalDevHost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '10.0.2.2' ||
+    hostname.startsWith('192.168.') ||
+    hostname.startsWith('10.')
+  );
+}
+
+function isLocalDevUrl(url: string): boolean {
+  try {
+    return isLocalDevHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
 
 /** In dev, localhost/127.0.0.1 is unreachable off the host machine — rewrite to emulator or LAN IP. */
 function resolveDevServiceUrl(url: string): string {
@@ -62,22 +93,50 @@ function resolveDevServiceUrl(url: string): string {
   return url;
 }
 
-const configuredSupabaseUrl =
-  Constants.expoConfig?.extra?.supabaseUrl ||
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  (isDevRuntime ? `http://${defaultHost}:55421` : '');
+function pickRuntimeValue(
+  extraValue: unknown,
+  envValue: string | undefined,
+  productionDefault: string,
+  devFallback: string
+): string {
+  if (typeof extraValue === 'string' && extraValue.length > 0) {
+    return extraValue;
+  }
+
+  if (isDevRuntime) {
+    return envValue || devFallback;
+  }
+
+  // OTA bundles can embed the publisher's local .env (127.0.0.1) — never use that in preview/production.
+  if (envValue && !isLocalDevUrl(envValue)) {
+    return envValue;
+  }
+
+  return productionDefault;
+}
+
+const configuredSupabaseUrl = pickRuntimeValue(
+  Constants.expoConfig?.extra?.supabaseUrl,
+  process.env.EXPO_PUBLIC_SUPABASE_URL,
+  PRODUCTION_ENDPOINTS.supabaseUrl,
+  `http://${defaultHost}:55421`
+);
 
 const supabaseUrl = resolveDevServiceUrl(configuredSupabaseUrl);
 
-const supabaseAnonKey =
-  Constants.expoConfig?.extra?.supabaseAnonKey ||
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  (isDevRuntime ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' : '');
+const supabaseAnonKey = pickRuntimeValue(
+  Constants.expoConfig?.extra?.supabaseAnonKey,
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+  PRODUCTION_ENDPOINTS.supabaseAnonKey,
+  LOCAL_SUPABASE_ANON_KEY
+);
 
-const configuredApiUrl =
-  Constants.expoConfig?.extra?.apiUrl ||
-  process.env.EXPO_PUBLIC_API_URL ||
-  (isDevRuntime ? `http://${defaultHost}:3001` : '');
+const configuredApiUrl = pickRuntimeValue(
+  Constants.expoConfig?.extra?.apiUrl,
+  process.env.EXPO_PUBLIC_API_URL,
+  PRODUCTION_ENDPOINTS.apiUrl,
+  `http://${defaultHost}:3001`
+);
 
 // API server URL for backend calls
 export const API_BASE_URL = resolveDevServiceUrl(configuredApiUrl);

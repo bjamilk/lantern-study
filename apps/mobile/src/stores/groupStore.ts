@@ -176,6 +176,8 @@ interface MessagePagination {
 interface GroupState {
   groups: Group[];
   currentGroup: Group | null;
+  /** Group id for the chat screen currently open (may differ from currentGroup when group list is still loading). */
+  activeGroupId: string | null;
   messages: Message[];
   messagesCache: Record<string, Message[]>;
   messagePagination: Record<string, MessagePagination>;
@@ -547,6 +549,7 @@ const mockMessages: Record<string, Message[]> = {
 export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
   currentGroup: null,
+  activeGroupId: null,
   messages: [],
   messagesCache: {},
   messagePagination: {},
@@ -672,9 +675,20 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   selectGroup: (groupId: string) => {
-    const group = get().groups.find(g => g.id === groupId) || null;
+    const group = get().groups.find(g => g.id === groupId) ?? null;
     const cached = get().messagesCache[groupId] || [];
-    set({ currentGroup: group, messages: cached });
+    set({
+      activeGroupId: groupId,
+      currentGroup:
+        group ??
+        ({
+          id: groupId,
+          name: 'Group',
+          adminIds: [],
+          permissions: {},
+        } as Group),
+      messages: cached,
+    });
     void get().fetchGroupMembers(groupId);
   },
 
@@ -719,9 +733,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       if (requestId !== messagesFetchSeqByGroup[groupId]) return;
 
-      const isCurrentGroup = get().currentGroup?.id === groupId;
+      const isActiveGroup = get().activeGroupId === groupId;
       set({
-        messages: isCurrentGroup ? merged : get().messages,
+        messages: isActiveGroup ? merged : get().messages,
         messagesCache: { ...get().messagesCache, [groupId]: merged },
         messagePagination: {
           ...get().messagePagination,

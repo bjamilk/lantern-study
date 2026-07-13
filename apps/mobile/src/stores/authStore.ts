@@ -212,9 +212,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       let profileName: string | null = null;
       let profileFirstName: string | null = null;
       if (user) {
-        const profile = await ensureUserProfile(user);
-        profileName = profile.displayName;
-        profileFirstName = profile.firstName ?? null;
+        try {
+          const profile = await ensureUserProfile(user);
+          profileName = profile.displayName;
+          profileFirstName = profile.firstName ?? null;
+        } catch (profileError) {
+          console.warn('Profile sync failed after sign-in; continuing with auth session:', profileError);
+          profileName =
+            (typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim()) ||
+            user.email?.split('@')[0] ||
+            null;
+        }
       }
       
       set({ 

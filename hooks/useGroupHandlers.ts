@@ -14,7 +14,7 @@ import {
     updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
     sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads, fetchDMUnreadCounts,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
-    deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile
+    deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
 } from '../services/supabase';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
@@ -42,7 +42,16 @@ function mapApiGroupMembers(fetchedMembers: any[]): User[] {
 
 function normalizeFetchedMessages(raw: unknown): Message[] {
     const list = Array.isArray(raw) ? raw : [];
-    return mapMessagesFromApi(list);
+    return list
+        .map((item) => {
+            try {
+                return mapMessageFromApi(item);
+            } catch (error) {
+                console.warn('[Chat] Skipping malformed message from API:', error, item);
+                return null;
+            }
+        })
+        .filter((message): message is Message => message != null);
 }
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
@@ -154,75 +163,101 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     useEffect(() => {
         if (!selectedChat || !currentUser) return;
 
-        if (selectedChat.chatType === 'group') {
-            const chatId = selectedChat.id;
-            const limit = lowDataMode ? 20 : 50;
-            const requestId = ++groupMessagesFetchSeqRef.current;
+        let cancelled = false;
 
-            fetchMessages(chatId, undefined, limit)
-                .then((fetchedMessages) => {
+        const waitForAuthToken = async (): Promise<boolean> => {
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+                if (cancelled) return false;
+                if (await ensureAuthTokenReady()) return true;
+                await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+            return false;
+        };
+
+        const loadSelectedChat = async () => {
+            const tokenReady = await waitForAuthToken();
+            if (!tokenReady || cancelled) {
+                if (!tokenReady) {
+                    console.warn('[selectedChat] Skipping message fetch — auth token not ready');
+                }
+                return;
+            }
+
+            if (selectedChat.chatType === 'group') {
+                const chatId = selectedChat.id;
+                const limit = lowDataMode ? 20 : 50;
+                const requestId = ++groupMessagesFetchSeqRef.current;
+
+                try {
+                    const fetchedMessages = await fetchMessages(chatId, undefined, limit);
                     if (requestId !== groupMessagesFetchSeqRef.current) return;
                     if (useUIStore.getState().selectedChat?.id !== chatId) return;
                     const list = normalizeFetchedMessages(fetchedMessages);
                     updateMessages((prev) => ({ ...prev, [chatId]: list }));
-                })
-                .catch((error) => {
+                } catch (error) {
                     console.error('[selectedChat] Error fetching messages:', error);
-                });
+                }
 
-            fetchUserVotesForGroup(chatId, currentUser.id)
-                .then((fetchedVotes) => {
-                    updateUserVotes((prev) => ({ ...prev, ...fetchedVotes }));
-                })
-                .catch((error) => {
-                    console.error('[selectedChat] Error fetching user votes:', error);
-                });
-
-            markGroupAsRead(chatId, currentUser.id)
-                .then(() => {
-                    updateGroups((prevGroups) =>
-                        prevGroups.map((g) => (g.id === chatId ? { ...g, unreadCount: 0 } : g))
-                    );
-                })
-                .catch((error) => {
-                    console.error('[selectedChat] Error marking group as read:', error);
-                });
-        } else if (selectedChat.chatType === 'dm') {
-            const threadId = selectedChat.id;
-            markDMAsRead(threadId, currentUser.id)
-                .then(() => {
-                    updateDmThreads((prevThreads) =>
-                        prevThreads.map((t) => (t.id === threadId ? { ...t, unreadCount: 0 } : t))
-                    );
-                })
-                .catch((error) => {
-                    console.error('[selectedChat] Error marking DM as read:', error);
-                });
-
-            const otherUserId = Array.isArray((selectedChat as DMThread).participantIds)
-                ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
-                : undefined;
-            if (otherUserId) {
-                const requestId = ++dmFetchSeqRef.current;
-                fetchDirectMessages(currentUser.id, otherUserId)
-                    .then((fetchedMessages) => {
-                        if (requestId !== dmFetchSeqRef.current) return;
-                        if (useUIStore.getState().selectedChat?.id !== threadId) return;
-                        const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
-                        const mappedMessages: DirectMessage[] = raw.map((m: any) => ({
-                            id: m.id,
-                            threadId: m.threadId || threadId,
-                            senderId: m.senderId || m.sender_id,
-                            text: m.text,
-                            timestamp: new Date(m.timestamp),
-                        }));
-                        updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
+                fetchUserVotesForGroup(chatId, currentUser.id)
+                    .then((fetchedVotes) => {
+                        updateUserVotes((prev) => ({ ...prev, ...fetchedVotes }));
                     })
                     .catch((error) => {
-                        console.error('[selectedChat] Error fetching DM messages:', error);
+                        console.error('[selectedChat] Error fetching user votes:', error);
                     });
+
+                markGroupAsRead(chatId, currentUser.id)
+                    .then(() => {
+                        updateGroups((prevGroups) =>
+                            prevGroups.map((g) => (g.id === chatId ? { ...g, unreadCount: 0 } : g))
+                        );
+                    })
+                    .catch((error) => {
+                        console.error('[selectedChat] Error marking group as read:', error);
+                    });
+            } else if (selectedChat.chatType === 'dm') {
+                const threadId = selectedChat.id;
+                markDMAsRead(threadId, currentUser.id)
+                    .then(() => {
+                        updateDmThreads((prevThreads) =>
+                            prevThreads.map((t) => (t.id === threadId ? { ...t, unreadCount: 0 } : t))
+                        );
+                    })
+                    .catch((error) => {
+                        console.error('[selectedChat] Error marking DM as read:', error);
+                    });
+
+                const otherUserId = Array.isArray((selectedChat as DMThread).participantIds)
+                    ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
+                    : undefined;
+                if (otherUserId) {
+                    const requestId = ++dmFetchSeqRef.current;
+                    fetchDirectMessages(currentUser.id, otherUserId)
+                        .then((fetchedMessages) => {
+                            if (requestId !== dmFetchSeqRef.current) return;
+                            if (useUIStore.getState().selectedChat?.id !== threadId) return;
+                            const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
+                            const mappedMessages: DirectMessage[] = raw.map((m: any) => ({
+                                id: m.id,
+                                threadId: m.threadId || threadId,
+                                senderId: m.senderId || m.sender_id,
+                                text: m.text,
+                                timestamp: new Date(m.timestamp),
+                            }));
+                            updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
+                        })
+                        .catch((error) => {
+                            console.error('[selectedChat] Error fetching DM messages:', error);
+                        });
+                }
             }
-        }
+        };
+
+        void loadSelectedChat();
+
+        return () => {
+            cancelled = true;
+        };
     }, [selectedChat?.id, selectedChat?.chatType, currentUser?.id, lowDataMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
 
     const handleInitiateDm = useCallback(async (otherUserId: string) => {

@@ -134,6 +134,9 @@ export const mapMessageFromApi = (data: any): Message => {
       ? data.question_data
       : {};
 
+  const rawOptions = data.options ?? questionData.options;
+  const optionsList = Array.isArray(rawOptions) ? rawOptions : [];
+
   return {
     id: data.id,
     groupId: data.group_id || data.groupId,
@@ -144,7 +147,7 @@ export const mapMessageFromApi = (data: any): Message => {
     questionStem: data.question_stem || data.questionStem || questionData.questionStem,
     explanation: data.explanation || questionData.explanation,
     questionType: data.question_type || data.questionType || questionData.questionType,
-    options: (data.options || questionData.options || []).map(mapQuestionOptionFromApi),
+    options: optionsList.map(mapQuestionOptionFromApi),
     correctAnswerIds: data.correct_answer_ids || data.correctAnswerIds || questionData.correctAnswerIds,
     imageUrl: (() => {
       const raw = data.image_url || data.imageUrl;

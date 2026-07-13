@@ -105,6 +105,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const deleteTestPreset = useTestStore(s => s.deleteTestPreset);
   const {
     messages,
+    messagesCache,
     currentGroup,
     isLoading,
     isLoadingMore,
@@ -159,9 +160,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
     [groupId, getSubgroupsWithLevel, groups]
   );
 
+  const displayMessages = useMemo(() => {
+    const cached = messagesCache[groupId] || [];
+    return messages.length > 0 ? messages : cached;
+  }, [messages, messagesCache, groupId]);
+
   const allGroupMessages = useMemo(() => {
-    const combined = [...messages];
-    const seen = new Set(messages.map(m => m.id));
+    const combined = [...displayMessages];
+    const seen = new Set(displayMessages.map(m => m.id));
     for (const msg of cachedGroupMessages) {
       if (!seen.has(msg.id)) {
         seen.add(msg.id);
@@ -169,7 +175,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
       }
     }
     return combined;
-  }, [messages, cachedGroupMessages]);
+  }, [displayMessages, cachedGroupMessages]);
 
   const availableTags = useMemo(() => extractTagsFromQuestions(allGroupMessages), [allGroupMessages]);
   const testableCount = useMemo(
@@ -228,7 +234,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     const subgroupIds = config.selectedSubgroupIds || [];
     const sourceGroupIds = [groupId, ...subgroupIds.filter(id => id !== groupId)];
     const sessionMessages = await getMessagesForGroups(sourceGroupIds);
-    const combinedMessages = sessionMessages.length ? sessionMessages : messages;
+    const combinedMessages = sessionMessages.length ? sessionMessages : displayMessages;
 
     const questions = selectGroupQuestions(
       combinedMessages,
@@ -394,14 +400,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
       />
 
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {isLoading && messages.length === 0 ? (
+        {isLoading && displayMessages.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <FlatList
             ref={listRef}
-            data={messages}
+            data={displayMessages}
             keyExtractor={item => item.id}
             className="flex-1"
             contentContainerClassName="px-4 py-4 flex-grow"
@@ -424,7 +430,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
               </View>
             }
             renderItem={({ item, index }) => {
-              const previous = index > 0 ? messages[index - 1] : undefined;
+              const previous = index > 0 ? displayMessages[index - 1] : undefined;
               const showDate =
                 index === 0 ||
                 (previous && isDifferentChatDay(previous.createdAt, item.createdAt));

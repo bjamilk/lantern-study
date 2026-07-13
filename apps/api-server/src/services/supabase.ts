@@ -1431,7 +1431,7 @@ export class SupabaseService {
       return (data || []).reverse().map((msg: any) => ({
         id: msg.id,
         groupId: msg.group_id,
-        sender: mapProfileSender(msg.profiles, msg.sender_id),
+        sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
         timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
         flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
         upvotes: msg.upvotes || 0,
