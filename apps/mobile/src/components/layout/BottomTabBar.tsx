@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
 import { useTheme } from '../../theme';
 
@@ -76,6 +77,16 @@ function TabButton({
   );
 }
 
+/** Approximate content height above the home indicator; used by screens for bottom padding. */
+export const BOTTOM_TAB_BAR_CONTENT_HEIGHT = 56;
+
+/** Bottom padding so scroll content clears the absolute tab bar + system nav. */
+export function useTabBarClearance(extra = 16): number {
+  const insets = useSafeAreaInsets();
+  // Android 3-button / gesture nav often reports a small inset; keep a firm minimum.
+  return BOTTOM_TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 20) + 10 + extra;
+}
+
 export function BottomTabBar({
   activeTab,
   onTabPress,
@@ -85,6 +96,8 @@ export function BottomTabBar({
   isMoreActive,
 }: Props) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 20) + 10;
 
   const scrollTabs: TabDef[] = [
     { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
@@ -115,8 +128,9 @@ export function BottomTabBar({
 
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pb-6 pt-2 flex-row"
+      className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pt-2 flex-row"
       style={{
+        paddingBottom: bottomPad,
         backgroundColor: colors.tabBar,
         borderTopColor: colors.tabBarBorder,
         shadowColor: isDark ? '#000000' : '#0f172a',

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType } from '@lantern/shared';
 import type { PerformanceRating } from '@lantern/shared/utils';
@@ -53,16 +53,15 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
   const settings = useSettingsStore.getState().settings;
   const activityDays = useStatsStore.getState().stats?.activityDays ?? [];
   const today = getTodayStudyCounts(activityDays);
-  const queue = buildFlashcardReviewQueue(cards, {
+  return buildFlashcardReviewQueue(cards, {
     srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
     newCardsIntroducedToday: today.newFlashcards,
   });
-  // If SRS caps leave an empty queue but the deck has cards, still allow study.
-  return queue.length > 0 ? queue : cards;
 }
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { reduceMotion, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Review';
   const user = useAuthStore(s => s.user);
@@ -123,13 +122,17 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
       }
 
       const wasNew = isNewFlashcard(currentCard);
-      void reviewFlashcard(currentCard.id, deckId, rating, user.id)
+      const cardId = currentCard.id;
+      // Advance immediately — local SRS update is applied synchronously in the store.
+      setIndex(prev => prev + 1);
+      setShowBack(false);
+
+      void reviewFlashcard(cardId, deckId, rating, user.id)
         .then(() => {
           trackStudyActivity('flashcard', 1);
           if (wasNew) {
             trackStudyActivity('flashcard_new', 1);
           }
-          setIndex(prev => prev + 1);
         })
         .catch((err) => {
           console.error('Failed to save review:', err);
@@ -244,7 +247,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         />
       </View>
 
-      <View className="px-4 pb-6 gap-3">
+      <View className="px-4 gap-3" style={{ paddingBottom: Math.max(insets.bottom, 12) + 12 }}>
         {!showBack ? (
           <Button
             fullWidth

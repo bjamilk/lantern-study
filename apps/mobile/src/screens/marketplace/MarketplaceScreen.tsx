@@ -27,12 +27,14 @@ import { fetchMarketplaceListing, checkSavedSearchMatches } from '../../services
 import { Button } from '../../components/ui';
 import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
 export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }) {
+  const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
   const {
     listings,
@@ -512,7 +514,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           keyExtractor={item => item.id}
           numColumns={2}
           ListHeaderComponent={listHeader}
-          contentContainerStyle={{ padding: 8, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 8, paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ justifyContent: 'space-between' }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
           onEndReached={loadMore}

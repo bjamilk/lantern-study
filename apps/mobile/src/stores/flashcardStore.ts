@@ -36,6 +36,8 @@ const OFFLINE_DECKS_KEY = 'lantern_offline_decks';
 
 // Debounce AsyncStorage writes during rapid SRS grading
 let saveStorageTimer: ReturnType<typeof setTimeout> | null = null;
+/** Keep local SRS updates while an API review/refetch is in flight so due counts don't regress. */
+const pendingLocalReviews = new Map<string, Flashcard>();
 
 function scheduleSaveToStorage(saveFn: () => Promise<void>) {
   if (saveStorageTimer) clearTimeout(saveStorageTimer);
@@ -51,6 +53,22 @@ function flushScheduledSave(saveFn: () => Promise<void>) {
     saveStorageTimer = null;
   }
   void saveFn();
+}
+
+function mergeCardsPreferPendingReviews(remoteCards: Flashcard[]): Flashcard[] {
+  if (pendingLocalReviews.size === 0) return remoteCards;
+  return remoteCards.map(card => pendingLocalReviews.get(card.id) ?? card);
+}
+
+function applyPendingToFlashcardMap(
+  map: Record<string, Flashcard[]>
+): Record<string, Flashcard[]> {
+  if (pendingLocalReviews.size === 0) return map;
+  const next: Record<string, Flashcard[]> = {};
+  for (const [deckId, cards] of Object.entries(map)) {
+    next[deckId] = cards.map(card => pendingLocalReviews.get(card.id) ?? card);
+  }
+  return next;
 }
 
 // Demo mode flag - matches authStore
@@ -263,7 +281,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         for (const [key, cards] of Object.entries(parsed)) {
           normalized[key] = mapFlashcardsFromApi(Array.isArray(cards) ? cards : []);
         }
-        set({ flashcards: normalized });
+        set({ flashcards: applyPendingToFlashcardMap(normalized) });
       }
       if (offlineJson) {
         set({ offlineDeckIds: JSON.parse(offlineJson) });
@@ -290,7 +308,11 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   fetchDecks: async (userId: string) => {
     try {
       set({ isLoading: true, error: null });
-      await get().loadFromStorage();
+      // Don't clobber in-memory SRS updates with stale disk cache when decks
+      // are already loaded (common after exiting a review session early).
+      if (get().decks.length === 0) {
+        await get().loadFromStorage();
+      }
 
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -326,10 +348,11 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       const hasCached = (get().flashcards[deckId] || []).length > 0;
       if (!hasCached) {
         set({ isLoading: true, error: null });
+        await get().loadFromStorage();
       } else {
         set({ error: null });
+        // Avoid reloading stale storage over in-memory SRS updates mid-session.
       }
-      await get().loadFromStorage();
 
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -351,7 +374,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       }
 
       try {
-        const cards = await fetchFlashcardPages(deckId);
+        const cards = mergeCardsPreferPendingReviews(await fetchFlashcardPages(deckId));
         set(state => {
           const flashcards = { ...state.flashcards, [deckId]: cards };
           return {
@@ -382,7 +405,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     if (DEMO_MODE) return;
 
     try {
-      const cards = await fetchFlashcardPages();
+      const cards = mergeCardsPreferPendingReviews(await fetchFlashcardPages());
       const grouped = groupFlashcardsByDeck(cards);
       set(state => ({
         flashcards: { ...state.flashcards, ...grouped },
@@ -596,6 +619,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
 
     const studySettings = useSettingsStore.getState().settings.study;
     const locallyUpdated = applyLocalFlashcardReview(card, rating, studySettings);
+    pendingLocalReviews.set(flashcardId, locallyUpdated);
 
     set(current => {
       const flashcards = {
@@ -609,7 +633,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         decks: enrichDecksWithStats(current.decks, flashcards),
       };
     });
-    flushScheduledSave(() => get().saveToStorage());
+    // Persist immediately so early exit / remount cannot lose graded cards.
+    await get().saveToStorage();
 
     const isOnline = syncService.getStatus().isOnline;
     const useOfflinePath = !isOnline || get().isDeckOffline(deckId);
@@ -622,17 +647,24 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         { rating, deckId },
         userId
       );
+      // Keep pending until sync confirms — due count stays correct offline.
       return;
     }
 
     try {
       const updated = await api.reviewFlashcard(flashcardId, rating);
       const mapped = mapFlashcardFromApi(updated);
+      // Prefer server SRS when present; otherwise keep the local FSRS result.
+      const finalCard =
+        mapped?.srsData?.nextReviewDate != null
+          ? { ...locallyUpdated, ...mapped, srsData: mapped.srsData }
+          : locallyUpdated;
+      pendingLocalReviews.delete(flashcardId);
       set(current => {
         const flashcards = {
           ...current.flashcards,
           [deckId]: (current.flashcards[deckId] || []).map(c =>
-            c.id === flashcardId ? mapped : c
+            c.id === flashcardId ? finalCard : c
           ),
         };
         return {
@@ -640,7 +672,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
           decks: enrichDecksWithStats(current.decks, flashcards),
         };
       });
-      flushScheduledSave(() => get().saveToStorage());
+      await get().saveToStorage();
     } catch (error: any) {
       console.error('Failed to review flashcard on server:', error);
       await syncService.queueOperation(
@@ -650,6 +682,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         { rating, deckId },
         userId
       );
+      // Keep pendingLocalReviews so refetch/sync cannot resurrect the old due state.
     }
   },
   

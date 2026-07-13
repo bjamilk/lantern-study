@@ -21,6 +21,7 @@ import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import { FlashcardType } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -129,6 +130,7 @@ function DeckCard({
 
 export function FlashcardsScreen({ navigation, embedded = false }: Props) {
   const { colors } = useTheme();
+  const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const user = useAuthStore(s => s.user);
   const { decks, isLoading, error, fetchDecks, createDeck, createFlashcard, clearError } = useFlashcardStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -268,7 +270,7 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
         <FlatList
           data={decks}
           keyExtractor={item => item.id}
-          contentContainerClassName="px-4 pb-8"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
@@ -309,7 +311,6 @@ export function FlashcardsScreen({ navigation, embedded = false }: Props) {
                 value={deckName}
                 onChangeText={setDeckName}
                 placeholder="Deck name"
-                placeholderTextColor="#94a3b8"
                 autoFocus
                 className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-background mb-4"
                 placeholderTextColor={colors.inputPlaceholder}

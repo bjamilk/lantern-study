@@ -83,6 +83,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const [generatingCards, setGeneratingCards] = useState(false);
   const [showCollaborators, setShowCollaborators] = useState(false);
+  const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
+  const handleDocumentScrollLock = useCallback((locked: boolean) => {
+    setParentScrollEnabled(!locked);
+  }, []);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -511,7 +515,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       >
 
-        <ScrollView className="flex-1" keyboardShouldPersistTaps="handled" contentContainerClassName="p-4 pb-10">
+        <ScrollView
+          className="flex-1"
+          keyboardShouldPersistTaps="handled"
+          contentContainerClassName="p-4 pb-10"
+          scrollEnabled={parentScrollEnabled}
+          nestedScrollEnabled
+          directionalLockEnabled
+        >
 
           <View className="flex-row flex-wrap gap-2 py-2 mb-2">
 
@@ -557,7 +568,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           {documentAttachment ? (
             <View className="mb-4">
-              <NotePdfViewer noteId={noteId} attachment={documentAttachment} />
+              <NotePdfViewer
+                noteId={noteId}
+                attachment={documentAttachment}
+                onScrollLockChange={handleDocumentScrollLock}
+              />
             </View>
           ) : null}
 

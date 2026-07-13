@@ -38,6 +38,9 @@ import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 import { useNotesStore } from '../../stores/notesStore';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import TestAnalysisModal from '../../components/TestAnalysisModal';
+import { normalizeRecentTest } from '../../utils/testAnalysisHelpers';
 
 import { useTestStore } from '../../stores/testStore';
 
@@ -51,8 +54,6 @@ import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
 import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
-
-import TestAnalysisModal from '../../components/TestAnalysisModal';
 
 import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../services/gamification';
 
@@ -137,6 +138,7 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
 
 
 export function DashboardScreen({ navigation }: Props) {
+  const tabBarClearance = useTabBarClearance(24);
 
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
@@ -426,7 +428,7 @@ export function DashboardScreen({ navigation }: Props) {
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: 96, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
@@ -664,7 +666,7 @@ export function DashboardScreen({ navigation }: Props) {
 
               <Pressable
                 key={`${test.id}-${test.completedAt}`}
-                onPress={() => setAnalysisTest(test)}
+                onPress={() => setAnalysisTest(normalizeRecentTest(test))}
                 className="mb-2 active:opacity-90"
               >
 

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { featureAccents } from '@lantern/shared/design';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { Button, Card, ScreenHeader } from '../../components/ui';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 interface Props {
   navigation: {
@@ -14,6 +15,7 @@ interface Props {
 
 export function StudyHubScreen({ navigation }: Props) {
   const { decks } = useFlashcardStore();
+  const tabBarClearance = useTabBarClearance(16);
 
   const dueCardsCount = useMemo(
     () => decks.reduce((sum, d) => sum + (d.due_count || 0), 0),
@@ -33,7 +35,7 @@ export function StudyHubScreen({ navigation }: Props) {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScrollView
         className="flex-1 w-full"
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: tabBarClearance }}
       >
         <ScreenHeader title="Study" subtitle="Review due cards and jump back in" />
 

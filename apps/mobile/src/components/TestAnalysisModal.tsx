@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Test Analysis Modal
 // ===========================================
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,14 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { PieChart, BarChart } from 'react-native-gifted-charts';
-import type { RecentTest } from '../types/dashboardStats';
+import type { RecentTest, TestAnalysisQuestionTime } from '../types/dashboardStats';
 import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
-import { useTheme } from '../theme';
+import { ThemeScope, useTheme } from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,74 +30,103 @@ interface TestAnalysisModalProps {
 
 export default function TestAnalysisModal({ visible, onClose, test }: TestAnalysisModalProps) {
   const { colors } = useTheme();
-  
-  if (!test) return null;
+  const insets = useSafeAreaInsets();
+  const [selectedQuestion, setSelectedQuestion] = useState<TestAnalysisQuestionTime | null>(null);
 
-  const { analysis } = test;
+  const analysis = test?.analysis;
 
-  // Pie chart data for question performance
-  const pieData = useMemo(() => [
-    { value: analysis.correctCount, color: '#22c55e', text: `${analysis.correctCount}`, label: 'Correct' },
-    { value: analysis.incorrectCount, color: '#ef4444', text: `${analysis.incorrectCount}`, label: 'Incorrect' },
-    { value: analysis.unattemptedCount, color: '#f59e0b', text: `${analysis.unattemptedCount}`, label: 'Skipped' },
-  ].filter(item => item.value > 0), [analysis]);
+  useEffect(() => {
+    setSelectedQuestion(null);
+  }, [test?.id, visible]);
 
-  // Bar chart data for time per question
-  const timePerQuestionData = useMemo(() => 
-    analysis.timePerQuestion.slice(0, 15).map((item) => ({
+  const selectQuestion = (item: TestAnalysisQuestionTime) => {
+    setSelectedQuestion(item);
+  };
+
+  const pieData = useMemo(() => {
+    if (!analysis) return [];
+    return [
+      { value: analysis.correctCount, color: '#22c55e', text: `${analysis.correctCount}`, label: 'Correct' },
+      { value: analysis.incorrectCount, color: '#ef4444', text: `${analysis.incorrectCount}`, label: 'Incorrect' },
+      { value: analysis.unattemptedCount, color: '#f59e0b', text: `${analysis.unattemptedCount}`, label: 'Skipped' },
+    ].filter(item => item.value > 0);
+  }, [analysis]);
+
+  const timePerQuestionData = useMemo(() => {
+    if (!analysis) return [];
+    return analysis.timePerQuestion.slice(0, 15).map((item) => ({
       value: item.status === 'unattempted' && item.time <= 0 ? 1 : item.time,
       label: `Q${item.questionNumber}`,
-      frontColor: STATUS_BAR_COLORS[item.status],
-    })), [analysis.timePerQuestion]);
+      frontColor:
+        selectedQuestion?.questionNumber === item.questionNumber
+          ? colors.primary
+          : STATUS_BAR_COLORS[item.status],
+      onPress: () => selectQuestion(item),
+    }));
+  }, [analysis, selectedQuestion, colors.primary]);
 
-  // Bar chart data for time per tag
-  const timePerTagData = useMemo(() => 
-    analysis.timePerTag.map(item => ({
+  const timePerTagData = useMemo(() => {
+    if (!analysis) return [];
+    return analysis.timePerTag.map(item => ({
       value: item.avgTime,
       label: item.tag.length > 8 ? item.tag.substring(0, 8) + '...' : item.tag,
       frontColor: '#8b5cf6',
-    })), [analysis.timePerTag]);
+    }));
+  }, [analysis]);
 
-  // Calculate average time
   const avgTime = useMemo(() => {
+    if (!analysis?.timePerQuestion.length) return 0;
     const totalTime = analysis.timePerQuestion.reduce((sum, q) => sum + q.time, 0);
-    return analysis.timePerQuestion.length > 0 ? Math.round(totalTime / analysis.timePerQuestion.length) : 0;
-  }, [analysis.timePerQuestion]);
+    return Math.round(totalTime / analysis.timePerQuestion.length);
+  }, [analysis]);
+
+  if (!visible) return null;
+  if (!test || !analysis) return null;
+
+  const statusLabel =
+    selectedQuestion?.status === 'correct'
+      ? 'Correct'
+      : selectedQuestion?.status === 'incorrect'
+        ? 'Incorrect'
+        : 'Unattempted';
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
-          {/* Header */}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <ThemeScope style={styles.overlay}>
+        <View
+          style={[
+            styles.container,
+            { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
+        >
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <View>
               <Text style={[styles.title, { color: colors.text }]}>Test Analysis</Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{test.groupName}</Text>
             </View>
-            <TouchableOpacity style={[styles.closeButton, { backgroundColor: colors.background }]} onPress={onClose}>
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: colors.background }]}
+              onPress={onClose}
+            >
               <Ionicons name="close" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView 
-            style={styles.content} 
+          <ScrollView
+            style={styles.content}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.contentContainer}
           >
-            {/* Score Summary */}
             <View style={[styles.scoreSummary, { backgroundColor: colors.inputBackground }]}>
               <View style={styles.scoreCircle}>
-                <Text style={[styles.scorePercentage, { color: colors.text }]}>{test.percentage}%</Text>
-                <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Score</Text>
+                <Text style={styles.scorePercentage}>{test.percentage}%</Text>
+                <Text style={styles.scoreLabel}>Score</Text>
               </View>
               <View style={styles.scoreDetails}>
                 <View style={styles.scoreDetailItem}>
-                  <Text style={[styles.scoreDetailValue, { color: colors.text }]}>{test.score}/{test.totalQuestions}</Text>
+                  <Text style={[styles.scoreDetailValue, { color: colors.text }]}>
+                    {test.score}/{test.totalQuestions}
+                  </Text>
                   <Text style={[styles.scoreDetailLabel, { color: colors.textSecondary }]}>Correct</Text>
                 </View>
                 <View style={styles.scoreDetailItem}>
@@ -103,13 +134,14 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                   <Text style={[styles.scoreDetailLabel, { color: colors.textSecondary }]}>Avg Time</Text>
                 </View>
                 <View style={styles.scoreDetailItem}>
-                  <Text style={[styles.scoreDetailValue, { color: colors.text }]}>{Math.floor(test.timeSpent / 60)}m</Text>
+                  <Text style={[styles.scoreDetailValue, { color: colors.text }]}>
+                    {Math.floor(test.timeSpent / 60)}m
+                  </Text>
                   <Text style={[styles.scoreDetailLabel, { color: colors.textSecondary }]}>Total Time</Text>
                 </View>
               </View>
             </View>
 
-            {/* Question Performance Pie Chart */}
             <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
               <View style={styles.chartHeader}>
                 <Ionicons name="pie-chart" size={20} color="#22c55e" />
@@ -133,19 +165,23 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                   {pieData.map((item, index) => (
                     <View key={index} style={styles.legendItem}>
                       <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                      <Text style={[styles.legendText, { color: colors.textSecondary }]}>{item.label}: {item.value}</Text>
+                      <Text style={[styles.legendText, { color: colors.textSecondary }]}>
+                        {item.label}: {item.value}
+                      </Text>
                     </View>
                   ))}
                 </View>
               </View>
             </View>
 
-            {/* Time per Question Bar Chart */}
             <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
               <View style={styles.chartHeader}>
                 <Ionicons name="time" size={20} color={colors.primary} />
                 <Text style={[styles.chartTitle, { color: colors.text }]}>Time per Question (seconds)</Text>
               </View>
+              <Text style={[styles.chartHint, { color: colors.textSecondary }]}>
+                Tap a bar to see the question
+              </Text>
               <View style={styles.statusLegend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.correct }]} />
@@ -176,15 +212,69 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                     yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                     xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
                     noOfSections={4}
-                    maxValue={Math.max(...timePerQuestionData.map(d => d.value)) + 10}
+                    maxValue={Math.max(10, ...timePerQuestionData.map(d => d.value)) + 10}
                     isAnimated
                     animationDuration={300}
+                    onPress={(_item: unknown, index: number) => {
+                      const q = analysis.timePerQuestion[index];
+                      if (q) selectQuestion(q);
+                    }}
                   />
                 </ScrollView>
               </View>
+
+              {selectedQuestion ? (
+                <View style={[styles.questionDetail, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.questionDetailHeader}>
+                    <Text style={[styles.questionDetailTitle, { color: colors.text }]}>
+                      Q{selectedQuestion.questionNumber} · {selectedQuestion.time}s · {statusLabel}
+                    </Text>
+                    <Pressable onPress={() => setSelectedQuestion(null)} hitSlop={8}>
+                      <Ionicons name="close" size={18} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                  <Text style={[styles.questionStem, { color: colors.text }]}>
+                    {selectedQuestion.stem || 'Question text unavailable for this session.'}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={[styles.questionsListTitle, { color: colors.text }]}>Questions</Text>
+              <View style={styles.questionsList}>
+                {analysis.timePerQuestion.map(item => {
+                  const active = selectedQuestion?.questionNumber === item.questionNumber;
+                  return (
+                    <Pressable
+                      key={item.questionNumber}
+                      onPress={() => selectQuestion(item)}
+                      style={[
+                        styles.questionRow,
+                        {
+                          backgroundColor: active ? colors.primary + '18' : colors.card,
+                          borderColor: active ? colors.primary : STATUS_BAR_COLORS[item.status],
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[styles.questionRowDot, { backgroundColor: STATUS_BAR_COLORS[item.status] }]}
+                      />
+                      <View style={styles.questionRowText}>
+                        <Text style={[styles.questionRowMeta, { color: colors.textSecondary }]}>
+                          Q{item.questionNumber} · {item.time}s
+                        </Text>
+                        <Text
+                          style={[styles.questionRowStem, { color: colors.text }]}
+                          numberOfLines={active ? undefined : 2}
+                        >
+                          {item.stem || `Question ${item.questionNumber}`}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
-            {/* Time per Tag Bar Chart */}
             {analysis.timePerTag.length > 0 && (
               <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
                 <View style={styles.chartHeader}>
@@ -206,7 +296,7 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                     yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                     xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
                     noOfSections={4}
-                    maxValue={Math.max(...timePerTagData.map(d => d.value)) + 10}
+                    maxValue={Math.max(10, ...timePerTagData.map(d => d.value)) + 10}
                     isAnimated
                     animationDuration={300}
                   />
@@ -214,7 +304,6 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
               </View>
             )}
 
-            {/* Tag Performance */}
             {analysis.tagPerformance.length > 0 && (
               <View style={[styles.chartSection, { backgroundColor: colors.inputBackground }]}>
                 <View style={styles.chartHeader}>
@@ -226,36 +315,43 @@ export default function TestAnalysisModal({ visible, onClose, test }: TestAnalys
                     <View key={index} style={[styles.tagPerformanceItem, { backgroundColor: colors.card }]}>
                       <View style={styles.tagPerformanceHeader}>
                         <Text style={[styles.tagName, { color: colors.text }]}>{tag.tag}</Text>
-                        <Text style={[
-                          styles.tagAccuracy,
-                          { color: tag.accuracy >= 80 ? '#10b981' : tag.accuracy >= 60 ? '#f59e0b' : '#ef4444' }
-                        ]}>
+                        <Text
+                          style={[
+                            styles.tagAccuracy,
+                            {
+                              color:
+                                tag.accuracy >= 80 ? '#10b981' : tag.accuracy >= 60 ? '#f59e0b' : '#ef4444',
+                            },
+                          ]}
+                        >
                           {tag.accuracy}%
                         </Text>
                       </View>
                       <View style={[styles.tagProgressBar, { backgroundColor: colors.border }]}>
-                        <View 
+                        <View
                           style={[
                             styles.tagProgressFill,
-                            { 
+                            {
                               width: `${tag.accuracy}%`,
-                              backgroundColor: tag.accuracy >= 80 ? '#10b981' : tag.accuracy >= 60 ? '#f59e0b' : '#ef4444',
-                            }
-                          ]} 
+                              backgroundColor:
+                                tag.accuracy >= 80 ? '#10b981' : tag.accuracy >= 60 ? '#f59e0b' : '#ef4444',
+                            },
+                          ]}
                         />
                       </View>
-                      <Text style={[styles.tagScore, { color: colors.textSecondary }]}>{tag.correct}/{tag.total} correct</Text>
+                      <Text style={[styles.tagScore, { color: colors.textSecondary }]}>
+                        {tag.correct}/{tag.total} correct
+                      </Text>
                     </View>
                   ))}
                 </View>
               </View>
             )}
 
-            {/* Bottom spacing */}
-            <View style={{ height: 40 }} />
+            <View style={{ height: 24 }} />
           </ScrollView>
         </View>
-      </View>
+      </ThemeScope>
     </Modal>
   );
 }
@@ -267,7 +363,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '92%',
@@ -281,23 +376,19 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   subtitle: {
     fontSize: 14,
-    color: '#9ca3af',
     marginTop: 2,
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -307,11 +398,9 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
   },
-  // Score Summary
   scoreSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -345,16 +434,12 @@ const styles = StyleSheet.create({
   scoreDetailValue: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#ffffff',
   },
   scoreDetailLabel: {
     fontSize: 11,
-    color: '#9ca3af',
     marginTop: 2,
   },
-  // Chart Section
   chartSection: {
-    backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -362,17 +447,15 @@ const styles = StyleSheet.create({
   chartHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 8,
   },
   chartTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
   },
   chartHint: {
     fontSize: 11,
-    color: '#9ca3af',
     marginBottom: 12,
     textAlign: 'center',
   },
@@ -383,7 +466,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 12,
   },
-  // Pie Chart
   pieChartContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -395,11 +477,9 @@ const styles = StyleSheet.create({
   pieCenterValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   pieCenterLabel: {
     fontSize: 10,
-    color: '#9ca3af',
   },
   pieLegend: {
     gap: 12,
@@ -416,18 +496,89 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 14,
-    color: '#e2e8f0',
   },
-  // Bar Chart
   barChartContainer: {
     alignItems: 'center',
   },
-  // Tag Performance
+  questionDetail: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  questionDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  questionDetailTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
+  },
+  questionStem: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  questionsListTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  questionsList: {
+    gap: 8,
+  },
+  questionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  questionRowDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  questionRowText: {
+    flex: 1,
+  },
+  questionRowMeta: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  questionRowStem: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  questionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    justifyContent: 'center',
+  },
+  questionChip: {
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  questionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   tagPerformanceList: {
     gap: 12,
   },
   tagPerformanceItem: {
-    backgroundColor: '#0f172a',
     borderRadius: 8,
     padding: 12,
   },
@@ -440,7 +591,6 @@ const styles = StyleSheet.create({
   tagName: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#ffffff',
   },
   tagAccuracy: {
     fontSize: 14,
@@ -448,7 +598,6 @@ const styles = StyleSheet.create({
   },
   tagProgressBar: {
     height: 6,
-    backgroundColor: '#334155',
     borderRadius: 3,
     marginBottom: 6,
     overflow: 'hidden',
@@ -459,6 +608,5 @@ const styles = StyleSheet.create({
   },
   tagScore: {
     fontSize: 12,
-    color: '#9ca3af',
   },
 });

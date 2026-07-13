@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,6 +11,8 @@ interface NotePdfViewerProps {
   noteId: string;
   attachment: NoteAttachment;
   height?: number;
+  /** When true, parent ScrollView should stop stealing vertical gestures. */
+  onScrollLockChange?: (locked: boolean) => void;
 }
 
 /**
@@ -22,17 +24,28 @@ function buildInAppViewerUri(signedUrl: string): string {
   if (Platform.OS === 'android') {
     return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(signedUrl)}`;
   }
-  // iOS WKWebView can render PDF over https natively.
   return signedUrl;
 }
 
-export function NotePdfViewer({ noteId, attachment, height = 420 }: NotePdfViewerProps) {
+export function NotePdfViewer({
+  noteId,
+  attachment,
+  height = 420,
+  onScrollLockChange,
+}: NotePdfViewerProps) {
   const { colors } = useTheme();
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [webViewFailed, setWebViewFailed] = useState(false);
+  const onScrollLockChangeRef = useRef(onScrollLockChange);
+  onScrollLockChangeRef.current = onScrollLockChange;
+  const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setParentLocked = useCallback((locked: boolean) => {
+    onScrollLockChangeRef.current?.(locked);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,8 +75,28 @@ export function NotePdfViewer({ noteId, attachment, height = 420 }: NotePdfViewe
 
     return () => {
       cancelled = true;
+      if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+      setParentLocked(false);
     };
-  }, [noteId, attachment.id]);
+  }, [noteId, attachment.id, setParentLocked]);
+
+  const lockParentScroll = useCallback(() => {
+    if (unlockTimerRef.current) {
+      clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = null;
+    }
+    setParentLocked(true);
+  }, [setParentLocked]);
+
+  const unlockParentScroll = useCallback(() => {
+    // Delay unlock so fling/scroll gestures inside the WebView can finish
+    // before the parent ScrollView takes over again.
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+    unlockTimerRef.current = setTimeout(() => {
+      unlockTimerRef.current = null;
+      setParentLocked(false);
+    }, 280);
+  }, [setParentLocked]);
 
   const openExternally = useCallback(async () => {
     if (!signedUrl) return;
@@ -149,24 +182,51 @@ export function NotePdfViewer({ noteId, attachment, height = 420 }: NotePdfViewe
           </Pressable>
         </View>
       ) : (
-        <WebView
-          source={{ uri: viewerUri }}
+        <View
           style={{ height }}
-          originWhitelist={['https://*', 'http://*']}
-          startInLoadingState
-          setSupportMultipleWindows={false}
-          javaScriptEnabled
-          domStorageEnabled
-          mixedContentMode="always"
-          onError={() => setWebViewFailed(true)}
-          onHttpError={() => setWebViewFailed(true)}
-          renderLoading={() => (
-            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: colors.surface }}>
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-          )}
-        />
+          collapsable={false}
+          onTouchStart={lockParentScroll}
+          onTouchEnd={unlockParentScroll}
+          onTouchCancel={unlockParentScroll}
+        >
+          <WebView
+            source={{ uri: viewerUri }}
+            style={{ flex: 1, height }}
+            originWhitelist={['https://*', 'http://*']}
+            startInLoadingState
+            setSupportMultipleWindows={false}
+            javaScriptEnabled
+            domStorageEnabled
+            mixedContentMode="always"
+            nestedScrollEnabled
+            scrollEnabled
+            overScrollMode="content"
+            scalesPageToFit
+            onTouchStart={lockParentScroll}
+            onTouchEnd={unlockParentScroll}
+            onTouchCancel={unlockParentScroll}
+            onError={() => {
+              setParentLocked(false);
+              setWebViewFailed(true);
+            }}
+            onHttpError={() => {
+              setParentLocked(false);
+              setWebViewFailed(true);
+            }}
+            renderLoading={() => (
+              <View
+                className="absolute inset-0 items-center justify-center"
+                style={{ backgroundColor: colors.surface }}
+              >
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            )}
+          />
+        </View>
       )}
+      <Text className="text-[11px] px-3 py-2" style={{ color: colors.textTertiary }}>
+        Scroll inside this preview · tap Open for full screen
+      </Text>
     </View>
   );
 }

@@ -22,6 +22,7 @@ import type { NoteFolder, StudyNote } from '../../services/notes';
 import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -109,6 +110,7 @@ function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
 
 export function NotesScreen({ navigation, embedded = false }: Props) {
   const { colors } = useTheme();
+  const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const {
     folders,
     notes,
@@ -312,7 +314,6 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           value={search}
           onChangeText={setSearch}
           placeholder="Search notes..."
-          placeholderTextColor="#94a3b8"
           className="flex-1 text-sm text-lantern-text py-0.5"
           placeholderTextColor={colors.inputPlaceholder}
         />
@@ -379,7 +380,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         <FlatList
           data={filteredNotes}
           keyExtractor={item => item.id}
-          contentContainerClassName="px-4 pb-8"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }

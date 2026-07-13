@@ -18,6 +18,7 @@ import NewDirectMessageModal from '../../components/NewDirectMessageModal';
 import { useGroupHandlers } from '../../hooks/useGroupHandlers';
 import { featureAccents } from '@lantern/shared/design';
 import type { ChatStackParamList } from '../../navigation/types';
+import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useTheme } from '../../theme';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'GroupsList'>;
@@ -121,6 +122,7 @@ function ChatRow({
 }
 
 export function GroupsScreen({ navigation }: Props) {
+  const tabBarClearance = useTabBarClearance(16);
   const user = useAuthStore(s => s.user);
   const { groups, dmThreads, isLoading, fetchGroups, fetchDmThreads, getTopLevelGroups } = useGroupStore();
   const { handleSelectGroup, handleInitiateDm } = useGroupHandlers();
@@ -269,6 +271,7 @@ export function GroupsScreen({ navigation }: Props) {
               ? `dm-${item.thread.id}`
               : `group-${item.group.id}-L${item.nestingLevel}`
           }
+          contentContainerStyle={{ paddingBottom: tabBarClearance }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
           }
