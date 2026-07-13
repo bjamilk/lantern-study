@@ -14,8 +14,12 @@ web-build/
 coverage/
 
 # Native folders (local `expo prebuild` / run:android artifacts ~2GB)
-/android
-/ios
+android/
+android/**
+_android_local_bak/
+_android_local_bak/**
+ios/
+ios/**
 .kotlin/
 
 # Local APKs / bundles that were bloating uploads to ~500MB
