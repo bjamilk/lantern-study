@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Appearance, View, useColorScheme as useDeviceScheme } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { getFontScale } from '@lantern/shared/settings';
@@ -15,7 +15,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { setColorScheme } = useColorScheme();
   const user = useAuthStore(s => s.user);
   const [fontRevision, setFontRevision] = useState(0);
+  const hasMountedFontEffect = useRef(false);
   const effectivePref = user ? themePref : 'light';
+
+  // Apply before children paint so the Text patch is correct without remounting the tree.
+  setFontScale(getFontScale(fontSize));
 
   const isDark =
     Boolean(user) &&
@@ -29,6 +33,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setFontScale(getFontScale(fontSize));
+    // Remount only when the user changes font size after launch — remounting on
+    // first mount remounts navigation/auth and has caused instant close on Android.
+    if (!hasMountedFontEffect.current) {
+      hasMountedFontEffect.current = true;
+      return;
+    }
     setFontRevision((revision) => revision + 1);
   }, [fontSize]);
 

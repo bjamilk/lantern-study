@@ -23,6 +23,7 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "autoIncrement": true,
       "env": {
         "APP_VARIANT": "preview"
       },
