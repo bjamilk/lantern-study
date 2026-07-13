@@ -235,6 +235,7 @@ export function groupMessageToTestQuestion(msg: GroupQuestionMessage): TestQuest
       return {
         ...base,
         diagramUrl: msg.imageUrl,
+        imageUrl: msg.imageUrl,
         diagramLabels: (msg.diagramLabels || []).map((l, i) => ({
           id: l.id || `label-${i}`,
           label: l.label || l.text,
@@ -455,9 +456,16 @@ export function normalizeApiQuestions(rawQuestions: unknown[]): TestQuestion[] {
       correctAnswer,
       correctAnswers,
       matchingPairs: q.matchingPairs,
-      diagramUrl: q.diagramUrl || q.imageUrl,
-      imageUrl: q.imageUrl,
-      diagramLabels: q.diagramLabels,
+      diagramUrl: q.diagramUrl || q.imageUrl || q.image_url,
+      imageUrl: q.imageUrl || q.image_url || q.diagramUrl,
+      diagramLabels: Array.isArray(q.diagramLabels)
+        ? q.diagramLabels.map((l: any, i: number) => ({
+            id: String(l.id || `label-${i}`),
+            label: String(l.label || l.text || ''),
+            x: typeof l.x === 'number' ? l.x : 50,
+            y: typeof l.y === 'number' ? l.y : 50,
+          }))
+        : undefined,
       blanks: q.blanks,
       sampleAnswer: q.sampleAnswer,
       keywords: q.keywords || q.acceptableAnswers,

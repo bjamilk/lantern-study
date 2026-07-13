@@ -7,6 +7,7 @@ import {
   getFreeformPaths,
   formatFreeformPointsForSvg,
 } from '@lantern/shared/utils';
+import { useResolvedStorageUrl } from '../hooks/useResolvedStorageUrl';
 
 interface ImageOcclusionViewProps {
   card: Flashcard;
@@ -16,6 +17,7 @@ interface ImageOcclusionViewProps {
 export function ImageOcclusionView({ card, showAnswer }: ImageOcclusionViewProps) {
   const [layout, setLayout] = React.useState({ width: 0, height: 0 });
   const overlayOpacity = showAnswer ? 0 : 1;
+  const imageUri = useResolvedStorageUrl(card.imageUrl);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -26,11 +28,15 @@ export function ImageOcclusionView({ card, showAnswer }: ImageOcclusionViewProps
     return null;
   }
 
+  if (!imageUri) {
+    return <View style={[styles.wrapper, { height: 120 }]} />;
+  }
+
   const data = card.occlusionData;
 
   return (
     <View style={styles.wrapper} onLayout={onLayout}>
-      <Image source={{ uri: card.imageUrl }} style={styles.image} resizeMode="contain" />
+      <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
       {layout.width > 0 && layout.height > 0 ? (
         <View style={[StyleSheet.absoluteFill, { opacity: overlayOpacity }]} pointerEvents="none">
           {data?.type === 'rectangles' &&

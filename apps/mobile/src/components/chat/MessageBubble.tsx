@@ -6,6 +6,7 @@ import { useTheme } from '../../theme';
 import { normalizeStorageUrl } from '@lantern/shared/utils';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 
 interface MessageBubbleProps {
   message: Message;
@@ -66,7 +67,7 @@ export function MessageBubble({
     borderColor: colors.border,
     borderWidth: 1,
   };
-  const questionImageUri = message.imageUrl ? normalizeStorageUrl(message.imageUrl) : undefined;
+  const questionImageUri = useResolvedStorageUrl(message.imageUrl);
 
   return (
     <View

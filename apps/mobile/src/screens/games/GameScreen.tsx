@@ -15,13 +15,14 @@ import {
   Dimensions,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -137,6 +138,8 @@ export default function GameScreen() {
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const currentQuestion = session.questions[currentQuestionIndex];
+  const diagramImageUri = useResolvedStorageUrl(currentQuestion?.imageUrl);
+  const insets = useSafeAreaInsets();
   const totalQuestions = session.questions.length;
 
   const [currentSelections, setCurrentSelections] = useState<string[]>([]);
@@ -421,6 +424,76 @@ export default function GameScreen() {
     </View>
   );
 
+  const renderDiagram = () => (
+    <View style={styles.diagramContainer}>
+      {diagramImageUri ? (
+        <View style={styles.diagramImageWrapper}>
+          <Image source={{ uri: diagramImageUri }} style={styles.diagramImage} resizeMode="contain" />
+          {currentQuestion.diagramLabels?.map((label, index) => (
+            <View
+              key={label.id}
+              style={[
+                styles.diagramMarker,
+                { left: `${label.x ?? 50}%`, top: `${label.y ?? 50}%` },
+              ]}
+            >
+              <Text style={styles.diagramMarkerText}>{index + 1}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={[styles.matchingPrompt, { color: colors.textSecondary, marginBottom: 12 }]}>
+          {currentQuestion.imageUrl ? 'Loading diagram…' : 'Diagram image unavailable'}
+        </Text>
+      )}
+      {currentQuestion.diagramLabels?.map((label, index) => (
+        <View
+          key={label.id}
+          style={[styles.matchingRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+        >
+          <Text style={[styles.matchingPrompt, { color: colors.text }]}>{index + 1}.</Text>
+          <TouchableOpacity
+            style={[styles.matchingSelect, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
+            onPress={() =>
+              !isQuestionAnswered &&
+              setShowMatchingDropdown(showMatchingDropdown === label.id ? null : label.id)
+            }
+            disabled={isQuestionAnswered}
+          >
+            <Text
+              style={[
+                styles.matchingSelectText,
+                { color: diagramSelections[label.id] ? colors.text : colors.textTertiary },
+              ]}
+            >
+              {diagramSelections[label.id]
+                ? (shuffledAnswers as DiagramLabel[]).find(a => a.id === diagramSelections[label.id])
+                    ?.text || 'Selected'
+                : 'Select label...'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+          {showMatchingDropdown === label.id && (
+            <View style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {(shuffledAnswers as DiagramLabel[]).map(opt => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[styles.dropdownItem, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    handleDiagramLabelSelect(label.id, opt.id);
+                    setShowMatchingDropdown(null);
+                  }}
+                >
+                  <Text style={[styles.dropdownText, { color: colors.text }]}>{opt.text}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+
   const renderQuestionContent = () => {
     switch (currentQuestion.questionType) {
       case QuestionType.MULTIPLE_CHOICE_SINGLE:
@@ -431,6 +504,8 @@ export default function GameScreen() {
         return renderFillBlank();
       case QuestionType.MATCHING:
         return renderMatching();
+      case QuestionType.DIAGRAM_LABELING:
+        return renderDiagram();
       default:
         return <View style={styles.optionsContainer}>{renderOptions()}</View>;
     }
@@ -500,7 +575,10 @@ export default function GameScreen() {
       </View>
 
       {/* Question Area */}
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
+      >
         <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.questionNumber, { color: colors.primary }]}>
             Question {currentQuestion.questionNumber}
@@ -706,6 +784,38 @@ const styles = StyleSheet.create({
   },
   matchingContainer: {
     gap: 12,
+  },
+  diagramContainer: {
+    gap: 12,
+  },
+  diagramImageWrapper: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+    position: 'relative',
+    marginBottom: 4,
+  },
+  diagramImage: {
+    width: '100%',
+    height: '100%',
+  },
+  diagramMarker: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#6366f1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -12,
+    marginTop: -12,
+  },
+  diagramMarkerText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   matchingRow: {
     padding: 12,

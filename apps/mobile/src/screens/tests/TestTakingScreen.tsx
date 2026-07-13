@@ -17,16 +17,16 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
 import { useTheme, type ThemeColors } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
-import { normalizeStorageUrl } from '@lantern/shared/utils';
 import { useStudySettings } from '../../stores/settingsStore';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
+import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 
@@ -354,15 +354,19 @@ const DiagramLabelingComponent = ({
     [question.id, question.diagramLabels]
   );
   const [pickerLabelId, setPickerLabelId] = useState<string | null>(null);
-  const imageUri = question.diagramUrl || (question as TestQuestion & { imageUrl?: string }).imageUrl;
+  const rawImageUri = question.diagramUrl || question.imageUrl;
+  const imageUri = useResolvedStorageUrl(rawImageUri);
+  const imagePending = !!rawImageUri && !imageUri;
 
   const handleSelect = (pointId: string, selectedId: string) => {
     onAnswer({ ...(labels || {}), [pointId]: selectedId });
     setPickerLabelId(null);
   };
 
-  const selectedOptionText = (selectedId?: string) =>
-    shuffledOptions.find(opt => opt.id === selectedId)?.label || 'Select a label...';
+  const selectedOptionText = (selectedId?: string) => {
+    const opt = shuffledOptions.find(o => o.id === selectedId);
+    return opt?.label || (opt as { text?: string } | undefined)?.text || 'Select a label...';
+  };
 
   return (
     <View style={styles.diagramContainer}>
@@ -372,7 +376,9 @@ const DiagramLabelingComponent = ({
         ) : (
           <View style={styles.diagramImagePlaceholder}>
             <Ionicons name="image-outline" size={48} color="#64748b" />
-            <Text style={styles.diagramPlaceholderText}>Diagram will appear here</Text>
+            <Text style={styles.diagramPlaceholderText}>
+              {imagePending ? 'Loading diagram…' : 'Diagram will appear here'}
+            </Text>
           </View>
         )}
         {imageUri
@@ -436,7 +442,9 @@ const DiagramLabelingComponent = ({
                   style={styles.pickerOption}
                   onPress={() => pickerLabelId && handleSelect(pickerLabelId, opt.id)}
                 >
-                  <Text style={styles.pickerOptionText}>{opt.label}</Text>
+                  <Text style={styles.pickerOptionText}>
+                    {opt.label || (opt as { text?: string }).text}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -493,6 +501,7 @@ export default function TestTakingScreen() {
   const route = useRoute<RouteProp<TestTakingRouteParams, 'TestTaking'>>();
   const navigation = useNavigation<any>();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const userId = useAuthStore(s => s.user?.id) || '';
   const { testName, isOffline, groupName, groupId } = route.params;
 
@@ -560,6 +569,12 @@ export default function TestTakingScreen() {
     if (!activeTest) return null;
     return activeTest.questions[activeTest.currentQuestionIndex];
   }, [activeTest]);
+
+  const questionImageSrc =
+    currentQuestion && currentQuestion.type !== 'diagram_labeling'
+      ? currentQuestion.imageUrl || currentQuestion.diagramUrl
+      : undefined;
+  const resolvedQuestionImage = useResolvedStorageUrl(questionImageSrc);
 
   const progress = useMemo(() => {
     if (!activeTest) return 0;
@@ -895,15 +910,15 @@ export default function TestTakingScreen() {
           
           <Text style={[styles.questionText, { color: colors.text }]}>{currentQuestion.question}</Text>
 
-          {currentQuestion.imageUrl && currentQuestion.type !== 'diagram_labeling' && (
+          {resolvedQuestionImage ? (
             <View style={styles.questionImageWrapper}>
               <Image
-                source={{ uri: normalizeStorageUrl(currentQuestion.imageUrl) }}
+                source={{ uri: resolvedQuestionImage }}
                 style={styles.questionImage}
                 resizeMode="contain"
               />
             </View>
-          )}
+          ) : null}
           
           {currentQuestion.tags && currentQuestion.tags.length > 0 && (
             <View style={styles.tagsContainer}>
@@ -966,7 +981,17 @@ export default function TestTakingScreen() {
       </ScrollView>
 
       {/* Navigation */}
-      <View style={[styles.navigation, { backgroundColor: colors.card, borderTopColor: colors.border }, isStudyMode && styles.navigationStudy]}>
+      <View
+        style={[
+          styles.navigation,
+          {
+            backgroundColor: colors.card,
+            borderTopColor: colors.border,
+            paddingBottom: Math.max(insets.bottom, 16) + 12,
+          },
+          isStudyMode && styles.navigationStudy,
+        ]}
+      >
         <TouchableOpacity
           style={[
             styles.navButton,
@@ -1058,7 +1083,7 @@ export default function TestTakingScreen() {
         onRequestClose={() => setShowReviewModal(false)}
       >
         <View style={styles.reviewOverlay}>
-          <View style={styles.reviewModal}>
+          <View style={[styles.reviewModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
             <Text style={styles.reviewTitle}>Review & Submit</Text>
             <Text style={styles.reviewSubtitle}>
               {answeredCount} answered · {activeTest.questions.length - answeredCount} skipped · {flaggedCount} flagged
@@ -1637,7 +1662,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
     backgroundColor: '#1e293b',
     borderTopWidth: 1,
     borderTopColor: '#334155',

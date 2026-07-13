@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
@@ -19,6 +19,7 @@ interface Props {
 }
 
 export function CramSessionScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Cram';
   const timedMinutes = route.params?.timedMinutes ?? 0;
@@ -179,7 +180,7 @@ export function CramSessionScreen({ navigation, route }: Props) {
         </Pressable>
       </View>
 
-      <View className="px-4 pb-6 gap-2">
+      <View className="px-4 gap-2" style={{ paddingBottom: Math.max(insets.bottom, 12) + 12 }}>
         {!showBack ? (
           <Button variant="accent" fullWidth onPress={() => setShowBack(true)}>
             Show Answer

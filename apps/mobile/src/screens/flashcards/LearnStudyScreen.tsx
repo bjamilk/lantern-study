@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -27,6 +27,7 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 export function LearnStudyScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Learn';
   const { flashcards } = useFlashcardStore();
@@ -124,7 +125,14 @@ export function LearnStudyScreen({ navigation, route }: Props) {
         </Text>
       </View>
 
-      <ScrollView contentContainerClassName="px-4 pb-8 flex-grow justify-center">
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: Math.max(insets.bottom, 16) + 24,
+          flexGrow: 1,
+          justifyContent: 'center',
+        }}
+      >
         <Card className="mb-4 border-violet-100 dark:border-violet-900/40">
           <Text className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-2">Question</Text>
           <Text className="text-lg font-medium text-lantern-text">{front}</Text>

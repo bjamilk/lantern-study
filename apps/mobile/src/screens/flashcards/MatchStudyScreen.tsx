@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -34,6 +34,7 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 export function MatchStudyScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Match';
   const { flashcards } = useFlashcardStore();
@@ -154,7 +155,12 @@ export function MatchStudyScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <ScrollView contentContainerClassName="px-4 pb-8">
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: Math.max(insets.bottom, 16) + 24,
+        }}
+      >
         <View className="flex-row flex-wrap gap-2 justify-center">
           {tiles.map(tile => {
             const isSelected = selected === tile.id;
