@@ -567,11 +567,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
 
   const toggleTheme = () => {
-
+    // Quick toggle switches between light and dark; Settings retains System option.
     const next = theme === 'dark' ? 'light' : 'dark';
-
     void updateSettings('appearance', { theme: next });
-
   };
 
 

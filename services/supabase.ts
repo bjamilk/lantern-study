@@ -3929,6 +3929,8 @@ export const saveUserSettings = async (userId: string, settings: UserSettings): 
 export interface UserPreferences {
   theme: 'light' | 'dark';
   lowDataMode?: boolean;
+  /** Canonical appearance preference including `system` (stored in preferences JSONB). */
+  themePreference?: 'light' | 'dark' | 'system';
   preferences?: Record<string, any>;
 }
 
@@ -3962,6 +3964,12 @@ export const fetchUserPreferences = async (userId: string): Promise<UserPreferen
     return data ? {
       theme: data.theme || 'light',
       lowDataMode: data.preferences?.lowDataMode === true,
+      themePreference:
+        data.preferences?.themePreference === 'system' ||
+        data.preferences?.themePreference === 'light' ||
+        data.preferences?.themePreference === 'dark'
+          ? data.preferences.themePreference
+          : undefined,
       preferences: data.preferences || {}
     } : null;
   } catch (error) {
@@ -3983,6 +3991,7 @@ export const saveUserPreferences = async (userId: string, prefs: UserPreferences
         preferences: {
           ...(prefs.preferences || {}),
           ...(prefs.lowDataMode !== undefined ? { lowDataMode: prefs.lowDataMode } : {}),
+          ...(prefs.themePreference ? { themePreference: prefs.themePreference } : {}),
         },
       }),
     });

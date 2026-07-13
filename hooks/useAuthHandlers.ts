@@ -114,10 +114,12 @@ export function useAuthHandlers() {
             applySettingsToUi(next);
         }
         if (category === 'appearance') {
-            const themeForPrefs = next.appearance.theme === 'system' ? theme : next.appearance.theme;
+            const resolvedTheme =
+                next.appearance.theme === 'system' ? theme : next.appearance.theme;
             void saveUserPreferences(currentUser.id, {
-                theme: themeForPrefs === 'dark' ? 'dark' : 'light',
+                theme: resolvedTheme === 'dark' ? 'dark' : 'light',
                 lowDataMode: next.appearance.lowDataMode,
+                themePreference: next.appearance.theme,
             });
         }
     }, [currentUser, getUserSettings, persistUserSettings, applySettingsToUi, setCurrentUser, theme]);

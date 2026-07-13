@@ -166,6 +166,7 @@ export const {
   deleteOfflineBundle,
   fetchUserPreferences,
   saveUserPreferences,
+  fetchMarketplaceCampuses,
   createChallenge,
   fetchChallenges,
   fetchChallenge,

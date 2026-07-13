@@ -9,8 +9,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const themePref = useSettingsStore(s => s.settings.appearance.theme);
   const deviceScheme = useDeviceScheme();
   const { setColorScheme } = useColorScheme();
-  const currentUser = useAuthStore(s => s.currentUser);
-  const effectivePref = currentUser ? themePref : 'light';
+  // authStore exposes `user` (not currentUser) — wrong key forced light mode forever.
+  const user = useAuthStore(s => s.user);
+  const effectivePref = user ? themePref : 'light';
 
   useEffect(() => {
     if (effectivePref === 'system') {
@@ -21,7 +22,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [effectivePref, deviceScheme, setColorScheme]);
 
   const isDark =
-    Boolean(currentUser) &&
+    Boolean(user) &&
     (themePref === 'dark' || (themePref === 'system' && deviceScheme === 'dark'));
 
   return (
@@ -36,8 +37,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useAppTheme(): 'light' | 'dark' {
   const themePref = useSettingsStore(s => s.settings.appearance.theme);
   const deviceScheme = useDeviceScheme();
-  const currentUser = useAuthStore(s => s.currentUser);
-  if (!currentUser) return 'light';
+  const user = useAuthStore(s => s.user);
+  if (!user) return 'light';
   if (themePref === 'system') return deviceScheme === 'dark' ? 'dark' : 'light';
   return themePref;
 }

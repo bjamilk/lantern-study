@@ -1854,16 +1854,36 @@ export function createApiEndpoints(client: ApiClient) {
 
     saveUserPreferences: (
       userId: string,
-      prefs: { theme: string; lowDataMode: boolean }
+      prefs: {
+        theme: string;
+        lowDataMode: boolean;
+        /** Canonical appearance theme including `system` (stored in preferences JSONB). */
+        themePreference?: 'light' | 'dark' | 'system';
+      }
     ) =>
       apiRequest<void>('/preferences', {
         method: 'POST',
         body: JSON.stringify({
           userId,
-          theme: prefs.theme,
-          preferences: { lowDataMode: prefs.lowDataMode },
+          theme: prefs.theme === 'dark' ? 'dark' : 'light',
+          preferences: {
+            lowDataMode: prefs.lowDataMode,
+            themePreference: prefs.themePreference ?? prefs.theme,
+          },
         }),
       }),
+
+    fetchMarketplaceCampuses: (country = 'NG') =>
+      apiRequest<
+        Array<{
+          id: string;
+          name: string;
+          city: string;
+          state: string;
+          country_code: string;
+          slug: string;
+        }>
+      >(`/marketplace/campuses?country=${encodeURIComponent(country)}`),
   };
 }
 

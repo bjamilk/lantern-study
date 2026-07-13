@@ -119,6 +119,30 @@ export const useSettingsStore = create<SettingsState>()(
               const data = await response.json();
               if (data.data?.settings) {
                 const mergedSettings = normalizeUserSettings(data.data.settings);
+                // Overlay low-data from slim prefs without clobbering system theme.
+                try {
+                  const prefs = await fetchUserPreferences(userId);
+                  if (prefs) {
+                    const lowDataMode =
+                      prefs.lowDataMode ??
+                      (prefs.preferences?.lowDataMode as boolean | undefined) ??
+                      mergedSettings.appearance.lowDataMode;
+                    set({
+                      settings: {
+                        ...mergedSettings,
+                        appearance: {
+                          ...mergedSettings.appearance,
+                          lowDataMode: Boolean(lowDataMode),
+                        },
+                      },
+                      isLoading: false,
+                      hasUnsyncedChanges: false,
+                    });
+                    return;
+                  }
+                } catch {
+                  // Preferences are optional
+                }
                 set({ 
                   settings: mergedSettings,
                   isLoading: false,
@@ -155,14 +179,27 @@ export const useSettingsStore = create<SettingsState>()(
             const prefs = await fetchUserPreferences(userId);
             if (prefs) {
               const { settings: current } = get();
-              const themePref = prefs.theme === 'light' ? 'light' : prefs.theme === 'dark' ? 'dark' : current.appearance.theme;
-              const lowDataMode = prefs.lowDataMode ?? prefs.preferences?.lowDataMode as boolean ?? current.appearance.lowDataMode;
+              const themePreference = prefs.preferences?.themePreference;
+              const resolvedTheme =
+                themePreference === 'system' || themePreference === 'light' || themePreference === 'dark'
+                  ? themePreference
+                  : current.appearance.theme === 'system'
+                    ? 'system'
+                    : prefs.theme === 'light'
+                      ? 'light'
+                      : prefs.theme === 'dark'
+                        ? 'dark'
+                        : current.appearance.theme;
+              const lowDataMode =
+                prefs.lowDataMode ??
+                (prefs.preferences?.lowDataMode as boolean | undefined) ??
+                current.appearance.lowDataMode;
               set({
                 settings: {
                   ...current,
                   appearance: {
                     ...current.appearance,
-                    theme: themePref,
+                    theme: resolvedTheme,
                     lowDataMode: Boolean(lowDataMode),
                   },
                 },
@@ -262,12 +299,14 @@ export const useSettingsStore = create<SettingsState>()(
           }).catch(() => null);
           
           if (response?.ok) {
-            // Sync cross-platform preferences
+            // Sync cross-platform preferences (resolved theme column + canonical themePreference)
             try {
-              const themeForPrefs = settings.appearance.theme === 'system' ? 'dark' : settings.appearance.theme;
+              const resolvedTheme =
+                settings.appearance.theme === 'system' ? 'light' : settings.appearance.theme;
               await saveUserPreferences(userId, {
-                theme: themeForPrefs,
+                theme: resolvedTheme,
                 lowDataMode: settings.appearance.lowDataMode,
+                themePreference: settings.appearance.theme,
               });
             } catch {
               // Non-blocking
@@ -296,10 +335,12 @@ export const useSettingsStore = create<SettingsState>()(
             
             if (!error) {
               try {
-                const themeForPrefs = settings.appearance.theme === 'system' ? 'dark' : settings.appearance.theme;
+                const resolvedTheme =
+                  settings.appearance.theme === 'system' ? 'light' : settings.appearance.theme;
                 await saveUserPreferences(effectiveUserId, {
-                  theme: themeForPrefs,
+                  theme: resolvedTheme,
                   lowDataMode: settings.appearance.lowDataMode,
+                  themePreference: settings.appearance.theme,
                 });
               } catch {
                 // Non-blocking

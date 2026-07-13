@@ -34,13 +34,21 @@ import {
 } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import { supabase } from '../../services/supabase';
-import { exportUserData } from '../../services/api';
+import { exportUserData, fetchMarketplaceCampuses } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
+import { MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
 import { reactivateUserAccount } from '../../services/accountLifecycle';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
+
+const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
+const THEME_OPTIONS = [
+  { value: 'system' as const, label: 'System', icon: 'phone-portrait-outline' as const },
+  { value: 'light' as const, label: 'Light', icon: 'sunny-outline' as const },
+  { value: 'dark' as const, label: 'Dark', icon: 'moon-outline' as const },
+];
 
 interface SettingItemProps {
   icon: string;
@@ -123,6 +131,7 @@ export default function SettingsScreen() {
     hasUnsyncedChanges,
     loadSettings, 
     updateSingleSetting,
+    updateSettings,
     syncSettings,
     resetToDefaults,
   } = useSettingsStore();
@@ -162,9 +171,12 @@ export default function SettingsScreen() {
   const [showContactModal, setShowContactModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showImportAccountModal, setShowImportAccountModal] = useState(false);
+  const [showCampusModal, setShowCampusModal] = useState(false);
   const [accountLifecycle, setAccountLifecycle] = useState<AccountLifecycleInfo | null>(null);
   const [reactivatingAccount, setReactivatingAccount] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [campuses, setCampuses] = useState<Array<{ id: string; name: string; city: string }>>([]);
+  const [campusesLoading, setCampusesLoading] = useState(false);
   
   // Temp values for modals
   const [tempDailyCardGoal, setTempDailyCardGoal] = useState(settings.study.dailyCardGoal);
@@ -176,6 +188,32 @@ export default function SettingsScreen() {
       loadSettings(user.id);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const country = settings.marketplace?.country_code || 'NG';
+    setCampusesLoading(true);
+    void fetchMarketplaceCampuses(country)
+      .then((rows) => {
+        if (!cancelled) setCampuses(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setCampuses([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCampusesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.marketplace?.country_code]);
+
+  const selectedCampusLabel = useMemo(() => {
+    const campusId = settings.marketplace?.campus_id;
+    if (!campusId) return 'All campuses (no default filter)';
+    const match = campuses.find((c) => c.id === campusId);
+    return match ? `${match.name} (${match.city})` : 'Campus selected';
+  }, [campuses, settings.marketplace?.campus_id]);
 
   // Sync indicator
   const SyncIndicator = () => {
@@ -427,6 +465,22 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="mail-unread-outline"
+              iconColor="#6366f1"
+              title="Group Invites"
+              subtitle="When someone invites you to a group"
+              rightElement={
+                <Switch
+                  value={settings.notifications.groupInvites !== false}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'groupInvites', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.groupInvites !== false ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
               icon="storefront-outline"
               iconColor="#a855f7"
               title="Marketplace Updates"
@@ -601,26 +655,105 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Appearance</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.settingItem, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[styles.settingIcon, { backgroundColor: '#f59e0b20' }]}>
+                  <Ionicons name={isDark ? 'moon' : 'sunny'} size={22} color="#f59e0b" />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Theme</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    Synced with the web app
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.themeChipRow}>
+                {THEME_OPTIONS.map((option) => {
+                  const selected = themeMode === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.themeChip,
+                        {
+                          backgroundColor: selected ? colors.primaryBackground : colors.backgroundSecondary,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => {
+                        setThemeMode(option.value);
+                        void updateSingleSetting('appearance', 'theme', option.value);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={option.icon}
+                        size={16}
+                        color={selected ? colors.primary : colors.textSecondary}
+                      />
+                      <Text
+                        style={{
+                          color: selected ? colors.primary : colors.text,
+                          fontSize: 13,
+                          fontWeight: selected ? '600' : '500',
+                        }}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
             <SettingItem
               colors={colors}
-              icon={isDark ? "moon" : "sunny"}
-              iconColor="#f59e0b"
-              title="Theme"
-              subtitle={themeMode === 'system' ? 'System default' : themeMode === 'dark' ? 'Dark mode' : 'Light mode'}
+              icon="cellular-outline"
+              iconColor="#0ea5e9"
+              title="Low-Data Mode"
+              subtitle="Lighter images, charts, and page loads"
               rightElement={
                 <Switch
-                  value={isDark}
-                  onValueChange={(value) => {
-                    const newTheme = value ? 'dark' : 'light';
-                    setThemeMode(newTheme);
-                    updateSingleSetting('appearance', 'theme', newTheme);
-                  }}
+                  value={settings.appearance.lowDataMode}
+                  onValueChange={(val) => updateSingleSetting('appearance', 'lowDataMode', val)}
                   trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={isDark ? colors.switchThumbOn : colors.switchThumbOff}
+                  thumbColor={settings.appearance.lowDataMode ? colors.switchThumbOn : colors.switchThumbOff}
                 />
               }
               showChevron={false}
             />
+            <View style={[styles.settingItem, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <View style={[styles.settingIcon, { backgroundColor: '#ec489920' }]}>
+                  <Ionicons name="color-palette-outline" size={22} color="#ec4899" />
+                </View>
+                <View style={styles.settingContent}>
+                  <Text style={[styles.settingTitle, { color: colors.text }]}>Accent color</Text>
+                  <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+                    Buttons and highlights
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.accentRow}>
+                {ACCENT_PRESETS.map((hex) => {
+                  const selected = settings.appearance.accentColor?.toLowerCase() === hex.toLowerCase();
+                  return (
+                    <TouchableOpacity
+                      key={hex}
+                      onPress={() => void updateSingleSetting('appearance', 'accentColor', hex)}
+                      style={[
+                        styles.accentSwatch,
+                        {
+                          backgroundColor: hex,
+                          borderColor: selected ? colors.text : 'transparent',
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Accent ${hex}`}
+                    />
+                  );
+                })}
+              </View>
+            </View>
             <SettingItem
               colors={colors}
               icon="contract-outline"
@@ -671,6 +804,34 @@ export default function SettingsScreen() {
                 const next = order[(idx + 1) % order.length];
                 updateSingleSetting('appearance', 'fontSize', next);
               }}
+            />
+          </View>
+        </View>
+
+        {/* Marketplace Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Marketplace</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.complianceBanner, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}>
+              <Text style={[styles.complianceText, { color: colors.textSecondary }]}>
+                {MARKETPLACE_COMPLIANCE_BANNER}
+              </Text>
+            </View>
+            <SettingItem
+              colors={colors}
+              icon="flag-outline"
+              iconColor="#10b981"
+              title="Country"
+              subtitle="Nigeria"
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
+              icon="school-outline"
+              iconColor="#6366f1"
+              title="Your campus"
+              subtitle={campusesLoading ? 'Loading campuses…' : selectedCampusLabel}
+              onPress={() => setShowCampusModal(true)}
             />
           </View>
         </View>
@@ -1028,6 +1189,70 @@ export default function SettingsScreen() {
           primaryText: '#ffffff',
         }}
       />
+
+      <Modal
+        visible={showCampusModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCampusModal(false)}
+      >
+        <View style={[styles.modalOverlay, modalTheme.overlay]}>
+          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Your campus</Text>
+              <TouchableOpacity onPress={() => setShowCampusModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              <TouchableOpacity
+                style={[
+                  styles.optionItem,
+                  modalTheme.optionItem,
+                  !settings.marketplace?.campus_id && modalTheme.optionItemActive,
+                ]}
+                onPress={() => {
+                  void updateSettings('marketplace', {
+                    country_code: settings.marketplace?.country_code || 'NG',
+                    campus_id: null,
+                  });
+                  setShowCampusModal(false);
+                }}
+              >
+                <Text style={[styles.optionTitle, modalTheme.optionTitle]}>All campuses</Text>
+                <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
+                  No default campus filter
+                </Text>
+              </TouchableOpacity>
+              {campuses.map((campus) => {
+                const selected = settings.marketplace?.campus_id === campus.id;
+                return (
+                  <TouchableOpacity
+                    key={campus.id}
+                    style={[
+                      styles.optionItem,
+                      modalTheme.optionItem,
+                      selected && modalTheme.optionItemActive,
+                    ]}
+                    onPress={() => {
+                      void updateSettings('marketplace', {
+                        country_code: settings.marketplace?.country_code || 'NG',
+                        campus_id: campus.id,
+                      });
+                      setShowCampusModal(false);
+                    }}
+                  >
+                    <Text style={[styles.optionTitle, modalTheme.optionTitle]}>{campus.name}</Text>
+                    <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
+                      {campus.city}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {user?.id ? (
         <AccountLifecycleModals
@@ -1515,6 +1740,43 @@ const styles = StyleSheet.create({
   },
   themeOptionText: {
     flex: 1,
+  },
+  themeChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themeChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  accentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  accentSwatch: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  complianceBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  complianceText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });
 

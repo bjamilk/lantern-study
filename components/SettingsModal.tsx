@@ -318,6 +318,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <p className="text-xs text-lantern-text-secondary mt-1">Currently {formatReminderTime(notifications.reminderTime)}</p>
                         </div>
                         <ToggleSwitch enabled={notifications.groupActivity} onChange={(val) => onUpdateSettingsCategory('notifications', { groupActivity: val })} label="Group Activity" description="Messages and questions in your groups." />
+                        <ToggleSwitch enabled={notifications.groupInvites !== false} onChange={(val) => onUpdateSettingsCategory('notifications', { groupInvites: val })} label="Group Invites" description="When someone invites you to a group." />
                         <ToggleSwitch enabled={notifications.marketplaceUpdates} onChange={(val) => onUpdateSettingsCategory('notifications', { marketplaceUpdates: val })} label="Marketplace Updates" description="Alerts about listings and messages." />
                         <ToggleSwitch enabled={notifications.badgeUnlocks} onChange={(val) => onUpdateSettingsCategory('notifications', { badgeUnlocks: val })} label="Badge Unlocks" description="Achievement notifications." />
                         <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="SRS Due Card Reminders" description="When flashcards are due for review." />
@@ -493,6 +494,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       <p className="text-sm text-amber-900 dark:text-amber-100">{syncCopy.lowDataDefaultHint}</p>
                     </div>
                     <ToggleSwitch enabled={userSettings.sync.autoSync} onChange={(val) => onUpdateSettingsCategory('sync', { autoSync: val })} label="Auto Sync" description="Sync changes automatically when online." />
+                    <ToggleSwitch enabled={userSettings.sync.syncOnWifiOnly} onChange={(val) => onUpdateSettingsCategory('sync', { syncOnWifiOnly: val })} label="Prefer Wi‑Fi for large syncs" description="On mobile, wait for Wi‑Fi when Sync on Wi‑Fi Only is enabled. Web still syncs when online." />
                     {userSettings.sync.lastSyncTime && (
                         <p className="text-sm text-lantern-text-secondary">Last synced: {new Date(userSettings.sync.lastSyncTime).toLocaleString()}</p>
                     )}

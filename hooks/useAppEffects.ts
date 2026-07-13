@@ -754,9 +754,23 @@ export function useAppEffects({
                 if (results[10].status === 'fulfilled') {
                     const cloudPrefs = results[10].value;
                     if (cloudPrefs) {
-                        setTheme(cloudPrefs.theme);
-                        localStorage.setItem('theme', cloudPrefs.theme);
-                        setLowDataMode(cloudPrefs.lowDataMode === true);
+                        // Theme comes from full UserSettings (supports system). Slim prefs
+                        // only carry a resolved light/dark column — do not overwrite system.
+                        const themePreference = cloudPrefs.preferences?.themePreference;
+                        const fullTheme = useAuthStore.getState().currentUser?.settings?.appearance?.theme;
+                        if (
+                            fullTheme !== 'system' &&
+                            themePreference !== 'system' &&
+                            (cloudPrefs.theme === 'light' || cloudPrefs.theme === 'dark')
+                        ) {
+                            setTheme(cloudPrefs.theme);
+                            localStorage.setItem('theme', cloudPrefs.theme);
+                        }
+                        if (typeof cloudPrefs.lowDataMode === 'boolean') {
+                            setLowDataMode(cloudPrefs.lowDataMode === true);
+                        } else if (typeof cloudPrefs.preferences?.lowDataMode === 'boolean') {
+                            setLowDataMode(cloudPrefs.preferences.lowDataMode === true);
+                        }
                         const extras = cloudPrefs.preferences?.budgetExtras;
                         if (extras && typeof extras === 'object') {
                             if (Array.isArray(extras.savingsGoals)) setSavingsGoals(extras.savingsGoals);
@@ -773,9 +787,15 @@ export function useAppEffects({
                         }
                     } else {
                         const localTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'light';
+                        const settingsTheme =
+                            useAuthStore.getState().currentUser?.settings?.appearance?.theme;
                         saveUserPreferences(userId, {
                             theme: localTheme,
                             lowDataMode,
+                            themePreference:
+                                settingsTheme === 'system' || settingsTheme === 'light' || settingsTheme === 'dark'
+                                    ? settingsTheme
+                                    : localTheme,
                         }).catch(console.error);
                     }
                 }
