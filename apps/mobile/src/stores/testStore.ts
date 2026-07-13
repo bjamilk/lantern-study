@@ -17,6 +17,7 @@ import {
   shuffleArray,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from './settingsStore';
+import { resolveAttemptTimeLimitMinutes } from '../utils/resolveAttemptTimeLimitMinutes';
 
 const DEMO_MODE = false;
 
@@ -90,6 +91,10 @@ function buildSessionPayload(
       groupId: options?.groupId,
       passingScore: activeTest.test.passingScore,
       mode: activeTest.mode,
+      // Persist timer so retake restores the same conditions (minutes + seconds for web parity).
+      timerDurationMinutes: activeTest.test.timeLimit || 0,
+      timerDuration: (activeTest.test.timeLimit || 0) * 60,
+      numberOfQuestions: activeTest.questions.length,
     },
   };
 }
@@ -166,6 +171,8 @@ export interface Test {
 export interface TestAttempt {
   id: string;
   testId: string;
+  /** Original template/deck test id when the attempt was a one-off session. */
+  originalTestId?: string;
   testName: string;
   groupId?: string;
   groupName?: string;
@@ -175,6 +182,8 @@ export interface TestAttempt {
   totalPoints: number;
   percentage: number;
   passed: boolean;
+  /** Minutes; 0 = no time limit. Used to restore conditions on retake. */
+  timeLimitMinutes?: number;
   answers: {
     questionId: string;
     userAnswer: string | string[] | Record<string, string>; // Support different answer formats
@@ -593,7 +602,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       const attempts: TestAttempt[] = apiResults.map((r: any) => {
         const session = r.session || r;
         const config = session.config || {};
-        const questions = session.questions || [];
+        const questions = normalizeApiQuestions(session.questions || []);
         const userAnswers = session.userAnswers || session.user_answers || {};
         const startTime = session.startTime || session.start_time;
         const endTime = session.endTime || session.end_time;
@@ -601,9 +610,14 @@ export const useTestStore = create<TestState>((set, get) => ({
         const totalQuestions = r.totalQuestions ?? r.total_questions ?? questions.length;
         const correctAnswersCount = r.correctAnswersCount ?? r.correct_answers_count ?? 0;
         const percentage = Math.round(r.score ?? 0);
+        const timeLimitMinutes = resolveAttemptTimeLimitMinutes(config);
+        const originalTestId =
+          typeof config.testId === 'string' && config.testId && !String(config.testId).startsWith('custom-')
+            ? config.testId
+            : undefined;
 
         const answers = Object.entries(userAnswers).map(([qId, ans]: [string, any]) => {
-          const question = questions.find((q: any) => q.id === qId);
+          const question = questions.find((q) => q.id === qId);
           const userAnswer =
             ans?.userAnswer ??
             ans?.selectedOptionIds ??
@@ -617,8 +631,8 @@ export const useTestStore = create<TestState>((set, get) => ({
             userAnswer,
             isCorrect: ans?.isCorrect || false,
             points: ans?.isCorrect ? (question?.points || 10) : 0,
-            questionText: question?.question || question?.questionStem,
-            questionType: question?.type || question?.questionType,
+            questionText: question?.question,
+            questionType: question?.type,
             correctAnswer: question ? getCorrectAnswerForQuestion(question) : undefined,
             options: question?.options,
             explanation: question?.explanation,
@@ -633,8 +647,9 @@ export const useTestStore = create<TestState>((set, get) => ({
 
         return {
           id: sessionId,
-          testId: sessionId,
-          testName: config.name || config.groupName || 'Test',
+          testId: originalTestId || sessionId,
+          originalTestId,
+          testName: config.name || config.testName || config.groupName || config.deckName || 'Test',
           groupId: config.groupId,
           groupName: config.groupName,
           startedAt: startTime ? new Date(startTime).toISOString() : new Date().toISOString(),
@@ -643,6 +658,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           totalPoints: totalQuestions,
           percentage,
           passed: percentage >= (config.passingScore || 70),
+          timeLimitMinutes,
           answers,
           timeSpent,
         };
@@ -759,9 +775,11 @@ export const useTestStore = create<TestState>((set, get) => ({
     mode: TestMode = 'study',
     options?: { timeLimitMinutes?: number }
   ) => {
+    // Do not invent a timer — use the caller's value, or untimed (0).
     const timeLimit =
-      options?.timeLimitMinutes ??
-      (mode === 'test' ? Math.max(questions.length * 2, 5) : 0);
+      options?.timeLimitMinutes !== undefined
+        ? Math.max(0, options.timeLimitMinutes)
+        : 0;
 
     const generatedTest: Test = {
       id: `custom-${Date.now()}`,
@@ -1041,6 +1059,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     const attempt: TestAttempt = {
       id: `attempt-${Date.now()}`,
       testId: activeTest.test.id,
+      originalTestId: activeTest.test.id.startsWith('custom-') ? undefined : activeTest.test.id,
       testName: activeTest.test.name,
       startedAt: new Date(activeTest.startTime).toISOString(),
       completedAt: new Date().toISOString(),
@@ -1048,6 +1067,7 @@ export const useTestStore = create<TestState>((set, get) => ({
       totalPoints,
       percentage,
       passed: percentage >= activeTest.test.passingScore,
+      timeLimitMinutes: activeTest.test.timeLimit || 0,
       answers,
       timeSpent,
     };
@@ -1227,8 +1247,8 @@ export const useTestStore = create<TestState>((set, get) => ({
       }
     }
 
-    set({ attempts: [] });
     clearTestResultsCache();
+    set({ attempts: [] });
     await get().saveToStorage();
   },
 

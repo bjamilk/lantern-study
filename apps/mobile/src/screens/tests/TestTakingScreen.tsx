@@ -842,13 +842,18 @@ export default function TestTakingScreen() {
   };
 
   if (!activeTest || !currentQuestion) {
+    const endedCopy = isSubmitting
+      ? 'Submitting your answers…'
+      : 'This test session has ended.';
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.errorContainer}>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>Test not found</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
-          </TouchableOpacity>
+          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{endedCopy}</Text>
+          {!isSubmitting && (
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <Text style={[styles.errorLink, { color: colors.primary }]}>Go Back</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     );

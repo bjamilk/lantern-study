@@ -612,7 +612,7 @@ export const App: React.FC = () => {
     };
     // Redirect invalid mode/state combinations
     useEffect(() => {
-        if (appMode === AppMode.TEST_ACTIVE && !activeTestSession) {
+        if (appMode === AppMode.TEST_ACTIVE && !activeTestSession && !activeTestResult) {
             setAppMode(AppMode.CHAT);
         } else if (appMode === AppMode.STUDY_ACTIVE && !activeStudySession) {
             setAppMode(AppMode.CHAT);

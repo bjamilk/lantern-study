@@ -327,8 +327,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 });
                 setUserQuestionStats(newUserQuestionStats);
                 setActiveTestResult(result);
-                setActiveTestSession(null);
                 setAppMode(AppMode.TEST_REVIEW);
+                setActiveTestSession(null);
                 trackQuestProgress('complete_test');
                 trackStudyActivity('test', 1);
                 addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
@@ -411,8 +411,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             setUserQuestionStats(newUserQuestionStats);
             
                 setActiveTestResult(result);
-                setActiveTestSession(null);
                 setAppMode(AppMode.TEST_REVIEW);
+                setActiveTestSession(null);
                 trackQuestProgress('complete_test');
                 // Study activity recorded server-side with createTestResult
                 // Post-test debrief via Lantern companion

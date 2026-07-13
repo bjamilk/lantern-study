@@ -3660,6 +3660,7 @@ export class SupabaseService {
       await cacheService.delete(`test:questions:${sessionId}`);
     }
     await cacheService.deletePattern(`tests:${userId}:*`);
+    await cacheService.delete(`user:${userId}:test-results`);
     await cacheService.delete(`tests:stats:subject:${userId}`);
     await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
     await cacheService.delete(`user:stats:${userId}`);

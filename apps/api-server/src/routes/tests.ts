@@ -136,6 +136,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         }
 
         await cacheService.deletePattern(`tests:${userId}:*`);
+        await cacheService.delete(`user:${userId}:test-results`);
         await cacheService.delete(`user:stats:${userId}`);
 
         res.json({

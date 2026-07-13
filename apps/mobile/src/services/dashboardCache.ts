@@ -60,6 +60,7 @@ export async function saveCachedDashboardStats(
 
 export function clearTestResultsCache(): void {
   testResultsCache = null;
+  inflightTestResults = null;
 }
 
 export async function fetchTestResultsCached(

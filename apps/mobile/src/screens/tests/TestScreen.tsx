@@ -21,6 +21,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
+import { normalizeApiQuestions } from '../../utils/questionHelpers';
 
 type TabType = 'tests' | 'history';
 
@@ -103,15 +104,20 @@ export default function TestScreen() {
   }, [configTest, testQuestionsById]);
 
   const handleRetake = useCallback(async (attempt: TestAttempt) => {
-    const questions = attempt.answers
-      .map(a => a.questionSnapshot)
-      .filter((q): q is NonNullable<typeof q> => !!q);
+    const questions = normalizeApiQuestions(
+      attempt.answers
+        .map(a => a.questionSnapshot)
+        .filter((q): q is NonNullable<typeof q> => !!q)
+    );
+
+    const timeLimitMinutes = attempt.timeLimitMinutes ?? 0;
+    const sessionName = attempt.testName || 'Retake';
 
     if (questions.length > 0) {
-      await startQuestionSet(attempt.testName, questions, 'test');
+      await startQuestionSet(sessionName, questions, 'test', { timeLimitMinutes });
       navigation.navigate('TestTaking', {
         testId: 'custom',
-        testName: attempt.testName,
+        testName: sessionName,
         mode: 'test',
         groupName: attempt.groupName,
         groupId: attempt.groupId,
@@ -119,10 +125,14 @@ export default function TestScreen() {
       return;
     }
 
-    const existingTest = tests.find(t => t.id === attempt.testId);
+    const lookupId = attempt.originalTestId || attempt.testId;
+    const existingTest = tests.find(t => t.id === lookupId);
     if (existingTest) {
       try {
-        await startTest(existingTest.id, 'test');
+        await startTest(existingTest.id, 'test', {
+          timeLimit: timeLimitMinutes || existingTest.timeLimit,
+          userId: user?.id,
+        });
         navigation.navigate('TestTaking', {
           testId: existingTest.id,
           testName: existingTest.name,
@@ -137,7 +147,7 @@ export default function TestScreen() {
     }
 
     Alert.alert('Cannot retake', 'Question data is no longer available for this test.');
-  }, [tests, startQuestionSet, startTest, navigation]);
+  }, [tests, startQuestionSet, startTest, navigation, user?.id]);
 
   const handleViewAttempt = useCallback((attempt: TestAttempt) => {
     navigation.navigate('TestResults', { attemptId: attempt.id });
@@ -167,21 +177,23 @@ export default function TestScreen() {
     if (!user?.id || attempts.length === 0) return;
     Alert.alert(
       'Clear test history?',
-      'Delete all test history? This cannot be undone.',
+      'Delete all completed test history? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Clear All',
           style: 'destructive',
           onPress: () => {
-            void clearTestHistory(user.id).catch(() => {
-              Alert.alert('Error', 'Failed to clear test history.');
-            });
+            void clearTestHistory(user.id)
+              .then(() => fetchAttempts(user.id))
+              .catch(() => {
+                Alert.alert('Error', 'Failed to clear test history.');
+              });
           },
         },
       ]
     );
-  }, [user?.id, attempts.length, clearTestHistory]);
+  }, [user?.id, attempts.length, clearTestHistory, fetchAttempts]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
