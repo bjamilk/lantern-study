@@ -64,11 +64,16 @@ const MOBILE_DEV_CONFIG: Config = {
   apiBaseUrl: 'http://192.168.4.38:3001',
 };
 
-// Production values (to be set via environment variables)
-const PROD_CONFIG: Config = {
-  supabaseUrl: '', // Set via VITE_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_URL
-  supabaseAnonKey: '', // Set via VITE_SUPABASE_ANON_KEY or EXPO_PUBLIC_SUPABASE_ANON_KEY
-  apiBaseUrl: '', // Set via VITE_API_URL or EXPO_PUBLIC_API_URL
+/**
+ * Public cloud endpoints used when Expo OTA/production bundles don't inline
+ * EXPO_PUBLIC_* (dynamic process.env access is stripped by Metro).
+ * Anon key is public-by-design (same values as apps/mobile supabase client).
+ */
+const MOBILE_PROD_FALLBACK: Config = {
+  supabaseUrl: 'https://tiizkjhbrnaibaagmurl.supabase.co',
+  supabaseAnonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXpramhicm5haWJhYWdtdXJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjMyMjMsImV4cCI6MjA5NjQzOTIyM30.dzI3L5Blbao5DItW3xgMIUzAi9LBijZncFaNBLTMvoE',
+  apiBaseUrl: 'https://lantern-study-api.onrender.com',
 };
 
 type GlobalWithLanternVite = typeof globalThis & {
@@ -90,14 +95,31 @@ const getWebViteEnv = (name: string): string | undefined => {
 };
 
 /**
+ * Static EXPO_PUBLIC_* reads — Metro/Expo only inlines literal property access.
+ * Dynamic `process.env[key]` is undefined in production OTA bundles.
+ */
+const getExpoPublicEnv = (name: 'SUPABASE_URL' | 'SUPABASE_ANON_KEY' | 'API_URL'): string | undefined => {
+  if (typeof process === 'undefined' || !process.env) return undefined;
+  switch (name) {
+    case 'SUPABASE_URL':
+      return process.env.EXPO_PUBLIC_SUPABASE_URL || undefined;
+    case 'SUPABASE_ANON_KEY':
+      return process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || undefined;
+    case 'API_URL':
+      return process.env.EXPO_PUBLIC_API_URL || undefined;
+    default:
+      return undefined;
+  }
+};
+
+/**
  * Get environment variable by name
  * Handles both Vite (web) and Expo (mobile) env patterns
  */
 const getEnvVar = (name: string): string | undefined => {
-  // Try Expo public env vars (mobile)
-  if (typeof process !== 'undefined' && process.env) {
-    const expoKey = `EXPO_PUBLIC_${name}`;
-    if (process.env[expoKey]) return process.env[expoKey];
+  if (name === 'SUPABASE_URL' || name === 'SUPABASE_ANON_KEY' || name === 'API_URL') {
+    const expoValue = getExpoPublicEnv(name);
+    if (expoValue) return expoValue;
   }
 
   if (!isReactNative()) {
@@ -114,33 +136,40 @@ const getEnvVar = (name: string): string | undefined => {
 export const getConfig = (): Config => {
   const platform = getPlatform();
   const env = getEnvironment();
-  
+
   // Production: use environment variables (with validation)
   if (env === 'production') {
     const supabaseUrl = getEnvVar('SUPABASE_URL');
     const supabaseAnonKey = getEnvVar('SUPABASE_ANON_KEY');
     const apiBaseUrl = getEnvVar('API_URL');
-    
-    // Validate required production environment variables
+
     const missing: string[] = [];
     if (!supabaseUrl) missing.push('SUPABASE_URL');
     if (!supabaseAnonKey) missing.push('SUPABASE_ANON_KEY');
     if (!apiBaseUrl) missing.push('API_URL');
-    
+
     if (missing.length > 0) {
+      // Mobile preview/production OTA: never hard-fail chat/API over missing inlined env.
+      if (platform === 'mobile') {
+        return {
+          supabaseUrl: supabaseUrl || MOBILE_PROD_FALLBACK.supabaseUrl,
+          supabaseAnonKey: supabaseAnonKey || MOBILE_PROD_FALLBACK.supabaseAnonKey,
+          apiBaseUrl: apiBaseUrl || MOBILE_PROD_FALLBACK.apiBaseUrl,
+        };
+      }
       throw new Error(`Missing required production environment variables: ${missing.join(', ')}`);
     }
-    
+
     return {
       supabaseUrl: supabaseUrl || '',
       supabaseAnonKey: supabaseAnonKey || '',
       apiBaseUrl: apiBaseUrl || '',
     };
   }
-  
+
   // Development: use platform-specific defaults, allow env override
   const defaultConfig = platform === 'mobile' ? MOBILE_DEV_CONFIG : DEV_CONFIG;
-  
+
   return {
     supabaseUrl: getEnvVar('SUPABASE_URL') || defaultConfig.supabaseUrl,
     supabaseAnonKey: getEnvVar('SUPABASE_ANON_KEY') || defaultConfig.supabaseAnonKey,
@@ -174,11 +203,11 @@ export const getLanIp = (): string => {
  */
 export const getApiUrl = (endpoint: string): string => {
   const baseUrl = getApiBaseUrl();
-  
+
   // If we have a LAN override and this is mobile dev, use it
   if (lanIpOverride && getPlatform() === 'mobile' && getEnvironment() === 'development') {
     return `http://${lanIpOverride}:3001${endpoint}`;
   }
-  
+
   return `${baseUrl}${endpoint}`;
 };

@@ -14,6 +14,12 @@ describe('normalizeStorageUrl', () => {
     expect(normalizeStorageUrl(dataUrl, 'http://127.0.0.1:55421')).toBe(dataUrl);
   });
 
+  it('leaves cloud storage URLs unchanged without requiring env config', () => {
+    const url =
+      'https://tiizkjhbrnaibaagmurl.supabase.co/storage/v1/object/public/question-images/q.png';
+    expect(normalizeStorageUrl(url)).toBe(url);
+  });
+
   it('parses public storage object URLs', () => {
     const url =
       'http://127.0.0.1:55421/storage/v1/object/public/question-images/user-1/questions/q.png';
