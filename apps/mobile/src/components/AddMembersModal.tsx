@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useTheme } from '../theme';
+import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
 
 interface SearchResult {
@@ -251,7 +251,10 @@ export default function AddMembersModal({
               <TouchableOpacity
                 style={[
                   styles.userItem,
-                  { backgroundColor: isSelected ? colors.primary + '20' : 'transparent' }
+                  {
+                    backgroundColor: isSelected ? colors.primary + '20' : colors.background,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                  },
                 ]}
                 onPress={() => handleUserToggle(item.id)}
               >
@@ -358,7 +361,7 @@ export default function AddMembersModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <ThemeScope style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.card }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -384,7 +387,7 @@ export default function AddMembersModal({
             {view === 'invite' && renderInviteView()}
           </View>
         </View>
-      </View>
+      </ThemeScope>
     </Modal>
   );
 }
@@ -511,6 +514,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     marginBottom: 8,
+    borderWidth: 1,
   },
   userAvatarContainer: {
     position: 'relative',

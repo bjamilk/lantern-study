@@ -18,6 +18,8 @@ import {
   assertNoteUploadSize,
   wrapNoteFinalizeError,
 } from '@lantern/shared/utils/noteUpload';
+import { assertAllowedImageUpload } from '@lantern/shared';
+import { compressImage } from '../utils/imageCompression';
 
 export {
   MAX_NOTE_UPLOAD_BYTES,
@@ -727,6 +729,219 @@ export async function uploadPresentationViaApi(
     return result;
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw wrapNoteFinalizeError(err);
+  }
+}
+
+function imageContentTypeFromFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+async function prepareImageForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('File is not an image.');
+  }
+  assertAllowedImageUpload({ contentType: file.type, byteLength: file.size });
+  if (file.size > 2 * 1024 * 1024) {
+    try {
+      const compressed = await compressImage(file, {
+        maxWidth: 1920,
+        maxHeight: 1920,
+        quality: 0.85,
+        outputType: 'file',
+      });
+      if (compressed instanceof File) {
+        assertAllowedImageUpload({ contentType: compressed.type, byteLength: compressed.size });
+        return compressed;
+      }
+    } catch {
+      // keep original file
+    }
+  }
+  return file;
+}
+
+export async function reorderNoteAttachments(
+  noteId: string,
+  attachmentIds: string[]
+): Promise<{ attachments: NoteAttachment[] }> {
+  return notesRequest<{ attachments: NoteAttachment[] }>(`/${noteId}/attachments/reorder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ attachmentIds }),
+  });
+}
+
+export async function uploadNoteImagesViaApi(
+  files: File[],
+  folderId?: string,
+  onProgress?: NoteImportProgressCallback,
+  title?: string
+): Promise<{ note: StudyNote; attachments: NoteAttachment[] }> {
+  if (files.length === 0) {
+    throw new Error('Select at least one image.');
+  }
+
+  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
+  onProgress?.({
+    stage: 'encoding',
+    percent: null,
+    label: 'Preparing photos…',
+    fileName: label,
+  });
+
+  const { userId } = await ensureNotesUploadSession();
+  const { supabase } = await import('./supabase');
+  const prepared: File[] = [];
+  for (const file of files) {
+    prepared.push(await prepareImageForUpload(file));
+  }
+
+  const storagePaths: string[] = [];
+  const fileNames: string[] = [];
+
+  try {
+    for (let i = 0; i < prepared.length; i++) {
+      const file = prepared[i];
+      const storagePath = buildNoteStoragePath(userId, file.name || `photo-${i + 1}.jpg`);
+      const contentType = file.type || imageContentTypeFromFileName(file.name);
+      await uploadFileToNoteStorage(file, storagePath, contentType, (progress) => {
+        const overall =
+          prepared.length > 1
+            ? Math.round(((i + (progress.percent ?? 0) / 100) / prepared.length) * 100)
+            : (progress.percent ?? null);
+        onProgress?.({
+          ...progress,
+          percent: overall,
+          label:
+            prepared.length > 1
+              ? `Uploading ${i + 1}/${prepared.length}…`
+              : progress.label,
+          fileName: label,
+        });
+      });
+      storagePaths.push(storagePath);
+      fileNames.push(file.name || `photo-${i + 1}.jpg`);
+    }
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
+    throw new Error(
+      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
+    );
+  }
+
+  onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Saving photos…',
+    fileName: label,
+  });
+
+  try {
+    const result = await notesRequest<{ note: StudyNote; attachments: NoteAttachment[] }>(
+      '/finalize-images',
+      {
+        method: 'POST',
+        body: JSON.stringify({ storagePaths, fileNames, folderId, title }),
+      }
+    );
+    onProgress?.({
+      stage: 'complete',
+      percent: 100,
+      label: 'Upload complete',
+      fileName: label,
+    });
+    return result;
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
+    throw wrapNoteFinalizeError(err);
+  }
+}
+
+export async function addImagesToPhotoNote(
+  noteId: string,
+  files: File[],
+  onProgress?: NoteImportProgressCallback
+): Promise<{ attachments: NoteAttachment[] }> {
+  if (files.length === 0) {
+    throw new Error('Select at least one image.');
+  }
+
+  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
+  onProgress?.({
+    stage: 'encoding',
+    percent: null,
+    label: 'Preparing photos…',
+    fileName: label,
+  });
+
+  const { userId } = await ensureNotesUploadSession();
+  const { supabase } = await import('./supabase');
+  const prepared: File[] = [];
+  for (const file of files) {
+    prepared.push(await prepareImageForUpload(file));
+  }
+
+  const storagePaths: string[] = [];
+  const fileNames: string[] = [];
+
+  try {
+    for (let i = 0; i < prepared.length; i++) {
+      const file = prepared[i];
+      const storagePath = buildNoteStoragePath(userId, file.name || `photo-${i + 1}.jpg`);
+      const contentType = file.type || imageContentTypeFromFileName(file.name);
+      await uploadFileToNoteStorage(file, storagePath, contentType, (progress) => {
+        const overall =
+          prepared.length > 1
+            ? Math.round(((i + (progress.percent ?? 0) / 100) / prepared.length) * 100)
+            : (progress.percent ?? null);
+        onProgress?.({
+          ...progress,
+          percent: overall,
+          label:
+            prepared.length > 1
+              ? `Uploading ${i + 1}/${prepared.length}…`
+              : progress.label,
+          fileName: label,
+        });
+      });
+      storagePaths.push(storagePath);
+      fileNames.push(file.name || `photo-${i + 1}.jpg`);
+    }
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
+    throw new Error(
+      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
+    );
+  }
+
+  onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Saving photos…',
+    fileName: label,
+  });
+
+  try {
+    const result = await notesRequest<{ attachments: NoteAttachment[] }>(
+      `/${noteId}/attachments/finalize-image`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ storagePaths, fileNames }),
+      }
+    );
+    onProgress?.({
+      stage: 'complete',
+      percent: 100,
+      label: 'Upload complete',
+      fileName: label,
+    });
+    return result;
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
     throw wrapNoteFinalizeError(err);
   }
 }

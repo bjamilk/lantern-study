@@ -797,6 +797,13 @@ export const App: React.FC = () => {
                     // Sticky toast shown by runNoteFileImport
                 }
             }}
+            onPhotosImport={async (files) => {
+                try {
+                    await noteHandlers.handlePhotosImport(files, selectedFolderId || undefined);
+                } catch {
+                    // Sticky toast shown by runNoteImagesImport
+                }
+            }}
         />
     );
 

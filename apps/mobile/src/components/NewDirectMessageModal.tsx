@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../theme';
+import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
 
 interface Contact {
@@ -150,13 +150,13 @@ export default function NewDirectMessageModal({
     switch (status) {
       case 'online': return '#10b981';
       case 'away': return '#f59e0b';
-      default: return '#6b7280';
+      default: return colors.textTertiary;
     }
   };
 
   const renderContact = ({ item }: { item: Contact & { username?: string } }) => (
     <TouchableOpacity
-      style={styles.contactItem}
+      style={[styles.contactItem, { backgroundColor: colors.background, borderColor: colors.border }]}
       onPress={() => handleSelectContact(item)}
       activeOpacity={0.7}
     >
@@ -169,20 +169,25 @@ export default function NewDirectMessageModal({
           style={styles.avatar}
         />
         {!useApiSearch && (
-          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: getStatusColor(item.status), borderColor: colors.card },
+            ]}
+          />
         )}
       </View>
-      
+
       <View style={styles.contactInfo}>
-        <Text style={styles.contactName}>{item.name}</Text>
+        <Text style={[styles.contactName, { color: colors.text }]}>{item.name}</Text>
         {item.username ? (
-          <Text style={styles.contactEmail}>@{item.username}</Text>
+          <Text style={[styles.contactEmail, { color: colors.primary }]}>@{item.username}</Text>
         ) : item.email ? (
-          <Text style={styles.contactEmail}>{item.email}</Text>
+          <Text style={[styles.contactEmail, { color: colors.textSecondary }]}>{item.email}</Text>
         ) : null}
       </View>
-      
-      <Ionicons name="chatbubble-outline" size={20} color="#6366f1" />
+
+      <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
     </TouchableOpacity>
   );
 
@@ -191,33 +196,39 @@ export default function NewDirectMessageModal({
     if (searchError) {
       return (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>{searchError}</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{searchError}</Text>
         </View>
       );
     }
     if (useApiSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={48} color="#4b5563" />
-          <Text style={styles.emptyText}>No users found</Text>
-          <Text style={styles.emptySubtext}>Try a different name or @username</Text>
+          <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No users found</Text>
+          <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
+            Try a different name or @username
+          </Text>
         </View>
       );
     }
     if (!trimmedSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Ionicons name="people-outline" size={48} color="#4b5563" />
-          <Text style={styles.emptyText}>No contacts available</Text>
-          <Text style={styles.emptySubtext}>Join groups to connect with others</Text>
+          <Ionicons name="people-outline" size={48} color={colors.textTertiary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No contacts available</Text>
+          <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
+            Join groups to connect with others
+          </Text>
         </View>
       );
     }
     if (trimmedSearch && !useApiSearch && listData.length === 0) {
       return (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No contacts found</Text>
-          <Text style={styles.emptySubtext}>Type 2+ characters to search all users</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No contacts found</Text>
+          <Text style={[styles.emptySubtext, { color: colors.textTertiary }]}>
+            Type 2+ characters to search all users
+          </Text>
         </View>
       );
     }
@@ -231,16 +242,24 @@ export default function NewDirectMessageModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <ThemeScope style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.card }]}>
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>New Message</Text>
-            <TouchableOpacity onPress={onClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={[styles.closeButton, { backgroundColor: colors.background }]}
+            >
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.searchContainer, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.searchContainer,
+              { backgroundColor: colors.background, borderColor: colors.border },
+            ]}
+          >
             <Ionicons name="search" size={20} color={colors.textSecondary} />
             <TextInput
               style={[styles.searchInput, { color: colors.text }]}
@@ -259,7 +278,14 @@ export default function NewDirectMessageModal({
 
           {isSearching && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#6366f1" />
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          )}
+
+          {!trimmedSearch && !useApiSearch && listData.length > 0 && (
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>All Contacts</Text>
+              <Text style={[styles.sectionCount, { color: colors.textTertiary }]}>{listData.length}</Text>
             </View>
           )}
 
@@ -271,15 +297,8 @@ export default function NewDirectMessageModal({
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={emptyMessage}
           />
-
-          {!trimmedSearch && !useApiSearch && listData.length > 0 && (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>All Contacts</Text>
-              <Text style={styles.sectionCount}>{listData.length}</Text>
-            </View>
-          )}
         </View>
-      </View>
+      </ThemeScope>
     </Modal>
   );
 }
@@ -287,11 +306,10 @@ export default function NewDirectMessageModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#0f172a',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '85%',
@@ -305,37 +323,33 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ffffff',
   },
   closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1e293b',
     justifyContent: 'center',
     alignItems: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: 8,
     paddingHorizontal: 14,
     borderRadius: 12,
+    borderWidth: 1,
     gap: 10,
   },
   searchInput: {
     flex: 1,
     paddingVertical: 14,
     fontSize: 16,
-    color: '#ffffff',
   },
   loadingContainer: {
     paddingVertical: 16,
@@ -346,23 +360,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#0f172a',
-    position: 'absolute',
-    top: 140,
-    left: 0,
-    right: 0,
+    paddingBottom: 4,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#9ca3af',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   sectionCount: {
     fontSize: 14,
-    color: '#6b7280',
   },
   listContent: {
     paddingHorizontal: 20,
@@ -373,10 +380,10 @@ const styles = StyleSheet.create({
   contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1e293b',
     padding: 14,
     borderRadius: 14,
     marginBottom: 10,
+    borderWidth: 1,
     gap: 14,
   },
   avatarContainer: {
@@ -395,7 +402,6 @@ const styles = StyleSheet.create({
     height: 14,
     borderRadius: 7,
     borderWidth: 2,
-    borderColor: '#1e293b',
   },
   contactInfo: {
     flex: 1,
@@ -403,12 +409,10 @@ const styles = StyleSheet.create({
   contactName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 2,
   },
   contactEmail: {
     fontSize: 13,
-    color: '#9ca3af',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -417,12 +421,10 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#9ca3af',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#6b7280',
     marginTop: 4,
   },
 });

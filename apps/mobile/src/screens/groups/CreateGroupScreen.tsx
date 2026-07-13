@@ -300,9 +300,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                   <Pressable
                     key={u.id}
                     onPress={() => handleUserRemove(u.id)}
-                    className="flex-row items-center bg-lantern-primary-background dark:bg-lantern-primary-dark/40 px-3 py-1.5 rounded-full"
+                    className="flex-row items-center bg-lantern-primary-background px-3 py-1.5 rounded-full"
                   >
-                    <Text className="text-sm text-lantern-primary-dark dark:text-lantern-primary-light mr-1">
+                    <Text className="text-sm text-lantern-primary-dark mr-1">
                       {u.username ? `@${u.username}` : u.name}
                     </Text>
                     <Ionicons name="close" size={14} color="#6366f1" />
@@ -310,14 +310,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                 ))}
               </View>
             </View>
-          ) : (
-            <View className="mt-4 p-4 rounded-2xl bg-lantern-primary-background mb-4">
-              <Text className="font-medium text-lantern-primary-dark dark:text-lantern-primary-light">Invite link after creation</Text>
-              <Text className="text-sm text-lantern-primary mt-1">
-                Share an invite link once the group is created.
-              </Text>
-            </View>
-          )}
+          ) : null}
         </ScrollView>
 
         <StepFooter>
@@ -328,9 +321,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           ) : (
             <Pressable
               onPress={() => setStep('group_details')}
-              className="w-full py-3 bg-lantern-border dark:bg-lantern-surface-secondary rounded-2xl items-center active:opacity-90"
+              className="w-full py-3 bg-lantern-surface-secondary border border-lantern-border rounded-2xl items-center active:opacity-90"
             >
-              <Text className="font-semibold text-sm text-white">Skip - Create Group Without Members</Text>
+              <Text className="font-semibold text-sm text-lantern-text">Skip - Create Group Without Members</Text>
             </Pressable>
           )}
         </StepFooter>

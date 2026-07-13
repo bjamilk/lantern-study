@@ -33,8 +33,11 @@ import {
   assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
   presentationContentType,
+  imageContentTypeFromFileName,
+  assertNoteImageUpload,
   warmGotenberg,
 } from '../services/noteFiles';
+import { detectImageMime } from '../utils/fileValidation';
 import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
@@ -62,6 +65,58 @@ async function resolveNoteStudyContent(
     summary: note.summary,
     attachments,
   });
+}
+
+type ValidatedNoteImage = {
+  storagePath: string;
+  fileName: string;
+  fileUrl: string;
+  contentType: string;
+};
+
+async function validateNoteImageUploads(
+  userId: string,
+  storagePaths: string[],
+  fileNames: string[]
+): Promise<ValidatedNoteImage[]> {
+  const validated: ValidatedNoteImage[] = [];
+  for (let i = 0; i < storagePaths.length; i++) {
+    const storagePath = String(storagePaths[i]);
+    const fileName = String(fileNames[i]);
+    assertUserOwnedNoteStoragePath(storagePath, userId);
+    const downloaded = await supabaseService.downloadNoteFile(storagePath);
+    let contentType = downloaded.contentType;
+    if (contentType === 'application/octet-stream') {
+      contentType = detectImageMime(downloaded.buffer) || imageContentTypeFromFileName(fileName);
+    }
+    assertNoteImageUpload(downloaded.buffer, contentType);
+    const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+    validated.push({ storagePath, fileName, fileUrl, contentType });
+  }
+  return validated;
+}
+
+async function createPhotoNoteAttachments(
+  noteId: string,
+  images: ValidatedNoteImage[],
+  startOrder: number
+) {
+  const attachments = [];
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    const attachment = await supabaseService.addNoteAttachment(noteId, {
+      type: 'image',
+      fileUrl: image.fileUrl,
+      fileName: image.fileName,
+      metadata: {
+        storagePath: image.storagePath,
+        sortOrder: startOrder + i,
+        contentType: image.contentType,
+      },
+    });
+    attachments.push(attachment);
+  }
+  return attachments;
 }
 
 async function startPresentationPreviewJob(params: {
@@ -472,6 +527,65 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   res.json({ success: true, data: { note, attachment } });
 }));
 
+router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const { storagePaths, fileNames, folderId, title } = req.body;
+  if (!Array.isArray(storagePaths) || !Array.isArray(fileNames) || storagePaths.length === 0) {
+    res.status(400).json({ error: 'storagePaths and fileNames arrays are required.' });
+    return;
+  }
+  if (storagePaths.length !== fileNames.length) {
+    res.status(400).json({ error: 'storagePaths and fileNames must have the same length.' });
+    return;
+  }
+
+  let validated: ValidatedNoteImage[] = [];
+  try {
+    validated = await validateNoteImageUploads(userId, storagePaths, fileNames);
+  } catch (err) {
+    for (const path of storagePaths) {
+      await supabaseService.deleteNoteFile(String(path)).catch(() => {});
+    }
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'Image file is invalid. Please re-upload.',
+    });
+    return;
+  }
+
+  const noteTitle =
+    (typeof title === 'string' && title.trim()) ||
+    (validated.length === 1
+      ? validated[0].fileName.replace(/\.[^.]+$/, '') || 'Photo note'
+      : `${validated.length} photos`);
+
+  let note;
+  let attachments;
+  try {
+    note = await supabaseService.createNote(userId, {
+      title: noteTitle,
+      body: '',
+      folderId,
+      sourceType: 'photos',
+    });
+    attachments = await createPhotoNoteAttachments(note.id, validated, 0);
+  } catch (err) {
+    for (const image of validated) {
+      await supabaseService.deleteNoteFile(image.storagePath).catch(() => {});
+    }
+    throw err;
+  }
+
+  logger.info('Photo note finalized', {
+    userId,
+    imageCount: validated.length,
+    durationMs: Date.now() - startedAt,
+  });
+
+  res.json({ success: true, data: { note, attachments } });
+}));
+
 router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
@@ -529,7 +643,94 @@ router.use('/:noteId', (req, res, next) => {
   return requireNoteAccess('noteId')(req as any, res, next);
 });
 
-// Attachment routes (before /:noteId CRUD)
+// Attachment routes (before /:noteId CRUD) — static paths before :attachmentId
+router.patch('/:noteId/attachments/reorder', asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  await supabaseService.getNote(req.params.noteId, userId);
+  const { attachmentIds } = req.body;
+  if (!Array.isArray(attachmentIds) || attachmentIds.length === 0) {
+    res.status(400).json({ error: 'attachmentIds array is required.' });
+    return;
+  }
+
+  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const imageAttachments = attachments.filter((a) => a.type === 'image');
+  if (attachmentIds.length !== imageAttachments.length) {
+    res.status(400).json({ error: 'attachmentIds must include every image attachment exactly once.' });
+    return;
+  }
+
+  const imageIdSet = new Set(imageAttachments.map((a) => a.id));
+  for (const id of attachmentIds) {
+    if (typeof id !== 'string' || !imageIdSet.has(id)) {
+      res.status(400).json({ error: 'attachmentIds must include every image attachment exactly once.' });
+      return;
+    }
+  }
+
+  const updated = [];
+  for (let i = 0; i < attachmentIds.length; i++) {
+    const existing = imageAttachments.find((a) => a.id === attachmentIds[i]);
+    const metadata = { ...(existing?.metadata || {}), sortOrder: i };
+    const attachment = await supabaseService.updateNoteAttachment(attachmentIds[i], { metadata });
+    updated.push(attachment);
+  }
+
+  updated.sort(
+    (a, b) =>
+      (typeof a.metadata?.sortOrder === 'number' ? a.metadata.sortOrder : 0) -
+      (typeof b.metadata?.sortOrder === 'number' ? b.metadata.sortOrder : 0)
+  );
+
+  res.json({ success: true, data: { attachments: updated } });
+}));
+
+router.post('/:noteId/attachments/finalize-image', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const note = await supabaseService.getNote(req.params.noteId, userId);
+  if (note.sourceType !== 'photos') {
+    res.status(400).json({ error: 'Note is not a photo note.' });
+    return;
+  }
+
+  const { storagePaths, fileNames } = req.body;
+  if (!Array.isArray(storagePaths) || !Array.isArray(fileNames) || storagePaths.length === 0) {
+    res.status(400).json({ error: 'storagePaths and fileNames arrays are required.' });
+    return;
+  }
+  if (storagePaths.length !== fileNames.length) {
+    res.status(400).json({ error: 'storagePaths and fileNames must have the same length.' });
+    return;
+  }
+
+  let validated: ValidatedNoteImage[] = [];
+  try {
+    validated = await validateNoteImageUploads(userId, storagePaths, fileNames);
+  } catch (err) {
+    for (const path of storagePaths) {
+      await supabaseService.deleteNoteFile(String(path)).catch(() => {});
+    }
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'Image file is invalid. Please re-upload.',
+    });
+    return;
+  }
+
+  const existing = await supabaseService.getNoteAttachments(req.params.noteId);
+  const imageAttachments = existing.filter((a) => a.type === 'image');
+  const startOrder =
+    imageAttachments.reduce(
+      (max, a) =>
+        Math.max(max, typeof a.metadata?.sortOrder === 'number' ? a.metadata.sortOrder : 0),
+      -1
+    ) + 1;
+
+  const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
+  res.json({ success: true, data: { attachments } });
+}));
+
 router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;

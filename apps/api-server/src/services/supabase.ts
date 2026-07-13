@@ -16,7 +16,7 @@ import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
 import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
-import { assertImageMagicBytes, clampSignedUrlTtl } from '../utils/fileValidation';
+import { assertImageMagicBytes, clampSignedUrlTtl, detectImageMime } from '../utils/fileValidation';
 
 type UserStats = typeof initialUserStats;
 
@@ -6514,13 +6514,22 @@ export class SupabaseService {
       throw new Error(error?.message || 'Failed to download note file');
     }
     const arrayBuffer = await data.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
     const lower = storagePath.toLowerCase();
     let contentType = 'application/octet-stream';
     if (lower.endsWith('.pdf')) contentType = 'application/pdf';
     else if (lower.endsWith('.pptx')) {
       contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     } else if (lower.endsWith('.ppt')) contentType = 'application/vnd.ms-powerpoint';
-    return { buffer: Buffer.from(arrayBuffer), contentType };
+    else if (lower.endsWith('.png')) contentType = 'image/png';
+    else if (lower.endsWith('.gif')) contentType = 'image/gif';
+    else if (lower.endsWith('.webp')) contentType = 'image/webp';
+    else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+    else {
+      const detected = detectImageMime(buffer);
+      if (detected) contentType = detected;
+    }
+    return { buffer, contentType };
   }
 
   resolveNoteAttachmentStoragePath(attachment: {

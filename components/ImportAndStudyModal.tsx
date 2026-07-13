@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   DocumentArrowUpIcon,
+  PhotoIcon,
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -175,6 +176,35 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     }
   };
 
+  const handlePhotos = async (files: File[]) => {
+    if (files.length === 0) return;
+    setStep('processing');
+    setError(null);
+    try {
+      const { note, attachments } = await notesApi.uploadNoteImagesViaApi(
+        files,
+        undefined,
+        setImportProgress
+      );
+      const notesState = useNotesStore.getState();
+      notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
+      await loadNote(note.id);
+      const loaded = useNotesStore.getState().selectedNote;
+      if (loaded?.id === note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+        notesState.setSelectedNote({ ...loaded, attachments });
+      }
+      useUIStore.getState().clearImportProgress();
+      await runStudyGenerators({
+        ...useNotesStore.getState().selectedNote!,
+        attachments: useNotesStore.getState().selectedNote?.attachments ?? attachments,
+      });
+    } catch (e: unknown) {
+      useUIStore.getState().clearImportProgress();
+      setError(e instanceof Error ? e.message : 'Photo import failed');
+      setStep('input');
+    }
+  };
+
   const handleTextSubmit = () => {
     if (!textContent.trim()) return;
     void processContent(textContent.trim(), 'Imported Notes', 'typed');
@@ -221,16 +251,21 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 {formatMaxNoteUploadLabel()}
               </p>
 
-              <div className="flex gap-3">
-                <label className="flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+              <div className="flex flex-wrap gap-3">
+                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <DocumentArrowUpIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Upload PDF</span>
                   <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
                 </label>
-                <label className="flex-1 flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <DocumentArrowUpIcon className="w-8 h-8 text-lantern-accent" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
+                </label>
+                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <PhotoIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
+                  <span className="text-sm font-medium text-lantern-text">Photos</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
               </div>
 

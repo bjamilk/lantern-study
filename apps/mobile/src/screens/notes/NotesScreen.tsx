@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -19,10 +20,11 @@ import {
 } from '@lantern/shared/utils/noteUpload';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
-import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../../services/notes';
+import { uploadNotePdfViaApi, uploadPresentationViaApi, uploadNoteImagesViaApi } from '../../services/notes';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import * as ImagePicker from 'expo-image-picker';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -33,17 +35,30 @@ interface Props {
   embedded?: boolean;
 }
 
-type PendingImport = {
+type PendingPhotoAsset = {
   uri: string;
   name: string;
   size: number;
-  mode: 'pdf' | 'presentation';
+  mimeType?: string | null;
 };
+
+type PendingImport =
+  | {
+      uri: string;
+      name: string;
+      size: number;
+      mode: 'pdf' | 'presentation';
+    }
+  | {
+      mode: 'photos';
+      assets: PendingPhotoAsset[];
+    };
 
 function sourceBadge(note: StudyNote): string {
   if (note.sourceType === 'youtube') return 'YouTube';
   if (note.sourceType === 'pdf') return 'PDF';
   if (note.sourceType === 'presentation') return 'Slides';
+  if (note.sourceType === 'photos') return 'Photos';
   if (note.sourceType === 'audio') return 'Audio';
   return 'Note';
 }
@@ -209,6 +224,68 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     }
   };
 
+  const mapImageAssets = (assets: ImagePicker.ImagePickerAsset[]): PendingPhotoAsset[] =>
+    assets.map((asset, index) => ({
+      uri: asset.uri,
+      name: asset.fileName || `photo-${index + 1}.jpg`,
+      size: asset.fileSize ?? 0,
+      mimeType: asset.mimeType,
+    }));
+
+  const handlePickPhotosFromLibrary = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Photo library permission is required.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets.length) return;
+      const assets = mapImageAssets(result.assets);
+      for (const asset of assets) {
+        try {
+          assertNoteUploadSize(asset.size, asset.name);
+        } catch (e: unknown) {
+          setError(e instanceof Error ? e.message : 'File is too large');
+          return;
+        }
+      }
+      setPendingImport({ mode: 'photos', assets });
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not open photo library');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Camera permission is required.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+      if (result.canceled || !result.assets[0]) return;
+      const assets = mapImageAssets(result.assets);
+      setPendingImport({ mode: 'photos', assets });
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not open camera');
+    }
+  };
+
+  const handlePickPhotos = () => {
+    Alert.alert('Import photos', 'Choose a source', [
+      { text: 'Photo library', onPress: () => void handlePickPhotosFromLibrary() },
+      { text: 'Camera', onPress: () => void handleTakePhoto() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const handleConfirmImport = async () => {
     if (!pendingImport) return;
     try {
@@ -216,7 +293,17 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       setError(null);
 
       const importResult =
-        pendingImport.mode === 'pdf'
+        pendingImport.mode === 'photos'
+          ? await uploadNoteImagesViaApi(
+              pendingImport.assets.map((asset) => ({
+                uri: asset.uri,
+                fileName: asset.name,
+                mimeType: asset.mimeType,
+                size: asset.size,
+              })),
+              selectedFolderId || undefined
+            )
+          : pendingImport.mode === 'pdf'
           ? await uploadNotePdfViaApi(
               pendingImport.uri,
               pendingImport.name,
@@ -326,10 +413,14 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         {pendingImport ? (
           <Card className="border-lantern-primary/30 mb-2">
             <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>
-              {pendingImport.name}
+              {pendingImport.mode === 'photos'
+                ? `${pendingImport.assets.length} photo${pendingImport.assets.length === 1 ? '' : 's'}`
+                : pendingImport.name}
             </Text>
             <Text className="text-xs text-lantern-text-secondary mt-1">
-              {formatFileSize(pendingImport.size)} · {formatMaxNoteUploadLabel()}
+              {pendingImport.mode === 'photos'
+                ? formatMaxNoteUploadLabel()
+                : `${formatFileSize(pendingImport.size)} · ${formatMaxNoteUploadLabel()}`}
             </Text>
             <View className="flex-row gap-2 mt-3">
               <Button
@@ -358,6 +449,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             </Button>
             <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('presentation')}>
               Import PowerPoint
+            </Button>
+            <Button size="sm" variant="secondary" disabled={importingFile} onPress={handlePickPhotos}>
+              Import photos
             </Button>
           </View>
         )}

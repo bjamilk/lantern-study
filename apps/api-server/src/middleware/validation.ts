@@ -197,7 +197,7 @@ export const validateNoteCreate = [
   body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
   body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
   body('groupId').optional().isUUID().withMessage('groupId must be a valid UUID'),
-  body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation']).withMessage('Invalid sourceType'),
+  body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation', 'photos']).withMessage('Invalid sourceType'),
 ];
 
 export const validateNoteUpdate = [

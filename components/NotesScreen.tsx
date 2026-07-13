@@ -28,6 +28,7 @@ interface NotesScreenProps {
   onSelectNote: (noteId: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
+  onPhotosImport?: (files: File[]) => void;
   selectedFolderId?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   /** When true, hides the page header (used inside Library tabs). */
@@ -52,6 +53,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onSelectNote,
   onPdfImport,
   onPresentationImport,
+  onPhotosImport,
   selectedFolderId,
   onSelectFolder,
   embedded = false,
@@ -88,10 +90,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     e.target.value = '';
   };
 
+  const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0 && onPhotosImport) onPhotosImport(files);
+    e.target.value = '';
+  };
+
   const sourceBadge = (note: StudyNote) => {
     if (note.sourceType === 'youtube') return 'YouTube';
     if (note.sourceType === 'pdf') return 'PDF';
     if (note.sourceType === 'presentation') return 'Slides';
+    if (note.sourceType === 'photos') return 'Photos';
     if (note.sourceType === 'audio') return 'Audio';
     return 'Note';
   };
@@ -203,6 +212,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 <DocumentArrowUpIcon className="w-5 h-5" />
                 Import PowerPoint
                 <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={handlePresentation} disabled={Boolean(importProgress)} />
+              </label>
+            )}
+            {onPhotosImport && (
+              <label className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
+                importProgress
+                  ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
+                  : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
+              }`}>
+                <DocumentArrowUpIcon className="w-5 h-5" />
+                Import photos
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} disabled={Boolean(importProgress)} />
               </label>
             )}
           </div>

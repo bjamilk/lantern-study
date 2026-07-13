@@ -9,7 +9,6 @@ import {
   CameraIcon,
   LockClosedIcon,
   MagnifyingGlassIcon,
-  LinkIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { searchUsers } from '../services/supabase';
@@ -252,7 +251,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
               <UsersIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
               <p className="text-sm text-lantern-text-secondary">No users found matching &quot;{searchTerm}&quot;</p>
               <p className="text-xs text-lantern-text-tertiary mt-2 max-w-xs mx-auto">
-                They may need to set a username in Settings. You can share an invite link after creating the group.
+                They may need to set a username in Settings before they can be found.
               </p>
             </div>
           )}
@@ -309,17 +308,6 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             </div>
           )}
 
-          {selectedUsers.length === 0 && searchTerm.length < 2 && (
-            <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 mt-4">
-              <h4 className="font-medium text-blue-800 dark:text-blue-200 flex items-center">
-                <LinkIcon className="w-5 h-5 mr-2" />
-                Invite Link Available After Creation
-              </h4>
-              <p className="text-sm text-lantern-primary dark:text-blue-300 mt-1">
-                Once you create the group, you can share an invite link with anyone to join.
-              </p>
-            </div>
-          )}
         </div>
 
         <div className="shrink-0 sticky bottom-0 p-4 bg-lantern-surface border-t dark:border-lantern-border">

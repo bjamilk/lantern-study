@@ -2,6 +2,7 @@
 import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize, wrapNoteFinalizeError } from '@lantern/shared/utils/noteUpload';
+import { assertAllowedImageUpload } from '@lantern/shared';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -284,6 +285,111 @@ export const uploadPresentationViaApi = async (
     );
   } catch (err) {
     await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
+    throw wrapNoteFinalizeError(err);
+  }
+};
+
+function imageContentTypeFromFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
+export const reorderNoteAttachments = (noteId: string, attachmentIds: string[]) =>
+  notesRequest<{ attachments: NoteAttachment[] }>(`/${noteId}/attachments/reorder`, {
+    method: 'PATCH',
+    body: JSON.stringify({ attachmentIds }),
+  });
+
+type MobileImageUpload = {
+  uri: string;
+  fileName: string;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
+async function uploadImagesToStorage(
+  userId: string,
+  images: MobileImageUpload[]
+): Promise<{ storagePaths: string[]; fileNames: string[] }> {
+  const storagePaths: string[] = [];
+  const fileNames: string[] = [];
+
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    const fileName = image.fileName || `photo-${i + 1}.jpg`;
+    const storagePath = `${userId}/${Date.now()}-${i}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
+    const fileResponse = await fetch(image.uri);
+    if (!fileResponse.ok) {
+      throw new Error('Could not read the selected image.');
+    }
+    const blob = await fileResponse.blob();
+    const contentType = image.mimeType || blob.type || imageContentTypeFromFileName(fileName);
+    assertAllowedImageUpload({ contentType, byteLength: blob.size });
+    assertNoteUploadSize(blob.size, fileName);
+
+    const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
+      contentType,
+      upsert: false,
+    });
+    if (uploadError) {
+      throw new Error(uploadError.message || 'Storage upload failed.');
+    }
+
+    storagePaths.push(storagePath);
+    fileNames.push(fileName);
+  }
+
+  return { storagePaths, fileNames };
+}
+
+export const uploadNoteImagesViaApi = async (
+  images: MobileImageUpload[],
+  folderId?: string,
+  title?: string
+) => {
+  const session = await getSession();
+  if (!session?.user?.id) {
+    throw new Error('Must be signed in to upload photos.');
+  }
+  if (images.length === 0) {
+    throw new Error('Select at least one image.');
+  }
+
+  const { storagePaths, fileNames } = await uploadImagesToStorage(session.user.id, images);
+
+  try {
+    return notesRequest<{ note: StudyNote; attachments: NoteAttachment[] }>('/finalize-images', {
+      method: 'POST',
+      body: JSON.stringify({ storagePaths, fileNames, folderId, title }),
+    });
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
+    throw wrapNoteFinalizeError(err);
+  }
+};
+
+export const addImagesToPhotoNote = async (noteId: string, images: MobileImageUpload[]) => {
+  const session = await getSession();
+  if (!session?.user?.id) {
+    throw new Error('Must be signed in to upload photos.');
+  }
+  if (images.length === 0) {
+    throw new Error('Select at least one image.');
+  }
+
+  const { storagePaths, fileNames } = await uploadImagesToStorage(session.user.id, images);
+
+  try {
+    return notesRequest<{ attachments: NoteAttachment[] }>(`/${noteId}/attachments/finalize-image`, {
+      method: 'POST',
+      body: JSON.stringify({ storagePaths, fileNames }),
+    });
+  } catch (err) {
+    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
     throw wrapNoteFinalizeError(err);
   }
 };

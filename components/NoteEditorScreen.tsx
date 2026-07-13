@@ -15,6 +15,7 @@ import YouTubeEmbed from './YouTubeEmbed';
 import NoteCollaboratorsModal from './NoteCollaboratorsModal';
 import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
+import NoteImageGallery from './NoteImageGallery';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
@@ -100,6 +101,17 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const isDark = theme === 'dark';
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
+  const isPhotoNote = note.sourceType === 'photos';
+  const imageAttachments = (note.attachments || [])
+    .filter((a) => a.type === 'image')
+    .sort(
+      (a, b) =>
+        (typeof a.metadata?.sortOrder === 'number' ? a.metadata.sortOrder : 0) -
+        (typeof b.metadata?.sortOrder === 'number' ? b.metadata.sortOrder : 0)
+    );
+  const showImageGallery = isPhotoNote || imageAttachments.length > 0;
+  const addPhotosInputRef = useRef<HTMLInputElement>(null);
+  const [addingPhotos, setAddingPhotos] = useState(false);
   const documentAttachment = note.attachments?.find(
     (a) => a.type === 'pdf' || (a.type === 'presentation' && a.metadata?.previewStoragePath)
   );
@@ -148,6 +160,34 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const handleBodyChange = (value: string) => {
     userEditedRef.current = true;
     setBody(value);
+  };
+
+  const handleImageAttachmentsChange = (attachments: NoteAttachment[]) => {
+    const other = (note.attachments || []).filter((a) => a.type !== 'image');
+    setSelectedNote({ ...note, attachments: [...other, ...attachments] });
+  };
+
+  const handleAddPhotosSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+    setAddingPhotos(true);
+    try {
+      const result = await notesApi.addImagesToPhotoNote(note.id, files);
+      const other = (note.attachments || []).filter((a) => a.type !== 'image');
+      const merged = [...other, ...result.attachments].filter(
+        (attachment, index, list) => list.findIndex((item) => item.id === attachment.id) === index
+      );
+      setSelectedNote({ ...note, attachments: merged });
+      showToast(
+        files.length === 1 ? 'Photo added' : `${files.length} photos added`,
+        'success'
+      );
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to add photos', 'error');
+    } finally {
+      setAddingPhotos(false);
+    }
   };
 
   useEffect(() => {
@@ -497,6 +537,33 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
           )}
 
+          {showImageGallery && imageAttachments.length > 0 && (
+            <>
+              <input
+                ref={addPhotosInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(event) => void handleAddPhotosSelected(event)}
+              />
+              <NoteImageGallery
+                noteId={note.id}
+                attachments={imageAttachments}
+                theme={theme}
+                editable={isPhotoNote}
+                onAttachmentsChange={handleImageAttachmentsChange}
+                onAddPhotos={
+                  isPhotoNote
+                    ? () => {
+                        if (!addingPhotos) addPhotosInputRef.current?.click();
+                      }
+                    : undefined
+                }
+              />
+            </>
+          )}
+
           {showPreviewBanner && (
             <div
               className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
@@ -554,7 +621,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </div>
           )}
 
-          {isDocumentNote ? (
+          {isDocumentNote || isPhotoNote ? (
             <div>
               <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
                 Your notes
@@ -562,7 +629,11 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <textarea
                 value={body}
                 onChange={e => handleBodyChange(e.target.value)}
-                placeholder="Add your own notes on top of this document..."
+                placeholder={
+                  isPhotoNote
+                    ? 'Add your own notes alongside these photos...'
+                    : 'Add your own notes on top of this document...'
+                }
                 className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
                   isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
                 }`}

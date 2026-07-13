@@ -24,7 +24,7 @@ import { useTestStore } from '../../stores/testStore';
 import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useGroupStore } from '../../stores/groupStore';
-import { useTheme } from '../../theme';
+import { ThemeScope, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
 import { useNetworkStatus } from '../../hooks';
@@ -191,30 +191,30 @@ export default function OfflineScreen() {
   };
 
   const DownloadedTestItem = ({ test }: { test: OfflineTest }) => (
-    <View style={styles.testItem}>
+    <View style={[styles.testItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.testInfo}>
         <View style={styles.testHeader}>
-          <Ionicons name="document-text" size={20} color="#6366f1" />
-          <Text style={styles.testName} numberOfLines={1}>{test.testName}</Text>
+          <Ionicons name="document-text" size={20} color={colors.primary} />
+          <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{test.testName}</Text>
         </View>
-        <Text style={styles.testMeta}>
+        <Text style={[styles.testMeta, { color: colors.textSecondary }]}>
           {test.groupName} • {test.questionCount} questions
         </Text>
         <View style={styles.testDetails}>
           <View style={styles.detailBadge}>
-            <Ionicons name="cloud-download" size={12} color="#9ca3af" />
-            <Text style={styles.detailText}>{formatDate(test.downloadedAt)}</Text>
+            <Ionicons name="cloud-download" size={12} color={colors.textTertiary} />
+            <Text style={[styles.detailText, { color: colors.textTertiary }]}>{formatDate(test.downloadedAt)}</Text>
           </View>
           <View style={styles.detailBadge}>
-            <Ionicons name="server" size={12} color="#9ca3af" />
-            <Text style={styles.detailText}>{formatSize(test.size)}</Text>
+            <Ionicons name="server" size={12} color={colors.textTertiary} />
+            <Text style={[styles.detailText, { color: colors.textTertiary }]}>{formatSize(test.size)}</Text>
           </View>
         </View>
       </View>
       
       <View style={styles.testActions}>
         <TouchableOpacity
-          style={styles.startButton}
+          style={[styles.startButton, { backgroundColor: colors.primary }]}
           onPress={() => handleStartOfflineTest(test)}
         >
           <Ionicons name="play" size={18} color="#ffffff" />
@@ -232,9 +232,9 @@ export default function OfflineScreen() {
   );
 
   const PendingResultItem = ({ result }: { result: PendingResult }) => (
-    <View style={styles.resultItem}>
+    <View style={[styles.resultItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.resultInfo}>
-        <Text style={styles.resultGroup}>{result.groupName}</Text>
+        <Text style={[styles.resultGroup, { color: colors.text }]}>{result.groupName}</Text>
         <View style={styles.resultScoreRow}>
           <Text style={[
             styles.resultScore,
@@ -242,11 +242,11 @@ export default function OfflineScreen() {
           ]}>
             {result.percentage}%
           </Text>
-          <Text style={styles.resultDetails}>
+          <Text style={[styles.resultDetails, { color: colors.textSecondary }]}>
             {result.score}/{result.totalQuestions} correct
           </Text>
         </View>
-        <Text style={styles.resultDate}>{formatDate(result.completedAt)}</Text>
+        <Text style={[styles.resultDate, { color: colors.textTertiary }]}>{formatDate(result.completedAt)}</Text>
       </View>
       
       <View style={[
@@ -285,10 +285,10 @@ export default function OfflineScreen() {
     };
     
     return (
-      <View style={styles.availableItem}>
+      <View style={[styles.availableItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.availableInfo}>
-          <Text style={styles.availableName}>{group.name}</Text>
-          <Text style={styles.availableMeta}>
+          <Text style={[styles.availableName, { color: colors.text }]}>{group.name}</Text>
+          <Text style={[styles.availableMeta, { color: colors.textSecondary }]}>
             {group.memberCount} members
           </Text>
         </View>
@@ -300,7 +300,7 @@ export default function OfflineScreen() {
           </View>
         ) : (
           <TouchableOpacity
-            style={styles.downloadButton}
+            style={[styles.downloadButton, { backgroundColor: colors.primary }]}
             onPress={handleOpenDownloadModal}
           >
             <Ionicons name="options" size={16} color="#ffffff" />
@@ -314,7 +314,7 @@ export default function OfflineScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -355,12 +355,12 @@ export default function OfflineScreen() {
           
           <View style={styles.storageStats}>
             <View style={styles.storageStat}>
-              <Text style={styles.statValue}>{downloadedTests.length}</Text>
-              <Text style={styles.statLabel}>Downloaded</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{downloadedTests.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Downloaded</Text>
             </View>
             <View style={styles.storageStat}>
-              <Text style={styles.statValue}>{pendingResults.filter(r => !r.synced).length}</Text>
-              <Text style={styles.statLabel}>Pending Sync</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{pendingResults.filter(r => !r.synced).length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pending Sync</Text>
             </View>
           </View>
           
@@ -383,9 +383,12 @@ export default function OfflineScreen() {
         </View>
 
         {/* Tabs */}
-        <View style={styles.tabs}>
+        <View style={[styles.tabs, { backgroundColor: colors.cardSecondary }]}>
           <TouchableOpacity
-            style={[styles.tab, selectedTab === 'downloads' && styles.activeTab]}
+            style={[
+              styles.tab,
+              selectedTab === 'downloads' && { backgroundColor: colors.background },
+            ]}
             onPress={() => setSelectedTab('downloads')}
           >
             <Ionicons 
@@ -395,6 +398,7 @@ export default function OfflineScreen() {
             />
             <Text style={[
               styles.tabText,
+              { color: selectedTab === 'downloads' ? colors.primary : colors.textSecondary },
               selectedTab === 'downloads' && styles.activeTabText
             ]}>
               Downloads ({downloadedTests.length})
@@ -402,7 +406,10 @@ export default function OfflineScreen() {
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={[styles.tab, selectedTab === 'pending' && styles.activeTab]}
+            style={[
+              styles.tab,
+              selectedTab === 'pending' && { backgroundColor: colors.background },
+            ]}
             onPress={() => setSelectedTab('pending')}
           >
             <Ionicons 
@@ -412,6 +419,7 @@ export default function OfflineScreen() {
             />
             <Text style={[
               styles.tabText,
+              { color: selectedTab === 'pending' ? colors.primary : colors.textSecondary },
               selectedTab === 'pending' && styles.activeTabText
             ]}>
               Pending ({pendingResults.filter(r => !r.synced).length})
@@ -425,13 +433,13 @@ export default function OfflineScreen() {
             {/* flashcard decks downloaded offline */}
             {offlineDeckIds.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Downloaded Decks</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Downloaded Decks</Text>
                 {offlineDeckIds.map(id => {
                   const deck = decks.find(d => d.id === id);
                   if (!deck) return null;
                   return (
-                    <View key={id} style={styles.offlineDeckItem}>
-                      <Text style={styles.offlineDeckName} numberOfLines={1}>{deck.name}</Text>
+                    <View key={id} style={[styles.offlineDeckItem, { backgroundColor: colors.card, borderColor: colors.border, borderBottomColor: colors.border }]}>
+                      <Text style={[styles.offlineDeckName, { color: colors.text }]} numberOfLines={1}>{deck.name}</Text>
                       <TouchableOpacity
                         onPress={() => unmarkDeckOffline(id)}
                       >
@@ -444,16 +452,16 @@ export default function OfflineScreen() {
             )}
             {downloadedTests.length > 0 ? (
               <>
-                <Text style={styles.sectionTitle}>Downloaded Tests</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Downloaded Tests</Text>
                 {downloadedTests.map(test => (
                   <DownloadedTestItem key={test.id} test={test} />
                 ))}
               </>
             ) : (
               <View style={styles.emptyState}>
-                <Ionicons name="cloud-download" size={48} color="#6b7280" />
-                <Text style={styles.emptyTitle}>No Downloads Yet</Text>
-                <Text style={styles.emptyText}>
+                <Ionicons name="cloud-download" size={48} color={colors.textTertiary} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No Downloads Yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   Download tests from your study groups to access them offline
                 </Text>
               </View>
@@ -462,7 +470,7 @@ export default function OfflineScreen() {
             {/* Available to Download */}
             {groups.length > 0 && (
               <View style={styles.availableSection}>
-                <Text style={styles.sectionTitle}>Available to Download</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Available to Download</Text>
                 {groups.slice(0, 5).map(group => (
                   <AvailableDownloadItem key={group.id} group={group} />
                 ))}
@@ -473,7 +481,7 @@ export default function OfflineScreen() {
           <View style={styles.section}>
             {pendingResults.length > 0 ? (
               <>
-                <Text style={styles.sectionTitle}>Test Results</Text>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Test Results</Text>
                 {pendingResults.map(result => (
                   <PendingResultItem key={result.id} result={result} />
                 ))}
@@ -481,8 +489,8 @@ export default function OfflineScreen() {
             ) : (
               <View style={styles.emptyState}>
                 <Ionicons name="checkmark-circle" size={48} color="#10b981" />
-                <Text style={styles.emptyTitle}>All Synced!</Text>
-                <Text style={styles.emptyText}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>All Synced!</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   All your offline test results have been synced
                 </Text>
               </View>
@@ -508,7 +516,7 @@ export default function OfflineScreen() {
         animationType="slide"
         onRequestClose={() => setShowDownloadModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <ThemeScope style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
@@ -541,13 +549,21 @@ export default function OfflineScreen() {
                       key={count}
                       style={[
                         styles.countButton,
-                        downloadOptions.questionCount === count && styles.countButtonActive,
+                        {
+                          backgroundColor:
+                            downloadOptions.questionCount === count ? colors.primary : colors.background,
+                          borderColor:
+                            downloadOptions.questionCount === count ? colors.primary : colors.border,
+                        },
                       ]}
                       onPress={() => setDownloadOptions(prev => ({ ...prev, questionCount: count }))}
                     >
                       <Text style={[
                         styles.countButtonText,
-                        downloadOptions.questionCount === count && styles.countButtonTextActive,
+                        {
+                          color:
+                            downloadOptions.questionCount === count ? '#ffffff' : colors.text,
+                        },
                       ]}>
                         {count}
                       </Text>
@@ -614,13 +630,20 @@ export default function OfflineScreen() {
                       key={time}
                       style={[
                         styles.countButton,
-                        downloadOptions.timeLimit === time && styles.countButtonActive,
+                        {
+                          backgroundColor:
+                            downloadOptions.timeLimit === time ? colors.primary : colors.background,
+                          borderColor:
+                            downloadOptions.timeLimit === time ? colors.primary : colors.border,
+                        },
                       ]}
                       onPress={() => setDownloadOptions(prev => ({ ...prev, timeLimit: time }))}
                     >
                       <Text style={[
                         styles.countButtonText,
-                        downloadOptions.timeLimit === time && styles.countButtonTextActive,
+                        {
+                          color: downloadOptions.timeLimit === time ? '#ffffff' : colors.text,
+                        },
                       ]}>
                         {time === 0 ? 'None' : time}
                       </Text>
@@ -646,13 +669,27 @@ export default function OfflineScreen() {
                       key={option.value}
                       style={[
                         styles.countButton,
-                        downloadOptions.recentlyAddedDays === option.value && styles.countButtonActive,
+                        {
+                          backgroundColor:
+                            downloadOptions.recentlyAddedDays === option.value
+                              ? colors.primary
+                              : colors.background,
+                          borderColor:
+                            downloadOptions.recentlyAddedDays === option.value
+                              ? colors.primary
+                              : colors.border,
+                        },
                       ]}
                       onPress={() => setDownloadOptions(prev => ({ ...prev, recentlyAddedDays: option.value }))}
                     >
                       <Text style={[
                         styles.countButtonText,
-                        downloadOptions.recentlyAddedDays === option.value && styles.countButtonTextActive,
+                        {
+                          color:
+                            downloadOptions.recentlyAddedDays === option.value
+                              ? '#ffffff'
+                              : colors.text,
+                        },
                       ]}>
                         {option.label}
                       </Text>
@@ -707,12 +744,12 @@ export default function OfflineScreen() {
             </ScrollView>
 
             {/* Download Button */}
-            <View style={styles.modalActions}>
+            <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: colors.background }]}
                 onPress={() => setShowDownloadModal(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -750,7 +787,7 @@ export default function OfflineScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </ThemeScope>
       </Modal>
     </SafeAreaView>
   );
@@ -759,7 +796,7 @@ export default function OfflineScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -768,7 +805,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: 'transparent',
   },
   backButton: {
     width: 40,
@@ -844,7 +881,7 @@ const styles = StyleSheet.create({
   // Tabs
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 4,
     marginBottom: 16,
@@ -859,7 +896,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   activeTab: {
-    backgroundColor: '#0f172a',
+    backgroundColor: 'transparent',
   },
   tabText: {
     fontSize: 14,
@@ -881,12 +918,12 @@ const styles = StyleSheet.create({
   },
   // Test Item
   testItem: {
-    backgroundColor: '#1e293b',
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
   },
   testInfo: {
     flex: 1,
@@ -949,12 +986,13 @@ const styles = StyleSheet.create({
   },
   // Result Item
   resultItem: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
   },
   resultInfo: {
     flex: 1,
@@ -1011,7 +1049,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: 'transparent',
   },
   offlineDeckName: {
     flex: 1,
@@ -1020,12 +1058,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   availableItem: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'transparent',
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
   },
   availableInfo: {
     flex: 1,
@@ -1116,7 +1155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#334155',
+    borderBottomColor: 'transparent',
   },
   modalTitle: {
     fontSize: 20,
@@ -1155,9 +1194,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#1e293b',
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: 'transparent',
   },
   countButtonActive: {
     backgroundColor: '#6366f1',
@@ -1215,13 +1254,13 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: 'transparent',
   },
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#334155',
+    backgroundColor: 'transparent',
     alignItems: 'center',
   },
   cancelButtonText: {

@@ -22,14 +22,17 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
-import { transcribeAudioForNote, summarizeNote, generateNoteQuiz } from '../../services/notes';
+import { transcribeAudioForNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
+import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
 import { useAuthStore } from '../../stores/authStore';
+import * as ImagePicker from 'expo-image-picker';
+import type { NoteAttachment } from '../../services/notes';
 
 type NavigationProp = {
 
@@ -53,7 +56,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const noteId = route.params.noteId;
   const { user } = useAuthStore();
-  const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote } = useNotesStore();
+  const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote, setSelectedNote } = useNotesStore();
 
   const { handleAIGenerateFlashcards, isAILoading } = useAIHandlers();
 
@@ -92,6 +95,20 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const isDocumentNote =
     selectedNote?.sourceType === 'pdf' || selectedNote?.sourceType === 'presentation';
+  const isPhotoNote = selectedNote?.sourceType === 'photos';
+  const imageAttachments = useMemo(
+    () =>
+      (selectedNote?.attachments || [])
+        .filter((a) => a.type === 'image')
+        .sort(
+          (a, b) =>
+            (typeof a.metadata?.sortOrder === 'number' ? a.metadata.sortOrder : 0) -
+            (typeof b.metadata?.sortOrder === 'number' ? b.metadata.sortOrder : 0)
+        ),
+    [selectedNote?.attachments]
+  );
+  const showImageGallery = isPhotoNote || imageAttachments.length > 0;
+  const [addingPhotos, setAddingPhotos] = useState(false);
 
   const documentAttachment = useMemo(
     () =>
@@ -131,6 +148,91 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         : body.trim().length >= 50,
     [selectedNote, body]
   );
+
+  const handleImageAttachmentsChange = (attachments: NoteAttachment[]) => {
+    if (!selectedNote) return;
+    const other = (selectedNote.attachments || []).filter((a) => a.type !== 'image');
+    setSelectedNote({ ...selectedNote, attachments: [...other, ...attachments] });
+  };
+
+  const handleAddPhotos = () => {
+    if (!selectedNote || addingPhotos) return;
+    Alert.alert('Add photos', 'Choose a source', [
+      {
+        text: 'Photo library',
+        onPress: () => {
+          void (async () => {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permission required', 'Photo library access is needed.');
+              return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsMultipleSelection: true,
+              quality: 0.85,
+            });
+            if (result.canceled || !result.assets.length) return;
+            setAddingPhotos(true);
+            try {
+              const uploadResult = await addImagesToPhotoNote(
+                selectedNote.id,
+                result.assets.map((asset, index) => ({
+                  uri: asset.uri,
+                  fileName: asset.fileName || `photo-${index + 1}.jpg`,
+                  mimeType: asset.mimeType,
+                  size: asset.fileSize ?? 0,
+                }))
+              );
+              const other = (selectedNote.attachments || []).filter((a) => a.type !== 'image');
+              const merged = [...other, ...uploadResult.attachments];
+              setSelectedNote({ ...selectedNote, attachments: merged });
+            } catch (e: unknown) {
+              Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not add photos');
+            } finally {
+              setAddingPhotos(false);
+            }
+          })();
+        },
+      },
+      {
+        text: 'Camera',
+        onPress: () => {
+          void (async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permission required', 'Camera access is needed.');
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+            if (result.canceled || !result.assets[0]) return;
+            const asset = result.assets[0];
+            setAddingPhotos(true);
+            try {
+              const uploadResult = await addImagesToPhotoNote(selectedNote.id, [
+                {
+                  uri: asset.uri,
+                  fileName: asset.fileName || 'photo.jpg',
+                  mimeType: asset.mimeType,
+                  size: asset.fileSize ?? 0,
+                },
+              ]);
+              const other = (selectedNote.attachments || []).filter((a) => a.type !== 'image');
+              setSelectedNote({
+                ...selectedNote,
+                attachments: [...other, ...uploadResult.attachments],
+              });
+            } catch (e: unknown) {
+              Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not add photo');
+            } finally {
+              setAddingPhotos(false);
+            }
+          })();
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
 
 
@@ -576,6 +678,16 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
+          {showImageGallery && imageAttachments.length > 0 ? (
+            <NoteImageGallery
+              noteId={noteId}
+              attachments={imageAttachments}
+              editable={isPhotoNote}
+              onAttachmentsChange={handleImageAttachmentsChange}
+              onAddPhotos={isPhotoNote ? handleAddPhotos : undefined}
+            />
+          ) : null}
+
           {selectedNote?.youtubeVideoId ? (
             <Pressable
               onPress={() =>
@@ -607,7 +719,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </Text>
           ) : null}
 
-          {isDocumentNote ? (
+          {isDocumentNote || isPhotoNote ? (
             <>
               <Text className="text-sm font-semibold text-lantern-text mb-2">
                 Your notes
@@ -615,7 +727,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <TextInput
                 value={body}
                 onChangeText={setBody}
-                placeholder="Add your own notes on top of this document..."
+                placeholder={
+                  isPhotoNote
+                    ? 'Add your own notes alongside these photos...'
+                    : 'Add your own notes on top of this document...'
+                }
                 placeholderTextColor="#94a3b8"
                 multiline
                 textAlignVertical="top"

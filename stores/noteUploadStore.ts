@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type NoteUploadKind = 'pdf' | 'presentation';
+export type NoteUploadKind = 'pdf' | 'presentation' | 'photos';
 export type NoteUploadJobStatus = 'uploading' | 'processing' | 'complete' | 'failed';
 
 export interface NoteUploadJob {

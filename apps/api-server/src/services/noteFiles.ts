@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { assertPdfMagicBytes } from '../utils/fileValidation';
+import { assertImageMagicBytes, assertPdfMagicBytes } from '../utils/fileValidation';
 
 const NOTE_FILES_BUCKET = 'note-files';
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -357,6 +357,29 @@ export function assertValidOfficeZip(buffer: Buffer, fileName: string): void {
       `${fileName} appears truncated. If the file is large, try again after the latest app update.`
     );
   }
+}
+
+export function imageContentTypeFromFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  return 'image/jpeg';
+}
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+export function assertNoteImageUpload(buffer: Buffer, contentType: string): void {
+  const normalized = contentType.toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.has(normalized)) {
+    throw new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.');
+  }
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    throw new Error('File is too large. Maximum size is 10 MB.');
+  }
+  assertImageMagicBytes(buffer, normalized);
 }
 
 export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES };

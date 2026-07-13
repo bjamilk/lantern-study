@@ -269,7 +269,7 @@ export enum AppMode {
   AI_TOOLS = 'AI_TOOLS',
 }
 
-export type StudyNoteSourceType = 'typed' | 'youtube' | 'pdf' | 'audio' | 'import' | 'presentation';
+export type StudyNoteSourceType = 'typed' | 'youtube' | 'pdf' | 'audio' | 'import' | 'presentation' | 'photos';
 export type StudyGoalMode = 'casual' | 'retention' | 'exam_prep';
 
 export interface NoteFolder {

@@ -21,6 +21,7 @@ interface NotesState {
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
   removeNote: (noteId: string) => Promise<void>;
   setSelectedFolderId: (id: string | null) => void;
+  setSelectedNote: (note: (StudyNote & { attachments?: NoteAttachment[] }) | null) => void;
   setError: (e: string | null) => void;
 }
 
@@ -34,6 +35,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   selectedFolderId: null,
 
   setSelectedFolderId: (selectedFolderId) => set({ selectedFolderId }),
+  setSelectedNote: (selectedNote) => set({ selectedNote }),
   setError: (error) => set({ error }),
 
   loadFolders: async () => {
