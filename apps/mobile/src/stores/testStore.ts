@@ -265,7 +265,8 @@ interface TestState {
   nextQuestion: () => void;
   previousQuestion: () => void;
   submitTest: (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => Promise<TestAttempt>;
-  exitStudyMode: () => void; // Exit without submitting
+  exitStudyMode: () => void; // Exit without submitting (study or test)
+  updateTimeRemaining: (seconds: number) => void;
   loadUserQuestionStats: (userId: string) => Promise<void>;
   loadTestPresets: (userId: string) => Promise<void>;
   saveTestPreset: (userId: string, name: string, config: TestPresetConfig) => Promise<void>;
@@ -885,9 +886,20 @@ export const useTestStore = create<TestState>((set, get) => ({
     };
   },
 
-  // Exit study mode without submitting
+  // Exit study/test mode without submitting (abandon session)
   exitStudyMode: () => {
     set({ activeTest: null });
+  },
+
+  updateTimeRemaining: (seconds: number) => {
+    const activeTest = get().activeTest;
+    if (!activeTest) return;
+    set({
+      activeTest: {
+        ...activeTest,
+        timeRemaining: Math.max(0, seconds),
+      },
+    });
   },
 
   toggleFlag: (questionId: string) => {

@@ -16,9 +16,10 @@ import {
   Image,
   Modal,
   Pressable,
+  AppState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
 import { useTheme, type ThemeColors } from '../../theme';
@@ -354,6 +355,7 @@ const DiagramLabelingComponent = ({
     [question.id, question.diagramLabels]
   );
   const [pickerLabelId, setPickerLabelId] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState(4 / 3);
   const rawImageUri = question.diagramUrl || question.imageUrl;
   const imageUri = useResolvedStorageUrl(rawImageUri);
   const imagePending = !!rawImageUri && !imageUri;
@@ -370,9 +372,17 @@ const DiagramLabelingComponent = ({
 
   return (
     <View style={styles.diagramContainer}>
-      <View style={styles.diagramImageWrapper}>
+      <View style={[styles.diagramImageWrapper, imageUri ? { aspectRatio } : null]}>
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.diagramImage} resizeMode="contain" />
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.diagramImage}
+            resizeMode="contain"
+            onLoad={e => {
+              const { width, height } = e.nativeEvent.source;
+              if (width > 0 && height > 0) setAspectRatio(width / height);
+            }}
+          />
         ) : (
           <View style={styles.diagramImagePlaceholder}>
             <Ionicons name="image-outline" size={48} color="#64748b" />
@@ -387,8 +397,12 @@ const DiagramLabelingComponent = ({
                 key={label.id}
                 style={[
                   styles.diagramMarker,
-                  { left: `${label.x}%`, top: `${label.y}%` },
+                  {
+                    left: `${typeof label.x === 'number' ? label.x : 50}%`,
+                    top: `${typeof label.y === 'number' ? label.y : 50}%`,
+                  },
                 ]}
+                pointerEvents="none"
               >
                 <Text style={styles.diagramMarkerText}>{index + 1}</Text>
               </View>
@@ -516,9 +530,11 @@ export default function TestTakingScreen() {
     exitStudyMode,
     toggleFlag,
     goToQuestion,
+    updateTimeRemaining,
   } = useTestStore();
 
   const { showExplanationsImmediately } = useStudySettings();
+  const isFocused = useIsFocused();
   const [timeRemaining, setTimeRemaining] = useState(activeTest?.timeRemaining || 0);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);
@@ -526,6 +542,7 @@ export default function TestTakingScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const questionViewStartTimeRef = useRef<number | null>(null);
+  const handleSubmitRef = useRef<(timeUp?: boolean) => Promise<void>>(async () => undefined);
 
   // Get mode from active test
   const isStudyMode = activeTest?.mode === 'study';
@@ -534,29 +551,19 @@ export default function TestTakingScreen() {
     title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
     message: isStudyMode
       ? 'Are you sure you want to exit? You can come back anytime.'
-      : 'Are you sure you want to exit? Your progress will be lost.',
+      : 'Are you sure you want to exit? Your progress will be lost and the test will not be scored.',
     confirmLabel: 'Exit',
     destructive: !isStudyMode,
-    onConfirm: isStudyMode ? exitStudyMode : undefined,
+    // Always abandon so the timer cannot keep running and auto-submit a zero.
+    onConfirm: () => exitStudyMode(),
   });
 
-  // Timer effect - only for test mode
+  // Keep local countdown in sync when resuming an in-progress session.
   useEffect(() => {
-    if (!activeTest || activeTest.mode === 'study' || activeTest.test.timeLimit === 0) return;
-
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleSubmit(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [activeTest?.test.timeLimit, activeTest?.mode]);
+    if (activeTest?.timeRemaining != null) {
+      setTimeRemaining(activeTest.timeRemaining);
+    }
+  }, [activeTest?.test.id, activeTest?.startTime]);
 
   // Reset feedback when changing questions
   useEffect(() => {
@@ -675,13 +682,14 @@ export default function TestTakingScreen() {
   }, [activeTest, currentQuestion]);
 
   const finalizeSubmit = useCallback(async () => {
-    if (!activeTest || submittingRef.current) return;
+    const liveSession = useTestStore.getState().activeTest;
+    if (!liveSession || submittingRef.current) return;
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const attempt = await submitTest(userId, {
         isOffline: !!isOffline,
-        groupName: groupName || activeTest.test.name,
+        groupName: groupName || liveSession.test.name,
         groupId,
       });
       setShowReviewModal(false);
@@ -690,14 +698,16 @@ export default function TestTakingScreen() {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [activeTest, submitTest, userId, isOffline, groupName, groupId, navigation]);
+  }, [submitTest, userId, isOffline, groupName, groupId, navigation]);
 
   const handleSubmit = useCallback(async (timeUp = false) => {
-    if (!activeTest) return;
+    // Session may have been abandoned (exit) while a timer tick was queued.
+    const liveSession = useTestStore.getState().activeTest;
+    if (!liveSession) return;
     hapticSuccess();
 
     // Study mode doesn't need submission
-    if (activeTest.mode === 'study') {
+    if (liveSession.mode === 'study') {
       Alert.alert(
         'End Study Session',
         'Would you like to end this study session?',
@@ -719,7 +729,37 @@ export default function TestTakingScreen() {
     }
 
     setShowReviewModal(true);
-  }, [activeTest, finalizeSubmit, exitStudyMode, navigation]);
+  }, [finalizeSubmit, exitStudyMode, navigation]);
+
+  handleSubmitRef.current = handleSubmit;
+
+  // Timer — only while focused and app is active; never after abandon.
+  useEffect(() => {
+    if (!isFocused) return;
+    if (!activeTest || activeTest.mode === 'study' || activeTest.test.timeLimit === 0) return;
+
+    const timer = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      if (!useTestStore.getState().activeTest) {
+        clearInterval(timer);
+        return;
+      }
+
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          updateTimeRemaining(0);
+          void handleSubmitRef.current(true);
+          return 0;
+        }
+        const next = prev - 1;
+        updateTimeRemaining(next);
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [activeTest?.test.timeLimit, activeTest?.mode, activeTest?.test.id, isFocused, updateTimeRemaining]);
 
   // Render question based on type
   const renderQuestionInput = () => {
@@ -1498,7 +1538,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e293b',
     borderRadius: 12,
     overflow: 'hidden',
-    minHeight: 200,
+    width: '100%',
   },
   diagramImagePlaceholder: {
     backgroundColor: '#1e293b',
@@ -1509,8 +1549,7 @@ const styles = StyleSheet.create({
   },
   diagramImage: {
     width: '100%',
-    minHeight: 160,
-    maxHeight: 360,
+    height: '100%',
     borderRadius: 12,
   },
   diagramMarker: {
@@ -1525,6 +1564,7 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 2,
   },
   diagramMarkerText: {
     color: '#ffffff',

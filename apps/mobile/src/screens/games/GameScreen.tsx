@@ -139,6 +139,7 @@ export default function GameScreen() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const currentQuestion = session.questions[currentQuestionIndex];
   const diagramImageUri = useResolvedStorageUrl(currentQuestion?.imageUrl);
+  const [diagramAspectRatio, setDiagramAspectRatio] = useState(4 / 3);
   const insets = useSafeAreaInsets();
   const totalQuestions = session.questions.length;
 
@@ -427,15 +428,27 @@ export default function GameScreen() {
   const renderDiagram = () => (
     <View style={styles.diagramContainer}>
       {diagramImageUri ? (
-        <View style={styles.diagramImageWrapper}>
-          <Image source={{ uri: diagramImageUri }} style={styles.diagramImage} resizeMode="contain" />
+        <View style={[styles.diagramImageWrapper, { aspectRatio: diagramAspectRatio }]}>
+          <Image
+            source={{ uri: diagramImageUri }}
+            style={styles.diagramImage}
+            resizeMode="contain"
+            onLoad={e => {
+              const { width, height } = e.nativeEvent.source;
+              if (width > 0 && height > 0) setDiagramAspectRatio(width / height);
+            }}
+          />
           {currentQuestion.diagramLabels?.map((label, index) => (
             <View
               key={label.id}
               style={[
                 styles.diagramMarker,
-                { left: `${label.x ?? 50}%`, top: `${label.y ?? 50}%` },
+                {
+                  left: `${typeof label.x === 'number' ? label.x : 50}%`,
+                  top: `${typeof label.y === 'number' ? label.y : 50}%`,
+                },
               ]}
+              pointerEvents="none"
             >
               <Text style={styles.diagramMarkerText}>{index + 1}</Text>
             </View>
@@ -790,7 +803,6 @@ const styles = StyleSheet.create({
   },
   diagramImageWrapper: {
     width: '100%',
-    height: 220,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#0f172a',
@@ -811,6 +823,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: -12,
     marginTop: -12,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    zIndex: 2,
   },
   diagramMarkerText: {
     color: '#ffffff',

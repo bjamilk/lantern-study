@@ -315,8 +315,8 @@ export function normalizeTestQuestionForSession(q: Record<string, unknown>, inde
     const diagramLabels = (q.diagramLabels as DiagramLabel[] | undefined)?.map(label => ({
         id: String(label.id),
         text: String(label.text || (label as { label?: string }).label || ''),
-        x: label.x ?? 0,
-        y: label.y ?? 0,
+        x: label.x ?? 50,
+        y: label.y ?? 50,
     }));
     const acceptableAnswers =
         (q.acceptableAnswers as string[] | undefined) ||
