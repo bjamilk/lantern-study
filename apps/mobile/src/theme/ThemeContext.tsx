@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useMemo, ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAuthStore } from '../stores/authStore';
 import {
   applyAccentToColors,
   applyHighContrastToColors,
@@ -53,10 +54,13 @@ interface ThemeProviderProps {
 export const ColorsThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const { settings, updateSingleSetting } = useSettingsStore();
+  const user = useAuthStore((s) => s.user);
   const themeMode = settings.appearance.theme;
 
-  const isDark =
-    themeMode === 'system' ? systemColorScheme === 'dark' : themeMode === 'dark';
+  // Match ThemeProvider: force light on auth screens when logged out.
+  const isDark = Boolean(user) && (
+    themeMode === 'system' ? systemColorScheme === 'dark' : themeMode === 'dark'
+  );
 
   const effects = useMemo(() => getAppearanceEffectFlags(settings), [settings]);
 

@@ -21,7 +21,6 @@ export function useGroupHandlers() {
     messages,
     userVotes,
     messagePagination,
-    fetchMessages,
     loadMoreMessages,
     sendMessage,
     markGroupAsRead,
@@ -44,18 +43,19 @@ export function useGroupHandlers() {
   const handleSelectGroup = useCallback(async (group: Group) => {
     if (!user?.id) return;
 
+    // GroupChatScreen owns message fetch via selectGroup + fetchMessages.
+    // Prefetch members/votes/read only — avoids racing a second messages request.
     navigation.navigate('GroupChat', {
       groupId: group.id,
       groupName: group.name,
     });
 
     await Promise.all([
-      fetchMessages(group.id, { page: 1, refresh: true }),
       fetchUserVotesForGroup(group.id, user.id),
       fetchGroupMembers(group.id),
       markGroupAsRead(group.id, user.id),
     ]);
-  }, [user?.id, navigation, fetchMessages, fetchUserVotesForGroup, fetchGroupMembers, markGroupAsRead]);
+  }, [user?.id, navigation, fetchUserVotesForGroup, fetchGroupMembers, markGroupAsRead]);
 
   const handleInitiateDm = useCallback(async (otherUserId: string, otherUserName: string) => {
     if (!user?.id || otherUserId === user.id) return;

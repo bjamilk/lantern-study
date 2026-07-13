@@ -188,6 +188,7 @@ interface GroupState {
   userVotes: Record<string, 'up' | 'down' | undefined>;
   isLoading: boolean;
   isLoadingMore: boolean;
+  isLoadingMessages: boolean;
   error: string | null;
 
   loadFromStorage: () => Promise<void>;
@@ -560,6 +561,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   userVotes: {},
   isLoading: false,
   isLoadingMore: false,
+  isLoadingMessages: false,
   error: null,
 
   // Load cached data from AsyncStorage
@@ -699,7 +701,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const requestId = (messagesFetchSeqByGroup[groupId] = (messagesFetchSeqByGroup[groupId] || 0) + 1);
 
     if (page === 1) {
-      set({ isLoading: true });
+      set({ isLoadingMessages: true, error: null });
     } else {
       set({ isLoadingMore: true });
     }
@@ -711,7 +713,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         messages: demoMessages,
         messagesCache: { ...get().messagesCache, [groupId]: demoMessages },
         messagePagination: { ...get().messagePagination, [groupId]: { page: 1, hasMore: false } },
-        isLoading: false,
+        isLoadingMessages: false,
         isLoadingMore: false,
       });
       return;
@@ -741,14 +743,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           ...get().messagePagination,
           [groupId]: { page, hasMore },
         },
-        isLoading: false,
+        // Only clear the shared spinner for the chat the user is viewing
+        isLoadingMessages: isActiveGroup ? false : get().isLoadingMessages,
         isLoadingMore: false,
+        error: isActiveGroup ? null : get().error,
       });
     } catch (error: any) {
       if (requestId !== messagesFetchSeqByGroup[groupId]) return;
+      const isActiveGroup = get().activeGroupId === groupId;
       set({
-        error: error.message || 'Failed to fetch messages',
-        isLoading: false,
+        error: isActiveGroup ? (error.message || 'Failed to fetch messages') : get().error,
+        isLoadingMessages: isActiveGroup ? false : get().isLoadingMessages,
         isLoadingMore: false,
       });
     }
@@ -833,16 +838,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const previousMessages = get().messages;
     const previousGroups = get().groups;
     const previousCache = get().messagesCache[groupId] || [];
-    set({ messages: [...previousMessages, newMessage] });
-
-    const groups = previousGroups.map(g => {
-      if (g.id === groupId) {
-        return { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() };
-      }
-      return g;
-    });
+    const isActiveGroup = get().activeGroupId === groupId;
     set({
-      groups,
+      messages: isActiveGroup ? [...previousMessages, newMessage] : previousMessages,
+      groups: previousGroups.map(g =>
+        g.id === groupId
+          ? { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() }
+          : g
+      ),
       messagesCache: { ...get().messagesCache, [groupId]: [...previousCache, newMessage] },
     });
 
@@ -852,13 +855,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         clientMessageId,
       });
       const serverMessage = mapApiMessage(serverPayload, groupId);
-      const isCurrentGroup = get().currentGroup?.id === groupId;
       set((state) => {
-        const previousCache = state.messagesCache[groupId] || [];
-        const updatedCache = replaceOptimisticWithServer(previousCache, newMessage.id, serverMessage);
-        const updatedMessages = isCurrentGroup
-          ? replaceOptimisticWithServer(state.messages, newMessage.id, serverMessage)
-          : state.messages;
+        const cache = state.messagesCache[groupId] || [];
+        const updatedCache = replaceOptimisticWithServer(cache, newMessage.id, serverMessage);
+        const updatedMessages =
+          state.activeGroupId === groupId
+            ? replaceOptimisticWithServer(state.messages, newMessage.id, serverMessage)
+            : state.messages;
         const updatedGroups = state.groups.map((group) => {
           if (group.id !== groupId) return group;
           return {
@@ -874,10 +877,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         };
       });
     } catch (error: any) {
-      const isCurrentGroup = get().currentGroup?.id === groupId;
       set({
         error: error.message || 'Failed to send message',
-        messages: isCurrentGroup ? previousMessages : get().messages,
+        messages: get().activeGroupId === groupId ? previousMessages : get().messages,
         groups: previousGroups,
         messagesCache: { ...get().messagesCache, [groupId]: previousCache },
       });
@@ -980,14 +982,24 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   leaveGroup: async (groupId: string, userId: string) => {
     if (DEMO_MODE) {
       const groups = get().groups.filter(g => g.id !== groupId);
-      set({ groups, currentGroup: null });
+      set(state => ({
+        groups,
+        currentGroup: state.currentGroup?.id === groupId ? null : state.currentGroup,
+        activeGroupId: state.activeGroupId === groupId ? null : state.activeGroupId,
+        messages: state.activeGroupId === groupId ? [] : state.messages,
+      }));
       return;
     }
     
     try {
       await api.leaveGroup(groupId, userId);
       const groups = get().groups.filter(g => g.id !== groupId);
-      set({ groups, currentGroup: null });
+      set(state => ({
+        groups,
+        currentGroup: state.currentGroup?.id === groupId ? null : state.currentGroup,
+        activeGroupId: state.activeGroupId === groupId ? null : state.activeGroupId,
+        messages: state.activeGroupId === groupId ? [] : state.messages,
+      }));
     } catch (error: any) {
       set({ error: error.message || 'Failed to leave group' });
     }
@@ -1502,7 +1514,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       const updated = [...withoutOptimisticDup, message];
       return {
         messagesCache: { ...state.messagesCache, [groupId]: updated },
-        messages: state.currentGroup?.id === groupId ? updated : state.messages,
+        messages: state.activeGroupId === groupId ? updated : state.messages,
       };
     });
   },
@@ -1517,7 +1529,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       updated[idx] = { ...updated[idx], ...message };
       return {
         messagesCache: { ...state.messagesCache, [groupId]: updated },
-        messages: state.currentGroup?.id === groupId ? updated : state.messages,
+        messages: state.activeGroupId === groupId ? updated : state.messages,
       };
     });
   },

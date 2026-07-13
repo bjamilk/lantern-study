@@ -5,6 +5,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   Text,
   View,
 } from 'react-native';
@@ -104,11 +105,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const saveTestPreset = useTestStore(s => s.saveTestPreset);
   const deleteTestPreset = useTestStore(s => s.deleteTestPreset);
   const {
-    messages,
     messagesCache,
     currentGroup,
-    isLoading,
     isLoadingMore,
+    isLoadingMessages,
+    error: groupError,
     userVotes,
     groups,
     selectGroup,
@@ -161,9 +162,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
   );
 
   const displayMessages = useMemo(() => {
-    const cached = messagesCache[groupId] || [];
-    return messages.length > 0 ? messages : cached;
-  }, [messages, messagesCache, groupId]);
+    // Per-group cache is the source of truth — global `messages` can lag or hold another chat.
+    return messagesCache[groupId] || [];
+  }, [messagesCache, groupId]);
 
   const allGroupMessages = useMemo(() => {
     const combined = [...displayMessages];
@@ -400,9 +401,19 @@ export function GroupChatScreen({ navigation, route }: Props) {
       />
 
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {isLoading && displayMessages.length === 0 ? (
+        {isLoadingMessages && displayMessages.length === 0 ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : groupError && displayMessages.length === 0 ? (
+          <View className="flex-1 items-center justify-center px-6 gap-3">
+            <Text className="text-sm text-center text-lantern-text-secondary">{groupError}</Text>
+            <Pressable
+              onPress={() => void loadChat()}
+              className="px-4 py-2 rounded-xl bg-lantern-primary"
+            >
+              <Text className="text-sm font-semibold text-white">Retry</Text>
+            </Pressable>
           </View>
         ) : (
           <FlatList

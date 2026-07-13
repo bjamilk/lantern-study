@@ -39,7 +39,7 @@ import {
     refreshCookieSession,
 } from '../services/authCookieSession';
 import { normalizeUserSettings, getNotificationSettings } from '@lantern/shared/settings';
-import { mapMessageFromApi, computeStudyStreak } from '@lantern/shared/utils';
+import { mapMessageFromApi, computeStudyStreak, getCardsDue } from '@lantern/shared/utils';
 import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { fetchStudyActivity, fetchDailyQuests, recordLoginStreak, syncGamificationProgress } from '../services/gamificationStreak';
@@ -1266,15 +1266,14 @@ export function useAppEffects({
     }, [theme, currentUser]);
 
     // --- SRS Notifications ---
+    // Use shared isCardDue once — do not add "new" + "date-due" (double-counts Again/new cards).
     const checkForDueCardsAndNotify = useCallback(() => {
-        if (!currentUser || !flashcards.length || !getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
+        if (!currentUser || !flashcards.length) return;
 
-        const today = new Date().toISOString().split('T')[0];
-        const dueCards = flashcards.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today);
-        const newCards = flashcards.filter(fc => !fc.srsData?.repetitions);
-
-        const totalDue = dueCards.length + newCards.length;
+        const totalDue = getCardsDue(flashcards).length;
         setDueCardsCount(totalDue);
+
+        if (!getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
 
         if (totalDue > 0 && Notification.permission === 'granted') {
             void showWebNotification({
@@ -1289,7 +1288,7 @@ export function useAppEffects({
                 },
             });
         }
-    }, [currentUser, flashcards, setAppMode]);
+    }, [currentUser, flashcards, setAppMode, setDueCardsCount]);
 
     useEffect(() => {
         return onWebNotificationClick((data) => {

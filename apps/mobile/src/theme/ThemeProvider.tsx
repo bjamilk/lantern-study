@@ -1,33 +1,36 @@
-import React, { useEffect } from 'react';
-import { View, useColorScheme as useDeviceScheme } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { Appearance, View, useColorScheme as useDeviceScheme } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import { ColorsThemeProvider } from './ThemeContext';
+import { darkLanternVars, lightLanternVars } from './lanternCssVars';
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const themePref = useSettingsStore(s => s.settings.appearance.theme);
   const deviceScheme = useDeviceScheme();
   const { setColorScheme } = useColorScheme();
-  // authStore exposes `user` (not currentUser) — wrong key forced light mode forever.
   const user = useAuthStore(s => s.user);
   const effectivePref = user ? themePref : 'light';
 
-  useEffect(() => {
-    if (effectivePref === 'system') {
-      setColorScheme(deviceScheme === 'dark' ? 'dark' : 'light');
-    } else {
-      setColorScheme(effectivePref);
-    }
-  }, [effectivePref, deviceScheme, setColorScheme]);
-
   const isDark =
     Boolean(user) &&
-    (themePref === 'dark' || (themePref === 'system' && deviceScheme === 'dark'));
+    (effectivePref === 'dark' || (effectivePref === 'system' && deviceScheme === 'dark'));
+
+  useEffect(() => {
+    const scheme = isDark ? 'dark' : 'light';
+    setColorScheme(scheme);
+    Appearance.setColorScheme(scheme);
+  }, [isDark, setColorScheme]);
+
+  const lanternVars = useMemo(() => (isDark ? darkLanternVars : lightLanternVars), [isDark]);
 
   return (
     <ColorsThemeProvider>
-      <View className={`flex-1 ${isDark ? 'dark' : ''} bg-lantern-background dark:bg-lantern-background`}>
+      <View
+        style={[lanternVars, { flex: 1 }]}
+        className={`flex-1 ${isDark ? 'dark' : ''} bg-lantern-background`}
+      >
         {children}
       </View>
     </ColorsThemeProvider>

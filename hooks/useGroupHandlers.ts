@@ -166,20 +166,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         let cancelled = false;
 
         const waitForAuthToken = async (): Promise<boolean> => {
-            for (let attempt = 0; attempt < 12; attempt += 1) {
+            for (let attempt = 0; attempt < 24; attempt += 1) {
                 if (cancelled) return false;
                 if (await ensureAuthTokenReady()) return true;
                 await new Promise((resolve) => setTimeout(resolve, 250));
             }
-            return false;
+            // One delayed retry after session bootstrap settles
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            if (cancelled) return false;
+            return ensureAuthTokenReady();
         };
 
         const loadSelectedChat = async () => {
             const tokenReady = await waitForAuthToken();
-            if (!tokenReady || cancelled) {
-                if (!tokenReady) {
-                    console.warn('[selectedChat] Skipping message fetch — auth token not ready');
-                }
+            if (cancelled) return;
+            if (!tokenReady) {
+                console.warn('[selectedChat] Auth token not ready after retries — will retry on next selection/focus');
                 return;
             }
 

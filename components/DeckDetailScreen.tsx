@@ -7,7 +7,7 @@ import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIc
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
-import { MarkdownRenderer } from '@lantern/shared';
+import { MarkdownRenderer, isCardDue } from '@lantern/shared';
 
 interface DeckDetailScreenProps {
   deck: Deck;
@@ -101,9 +101,8 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     setHasMore(true);
   }, [deck.id]);
 
-  const today = new Date().toISOString().split('T')[0];
   const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
-  const dueCards = cardsInDeck.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length;
+  const dueCards = cardsInDeck.filter(fc => isCardDue(fc.srsData)).length;
   const reviewedCards = cardsInDeck.filter(fc => fc.srsData?.repetitions && fc.srsData.repetitions > 0);
   const avgEaseFactor = reviewedCards.length > 0 ? reviewedCards.reduce((sum, fc) => sum + (fc.srsData?.easeFactor || 0), 0) / reviewedCards.length : 0;
   const leechCards = cardsInDeck.filter(fc => fc.srsData?.isLeech).length;

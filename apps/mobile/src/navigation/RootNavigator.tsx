@@ -4,14 +4,14 @@ import { View } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { NavigationContainer, getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { navigationRef } from './navigationRef';
 
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-import { ThemeProvider, useAppTheme } from '../theme';
+import { useAppTheme, useTheme } from '../theme';
 
 import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
 
@@ -919,21 +919,30 @@ function RootNavigatorInner() {
 
 
 export function RootNavigator() {
+  const colorScheme = useAppTheme();
+  const { colors } = useTheme();
 
-  return (
-
-    <ThemeProvider>
-
-      <NavigationContainer ref={navigationRef} linking={linkingConfig}>
-
-      <RootNavigatorInner />
-
-      </NavigationContainer>
-
-    </ThemeProvider>
-
+  const navigationTheme = useMemo(
+    () => ({
+      ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(colorScheme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.error,
+      },
+    }),
+    [colorScheme, colors]
   );
 
+  return (
+    <NavigationContainer ref={navigationRef} linking={linkingConfig} theme={navigationTheme}>
+      <RootNavigatorInner />
+    </NavigationContainer>
+  );
 }
 
 

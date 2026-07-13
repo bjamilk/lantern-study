@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Badge } from '../ui';
+import { useTheme } from '../../theme';
 
 export type TabKey =
   | 'Home'
@@ -39,10 +40,14 @@ function TabButton({
   tab,
   active,
   onPress,
+  activeColor,
+  inactiveColor,
 }: {
   tab: TabDef;
   active: boolean;
   onPress: () => void;
+  activeColor: string;
+  inactiveColor: string;
 }) {
   return (
     <Pressable
@@ -57,7 +62,7 @@ function TabButton({
         <Ionicons
           name={active ? tab.activeIcon : tab.icon}
           size={22}
-          color={active ? '#4f46e5' : '#94a3b8'}
+          color={active ? activeColor : inactiveColor}
         />
         {tab.badge ? <Badge count={tab.badge} /> : null}
       </View>
@@ -79,6 +84,8 @@ export function BottomTabBar({
   unreadNotificationCount = 0,
   isMoreActive,
 }: Props) {
+  const { colors, isDark } = useTheme();
+
   const scrollTabs: TabDef[] = [
     { key: 'Home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
     {
@@ -110,9 +117,11 @@ export function BottomTabBar({
     <View
       className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pb-6 pt-2 flex-row"
       style={{
-        shadowColor: '#0f172a',
+        backgroundColor: colors.tabBar,
+        borderTopColor: colors.tabBarBorder,
+        shadowColor: isDark ? '#000000' : '#0f172a',
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.08,
+        shadowOpacity: isDark ? 0.35 : 0.08,
         shadowRadius: 12,
         elevation: 12,
       }}
@@ -128,19 +137,20 @@ export function BottomTabBar({
           <TabButton
             key={tab.key}
             tab={tab}
-            active={activeTab === tab.key}
+            active={activeTab === tab.key && !isMoreActive}
             onPress={() => onTabPress(tab.key)}
+            activeColor={colors.tabBarActive}
+            inactiveColor={colors.tabBarInactive}
           />
         ))}
       </ScrollView>
-
-      <View className="border-l border-lantern-border pl-1">
-        <TabButton
-          tab={moreTab}
-          active={isMoreActive === true}
-          onPress={() => onTabPress('More')}
-        />
-      </View>
+      <TabButton
+        tab={moreTab}
+        active={!!isMoreActive}
+        onPress={() => onTabPress('More')}
+        activeColor={colors.tabBarActive}
+        inactiveColor={colors.tabBarInactive}
+      />
     </View>
   );
 }

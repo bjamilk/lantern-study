@@ -12,6 +12,7 @@ import {
   EllipsisVerticalIcon,
   ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
+import { isCardDue } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
@@ -68,10 +69,10 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   };
 
   const getDeckStats = (deckId: string) => {
-    const today = new Date().toISOString().split('T')[0];
     const cardsInDeck = flashcards.filter(fc => fc.deckId === deckId);
     const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
-    const dueCards = cardsInDeck.filter(fc => fc.srsData && fc.srsData.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length;
+    // Shared isCardDue includes new + overdue once (matches mobile due_count)
+    const dueCards = cardsInDeck.filter(fc => isCardDue(fc.srsData)).length;
     return { newCards, dueCards, totalCards: cardsInDeck.length };
   };
 

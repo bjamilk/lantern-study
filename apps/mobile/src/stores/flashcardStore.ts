@@ -306,8 +306,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         );
         set({ decks, isLoading: false, error: null });
         await get().saveToStorage();
-        // Load flashcards so due/new counts match web (and refresh card totals)
-        void get().syncAllFlashcards(userId);
+        // Await sync so due/new counts match the API (and web) before UI settles
+        await get().syncAllFlashcards(userId);
       } catch (apiError: any) {
         console.warn('Failed to fetch decks from API, using cached:', apiError);
         set({
