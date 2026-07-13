@@ -13,7 +13,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -21,96 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useBudgetStore, EXPENSE_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
-
-// Simple date picker component
-const SimpleDatePicker: React.FC<{
-  visible: boolean;
-  date: Date;
-  onSelect: (date: Date) => void;
-  onClose: () => void;
-}> = ({ visible, date, onSelect, onClose }) => {
-  const [selectedDate, setSelectedDate] = useState(date);
-
-  const changeDay = (delta: number) => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + delta);
-    if (newDate <= new Date()) {
-      setSelectedDate(newDate);
-    }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <TouchableOpacity style={styles.modalOverlay} onPress={onClose} activeOpacity={1}>
-        <View style={styles.datePickerModal}>
-          <Text style={styles.datePickerTitle}>Select Date</Text>
-          
-          <View style={styles.datePickerControls}>
-            <TouchableOpacity 
-              style={styles.dateArrow}
-              onPress={() => changeDay(-1)}
-            >
-              <Ionicons name="chevron-back" size={28} color="#6366f1" />
-            </TouchableOpacity>
-            
-            <View style={styles.dateDisplay}>
-              <Text style={styles.dateDay}>{selectedDate.getDate()}</Text>
-              <Text style={styles.dateMonthYear}>
-                {selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-              </Text>
-            </View>
-            
-            <TouchableOpacity 
-              style={styles.dateArrow}
-              onPress={() => changeDay(1)}
-              disabled={selectedDate.toDateString() === new Date().toDateString()}
-            >
-              <Ionicons 
-                name="chevron-forward" 
-                size={28} 
-                color={selectedDate.toDateString() === new Date().toDateString() ? '#334155' : '#6366f1'} 
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.dateQuickButtons}>
-            {['Today', 'Yesterday', '2 days ago'].map((label, idx) => {
-              const quickDate = new Date();
-              quickDate.setDate(quickDate.getDate() - idx);
-              return (
-                <TouchableOpacity
-                  key={label}
-                  style={[
-                    styles.quickDateButton,
-                    selectedDate.toDateString() === quickDate.toDateString() && styles.quickDateButtonActive
-                  ]}
-                  onPress={() => setSelectedDate(quickDate)}
-                >
-                  <Text style={[
-                    styles.quickDateText,
-                    selectedDate.toDateString() === quickDate.toDateString() && styles.quickDateTextActive
-                  ]}>{label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View style={styles.datePickerActions}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.confirmButton}
-              onPress={() => { onSelect(selectedDate); onClose(); }}
-            >
-              <Text style={styles.confirmButtonText}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-};
+import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 
 export default function AddExpenseScreen() {
   const navigation = useNavigation<any>();
@@ -167,8 +77,11 @@ export default function AddExpenseScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+      <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.closeButton, { backgroundColor: colors.backgroundSecondary }]}
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Add Expense</Text>
@@ -272,9 +185,10 @@ export default function AddExpenseScreen() {
             </TouchableOpacity>
           </View>
 
-          <SimpleDatePicker
+          <BudgetDatePicker
             visible={showDatePicker}
             date={date}
+            accentColor="#ef4444"
             onSelect={setDate}
             onClose={() => setShowDatePicker(false)}
           />
@@ -428,104 +342,5 @@ const styles = StyleSheet.create({
   dateText: {
     flex: 1,
     fontSize: 15,
-    color: '#ffffff',
-  },
-  // Date Picker Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  datePickerModal: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 24,
-    width: '85%',
-    alignItems: 'center',
-  },
-  datePickerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 20,
-  },
-  datePickerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 20,
-  },
-  dateArrow: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#0f172a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dateDisplay: {
-    alignItems: 'center',
-  },
-  dateDay: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#6366f1',
-  },
-  dateMonthYear: {
-    fontSize: 16,
-    color: '#94a3b8',
-  },
-  dateQuickButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 24,
-  },
-  quickDateButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#0f172a',
-  },
-  quickDateButtonActive: {
-    backgroundColor: '#6366f1',
-  },
-  quickDateText: {
-    fontSize: 14,
-    color: '#94a3b8',
-  },
-  quickDateTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  datePickerActions: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#94a3b8',
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#6366f1',
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
   },
 });

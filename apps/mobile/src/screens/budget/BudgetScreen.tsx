@@ -49,7 +49,7 @@ export default function BudgetScreen() {
   const [activeTab, setActiveTab] = useState<BudgetTab>('overview');
   const [txFilter, setTxFilter] = useState<TxFilter>('all');
   const { colors } = useTheme();
-  const tabBarClearance = useTabBarClearance(16);
+  const tabBarClearance = useTabBarClearance(24);
 
   const {
     transactions,
@@ -171,7 +171,7 @@ export default function BudgetScreen() {
         {TABS.map(tab => (
           <TouchableOpacity
             key={tab.key}
-            style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
+            style={[styles.tabItem, activeTab === tab.key && { borderBottomColor: featureAccents.budget }]}
             onPress={() => setActiveTab(tab.key)}
           >
             <Ionicons
@@ -382,14 +382,20 @@ export default function BudgetScreen() {
                   key={filter}
                   style={[
                     styles.txFilterBtn,
-                    txFilter === filter && styles.txFilterBtnActive,
+                    {
+                      backgroundColor:
+                        txFilter === filter ? featureAccents.budget : colors.backgroundSecondary,
+                    },
                   ]}
                   onPress={() => setTxFilter(filter)}
                 >
                   <Text
                     style={[
                       styles.txFilterText,
-                      txFilter === filter && styles.txFilterTextActive,
+                      {
+                        color:
+                          txFilter === filter ? colors.textInverse : colors.textSecondary,
+                      },
                     ]}
                   >
                     {filter === 'all' ? 'All' : filter === 'income' ? 'Income' : 'Expense'}
@@ -540,19 +546,19 @@ export default function BudgetScreen() {
             <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Summary</Text>
               <View style={styles.insightsGrid}>
-                <View style={styles.insightItem}>
+                <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Budget used</Text>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>{Math.round(budgetProgress)}%</Text>
                 </View>
-                <View style={styles.insightItem}>
+                <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Avg daily</Text>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCurrency(avgDailySpend)}</Text>
                 </View>
-                <View style={styles.insightItem}>
+                <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Projected</Text>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>{formatCurrency(projectedMonth)}</Text>
                 </View>
-                <View style={styles.insightItem}>
+                <View style={[styles.insightItem, { backgroundColor: colors.backgroundSecondary }]}>
                   <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Transactions</Text>
                   <Text style={[styles.summaryValue, { color: colors.text }]}>{monthlyTransactions.length}</Text>
                 </View>
