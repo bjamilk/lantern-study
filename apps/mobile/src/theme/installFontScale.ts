@@ -37,7 +37,7 @@ function scaleTextStyle(style: TextProps['style']): TextProps['style'] {
   return Array.isArray(style) ? [...style, { fontSize: scaled }] : [style ?? {}, { fontSize: scaled }];
 }
 
-const ScaledText = React.forwardRef<RNText, TextProps>(function ScaledText(props, ref) {
+const ScaledText = React.forwardRef(function ScaledText(props: TextProps, ref: React.Ref<RNText>) {
   const { style, allowFontScaling = false, ...rest } = props;
   return (
     <RNText ref={ref} {...rest} style={scaleTextStyle(style)} allowFontScaling={allowFontScaling} />
@@ -45,9 +45,9 @@ const ScaledText = React.forwardRef<RNText, TextProps>(function ScaledText(props
 });
 ScaledText.displayName = 'Text';
 
-const ScaledTextInput = React.forwardRef<RNTextInput, TextInputProps>(function ScaledTextInput(
-  props,
-  ref
+const ScaledTextInput = React.forwardRef(function ScaledTextInput(
+  props: TextInputProps,
+  ref: React.Ref<RNTextInput>
 ) {
   const { style, allowFontScaling = false, ...rest } = props;
   return (
