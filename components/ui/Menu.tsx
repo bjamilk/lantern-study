@@ -1,4 +1,13 @@
-import React, { createContext, useContext, useId, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useMenuKeyboard } from '../../hooks/useMenuKeyboard';
 import { useDismissableLayer } from '../../hooks/useDismissableLayer';
 
@@ -9,6 +18,7 @@ interface MenuContextValue {
   triggerId: string;
   registerItem: (index: number, el: HTMLButtonElement | null) => void;
   setTrigger: (el: HTMLButtonElement | null) => void;
+  getTrigger: () => HTMLButtonElement | null;
   handleMenuKeyDown: (event: React.KeyboardEvent) => void;
   closeMenu: () => void;
   itemIndex: () => number;
@@ -40,7 +50,7 @@ export function Menu({
   const itemCounter = useRef(0);
   itemCounter.current = 0;
 
-  const { registerItem, setTrigger, handleMenuKeyDown, closeMenu } = useMenuKeyboard({
+  const { registerItem, setTrigger, getTrigger, handleMenuKeyDown, closeMenu } = useMenuKeyboard({
     open,
     onOpenChange: setOpen,
   });
@@ -56,6 +66,7 @@ export function Menu({
         triggerId,
         registerItem,
         setTrigger,
+        getTrigger,
         handleMenuKeyDown,
         closeMenu,
         itemIndex,
@@ -106,26 +117,74 @@ export function MenuContent({
 }) {
   const ctx = useMenuContext();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
   useDismissableLayer(ctx.open, containerRef, ctx.closeMenu);
 
-  if (!ctx.open) return null;
+  const updatePosition = () => {
+    const trigger = ctx.getTrigger();
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = Math.max(containerRef.current?.offsetWidth || 192, 192);
+    let left = align === 'end' ? rect.right - menuWidth : rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
+    const top =
+      placement === 'top'
+        ? Math.max(8, rect.top - 8)
+        : Math.min(window.innerHeight - 8, rect.bottom + 8);
+    setCoords({ top, left, width: menuWidth });
+  };
 
-  const alignClass = align === 'end' ? 'right-0' : 'left-0';
-  const placementClass =
-    placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2';
+  useLayoutEffect(() => {
+    if (!ctx.open) {
+      setCoords(null);
+      return;
+    }
+    updatePosition();
+  }, [ctx.open, align, placement]);
 
-  return (
-    <div ref={containerRef} className="relative">
-      <div
-        id={ctx.menuId}
-        role="menu"
-        aria-labelledby={ctx.triggerId}
-        onKeyDown={ctx.handleMenuKeyDown}
-        className={`absolute ${alignClass} ${placementClass} min-w-[12rem] bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-150 ${className}`}
-      >
-        {children}
-      </div>
-    </div>
+  useEffect(() => {
+    if (!ctx.open) return;
+    const onReposition = () => updatePosition();
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [ctx.open, align, placement]);
+
+  if (!ctx.open || typeof document === 'undefined') return null;
+
+  const style: React.CSSProperties =
+    placement === 'top'
+      ? {
+          position: 'fixed',
+          left: coords?.left ?? 0,
+          bottom: coords ? window.innerHeight - coords.top + 8 : 72,
+          width: coords?.width,
+          zIndex: 100,
+        }
+      : {
+          position: 'fixed',
+          left: coords?.left ?? 0,
+          top: coords?.top ?? 0,
+          width: coords?.width,
+          zIndex: 100,
+        };
+
+  return createPortal(
+    <div
+      ref={containerRef}
+      id={ctx.menuId}
+      role="menu"
+      aria-labelledby={ctx.triggerId}
+      onKeyDown={ctx.handleMenuKeyDown}
+      style={style}
+      className={`min-w-[12rem] bg-lantern-surface rounded-lantern-xl shadow-xl ring-1 ring-lantern-border py-1 animate-in fade-in duration-150 ${className}`}
+    >
+      {children}
+    </div>,
+    document.body
   );
 }
 

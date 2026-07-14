@@ -64,6 +64,11 @@ if (Test-Path $adb) {
 }
 
 Remove-Item Env:CI -ErrorAction SilentlyContinue
+# Offline mode blocks Expo from signing the development manifest → Expo Go
+# shows "Failed to download remote update" on physical devices.
+Remove-Item Env:EXPO_OFFLINE -ErrorAction SilentlyContinue
+# Skip Expo API dependency doctor when network to expo.dev is flaky.
+$env:EXPO_NO_DEPENDENCY_VALIDATION = '1'
 
 # Tell Metro to use Expo Go stubs (no remote push, etc.)
 $env:EXPO_PUBLIC_APP_RUNTIME = 'expo-go'

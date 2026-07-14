@@ -86,9 +86,12 @@ export function useMenuKeyboard({
     requestAnimationFrame(() => focusItem(0));
   }, [focusItem, open]);
 
+  const getTrigger = useCallback(() => triggerRef.current, []);
+
   return {
     registerItem,
     setTrigger,
+    getTrigger,
     handleMenuKeyDown,
     closeMenu,
   };

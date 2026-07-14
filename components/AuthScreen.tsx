@@ -784,7 +784,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   };
 
   return (
-    <main className="flex items-center justify-center min-h-screen bg-lantern-background transition-colors duration-300">
+    <main className="flex items-start justify-center min-h-[100dvh] overflow-y-auto overscroll-contain bg-lantern-background transition-colors duration-300 py-4 sm:items-center sm:py-6">
       <div className="w-full max-w-5xl m-4 lg:m-8 bg-lantern-surface/95 border border-lantern-border rounded-3xl shadow-lantern-lg overflow-hidden grid lg:grid-cols-2 backdrop-blur-sm">
         {/* Left Branding Column */}
         <div className={`hidden lg:block relative p-12 ${lowDataMode ? 'bg-lantern-accent-background' : 'bg-lantern-primary-background'}`}>
@@ -804,10 +804,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           </div>
         </div>
 
-        {/* Right Form Column */}
-        <div className="p-8 sm:p-12 flex flex-col justify-center">
+        {/* Right Form Column — keep padding modest so short landscape can scroll to submit */}
+        <div className="p-5 sm:p-10 lg:p-12 flex flex-col justify-center max-h-[100dvh] overflow-y-auto">
             <div className="w-full max-w-md mx-auto">
-                <div className="text-center lg:hidden mb-8">
+                <div className="text-center lg:hidden mb-4 sm:mb-8">
                     <LanternIcon size={48} className="mx-auto" />
                 </div>
                 <h1 className="font-display text-3xl font-semibold tracking-tight text-lantern-text">

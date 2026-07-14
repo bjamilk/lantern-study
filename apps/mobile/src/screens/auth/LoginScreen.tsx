@@ -47,8 +47,9 @@ export function LoginScreen({ navigation }: Props) {
         className="flex-1"
       >
         <ScrollView
+          keyboardShouldPersistTaps="handled"
           contentContainerClassName="flex-grow px-6 py-8 justify-center"
-          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
+          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset, flexGrow: 1 }}
         >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />

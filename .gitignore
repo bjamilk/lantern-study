@@ -37,6 +37,13 @@ apps/mobile/.expo/
 apps/mobile/.expo-export*/
 apps/mobile/dist/
 
+# Responsive audit artifacts
+tmp/
+tmp/responsive/
+playwright-report/
+test-results/
+**/playwright/.cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

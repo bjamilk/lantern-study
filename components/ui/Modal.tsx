@@ -79,7 +79,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
-        className={`w-full ${maxWidthClass} transform rounded-lg bg-lantern-surface p-6 shadow-xl transition-all duration-300 dark:bg-lantern-surface ${panelClassName}`}
+        className={`w-full ${maxWidthClass} max-h-[min(90dvh,920px)] overflow-y-auto overscroll-contain transform rounded-lg bg-lantern-surface p-6 shadow-xl transition-all duration-300 dark:bg-lantern-surface ${panelClassName}`}
         style={panelStyle}
       >
         {children}
