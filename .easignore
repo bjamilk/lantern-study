@@ -1,0 +1,70 @@
+# EAS uploads the entire monorepo from git root — keep this lean.
+# App-level ignores in apps/mobile/.easignore also apply relative to that project,
+# but root node_modules / other apps must be excluded here.
+
+# Dependencies & caches (root + workspaces)
+node_modules/
+**/node_modules/
+.turbo/
+**/.turbo/
+.expo/
+**/.expo/
+**/.expo-*/
+.metro-health-check*
+
+# Other apps not needed for the mobile native build
+apps/web/
+apps/api-server/
+
+# Local native prebuild / run:android artifacts
+apps/mobile/android/
+apps/mobile/android/**
+apps/mobile/_android_local_bak/
+apps/mobile/_android_local_bak/**
+apps/mobile/ios/
+apps/mobile/ios/**
+**/android/app/build/
+**/.kotlin/
+
+# Local APKs / bundles
+*.apk
+*.aab
+**/*.apk
+**/*.aab
+
+# Build outputs
+dist/
+**/dist/
+web-build/
+coverage/
+**/coverage/
+
+# Env / secrets
+.env
+**/.env
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Repo noise
+.git/
+.migration-payloads/
+docs/
+*.log
+.DS_Store
+tmp/
+*.pem
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.tsbuildinfo
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+**/*.test.ts
+**/*.test.tsx
+**/__tests__/
+**/*.spec.ts

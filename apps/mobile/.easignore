@@ -1,8 +1,16 @@
 # IMPORTANT: when .easignore exists, EAS uses it INSTEAD of .gitignore.
-# Keep both dependency ignores and local junk exclusions here.
+# Paths are relative to this file (apps/mobile). EAS still archives the monorepo,
+# so parent folders must be excluded with ../.. patterns.
 
-# Dependencies & caches
+# Dependencies & caches (local + monorepo root — root node_modules was ~2GB)
 node_modules/
+../../node_modules/
+../web/
+../api-server/
+../../.turbo/
+../../dist/
+../../.migration-payloads/
+../../docs/
 .expo/
 .expo-*/
 .turbo/
