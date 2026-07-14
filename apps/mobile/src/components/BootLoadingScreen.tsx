@@ -3,7 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { LanternLogo } from './LanternLogo';
 
 /** Matches native Expo splash background in app.config.ts */
-const SPLASH_BACKGROUND_COLOR = '#4f46e5';
+const SPLASH_BACKGROUND_COLOR = '#6569EE';
 
 export function BootLoadingScreen() {
   return (

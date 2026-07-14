@@ -21,6 +21,27 @@ import { isEmailNotConfirmedError } from '@lantern/shared';
 // Demo mode flag - set to true for offline testing without backend
 const DEMO_MODE = false;
 
+/** Auth boot must never hang forever (SecureStore / network can stall on device). */
+const AUTH_BOOT_TIMEOUT_MS = 6_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`[Auth] ${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 // Mock user for demo mode
 const DEMO_USER: User = {
   id: 'demo-user-123',
@@ -104,16 +125,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         return;
       }
-      
-      // Refresh session if present, otherwise load current session
-      const { data: refreshData } = await supabase.auth.refreshSession();
-      const session = refreshData.session ?? (await getSession());
+
+      // Prefer getSession first — refreshSession() can hang indefinitely on bad
+      // SecureStore/network and used to leave the app stuck on the boot logo forever.
+      let session: Session | null = null;
+      try {
+        session = await withTimeout(getSession(), AUTH_BOOT_TIMEOUT_MS, 'getSession');
+      } catch (sessionError) {
+        console.warn('[Auth] getSession failed during boot:', sessionError);
+      }
+
+      if (session?.refresh_token) {
+        try {
+          const { data: refreshData } = await withTimeout(
+            supabase.auth.refreshSession(),
+            AUTH_BOOT_TIMEOUT_MS,
+            'refreshSession'
+          );
+          if (refreshData.session) {
+            session = refreshData.session;
+          }
+        } catch (refreshError) {
+          console.warn('[Auth] refreshSession skipped during boot:', refreshError);
+        }
+      }
       
       if (session) {
         let profileName: string | null = null;
         let profileFirstName: string | null = null;
         try {
-          const profile = await ensureUserProfile(session.user);
+          const profile = await withTimeout(
+            ensureUserProfile(session.user),
+            AUTH_BOOT_TIMEOUT_MS,
+            'ensureUserProfile'
+          );
           profileName = profile.displayName;
           profileFirstName = profile.firstName ?? null;
         } catch (profileError) {
@@ -180,10 +225,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       set({ 
-        error: error.message,
+        error: error?.message ?? 'Auth initialization failed',
+        user: null,
+        session: null,
         isInitialized: true,
         isLoading: false,
       });
+    } finally {
+      // Hard guarantee: never leave the navigator waiting forever.
+      if (!get().isInitialized) {
+        set({
+          user: null,
+          session: null,
+          isInitialized: true,
+          isLoading: false,
+        });
+      }
     }
   },
   

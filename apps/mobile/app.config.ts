@@ -40,7 +40,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: IS_DEV_VARIANT ? 'Lantern Study Dev' : 'Lantern Study',
   slug: 'lantern-study',
-  version: '1.0.1',
+  version: '1.0.2',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

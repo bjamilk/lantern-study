@@ -728,6 +728,9 @@ function RootNavigatorInner() {
 
   const [showUsernameModal, setShowUsernameModal] = useState(false);
 
+  // If auth/bootstrap never finishes, force past BootLoadingScreen (looks like splash).
+  const [bootTimedOut, setBootTimedOut] = useState(false);
+
 
 
   useChallengeNotificationHandler();
@@ -851,13 +854,19 @@ function RootNavigatorInner() {
   useEffect(() => {
     const timer = setTimeout(() => {
       void SplashScreen.hideAsync();
-    }, 8000);
+    }, 4000);
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setBootTimedOut(true), 10_000);
+    return () => clearTimeout(timer);
+  }, []);
 
-
-  if (!isInitialized || (user && !onboardingChecked && !isPasswordRecovery)) {
+  if (
+    (!isInitialized && !bootTimedOut) ||
+    (user && !onboardingChecked && !isPasswordRecovery && !bootTimedOut)
+  ) {
     return <BootLoadingScreen />;
   }
 
