@@ -3,6 +3,7 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
 const APP_VARIANT = process.env.APP_VARIANT || process.env.EAS_BUILD_PROFILE || 'development';
 const IS_DEV_VARIANT = APP_VARIANT === 'development';
 const IS_PRODUCTION_BUILD = ['production', 'preview'].includes(process.env.EAS_BUILD_PROFILE || '');
+const IS_EXPO_GO = process.env.EXPO_PUBLIC_APP_RUNTIME === 'expo-go';
 const ANDROID_PACKAGE = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
 const IOS_BUNDLE_ID = IS_DEV_VARIANT ? 'com.lanternstudy.app.dev' : 'com.lanternstudy.app';
 
@@ -108,20 +109,28 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   ],
 
-  updates: {
-    url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
-    checkAutomatically: 'ON_LOAD',
-    ...(IS_PRODUCTION_BUILD
-      ? {
-          // Prefer a quick launch; still fetch update asynchronously after boot.
-          fallbackToCacheTimeout: 0,
-        }
-      : { enabled: false }),
-  },
-
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
+  ...(IS_EXPO_GO
+    ? {
+        // Expo Go loads directly from Metro. Resolving EAS update metadata here
+        // can make the development manifest exceed Expo Go's request timeout.
+        updates: { enabled: false },
+        runtimeVersion: 'exposdk:54.0.0',
+      }
+    : {
+        updates: {
+          url: 'https://u.expo.dev/2e6076dd-b213-42d0-a966-3a15e3f9cb33',
+          checkAutomatically: 'ON_LOAD' as const,
+          ...(IS_PRODUCTION_BUILD
+            ? {
+                // Prefer a quick launch; still fetch update asynchronously after boot.
+                fallbackToCacheTimeout: 0,
+              }
+            : { enabled: false }),
+        },
+        runtimeVersion: {
+          policy: 'appVersion' as const,
+        },
+      }),
 
   extra: {
     appVariant: APP_VARIANT,
@@ -141,7 +150,4 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
   },
 
-  experiments: {
-    typedRoutes: true,
-  },
 });

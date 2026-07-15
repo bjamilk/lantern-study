@@ -1,10 +1,10 @@
 import 'react-native-gesture-handler';
-import './src/theme/installFontScale';
+import type { ComponentType } from 'react';
 import { registerRootComponent } from 'expo';
 import App from './App';
 import { initSentry, Sentry } from './src/services/sentry';
 
-let Root = App;
+let Root: ComponentType<any> = App;
 
 try {
   initSentry();
