@@ -28,8 +28,7 @@
         "APP_VARIANT": "preview"
       },
       "android": {
-        "buildType": "apk",
-        "resourceClass": "large"
+        "buildType": "apk"
       }
     },
     "production": {
