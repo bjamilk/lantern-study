@@ -19,7 +19,8 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "seo:notify": "node scripts/seo/notify-search-engines.mjs"
+    "seo:notify": "node scripts/seo/notify-search-engines.mjs",
+    "eas-build-pre-install": "node scripts/eas-prepare-mobile-install.js"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
