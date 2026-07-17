@@ -10,7 +10,9 @@ export function buildContentSecurityPolicy(env = {}) {
   const connectSrc = new Set([
     "'self'",
     supabaseUrl,
+    // Keep Render host for mobile/direct clients; web prefers same-origin /api proxy.
     apiUrl,
+    'https://lantern-study-api.onrender.com',
     'https://*.supabase.co',
     'wss://*.supabase.co',
     'https://unpkg.com',

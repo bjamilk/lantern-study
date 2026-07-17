@@ -65,16 +65,19 @@ const MOBILE_DEV_CONFIG: Config = {
 };
 
 /**
- * Public cloud endpoints used when Expo OTA/production bundles don't inline
- * EXPO_PUBLIC_* (dynamic process.env access is stripped by Metro).
- * Anon key is public-by-design (same values as apps/mobile supabase client).
+ * Public cloud endpoints — used for production web/mobile when env is missing
+ * or incorrectly baked as localhost (phones cannot reach the developer's machine).
+ * Anon key is public-by-design.
  */
-const MOBILE_PROD_FALLBACK: Config = {
+const CLOUD_PROD_FALLBACK: Config = {
   supabaseUrl: 'https://tiizkjhbrnaibaagmurl.supabase.co',
   supabaseAnonKey:
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRpaXpramhicm5haWJhYWdtdXJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NjMyMjMsImV4cCI6MjA5NjQzOTIyM30.dzI3L5Blbao5DItW3xgMIUzAi9LBijZncFaNBLTMvoE',
   apiBaseUrl: 'https://lantern-study-api.onrender.com',
 };
+
+/** @deprecated use CLOUD_PROD_FALLBACK */
+const MOBILE_PROD_FALLBACK = CLOUD_PROD_FALLBACK;
 
 type GlobalWithLanternVite = typeof globalThis & {
   __LANTERN_VITE_SUPABASE_URL__?: string;
@@ -130,6 +133,85 @@ const getEnvVar = (name: string): string | undefined => {
   return undefined;
 };
 
+const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])$/i;
+const LOOPBACK_URL_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?/i;
+const VITE_DEV_PORTS = new Set(['5173', '5174', '5175', '5176']);
+
+const isLoopbackHost = (host: string): boolean => LOOPBACK_HOST_RE.test(host);
+
+const isLoopbackOrDevProxyUrl = (url: string): boolean => {
+  if (!url) return true;
+  if (url.startsWith('/')) return true; // relative / Vite proxy path
+  if (LOOPBACK_URL_RE.test(url)) return true;
+  if (url.includes('__lantern_api')) return true;
+  return false;
+};
+
+/** True when URL points at the Render API host (cross-site vs lanternstudy.com). */
+const isCrossSiteRenderApiUrl = (url: string): boolean =>
+  /lantern-study-api\.onrender\.com/i.test(url);
+
+/** Hosted production web (phones must never call the developer's localhost). */
+const isDeployedWebHost = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  if (isLoopbackHost(host)) return false;
+  if (host === 'lanternstudy.com' || host === 'www.lanternstudy.com') return true;
+  if (host.endsWith('.pages.dev')) return true;
+  // Any https public host serving this SPA is treated as deployed.
+  return window.location.protocol === 'https:';
+};
+
+/**
+ * Resolve API base for web:
+ * - Deployed site → same-origin '' so `/api/*` hits the Cloudflare Pages proxy
+ *   (first-party cookies; cross-site cookies from *.onrender.com are blocked in Chrome)
+ * - Local Vite on LAN → same-origin `/__lantern_api` proxy
+ */
+const resolveWebApiBaseUrl = (apiBaseUrl: string): string => {
+  if (typeof window === 'undefined') return apiBaseUrl;
+
+  if (isDeployedWebHost()) {
+    // Empty base → fetch('/api/v1/...') on lanternstudy.com (Pages Function → Render).
+    // Never call onrender.com directly from the browser when cookie auth is used.
+    if (!apiBaseUrl || isLoopbackOrDevProxyUrl(apiBaseUrl) || isCrossSiteRenderApiUrl(apiBaseUrl)) {
+      return '';
+    }
+    return apiBaseUrl;
+  }
+
+  const { hostname, origin, port } = window.location;
+  const onViteDevPort = VITE_DEV_PORTS.has(port);
+
+  if (apiBaseUrl.startsWith('/')) return apiBaseUrl;
+
+  const pointsAtLoopback = LOOPBACK_URL_RE.test(apiBaseUrl) || apiBaseUrl.includes('__lantern_api');
+
+  if (!isLoopbackHost(hostname) && pointsAtLoopback) {
+    return onViteDevPort
+      ? `${origin}/__lantern_api`
+      : apiBaseUrl.replace(LOOPBACK_URL_RE, `${window.location.protocol}//${hostname}`);
+  }
+
+  if (!isLoopbackHost(hostname) && onViteDevPort && /^https?:\/\//i.test(apiBaseUrl)) {
+    return `${origin}/__lantern_api`;
+  }
+
+  if (onViteDevPort && pointsAtLoopback) {
+    return '/__lantern_api';
+  }
+
+  return apiBaseUrl;
+};
+
+const resolveWebSupabaseUrl = (supabaseUrl: string): string => {
+  if (typeof window === 'undefined') return supabaseUrl;
+  if (isDeployedWebHost() && (!supabaseUrl || LOOPBACK_URL_RE.test(supabaseUrl))) {
+    return CLOUD_PROD_FALLBACK.supabaseUrl;
+  }
+  return supabaseUrl;
+};
+
 /**
  * Get the full configuration based on platform and environment
  */
@@ -139,9 +221,20 @@ export const getConfig = (): Config => {
 
   // Production: use environment variables (with validation)
   if (env === 'production') {
-    const supabaseUrl = getEnvVar('SUPABASE_URL');
+    let supabaseUrl = getEnvVar('SUPABASE_URL');
     const supabaseAnonKey = getEnvVar('SUPABASE_ANON_KEY');
-    const apiBaseUrl = getEnvVar('API_URL');
+    let apiBaseUrl = getEnvVar('API_URL');
+
+    if (platform === 'web') {
+      // Never ship phones a localhost API/DB — recover even if the build baked bad env.
+      apiBaseUrl = resolveWebApiBaseUrl(apiBaseUrl || CLOUD_PROD_FALLBACK.apiBaseUrl);
+      supabaseUrl = resolveWebSupabaseUrl(supabaseUrl || CLOUD_PROD_FALLBACK.supabaseUrl);
+      return {
+        supabaseUrl,
+        supabaseAnonKey: supabaseAnonKey || CLOUD_PROD_FALLBACK.supabaseAnonKey,
+        apiBaseUrl,
+      };
+    }
 
     const missing: string[] = [];
     if (!supabaseUrl) missing.push('SUPABASE_URL');
@@ -169,11 +262,17 @@ export const getConfig = (): Config => {
 
   // Development: use platform-specific defaults, allow env override
   const defaultConfig = platform === 'mobile' ? MOBILE_DEV_CONFIG : DEV_CONFIG;
+  let apiBaseUrl = getEnvVar('API_URL') || defaultConfig.apiBaseUrl;
+  let supabaseUrl = getEnvVar('SUPABASE_URL') || defaultConfig.supabaseUrl;
+  if (platform === 'web') {
+    apiBaseUrl = resolveWebApiBaseUrl(apiBaseUrl);
+    supabaseUrl = resolveWebSupabaseUrl(supabaseUrl);
+  }
 
   return {
-    supabaseUrl: getEnvVar('SUPABASE_URL') || defaultConfig.supabaseUrl,
+    supabaseUrl,
     supabaseAnonKey: getEnvVar('SUPABASE_ANON_KEY') || defaultConfig.supabaseAnonKey,
-    apiBaseUrl: getEnvVar('API_URL') || defaultConfig.apiBaseUrl,
+    apiBaseUrl,
   };
 };
 

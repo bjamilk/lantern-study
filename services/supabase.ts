@@ -34,7 +34,7 @@ import {
 // Use shared config for URLs
 const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
-const API_BASE_URL = getApiBaseUrl()
+const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
 const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -191,7 +191,7 @@ export async function apiLogoutSession(): Promise<void> {
       const headers = await getAuthHeaders();
       if (headers.Authorization) {
         await fetch(
-          `${API_BASE_URL}/api/v1/auth/logout`,
+          `${getApiRoot()}/api/v1/auth/logout`,
           withApiCredentials({ method: 'POST', headers })
         );
       }
@@ -489,7 +489,7 @@ export async function fetchSignedStorageUrl(
 ): Promise<string> {
   const headers = await getAuthHeaders();
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/storage/signed-url`,
+    `${getApiRoot()}/api/v1/storage/signed-url`,
     withApiCredentials({
       method: 'POST',
       headers,
@@ -515,7 +515,7 @@ export const uploadProfileAvatar = async (
 ): Promise<{ url: string; path: string; avatarUrl: string }> => {
   const headers = await getAuthHeaders();
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/users/${userId}/avatar`,
+    `${getApiRoot()}/api/v1/users/${userId}/avatar`,
     withApiCredentials({
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -586,7 +586,7 @@ export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
 export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string }, userId: string, memberIds: string[]) => {
   console.log('Creating group with data:', groupData, 'userId:', userId, 'memberIds:', memberIds);
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ ...groupData, userId, memberIds }),
@@ -632,7 +632,7 @@ export const fetchGroups = async (userId: string) => {
     return [];
   }
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
     method: 'GET',
     headers: await getAuthHeaders(),
   });
@@ -665,7 +665,7 @@ export const fetchGroupMembers = async (groupId: string, options?: { bustCache?:
 
   const query = params.toString();
   const response = await fetch(
-    `${API_BASE_URL}/api/v1/groups/${groupId}/members${query ? `?${query}` : ''}`,
+    `${getApiRoot()}/api/v1/groups/${groupId}/members${query ? `?${query}` : ''}`,
     {
       method: 'GET',
       headers: await getAuthHeaders(),
@@ -694,7 +694,7 @@ export const addGroupMember = async (groupId: string, userId: string) => {
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/members`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/members`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ userId }),
@@ -723,7 +723,7 @@ export const addGroupMembersBatch = async (groupId: string, userIds: string[]) =
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/members/batch`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/members/batch`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ userIds }),
@@ -740,7 +740,7 @@ export const addGroupMembersBatch = async (groupId: string, userIds: string[]) =
 };
 
 export const fetchGroupInvitePreview = async (inviteId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/invite/${encodeURIComponent(inviteId)}`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/invite/${encodeURIComponent(inviteId)}`, {
     headers: await getAuthHeaders(),
   });
   if (!response.ok) {
@@ -762,7 +762,7 @@ export const fetchGroupInvitePreview = async (inviteId: string) => {
 export const joinGroupByInvite = async (inviteId: string) => {
   console.log('Joining group via invite:', inviteId);
   
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/join`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/join`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ inviteId }),
@@ -785,7 +785,7 @@ export const sendMessage = async (
   clientMessageId?: string
 ) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ content, userId, clientMessageId }),
@@ -813,7 +813,7 @@ export const sendMessage = async (
 export const voteQuestion = async (messageId: string, userId: string, voteType: 'up' | 'down') => {
   console.log('Voting on message:', messageId, 'type:', voteType);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/vote`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/${messageId}/vote`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -839,7 +839,7 @@ export const voteQuestion = async (messageId: string, userId: string, voteType: 
 export const removeVote = async (messageId: string, userId: string) => {
   console.log('Removing vote on message:', messageId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/vote`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/${messageId}/vote`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -861,7 +861,7 @@ export const removeVote = async (messageId: string, userId: string) => {
 export const fetchMessages = async (groupId: string, page?: number, limit?: number, before?: string) => {
   console.log('Fetching messages for group:', groupId, { page, limit, before });
   
-  let url = `${API_BASE_URL}/api/v1/messages/group/${groupId}?`;
+  let url = `${getApiRoot()}/api/v1/messages/group/${groupId}?`;
   const params: string[] = [];
   if (page !== undefined) params.push(`page=${page}`);
   if (limit !== undefined) params.push(`limit=${limit}`);
@@ -888,7 +888,7 @@ export const fetchMessages = async (groupId: string, page?: number, limit?: numb
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {
   console.log('Fetching user votes for group:', groupId, 'userId:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/group/${groupId}/user-votes`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}/user-votes`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -910,7 +910,7 @@ export const fetchUserVotesForGroup = async (groupId: string, userId: string): P
 export const updateMessage = async (messageId: string, updates: { flagged_as_similar_user_ids?: string[] }) => {
   console.log('Updating message:', messageId, 'updates:', updates);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/update`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/${messageId}/update`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -935,7 +935,7 @@ export const updateMessage = async (messageId: string, updates: { flagged_as_sim
 export const updateQuestionStatus = async (messageId: string, questionStatus: string) => {
   console.log('Updating question status:', messageId, 'to:', questionStatus);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/${messageId}/status`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/${messageId}/status`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ questionStatus }),
@@ -960,7 +960,7 @@ export const updateQuestionStatus = async (messageId: string, questionStatus: st
 export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean }, userId: string) => {
   console.log('Creating deck:', deckData.name, 'isShared:', deckData.isShared);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -997,7 +997,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
     params.set('userId', userId);
     if (includeShared) params.set('includeShared', 'true');
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks?${params.toString()}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks?${params.toString()}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1024,7 +1024,7 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
 export const updateDeck = async (deckId: string, updates: { name?: string; description?: string; isShared?: boolean }) => {
   console.log('Updating deck:', deckId, 'updates:', updates);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -1052,7 +1052,7 @@ export const fetchUsers = async (search?: string, options?: { page?: number; lim
     params.set('page', String(options?.page ?? 1));
     params.set('limit', String(options?.limit ?? 20));
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/users?${params.toString()}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users?${params.toString()}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1076,7 +1076,7 @@ export const searchUsers = async (query: string, limit: number = 20) => {
     if (normalizedQuery.length < 2) {
       return [];
     }
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1102,7 +1102,7 @@ export const searchUsers = async (query: string, limit: number = 20) => {
 export const fetchDeckCollaborators = async (deckId: string) => {
   console.log('Fetching collaborators for deck:', deckId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/collaborators`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/collaborators`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1123,7 +1123,7 @@ export const fetchDeckCollaborators = async (deckId: string) => {
 export const addDeckCollaborator = async (deckId: string, userId: string, role: string = 'editor') => {
   console.log('Adding collaborator to deck:', deckId, userId, role);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/collaborators`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/collaborators`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ userId, role }),
@@ -1145,7 +1145,7 @@ export const addDeckCollaborator = async (deckId: string, userId: string, role: 
 export const removeDeckCollaborator = async (deckId: string, userId: string) => {
   console.log('Removing collaborator from deck:', deckId, userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/collaborators/${userId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/collaborators/${userId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -1165,7 +1165,7 @@ export const removeDeckCollaborator = async (deckId: string, userId: string) => 
 export const deleteDeck = async (deckId: string) => {
   console.log('Deleting deck:', deckId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -1196,7 +1196,7 @@ export const createFlashcard = async (flashcardData: {
 }) => {
   console.log('Creating flashcard for deck:', flashcardData.deckId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1229,7 +1229,7 @@ export const createFlashcard = async (flashcardData: {
 export const fetchFlashcardComments = async (flashcardId: string) => {
   console.log('Fetching comments for flashcard:', flashcardId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}/comments`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}/comments`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1250,7 +1250,7 @@ export const fetchFlashcardComments = async (flashcardId: string) => {
 export const addFlashcardComment = async (flashcardId: string, userId: string, comment: string) => {
   console.log('Adding comment to flashcard:', flashcardId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}/comments`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}/comments`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ userId, comment }),
@@ -1294,7 +1294,7 @@ export const fetchFlashcards = async (
     params.append('page', page.toString());
     params.append('limit', limit.toString());
 
-    const url = `${API_BASE_URL}/api/v1/flashcards?${params.toString()}`;
+    const url = `${getApiRoot()}/api/v1/flashcards?${params.toString()}`;
     console.log('Fetching flashcards URL:', url);
     
     const response = await fetch(url, {
@@ -1353,7 +1353,7 @@ export const updateFlashcard = async (flashcardId: string, updates: {
 }) => {
   console.log('Updating flashcard:', flashcardId, 'updates:', updates);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1385,7 +1385,7 @@ export const reviewFlashcard = async (
   rating: 'again' | 'hard' | 'good' | 'easy'
 ) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}/review`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}/review`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ rating }),
@@ -1407,7 +1407,7 @@ export const reviewFlashcard = async (
 export const deleteFlashcard = async (flashcardId: string) => {
   console.log('Deleting flashcard:', flashcardId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/flashcards/${flashcardId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -1431,7 +1431,7 @@ export const resetDeckStatistics = async (deckId: string, userId?: string) => {
     const body: any = {};
     if (userId) body.userId = userId;
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/reset`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/reset`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(body),
@@ -1455,7 +1455,7 @@ export const resetDeckStatistics = async (deckId: string, userId?: string) => {
 export const exportDeck = async (deckId: string) => {
   console.log('Exporting deck:', deckId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/export`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/export`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1478,7 +1478,7 @@ export const exportDeck = async (deckId: string) => {
 export const importDeck = async (importData: any, userId: string): Promise<{deck: any; flashcards: any[]}> => {
   console.log('Importing deck for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/decks/import`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/decks/import`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1508,7 +1508,7 @@ export const importDeck = async (importData: any, userId: string): Promise<{deck
 };
 
 export const exportDeckCsv = async (deckId: string): Promise<string> => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/decks/${deckId}/export/csv`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/decks/${deckId}/export/csv`, {
     method: 'GET',
     headers: await getAuthHeaders(),
   });
@@ -1517,7 +1517,7 @@ export const exportDeckCsv = async (deckId: string): Promise<string> => {
 };
 
 export const importDeckCsv = async (csv: string, userId: string, deckName?: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/decks/import/csv`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/decks/import/csv`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ csv, userId, deckName }),
@@ -1531,7 +1531,7 @@ export const importDeckCsv = async (csv: string, userId: string, deckName?: stri
 };
 
 export const importDeckApkg = async (apkgBase64: string, userId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/decks/import/apkg`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/decks/import/apkg`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ apkgBase64, userId }),
@@ -1556,7 +1556,7 @@ export const createTestSession = async (sessionData: {
 }, userId: string) => {
   console.log('Creating test session for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/tests`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/tests`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1589,7 +1589,7 @@ export const updateTestSession = async (sessionId: string, updates: {
 }, userId: string) => {
   console.log('Updating test session:', sessionId, 'updates:', updates, 'user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/tests/${sessionId}/submit`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/tests/${sessionId}/submit`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1620,7 +1620,7 @@ export const createTestResult = async (resultData: {
 }) => {
   console.log('Creating test result for session:', resultData.session_id);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/tests/${resultData.session_id}/results`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/tests/${resultData.session_id}/results`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -1652,7 +1652,7 @@ export const fetchTestResults = async (userId: string, options?: { limit?: numbe
     }
 
     const limit = options?.limit ?? 50;
-    const response = await fetch(`${API_BASE_URL}/api/v1/tests?status=completed&limit=${limit}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/tests?status=completed&limit=${limit}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1705,7 +1705,7 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
   });
 
   const doFetch = async () =>
-    fetch(`${API_BASE_URL}/api/v1/user-stats`, {
+    fetch(`${getApiRoot()}/api/v1/user-stats`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body,
@@ -1740,7 +1740,7 @@ export const fetchUserQuestionStats = async (userId: string) => {
       return {} as UserQuestionStats;
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1748,7 +1748,7 @@ export const fetchUserQuestionStats = async (userId: string) => {
     if (response.status === 401 || response.status === 403) {
       const { handleApiAuthFailure } = await import('./sessionHandler');
       if (await handleApiAuthFailure(response.status)) {
-        const retry = await fetch(`${API_BASE_URL}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
+        const retry = await fetch(`${getApiRoot()}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
           method: 'GET',
           headers: await getAuthHeaders(),
         });
@@ -1808,7 +1808,7 @@ export const fetchUserQuestionStats = async (userId: string) => {
 export const fetchUserProfile = async (userId: string) => {
   console.log('Fetching user profile for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -1846,7 +1846,7 @@ export const updateUserProfile = async (userId: string, updates: {
   console.log('Updating user profile for user:', userId, 'updates:', updates);
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(updates),
@@ -1881,7 +1881,7 @@ export const createUserProfile = async (profileData: {
 }) => {
   console.log('Creating user profile:', profileData);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/users`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(profileData),
@@ -1903,7 +1903,7 @@ export const createUserProfile = async (profileData: {
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}`, {
       method: 'DELETE',
       headers,
     });
@@ -1923,7 +1923,7 @@ export const deleteUserAccountImmediate = async (
   password: string
 ): Promise<void> => {
   const headers = await getRequiredAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/delete-immediate`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/delete-immediate`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
@@ -1941,7 +1941,7 @@ export const deactivateUserAccount = async (userId: string): Promise<{
   message?: string;
 }> => {
   const headers = await getRequiredAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/deactivate`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/deactivate`, {
     method: 'POST',
     headers,
   });
@@ -1954,7 +1954,7 @@ export const deactivateUserAccount = async (userId: string): Promise<{
 
 export const reactivateUserAccount = async (userId: string): Promise<void> => {
   const headers = await getRequiredAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/reactivate`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/reactivate`, {
     method: 'POST',
     headers,
   });
@@ -1973,7 +1973,7 @@ export const fetchAccountLifecycle = async (userId: string): Promise<{
 } | null> => {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/lifecycle`, { headers });
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/lifecycle`, { headers });
     if (!response.ok) return null;
     const json = await response.json();
     return json.data ?? null;
@@ -1991,7 +1991,7 @@ export const importUserAccountBackup = async (
   }
 ): Promise<{ noteFolders: number; notes: number; decks: number; flashcards: number }> => {
   const headers = await getRequiredAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/import`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/import`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -2010,7 +2010,7 @@ export const importUserAccountBackup = async (
 export const exportUserAccountData = async (userId: string): Promise<Record<string, unknown> | null> => {
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/export`, { headers });
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/export`, { headers });
     if (!response.ok) {
       console.error('Error exporting user data:', response.status);
       return null;
@@ -2025,7 +2025,7 @@ export const exportUserAccountData = async (userId: string): Promise<Record<stri
 
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/check-username/${encodeURIComponent(username)}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/check-username/${encodeURIComponent(username)}`, {
       headers: { 'Content-Type': 'application/json' },
     });
     if (!response.ok) {
@@ -2042,7 +2042,7 @@ export const checkUsernameAvailability = async (username: string): Promise<boole
 export const updateUsername = async (userId: string, username: string, firstName: string, lastName: string): Promise<any> => {
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${userId}/username`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/username`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ username, firstName, lastName }),
@@ -2068,7 +2068,7 @@ export const createNotification = async (notificationData: {
 }) => {
   console.log('Creating notification for user:', notificationData.user_id);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -2098,7 +2098,7 @@ export const fetchNotifications = async (userId: string) => {
       return [];
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications?limit=100`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications?limit=100`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2136,7 +2136,7 @@ export const fetchNotifications = async (userId: string) => {
 export const markNotificationAsRead = async (notificationId: string, userId: string) => {
   console.log('Marking notification as read:', notificationId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}/read`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications/${notificationId}/read`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
     });
@@ -2157,7 +2157,7 @@ export const markNotificationAsRead = async (notificationId: string, userId: str
 export const markAllNotificationsAsRead = async (userId: string) => {
   console.log('Marking all notifications as read for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/read-all`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications/read-all`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
     });
@@ -2180,7 +2180,7 @@ export const deleteNotification = async (notificationId: string, userId?: string
   try {
     const resolvedUserId = userId || await getAuthenticatedUserId();
     const userParam = '';
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/${notificationId}${userParam}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications/${notificationId}${userParam}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2199,7 +2199,7 @@ export const deleteNotification = async (notificationId: string, userId?: string
 export const deleteAllNotifications = async (userId: string) => {
   console.log('Deleting all notifications for user:', userId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/notifications`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/notifications`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2221,7 +2221,7 @@ export const deleteAllNotifications = async (userId: string) => {
 export const deleteGroup = async (groupId: string) => {
   console.log('Deleting group:', groupId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2241,7 +2241,7 @@ export const deleteGroup = async (groupId: string) => {
 export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string }) => {
   console.log('Updating group:', groupId, 'updates:', updates);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({
@@ -2267,7 +2267,7 @@ export const updateGroup = async (groupId: string, updates: { name?: string; des
 };
 
 export const promoteGroupAdmin = async (groupId: string, memberId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/admins/${memberId}`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/admins/${memberId}`, {
     method: 'POST',
     headers: await getAuthHeaders(),
   });
@@ -2280,7 +2280,7 @@ export const promoteGroupAdmin = async (groupId: string, memberId: string) => {
 };
 
 export const demoteGroupAdmin = async (groupId: string, memberId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/admins/${memberId}`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/admins/${memberId}`, {
     method: 'DELETE',
     headers: await getAuthHeaders(),
   });
@@ -2309,7 +2309,7 @@ export const createMarketplaceListing = async (listingData: {
 }) => {
   console.log('Creating marketplace listing:', listingData.title);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(listingData),
@@ -2355,7 +2355,7 @@ export const fetchMarketplaceListings = async (filters: {
 
 export const fetchMarketplaceCampuses = async (country = 'NG'): Promise<any[]> => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/campuses?country=${encodeURIComponent(country)}`,
+    `${getApiRoot()}/api/v1/marketplace/campuses?country=${encodeURIComponent(country)}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -2396,7 +2396,7 @@ export const fetchMarketplaceListingsPage = async (filters: {
       });
 
       const response = await fetchWithTimeout(
-        `${API_BASE_URL}/api/v1/marketplace/listings?${queryParams}`,
+        `${getApiRoot()}/api/v1/marketplace/listings?${queryParams}`,
         { method: 'GET', headers: await getAuthHeaders() },
         5000
       );
@@ -2434,7 +2434,7 @@ export const fetchMarketplaceListingsPage = async (filters: {
 export const fetchMarketplaceListing = async (listingId: string) => {
   console.log('Fetching marketplace listing:', listingId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2461,7 +2461,7 @@ export const fetchMarketplaceListing = async (listingId: string) => {
 export const updateMarketplaceListing = async (listingId: string, updates: any) => {
   console.log('Updating marketplace listing:', listingId, updates);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -2484,7 +2484,7 @@ export const updateMarketplaceListing = async (listingId: string, updates: any) 
 export const deleteMarketplaceListing = async (listingId: string) => {
   console.log('Deleting marketplace listing:', listingId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2504,7 +2504,7 @@ export const deleteMarketplaceListing = async (listingId: string) => {
 export const addMarketplaceReview = async (listingId: string, review: { rating: number; comment?: string }) => {
   console.log('Adding review to listing:', listingId, review);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/reviews`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/reviews`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(review),
@@ -2527,7 +2527,7 @@ export const addMarketplaceReview = async (listingId: string, review: { rating: 
 export const reportMarketplaceListing = async (listingId: string, report: { reason: string; details?: string }) => {
   console.log('Reporting listing:', listingId, report);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/reports`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/reports`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(report),
@@ -2550,7 +2550,7 @@ export const reportMarketplaceListing = async (listingId: string, report: { reas
 export const initiateMarketplaceTransaction = async (listingId: string, amount: number) => {
   console.log('Initiating transaction for listing:', listingId, amount);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/transactions`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/transactions`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ listingId, amount }),
@@ -2578,7 +2578,7 @@ export const fetchMyListings = async (status?: string) => {
     const queryParams = new URLSearchParams();
     if (status) queryParams.append('status', status);
     
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/my-listings?${queryParams}`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/my-listings?${queryParams}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     }, 5000);
@@ -2600,7 +2600,7 @@ export const fetchMyListings = async (status?: string) => {
 export const fetchSellerStats = async () => {
   console.log('Fetching seller stats');
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/stats`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/stats`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     }, 5000);
@@ -2622,7 +2622,7 @@ export const fetchSellerStats = async () => {
 export const updateListingStatus = async (listingId: string, status: 'active' | 'inactive' | 'sold') => {
   console.log('Updating listing status:', listingId, status);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/status`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/status`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -2647,7 +2647,7 @@ export const updateListingStatus = async (listingId: string, status: 'active' | 
 export const fetchMyFavorites = async () => {
   try {
     if (!(await hasValidSession())) return [];
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/favorites`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/favorites`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     }, 5000);
@@ -2668,7 +2668,7 @@ export const fetchMyFavorites = async () => {
 export const addToFavorites = async (listingId: string) => {
   console.log('Adding to favorites:', listingId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/favorites`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/favorites`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ listingId }),
@@ -2691,7 +2691,7 @@ export const addToFavorites = async (listingId: string) => {
 export const removeFromFavorites = async (listingId: string) => {
   console.log('Removing from favorites:', listingId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/favorites/${listingId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/favorites/${listingId}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -2710,7 +2710,7 @@ export const removeFromFavorites = async (listingId: string) => {
 
 export const checkIfFavorited = async (listingId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/favorites/${listingId}/check`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/favorites/${listingId}/check`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2733,7 +2733,7 @@ export const fetchMyInquiries = async (role: 'seller' | 'buyer' = 'seller', stat
     const queryParams = new URLSearchParams({ role });
     if (status) queryParams.append('status', status);
     
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/inquiries?${queryParams}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/inquiries?${queryParams}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2755,7 +2755,7 @@ export const fetchMyInquiries = async (role: 'seller' | 'buyer' = 'seller', stat
 export const createInquiry = async (listingId: string, message: string) => {
   console.log('Creating inquiry for listing:', listingId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/inquiries`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/inquiries`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ listingId, message }),
@@ -2778,7 +2778,7 @@ export const createInquiry = async (listingId: string, message: string) => {
 export const updateInquiryStatus = async (inquiryId: string, status: 'open' | 'negotiating' | 'closed' | 'purchased') => {
   console.log('Updating inquiry status:', inquiryId, status);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/inquiries/${inquiryId}/status`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/inquiries/${inquiryId}/status`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -2812,7 +2812,7 @@ export const threadMayHaveMarketplaceInquiry = (
 
 export const getInquiryByThread = async (threadId: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/inquiries/thread/${threadId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/inquiries/thread/${threadId}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2831,7 +2831,7 @@ export const getInquiryByThread = async (threadId: string) => {
 
 export const createOffer = async (listingId: string, amount: number, message?: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/offers`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ listingId, amount, message }),
@@ -2850,7 +2850,7 @@ export const createOffer = async (listingId: string, amount: number, message?: s
 
 export const respondToOffer = async (offerId: string, action: 'accept' | 'decline' | 'counter' | 'withdraw', counterAmount?: number) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/offers/${offerId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers/${offerId}`, {
       method: 'PUT',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ action, counterAmount }),
@@ -2869,7 +2869,7 @@ export const respondToOffer = async (offerId: string, action: 'accept' | 'declin
 
 export const fetchOffers = async (role: 'buyer' | 'seller') => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/offers?role=${role}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers?role=${role}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2884,7 +2884,7 @@ export const fetchOffers = async (role: 'buyer' | 'seller') => {
 
 export const fetchOffersForListing = async (listingId: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/offers`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/offers`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2899,7 +2899,7 @@ export const fetchOffersForListing = async (listingId: string) => {
 
 export const fetchNegotiationHistory = async (listingId: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/offers-history`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/offers-history`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -2914,7 +2914,7 @@ export const fetchNegotiationHistory = async (listingId: string) => {
 
 export const fetchMarketplaceOrders = async (role: 'buyer' | 'seller' = 'buyer') => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/orders?role=${role}`,
+    `${getApiRoot()}/api/v1/marketplace/orders?role=${role}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -2928,7 +2928,7 @@ export const fetchMarketplaceOrders = async (role: 'buyer' | 'seller' = 'buyer')
 
 export const fetchMarketplaceOrder = async (orderId: string) => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/orders/${orderId}`,
+    `${getApiRoot()}/api/v1/marketplace/orders/${orderId}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -2942,7 +2942,7 @@ export const fetchMarketplaceOrder = async (orderId: string) => {
 
 export const fetchOrderForInquiry = async (inquiryId: string) => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/orders/inquiry/${inquiryId}`,
+    `${getApiRoot()}/api/v1/marketplace/orders/inquiry/${inquiryId}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -2955,7 +2955,7 @@ export const updateMarketplaceOrder = async (
   orderId: string,
   payload: { action: string; meetingLocation?: string; sellerNote?: string; fulfillmentMode?: string }
 ) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/orders/${orderId}`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/orders/${orderId}`, {
     method: 'PATCH',
     headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -2969,7 +2969,7 @@ export const updateMarketplaceOrder = async (
 };
 
 export const requestOrderPayment = async (orderId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/orders/${orderId}/payment-link`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/orders/${orderId}/payment-link`, {
     method: 'POST',
     headers: await getAuthHeaders(),
   });
@@ -2983,7 +2983,7 @@ export const requestOrderPayment = async (orderId: string) => {
 
 export const fetchSellerAnalytics = async () => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/analytics/seller`,
+    `${getApiRoot()}/api/v1/marketplace/analytics/seller`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -2995,7 +2995,7 @@ export const fetchSellerAnalytics = async () => {
 export const fetchSellerBuyers = async (segment?: string) => {
   const qs = segment ? `?segment=${encodeURIComponent(segment)}` : '';
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/seller/buyers${qs}`,
+    `${getApiRoot()}/api/v1/marketplace/seller/buyers${qs}`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3006,7 +3006,7 @@ export const fetchSellerBuyers = async (segment?: string) => {
 
 export const fetchSellerCoupons = async () => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/coupons`,
+    `${getApiRoot()}/api/v1/marketplace/coupons`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3022,7 +3022,7 @@ export const createSellerCoupon = async (data: {
   maxUses?: number;
   endsAt?: string;
 }) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/coupons`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/coupons`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify(data),
@@ -3036,7 +3036,7 @@ export const createSellerCoupon = async (data: {
 };
 
 export const validateMarketplaceCoupon = async (code: string, listingId: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/coupons/validate`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/coupons/validate`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ code, listingId }),
@@ -3051,7 +3051,7 @@ export const validateMarketplaceCoupon = async (code: string, listingId: string)
 
 export const fetchSellerPreferences = async () => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/seller/preferences`,
+    `${getApiRoot()}/api/v1/marketplace/seller/preferences`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3066,7 +3066,7 @@ export const updateSellerPreferences = async (data: {
   requirePaymentConfirmation?: boolean;
   favoriteAlertThreshold?: number;
 }) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/preferences`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/preferences`, {
     method: 'PUT',
     headers: await getAuthHeaders(),
     body: JSON.stringify(data),
@@ -3081,7 +3081,7 @@ export const updateSellerPreferences = async (data: {
 
 export const fetchPickupNudge = async (sellerId: string) => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/sellers/${sellerId}/pickup-nudge`,
+    `${getApiRoot()}/api/v1/marketplace/sellers/${sellerId}/pickup-nudge`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3095,7 +3095,7 @@ export const sendSellerCampaign = async (data: {
   segment?: string;
   buyerIds?: string[];
 }) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/campaigns`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/campaigns`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify(data),
@@ -3115,7 +3115,7 @@ export const createMarketplaceBundle = async (data: {
   listingIds: string[];
   location?: string;
 }) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/bundles`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/bundles`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify(data),
@@ -3130,7 +3130,7 @@ export const createMarketplaceBundle = async (data: {
 
 export const fetchSellerOnboarding = async () => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/seller/onboarding`,
+    `${getApiRoot()}/api/v1/marketplace/seller/onboarding`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3140,7 +3140,7 @@ export const fetchSellerOnboarding = async () => {
 };
 
 export const completeSellerOnboarding = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/seller/onboarding/complete`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/onboarding/complete`, {
     method: 'POST',
     headers: await getAuthHeaders(),
   });
@@ -3154,7 +3154,7 @@ export const completeSellerOnboarding = async () => {
 
 export const submitOrderPaymentProof = async (orderId: string, proofUrl: string) => {
   const response = await fetch(
-    `${API_BASE_URL}/api/v1/marketplace/orders/${orderId}/payment-proof`,
+    `${getApiRoot()}/api/v1/marketplace/orders/${orderId}/payment-proof`,
     {
       method: 'POST',
       headers: await getAuthHeaders(),
@@ -3171,7 +3171,7 @@ export const submitOrderPaymentProof = async (orderId: string, proofUrl: string)
 
 export const checkSavedSearchMatches = async (searchId: string) => {
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/saved-searches/${searchId}/matches`,
+    `${getApiRoot()}/api/v1/marketplace/saved-searches/${searchId}/matches`,
     { method: 'GET', headers: await getAuthHeaders() },
     5000
   );
@@ -3181,7 +3181,7 @@ export const checkSavedSearchMatches = async (searchId: string) => {
 };
 
 export const boostMarketplaceListing = async (listingId: string, durationHours: number = 72) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/boost`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/boost`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify({ durationHours }),
@@ -3197,7 +3197,7 @@ export const boostMarketplaceListing = async (listingId: string, durationHours: 
 };
 
 export const buyMarketplaceListingNow = async (listingId: string, couponCode?: string) => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/buy-now`, {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/buy-now`, {
     method: 'POST',
     headers: await getAuthHeaders(),
     body: JSON.stringify(couponCode ? { couponCode } : {}),
@@ -3216,7 +3216,7 @@ export const fetchMarketplaceCategoryAnalytics = async () => {
   try {
     return await marketplaceCategoryAnalyticsCache.get('categories', async () => {
       const response = await fetchWithTimeout(
-        `${API_BASE_URL}/api/v1/marketplace/analytics/categories`,
+        `${getApiRoot()}/api/v1/marketplace/analytics/categories`,
         { method: 'GET', headers: await getAuthHeaders() },
         5000
       );
@@ -3244,7 +3244,7 @@ export const fetchMarketplaceCategoryAnalytics = async () => {
 
 export const saveSearch = async (filters: Record<string, any>, name?: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/saved-searches`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/saved-searches`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ filters, name }),
@@ -3264,7 +3264,7 @@ export const saveSearch = async (filters: Record<string, any>, name?: string) =>
 export const fetchSavedSearches = async () => {
   try {
     if (!(await hasValidSession())) return [];
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/saved-searches`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/saved-searches`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3279,7 +3279,7 @@ export const fetchSavedSearches = async () => {
 
 export const deleteSavedSearch = async (id: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/saved-searches/${id}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/saved-searches/${id}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -3294,7 +3294,7 @@ export const deleteSavedSearch = async (id: string) => {
 
 export const fetchCustomCategories = async () => {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/categories/custom`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/categories/custom`, {
       method: 'GET',
     }, 5000);
     if (!response.ok) return [];
@@ -3308,7 +3308,7 @@ export const fetchCustomCategories = async () => {
 
 export const createCustomCategory = async (name: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/marketplace/categories/custom`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/categories/custom`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ name }),
@@ -3329,7 +3329,7 @@ export const createCustomCategory = async (name: string) => {
 
 export const fetchSimilarListings = async (listingId: string) => {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/similar`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/similar`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     }, 5000);
@@ -3350,7 +3350,7 @@ export const fetchMarketplaceListingFull = async (
 ): Promise<{ listing: any; isFavorited: boolean; similarListings: any[] }> => {
   const params = userId ? `` : '';
   const response = await fetchWithTimeout(
-    `${API_BASE_URL}/api/v1/marketplace/listings/${listingId}/full${params}`,
+    `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/full${params}`,
     { method: 'GET', headers: await getAuthHeaders() },
     8000
   );
@@ -3366,7 +3366,7 @@ export const fetchMarketplaceListingFull = async (
 
 export const fetchSellerProfile = async (userId: string) => {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/marketplace/sellers/${userId}/profile`, {
+    const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/sellers/${userId}/profile`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     }, 5000);
@@ -3528,7 +3528,7 @@ export const fetchDirectMessages = async (userId: string, otherUserId: string, o
       limit: limit.toString(),
     });
     
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/user/${userId}?${queryParams}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/user/${userId}?${queryParams}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3561,7 +3561,7 @@ export const fetchDmThreads = async (userId: string) => {
       return [];
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/threads`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/threads`, {
       method: 'GET',
       headers: authHeaders,
     });
@@ -3591,7 +3591,7 @@ export const sendDirectMessage = async (
 ) => {
   console.log('Sending direct message from:', senderId, 'to:', recipientId);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/user/${senderId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/user/${senderId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
       body: JSON.stringify({
@@ -3622,7 +3622,7 @@ export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<str
       return {};
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/groups/unread/all`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/groups/unread/all`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3647,7 +3647,7 @@ export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<str
 // Mark a group as read
 export const markGroupAsRead = async (groupId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/groups/${groupId}/read`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/read`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ userId }),
@@ -3672,7 +3672,7 @@ export const fetchDMUnreadCounts = async (userId: string): Promise<Record<string
       return {};
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/unread/all`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/unread/all`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3697,7 +3697,7 @@ export const fetchDMUnreadCounts = async (userId: string): Promise<Record<string
 // Mark a DM thread as read
 export const markDMAsRead = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/read`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/read`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ userId }),
@@ -3718,7 +3718,7 @@ export const markDMAsRead = async (threadId: string, userId: string): Promise<bo
 // Delete a DM thread
 export const deleteDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -3738,7 +3738,7 @@ export const deleteDmThread = async (threadId: string, userId: string): Promise<
 // Archive a DM thread
 export const archiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/archive`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/archive`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -3756,7 +3756,7 @@ export const archiveDmThread = async (threadId: string, userId: string): Promise
 // Unarchive a DM thread
 export const unarchiveDmThread = async (threadId: string, userId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/messages/dm/${threadId}/unarchive`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/unarchive`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -3790,7 +3790,7 @@ export const fetchOfflineBundles = async (userId: string): Promise<OfflineBundle
       return [];
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/offline-bundles`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3815,7 +3815,7 @@ export const fetchOfflineBundles = async (userId: string): Promise<OfflineBundle
 
 export const saveOfflineBundle = async (userId: string, bundle: OfflineBundleData): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/offline-bundles`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify({ userId, bundle: {
@@ -3838,7 +3838,7 @@ export const saveOfflineBundle = async (userId: string, bundle: OfflineBundleDat
 
 export const deleteOfflineBundle = async (userId: string, bundleId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`, {
       method: 'DELETE',
       headers: await getAuthHeaders(),
     });
@@ -3901,7 +3901,7 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   try {
     if (!(await hasValidSession())) return null;
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -3925,7 +3925,7 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
 export const saveUserSettings = async (userId: string, settings: UserSettings): Promise<boolean> => {
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/users/settings`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ settings }),
@@ -3962,7 +3962,7 @@ export const fetchUserPreferences = async (userId: string): Promise<UserPreferen
       return null;
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/preferences/${encodeURIComponent(userId)}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/preferences/${encodeURIComponent(userId)}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });
@@ -4003,7 +4003,7 @@ export const saveUserPreferences = async (userId: string, prefs: UserPreferences
   console.log('Saving user preferences for user:', userId, 'prefs:', prefs);
   try {
     const headers = await getRequiredAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/preferences`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/preferences`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -4371,7 +4371,7 @@ export const syncPendingResultsToCloud = async (
 export const sendPresenceHeartbeat = async (): Promise<void> => {
   try {
     const headers = await getAuthHeaders();
-    await fetch(`${API_BASE_URL}/api/v1/users/presence/heartbeat`, {
+    await fetch(`${getApiRoot()}/api/v1/users/presence/heartbeat`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: '{}',

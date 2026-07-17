@@ -2,7 +2,10 @@ import type { Session, SupportedStorage } from '@supabase/supabase-js';
 import { getApiBaseUrl } from '@lantern/shared';
 import { setCachedAuthToken } from './supabase';
 
-const API_BASE_URL = getApiBaseUrl();
+/** Resolve per call so deployed web can use same-origin '' after config remap. */
+function cookieAuthApiBase(): string {
+  return (getApiBaseUrl() || '').replace(/\/$/, '');
+}
 
 export function isCookieAuthEnabled(): boolean {
   if (typeof window === 'undefined') return false;
@@ -58,7 +61,8 @@ export async function cookieAuthFetch(
   path: string,
   init: RequestInit = {}
 ): Promise<Response> {
-  return fetch(`${API_BASE_URL}/api/v1/auth${path}`, {
+  const base = cookieAuthApiBase();
+  return fetch(`${base}/api/v1/auth${path}`, {
     ...init,
     credentials: 'include',
     headers: {

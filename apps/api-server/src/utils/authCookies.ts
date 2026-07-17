@@ -5,6 +5,11 @@ export const REFRESH_COOKIE = 'lantern_refresh';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+/**
+ * Cookie SameSite:
+ * - production defaults to 'none' so a direct cross-site API host can work when allowed
+ * - Cloudflare same-origin proxy rewrites Set-Cookie to Lax for lanternstudy.com
+ */
 function baseCookieOptions(maxAgeMs: number): CookieOptions {
   return {
     httpOnly: true,

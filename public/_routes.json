@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/assets/*",
+    "/favicon.svg",
+    "/favicon-v2.svg",
+    "/favicon.png",
+    "/lantern-icon.png",
+    "/lantern-icon-v2.png",
+    "/manifest.json",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/sitemap/*",
+    "/sw.js"
+  ]
+}
