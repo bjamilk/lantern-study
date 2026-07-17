@@ -1,7 +1,9 @@
-# Cookie Notice
+# Cookie Policy
 
-See the canonical in-app version: [packages/shared/src/legal/cookieNotice.ts](../packages/shared/src/legal/cookieNotice.ts)
+Canonical in-app / web copy: [`packages/shared/src/legal.ts`](../../packages/shared/src/legal.ts) (`COOKIE_NOTICE_MD`).
 
-Published at `/cookies` on web.
+Consent protocol (categories, storage keys, helpers): [`packages/shared/src/cookieConsent.ts`](../../packages/shared/src/cookieConsent.ts).
 
-**Last updated:** June 13, 2026
+Published at `/cookies` on web. Preference Center UI: `components/CookieNoticeBanner.tsx`.
+
+**Last updated:** July 17, 2026

@@ -7,6 +7,7 @@ import {
 } from '@lantern/shared';
 import { MarkdownRenderer } from '@lantern/shared';
 import { usePageSeo } from '../hooks/usePageSeo';
+import { openCookiePreferenceCenter } from './CookieNoticeBanner';
 
 const PATH_TO_DOC: Record<string, LegalDocumentId> = {
   [LEGAL_PATHS.privacy]: 'privacy',
@@ -26,7 +27,8 @@ interface LegalPageProps {
 const LEGAL_DESCRIPTIONS: Record<LegalDocumentId, string> = {
   privacy: 'How Lantern Study collects, uses, and protects your personal data.',
   terms: 'Terms of Service for using Lantern Study flashcards, tests, groups, and marketplace.',
-  cookies: 'How Lantern Study uses cookies and similar technologies on lanternstudy.com.',
+  cookies:
+    'Cookie Policy and Preference Center for Lantern Study — categories, choices, and what we use today.',
 };
 
 export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) => {
@@ -66,6 +68,21 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document: documentId }) =>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">{title}</h1>
+        {documentId === 'cookies' && (
+          <div className="mb-6 rounded-xl border border-lantern-border bg-lantern-surface/80 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <p className="flex-1 text-sm text-lantern-text-secondary leading-snug">
+              Open the Cookie Preference Center to review categories and confirm your choices. Strictly Necessary
+              cookies always stay on.
+            </p>
+            <button
+              type="button"
+              onClick={() => openCookiePreferenceCenter()}
+              className="shrink-0 min-h-[44px] rounded-lg bg-lantern-primary text-white px-4 py-2 text-sm font-medium"
+            >
+              Manage cookie preferences
+            </button>
+          </div>
+        )}
         <div className="prose prose-slate dark:prose-invert max-w-none legal-markdown">
           <MarkdownRenderer content={content} enableMath={false} />
         </div>

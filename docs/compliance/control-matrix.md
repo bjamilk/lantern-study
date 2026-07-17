@@ -5,7 +5,8 @@
 
 | ID | Framework | Control | Status | Evidence |
 |----|-----------|---------|--------|----------|
-| C01 | GDPR Art. 13/14 | Privacy Policy published | Implemented | `/privacy`, `packages/shared/src/legal/` |
+| C01 | GDPR Art. 13/14 | Privacy Policy published | Implemented | `/privacy`, `packages/shared/src/legal.ts` |
+| C17 | ePrivacy / cookies | Cookie Preference Center | Implemented | `/cookies`, `cookieConsent.ts`, `CookieNoticeBanner.tsx` |
 | C02 | GDPR Art. 17 | Account deletion | Implemented | `userDataLifecycle.ts`, Settings UI |
 | C03 | GDPR Art. 15/20 | Data export | Implemented | `GET /users/:id/export` |
 | C04 | GDPR Art. 30 | RoPA | Implemented | `docs/compliance/ropa.md` |

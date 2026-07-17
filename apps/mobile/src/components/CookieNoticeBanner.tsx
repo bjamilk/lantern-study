@@ -2,20 +2,33 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const STORAGE_KEY = 'lantern_cookie_notice_v1';
+import {
+  COOKIE_NOTICE_LEGACY_KEY,
+  COOKIE_PREFS_STORAGE_KEY,
+  essentialOnlyCookiePreferences,
+  hasRecordedCookieChoice,
+  serializeCookiePreferences,
+} from '@lantern/shared';
 
 /** Body height excluding safe-area padding — keep in sync with banner layout. */
-export const COOKIE_NOTICE_BODY_HEIGHT = 72;
+export const COOKIE_NOTICE_BODY_HEIGHT = 88;
+
+async function persistEssentialOnly() {
+  const prefs = serializeCookiePreferences(essentialOnlyCookiePreferences());
+  await AsyncStorage.setItem(COOKIE_PREFS_STORAGE_KEY, prefs);
+  await AsyncStorage.setItem(COOKIE_NOTICE_LEGACY_KEY, 'dismissed');
+}
 
 export function useCookieNoticeBottomInset(): number {
   const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    void AsyncStorage.getItem(STORAGE_KEY).then((value) => {
-      if (!value) setVisible(true);
-    });
+    void (async () => {
+      const prefsRaw = await AsyncStorage.getItem(COOKIE_PREFS_STORAGE_KEY);
+      const legacyRaw = await AsyncStorage.getItem(COOKIE_NOTICE_LEGACY_KEY);
+      if (!hasRecordedCookieChoice(prefsRaw, legacyRaw)) setVisible(true);
+    })();
   }, []);
 
   if (!visible) return 0;
@@ -27,16 +40,17 @@ export function CookieNoticeBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    void AsyncStorage.getItem(STORAGE_KEY).then((value) => {
-      if (!value) setVisible(true);
-    });
+    void (async () => {
+      const prefsRaw = await AsyncStorage.getItem(COOKIE_PREFS_STORAGE_KEY);
+      const legacyRaw = await AsyncStorage.getItem(COOKIE_NOTICE_LEGACY_KEY);
+      if (!hasRecordedCookieChoice(prefsRaw, legacyRaw)) setVisible(true);
+    })();
   }, []);
 
   if (!visible) return null;
 
   const dismiss = () => {
-    void AsyncStorage.setItem(STORAGE_KEY, 'dismissed');
-    setVisible(false);
+    void persistEssentialOnly().then(() => setVisible(false));
   };
 
   return (
@@ -46,19 +60,20 @@ export function CookieNoticeBanner() {
     >
       <View className="flex-row items-center gap-3">
         <Text className="flex-1 text-xs text-lantern-text leading-snug">
-          Essential on-device storage only (sign-in, theme, preferences). No ad or analytics cookies.{' '}
+          Essential on-device storage only (sign-in, theme, preferences). Optional analytics and advertising are off and
+          not used in the app today.{' '}
           <Text
             className="text-lantern-primary underline"
             onPress={() => void Linking.openURL('https://lanternstudy.com/cookies')}
           >
-            Learn more
+            Cookie Policy
           </Text>
         </Text>
         <Pressable
           onPress={dismiss}
           className="shrink-0 rounded-lg bg-lantern-primary px-3 py-2.5 active:opacity-90"
           accessibilityRole="button"
-          accessibilityLabel="Dismiss cookie notice"
+          accessibilityLabel="Accept essential storage only"
         >
           <Text className="text-sm font-semibold text-white">Got it</Text>
         </Pressable>

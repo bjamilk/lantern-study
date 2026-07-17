@@ -1099,7 +1099,7 @@ export default function SettingsScreen() {
               colors={colors}
               icon="cookie-outline"
               iconColor="#8b5cf6"
-              title="Cookie Notice"
+              title="Cookie Policy"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'cookies' } as never)}
             />
             <SettingItem
