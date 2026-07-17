@@ -1,5 +1,5 @@
 import './global.css';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -7,11 +7,26 @@ import * as SplashScreen from 'expo-splash-screen';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useAppTheme } from './src/theme';
 import CookieNoticeBanner from './src/components/CookieNoticeBanner';
+import { checkAndApplyOtaUpdate } from './src/services/otaUpdates';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function AppInner() {
   const theme = useAppTheme();
+
+  useEffect(() => {
+    // Native ON_LOAD may only download; apply immediately once JS is up.
+    void checkAndApplyOtaUpdate().then((result) => {
+      if (result.reason && result.reason !== 'up-to-date') {
+        console.log('[OTA]', result.reason, {
+          enabled: result.isEnabled,
+          channel: result.channel,
+          updateId: result.updateId,
+        });
+      }
+    });
+  }, []);
+
   return (
     <>
       <RootNavigator />

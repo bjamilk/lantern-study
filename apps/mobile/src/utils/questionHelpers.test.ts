@@ -3,8 +3,23 @@ import {
   resolveOptionText,
   resolveCorrectAnswerLabel,
   formatCorrectAnswerDisplay,
+  canonicalOfflineQuestionType,
+  matchesOfflineQuestionTypeFilter,
 } from './questionHelpers';
 import type { TestQuestion } from '../stores/testStore';
+
+describe('offline question type normalize', () => {
+  it('maps kebab UI filters and API enums to the same canonical type', () => {
+    expect(canonicalOfflineQuestionType('mcq-single')).toBe('multiple_choice_single');
+    expect(canonicalOfflineQuestionType('MULTIPLE_CHOICE_SINGLE')).toBe('multiple_choice_single');
+  });
+
+  it('accepts MULTIPLE_CHOICE_SINGLE when options include mcq-single', () => {
+    expect(matchesOfflineQuestionTypeFilter('MULTIPLE_CHOICE_SINGLE', ['mcq-single'])).toBe(true);
+    expect(matchesOfflineQuestionTypeFilter('multiple_choice_single', ['mcq-single'])).toBe(true);
+    expect(matchesOfflineQuestionTypeFilter('TRUE_FALSE', ['mcq-single'])).toBe(false);
+  });
+});
 
 describe('resolveOptionText', () => {
   it('maps semantic true/false ids to labels', () => {

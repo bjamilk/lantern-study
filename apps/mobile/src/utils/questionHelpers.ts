@@ -23,13 +23,17 @@ function normalizeQuestionType(raw?: string): QuestionType | null {
   const map: Record<string, QuestionType> = {
     MULTIPLE_CHOICE_SINGLE: 'multiple_choice_single',
     multiple_choice_single: 'multiple_choice_single',
+    'mcq-single': 'multiple_choice_single',
     MULTIPLE_CHOICE_MULTIPLE: 'multiple_choice_multiple',
     multiple_choice_multiple: 'multiple_choice_multiple',
+    'mcq-multiple': 'multiple_choice_multiple',
     TRUE_FALSE: 'true_false',
     true_false: 'true_false',
+    'true-false': 'true_false',
     FILL_IN_THE_BLANK: 'fill_in_blank',
     fill_in_blank: 'fill_in_blank',
     fill_in_the_blank: 'fill_in_blank',
+    'fill-blank': 'fill_in_blank',
     MATCHING: 'matching',
     matching: 'matching',
     DIAGRAM_LABELING: 'diagram_labeling',
@@ -39,6 +43,22 @@ function normalizeQuestionType(raw?: string): QuestionType | null {
   };
   return map[raw] || null;
 }
+
+/** Canonical type for offline download filters (UI kebab + API enums). */
+export function canonicalOfflineQuestionType(raw?: string): string | null {
+  return normalizeQuestionType(raw);
+}
+
+/** Match UI filter chips (e.g. mcq-single) against API/stored types (e.g. MULTIPLE_CHOICE_SINGLE). */
+export function matchesOfflineQuestionTypeFilter(questionType: string, filters: string[]): boolean {
+  const canonicalQuestion = canonicalOfflineQuestionType(questionType) || questionType;
+  return filters.some((filter) => {
+    const canonicalFilter = canonicalOfflineQuestionType(filter) || filter;
+    return canonicalQuestion === canonicalFilter || questionType === filter;
+  });
+}
+
+export { normalizeQuestionType };
 
 export function isQuestionTestable(msg: GroupQuestionMessage): boolean {
   if (msg.type !== 'question' || msg.isArchived) return false;

@@ -133,6 +133,12 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                         compact={false}
                         className="hidden md:inline-flex"
                     />
+                    {/* Mobile AI usage — top strip instead of mid-screen float (avoids covering XP/content) */}
+                    {!hideMobileAiUsageBadge && (
+                        <div className="md:hidden min-w-0 max-w-[9.5rem] shrink">
+                            <AIUsageBadge compact className="shadow-none px-2 py-1" />
+                        </div>
+                    )}
                 </div>
                 {importProgress ? (
                     <div
@@ -222,14 +228,6 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 ))}
                 {children}
 
-                {/* mobile-only AI usage indicator — hidden during chat (composer + send) */}
-                {!hideMobileAiUsageBadge && (
-                <div className="md:hidden fixed top-1/2 -translate-y-1/2 right-3 z-30 max-w-[9rem] pointer-events-none">
-                    <div className="pointer-events-auto scale-90 origin-center">
-                        <AIUsageBadge compact className="px-2 py-1 shadow-md" />
-                    </div>
-                </div>
-                )}
             </main>
 
             {/* Mobile bottom nav - hidden on desktop */}

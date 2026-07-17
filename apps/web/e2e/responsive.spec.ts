@@ -65,5 +65,10 @@ test.describe('Responsive smoke — auth + shell (credentials)', () => {
     await page.locator('[aria-label="More"]').click({ timeout: 10000 });
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /settings/i })).toBeVisible();
+
+    // AI usage badge must not float mid-screen over dashboard content
+    await page.keyboard.press('Escape').catch(() => {});
+    const midFloat = page.locator('div.fixed.top-1\\/2.right-3');
+    await expect(midFloat).toHaveCount(0);
   });
 });

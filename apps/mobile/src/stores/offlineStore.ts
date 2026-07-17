@@ -5,6 +5,10 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
+import {
+  canonicalOfflineQuestionType,
+  matchesOfflineQuestionTypeFilter,
+} from '../utils/questionHelpers';
 
 export interface OfflineTest {
   id: string;
@@ -175,7 +179,9 @@ const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuesti
   return {
     id: String(message.id ?? `q-${index}`),
     stem: String(stem),
-    type: String(payload.questionType || payload.type || 'mcq-single'),
+    type:
+      canonicalOfflineQuestionType(payload.questionType || payload.type || message.questionType) ||
+      String(payload.questionType || payload.type || 'mcq-single'),
     options,
     explanation: payload.explanation || message.explanation,
     tags: payload.tags || message.tags || [],
@@ -191,12 +197,20 @@ const fetchGroupQuestionsForOffline = async (
   const messages = await api.fetchMessages(groupId, { limit: 200 });
   const list = Array.isArray(messages) ? messages : (messages as any)?.data || [];
   let questions = list
-    .filter((m: any) => m.type === 'QUESTION' || m.questionType || m.questionStem)
+    .filter(
+      (m: any) =>
+        m.type === 'QUESTION' ||
+        m.type === 'question' ||
+        m.questionType ||
+        m.questionStem
+    )
     .map(mapMessageToOfflineQuestion)
     .filter(Boolean) as OfflineQuestion[];
 
   if (options?.questionTypes?.length) {
-    questions = questions.filter(q => options.questionTypes!.includes(q.type as any));
+    questions = questions.filter((q) =>
+      matchesOfflineQuestionTypeFilter(q.type, options.questionTypes!)
+    );
   }
 
   if (options?.recentlyAddedDays && options.recentlyAddedDays > 0) {

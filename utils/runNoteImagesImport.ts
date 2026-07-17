@@ -1,3 +1,4 @@
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import type { NoteAttachment, StudyNote } from '../types';
 import type { NoteImportProgress } from '../services/notes';
 import { uploadNoteImagesViaApi } from '../services/notes';
@@ -44,12 +45,12 @@ export async function runNoteImagesImport({
   navigateToEditor,
 }: RunNoteImagesImportOptions): Promise<StudyNote> {
   const uploadStore = useNoteUploadStore.getState();
-  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
-  const jobId = uploadStore.startJob(label, 'photos');
+  const noteTitle = title?.trim() || defaultPhotoNoteTitle();
+  const jobId = uploadStore.startJob(noteTitle, 'photos');
   const onProgress = makeProgressCallback(jobId);
 
   try {
-    const result = await uploadNoteImagesViaApi(files, folderId, onProgress, title);
+    const result = await uploadNoteImagesViaApi(files, folderId, onProgress, noteTitle);
     setSelectedNote({ ...result.note, attachments: result.attachments });
     navigateToEditor(result.note.id);
     await loadNote(result.note.id);
@@ -63,10 +64,10 @@ export async function runNoteImagesImport({
       stage: 'complete',
       percent: 100,
       label: 'Upload complete',
-      fileName: label,
+      fileName: noteTitle,
     });
     useUIStore.getState().clearImportProgress();
-    useToastStore.getState().showStickyToast(`"${label}" imported successfully`, 'success');
+    useToastStore.getState().showStickyToast(`"${result.note.title || noteTitle}" imported successfully`, 'success');
     return result.note;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Import failed';

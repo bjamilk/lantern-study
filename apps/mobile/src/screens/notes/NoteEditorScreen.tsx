@@ -27,6 +27,7 @@ import { transcribeAudioForNote, summarizeNote, generateNoteQuiz, addImagesToPho
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
 import { Button, Card } from '../../components/ui';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
@@ -679,13 +680,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           ) : null}
 
           {showImageGallery && imageAttachments.length > 0 ? (
-            <NoteImageGallery
-              noteId={noteId}
-              attachments={imageAttachments}
-              editable={isPhotoNote}
-              onAttachmentsChange={handleImageAttachmentsChange}
-              onAddPhotos={isPhotoNote ? handleAddPhotos : undefined}
-            />
+            <ErrorBoundary fallbackTitle="Photos failed to load">
+              <NoteImageGallery
+                noteId={noteId}
+                attachments={imageAttachments}
+                editable={isPhotoNote}
+                onAttachmentsChange={handleImageAttachmentsChange}
+                onAddPhotos={isPhotoNote ? handleAddPhotos : undefined}
+              />
+            </ErrorBoundary>
           ) : null}
 
           {selectedNote?.youtubeVideoId ? (

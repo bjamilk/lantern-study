@@ -764,12 +764,17 @@ export default function OfflineScreen() {
                       selectedGroup.id,
                       selectedGroup.name,
                       `${selectedGroup.name} Practice Test`,
-                      downloadOptions
+                      downloadOptions,
+                      userId || undefined
                     );
                     setShowDownloadModal(false);
                     Alert.alert('Success', 'Test downloaded for offline use!');
                   } catch (error) {
-                    Alert.alert('Error', 'Failed to download test');
+                    const message =
+                      error instanceof Error && error.message.trim()
+                        ? error.message
+                        : 'Failed to download test';
+                    Alert.alert('Error', message);
                   }
                 }}
                 disabled={isDownloading || (downloadOptions.questionTypes?.length === 0)}

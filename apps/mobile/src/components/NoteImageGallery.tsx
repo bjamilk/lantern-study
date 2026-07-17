@@ -13,7 +13,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import type { NoteAttachment } from '../services/notes';
 import { refreshNoteAttachmentUrl, reorderNoteAttachments } from '../services/notes';
-import { Button } from './ui';
+import { Button, Card } from './ui';
 import { useTheme } from '../theme';
 
 interface NoteImageGalleryProps {
@@ -102,14 +102,24 @@ export function NoteImageGallery({
 
     (async () => {
       try {
-        const entries = await Promise.all(
+        const settled = await Promise.allSettled(
           ordered.map(async (attachment) => {
             const result = await refreshNoteAttachmentUrl(noteId, attachment.id);
             return [attachment.id, result.url] as const;
           })
         );
         if (cancelled) return;
+        const entries = settled
+          .filter((result): result is PromiseFulfilledResult<readonly [string, string]> => result.status === 'fulfilled')
+          .map((result) => result.value);
         setImageUrls(Object.fromEntries(entries));
+        if (entries.length === 0 && ordered.length > 0) {
+          const firstRejection = settled.find((result) => result.status === 'rejected') as
+            | PromiseRejectedResult
+            | undefined;
+          const reason = firstRejection?.reason;
+          setError(reason instanceof Error ? reason.message : 'Failed to load photos');
+        }
       } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load photos');

@@ -42,6 +42,7 @@ import { reactivateUserAccount } from '../../services/accountLifecycle';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
+import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 
 const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
@@ -172,6 +173,8 @@ export default function SettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showImportAccountModal, setShowImportAccountModal] = useState(false);
   const [showCampusModal, setShowCampusModal] = useState(false);
+  const [checkingOta, setCheckingOta] = useState(false);
+  const otaDiagnostics = useMemo(() => getOtaDiagnostics(), []);
   const [accountLifecycle, setAccountLifecycle] = useState<AccountLifecycleInfo | null>(null);
   const [reactivatingAccount, setReactivatingAccount] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -1131,8 +1134,55 @@ export default function SettingsScreen() {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        {/* Version Info */}
-        <Text style={[styles.versionText, { color: colors.textTertiary }]}>Lantern Study v1.0.0</Text>
+        {/* App update / version */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>App update</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.surface }]}>
+            <SettingItem
+              colors={colors}
+              icon="cloud-download-outline"
+              iconColor="#6569EE"
+              title="Check for update"
+              subtitle={
+                checkingOta
+                  ? 'Checking…'
+                  : otaDiagnostics.isEnabled
+                    ? `Channel ${otaDiagnostics.channel || '—'} · ${otaDiagnostics.updateId ? otaDiagnostics.updateId.slice(0, 8) : 'embedded'}`
+                    : 'OTA disabled on this build'
+              }
+              showChevron={false}
+              onPress={() => {
+                if (checkingOta) return;
+                setCheckingOta(true);
+                void checkAndApplyOtaUpdate()
+                  .then((result) => {
+                    if (result.updated) return;
+                    if (!result.isEnabled) {
+                      Alert.alert(
+                        'Updates unavailable',
+                        'This install has OTA disabled (Expo Go or a development build). Install the preview APK from Expo to receive updates.'
+                      );
+                      return;
+                    }
+                    Alert.alert(
+                      result.reason === 'up-to-date' ? 'Up to date' : 'No update applied',
+                      result.reason === 'up-to-date'
+                        ? 'You already have the latest preview update.'
+                        : result.reason || 'Could not apply an update.'
+                    );
+                  })
+                  .finally(() => setCheckingOta(false));
+              }}
+              rightElement={
+                checkingOta ? <ActivityIndicator size="small" color={colors.primary} /> : undefined
+              }
+            />
+          </View>
+        </View>
+
+        <Text style={[styles.versionText, { color: colors.textTertiary }]}>
+          Lantern Study v{otaDiagnostics.runtimeVersion || '1.0.2'}
+        </Text>
 
         <View style={{ height: 100 }} />
       </ScrollView>

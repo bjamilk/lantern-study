@@ -31,10 +31,10 @@ export function CookieNoticeBanner() {
     <div
       role="region"
       aria-label="Cookie notice"
-      className="fixed bottom-0 inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-4 py-3 shadow-lg"
+      className="fixed inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-4 py-3 shadow-lg bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:bottom-0"
     >
       <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 text-sm text-lantern-text dark:text-lantern-text">
-        <p className="flex-1">
+        <p className="flex-1 min-w-0">
           Lantern Study uses only essential cookies and local storage (sign-in session, theme, and UI preferences).
           We do not use analytics or advertising cookies.{' '}
           <Link to="/cookies" className="underline text-lantern-primary">
@@ -44,7 +44,7 @@ export function CookieNoticeBanner() {
         <button
           type="button"
           onClick={dismiss}
-          className="shrink-0 rounded-lg bg-lantern-primary hover:bg-lantern-primary text-white px-4 py-2 text-sm font-medium"
+          className="shrink-0 min-h-[44px] rounded-lg bg-lantern-primary hover:bg-lantern-primary text-white px-4 py-2 text-sm font-medium"
         >
           Got it
         </button>

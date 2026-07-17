@@ -18,6 +18,7 @@ import {
   formatFileSize,
   formatMaxNoteUploadLabel,
 } from '@lantern/shared/utils/noteUpload';
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import { uploadNotePdfViaApi, uploadPresentationViaApi, uploadNoteImagesViaApi } from '../../services/notes';
@@ -301,7 +302,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
                 mimeType: asset.mimeType,
                 size: asset.size,
               })),
-              selectedFolderId || undefined
+              selectedFolderId || undefined,
+              defaultPhotoNoteTitle()
             )
           : pendingImport.mode === 'pdf'
           ? await uploadNotePdfViaApi(

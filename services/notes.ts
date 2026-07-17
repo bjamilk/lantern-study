@@ -785,7 +785,7 @@ export async function uploadNoteImagesViaApi(
     throw new Error('Select at least one image.');
   }
 
-  const label = files.length === 1 ? files[0].name : `${files.length} photos`;
+  const label = title?.trim() || (files.length === 1 ? files[0].name : `${files.length} photos`);
   onProgress?.({
     stage: 'encoding',
     percent: null,

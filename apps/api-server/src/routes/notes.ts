@@ -42,6 +42,7 @@ import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
 } from '@lantern/shared/utils/noteStudyContent';
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -555,10 +556,7 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
   }
 
   const noteTitle =
-    (typeof title === 'string' && title.trim()) ||
-    (validated.length === 1
-      ? validated[0].fileName.replace(/\.[^.]+$/, '') || 'Photo note'
-      : `${validated.length} photos`);
+    (typeof title === 'string' && title.trim()) || defaultPhotoNoteTitle();
 
   let note;
   let attachments;

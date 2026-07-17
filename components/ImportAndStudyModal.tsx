@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { getNoteStudyContent } from '@lantern/shared';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { Button } from './ui';
 import Modal from './ui/Modal';
 import * as notesApi from '../services/notes';
@@ -184,7 +185,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       const { note, attachments } = await notesApi.uploadNoteImagesViaApi(
         files,
         undefined,
-        setImportProgress
+        setImportProgress,
+        defaultPhotoNoteTitle()
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
