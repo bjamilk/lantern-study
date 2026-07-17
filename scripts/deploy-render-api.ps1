@@ -136,6 +136,7 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
         @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },
         @{ key = 'SUPABASE_SERVICE_ROLE_KEY'; value = $ApiEnv['SUPABASE_SERVICE_ROLE_KEY'] },
+        @{ key = 'SUPABASE_ANON_KEY'; value = $ApiEnv['SUPABASE_ANON_KEY'] },
         @{ key = 'GROQ_API_KEY'; value = $ApiEnv['GROQ_API_KEY'] },
         @{ key = 'JWT_SECRET'; value = $jwt },
         @{ key = 'API_KEY_SALT_ROUNDS'; value = '12' },
@@ -357,9 +358,19 @@ function Test-Health([string]$BaseUrl) {
 Write-Host 'Lantern Study - Render API deploy' -ForegroundColor Cyan
 $script:RenderApiKey = Get-RenderApiKey
 $apiEnv = Read-DotEnvFile (Join-Path $RepoRoot 'apps/api-server/.env')
+$rootEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env')
 $resendEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env.resend')
+# Auth routes need the anon key; accept common local names from root .env.
+if (-not $apiEnv['SUPABASE_ANON_KEY']) {
+    if ($rootEnv['SUPABASE_ANON_KEY']) { $apiEnv['SUPABASE_ANON_KEY'] = $rootEnv['SUPABASE_ANON_KEY'] }
+    elseif ($rootEnv['VITE_SUPABASE_ANON_KEY']) { $apiEnv['SUPABASE_ANON_KEY'] = $rootEnv['VITE_SUPABASE_ANON_KEY'] }
+    elseif ($rootEnv['EXPO_PUBLIC_SUPABASE_ANON_KEY']) { $apiEnv['SUPABASE_ANON_KEY'] = $rootEnv['EXPO_PUBLIC_SUPABASE_ANON_KEY'] }
+}
 if (-not $apiEnv['SUPABASE_SERVICE_ROLE_KEY']) {
     throw 'SUPABASE_SERVICE_ROLE_KEY missing in apps/api-server/.env'
+}
+if (-not $apiEnv['SUPABASE_ANON_KEY']) {
+    throw 'SUPABASE_ANON_KEY missing (set in apps/api-server/.env or VITE_SUPABASE_ANON_KEY in root .env). Auth routes will fail without it.'
 }
 if (-not $apiEnv['GROQ_API_KEY']) {
     Write-Host 'Warning: GROQ_API_KEY missing in apps/api-server/.env (AI routes may fail).' -ForegroundColor DarkYellow
