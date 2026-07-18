@@ -306,7 +306,20 @@ function Wait-Deploy([string]$ServiceId, [string]$DeployId) {
             continue
         }
 
-        $deploy = $items | Where-Object { $_.id -eq $DeployId } | Select-Object -First 1
+        # Render list payloads are often { deploy: { id, status, ... } }.
+        $deploy = $null
+        foreach ($item in $items) {
+            $candidate = if ($item.deploy) { $item.deploy } else { $item }
+            if ($candidate.id -eq $DeployId) {
+                $deploy = $candidate
+                break
+            }
+        }
+        if (-not $deploy) {
+            # Fallback: newest deploy may be the one we just triggered.
+            $newest = $items | Select-Object -First 1
+            $deploy = if ($newest.deploy) { $newest.deploy } else { $newest }
+        }
         if (-not $deploy) { continue }
         $status = $deploy.status
         Write-Host "  deploy status: $status"
