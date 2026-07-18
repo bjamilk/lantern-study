@@ -2,12 +2,15 @@
  * Same-origin API proxy for Cloudflare Pages.
  *
  * Browser → https://lanternstudy.com/api/... → https://lantern-study-api.onrender.com/api/...
+ * Preview → https://*.lantern-study.pages.dev/api/... → staging (LANTERN_API_UPSTREAM)
  *
  * Auth cookies must be first-party. Cross-site cookies from *.onrender.com are blocked by
  * modern browsers when the SPA runs on lanternstudy.com, which caused 401 on every refresh.
+ *
+ * Set LANTERN_API_UPSTREAM in Cloudflare Pages env (Production vs Preview).
  */
 
-const UPSTREAM = 'https://lantern-study-api.onrender.com';
+const DEFAULT_UPSTREAM = 'https://lantern-study-api.onrender.com';
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -32,6 +35,12 @@ function joinPath(pathParam: string | string[] | undefined): string {
   return pathParam;
 }
 
+function resolveUpstream(env: { LANTERN_API_UPSTREAM?: string } | undefined): string {
+  const raw = env?.LANTERN_API_UPSTREAM?.trim();
+  if (!raw) return DEFAULT_UPSTREAM;
+  return raw.replace(/\/+$/, '');
+}
+
 /** Prefer Lax on first-party responses; keep Path/HttpOnly/Secure intact. */
 function rewriteSetCookie(value: string): string {
   let next = value;
@@ -47,8 +56,10 @@ function rewriteSetCookie(value: string): string {
 export async function onRequest(context: {
   request: Request;
   params: { path?: string | string[] };
+  env?: { LANTERN_API_UPSTREAM?: string };
 }): Promise<Response> {
-  const { request, params } = context;
+  const { request, params, env } = context;
+  const UPSTREAM = resolveUpstream(env);
   const incoming = new URL(request.url);
   const suffix = joinPath(params.path);
   const targetUrl = `${UPSTREAM}/api/${suffix}${incoming.search}`;

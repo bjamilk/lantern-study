@@ -3,20 +3,26 @@
 #
 # Usage (repo root):
 #   .\scripts\deploy-render-api.ps1
+#   .\scripts\deploy-render-api.ps1 -Staging
 # Or:
 #   $env:RENDER_API_KEY = 'rnd_...'; .\scripts\deploy-render-api.ps1
+
+param(
+    [switch]$Staging
+)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'deploy-constants.ps1')
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$ServiceName = 'lantern-study-api'
+$ServiceName = if ($Staging) { 'lantern-study-api-staging' } else { 'lantern-study-api' }
 $WorkerServiceName = 'lantern-study-worker'
 $GitHubRepo = 'https://github.com/bjamilk/lantern-study'
 $Branch = 'main'
 $HealthPath = '/health'
-$ProductionFrontendUrl = $script:ProductionWebUrl
+$ProductionFrontendUrl = if ($Staging) { 'https://lantern-study.pages.dev' } else { $script:ProductionWebUrl }
 $ApiBase = 'https://api.render.com/v1'
+$script:IsStagingDeploy = [bool]$Staging
 
 function Write-Step([string]$Message) {
     Write-Host $Message -ForegroundColor Yellow
@@ -124,16 +130,24 @@ function New-JwtSecret {
 
 function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
     $jwt = if ($ApiEnv['JWT_SECRET']) { $ApiEnv['JWT_SECRET'] } else { New-JwtSecret }
+    $redisUrl = if ($script:IsStagingDeploy -and $ApiEnv['REDIS_URL_STAGING']) {
+        $ApiEnv['REDIS_URL_STAGING']
+    } else {
+        $ApiEnv['REDIS_URL']
+    }
+    $bullmq = if ($script:IsStagingDeploy) { 'false' } else { 'true' }
+    $marketplace = if ($script:IsStagingDeploy) { 'false' } else { 'true' }
+    $webAppUrl = if ($script:IsStagingDeploy) { 'https://lantern-study.pages.dev' } else { $script:ProductionWebUrl }
     $vars = @(
         @{ key = 'NODE_ENV'; value = 'production' },
         @{ key = 'PORT'; value = '3001' },
         @{ key = 'FRONTEND_URL'; value = $ProductionFrontendUrl },
-        @{ key = 'WEB_APP_URL'; value = $script:ProductionWebUrl },
+        @{ key = 'WEB_APP_URL'; value = $webAppUrl },
         @{ key = 'REDIS_ENABLED'; value = 'true' },
-        @{ key = 'REDIS_URL'; value = $ApiEnv['REDIS_URL'] },
+        @{ key = 'REDIS_URL'; value = $redisUrl },
         @{ key = 'GOTENBERG_URL'; value = $ApiEnv['GOTENBERG_URL'] },
         @{ key = 'ALLOW_DEV_AUTH_BYPASS'; value = 'false' },
-        @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
+        @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = $marketplace },
         @{ key = 'SUPABASE_URL'; value = 'https://tiizkjhbrnaibaagmurl.supabase.co' },
         @{ key = 'SUPABASE_SERVICE_ROLE_KEY'; value = $ApiEnv['SUPABASE_SERVICE_ROLE_KEY'] },
         @{ key = 'SUPABASE_ANON_KEY'; value = $ApiEnv['SUPABASE_ANON_KEY'] },
@@ -149,7 +163,7 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '1200' },
         @{ key = 'AI_POST_BURST_MAX'; value = '15' },
         @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
-        @{ key = 'BULLMQ_ENABLED'; value = 'true' },
+        @{ key = 'BULLMQ_ENABLED'; value = $bullmq },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {
@@ -370,7 +384,8 @@ function Test-Health([string]$BaseUrl) {
     return $false
 }
 
-Write-Host 'Lantern Study - Render API deploy' -ForegroundColor Cyan
+$deployLabel = if ($script:IsStagingDeploy) { 'Render API staging deploy' } else { 'Render API deploy' }
+Write-Host "Lantern Study - $deployLabel" -ForegroundColor Cyan
 $script:RenderApiKey = Get-RenderApiKey
 $apiEnv = Read-DotEnvFile (Join-Path $RepoRoot 'apps/api-server/.env')
 $rootEnv = Read-DotEnvFile (Join-Path $RepoRoot '.env')
@@ -390,13 +405,14 @@ if (-not $apiEnv['SUPABASE_ANON_KEY']) {
 if (-not $apiEnv['GROQ_API_KEY']) {
     Write-Host 'Warning: GROQ_API_KEY missing in apps/api-server/.env (AI routes may fail).' -ForegroundColor DarkYellow
 }
-if (-not $apiEnv['REDIS_URL']) {
+if (-not $apiEnv['REDIS_URL'] -and -not ($script:IsStagingDeploy -and $apiEnv['REDIS_URL_STAGING'])) {
     Write-Host 'Warning: REDIS_URL missing in apps/api-server/.env (production startup requires Redis).' -ForegroundColor DarkYellow
 }
 
 $envVars = Build-EnvVars -ApiEnv $apiEnv -ResendEnv $resendEnv
 $ownerId = Get-OwnerId
 Write-Host "Render workspace id: $ownerId"
+Write-Host "Service: $ServiceName"
 $service = Ensure-Service -OwnerId $ownerId -EnvVars $envVars
 Update-ServiceEnvVars -ServiceId $service.id -EnvVars $envVars
 $deployId = Start-Deploy -ServiceId $service.id
@@ -407,22 +423,26 @@ if (-not $apiDeployOk) {
 
 $worker = $null
 $workerDeployId = $null
-try {
-    $workerEnvVars = Build-WorkerEnvVars -ApiEnv $apiEnv
-    $worker = Ensure-WorkerService -OwnerId $ownerId -EnvVars $workerEnvVars
-    Update-ServiceEnvVars -ServiceId $worker.id -EnvVars $workerEnvVars
-    $workerDeployId = Start-Deploy -ServiceId $worker.id
-    $workerDeployOk = Wait-Deploy -ServiceId $worker.id -DeployId $workerDeployId
-    if (-not $workerDeployOk) {
-        Write-Host 'Worker deploy wait timed out; skipping worker health verification.' -ForegroundColor DarkYellow
+if (-not $script:IsStagingDeploy) {
+    try {
+        $workerEnvVars = Build-WorkerEnvVars -ApiEnv $apiEnv
+        $worker = Ensure-WorkerService -OwnerId $ownerId -EnvVars $workerEnvVars
+        Update-ServiceEnvVars -ServiceId $worker.id -EnvVars $workerEnvVars
+        $workerDeployId = Start-Deploy -ServiceId $worker.id
+        $workerDeployOk = Wait-Deploy -ServiceId $worker.id -DeployId $workerDeployId
+        if (-not $workerDeployOk) {
+            Write-Host 'Worker deploy wait timed out; skipping worker health verification.' -ForegroundColor DarkYellow
+        }
+    } catch {
+        $workerMessage = $_.Exception.Message
+        if ($workerMessage -match 'only web services allowed for plan') {
+            Write-Host 'Worker deploy skipped: current Render plan allows web services only (API deploy succeeded).' -ForegroundColor DarkYellow
+        } else {
+            Write-Host "Worker deploy skipped: $workerMessage" -ForegroundColor DarkYellow
+        }
     }
-} catch {
-    $workerMessage = $_.Exception.Message
-    if ($workerMessage -match 'only web services allowed for plan') {
-        Write-Host 'Worker deploy skipped: current Render plan allows web services only (API deploy succeeded).' -ForegroundColor DarkYellow
-    } else {
-        Write-Host "Worker deploy skipped: $workerMessage" -ForegroundColor DarkYellow
-    }
+} else {
+    Write-Host 'Staging deploy: skipping background worker (BULLMQ_ENABLED=false).' -ForegroundColor DarkYellow
 }
 
 $service = Get-ExistingService -OwnerId $ownerId
@@ -434,7 +454,9 @@ if ($healthOk) {
 } else {
     Write-Host 'Deploy finished but health check not yet OK (free tier may still be waking up).' -ForegroundColor DarkYellow
 }
-Update-RootEnv -ApiUrl $serviceUrl
+if (-not $script:IsStagingDeploy) {
+    Update-RootEnv -ApiUrl $serviceUrl
+}
 Write-Host ''
 Write-Host "API URL: $serviceUrl"
 Write-Host "Dashboard: https://dashboard.render.com/web/$($service.id)"

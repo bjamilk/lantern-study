@@ -1,0 +1,61 @@
+name: Deploy staging API (Render)
+
+# Deploys lantern-study-api-staging when API paths change on a PR, or on demand.
+# Preview web workflow points Cloudflare Preview env LANTERN_API_UPSTREAM here.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/api-server/**'
+      - 'packages/shared/**'
+      - 'render.yaml'
+      - '.github/workflows/deploy-staging-api.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging-api
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-staging:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write API env for staging deploy
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          REDIS_URL_STAGING: ${{ secrets.REDIS_URL_STAGING }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          GOTENBERG_URL: ${{ vars.GOTENBERG_URL }}
+          JWT_SECRET_STAGING: ${{ secrets.JWT_SECRET_STAGING }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:SUPABASE_SERVICE_ROLE_KEY) { throw 'Missing secret SUPABASE_SERVICE_ROLE_KEY' }
+          if (-not $env:SUPABASE_ANON_KEY) { throw 'Missing secret SUPABASE_ANON_KEY' }
+          $redis = if ($env:REDIS_URL_STAGING) { $env:REDIS_URL_STAGING } else { $env:REDIS_URL }
+          if (-not $redis) { throw 'Missing secret REDIS_URL_STAGING or REDIS_URL' }
+          $jwt = if ($env:JWT_SECRET_STAGING) { $env:JWT_SECRET_STAGING } else { $env:JWT_SECRET }
+          $gotenberg = if ($env:GOTENBERG_URL) { $env:GOTENBERG_URL } else { 'https://lantern-study-gotenberg.onrender.com' }
+          @"
+          SUPABASE_SERVICE_ROLE_KEY=$($env:SUPABASE_SERVICE_ROLE_KEY)
+          SUPABASE_ANON_KEY=$($env:SUPABASE_ANON_KEY)
+          GROQ_API_KEY=$($env:GROQ_API_KEY)
+          REDIS_URL=$redis
+          GOTENBERG_URL=$gotenberg
+          JWT_SECRET=$jwt
+          "@ | Set-Content -Path apps/api-server/.env
+
+      - name: Deploy Render staging API
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        shell: pwsh
+        run: .\scripts\deploy-render-api.ps1 -Staging

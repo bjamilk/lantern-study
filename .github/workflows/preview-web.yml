@@ -1,0 +1,114 @@
+name: Preview web (Cloudflare + Playwright)
+
+# Deploy a Cloudflare Pages preview for every PR, then smoke-test the URL.
+# Requires secrets listed in docs/deploy/05-ci-cd-pipeline.md
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: preview-web-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared + web
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Same-origin proxy on pages.dev; value is rewritten at runtime.
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          npm run build --workspace=@lantern/shared
+          npx turbo run build --filter=@lantern/web --force
+
+      - name: Deploy Cloudflare Pages preview
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          BRANCH="pr-${{ github.event.pull_request.number }}"
+          OUT=$(npx wrangler pages deploy dist \
+            --project-name=lantern-study \
+            --branch="$BRANCH" \
+            --commit-dirty=true \
+            --commit-hash="${{ github.sha }}" \
+            --commit-message="PR ${{ github.event.pull_request.number }} ${{ github.sha }}")
+          echo "$OUT"
+          URL=$(echo "$OUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.pages\.dev' | head -n1 || true)
+          if [ -z "$URL" ]; then
+            URL="https://${BRANCH}.lantern-study.pages.dev"
+          fi
+          echo "preview_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Preview URL: $URL"
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+
+      - name: Playwright preview smoke
+        env:
+          AUDIT_BASE_URL: ${{ steps.deploy.outputs.preview_url }}
+          AUDIT_EMAIL: ${{ secrets.AUDIT_EMAIL }}
+          AUDIT_PASSWORD: ${{ secrets.AUDIT_PASSWORD }}
+        run: npx playwright test -c playwright.config.ts e2e/preview-smoke.spec.ts
+        working-directory: apps/web
+
+      - name: Comment preview URL on PR
+        if: always() && steps.deploy.outputs.preview_url != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.deploy.outputs.preview_url }}';
+            const body = [
+              '### Cloudflare Pages preview',
+              '',
+              `**URL:** ${url}`,
+              '',
+              'Playwright public smoke ran against this URL (see workflow logs).',
+              '',
+              `_API proxy target is Cloudflare Preview env \`LANTERN_API_UPSTREAM\` (staging)._`
+            ].join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = '### Cloudflare Pages preview';
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import { getAllowedCorsOrigins } from '../utils/corsOrigins';
+import { isOriginAllowed } from '../utils/corsOrigins';
 
 // Extended Request type
 interface AuthenticatedRequest extends Request {
@@ -95,11 +95,7 @@ export const securityHeaders = helmet({
 // 4. CORS Configuration
 export const corsConfig = cors({
   origin: (origin, callback) => {
-    const allowedOrigins = getAllowedCorsOrigins();
-
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else if (process.env.NODE_ENV !== 'production') {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));

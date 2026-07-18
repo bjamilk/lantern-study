@@ -2,6 +2,8 @@
 
 Host the Lantern Study Vite web app on **Cloudflare Pages** with GitHub auto-deploy from `main`.
 
+For **PR previews**, Playwright smoke, Render staging, and post-merge production CI, see [05-ci-cd-pipeline.md](./05-ci-cd-pipeline.md).
+
 ## What gets deployed
 
 | Item | Value |

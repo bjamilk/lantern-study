@@ -149,7 +149,7 @@ const isLoopbackOrDevProxyUrl = (url: string): boolean => {
 
 /** True when URL points at the Render API host (cross-site vs lanternstudy.com). */
 const isCrossSiteRenderApiUrl = (url: string): boolean =>
-  /lantern-study-api\.onrender\.com/i.test(url);
+  /lantern-study-api(-staging)?\.onrender\.com/i.test(url);
 
 /** Hosted production web (phones must never call the developer's localhost). */
 const isDeployedWebHost = (): boolean => {

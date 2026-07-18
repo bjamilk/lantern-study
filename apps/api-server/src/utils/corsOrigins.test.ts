@@ -22,6 +22,13 @@ describe('corsOrigins', () => {
     expect(isOriginAllowed('https://evil.example.com')).toBe(false);
   });
 
+  it('allows Cloudflare Pages PR preview origins', () => {
+    process.env.NODE_ENV = 'production';
+    expect(isOriginAllowed('https://abc123.lantern-study.pages.dev')).toBe(true);
+    expect(isOriginAllowed('https://pr-42.lantern-study.pages.dev')).toBe(true);
+    expect(isOriginAllowed('https://evil.pages.dev')).toBe(false);
+  });
+
   it('merges env and ALLOWED_ORIGINS', () => {
     process.env.NODE_ENV = 'production';
     process.env.FRONTEND_URL = 'https://preview.example.com';
@@ -31,5 +38,12 @@ describe('corsOrigins', () => {
     expect(origins).toContain('https://lanternstudy.com');
     expect(origins).toContain('https://preview.example.com');
     expect(origins).toContain('https://extra.example.com');
+  });
+
+  it('allows private LAN Vite origins in non-production', () => {
+    process.env.NODE_ENV = 'development';
+    expect(isOriginAllowed('http://192.168.4.49:5173')).toBe(true);
+    expect(isOriginAllowed('http://10.0.0.5:5173')).toBe(true);
+    expect(isOriginAllowed('https://evil.example.com')).toBe(false);
   });
 });

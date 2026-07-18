@@ -28,7 +28,7 @@ import { sanitizationMiddleware } from './middleware/security';
 import { csrfProtectionMiddleware } from './middleware/csrf';
 import { validateBodyShape } from './middleware/validateBody';
 import { applyPublicRateLimits } from './middleware/publicRateLimitMiddleware';
-import { getAllowedCorsOrigins } from './utils/corsOrigins';
+import { isOriginAllowed } from './utils/corsOrigins';
 import healthRoutes from './routes/health';
 import { setupGracefulShutdown } from './config/production';
 import { disconnectRedis } from './services/redisStore';
@@ -198,9 +198,7 @@ app.use(helmet({
 // CORS configuration — production uses explicit allowlist only
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = getAllowedCorsOrigins();
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (isOriginAllowed(origin)) return callback(null, true);
     if (process.env.ALLOW_ALL_CORS === 'true' && process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }

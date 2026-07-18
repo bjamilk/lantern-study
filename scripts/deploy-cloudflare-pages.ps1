@@ -117,24 +117,38 @@ Also clear any shell override: Remove-Item Env:VITE_API_URL
 
 function Build-DeploymentConfigs([hashtable]$RootEnv) {
     Assert-PhoneSafeViteEnv -RootEnv $RootEnv
-    $envVars = @{
-        NODE_VERSION            = (New-EnvVarEntry -Value $NodeVersion)
-        VITE_SUPABASE_URL       = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_URL'])
-        VITE_SUPABASE_ANON_KEY  = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_ANON_KEY'])
-        VITE_API_URL            = (New-EnvVarEntry -Value $RootEnv['VITE_API_URL'])
+    $prodUpstream = if ($RootEnv['LANTERN_API_UPSTREAM_PRODUCTION']) {
+        $RootEnv['LANTERN_API_UPSTREAM_PRODUCTION']
+    } else {
+        'https://lantern-study-api.onrender.com'
+    }
+    $previewUpstream = if ($RootEnv['LANTERN_API_UPSTREAM_PREVIEW']) {
+        $RootEnv['LANTERN_API_UPSTREAM_PREVIEW']
+    } else {
+        'https://lantern-study-api-staging.onrender.com'
+    }
+    $sharedVite = @{
+        NODE_VERSION           = (New-EnvVarEntry -Value $NodeVersion)
+        VITE_SUPABASE_URL      = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_URL'])
+        VITE_SUPABASE_ANON_KEY = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_ANON_KEY'])
+        VITE_API_URL           = (New-EnvVarEntry -Value $RootEnv['VITE_API_URL'])
     }
     if ($RootEnv['VITE_SENTRY_DSN']) {
-        $envVars['VITE_SENTRY_DSN'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_DSN'])
+        $sharedVite['VITE_SENTRY_DSN'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_DSN'])
         if ($RootEnv['VITE_SENTRY_RELEASE']) {
-            $envVars['VITE_SENTRY_RELEASE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_RELEASE'])
+            $sharedVite['VITE_SENTRY_RELEASE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_RELEASE'])
         }
         if ($RootEnv['VITE_SENTRY_TRACES_SAMPLE_RATE']) {
-            $envVars['VITE_SENTRY_TRACES_SAMPLE_RATE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_TRACES_SAMPLE_RATE'])
+            $sharedVite['VITE_SENTRY_TRACES_SAMPLE_RATE'] = (New-EnvVarEntry -Value $RootEnv['VITE_SENTRY_TRACES_SAMPLE_RATE'])
         }
     }
+    $productionEnv = @{} + $sharedVite
+    $productionEnv['LANTERN_API_UPSTREAM'] = (New-EnvVarEntry -Value $prodUpstream)
+    $previewEnv = @{} + $sharedVite
+    $previewEnv['LANTERN_API_UPSTREAM'] = (New-EnvVarEntry -Value $previewUpstream)
     return @{
-        production = @{ env_vars = $envVars }
-        preview    = @{ env_vars = $envVars }
+        production = @{ env_vars = $productionEnv }
+        preview    = @{ env_vars = $previewEnv }
     }
 }
 

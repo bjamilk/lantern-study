@@ -46,7 +46,40 @@ export function getAllowedCorsOrigins(): string[] {
   return Array.from(origins);
 }
 
+/** Allow http://192.168.x.x:5173 (etc.) when developing against a local API. */
+function isPrivateLanHttpOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:') return false;
+    const host = url.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') return true;
+    const parts = host.split('.').map((p) => Number(p));
+    if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return false;
+    const [a, b] = parts;
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Cloudflare Pages PR previews: https://<hash>.lantern-study.pages.dev */
+function isLanternPagesPreviewOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return host === 'lantern-study.pages.dev' || host.endsWith('.lantern-study.pages.dev');
+  } catch {
+    return false;
+  }
+}
+
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // mobile apps, curl, server-to-server
-  return getAllowedCorsOrigins().includes(origin);
+  if (getAllowedCorsOrigins().includes(origin)) return true;
+  if (isLanternPagesPreviewOrigin(origin)) return true;
+  // Local/LAN Vite origins are not enumerable up front; allow in non-production.
+  if (process.env.NODE_ENV !== 'production' && isPrivateLanHttpOrigin(origin)) return true;
+  return false;
 }

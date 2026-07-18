@@ -121,3 +121,49 @@ services:
         value: "true"
       - key: ENABLE_DATA_RETENTION_JOBS
         value: "true"
+
+  # Staging API for Cloudflare PR previews (proxy via LANTERN_API_UPSTREAM).
+  # No worker — BULLMQ off. Prefer a separate REDIS_URL from production.
+  - type: web
+    name: lantern-study-api-staging
+    runtime: docker
+    dockerfilePath: ./apps/api-server/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: FRONTEND_URL
+        value: https://lantern-study.pages.dev
+      - key: WEB_APP_URL
+        value: https://lantern-study.pages.dev
+      - key: ALLOWED_ORIGINS
+        value: https://lantern-study.pages.dev
+      - key: REDIS_ENABLED
+        value: "true"
+      - key: REDIS_URL
+        sync: false
+      - key: GOTENBERG_URL
+        value: https://lantern-study-gotenberg.onrender.com
+      - key: ALLOW_DEV_AUTH_BYPASS
+        value: "false"
+      - key: ENABLE_MARKETPLACE_JOBS
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://tiizkjhbrnaibaagmurl.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: BULLMQ_ENABLED
+        value: "false"
+      - key: AI_DAILY_LIMIT
+        value: "100"

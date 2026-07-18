@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/inject-sw-build-id.mjs && node scripts/inject-csp-headers.mjs",
+    "build": "tsc && vite build && node scripts/assert-prod-endpoints.mjs && node scripts/inject-sw-build-id.mjs && node scripts/inject-csp-headers.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest",
     "test:responsive": "playwright test -c playwright.config.ts",
+    "test:preview-smoke": "playwright test -c playwright.config.ts e2e/preview-smoke.spec.ts",
     "audit:responsive": "node scripts/responsive-audit.mjs"
   },
   "dependencies": {
