@@ -99,7 +99,24 @@ function New-EnvVarEntry([string]$Value) {
     }
 }
 
+function Assert-PhoneSafeViteEnv([hashtable]$RootEnv) {
+    $api = [string]$RootEnv['VITE_API_URL']
+    $supabase = [string]$RootEnv['VITE_SUPABASE_URL']
+    if (-not $api -or $api -match 'localhost|127\.0\.0\.1|__lantern_api' -or $api.StartsWith('/')) {
+        throw @"
+VITE_API_URL must be the public cloud API for Cloudflare Pages (phones cannot use localhost).
+Got: '$api'
+Required: https://lantern-study-api.onrender.com
+Also clear any shell override: Remove-Item Env:VITE_API_URL
+"@
+    }
+    if (-not $supabase -or $supabase -match 'localhost|127\.0\.0\.1') {
+        throw "VITE_SUPABASE_URL must be the cloud Supabase URL. Got: '$supabase'"
+    }
+}
+
 function Build-DeploymentConfigs([hashtable]$RootEnv) {
+    Assert-PhoneSafeViteEnv -RootEnv $RootEnv
     $envVars = @{
         NODE_VERSION            = (New-EnvVarEntry -Value $NodeVersion)
         VITE_SUPABASE_URL       = (New-EnvVarEntry -Value $RootEnv['VITE_SUPABASE_URL'])
@@ -255,11 +272,16 @@ function Test-PagesUrl([string]$Url) {
 
 function Ensure-WebDist {
     $distPath = Join-Path $RepoRoot $OutputDir
-    Write-Step 'Running fresh web build (npm run build:web)...'
+    # Force Turbo rebuild: web vite outDir is repo-root dist/, but Turbo only
+    # tracks apps/web/dist/**, so cache hits can redeploy a stale bundle.
+    Write-Step 'Running fresh web build (turbo --force)...'
     Push-Location $RepoRoot
     try {
-        npm run build:web
-        if ($LASTEXITCODE -ne 0) { throw "build:web failed with exit code $LASTEXITCODE" }
+        if (Test-Path $distPath) {
+            Remove-Item -Recurse -Force $distPath
+        }
+        npx turbo run build --filter=@lantern/web --force
+        if ($LASTEXITCODE -ne 0) { throw "web build failed with exit code $LASTEXITCODE" }
     } finally {
         Pop-Location
     }
