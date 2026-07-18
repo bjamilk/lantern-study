@@ -4371,11 +4371,16 @@ export const syncPendingResultsToCloud = async (
 export const sendPresenceHeartbeat = async (): Promise<void> => {
   try {
     const headers = await getAuthHeaders();
-    await fetch(`${getApiRoot()}/api/v1/users/presence/heartbeat`, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: '{}',
-    });
+    // Avoid noisy 401s when UI has a cached user but no API session yet.
+    if (!headers.Authorization) return;
+    await fetch(
+      `${getApiRoot()}/api/v1/users/presence/heartbeat`,
+      withApiCredentials({
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+    );
   } catch {
     // Non-fatal presence update
   }

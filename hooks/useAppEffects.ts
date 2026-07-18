@@ -224,9 +224,27 @@ export function useAppEffects({
         if (!currentUser?.id || !normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus) {
             return;
         }
-        void sendPresenceHeartbeat();
-        const interval = setInterval(() => void sendPresenceHeartbeat(), 2 * 60 * 1000);
-        return () => clearInterval(interval);
+        let cancelled = false;
+        let interval: ReturnType<typeof setInterval> | undefined;
+
+        const start = async () => {
+            // Wait until a bearer token exists so we don't 401 every 2 minutes
+            // after fast-boot restores a cached user without a live session.
+            for (let i = 0; i < 20 && !cancelled; i++) {
+                if (await ensureAuthTokenReady()) break;
+                await new Promise((r) => setTimeout(r, 250));
+            }
+            if (cancelled) return;
+            if (!(await ensureAuthTokenReady())) return;
+            void sendPresenceHeartbeat();
+            interval = setInterval(() => void sendPresenceHeartbeat(), 2 * 60 * 1000);
+        };
+
+        void start();
+        return () => {
+            cancelled = true;
+            if (interval) clearInterval(interval);
+        };
     }, [currentUser?.id, currentUser?.settings]);
 
     // --- Restore session on app load ---

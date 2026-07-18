@@ -7,12 +7,20 @@ function cookieAuthApiBase(): string {
   return (getApiBaseUrl() || '').replace(/\/$/, '');
 }
 
+/**
+ * HttpOnly cookie BFF auth.
+ *
+ * Default OFF. Cloudflare Pages Functions strip Set-Cookie from outbound fetch()
+ * to the Render API, so cookies never stick on lanternstudy.com when using the
+ * same-origin /api proxy. Until auth runs on a same-site API host (e.g.
+ * api.lanternstudy.com), production web must use Supabase localStorage sessions
+ * + Bearer tokens.
+ *
+ * Opt in only with VITE_AUTH_COOKIE_MODE=true (local direct-to-API testing).
+ */
 export function isCookieAuthEnabled(): boolean {
   if (typeof window === 'undefined') return false;
-  const flag = import.meta.env.VITE_AUTH_COOKIE_MODE;
-  if (flag === 'false') return false;
-  if (flag === 'true') return true;
-  return import.meta.env.PROD;
+  return import.meta.env.VITE_AUTH_COOKIE_MODE === 'true';
 }
 
 let memorySession: Session | null = null;
