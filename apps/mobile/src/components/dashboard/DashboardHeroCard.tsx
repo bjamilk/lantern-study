@@ -40,7 +40,7 @@ export function DashboardHeroCard({
         : 'Import material or review flashcards to get started.';
 
   return (
-    <Card className="mb-4 border-l-4 border-l-lantern-primary bg-lantern-surface">
+    <Card className="mb-4 border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-lantern-primary-background">
       <Text className="font-display text-xl font-semibold text-lantern-text">
         {getGreeting()}, {userName}
       </Text>

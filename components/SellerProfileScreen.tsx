@@ -89,7 +89,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
     <div className="flex-1 flex flex-col bg-lantern-background overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-br from-lantern-primary via-lantern-primary-dark to-purple-700 px-4 py-5">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-lantern-primary-light hover:text-white mb-4 transition-colors">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-white/90 hover:text-white mb-4 transition-colors">
           <ArrowLeftIcon className="w-4 h-4" />
           <span className="text-sm font-medium">Back</span>
         </button>
@@ -115,12 +115,12 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
             </div>
             <div className="flex items-center gap-2 mt-1">
               <div className="flex items-center gap-0.5">{renderStars(profile.stats.avgRating)}</div>
-              <span className="text-sm text-lantern-primary-light">
+              <span className="text-sm text-white/85">
                 {profile.stats.avgRating > 0 ? profile.stats.avgRating.toFixed(1) : 'No ratings'}
                 {profile.stats.totalReviews > 0 && ` (${profile.stats.totalReviews})`}
               </span>
             </div>
-            <p className="text-xs text-lantern-primary-light mt-0.5 flex items-center gap-1">
+            <p className="text-xs text-white/80 mt-0.5 flex items-center gap-1">
               <ClockIcon className="w-3 h-3" />
               Member since {memberSince(profile.user.created_at)}
             </p>

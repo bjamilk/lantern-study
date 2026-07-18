@@ -398,7 +398,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       </View>
 
       <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface">
-        <Ionicons name="search" size={16} color="#94a3b8" />
+        <Ionicons name="search" size={16} color="#64748b" />
         <TextInput
           value={search}
           onChangeText={setSearch}

@@ -105,8 +105,8 @@ export function SellerProfileScreen({ navigation, route }: Props) {
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <LinearGradient colors={['#4f46e5', '#6366f1', '#7c3aed']} className="px-4 pt-2 pb-5">
         <Pressable onPress={() => navigation.goBack()} className="flex-row items-center gap-1 mb-4">
-          <Ionicons name="arrow-back" size={18} color="#e0e7ff" />
-          <Text className="text-sm font-medium text-lantern-primary-light">Back</Text>
+          <Ionicons name="arrow-back" size={18} color="#f8fafc" />
+          <Text className="text-sm font-medium text-white/90">Back</Text>
         </Pressable>
 
         <View className="flex-row items-center gap-4">
@@ -118,13 +118,13 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             {profile?.average_rating != null && profile.average_rating > 0 ? (
               <View className="flex-row items-center gap-1 mt-1">
                 <Ionicons name="star" size={14} color="#fbbf24" />
-                <Text className="text-sm text-lantern-primary-light">
+                <Text className="text-sm text-white/90">
                   {profile.average_rating.toFixed(1)}
                   {profile.review_count ? ` (${profile.review_count} reviews)` : ''}
                 </Text>
               </View>
             ) : (
-              <Text className="text-sm text-lantern-primary-light mt-1">No ratings yet</Text>
+              <Text className="text-sm text-white/85 mt-1">No ratings yet</Text>
             )}
           </View>
         </View>
@@ -137,7 +137,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           ].map(stat => (
             <View key={stat.label} className="flex-1 bg-lantern-surface/15 rounded-xl p-3 items-center">
               <Text className="text-lg font-bold text-white">{stat.value}</Text>
-              <Text className="text-xs text-lantern-primary-light">{stat.label}</Text>
+              <Text className="text-xs text-white/85">{stat.label}</Text>
             </View>
           ))}
         </View>

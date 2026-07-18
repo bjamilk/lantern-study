@@ -14,7 +14,7 @@ export function getActivityHeatLevel(count: number): ActivityHeatLevel {
 }
 
 const HEAT_TAILWIND_LIGHT: Record<ActivityHeatLevel, string> = {
-  0: 'bg-lantern-background-secondary',
+  0: 'bg-slate-300/80',
   1: 'bg-green-200',
   2: 'bg-green-400',
   3: 'bg-green-500',
@@ -30,7 +30,7 @@ const HEAT_TAILWIND_DARK: Record<ActivityHeatLevel, string> = {
 };
 
 const HEAT_HEX_COLORS: Record<ActivityHeatLevel, string> = {
-  0: '#e2e8f0',
+  0: '#cbd5e1',
   1: '#bbf7d0',
   2: '#4ade80',
   3: '#22c55e',

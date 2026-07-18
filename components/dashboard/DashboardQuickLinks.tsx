@@ -47,7 +47,7 @@ export const DashboardQuickLinks: React.FC<DashboardQuickLinksProps> = ({
       )}
     </button>
     <button type="button" onClick={onNavigateToMarketplace} className={linkBase}>
-      <ShoppingBagIcon className="w-6 h-6 text-lantern-primary-light" />
+      <ShoppingBagIcon className="w-6 h-6 text-lantern-primary" />
       <span className="text-xs font-semibold text-lantern-text">Explore</span>
     </button>
   </div>

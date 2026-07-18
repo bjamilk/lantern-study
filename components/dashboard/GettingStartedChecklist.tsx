@@ -119,7 +119,7 @@ export const GettingStartedChecklist: React.FC<Props> = ({
               {item.done ? (
                 <CheckCircleSolid className="w-5 h-5 text-emerald-500 shrink-0" />
               ) : (
-                <CheckCircleIcon className="w-5 h-5 text-lantern-primary-light shrink-0" />
+                <CheckCircleIcon className="w-5 h-5 text-lantern-primary shrink-0" />
               )}
               <span className={item.done ? 'line-through opacity-80' : ''}>{item.label}</span>
             </button>

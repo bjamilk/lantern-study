@@ -48,7 +48,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   return (
     <div className="px-4 md:px-8 py-6 w-full">
       <div className="w-full">
-        <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary bg-gradient-to-br from-lantern-primary/[0.07] via-lantern-surface to-lantern-accent/[0.06]'}`} padding="lg" variant="elevated">
+        <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-gradient-to-br from-lantern-primary/[0.14] via-lantern-primary-background/80 to-lantern-accent/[0.12]'}`} padding="lg" variant="elevated">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-lantern-text">

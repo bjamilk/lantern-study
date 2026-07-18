@@ -51,7 +51,7 @@ export const BudgetQuickLinks: React.FC<BudgetQuickLinksProps> = ({
     ) : null}
     {onExpenseSplit ? (
       <button type="button" onClick={onExpenseSplit} className={linkBase}>
-        <UserGroupIcon className="w-6 h-6 text-lantern-primary-light" />
+        <UserGroupIcon className="w-6 h-6 text-lantern-primary" />
         <span className="text-xs font-semibold text-lantern-text">Split expense</span>
       </button>
     ) : null}

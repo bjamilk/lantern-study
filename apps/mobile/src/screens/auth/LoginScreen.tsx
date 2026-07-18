@@ -47,9 +47,8 @@ export function LoginScreen({ navigation }: Props) {
         className="flex-1"
       >
         <ScrollView
-          keyboardShouldPersistTaps="handled"
           contentContainerClassName="flex-grow px-6 py-8 justify-center"
-          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset, flexGrow: 1 }}
+          contentContainerStyle={{ paddingBottom: 24 + cookieNoticeInset }}
         >
           <View className="items-center mb-8">
             <LanternLogo size={64} style={{ marginBottom: 16 }} />
@@ -72,7 +71,7 @@ export function LoginScreen({ navigation }: Props) {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholder="you@university.edu"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="#64748b"
                 className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 text-lantern-text"
               />
             </View>
@@ -84,14 +83,14 @@ export function LoginScreen({ navigation }: Props) {
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                   placeholder="••••••••"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor="#64748b"
                   className="bg-lantern-surface border border-lantern-border rounded-xl px-4 py-3 pr-12 text-lantern-text"
                 />
                 <Pressable
                   onPress={() => setShowPassword(v => !v)}
                   className="absolute right-3 top-3"
                 >
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#94a3b8" />
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#64748b" />
                 </Pressable>
               </View>
             </View>

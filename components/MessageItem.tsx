@@ -53,6 +53,8 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   }
 
   const isQuestion = message.type === MessageType.QUESTION;
+  // Own text bubbles stay solid primary; own questions use a light wash so vote controls stay readable in light mode.
+  const onPrimaryChrome = isCurrentUserMessage && !isQuestion;
 
   const isPending = isQuestion && message.questionStatus === QuestionStatus.PENDING;
   const isRejected = isQuestion && message.questionStatus === QuestionStatus.REJECTED;
@@ -64,7 +66,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
     : 0;
 
   const questionBubbleClasses = isCurrentUserMessage
-    ? 'bg-lantern-primary text-white rounded-2xl rounded-br-md shadow-sm ring-1 ring-lantern-primary/40'
+    ? 'bg-lantern-primary-background text-lantern-text rounded-2xl rounded-br-md shadow-sm ring-1 ring-lantern-primary/30 border border-lantern-primary/25'
     : 'bg-lantern-surface text-lantern-text rounded-2xl rounded-bl-md shadow-sm ring-1 ring-emerald-500/30';
 
   const bubbleClasses = isQuestion
@@ -94,11 +96,11 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
     if (!items || items.length === 0) return null;
     return (
       <div className="mt-2">
-        <p className={`text-xs font-medium mb-1 ${isCurrentUserMessage ? 'text-lantern-primary-light' : 'text-lantern-text-secondary'}`}>{listTitle}</p>
+        <p className="text-xs font-medium mb-1 text-lantern-text-secondary">{listTitle}</p>
         <div className="space-y-1">
           {items.map((item, i) => (
-            <div key={item.id} className={`text-sm flex items-start gap-2 ${isCurrentUserMessage ? 'text-white/90' : 'text-lantern-text'}`}>
-              <span className={`flex-shrink-0 w-5 h-5 rounded text-xs flex items-center justify-center font-medium ${isCurrentUserMessage ? 'bg-lantern-surface/20' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary'}`}>
+            <div key={item.id} className="text-sm flex items-start gap-2 text-lantern-text">
+              <span className="flex-shrink-0 w-5 h-5 rounded text-xs flex items-center justify-center font-medium bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary">
                 {String.fromCharCode(65 + i)}
               </span>
               {item.text}
@@ -145,11 +147,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
           <div className="space-y-2">
             {/* Question type badge + pending status */}
             <div className="flex items-center flex-wrap gap-1.5">
-              <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md ${
-                isCurrentUserMessage
-                  ? 'bg-lantern-surface/20 text-white'
-                  : 'bg-lantern-primary-background text-lantern-primary'
-              }`}>
+              <span className="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md bg-lantern-primary/10 text-lantern-primary dark:bg-lantern-primary-background dark:text-lantern-primary-light">
                 {getQuestionTypeLabel(message.questionType)}
               </span>
               {isPending && (
@@ -189,8 +187,8 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             {(message.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE || message.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE) && message.options && (
               <div className="space-y-1 mt-1">
                 {message.options.map((opt, i) => (
-                  <div key={opt.id} className={`flex items-start gap-2 text-sm ${isCurrentUserMessage ? 'text-white/90' : 'text-lantern-text'}`}>
-                    <span className={`flex-shrink-0 w-5 h-5 rounded text-xs flex items-center justify-center font-medium ${isCurrentUserMessage ? 'bg-lantern-surface/20' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary'}`}>
+                  <div key={opt.id} className="flex items-start gap-2 text-sm text-lantern-text">
+                    <span className="flex-shrink-0 w-5 h-5 rounded text-xs flex items-center justify-center font-medium bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary">
                       {String.fromCharCode(65 + i)}
                     </span>
                     {opt.text}
@@ -203,7 +201,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             {message.questionType === QuestionType.TRUE_FALSE && message.options && (
               <div className="flex gap-2 mt-1">
                 {['True', 'False'].map(label => (
-                  <span key={label} className={`text-sm px-3 py-1 rounded-lg ${isCurrentUserMessage ? 'bg-lantern-surface/15 text-white/90' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text'}`}>
+                  <span key={label} className="text-sm px-3 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text">
                     {label}
                   </span>
                 ))}
@@ -225,12 +223,12 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
             {/* Tags */}
             {message.tags && message.tags.length > 0 && (
-              <div className={`flex items-center flex-wrap gap-1 pt-2 mt-1 border-t ${isCurrentUserMessage ? 'border-white/15' : 'border-lantern-border'}`}>
-                <TagIcon className={`w-3 h-3 ${isCurrentUserMessage ? 'text-lantern-primary-light' : 'text-lantern-text-tertiary'}`} />
+              <div className="flex items-center flex-wrap gap-1 pt-2 mt-1 border-t border-lantern-border">
+                <TagIcon className="w-3 h-3 text-lantern-text-tertiary" />
                 {message.tags.map((tag, index) => (
                   <span
                     key={index}
-                    className={`text-[11px] px-1.5 py-0.5 rounded-md font-medium ${isCurrentUserMessage ? 'bg-lantern-surface/15 text-white/90' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary'}`}
+                    className="text-[11px] px-1.5 py-0.5 rounded-md font-medium bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary"
                   >
                     {tag}
                   </span>
@@ -240,13 +238,13 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
             {isPending && memberCount > 0 && (
               <div className="space-y-1 pt-1">
-                <div className={`flex items-center justify-between text-[10px] ${isCurrentUserMessage ? 'text-lantern-primary-light' : 'text-lantern-text-secondary'}`}>
+                <div className="flex items-center justify-between text-[10px] text-lantern-text-secondary">
                   <span>{message.upvotes} / {approvalThreshold} approvals needed</span>
                   <span>{approvalProgress}%</span>
                 </div>
-                <div className={`h-1 rounded-full overflow-hidden ${isCurrentUserMessage ? 'bg-lantern-surface/20' : 'bg-lantern-background-secondary'}`}>
+                <div className="h-1 rounded-full overflow-hidden bg-lantern-background-secondary">
                   <div
-                    className={`h-full rounded-full ${isCurrentUserMessage ? 'bg-emerald-300' : 'bg-emerald-500'}`}
+                    className="h-full rounded-full bg-emerald-500"
                     style={{ width: `${approvalProgress}%`, minWidth: approvalProgress > 0 ? '4px' : undefined }}
                   />
                 </div>
@@ -255,17 +253,13 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
             {/* Vote / flag actions */}
             {group && (
-              <div className={`flex items-center gap-1.5 pt-2 mt-1 border-t ${isCurrentUserMessage ? 'border-white/15' : 'border-lantern-border'}`}>
+              <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-lantern-border">
                 <button
                   onClick={() => onVoteQuestion(message.id, 'up')}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'up'
-                      ? isCurrentUserMessage
-                        ? 'bg-emerald-500/30 text-emerald-200 border-transparent'
-                        : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
-                      : isCurrentUserMessage
-                        ? 'text-lantern-primary-light border-transparent hover:bg-lantern-surface/10'
-                        : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                      : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
                   }`}
                   aria-pressed={currentUserVote === 'up'}
                   aria-label={`Upvote question, current upvotes: ${message.upvotes}`}
@@ -277,12 +271,8 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   onClick={() => onVoteQuestion(message.id, 'down')}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserVote === 'down'
-                      ? isCurrentUserMessage
-                        ? 'bg-red-500/30 text-red-200 border-transparent'
-                        : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
-                      : isCurrentUserMessage
-                        ? 'text-lantern-primary-light border-transparent hover:bg-lantern-surface/10'
-                        : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
+                      ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800/60'
+                      : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
                   }`}
                   aria-pressed={currentUserVote === 'down'}
                   aria-label={`Downvote question, current downvotes: ${message.downvotes}`}
@@ -290,18 +280,14 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   <DownvoteIcon className="w-3.5 h-3.5" />
                   <span className="font-medium">{message.downvotes}</span>
                 </button>
-                <div className={`w-px h-4 mx-0.5 ${isCurrentUserMessage ? 'bg-lantern-surface/15' : 'bg-lantern-border'}`} />
+                <div className="w-px h-4 mx-0.5 bg-lantern-border" />
                 <button
                   onClick={() => onFlagAsSimilar(message.id)}
                   disabled={isCurrentUserMessage}
                   className={`inline-flex items-center gap-1 text-xs px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg transition-colors duration-150 min-h-[36px] md:min-h-0 border ${
                     currentUserFlagged
-                      ? isCurrentUserMessage
-                        ? 'bg-amber-500/30 text-amber-200 border-transparent'
-                        : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
-                      : isCurrentUserMessage
-                        ? 'text-lantern-primary-light border-transparent hover:bg-lantern-surface/10'
-                        : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
+                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                      : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary/70 text-lantern-text border-lantern-border hover:bg-lantern-border'
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                   aria-pressed={currentUserFlagged}
                   aria-label={`Flag as similar, current flags: ${message.flaggedAsSimilarUserIds?.length || 0}`}
@@ -316,7 +302,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
         )}
 
         {/* Timestamp */}
-        <p className={`text-[11px] mt-1.5 ${isCurrentUserMessage ? 'text-lantern-primary-light' : 'text-lantern-text-tertiary'} text-right`}>
+        <p className={`text-[11px] mt-1.5 ${onPrimaryChrome ? 'text-white/80' : 'text-lantern-text-tertiary'} text-right`}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
