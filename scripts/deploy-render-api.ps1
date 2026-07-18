@@ -149,7 +149,8 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '1200' },
         @{ key = 'AI_POST_BURST_MAX'; value = '15' },
         @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
-        @{ key = 'BULLMQ_ENABLED'; value = 'true' },
+        # Free plan has no worker; queueing AI jobs causes client timeouts.
+        @{ key = 'BULLMQ_ENABLED'; value = 'false' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {

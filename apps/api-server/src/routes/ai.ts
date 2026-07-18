@@ -10,8 +10,7 @@ import { clientErrorMessage } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 import { SupabaseService } from '../services/supabase';
 import { logAIInference } from '../services/aiInferenceLog';
-import { runSyncOrEnqueue } from '../queue/enqueue';
-import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { runNoteAiSync } from '../queue/enqueue';
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
@@ -71,30 +70,21 @@ router.use(requirePermission('ai'));
 router.use(aiPostBurstRateLimit);
 router.use(validateAIMessage, handleValidationErrors);
 
-// Generate questions from notes
+// Generate questions from notes — sync (interactive UI). Do not queue: free-tier
+// Render often has no background worker, so async jobs sit forever and clients time out.
 router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { notes, count, difficulty, questionTypes, subject } = req.body;
     if (!notes || typeof notes !== 'string' || notes.trim().length < 50) {
       res.status(400).json({ error: 'Notes must be at least 50 characters.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.generate.questions',
-      { notes, count, difficulty, questionTypes, subject },
-      userId,
-      async () => {
-        const result = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
-        await recordInference(req, 'generate-questions', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const generated = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
+      await recordInference(req, 'generate-questions', generated);
+      return generated;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI generate questions error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate questions.') });
@@ -103,27 +93,17 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
 
 router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { notes, count, style } = req.body;
     if (!notes || typeof notes !== 'string' || notes.trim().length < 50) {
       res.status(400).json({ error: 'Notes must be at least 50 characters.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.generate.flashcards',
-      { notes, count, style },
-      userId,
-      async () => {
-        const result = await generateFlashcardsFromNotes(notes, { count, style });
-        await recordInference(req, 'generate-flashcards', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const generated = await generateFlashcardsFromNotes(notes, { count, style });
+      await recordInference(req, 'generate-flashcards', generated);
+      return generated;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI generate flashcards error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate flashcards.') });
@@ -132,27 +112,17 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
 
 router.post('/explain-answer', aiRateLimitForFeature('explain'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { question, userAnswer, correctAnswer, options } = req.body;
     if (!question || !correctAnswer) {
       res.status(400).json({ error: 'Question and correct answer required.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.explain.answer',
-      { question, userAnswer, correctAnswer, options },
-      userId,
-      async () => {
-        const result = await explainAnswer(question, userAnswer || '', correctAnswer, options);
-        await recordInference(req, 'explain-answer', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const explained = await explainAnswer(question, userAnswer || '', correctAnswer, options);
+      await recordInference(req, 'explain-answer', explained);
+      return explained;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI explain answer error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to explain.') });
@@ -161,27 +131,17 @@ router.post('/explain-answer', aiRateLimitForFeature('explain'), async (req: Aut
 
 router.post('/study-recommendations', aiRateLimitForFeature('study_recommendations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { performanceData } = req.body;
     if (!performanceData) {
       res.status(400).json({ error: 'Performance data required.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.study.recommendations',
-      { performanceData },
-      userId,
-      async () => {
-        const result = await getStudyRecommendations(performanceData);
-        await recordInference(req, 'study-recommendations', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const recommendations = await getStudyRecommendations(performanceData);
+      await recordInference(req, 'study-recommendations', recommendations);
+      return recommendations;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI recommendations error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to get recommendations.') });
@@ -190,27 +150,17 @@ router.post('/study-recommendations', aiRateLimitForFeature('study_recommendatio
 
 router.post('/ask-tutor', aiRateLimitForFeature('study_plan'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { question, context } = req.body;
     if (!question || typeof question !== 'string' || question.trim().length < 5) {
       res.status(400).json({ error: 'Question must be at least 5 characters.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.ask.tutor',
-      { question, context },
-      userId,
-      async () => {
-        const result = await askTutor(question, context);
-        await recordInference(req, 'ask-tutor', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const answer = await askTutor(question, context);
+      await recordInference(req, 'ask-tutor', answer);
+      return answer;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI tutor error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to get answer.') });
@@ -219,27 +169,17 @@ router.post('/ask-tutor', aiRateLimitForFeature('study_plan'), async (req: Authe
 
 router.post('/enhance-flashcard', aiRateLimitForFeature('enhance_flashcard'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
     const { front, back } = req.body;
     if (!front || !back) {
       res.status(400).json({ error: 'Front and back are required.' });
       return;
     }
-    const outcome = await runSyncOrEnqueue(
-      'ai.enhance.flashcard',
-      { front, back },
-      userId,
-      async () => {
-        const result = await enhanceFlashcard(front, back);
-        await recordInference(req, 'enhance-flashcard', result);
-        return result;
-      }
-    );
-    if (outcome.mode === 'async') {
-      sendAsyncJobAccepted(res, outcome.jobId);
-      return;
-    }
-    res.json(outcome.result);
+    const result = await runNoteAiSync(async () => {
+      const enhanced = await enhanceFlashcard(front, back);
+      await recordInference(req, 'enhance-flashcard', enhanced);
+      return enhanced;
+    });
+    res.json(result);
   } catch (error: any) {
     console.error('AI enhance flashcard error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to enhance flashcard.') });

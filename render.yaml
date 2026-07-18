@@ -73,8 +73,10 @@ services:
         value: "15"
       - key: UPLOAD_BURST_MAX
         value: "10"
+      # Free Render plan has no background worker — keep false so AI/jobs run in-request.
+      # Re-enable only after lantern-study-worker is deployed on a paid plan.
       - key: BULLMQ_ENABLED
-        value: "true"
+        value: "false"
       - key: ADMIN_RATE_LIMIT_MAX
         value: "300"
       - key: AI_DAILY_LIMIT
