@@ -70,8 +70,7 @@ router.use(requirePermission('ai'));
 router.use(aiPostBurstRateLimit);
 router.use(validateAIMessage, handleValidationErrors);
 
-// Generate questions from notes — sync (interactive UI). Do not queue: free-tier
-// Render often has no background worker, so async jobs sit forever and clients time out.
+// Generate questions from notes — sync for interactive UI (same pattern as note quiz/flashcards).
 router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { notes, count, difficulty, questionTypes, subject } = req.body;

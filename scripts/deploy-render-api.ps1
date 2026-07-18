@@ -149,8 +149,7 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'AUTHENTICATED_RATE_LIMIT_MAX'; value = '1200' },
         @{ key = 'AI_POST_BURST_MAX'; value = '15' },
         @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
-        # Free plan has no worker; queueing AI jobs causes client timeouts.
-        @{ key = 'BULLMQ_ENABLED'; value = 'false' },
+        @{ key = 'BULLMQ_ENABLED'; value = 'true' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     if ($ApiEnv['SENTRY_DSN']) {
@@ -218,7 +217,9 @@ function Ensure-WorkerService([string]$OwnerId, [array]$EnvVars) {
         envVars        = $EnvVars
         serviceDetails = @{
             runtime            = 'docker'
-            plan               = 'free'
+            # Match the API service plan (starter). Free workers are not available on paid workspaces
+            # that have upgraded, and free-plan create fails with "only web services allowed".
+            plan               = 'starter'
             region             = 'oregon'
             envSpecificDetails = @{
                 dockerfilePath = './apps/api-server/Dockerfile'
