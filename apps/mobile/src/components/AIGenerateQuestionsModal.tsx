@@ -18,10 +18,13 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared/utils';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
+import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../services/notes';
 import type { AIGeneratedQuestion } from '../services/ai';
 
 interface AIGenerateQuestionsModalProps {
@@ -49,10 +52,58 @@ export default function AIGenerateQuestionsModal({
   const [count, setCount] = useState<number>(5);
   const [difficulty, setDifficulty] = useState<string>('medium');
   const [generatedQuestions, setGeneratedQuestions] = useState<AIGeneratedQuestion[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handlePickAttachment = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/pdf',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const name = asset.name || 'upload.pdf';
+      const isPdf = /\.pdf$/i.test(name) || asset.mimeType === 'application/pdf';
+
+      setIsUploading(true);
+      setAiError(null);
+      const uploaded = isPdf
+        ? await uploadNotePdfViaApi(asset.uri, name)
+        : await uploadPresentationViaApi(asset.uri, name);
+
+      const studyInput = {
+        sourceType: uploaded.note.sourceType,
+        body: uploaded.note.body,
+        summary: uploaded.note.summary,
+        attachments: [uploaded.attachment, ...(uploaded.note.attachments || [])],
+      };
+      if (!hasEnoughNoteStudyContent(studyInput)) {
+        Alert.alert(
+          'Not enough text',
+          'Could not extract enough study text yet. Wait a moment and try again, or paste notes manually.'
+        );
+        return;
+      }
+      setNotes(getNoteStudyContent(studyInput).slice(0, 8000));
+    } catch (err: unknown) {
+      Alert.alert('Upload failed', err instanceof Error ? err.message : 'Could not upload attachment.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!notes.trim()) {
-      Alert.alert('Missing Notes', 'Please paste some notes or enter a topic to generate questions from.');
+      Alert.alert('Missing Notes', 'Please paste some notes or upload a PDF/PowerPoint.');
+      return;
+    }
+    if (notes.trim().length < 50) {
+      Alert.alert('More notes needed', 'Paste at least 50 characters, or upload a PDF/slides file.');
       return;
     }
 
@@ -114,9 +165,25 @@ export default function AIGenerateQuestionsModal({
             {generatedQuestions.length === 0 ? (
               <>
                 {/* Notes Input */}
-                <Text style={[styles.label, { color: colors.textSecondary }]}>
-                  Paste your notes or describe a topic
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={[styles.label, { color: colors.textSecondary, marginBottom: 0 }]}>
+                    Paste notes or upload a file
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => void handlePickAttachment()}
+                    disabled={isAILoading || isUploading}
+                    style={[styles.uploadChip, { borderColor: colors.border, backgroundColor: colors.inputBackground }]}
+                  >
+                    {isUploading ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
+                    )}
+                    <Text style={[styles.uploadChipText, { color: colors.primary }]}>
+                      {isUploading ? 'Uploading…' : 'PDF / PPT'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 <AIDisclaimer compact textColor={colors.textSecondary} linkColor={colors.primary} />
                 <TextInput
                   style={[
@@ -134,10 +201,10 @@ export default function AIGenerateQuestionsModal({
                   textAlignVertical="top"
                   value={notes}
                   onChangeText={setNotes}
-                  maxLength={3000}
+                  maxLength={8000}
                 />
                 <Text style={[styles.charCount, { color: colors.textTertiary }]}>
-                  {notes.length}/3000
+                  {notes.length}/8000 · min 50 characters
                 </Text>
 
                 {/* Count Selection */}
@@ -345,6 +412,26 @@ export default function AIGenerateQuestionsModal({
 }
 
 const styles = StyleSheet.create({
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+  },
+  uploadChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  uploadChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

@@ -44,7 +44,8 @@ const { ai, companion } = createLanternAI({
   getAuthHeaders,
   getUserId: getCurrentUserId,
   onUsageUpdate: updateUsage,
-  defaultTimeoutMs: 30000,
+  // Initial enqueue is fast; async job polling has its own timeout.
+  defaultTimeoutMs: 120_000,
 });
 
 export function getLatestAIUsage(): AIUsageInfo {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAIResetLabel } from '@lantern/shared/utils';
-import { subscribeToAIUsage, getLatestAIUsage, AIUsageInfo } from '../services/ai';
+import { subscribeToAIUsage, getLatestAIUsage, fetchAIUsage, AIUsageInfo } from '../services/ai';
 
 /**
  * Compact inline AI usage indicator — "✨ 7 left · Resets in 4h 23m"
@@ -12,6 +12,7 @@ const AIUsageInline: React.FC<{ className?: string }> = ({ className = '' }) => 
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
+    void fetchAIUsage();
     return subscribeToAIUsage(setUsage);
   }, []);
 

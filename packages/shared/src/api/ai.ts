@@ -19,6 +19,38 @@ export interface AIClientConfig {
   defaultTimeoutMs?: number;
 }
 
+async function pollAiJob<T>(
+  config: AIClientConfig,
+  jobId: string,
+  timeoutMs = 180_000
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const headers = await config.getAuthHeaders();
+    const response = await fetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
+    const payload = (await response.json().catch(() => ({}))) as {
+      data?: { status?: string; result?: T; error?: string };
+      error?: string;
+      status?: string;
+      result?: T;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error || `Job status check failed (${response.status})`);
+    }
+    const job = payload.data ?? payload;
+    const status = job.status;
+    if (status === 'completed') {
+      if (job.result !== undefined) return job.result;
+      throw new Error('AI job completed without a result.');
+    }
+    if (status === 'failed') {
+      throw new Error(typeof job.error === 'string' && job.error ? job.error : 'AI job failed.');
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error('AI request timed out. Try again in a moment.');
+}
+
 export interface AIGeneratedQuestion {
   text: string;
   type: 'multiple_choice' | 'true_false' | 'short_answer' | 'fill_in_blank';
@@ -52,6 +84,28 @@ export function createAIClient(config: AIClientConfig) {
   let usageBackoffUntil = 0;
   let cachedUsage: AIUsageInfo | null = null;
 
+  const refreshGlobalUsage = () => {
+    void (async () => {
+      try {
+        const headers = await config.getAuthHeaders();
+        const res = await fetch(`${config.getBaseUrl()}/api/v1/ai/usage`, { headers });
+        if (!res.ok) return;
+        const data = await res.json();
+        const usage: AIUsageInfo = {
+          used: data.used,
+          limit: data.limit,
+          remaining: data.limit - data.used,
+          resetsAt: data.resetsAt,
+        };
+        cachedUsage = usage;
+        usageLastFetchAt = Date.now();
+        config.onUsageUpdate?.(usage);
+      } catch {
+        // non-fatal
+      }
+    })();
+  };
+
   const aiRequest = async <T>(
     endpoint: string,
     body: Record<string, unknown> = {},
@@ -72,26 +126,42 @@ export function createAIClient(config: AIClientConfig) {
       });
       clearTimeout(timeoutId);
 
+      const hadFeatureQuota = Boolean(response.headers.get('X-AI-Feature'));
       parseGlobalAIUsageFromHeaders(response, config.onUsageUpdate);
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Request failed' }));
-        if (
-          response.status === 429 &&
-          error.used !== undefined &&
-          error.limit !== undefined
-        ) {
-          config.onUsageUpdate?.({
-            used: error.used,
-            limit: error.limit,
-            remaining: 0,
-            resetsAt: error.resetsAt || '',
-          });
-        }
-        throw new Error(error.error || `AI request failed (${response.status})`);
+      const json = (await response.json().catch(() => ({}))) as T & {
+        jobId?: string;
+        error?: string;
+        used?: number;
+        limit?: number;
+        resetsAt?: string;
+        feature?: string;
+      };
+
+      if (response.status === 202 && typeof json.jobId === 'string') {
+        if (hadFeatureQuota) refreshGlobalUsage();
+        return pollAiJob<T>(config, json.jobId);
       }
 
-      return response.json() as Promise<T>;
+      if (!response.ok) {
+        if (
+          response.status === 429 &&
+          !json.feature &&
+          json.used !== undefined &&
+          json.limit !== undefined
+        ) {
+          config.onUsageUpdate?.({
+            used: json.used,
+            limit: json.limit,
+            remaining: 0,
+            resetsAt: json.resetsAt || '',
+          });
+        }
+        throw new Error(json.error || `AI request failed (${response.status})`);
+      }
+
+      if (hadFeatureQuota) refreshGlobalUsage();
+      return json as T;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === 'AbortError') {

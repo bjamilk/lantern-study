@@ -1,9 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { SparklesIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import {
+  SparklesIcon,
+  XMarkIcon,
+  ArrowPathIcon,
+  DocumentArrowUpIcon,
+} from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
 import { AIDisclaimer } from './AIDisclaimer';
 import Modal from './ui/Modal';
+import { fetchAIUsage } from '../services/ai';
+import * as notesApi from '../services/notes';
+import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared/utils';
+import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 
 interface AIGenerateQuestionsModalProps {
   isOpen: boolean;
@@ -11,8 +20,9 @@ interface AIGenerateQuestionsModalProps {
   onSubmit: (
     notes: string,
     options: { count: number; difficulty: string; questionTypes: string[]; subject: string }
-  ) => void;
+  ) => void | Promise<unknown>;
   isGenerating: boolean;
+  error?: string | null;
 }
 
 const QUESTION_TYPES = [
@@ -27,17 +37,91 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
   onClose,
   onSubmit,
   isGenerating,
+  error = null,
 }) => {
   const [notes, setNotes] = useState('');
   const [count, setCount] = useState<number | ''>(5);
   const [difficulty, setDifficulty] = useState('mixed');
   const [subject, setSubject] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>(['multiple_choice', 'true_false']);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) void fetchAIUsage();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (error) {
+      useToastStore.getState().showToast(error, 'error');
+    }
+  }, [error]);
 
   const toggleType = (type: string) => {
     setSelectedTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
+  };
+
+  const handleFileUpload = async (file: File | undefined) => {
+    if (!file || isGenerating || isUploading) return;
+    const name = file.name.toLowerCase();
+    const isPdf = name.endsWith('.pdf') || file.type === 'application/pdf';
+    const isPpt =
+      name.endsWith('.pptx') ||
+      name.endsWith('.ppt') ||
+      file.type.includes('presentation') ||
+      file.type.includes('powerpoint');
+
+    if (!isPdf && !isPpt) {
+      useToastStore.getState().showToast('Upload a PDF or PowerPoint file.', 'error');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadLabel(`Uploading ${file.name}…`);
+    try {
+      const result = isPdf
+        ? await notesApi.uploadNotePdfViaApi(file, undefined, (p) => {
+            if (p.label) setUploadLabel(p.label);
+          })
+        : await notesApi.uploadPresentationViaApi(file, undefined, (p) => {
+            if (p.label) setUploadLabel(p.label);
+          });
+
+      const studyText = getNoteStudyContent({
+        sourceType: result.note.sourceType,
+        body: result.note.body,
+        summary: result.note.summary,
+        attachments: [result.attachment, ...(result.note.attachments || [])],
+      });
+
+      if (!hasEnoughNoteStudyContent({
+        sourceType: result.note.sourceType,
+        body: result.note.body,
+        summary: result.note.summary,
+        attachments: [result.attachment, ...(result.note.attachments || [])],
+      })) {
+        useToastStore
+          .getState()
+          .showToast(
+            'Not enough text extracted yet. Wait a moment and try again, or paste notes manually.',
+            'error'
+          );
+        return;
+      }
+
+      setNotes(studyText.slice(0, 8000));
+      useToastStore.getState().showToast('Attachment text loaded into the notes field.', 'success');
+    } catch (err: unknown) {
+      useToastStore
+        .getState()
+        .showToast(err instanceof Error ? err.message : 'Failed to upload attachment', 'error');
+    } finally {
+      setIsUploading(false);
+      setUploadLabel(null);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,11 +130,17 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
       useToastStore.getState().showToast('Please provide notes and a number of questions between 1 and 20.', 'error');
       return;
     }
+    if (notes.trim().length < 50) {
+      useToastStore
+        .getState()
+        .showToast('Notes must be at least 50 characters (or upload a PDF/slides file).', 'error');
+      return;
+    }
     if (selectedTypes.length === 0) {
       useToastStore.getState().showToast('Please select at least one question type.', 'error');
       return;
     }
-    onSubmit(notes, {
+    void onSubmit(notes, {
       count: Number(count),
       difficulty,
       questionTypes: selectedTypes,
@@ -58,14 +148,16 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
     });
   };
 
+  const busy = isGenerating || isUploading;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       ariaLabelledBy="ai-generate-questions-title"
       maxWidthClass="max-w-2xl"
-      loading={isGenerating}
-      closeOnBackdrop={!isGenerating}
+      loading={busy}
+      closeOnBackdrop={!busy}
       panelClassName="max-h-[90vh] overflow-y-auto"
     >
       <div className="flex justify-between items-center mb-4">
@@ -79,7 +171,7 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
         <button
           type="button"
           onClick={onClose}
-          disabled={isGenerating}
+          disabled={busy}
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
           aria-label="Close generate questions dialog"
         >
@@ -87,24 +179,65 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
         </button>
       </div>
       <p className="text-sm text-lantern-text-secondary mb-2">
-        Paste your notes below, and AI will generate practice questions that get posted to the group chat.
+        Paste notes or upload a PDF/PowerPoint. AI posts practice questions to the group chat for voting.
       </p>
       <AIDisclaimer className="mb-4" />
 
+      {error ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+        >
+          {error}
+        </div>
+      ) : null}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="ai-notes" className="block text-sm font-medium text-lantern-text mb-1">
-            Your Notes
-          </label>
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <label htmlFor="ai-notes" className="block text-sm font-medium text-lantern-text">
+              Your Notes
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  void handleFileUpload(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-lantern-border bg-lantern-background-secondary px-3 py-1.5 text-xs font-medium text-lantern-text hover:bg-lantern-surface disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <ArrowPathIcon className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <DocumentArrowUpIcon className="h-4 w-4" aria-hidden />
+                )}
+                {isUploading ? 'Uploading…' : 'Upload PDF / PPT'}
+              </button>
+            </div>
+          </div>
           <textarea
             id="ai-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={8}
             className="w-full p-2 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
-            placeholder="Paste lecture notes, chapter text, or any study material..."
+            placeholder="Paste lecture notes, chapter text, or upload a PDF/PowerPoint…"
             required
           />
+          <p className="mt-1 text-xs text-lantern-text-secondary">
+            {uploadLabel ||
+              `At least 50 characters · max upload ${formatMaxNoteUploadLabel()} · text is truncated for AI`}
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -186,14 +319,14 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              disabled={isGenerating}
+              disabled={busy}
               className="min-h-[44px] px-4 py-2 text-sm font-medium text-lantern-text bg-lantern-background-secondary border border-lantern-border rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isGenerating}
+              disabled={busy}
               className="min-h-[44px] px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-lg shadow-sm flex items-center justify-center disabled:opacity-50"
             >
               {isGenerating && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" aria-hidden />}

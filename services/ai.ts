@@ -3,8 +3,10 @@
  * Uses the same auth headers and base URL as the main supabase service.
  */
 import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
+import { parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
 import { useAuthStore } from '../stores/authStore';
 import { getAuthHeaders, ensureAuthTokenReady } from './supabase';
+import { pollApiJob } from './jobPoll';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -92,32 +94,50 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
     body: JSON.stringify(body),
   });
 
-  // Read usage from response headers (set by aiRateLimit middleware)
-  const usedHeader = response.headers.get('X-AI-Usage-Used');
-  const limitHeader = response.headers.get('X-AI-Usage-Limit');
-  const resetsHeader = response.headers.get('X-AI-Usage-Resets-At');
-  if (usedHeader && limitHeader) {
-    const used = parseInt(usedHeader, 10);
-    const limit = parseInt(limitHeader, 10);
-    updateUsage({ used, limit, remaining: limit - used, resetsAt: resetsHeader || '' });
+  // Global badge only — feature quotas (generate_questions=15) must not overwrite the 100 daily limit.
+  const hadFeatureQuota = Boolean(response.headers.get('X-AI-Feature'));
+  parseGlobalAIUsageFromHeaders(response, updateUsage);
+
+  const json = (await response.json().catch(() => ({}))) as T & {
+    jobId?: string;
+    error?: string;
+    used?: number;
+    limit?: number;
+    resetsAt?: string;
+    feature?: string;
+  };
+
+  if (response.status === 202 && typeof json.jobId === 'string') {
+    if (hadFeatureQuota) void fetchAIUsage();
+    return pollApiJob<T>(json.jobId);
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    // If 429 (rate limited), update usage from the error body
-    if (response.status === 429 && error.used !== undefined && error.limit !== undefined) {
-      updateUsage({ used: error.used, limit: error.limit, remaining: 0, resetsAt: error.resetsAt || '' });
+    // Feature 429 bodies carry the feature limit — keep the global badge intact.
+    if (
+      response.status === 429 &&
+      !json.feature &&
+      json.used !== undefined &&
+      json.limit !== undefined
+    ) {
+      updateUsage({
+        used: json.used,
+        limit: json.limit,
+        remaining: 0,
+        resetsAt: json.resetsAt || '',
+      });
     }
     const message =
       response.status === 400 &&
-      typeof error.error === 'string' &&
-      /at least 50 characters/i.test(error.error)
+      typeof json.error === 'string' &&
+      /at least 50 characters/i.test(json.error)
         ? 'Not enough study content yet. Add notes or wait for slide/PDF text extraction to finish.'
-        : error.error || `AI request failed (${response.status})`;
+        : json.error || `AI request failed (${response.status})`;
     throw new Error(message);
   }
 
-  return response.json();
+  if (hadFeatureQuota) void fetchAIUsage();
+  return json as T;
 }
 
 // ─── Types ──────────────────────────────────────────────────

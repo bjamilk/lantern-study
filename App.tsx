@@ -388,7 +388,7 @@ export const App: React.FC = () => {
 
     useFontMode();
     useInviteLink(currentUser?.id);
-    const { isAILoading, handleAIGenerateQuestions, handleAIExplainAnswer, handleAIStudyRecommendations, handleAIAskTutor, handleAIEnhanceFlashcard } = useAIHandlers();
+    const { isAILoading, aiError, setAiError, handleAIGenerateQuestions, handleAIExplainAnswer, handleAIStudyRecommendations, handleAIAskTutor, handleAIEnhanceFlashcard } = useAIHandlers();
     const noteHandlers = useNoteHandlers(currentUser?.id);
 
     const handleWeakAreaFlashcardsFromAnalysis = React.useCallback(
@@ -1416,9 +1416,13 @@ export const App: React.FC = () => {
                 listing={editingMarketplaceListing}
                 onSuccess={() => { closeModal('editMarketplaceListing'); setEditingMarketplaceListing(null); }} />}
             <AIGenerateQuestionsModal isOpen={modals.aiGenerateQuestions}
-                onClose={() => closeModal('aiGenerateQuestions')}
+                onClose={() => {
+                    setAiError(null);
+                    closeModal('aiGenerateQuestions');
+                }}
                 onSubmit={(notes, options) => handleAIGenerateQuestions(notes, options)}
-                isGenerating={isAILoading} />
+                isGenerating={isAILoading}
+                error={aiError} />
             {currentUser && <UsernameRequiredModal isOpen={modals.usernameRequired}
                 onClose={() => closeModal('usernameRequired')} currentUser={currentUser}
                 onSuccess={(username, firstName, lastName) => {

@@ -35,12 +35,30 @@ export function useAIHandlers() {
       notes: string,
       options?: { count?: number; difficulty?: string; questionTypes?: string[]; subject?: string }
     ): Promise<AIGeneratedQuestion[]> => {
-      if (!currentUser || !selectedChat || selectedChat.chatType !== 'group') return [];
+      if (!currentUser) {
+        setAiError('Please sign in to generate questions.');
+        return [];
+      }
+      if (!selectedChat || selectedChat.chatType !== 'group') {
+        setAiError('Open a group chat first, then generate questions to post for voting.');
+        return [];
+      }
+      if (notes.trim().length < 50) {
+        setAiError('Paste at least 50 characters of notes, or upload a PDF/slides file.');
+        return [];
+      }
       setIsAILoading(true);
       setAiError(null);
       try {
-        const { questions } = await aiGenerateQuestions(notes, options);
+        const result = await aiGenerateQuestions(notes, options);
+        const questions = Array.isArray(result?.questions) ? result.questions : [];
+        if (questions.length === 0) {
+          setAiError('AI returned no questions. Try again with more detailed notes.');
+          return [];
+        }
         const groupId = selectedChat.id;
+        let posted = 0;
+        let failed = 0;
 
         for (const q of questions) {
           const qOptions = q.options?.map((text) => ({ id: uuidv4(), text }));
@@ -97,6 +115,7 @@ export function useAIHandlers() {
             const content = JSON.stringify({ type: MessageType.QUESTION, ...questionData });
             const saved = await sendMessage(groupId, currentUser.id, content);
             if (saved) {
+              posted += 1;
               updateMessages((prev) => ({
                 ...prev,
                 [groupId]: [
@@ -111,12 +130,21 @@ export function useAIHandlers() {
                   },
                 ],
               }));
+            } else {
+              failed += 1;
             }
           } catch {
-            // silently continue to next question
+            failed += 1;
           }
         }
 
+        if (posted === 0) {
+          setAiError('Questions were generated but could not be posted to the group chat. Check your connection and try again.');
+          return questions;
+        }
+        if (failed > 0) {
+          setAiError(`Posted ${posted} question(s); ${failed} failed to send.`);
+        }
         closeModal('aiGenerateQuestions');
         return questions;
       } catch (err: any) {

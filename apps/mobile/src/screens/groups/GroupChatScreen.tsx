@@ -81,6 +81,62 @@ function mapModalQuestionToPayload(question: any, senderId: string, senderName: 
   };
 }
 
+function mapAIQuestionToPayload(
+  q: {
+    text: string;
+    type: string;
+    options?: string[];
+    correctAnswer: string;
+    explanation?: string;
+    topic?: string;
+  },
+  senderId: string,
+  senderName: string
+) {
+  const normalise = (s: string) => s.replace(/^[A-Da-d][).\s]+\s*/, '').trim().toLowerCase();
+  const correctNorm = q.correctAnswer ? normalise(q.correctAnswer) : '';
+  const options = (q.options || []).map((text, idx) => ({
+    id: `ai-opt-${Date.now()}-${idx}`,
+    text,
+  }));
+  const correctAnswerIds = options
+    .filter((o) => {
+      if (!q.correctAnswer) return false;
+      if (o.text === q.correctAnswer) return true;
+      const optNorm = normalise(o.text);
+      if (optNorm === correctNorm) return true;
+      const letterMatch = q.correctAnswer.trim().match(/^([A-Da-d])$/);
+      if (letterMatch) {
+        const idx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+        return options.indexOf(o) === idx;
+      }
+      return optNorm.includes(correctNorm) || correctNorm.includes(optNorm);
+    })
+    .map((o) => o.id);
+
+  const questionType =
+    q.type === 'multiple_choice'
+      ? 'MULTIPLE_CHOICE_SINGLE'
+      : q.type === 'true_false'
+        ? 'TRUE_FALSE'
+        : q.type === 'fill_in_blank'
+          ? 'FILL_IN_THE_BLANK'
+          : 'OPEN_ENDED';
+
+  return {
+    senderId,
+    senderName,
+    stem: q.text,
+    explanation: q.explanation,
+    questionType,
+    options,
+    correctAnswerIds,
+    tags: q.topic ? [q.topic] : [],
+    acceptableAnswers:
+      questionType === 'FILL_IN_THE_BLANK' && q.correctAnswer ? [q.correctAnswer] : undefined,
+  };
+}
+
 function ChatDateSeparator({ label }: { label: string }) {
   if (!label) return null;
   return (
@@ -590,9 +646,34 @@ export function GroupChatScreen({ navigation, route }: Props) {
           visible={showAIGenerate}
           onClose={() => setShowAIGenerate(false)}
           subject={displayName}
-          onQuestionsGenerated={() => {
+          onQuestionsGenerated={async (questions) => {
+            if (!user?.id) {
+              Alert.alert('Error', 'Please sign in to post questions.');
+              return;
+            }
+            const senderName = user.user_metadata?.full_name || 'You';
+            let posted = 0;
+            for (const q of questions) {
+              try {
+                await submitQuestion(
+                  groupId,
+                  mapAIQuestionToPayload(q, user.id, senderName)
+                );
+                posted += 1;
+              } catch {
+                // continue posting remaining questions
+              }
+            }
             setShowAIGenerate(false);
-            void fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
+            await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
+            if (posted === 0) {
+              Alert.alert('Error', 'Questions were generated but could not be posted to chat.');
+            } else if (posted < questions.length) {
+              Alert.alert(
+                'Partial success',
+                `Posted ${posted} of ${questions.length} questions to the group chat.`
+              );
+            }
           }}
         />
       ) : null}
