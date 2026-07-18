@@ -17,7 +17,8 @@ permissions:
 
 jobs:
   preview:
-    if: github.event.pull_request.draft == false
+    # Skip drafts and until Cloudflare + Vite secrets exist (docs/deploy/05-ci-cd-pipeline.md).
+    if: ${{ github.event.pull_request.draft == false && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.VITE_SUPABASE_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

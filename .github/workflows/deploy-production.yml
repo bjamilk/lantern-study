@@ -23,6 +23,7 @@ permissions:
 
 jobs:
   deploy-web:
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.VITE_SUPABASE_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

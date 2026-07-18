@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   deploy-staging:
+    # Skip until Actions secrets are configured (see docs/deploy/05-ci-cd-pipeline.md).
+    if: ${{ secrets.RENDER_API_KEY != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
