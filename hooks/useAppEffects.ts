@@ -48,6 +48,7 @@ import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
 import {
+  getWebNotificationPermission,
   onWebNotificationClick,
   requestWebNotificationPermission,
   showWebNotification,
@@ -1284,7 +1285,7 @@ export function useAppEffects({
 
         if (!getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
 
-        if (totalDue > 0 && Notification.permission === 'granted') {
+        if (totalDue > 0 && getWebNotificationPermission() === 'granted') {
             void showWebNotification({
                 title: 'Flashcard Review Due',
                 body: `You have ${totalDue} flashcards ready for review.`,
@@ -1310,7 +1311,7 @@ export function useAppEffects({
 
     useEffect(() => {
         if (currentUser && flashcards.length > 0) {
-            if ('Notification' in window && Notification.permission === 'default') {
+            if (getWebNotificationPermission() === 'default') {
                 void requestWebNotificationPermission();
             }
 

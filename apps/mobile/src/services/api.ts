@@ -13,6 +13,7 @@ const { api: lanternApi } = createLanternApi({
     return !error && !!data.session?.access_token;
   },
   onUnauthorized: () => {
+    // Shared client only invokes this for definitive auth codes or failed refresh.
     void useAuthStore.getState().signOut();
   },
 });

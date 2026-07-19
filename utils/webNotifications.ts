@@ -2,6 +2,9 @@
  * Cross-platform web notifications.
  * Mobile browsers require ServiceWorkerRegistration.showNotification();
  * the Notification constructor throws on many mobile UAs.
+ *
+ * Never read the bare `Notification` global without an existence check —
+ * Safari throws "Can't find variable: Notification" when the API is absent.
  */
 
 export interface WebNotificationPayload {
@@ -14,8 +17,18 @@ export interface WebNotificationPayload {
   onClick?: () => void;
 }
 
+export function hasWebNotificationSupport(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+/** Safe read of Notification.permission; never throws when the API is missing. */
+export function getWebNotificationPermission(): NotificationPermission | 'unsupported' {
+  if (!hasWebNotificationSupport()) return 'unsupported';
+  return Notification.permission;
+}
+
 export async function requestWebNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
-  if (typeof window === 'undefined' || !('Notification' in window)) {
+  if (!hasWebNotificationSupport()) {
     return 'unsupported';
   }
   if (Notification.permission !== 'default') {
@@ -29,7 +42,7 @@ export async function requestWebNotificationPermission(): Promise<NotificationPe
 }
 
 export async function showWebNotification(payload: WebNotificationPayload): Promise<void> {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (!hasWebNotificationSupport()) return;
   if (Notification.permission !== 'granted') return;
 
   const { title, body, icon = '/favicon.ico', tag, data, onClick } = payload;

@@ -6,7 +6,7 @@ import {
 } from '@lantern/shared/settings';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { User } from '../types';
-import { showWebNotification } from '../utils/webNotifications';
+import { getWebNotificationPermission, showWebNotification } from '../utils/webNotifications';
 
 const CHECK_INTERVAL_MS = 60_000;
 
@@ -25,8 +25,7 @@ export function useDailyStudyReminder(currentUser: User | null): void {
 
       if (
         !shouldTriggerDailyReminder(settings.notifications, lastFired) ||
-        typeof Notification === 'undefined' ||
-        Notification.permission !== 'granted'
+        getWebNotificationPermission() !== 'granted'
       ) {
         return;
       }

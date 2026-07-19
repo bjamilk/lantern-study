@@ -167,7 +167,7 @@ import { useLowDataMode } from '../hooks/useLowDataMode';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
 
-import { supabase } from '../services/supabase';
+import { getAuthHeaders, supabase } from '../services/supabase';
 
 
 
@@ -776,30 +776,40 @@ function RootNavigatorInner() {
 
     }
 
-    void loadSettings(user.id);
+    let cancelled = false;
+    const userId = user.id;
 
-    void fetchDecks(user.id);
+    const bootstrapAuthenticatedData = async () => {
+      // Wait until Bearer token is available before fan-out; avoids race 401s
+      // right after login that previously triggered hard sign-out.
+      const headers = await getAuthHeaders();
+      if (cancelled || !headers.Authorization) return;
 
-    void fetchGroups(user.id);
+      void loadSettings(userId);
+      void fetchDecks(userId);
+      void fetchGroups(userId);
+      void fetchDmThreads(userId);
+      void loadUnreadCount(userId);
+      void fetchAIUsage(userId);
 
-    void fetchDmThreads(user.id);
+      if (!isRunningInExpoGo() && pushEnabled) {
+        void registerForPushNotifications().then(token => {
+          if (token && !cancelled) void uploadPushToken(token);
+        });
+      }
+    };
 
-    void loadUnreadCount(user.id);
-    void fetchAIUsage(user.id);
-
-    if (!isRunningInExpoGo() && pushEnabled) {
-      void registerForPushNotifications().then(token => {
-        if (token && user?.id) void uploadPushToken(token);
-      });
-    }
+    void bootstrapAuthenticatedData();
 
     AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
-
+      if (cancelled) return;
       setShowOnboarding(v !== 'true');
-
       setOnboardingChecked(true);
-
     });
+
+    return () => {
+      cancelled = true;
+    };
 
   }, [user?.id, pushEnabled, loadSettings, fetchDecks, fetchGroups, fetchDmThreads, loadUnreadCount]);
 

@@ -68,7 +68,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       timeoutMs
     );
 
-    if (response.status === 401 && allowRetry) {
+    if (response.status === 401) {
       let authCode: string | undefined;
       try {
         const clone = response.clone();
@@ -77,27 +77,40 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       } catch {
         authCode = undefined;
       }
-      if (authCode === 'SESSION_REVOKED' || authCode === 'ACCOUNT_BANNED' || authCode === 'ACCOUNT_DEACTIVATED') {
+
+      const definitiveAuthFailure =
+        authCode === 'SESSION_REVOKED' ||
+        authCode === 'ACCOUNT_BANNED' ||
+        authCode === 'ACCOUNT_DEACTIVATED';
+
+      if (definitiveAuthFailure) {
         config.onUnauthorized?.();
-        const errBody = await response.json().catch(() => ({})) as { message?: string };
+        const errBody = (await response.json().catch(() => ({}))) as { message?: string };
         throw new Error(errBody.message || 'Session ended. Please sign in again.');
       }
-      if (config.refreshAuth) {
+
+      // Retry once after refresh. Only hard-sign-out when refresh fails
+      // (no recoverable session). A post-refresh 401 can be bootstrap race —
+      // throw without signing out so login fan-out does not bounce users.
+      if (allowRetry && config.refreshAuth) {
         const refreshed = await config.refreshAuth();
         if (refreshed) {
           return requestRaw<T>(endpoint, options, timeoutMs, false);
         }
         config.onUnauthorized?.();
-      } else {
+        const errBody = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(errBody.message || 'Session ended. Please sign in again.');
+      }
+
+      if (allowRetry && !config.refreshAuth) {
         config.onUnauthorized?.();
+        const errBody = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(errBody.message || 'Session ended. Please sign in again.');
       }
     }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Request failed' }));
-      if (response.status === 401) {
-        config.onUnauthorized?.();
-      }
       if (response.status === 429) {
         const errBody = error as { message?: string; error?: string };
         const detail = errBody.message || errBody.error || 'Rate limit exceeded';
