@@ -274,7 +274,7 @@ function replaceOptimisticWithServer(
   return [...stripped, serverMessage];
 }
 
-function mapApiMessage(m: any, groupId: string): Message {
+function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message {
   let parsed: any = {};
   const rawContent = m.content || m.text || '';
   if (typeof rawContent === 'string' && rawContent.trim().startsWith('{')) {
@@ -285,9 +285,19 @@ function mapApiMessage(m: any, groupId: string): Message {
     }
   }
 
+  // Realtime postgres payloads expose question fields on question_data JSONB.
+  const questionData =
+    m.question_data && typeof m.question_data === 'object'
+      ? m.question_data
+      : m.questionData && typeof m.questionData === 'object'
+        ? m.questionData
+        : {};
+
   const questionStem =
     m.questionStem ||
     m.question_stem ||
+    questionData.questionStem ||
+    questionData.question_stem ||
     parsed.questionStem ||
     parsed.question_stem;
 
@@ -299,8 +309,12 @@ function mapApiMessage(m: any, groupId: string): Message {
     !!questionStem;
 
   const sender = m.sender || {};
+  const senderId = m.sender_id || m.senderId || sender.id || '';
+  const rosterMember = roster?.find(
+    (member) => member.userId === senderId || member.id === senderId
+  );
   const timestamp = m.timestamp || m.created_at || m.createdAt || new Date().toISOString();
-  const rawOptions = m.options || parsed.options || [];
+  const rawOptions = m.options || questionData.options || parsed.options || [];
   const optionItems = rawOptions
     .map((opt: any) => {
       if (typeof opt === 'string') {
@@ -320,15 +334,20 @@ function mapApiMessage(m: any, groupId: string): Message {
   const correctAnswerIds =
     m.correct_answer_ids ||
     m.correctAnswerIds ||
+    questionData.correctAnswerIds ||
+    questionData.correct_answer_ids ||
     parsed.correctAnswerIds ||
     parsed.correct_answer_ids;
 
   return {
     id: m.id,
     groupId: m.group_id || m.groupId || groupId,
-    senderId: m.sender_id || sender.id || '',
-    senderName: formatChatSenderLabel({ username: sender.username }),
-    senderAvatar: sender.avatar_url || sender.avatarUrl,
+    senderId,
+    senderName: formatChatSenderLabel({
+      username: sender.username || rosterMember?.username,
+    }),
+    senderAvatar:
+      sender.avatar_url || sender.avatarUrl || rosterMember?.avatarUrl,
     text: isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
     type: isQuestion ? 'question' : 'text',
     createdAt: typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString(),
@@ -341,22 +360,52 @@ function mapApiMessage(m: any, groupId: string): Message {
       m.flaggedUserIds ||
       [],
     questionStem,
-    questionStatus: m.question_status || m.questionStatus || parsed.questionStatus,
-    questionType: m.question_type || m.questionType || parsed.questionType,
+    questionStatus:
+      m.question_status ||
+      m.questionStatus ||
+      questionData.questionStatus ||
+      parsed.questionStatus,
+    questionType:
+      m.question_type ||
+      m.questionType ||
+      questionData.questionType ||
+      parsed.questionType,
     options: options.length > 0 ? options : undefined,
     optionItems: optionItems.length > 0 ? optionItems : undefined,
-    tags: m.tags || parsed.tags,
+    tags: m.tags || questionData.tags || parsed.tags,
     correctAnswerIds: Array.isArray(correctAnswerIds) ? correctAnswerIds : undefined,
-    acceptableAnswers: m.acceptable_answers || m.acceptableAnswers || parsed.acceptableAnswers,
-    matchingPromptItems: m.matching_prompt_items || m.matchingPromptItems || parsed.matchingPromptItems,
-    matchingAnswerItems: m.matching_answer_items || m.matchingAnswerItems || parsed.matchingAnswerItems,
-    correctMatches: m.correct_matches || m.correctMatches || parsed.correctMatches,
-    diagramLabels: m.diagram_labels || m.diagramLabels || parsed.diagramLabels,
+    acceptableAnswers:
+      m.acceptable_answers ||
+      m.acceptableAnswers ||
+      questionData.acceptableAnswers ||
+      parsed.acceptableAnswers,
+    matchingPromptItems:
+      m.matching_prompt_items ||
+      m.matchingPromptItems ||
+      questionData.matchingPromptItems ||
+      parsed.matchingPromptItems,
+    matchingAnswerItems:
+      m.matching_answer_items ||
+      m.matchingAnswerItems ||
+      questionData.matchingAnswerItems ||
+      parsed.matchingAnswerItems,
+    correctMatches:
+      m.correct_matches ||
+      m.correctMatches ||
+      questionData.correctMatches ||
+      parsed.correctMatches,
+    diagramLabels:
+      m.diagram_labels ||
+      m.diagramLabels ||
+      questionData.diagramLabels ||
+      parsed.diagramLabels,
     imageUrl: (() => {
-      const raw = m.image_url || m.imageUrl || parsed.imageUrl;
+      const raw =
+        m.image_url || m.imageUrl || questionData.imageUrl || parsed.imageUrl;
       return raw ? normalizeStorageUrl(raw) : undefined;
     })(),
-    explanation: m.explanation || parsed.explanation,
+    explanation:
+      m.explanation || questionData.explanation || parsed.explanation,
   };
 }
 
@@ -1506,7 +1555,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   appendGroupMessage: (groupId: string, rawMessage: unknown) => {
-    const message = mapApiMessage(rawMessage, groupId);
+    const roster = get().groups.find(g => g.id === groupId)?.members;
+    const message = mapApiMessage(rawMessage, groupId, roster);
     set(state => {
       const cached = state.messagesCache[groupId] || [];
       if (cached.some(m => m.id === message.id)) return state;
@@ -1520,7 +1570,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   mergeGroupMessage: (groupId: string, rawMessage: unknown) => {
-    const message = mapApiMessage(rawMessage, groupId);
+    const roster = get().groups.find(g => g.id === groupId)?.members;
+    const message = mapApiMessage(rawMessage, groupId, roster);
     set(state => {
       const cached = state.messagesCache[groupId] || [];
       const idx = cached.findIndex(m => m.id === message.id);

@@ -1091,6 +1091,18 @@ export function useAppEffects({
                         content?: string;
                         text?: string;
                     };
+                    // Realtime rows lack joined profiles — fill from group roster when possible.
+                    const rosterMember = useGroupStore
+                        .getState()
+                        .groups.find((g) => g.id === groupId)
+                        ?.members?.find((m) => m.id === raw.sender_id);
+                    if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member')) {
+                        mapped.sender = {
+                            ...mapped.sender,
+                            ...rosterMember,
+                            id: rosterMember.id || mapped.sender?.id || raw.sender_id || 'unknown',
+                        };
+                    }
                     updateMessages(prev => {
                         const existing = prev[groupId] || [];
                         if (existing.some(m => m.id === mapped.id)) {
@@ -1121,6 +1133,21 @@ export function useAppEffects({
                         }
                         return { ...prev, [groupId]: [...existing, mapped] };
                     });
+                    // Keep sidebar preview fresh without a full refresh.
+                    useGroupStore.getState().updateGroups((prev) =>
+                        prev.map((g) =>
+                            g.id === groupId
+                                ? {
+                                    ...g,
+                                    lastMessage: mapped.text || g.lastMessage,
+                                    lastMessageTime:
+                                        mapped.timestamp instanceof Date
+                                            ? mapped.timestamp.toISOString()
+                                            : g.lastMessageTime,
+                                  }
+                                : g
+                        )
+                    );
                 }
             )
             .on(
