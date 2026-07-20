@@ -820,7 +820,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   sendMessage: async (groupId: string, text: string, senderId: string, _senderName?: string) => {
-    if (sendingGroupIds.has(groupId)) return;
+    if (sendingGroupIds.has(groupId)) {
+      throw new Error('Another message is still sending. Please wait a moment and try again.');
+    }
     sendingGroupIds.add(groupId);
 
     const group = get().groups.find((g) => g.id === groupId);
@@ -932,6 +934,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         groups: previousGroups,
         messagesCache: { ...get().messagesCache, [groupId]: previousCache },
       });
+      throw error instanceof Error ? error : new Error(error?.message || 'Failed to send message');
     } finally {
       sendingGroupIds.delete(groupId);
     }

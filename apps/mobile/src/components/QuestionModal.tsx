@@ -74,7 +74,7 @@ interface QuestionModalProps {
   visible: boolean;
   onClose: () => void;
   groupId: string;
-  onSubmit: (question: Question) => void;
+  onSubmit: (question: Question) => void | Promise<void>;
 }
 
 const QUESTION_TYPES: { type: QuestionType; label: string; icon: string }[] = [
@@ -508,9 +508,15 @@ export default function QuestionModal({
       diagramImage: diagramImage || undefined,
     };
 
-    onSubmit(question);
-    handleClose();
-    Alert.alert('Success', 'Question submitted successfully!');
+    void (async () => {
+      try {
+        await onSubmit(question);
+        handleClose();
+        Alert.alert('Success', 'Question submitted successfully!');
+      } catch (error: any) {
+        Alert.alert('Error', error?.message || 'Failed to submit question.');
+      }
+    })();
   };
 
   const renderTypeSelection = () => (

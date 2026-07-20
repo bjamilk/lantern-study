@@ -310,6 +310,22 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             useToastStore.getState().showToast("For Fill-in-the-Blank questions, please use '___' (three underscores) to indicate where the blank should appear in the question stem.", 'error');
         } else if (state.questionType === QuestionType.DIAGRAM_LABELING) {
             useToastStore.getState().showToast("For Diagram Labeling questions, please ensure you have uploaded an image, added at least one label pin, and filled in all label texts.", 'error');
+        } else if (
+          state.questionType === QuestionType.MULTIPLE_CHOICE_SINGLE ||
+          state.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE
+        ) {
+            const missingCorrect = state.correctAnswerIdsSelected.length === 0;
+            const emptyOption = state.options.some(opt => !opt.text.trim());
+            useToastStore.getState().showToast(
+              missingCorrect
+                ? 'Select the correct answer option before submitting.'
+                : emptyOption
+                  ? 'Fill in every answer option, or remove unused ones.'
+                  : 'Complete the question stem, explanation, and answer options before submitting.',
+              'error'
+            );
+        } else if (!state.stem.trim() || !state.explanation.trim()) {
+            useToastStore.getState().showToast('Question stem and explanation are required.', 'error');
         }
         return;
     }
@@ -391,6 +407,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             type={isMultipleType ? "checkbox" : "radio"}
             id={`option-check-${option.id}`}
             name={isMultipleType ? `option-check-${option.id}` : "correctAnswerSingle"}
+            value={option.id}
             checked={state.correctAnswerIdsSelected.includes(option.id)}
             onChange={() => handleMcqCorrectAnswerChange(option.id, isMultipleType)}
             className={`h-4 w-4 ${isMultipleType ? 'rounded' : 'rounded-full'} text-lantern-primary border-lantern-border dark:border-lantern-border focus:ring-lantern-primary`}

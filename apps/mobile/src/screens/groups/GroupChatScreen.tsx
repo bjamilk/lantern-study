@@ -357,14 +357,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
   };
 
   const handleQuestionSubmit = async (question: any) => {
-    if (!user?.id) return;
-    try {
-      await submitQuestion(groupId, mapModalQuestionToPayload(question, user.id, user.user_metadata?.full_name || 'You'));
-      setShowQuestionModal(false);
-      await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
-    } catch {
-      Alert.alert('Error', 'Failed to submit question.');
-    }
+    if (!user?.id) throw new Error('You must be signed in to submit a question.');
+    await submitQuestion(groupId, mapModalQuestionToPayload(question, user.id, user.user_metadata?.full_name || 'You'));
+    setShowQuestionModal(false);
+    await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
   };
 
   const handleAddMembers = async (userIds: string[]) => {
