@@ -10,6 +10,10 @@ import { getWebNotificationPermission, showWebNotification } from '../utils/webN
 
 const CHECK_INTERVAL_MS = 60_000;
 
+/**
+ * Fires at most one daily OS reminder. showWebNotification already skips
+ * while the Lantern tab is visible so active study sessions stay quiet.
+ */
 export function useDailyStudyReminder(currentUser: User | null): void {
   const firedRef = useRef<string | null>(null);
 

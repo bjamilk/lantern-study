@@ -309,7 +309,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <p className="text-sm text-lantern-text-secondary mb-4">Control how you receive notifications.</p>
                     <div className="space-y-4 divide-y divide-lantern-border">
                         <ToggleSwitch enabled={notifications.pushEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { pushEnabled: val })} label="Push Notifications" description="Mobile push alerts (synced across devices)." />
-                        <ToggleSwitch enabled={notifications.dailyReminder} onChange={(val) => onUpdateSettingsCategory('notifications', { dailyReminder: val })} label="Daily Study Reminders" description="Get reminded to study each day." />
+                        <ToggleSwitch enabled={notifications.dailyReminder} onChange={(val) => onUpdateSettingsCategory('notifications', { dailyReminder: val })} label="Daily Study Reminders" description="One reminder at your chosen time — only if Lantern isn't already open." />
                         <div className="pt-4">
                             <label htmlFor="reminderTime" className="block text-sm font-medium text-lantern-text mb-1">Reminder time</label>
                             <input id="reminderTime" type="time" value={notifications.reminderTime}
@@ -321,7 +321,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={notifications.groupInvites !== false} onChange={(val) => onUpdateSettingsCategory('notifications', { groupInvites: val })} label="Group Invites" description="When someone invites you to a group." />
                         <ToggleSwitch enabled={notifications.marketplaceUpdates} onChange={(val) => onUpdateSettingsCategory('notifications', { marketplaceUpdates: val })} label="Marketplace Updates" description="Alerts about listings and messages." />
                         <ToggleSwitch enabled={notifications.badgeUnlocks} onChange={(val) => onUpdateSettingsCategory('notifications', { badgeUnlocks: val })} label="Badge Unlocks" description="Achievement notifications." />
-                        <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="SRS Due Card Reminders" description="When flashcards are due for review." />
+                        <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="SRS Due Card Reminders" description="Browser alerts when cards are due — only while Lantern is in the background, at most every few hours." />
                         <ToggleSwitch enabled={notifications.testResults} onChange={(val) => onUpdateSettingsCategory('notifications', { testResults: val })} label="Test Results" description="Notifications when tests are completed." />
                         <ToggleSwitch enabled={notifications.emailEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { emailEnabled: val })} label="Email Notifications" description="Receive important updates by email." />
                         <ToggleSwitch enabled={notifications.weeklyDigest} onChange={(val) => onUpdateSettingsCategory('notifications', { weeklyDigest: val })} label="Weekly Digest" description="Summary of your weekly study activity." />

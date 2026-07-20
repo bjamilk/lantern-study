@@ -49,8 +49,10 @@ import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { DirectMessage } from '../types';
 import {
   getWebNotificationPermission,
+  markSrsWebReminderSent,
   onWebNotificationClick,
   requestWebNotificationPermission,
+  shouldSendSrsWebReminder,
   showWebNotification,
 } from '../utils/webNotifications';
 import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
@@ -1304,28 +1306,33 @@ export function useAppEffects({
 
     // --- SRS Notifications ---
     // Use shared isCardDue once — do not add "new" + "date-due" (double-counts Again/new cards).
+    // OS toasts only when the tab is in the background and throttled — studying notes/flashcards
+    // must not keep popping "cards due" notifications.
     const checkForDueCardsAndNotify = useCallback(() => {
-        if (!currentUser || !flashcards.length) return;
+        if (!currentUser) return;
+        const cards = useFlashcardStore.getState().flashcards;
+        if (!cards.length) return;
 
-        const totalDue = getCardsDue(flashcards).length;
+        const totalDue = getCardsDue(cards).length;
         setDueCardsCount(totalDue);
 
         if (!getNotificationSettings(normalizeUserSettings(currentUser.settings)).srsReminders) return;
+        if (getWebNotificationPermission() !== 'granted') return;
+        if (!shouldSendSrsWebReminder(totalDue)) return;
 
-        if (totalDue > 0 && getWebNotificationPermission() === 'granted') {
-            void showWebNotification({
-                title: 'Flashcard Review Due',
-                body: `You have ${totalDue} flashcards ready for review.`,
-                icon: '/favicon.ico',
-                tag: 'srs-reminder',
-                data: { navigate: 'flashcards' },
-                onClick: () => {
-                    window.focus();
-                    setAppMode(AppMode.FLASHCARDS);
-                },
-            });
-        }
-    }, [currentUser, flashcards, setAppMode, setDueCardsCount]);
+        void showWebNotification({
+            title: 'Flashcard Review Due',
+            body: `You have ${totalDue} flashcards ready for review.`,
+            icon: '/favicon.ico',
+            tag: 'srs-reminder',
+            data: { navigate: 'flashcards' },
+            onClick: () => {
+                window.focus();
+                setAppMode(AppMode.FLASHCARDS);
+            },
+        });
+        markSrsWebReminderSent(totalDue);
+    }, [currentUser, setAppMode, setDueCardsCount]);
 
     useEffect(() => {
         return onWebNotificationClick((data) => {
@@ -1336,19 +1343,45 @@ export function useAppEffects({
         });
     }, [setAppMode]);
 
+    // Keep due-count badge in sync without notifying on every card review.
     useEffect(() => {
-        if (currentUser && flashcards.length > 0) {
-            if (getWebNotificationPermission() === 'default') {
-                void requestWebNotificationPermission();
-            }
+        if (!currentUser || !flashcards.length) return;
+        setDueCardsCount(getCardsDue(flashcards).length);
+    }, [currentUser, flashcards, setDueCardsCount]);
 
-            checkForDueCardsAndNotify();
+    useEffect(() => {
+        if (!currentUser) return;
 
-            if (lowDataMode) return; // Skip hourly polling in low-data mode
-            const interval = setInterval(checkForDueCardsAndNotify, 60 * 60 * 1000);
-            return () => clearInterval(interval);
+        // Ask once when permission is still undecided.
+        if (getWebNotificationPermission() === 'default') {
+            void requestWebNotificationPermission();
         }
-    }, [currentUser, flashcards, checkForDueCardsAndNotify, lowDataMode]);
+
+        const maybeNotify = () => {
+            checkForDueCardsAndNotify();
+        };
+
+        // Initial check (no-ops while tab visible).
+        maybeNotify();
+
+        const onVisibility = () => {
+            // When the user leaves the tab, consider a background reminder.
+            if (document.visibilityState === 'hidden') {
+                maybeNotify();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        if (lowDataMode) {
+            return () => document.removeEventListener('visibilitychange', onVisibility);
+        }
+
+        const interval = setInterval(maybeNotify, 60 * 60 * 1000);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+    }, [currentUser?.id, checkForDueCardsAndNotify, lowDataMode]);
 
     // Auto-sync queued flashcard reviews when back online
     useEffect(() => {
