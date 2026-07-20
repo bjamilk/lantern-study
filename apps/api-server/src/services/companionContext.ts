@@ -159,15 +159,21 @@ export async function fetchAuthorizedGroupSummaryMessages(
   const group = await supabaseService.getGroupById(groupId);
   const groupName = group?.name || 'Group';
 
+  // Use full profile so QUESTION stems in question_data are included (compact omits them).
   const rows = await supabaseService.getGroupMessages(groupId, {
     page: 1,
     limit: Math.min(limit, 50),
-    responseProfile: 'compact',
+    responseProfile: 'full',
   });
 
   const messages = (rows || [])
     .filter((row: any) => !row.is_archived && !row.isArchived)
-    .map((row: any) => extractMessageText(row as Record<string, unknown>))
+    .map((row: any) => {
+      const text = extractMessageText(row as Record<string, unknown>);
+      if (!text) return '';
+      const type = String(row.type || '').toUpperCase();
+      return type === 'QUESTION' ? `[Question] ${text}` : text;
+    })
     .filter((text: string) => text.length > 0)
     .slice(-limit);
 

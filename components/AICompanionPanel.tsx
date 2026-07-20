@@ -29,6 +29,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
     loadHistory, sendMessageStreaming, clearHistory, clearError,
     pendingMessage, setPendingMessage,
+    pendingAssistantMessage, setPendingAssistantMessage, injectAssistantMessage,
   } = useCompanionStore();
   const currentUser = useAuthStore(s => s.currentUser);
   const [input, setInput] = useState('');
@@ -62,6 +63,27 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, pendingMessage, historyLoaded, isLoadingHistory, isLoading, isStreaming]);
+
+  // Inject assistant-only content (e.g. group chat summary) after history loads
+  useEffect(() => {
+    if (
+      isOpen &&
+      pendingAssistantMessage &&
+      historyLoaded &&
+      !isLoadingHistory
+    ) {
+      const content = pendingAssistantMessage;
+      setPendingAssistantMessage(null);
+      injectAssistantMessage(content);
+    }
+  }, [
+    isOpen,
+    pendingAssistantMessage,
+    historyLoaded,
+    isLoadingHistory,
+    setPendingAssistantMessage,
+    injectAssistantMessage,
+  ]);
 
   // Scroll to bottom on new messages / streaming tokens
   useEffect(() => {

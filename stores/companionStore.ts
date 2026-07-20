@@ -21,6 +21,11 @@ interface CompanionState {
   pendingMessage: string | null;
   setPendingMessage: (msg: string | null) => void;
   openWithMessage: (msg: string) => void;
+  /** Show an assistant message after history loads (no extra AI round-trip). */
+  pendingAssistantMessage: string | null;
+  setPendingAssistantMessage: (msg: string | null) => void;
+  openWithAssistantMessage: (msg: string) => void;
+  injectAssistantMessage: (content: string) => void;
 
   // Conversation
   messages: CompanionMessage[];
@@ -47,6 +52,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isStreaming: false,
   error: null,
   pendingMessage: null,
+  pendingAssistantMessage: null,
 
   open: () => set({ isOpen: true }),
   close: () => set({ isOpen: false }),
@@ -54,6 +60,19 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   clearError: () => set({ error: null }),
   setPendingMessage: (msg) => set({ pendingMessage: msg }),
   openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
+  setPendingAssistantMessage: (msg) => set({ pendingAssistantMessage: msg }),
+  openWithAssistantMessage: (msg) => set({ isOpen: true, pendingAssistantMessage: msg }),
+  injectAssistantMessage: (content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const assistantMsg: CompanionMessage = {
+      id: `assistant-local-${Date.now()}`,
+      role: 'assistant',
+      content: trimmed,
+      created_at: new Date().toISOString(),
+    };
+    set((s) => ({ messages: [...s.messages, assistantMsg], error: null }));
+  },
 
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });

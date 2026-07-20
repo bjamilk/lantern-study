@@ -341,16 +341,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setSummarizing(true);
     try {
       const result = await summarizeGroupChat(groupId, displayName);
-      const summary = result?.summary || 'Summary unavailable.';
-      // Show summary in companion-friendly toast (long text truncated)
-      const { useToastStore } = await import('../../stores/toastStore');
-      useToastStore.getState().showToast(
-        summary.length > 180 ? `${summary.slice(0, 180)}…` : summary,
-        'info'
-      );
-    } catch {
-      const { useToastStore } = await import('../../stores/toastStore');
-      useToastStore.getState().showToast('Failed to summarize chat.', 'error');
+      const summary = result?.summary?.trim();
+      if (!summary) {
+        throw new Error('Summary was empty. Please try again.');
+      }
+      Alert.alert(`Summary · ${displayName}`, summary);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to summarize chat.';
+      Alert.alert('Summarize failed', message);
     } finally {
       setSummarizing(false);
     }

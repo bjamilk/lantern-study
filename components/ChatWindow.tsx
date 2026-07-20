@@ -6,6 +6,7 @@ import MessageItem from './MessageItem';
 import MessageInputBar from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
+import { useCompanionStore } from '../stores/companionStore';
 import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
@@ -176,11 +177,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setIsSummarizingChat(true);
     try {
       const { summary } = await summarizeGroupChat(chat.id, groupName);
-      const companion = useCompanionStore.getState();
-      companion.open();
-      await companion.sendMessage(`Here's a summary of recent activity in #${groupName}:\n\n${summary}\n\nIs there anything specific from this you'd like help with?`);
-    } catch {
-      useToastStore.getState().showToast('Failed to summarize group chat. Please try again.', 'error');
+      if (!summary?.trim()) {
+        throw new Error('Summary was empty. Please try again.');
+      }
+      // Inject as assistant message after history loads — do not re-send to the AI
+      // (avoids a race with loadHistory wiping the panel and a second failed AI call).
+      useCompanionStore.getState().openWithAssistantMessage(
+        `Here's a summary of recent activity in #${groupName}:\n\n${summary.trim()}\n\nIs there anything specific from this you'd like help with?`
+      );
+      useToastStore.getState().showToast('Group chat summary ready in Lantern.', 'success');
+    } catch (err: unknown) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Failed to summarize group chat. Please try again.';
+      useToastStore.getState().showToast(message, 'error');
     } finally {
       setIsSummarizingChat(false);
     }
