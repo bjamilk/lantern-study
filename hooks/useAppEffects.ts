@@ -513,7 +513,9 @@ export function useAppEffects({
         });
     }, [currentUser?.id, isAuthLoading, authTokenReady]);
 
-    // --- Theme initialization ---
+    // --- Theme / appearance DOM sync (not privacy/study — avoids re-render storms while Settings is open) ---
+    const appearanceSettings = currentUser?.settings?.appearance;
+    const accessibilitySettings = currentUser?.settings?.accessibility;
     useEffect(() => {
         if (currentUser?.settings) {
             applyUserSettingsToDom(normalizeUserSettings(currentUser.settings), {
@@ -531,7 +533,7 @@ export function useAppEffects({
             setTheme('light');
             document.documentElement.classList.remove('dark');
         }
-    }, [currentUser?.id, currentUser?.settings, setTheme, setLowDataMode]);
+    }, [currentUser?.id, appearanceSettings, accessibilitySettings, setTheme, setLowDataMode]);
 
     // --- Sync canonical settings from API (cross-device) ---
     useEffect(() => {

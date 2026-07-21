@@ -67,6 +67,19 @@ interface UIState {
   openModal: (modal: keyof UIState['modals']) => void;
   closeModal: (modal: keyof UIState['modals']) => void;
   closeAllModals: () => void;
+
+  /** Active Settings dialog tab — lives in the store so Suspense remounts don't bounce to Profile. */
+  settingsTab:
+    | 'profile'
+    | 'notifications'
+    | 'study'
+    | 'appearance'
+    | 'privacy'
+    | 'marketplace'
+    | 'dataSync'
+    | 'support'
+    | 'account';
+  setSettingsTab: (tab: UIState['settingsTab']) => void;
   
   // Test Config
   activeTestConfigMode: 'test' | 'study' | 'game';
@@ -221,13 +234,18 @@ export const useUIStore = create<UIState>()(
       
       // Modals
       modals: { ...initialModals },
-      openModal: (modal) => set((state) => ({ 
-        modals: { ...state.modals, [modal]: true } 
+      openModal: (modal) => set((state) => ({
+        modals: { ...state.modals, [modal]: true },
+        ...(modal === 'settings' ? { settingsTab: 'profile' as const } : {}),
       })),
-      closeModal: (modal) => set((state) => ({ 
-        modals: { ...state.modals, [modal]: false } 
+      closeModal: (modal) => set((state) => ({
+        modals: { ...state.modals, [modal]: false },
+        ...(modal === 'settings' ? { settingsTab: 'profile' as const } : {}),
       })),
-      closeAllModals: () => set({ modals: { ...initialModals } }),
+      closeAllModals: () => set({ modals: { ...initialModals }, settingsTab: 'profile' }),
+
+      settingsTab: 'profile',
+      setSettingsTab: (tab) => set({ settingsTab: tab }),
       
       // Test Config
       activeTestConfigMode: 'test',

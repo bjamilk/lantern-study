@@ -1377,17 +1377,6 @@ export const App: React.FC = () => {
             <NewDirectMessageModal isOpen={modals.newDm} onClose={() => closeModal('newDm')}
                 currentUser={currentUser}
                 onStartDm={(userId) => { handleInitiateDm(userId); closeModal('newDm'); }} />
-            <SettingsModal isOpen={modals.settings} onClose={() => closeModal('settings')}
-                currentUser={currentUser} userSettings={getUserSettings()}
-                onUpdateSettingsCategory={handleUpdateSettingsCategory}
-                onUpdateProfile={handleUpdateProfile}
-                onUpdateAvatar={handleUpdateCurrentUserAvatar}
-                onUpdatePassword={handleUpdatePassword} onLogout={handleLogoutAndRedirect}
-                onPauseAccount={handlePauseAccount}
-                onDeleteAccountImmediate={handleDeleteAccountImmediate}
-                onImportAccount={handleImportAccount}
-                onExportAccount={handleExportAccount}
-                onResetSettings={handleResetSettings} />
             <CreateDeckModal isOpen={modals.createDeck} onClose={() => closeModal('createDeck')}
                 onSubmit={handleCreateOrUpdateDeck} editingDeck={editingDeck} />
             <CreateFlashcardModal isOpen={modals.createFlashcard} onClose={() => closeModal('createFlashcard')}
@@ -1560,6 +1549,18 @@ export const App: React.FC = () => {
             />
         </AppShell>
         </Suspense>
+        {/* Outside Suspense so lazy screen loads don't remount Settings and reset the active tab */}
+        <SettingsModal isOpen={modals.settings} onClose={() => closeModal('settings')}
+            currentUser={currentUser} userSettings={getUserSettings()}
+            onUpdateSettingsCategory={handleUpdateSettingsCategory}
+            onUpdateProfile={handleUpdateProfile}
+            onUpdateAvatar={handleUpdateCurrentUserAvatar}
+            onUpdatePassword={handleUpdatePassword} onLogout={handleLogoutAndRedirect}
+            onPauseAccount={handlePauseAccount}
+            onDeleteAccountImmediate={handleDeleteAccountImmediate}
+            onImportAccount={handleImportAccount}
+            onExportAccount={handleExportAccount}
+            onResetSettings={handleResetSettings} />
         </ErrorBoundary>
     );
 };

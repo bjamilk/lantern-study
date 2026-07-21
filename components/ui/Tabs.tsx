@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useId, useMemo } from 'react';
+import React, { createContext, useContext, useId, useLayoutEffect, useMemo } from 'react';
 import { useRovingTabIndex } from '../../hooks/useRovingTabIndex';
 
 type TabsVariant = 'underline' | 'pills' | 'segmented';
@@ -141,7 +141,9 @@ export interface TabProps {
 
 export function Tab({ value, children, icon, badge, disabled, className = '', style, index = 0 }: TabProps) {
   const ctx = useTabsContext();
-  ctx.registerTabIndex(value, index);
+  useLayoutEffect(() => {
+    ctx.registerTabIndex(value, index);
+  }, [ctx, value, index]);
   const selected = ctx.value === value;
   const tabId = `${ctx.baseId}-tab-${value}`;
   const panelId = `${ctx.baseId}-panel-${value}`;

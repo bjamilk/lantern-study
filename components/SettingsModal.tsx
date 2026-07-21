@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
+import { useUIStore } from '../stores/uiStore';
 import { User } from '../types';
 import { 
     XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
@@ -103,7 +104,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onExportAccount, onResetSettings,
 }) => {
     const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
-    const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+    const activeTab = useUIStore((s) => s.settingsTab);
+    const setActiveTab = useUIStore((s) => s.setSettingsTab);
     const [deletionOpen, setDeletionOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [accountActionLoading, setAccountActionLoading] = useState(false);
@@ -145,7 +147,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return () => mq.removeEventListener('change', update);
     }, []);
 
-    // Reset to Profile only when the modal opens — never when currentUser/settings update.
+    // Reset form drafts only when the modal opens. Tab selection lives in uiStore so
+    // Suspense remounts / settings saves never bounce the user back to Profile.
     const wasOpenRef = useRef(false);
     const currentUserRef = useRef(currentUser);
     const userSettingsRef = useRef(userSettings);
@@ -157,7 +160,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         if (!justOpened) return;
 
         const user = currentUserRef.current;
-        setActiveTab('profile');
         setProfileData({ name: user.name, phone: user.phoneNumber || '' });
         setIsProfileDirty(false);
         setShowPasswordChange(false);
