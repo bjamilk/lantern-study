@@ -98,15 +98,22 @@ export const deleteNote = (noteId: string) =>
   notesRequest<void>(`/${noteId}`, { method: 'DELETE' });
 export const transcribeAudioForNote = (
   audioBase64: string,
-  options?: { mimeType?: string; noteId?: string; fileName?: string; signal?: AbortSignal }
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    currentBody?: string;
+  }
 ) =>
-  notesRequest<{ transcript: string }>('/transcribe-audio', {
+  notesRequest<{ transcript: string; note?: StudyNote }>('/transcribe-audio', {
     method: 'POST',
     body: JSON.stringify({
       audioBase64,
       mimeType: options?.mimeType,
       noteId: options?.noteId,
       fileName: options?.fileName,
+      currentBody: options?.currentBody,
     }),
     signal: options?.signal,
   });

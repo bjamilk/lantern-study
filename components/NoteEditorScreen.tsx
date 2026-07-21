@@ -45,6 +45,8 @@ interface NoteEditorScreenProps {
   onPostComment: (comment: string) => void;
   onShareWithGroup: (groupId: string) => void;
   onTranscriptReady: (transcript: string) => void;
+  /** Cancel pending autosave before/after voice transcription. */
+  onCancelPendingSave?: () => void;
 }
 
 const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
@@ -71,9 +73,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   onPostComment,
   onShareWithGroup,
   onTranscriptReady,
+  onCancelPendingSave,
 }) => {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
   const [commentText, setCommentText] = useState('');
   const [showCollabModal, setShowCollabModal] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -135,10 +140,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }).length;
 
   useEffect(() => {
+    // Only hydrate when switching notes. Re-syncing on every store title/body
+    // update races autosave and erases keystrokes typed after the save started.
     userEditedRef.current = false;
     setTitle(note.title);
     setBody(note.body);
-  }, [note.id, note.title, note.body]);
+  }, [note.id]);
 
   useEffect(() => {
     saveEnabledRef.current = true;
@@ -147,10 +154,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     };
   }, [note.id]);
 
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
   useEffect(() => {
     if (!note.id || !saveEnabledRef.current || !userEditedRef.current) return;
-    onSave({ title, body });
-  }, [note.id, title, body, onSave]);
+    onSaveRef.current({ title, body });
+  }, [note.id, title, body]);
 
   const handleTitleChange = (value: string) => {
     userEditedRef.current = true;
@@ -383,7 +393,20 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       discardRecordingRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
+      const mimeCandidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+      ];
+      const supportedMime =
+        typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function'
+          ? mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+          : '';
+      const recorder = supportedMime
+        ? new MediaRecorder(stream, { mimeType: supportedMime })
+        : new MediaRecorder(stream);
+      const recordingMime = recorder.mimeType || supportedMime || 'audio/webm';
       chunksRef.current = [];
       recorder.ondataavailable = e => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -396,21 +419,35 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           return;
         }
 
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: recordingMime });
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64 = (reader.result as string).split(',')[1];
           const abortController = new AbortController();
           transcribeAbortRef.current = abortController;
           setTranscribing(true);
+          onCancelPendingSave?.();
           try {
-            await notesApi.transcribeAudioForNote(base64, {
-              mimeType: 'audio/webm',
+            const mimeType = recordingMime.split(';')[0] || 'audio/webm';
+            const ext = mimeType.includes('mp4')
+              ? 'm4a'
+              : mimeType.includes('ogg')
+                ? 'ogg'
+                : 'webm';
+            const result = await notesApi.transcribeAudioForNote(base64, {
+              mimeType,
               noteId: note.id,
-              fileName: `lecture-${Date.now()}.webm`,
+              fileName: `lecture-${Date.now()}.${ext}`,
               signal: abortController.signal,
+              currentBody: bodyRef.current,
             });
-            onTranscriptReady('');
+            if (result.transcript) {
+              // Apply locally so we do not rely on store re-hydration (which no longer
+              // overwrites the draft on every save).
+              setBody((prev) => [prev, result.transcript].filter(Boolean).join('\n\n'));
+              userEditedRef.current = false;
+            }
+            onTranscriptReady(result.transcript || '');
           } catch (err: unknown) {
             if (err instanceof DOMException && err.name === 'AbortError') return;
             const message = err instanceof Error ? err.message : 'Transcription failed';

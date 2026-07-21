@@ -1031,6 +1031,7 @@ export const App: React.FC = () => {
                         isSaving={notesSaving}
                         onBack={() => navigateTo(AppMode.NOTES)}
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
+                        onCancelPendingSave={noteHandlers.cancelAutoSave}
                         onDelete={async () => {
                             if (!confirm('Delete this note?')) return;
                             const noteId = selectedNote.id;
@@ -1093,7 +1094,10 @@ export const App: React.FC = () => {
                         }}
                         onPostComment={(text) => { void noteHandlers.handlePostComment(selectedNote.id, text); }}
                         onShareWithGroup={(groupId) => { void noteHandlers.handleShareWithGroup(selectedNote.id, groupId); }}
-                        onTranscriptReady={() => { void useNotesStore.getState().loadNote(selectedNote.id); }}
+                        onTranscriptReady={() => {
+                            noteHandlers.cancelAutoSave();
+                            void useNotesStore.getState().loadNote(selectedNote.id);
+                        }}
                     />
                 );
             case AppMode.FLASHCARDS:

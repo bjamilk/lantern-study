@@ -530,14 +530,21 @@ export async function updateNoteQuiz(
 
 export async function transcribeAudioForNote(
   audioBase64: string,
-  options?: { mimeType?: string; noteId?: string; fileName?: string; signal?: AbortSignal }
-): Promise<{ transcript: string }> {
-  return notesLongRequest<{ transcript: string }>('/transcribe-audio', {
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    currentBody?: string;
+  }
+): Promise<{ transcript: string; note?: StudyNote }> {
+  return notesLongRequest<{ transcript: string; note?: StudyNote }>('/transcribe-audio', {
     body: {
       audioBase64,
       mimeType: options?.mimeType,
       noteId: options?.noteId,
       fileName: options?.fileName,
+      currentBody: options?.currentBody,
     },
     processingLabel: 'Transcribing audio…',
     timeoutMs: 120_000,

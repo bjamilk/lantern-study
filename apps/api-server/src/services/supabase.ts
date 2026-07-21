@@ -6428,7 +6428,35 @@ export class SupabaseService {
     return this.mapNote(data);
   }
 
+  async canEditNote(userId: string, noteId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('notes')
+      .select('user_id')
+      .eq('id', noteId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return false;
+    if (data.user_id === userId) return true;
+
+    const { data: collab } = await this.supabase
+      .from('note_collaborators')
+      .select('role')
+      .eq('note_id', noteId)
+      .eq('user_id', userId)
+      .in('role', ['editor', 'owner'])
+      .maybeSingle();
+    return Boolean(collab);
+  }
+
   async updateNote(userId: string, noteId: string, updates: Record<string, unknown>) {
+    const allowed = await this.canEditNote(userId, noteId);
+    if (!allowed) {
+      const err = new Error('Note not found or access denied') as Error & { code?: string; status?: number };
+      err.code = 'PGRST116';
+      err.status = 403;
+      throw err;
+    }
+
     const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (updates.title !== undefined) dbUpdates.title = updates.title;
     if (updates.body !== undefined) dbUpdates.body = updates.body;
@@ -6439,11 +6467,11 @@ export class SupabaseService {
     if (updates.youtubeUrl !== undefined) dbUpdates.youtube_url = updates.youtubeUrl;
     if (updates.youtubeVideoId !== undefined) dbUpdates.youtube_video_id = updates.youtubeVideoId;
 
+    // Update by note id after ACL check — do not require caller to be the owner row.
     const { data, error } = await this.supabase
       .from('notes')
       .update(dbUpdates)
       .eq('id', noteId)
-      .eq('user_id', userId)
       .select()
       .single();
     if (error) throw error;

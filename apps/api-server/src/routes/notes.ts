@@ -599,11 +599,25 @@ router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRate
 router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { audioBase64, mimeType, noteId, fileName } = req.body;
+  const { audioBase64, mimeType, noteId, fileName, currentBody } = req.body;
   if (!audioBase64) {
     res.status(400).json({ error: 'audioBase64 is required.' });
     return;
   }
+
+  // Authorize edit before calling Whisper so collaborators without write access
+  // (and failed ACL checks) do not burn AI quota.
+  if (noteId) {
+    const canEdit = await supabaseService.canEditNote(userId, noteId);
+    if (!canEdit) {
+      res.status(403).json({
+        success: false,
+        error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+      });
+      return;
+    }
+  }
+
   const result = await runNoteAiSync(() =>
     transcribeAudioBase64(audioBase64, mimeType || 'audio/webm')
   );
@@ -618,14 +632,23 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
 
   if (noteId) {
     const note = await supabaseService.getNote(noteId, userId);
-    const mergedBody = [note.body, result.transcript].filter(Boolean).join('\n\n');
-    await supabaseService.updateNote(userId, noteId, { body: mergedBody });
+    const baseBody =
+      typeof currentBody === 'string' ? currentBody : (note.body || '');
+    // Avoid duplicating if the client already appended the same transcript.
+    const alreadyHasTranscript =
+      Boolean(result.transcript) && baseBody.includes(result.transcript);
+    const mergedBody = alreadyHasTranscript
+      ? baseBody
+      : [baseBody, result.transcript].filter(Boolean).join('\n\n');
+    const updatedNote = await supabaseService.updateNote(userId, noteId, { body: mergedBody });
     await supabaseService.addNoteAttachment(noteId, {
       type: 'audio',
       fileName: fileName || 'lecture-recording.webm',
       extractedText: result.transcript,
-      metadata: { provider: result.provider },
+      metadata: { provider: result.provider, mimeType: mimeType || null },
     });
+    res.json({ success: true, data: { ...result, note: updatedNote } });
+    return;
   }
 
   res.json({ success: true, data: result });

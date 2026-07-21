@@ -238,28 +238,25 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
   useEffect(() => {
-
     loadNote(noteId);
-
   }, [noteId, loadNote]);
 
-
+  const lastHydratedNoteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    lastHydratedNoteIdRef.current = null;
+  }, [noteId]);
 
-    if (selectedNote?.id === noteId) {
-
-      setTitle(selectedNote.title);
-
-      setBody(selectedNote.body);
-
-      setSummary(selectedNote.summary || '');
-
-    }
-
+  useEffect(() => {
+    // Hydrate once per note open. Re-applying selectedNote on every store update
+    // (autosave, attachments, transcript reload) erases in-progress typing.
+    if (!selectedNote || selectedNote.id !== noteId) return;
+    if (lastHydratedNoteIdRef.current === noteId) return;
+    lastHydratedNoteIdRef.current = noteId;
+    setTitle(selectedNote.title);
+    setBody(selectedNote.body);
+    setSummary(selectedNote.summary || '');
   }, [selectedNote, noteId]);
-
-
 
   useEffect(() => {
     if (!isRecording) {
@@ -289,43 +286,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
 
-
-
   const scheduleSave = useCallback(
-
     (updates: { title?: string; body?: string; summary?: string }) => {
-
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-
       saveTimerRef.current = setTimeout(() => {
-
         saveNote(noteId, updates).catch(() => {});
-
       }, 800);
-
     },
-
     [noteId, saveNote]
-
   );
 
-
+  const cancelPendingSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-
     if (!selectedNote || selectedNote.id !== noteId) return;
-
     if (title === selectedNote.title && body === selectedNote.body) return;
-
     scheduleSave({ title, body });
-
     return () => {
-
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-
     };
-
-  }, [title, body, noteId, selectedNote, scheduleSave]);
+  }, [title, body, noteId, selectedNote?.id, selectedNote?.title, selectedNote?.body, scheduleSave]);
 
 
 
@@ -383,6 +368,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     setTranscribing(true);
     const abortController = new AbortController();
     transcribeAbortRef.current = abortController;
+    cancelPendingSave();
 
     try {
       await recording.stopAndUnloadAsync();
@@ -392,13 +378,18 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
 
-      await transcribeAudioForNote(base64, {
+      const result = await transcribeAudioForNote(base64, {
         mimeType: 'audio/m4a',
         noteId,
         fileName: `lecture-${Date.now()}.m4a`,
         signal: abortController.signal,
+        currentBody: body,
       });
 
+      if (result.transcript) {
+        setBody((prev) => [prev, result.transcript].filter(Boolean).join('\n\n'));
+      }
+      // Refresh attachments/metadata without re-hydrating the draft (see lastHydratedNoteIdRef).
       await loadNote(noteId);
     } catch (e: unknown) {
       if (e instanceof Error && e.name === 'AbortError') return;
