@@ -198,15 +198,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
-
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -221,10 +212,19 @@ const Sidebar: React.FC<SidebarProps> = ({
           quality: 0.7,
           outputType: 'base64',
         }) as string;
-        onUpdateCurrentUserAvatar(base64);
+        const base64Data = base64.includes(',') ? base64.split(',')[1]! : base64;
+        const { uploadProfileAvatar } = await import('../services/supabase');
+        const uploaded = await uploadProfileAvatar(
+          currentUser.id,
+          file.name || 'avatar.jpg',
+          base64Data,
+          file.type || 'image/jpeg'
+        );
+        // Canonical storage URL persists; Avatar component re-signs for display.
+        onUpdateCurrentUserAvatar(uploaded.avatarUrl);
       } catch (error) {
-        console.error("Error converting file to base64:", error);
-        useToastStore.getState().showToast("Error processing image. Please try another one.", 'error');
+        console.error("Error uploading avatar:", error);
+        useToastStore.getState().showToast("Error uploading avatar. Please try another one.", 'error');
       } finally {
         if (event.target) {
             event.target.value = "";

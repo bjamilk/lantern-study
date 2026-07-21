@@ -15,12 +15,12 @@ import {
   Share,
   FlatList,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
+import { ResolvedAvatar } from './ResolvedAvatar';
 
 interface SearchResult {
   id: string;
@@ -147,8 +147,7 @@ export default function AddMembersModal({
 
   const getAvatarUrl = (user: SearchResult) => {
     if (user.avatarUrl) return user.avatarUrl;
-    const name = user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff&size=80`;
+    return null;
   };
 
   const renderInitialView = () => (

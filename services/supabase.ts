@@ -1835,7 +1835,7 @@ export const fetchUserProfile = async (userId: string) => {
 
 export const updateUserProfile = async (userId: string, updates: {
   name?: string;
-  avatar_url?: string;
+  avatar_url?: string | null;
   phone?: string;
   points?: number;
   stats?: any;

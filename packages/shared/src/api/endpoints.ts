@@ -351,7 +351,7 @@ export function createApiEndpoints(client: ApiClient) {
       userId: string,
       updates: Partial<{
         name: string;
-        avatar_url?: string;
+        avatar_url?: string | null;
         phone?: string;
         points: number;
         stats?: unknown;
@@ -370,6 +370,25 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/users/${userId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
+      }),
+
+    uploadProfileAvatar: (
+      userId: string,
+      payload: { fileName: string; base64Data: string; contentType: string }
+    ) =>
+      apiRequest<{
+        url: string;
+        path: string;
+        avatarUrl: string;
+        user?: {
+          id: string;
+          name: string;
+          avatarUrl?: string;
+          avatar_url?: string;
+        };
+      }>(`/users/${userId}/avatar`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }),
 
     deleteUserAccount: (userId: string) =>

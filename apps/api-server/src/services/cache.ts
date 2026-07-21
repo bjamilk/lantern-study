@@ -266,6 +266,8 @@ export class CacheService {
 
   // Invalidate cache by pattern
   async invalidateUserCache(userId: string): Promise<void> {
+    // Exact key used by getUserById / GET /users/:id, plus any namespaced keys.
+    await this.delete(`user:${userId}`);
     await this.deletePattern(`user:${userId}:*`);
   }
 

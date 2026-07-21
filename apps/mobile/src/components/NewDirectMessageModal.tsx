@@ -12,12 +12,12 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-  Image,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeScope, useTheme } from '../theme';
 import * as api from '../services/api';
+import { ResolvedAvatar } from './ResolvedAvatar';
 
 interface Contact {
   id: string;

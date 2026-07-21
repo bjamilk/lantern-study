@@ -51,6 +51,32 @@ function resolveNestedProfile(profiles: unknown): ProfileSenderRow | null {
   return (profiles as ProfileSenderRow) ?? null;
 }
 
+/** Map a profiles table row (snake_case) to the API User shape (with snake_case aliases). */
+function mapProfileRowToUser(row: Record<string, unknown> | null | undefined): User | null {
+  if (!row || typeof row !== 'object') return null;
+  const avatarUrl = (row.avatar_url as string | undefined) || undefined;
+  const mapped = {
+    id: String(row.id),
+    name: String(row.name || ''),
+    username: (row.username as string | undefined) || undefined,
+    firstName: (row.first_name as string | undefined) || undefined,
+    lastName: (row.last_name as string | undefined) || undefined,
+    email: (row.email as string | undefined) || undefined,
+    phoneNumber: (row.phone as string | undefined) || undefined,
+    avatarUrl,
+    points: typeof row.points === 'number' ? row.points : 0,
+    badges: Array.isArray(row.badges) ? row.badges : [],
+    stats: row.stats ?? {},
+    settings: row.settings ?? {},
+    // Aliases for clients that still read snake_case from GET /users/:id
+    avatar_url: avatarUrl,
+    phone: (row.phone as string | undefined) || undefined,
+    first_name: (row.first_name as string | undefined) || undefined,
+    last_name: (row.last_name as string | undefined) || undefined,
+  };
+  return mapped as User;
+}
+
 function buildProfileUpsertRow(profile: Partial<User> & {
   first_name?: string;
   last_name?: string;
@@ -486,7 +512,7 @@ export class SupabaseService {
         throw error;
       }
 
-      return data;
+      return mapProfileRowToUser(data as Record<string, unknown>);
     }, { ttl: 600 }); // Cache for 10 minutes
   }
 
@@ -512,7 +538,7 @@ export class SupabaseService {
       throw error;
     }
 
-    return data;
+    return mapProfileRowToUser(data as Record<string, unknown>);
   }
 
   /** Resolve a UUID, @username, email, or display name to a profile id. */
@@ -605,10 +631,10 @@ export class SupabaseService {
       throw error;
     }
 
-    // Invalidate cache
+    // Invalidate cache (exact user key + pattern)
     await cacheService.invalidateUserCache(userId);
 
-    return data;
+    return mapProfileRowToUser(data as Record<string, unknown>);
   }
 
   async deleteUser(userId: string): Promise<boolean> {
@@ -2186,6 +2212,7 @@ export class SupabaseService {
     userId: string;
   }): Promise<{ url: string; path: string; avatarUrl: string }> {
     const bucket = 'profile-avatars';
+    const safeUserId = params.userId.replace(/[^a-zA-Z0-9_-]/g, '');
     const ext = params.contentType === 'image/png'
       ? 'png'
       : params.contentType === 'image/webp'
@@ -2193,7 +2220,9 @@ export class SupabaseService {
         : params.contentType === 'image/gif'
           ? 'gif'
           : 'jpg';
-    const filePath = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/avatar.${ext}`;
+    // Versioned path so clients and CDNs do not keep serving a stale avatar after replace.
+    const version = Date.now();
+    const filePath = `${safeUserId}/avatar-${version}.${ext}`;
     const buffer = Buffer.from(params.base64Data, 'base64');
     assertImageMagicBytes(buffer, params.contentType);
 
@@ -2201,13 +2230,27 @@ export class SupabaseService {
       .from(bucket)
       .upload(filePath, buffer, {
         contentType: params.contentType,
-        cacheControl: '3600',
+        cacheControl: '60',
         upsert: true,
       });
 
     if (error) {
       logger.error('Error uploading profile avatar:', { error, filePath });
       throw new Error(error.message);
+    }
+
+    // Best-effort cleanup of older avatar objects for this user.
+    try {
+      const { data: existing } = await this.supabase.storage.from(bucket).list(safeUserId, { limit: 50 });
+      const stale = (existing || [])
+        .map((obj) => obj.name)
+        .filter((name) => name.startsWith('avatar') && name !== `avatar-${version}.${ext}`)
+        .map((name) => `${safeUserId}/${name}`);
+      if (stale.length > 0) {
+        await this.supabase.storage.from(bucket).remove(stale);
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to clean up old profile avatars', { cleanupError, userId: safeUserId });
     }
 
     const signedUrl = await this.createSignedStorageUrl(bucket, filePath);

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,13 +15,23 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../../stores/authStore';
-import { updateUserProfile, fetchUserProfile } from '../../services/api';
+import { updateUserProfile, fetchUserProfile, uploadProfileAvatar } from '../../services/api';
 import { supabase } from '../../services/supabase';
 import { Button, Card, ScreenHeader } from '../../components/ui';
+import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 
 type NavigationProp = {
   goBack: () => void;
 };
+
+function guessContentType(uri: string, mimeType?: string | null): string {
+  if (mimeType && mimeType.startsWith('image/')) return mimeType;
+  const lower = uri.toLowerCase();
+  if (lower.includes('.png')) return 'image/png';
+  if (lower.includes('.webp')) return 'image/webp';
+  if (lower.includes('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
 
 export default function EditProfileScreen({ navigation }: { navigation: NavigationProp }) {
   const user = useAuthStore(s => s.user);
@@ -30,6 +39,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
   const [name, setName] = useState(user?.user_metadata?.name || '');
   const [phone, setPhone] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -47,7 +57,12 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
         const profile = await fetchUserProfile(user.id);
         setName(profile.name || user.user_metadata?.name || '');
         setPhone(profile.phone || '');
-        setAvatarUrl(profile.avatar_url || null);
+        const stored =
+          (profile as { avatar_url?: string; avatarUrl?: string }).avatar_url ||
+          (profile as { avatarUrl?: string }).avatarUrl ||
+          null;
+        setAvatarUrl(stored);
+        setPreviewUrl(null);
       } catch {
         setName(user.user_metadata?.name || '');
       } finally {
@@ -75,22 +90,40 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
     setUploadingAvatar(true);
     try {
       const asset = result.assets[0];
-      let dataUrl = asset.base64
-        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-        : null;
+      const contentType = guessContentType(asset.uri, asset.mimeType);
+      let base64Data = asset.base64 || null;
 
-      if (!dataUrl && asset.uri) {
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
-        dataUrl = `data:${asset.mimeType || 'image/jpeg'};base64,${base64}`;
+      if (!base64Data && asset.uri) {
+        base64Data = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
       }
+      if (!base64Data) throw new Error('Could not read image');
 
-      if (!dataUrl) throw new Error('Could not read image');
+      const uploaded = await uploadProfileAvatar(user.id, {
+        fileName: asset.fileName || `avatar.${contentType === 'image/png' ? 'png' : 'jpg'}`,
+        base64Data,
+        contentType,
+      });
 
-      await updateUserProfile(user.id, { avatar_url: dataUrl });
-      setAvatarUrl(dataUrl);
-      await supabase.auth.updateUser({ data: { avatar_url: dataUrl } });
+      setAvatarUrl(uploaded.avatarUrl);
+      setPreviewUrl(uploaded.url);
+      await supabase.auth.updateUser({ data: { avatar_url: uploaded.avatarUrl } });
     } catch (e: unknown) {
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not update avatar');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }, [user?.id]);
+
+  const handleRemoveAvatar = useCallback(async () => {
+    if (!user?.id) return;
+    setUploadingAvatar(true);
+    try {
+      await updateUserProfile(user.id, { avatar_url: null });
+      setAvatarUrl(null);
+      setPreviewUrl(null);
+      await supabase.auth.updateUser({ data: { avatar_url: null } });
+    } catch (e: unknown) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove avatar');
     } finally {
       setUploadingAvatar(false);
     }
@@ -154,8 +187,6 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
     );
   }
 
-  const initials = (name || user?.email || 'U').charAt(0).toUpperCase();
-
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader
@@ -171,13 +202,11 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
         <ScrollView className="flex-1 px-4" contentContainerClassName="pb-10" keyboardShouldPersistTaps="handled">
           <View className="items-center py-6">
             <Pressable onPress={() => void handlePickAvatar()} className="relative">
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} className="w-24 h-24 rounded-full" />
-              ) : (
-                <View className="w-24 h-24 rounded-full bg-lantern-primary items-center justify-center">
-                  <Text className="text-3xl font-bold text-white">{initials}</Text>
-                </View>
-              )}
+              <ResolvedAvatar
+                name={name || user?.email || 'U'}
+                uri={previewUrl || avatarUrl}
+                size={96}
+              />
               <View className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-lantern-surface dark:bg-lantern-surface-secondary border border-lantern-border items-center justify-center">
                 {uploadingAvatar ? (
                   <ActivityIndicator size="small" color="#6366f1" />
@@ -187,6 +216,11 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
               </View>
             </Pressable>
             <Text className="text-xs text-lantern-text-secondary mt-2">Tap to change photo</Text>
+            {avatarUrl || previewUrl ? (
+              <Pressable onPress={() => void handleRemoveAvatar()} className="mt-2">
+                <Text className="text-xs text-lantern-error">Remove photo</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           <Card className="mb-4">

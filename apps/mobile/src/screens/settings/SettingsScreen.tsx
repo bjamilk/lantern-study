@@ -34,7 +34,7 @@ import {
 } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import { supabase } from '../../services/supabase';
-import { exportUserData, fetchMarketplaceCampuses } from '../../services/api';
+import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
@@ -45,6 +45,7 @@ import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
+import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 
 const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
@@ -183,6 +184,7 @@ export default function SettingsScreen() {
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string; city: string; state?: string; slug?: string }>>([]);
   const [campusesLoading, setCampusesLoading] = useState(false);
   const [campusSearch, setCampusSearch] = useState('');
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   
   // Temp values for modals
   const [tempDailyCardGoal, setTempDailyCardGoal] = useState(settings.study.dailyCardGoal);
@@ -194,6 +196,29 @@ export default function SettingsScreen() {
       loadSettings(user.id);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void fetchUserProfile(user.id)
+      .then((profile) => {
+        if (cancelled) return;
+        const url =
+          (profile as { avatar_url?: string; avatarUrl?: string }).avatar_url ||
+          (profile as { avatarUrl?: string }).avatarUrl ||
+          (user.user_metadata?.avatar_url as string | undefined) ||
+          null;
+        setProfileAvatarUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProfileAvatarUrl((user.user_metadata?.avatar_url as string | undefined) || null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.user_metadata?.avatar_url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -382,11 +407,11 @@ export default function SettingsScreen() {
 
         {/* Profile Section */}
         <View style={[styles.profileSection, { backgroundColor: colors.card }]}>
-          <View style={[styles.profileAvatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.profileInitials}>
-              {user?.user_metadata?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
-            </Text>
-          </View>
+          <ResolvedAvatar
+            name={user?.user_metadata?.name || user?.email || 'U'}
+            uri={profileAvatarUrl}
+            size={56}
+          />
           <View style={styles.profileInfo}>
             <Text style={[styles.profileName, { color: colors.text }]}>{user?.user_metadata?.name || 'User'}</Text>
             <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email || 'user@example.com'}</Text>

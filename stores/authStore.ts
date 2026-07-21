@@ -359,7 +359,7 @@ export const useAuthStore = create<AuthState>()(
           // Build API-compatible update payload
           const apiUpdates: any = {};
           if (updates.name) apiUpdates.name = updates.name;
-          if (updates.avatarUrl) apiUpdates.avatar_url = updates.avatarUrl;
+          if (updates.avatarUrl !== undefined) apiUpdates.avatar_url = updates.avatarUrl || null;
           if (updates.points !== undefined) apiUpdates.points = updates.points;
           if (updates.badges) apiUpdates.badges = updates.badges;
           if (updates.stats) apiUpdates.stats = updates.stats;

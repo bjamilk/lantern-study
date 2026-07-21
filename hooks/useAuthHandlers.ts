@@ -27,6 +27,7 @@ import {
     mergeSettingsCategory,
 } from '@lantern/shared/settings';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
+import { useToastStore } from '../stores/toastStore';
 
 export type BootstrapDomain =
     | 'groups'
@@ -83,7 +84,7 @@ export function useAuthHandlers() {
 
     const persistProfileUpdate = useCallback(async (updates: {
         name?: string;
-        avatar_url?: string;
+        avatar_url?: string | null;
         phone?: string;
         settings?: UserSettings;
         test_presets?: any[];
@@ -185,9 +186,21 @@ export function useAuthHandlers() {
 
     const handleUpdateCurrentUserAvatar = useCallback((avatarUrl: string) => {
         if (!currentUser) return;
+        // Local UI update immediately. Persist only when clearing or setting a
+        // non-data URL (POST /avatar already writes the DB for uploads).
         setCurrentUser({ ...currentUser, avatarUrl });
-        persistProfileUpdate({ avatar_url: avatarUrl }).catch(error => console.error('Failed to update user avatar:', error));
-    }, [currentUser, setCurrentUser, persistProfileUpdate]);
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => (u.id === currentUser.id ? { ...u, avatarUrl } : u))
+        );
+        if (avatarUrl.startsWith('data:')) {
+          console.error('Blocked local-only base64 avatar persist; use POST /users/:id/avatar');
+          useToastStore.getState().showToast('Avatar upload failed. Please try again from Settings.', 'error');
+          return;
+        }
+        persistProfileUpdate({ avatar_url: avatarUrl || null }).catch((error) =>
+          console.error('Failed to update user avatar:', error)
+        );
+    }, [currentUser, setCurrentUser, setUsers, persistProfileUpdate]);
 
     const handleUpdatePassword = useCallback((current: string, newPass: string): boolean => {
         if (!currentUser) return false;

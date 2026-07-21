@@ -56,13 +56,15 @@ async function applySettingsSideEffects(
   }
 }
 
-const toPublicUser = (user: User) => ({
+/** Normalize DB snake_case or API camelCase profile rows for clients. */
+const toPublicUser = (user: User & { avatar_url?: string; first_name?: string; last_name?: string }) => ({
   id: user.id,
   name: user.name,
   username: user.username,
-  firstName: user.firstName,
-  lastName: user.lastName,
-  avatarUrl: user.avatarUrl,
+  firstName: user.firstName ?? user.first_name,
+  lastName: user.lastName ?? user.last_name,
+  avatarUrl: user.avatarUrl ?? user.avatar_url ?? null,
+  avatar_url: user.avatarUrl ?? user.avatar_url ?? null,
   points: user.points,
   badges: user.badges,
 });

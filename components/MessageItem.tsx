@@ -111,8 +111,6 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
     );
   };
 
-  const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E";
-
   return (
     <div className={`flex ${alignmentClass} items-end gap-2 group ${isGroupedWithPrevious ? 'mt-0.5' : 'mt-2'}`}>
       {/* Left avatar — spacer when grouped with previous message from same sender */}
@@ -309,12 +307,17 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
       {/* Right avatar */}
       {isCurrentUserMessage && (
-        <img
-          src={resolveAvatarSrc(message.sender.avatarUrl, lowDataMode)}
-          alt={formatSenderLabel(message.sender, group?.members)}
-          className="w-7 h-7 rounded-full self-end object-cover flex-shrink-0 ring-1 ring-white dark:ring-lantern-border"
-          onError={(e) => { e.currentTarget.src = fallbackAvatar; }}
-        />
+        isGroupedWithPrevious ? (
+          <div className="w-7 shrink-0" aria-hidden />
+        ) : (
+          <Avatar
+            name={formatSenderLabel(message.sender, group?.members)}
+            src={resolveAvatarSrc(message.sender?.avatarUrl, lowDataMode)}
+            size="sm"
+            localOnly={lowDataMode}
+            className="self-end ring-1 ring-white dark:ring-lantern-border"
+          />
+        )
       )}
     </div>
   );
