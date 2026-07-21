@@ -42,6 +42,8 @@ export interface Flashcard {
   occlusionData?: OcclusionData;
   srsData?: SrsData;
   tags?: string[];
+  /** Optimistic concurrency token from API (CAS). */
+  version?: number;
   createdAt: string;
 }
 
@@ -137,6 +139,7 @@ export interface User {
   badges: Badge[];
   stats: UserStats;
   settings?: UserSettings;
+  settingsVersion?: number;
   testPresets?: TestPreset[];
   decks?: Deck[];
   flashcards?: Flashcard[];
@@ -296,6 +299,8 @@ export interface StudyNote {
   youtubeVideoId?: string;
   isShared?: boolean;
   shareToken?: string;
+  /** Optimistic concurrency token from API (CAS). */
+  version?: number;
   createdAt: string;
   updatedAt: string;
 }

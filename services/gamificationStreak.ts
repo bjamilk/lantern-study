@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '@lantern/shared';
+import { createIdempotencyKey } from '@lantern/shared/api';
 import type { ActivityType, StudyActivityDay, UserStats } from '@lantern/shared';
 import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
 import { getAuthHeaders } from './supabase';
@@ -45,10 +46,18 @@ export const fetchLoginStreak = () =>
   gamificationRequest<any>('/streak');
 
 export const useStreakFreeze = () =>
-  gamificationRequest<any>('/streak/freeze', { method: 'POST', body: '{}' });
+  gamificationRequest<any>('/streak/freeze', {
+    method: 'POST',
+    body: '{}',
+    headers: { 'Idempotency-Key': createIdempotencyKey('streak-freeze-use') },
+  });
 
 export const purchaseStreakFreeze = () =>
-  gamificationRequest<any>('/streak/freeze/purchase', { method: 'POST', body: '{}' });
+  gamificationRequest<any>('/streak/freeze/purchase', {
+    method: 'POST',
+    body: '{}',
+    headers: { 'Idempotency-Key': createIdempotencyKey('streak-freeze-purchase') },
+  });
 
 export const fetchDailyQuests = () => {
   const activityDate = formatActivityLocalDate(new Date());

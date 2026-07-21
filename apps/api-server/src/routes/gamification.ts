@@ -20,6 +20,7 @@ import {
 } from '@lantern/shared/utils/walletCoins';
 import { getWalletService, WalletInsufficientError } from '../services/walletService';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
+import { idempotencyMiddleware } from '../middleware/idempotency';
 import { resolveAllowedActivityDate } from '../utils/activityDate';
 
 const router = Router();
@@ -719,11 +720,12 @@ router.get(
   })
 );
 
-// POST /api/v1/gamification/streak/freeze - Use a streak freeze (costs wallet coins)
+// POST /api/v1/gamification/streak/freeze - Use a streak freeze
 router.post(
   '/streak/freeze',
   authMiddleware,
   handleValidationErrors,
+  idempotencyMiddleware({ operation: 'streak_freeze_use' }),
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -739,19 +741,23 @@ router.post(
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const { data, error } = await supabaseService.getClient()
-      .from('user_streaks')
-      .update({
-        streak_freezes: streak.streak_freezes - 1,
-        last_login_date: today,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-      .select()
-      .single();
+    const data = await req.runIdempotent!(async () => {
+      const { data: updated, error } = await supabaseService.getClient()
+        .from('user_streaks')
+        .update({
+          streak_freezes: streak.streak_freezes - 1,
+          last_login_date: today,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .select()
+        .single();
 
-    if (error) throw error;
-    res.json({ success: true, data });
+      if (error) throw error;
+      return { streak: updated as Record<string, unknown> };
+    });
+
+    res.json({ success: true, data: data.streak });
   })
 );
 

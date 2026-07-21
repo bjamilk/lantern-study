@@ -1378,17 +1378,30 @@ export const updateFlashcard = async (flashcardId: string, updates: {
 
 export const reviewFlashcard = async (
   flashcardId: string,
-  rating: 'again' | 'hard' | 'good' | 'easy'
+  rating: 'again' | 'hard' | 'good' | 'easy',
+  expectedVersion?: number
 ) => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/flashcards/${flashcardId}/review`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({ rating }),
+      body: JSON.stringify({
+        rating,
+        ...(expectedVersion != null ? { expectedVersion } : {}),
+      }),
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
+      if (response.status === 409 || error.code === 'version_conflict') {
+        const err = new Error(
+          error.error || error.message || 'Flashcard was updated elsewhere'
+        ) as Error & { code?: string; status?: number; current?: unknown };
+        err.code = 'version_conflict';
+        err.status = 409;
+        err.current = error.data ?? null;
+        throw err;
+      }
       throw new Error(error.error || error.message || 'Failed to review flashcard');
     }
 
@@ -3426,26 +3439,6 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
   }
 };
 
-export const uploadFlashcardImage = async (file: File) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) throw new Error('Must be signed in to upload images');
-  const fileExt = file.name.split('.').pop();
-  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-  const filePath = `${user.id}/cards/${fileName}`;
-
-  const { error } = await supabase.storage
-    .from('flashcard-images')
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (error) {
-    console.error('Error uploading flashcard image:', error);
-    throw new Error(error.message);
-  }
-
-  const url = await fetchSignedStorageUrl('flashcard-images', filePath);
-  return { url, path: filePath };
-};
-
 async function fileToBase64Payload(file: File): Promise<{
   fileName: string;
   base64Data: string;
@@ -3468,6 +3461,23 @@ async function fileToBase64Payload(file: File): Promise<{
     contentType: contentType === 'image/jpg' ? 'image/jpeg' : contentType,
   };
 }
+
+/** Upload a flashcard image via API (SEC-07 magic-byte validation). */
+export const uploadFlashcardImage = async (file: File) => {
+  const headers = await getAuthHeaders();
+  if (!headers.Authorization) throw new Error('Must be signed in to upload images');
+  const payload = await fileToBase64Payload(file);
+  const response = await fetch(`${getApiRoot()}/api/v1/flashcards/upload-image`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json?.success) {
+    throw new Error(json?.error || 'Failed to upload flashcard image');
+  }
+  return json.data as { url: string; path: string };
+};
 
 /** Upload a question attachment via API (SEC-07 magic-byte validation). */
 export const uploadQuestionImage = async (file: File) => {
@@ -3927,18 +3937,55 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   }
 };
 
-export const saveUserSettings = async (userId: string, settings: UserSettings): Promise<boolean> => {
+let lastKnownSettingsVersion: number | undefined;
+
+export const saveUserSettings = async (
+  userId: string,
+  settings: UserSettings,
+  expectedSettingsVersion?: number
+): Promise<boolean> => {
   try {
     const headers = await getRequiredAuthHeaders();
+    const version =
+      expectedSettingsVersion ?? lastKnownSettingsVersion;
     const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ settings }),
+      body: JSON.stringify({
+        settings,
+        ...(version != null ? { expectedSettingsVersion: version } : {}),
+      }),
     });
+
+    if (response.status === 409) {
+      // Refetch authoritative settings version; do not blind-overwrite.
+      try {
+        const refresh = await fetch(
+          `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
+          { headers }
+        );
+        if (refresh.ok) {
+          const body = await refresh.json();
+          if (typeof body?.data?.settingsVersion === 'number') {
+            lastKnownSettingsVersion = body.data.settingsVersion;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      throw new Error('Settings were updated elsewhere. Refresh and try again.');
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Failed to save user settings');
+    }
+
+    const body = await response.json().catch(() => ({}));
+    if (typeof body?.data?.settingsVersion === 'number') {
+      lastKnownSettingsVersion = body.data.settingsVersion;
+    } else if (version != null) {
+      lastKnownSettingsVersion = version + 1;
     }
 
     return true;

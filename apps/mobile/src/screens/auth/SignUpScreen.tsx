@@ -20,6 +20,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
+import { checkUsername } from '../../services/api';
 import { supabase } from '../../services/supabase';
 import { useTheme } from '../../theme';
 import { LanternLogo } from '../../components/LanternLogo';
@@ -166,13 +167,8 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
     setCheckingUsername(true);
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('is_username_available', { 
-          username_to_check: normalizedUsername 
-        });
-        
-        if (!error) {
-          setUsernameAvailable(data === true);
-        }
+        const result = await checkUsername(normalizedUsername);
+        setUsernameAvailable(result.available === true);
       } catch (err) {
         console.error('Error checking username:', err);
       } finally {

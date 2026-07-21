@@ -231,6 +231,12 @@ export const mapFlashcardFromApi = (data: any): Flashcard => {
     occlusionData: data.occlusion_data || data.occlusionData,
     srsData: mapSrsDataFromApi(data.srs_data || data.srsData),
     tags: data.tags,
+    version:
+      typeof data.version === 'number'
+        ? data.version
+        : data.version != null
+          ? Number(data.version) || undefined
+          : undefined,
     createdAt: data.created_at || data.createdAt,
   };
 };

@@ -150,6 +150,7 @@ export const schemas = {
   reviewFlashcard: Joi.object({
     rating: Joi.string().valid('again', 'hard', 'good', 'easy').required(),
     responseTime: Joi.number().min(0).max(300000).optional(), // Max 5 min
+    expectedVersion: Joi.number().integer().min(1).optional(),
   }),
 
   // ============ TEST SCHEMAS ============

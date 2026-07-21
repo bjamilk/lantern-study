@@ -53,6 +53,7 @@ async function canSyncNow(settings: UserSettings): Promise<boolean> {
 
 interface SettingsState {
   settings: UserSettings;
+  settingsVersion: number | null;
   isLoading: boolean;
   isSyncing: boolean;
   error: string | null;
@@ -82,6 +83,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
       settings: DEFAULT_SETTINGS,
+      settingsVersion: null,
       isLoading: false,
       isSyncing: false,
       error: null,
@@ -119,6 +121,10 @@ export const useSettingsStore = create<SettingsState>()(
               const data = await response.json();
               if (data.data?.settings) {
                 const mergedSettings = normalizeUserSettings(data.data.settings);
+                const settingsVersion =
+                  typeof data.data.settingsVersion === 'number'
+                    ? data.data.settingsVersion
+                    : null;
                 // Overlay low-data from slim prefs without clobbering system theme.
                 try {
                   const prefs = await fetchUserPreferences(userId);
@@ -135,6 +141,7 @@ export const useSettingsStore = create<SettingsState>()(
                           lowDataMode: Boolean(lowDataMode),
                         },
                       },
+                      settingsVersion,
                       isLoading: false,
                       hasUnsyncedChanges: false,
                     });
@@ -145,6 +152,7 @@ export const useSettingsStore = create<SettingsState>()(
                 }
                 set({ 
                   settings: mergedSettings,
+                  settingsVersion,
                   isLoading: false,
                   hasUnsyncedChanges: false,
                 });
@@ -292,13 +300,37 @@ export const useSettingsStore = create<SettingsState>()(
           
           // Try API first
           const headers = await getAuthHeaders();
+          const expectedSettingsVersion = get().settingsVersion;
           const response = await fetch(`${API_BASE_URL}/api/v1/users/settings`, {
             method: 'PUT',
             headers,
-            body: JSON.stringify({ settings }),
+            body: JSON.stringify({
+              settings,
+              ...(expectedSettingsVersion != null
+                ? { expectedSettingsVersion }
+                : {}),
+            }),
           }).catch(() => null);
+
+          if (response?.status === 409) {
+            // Refetch server settings; do not blind-overwrite via profiles fallback.
+            await get().loadSettings(effectiveUserId!);
+            set({
+              isSyncing: false,
+              error: 'Settings were updated on another device. Reloaded latest.',
+            });
+            return;
+          }
           
           if (response?.ok) {
+            const body = await response.json().catch(() => ({}));
+            const nextVersion =
+              typeof body?.data?.settingsVersion === 'number'
+                ? body.data.settingsVersion
+                : expectedSettingsVersion != null
+                  ? expectedSettingsVersion + 1
+                  : get().settingsVersion;
+
             // Sync cross-platform preferences (resolved theme column + canonical themePreference)
             try {
               const resolvedTheme =
@@ -315,6 +347,7 @@ export const useSettingsStore = create<SettingsState>()(
             set({ 
               isSyncing: false,
               hasUnsyncedChanges: false,
+              settingsVersion: nextVersion,
               settings: {
                 ...settings,
                 sync: {
@@ -326,7 +359,7 @@ export const useSettingsStore = create<SettingsState>()(
             return;
           }
           
-          // Fallback: direct Supabase update
+          // Fallback: direct Supabase update (no CAS — only when API unreachable)
           if (effectiveUserId) {
             const { error } = await supabase
               .from('profiles')

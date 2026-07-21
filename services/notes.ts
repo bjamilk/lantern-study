@@ -8,7 +8,7 @@ import type {
   StudyGoalMode,
   StudyNote,
 } from '../types';
-import { ensureNotesUploadSession, getAuthHeaders } from './supabase';
+import { getAuthHeaders } from './supabase';
 import { pollApiJob } from './jobPoll';
 
 const API_BASE_URL = getApiBaseUrl();
@@ -16,8 +16,6 @@ const API_BASE_URL = getApiBaseUrl();
 import {
   MAX_NOTE_UPLOAD_BYTES,
   assertNoteUploadSize,
-  buildNoteStoragePath,
-  wrapNoteFinalizeError,
 } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 import { compressImage } from '../utils/imageCompression';
@@ -224,6 +222,17 @@ async function notesRequest<T>(
     return pollApiJob<T>(data.jobId);
   }
   if (!response.ok) {
+    if (response.status === 409 || data.code === 'version_conflict') {
+      const err = new Error(
+        (typeof data.error === 'string' && data.error) ||
+          data.message ||
+          'Note was updated elsewhere. Refresh and try again.'
+      ) as Error & { code?: string; status?: number; current?: unknown };
+      err.code = 'version_conflict';
+      err.status = 409;
+      err.current = data.data ?? null;
+      throw err;
+    }
     const hasBody =
       (typeof data.error === 'string' && data.error && data.error !== 'Error') ||
       (typeof data.message === 'string' && data.message);
@@ -323,10 +332,30 @@ export async function updateNote(
   noteId: string,
   updates: Partial<StudyNote>
 ): Promise<StudyNote> {
-  return notesRequest<StudyNote>(`/${noteId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(updates),
-  });
+  const { version, ...rest } = updates;
+  try {
+    return await notesRequest<StudyNote>(`/${noteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...rest,
+        ...(version != null ? { expectedVersion: version } : {}),
+      }),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '';
+    const looksConflict =
+      message.toLowerCase().includes('updated elsewhere') ||
+      message.toLowerCase().includes('version');
+    if (looksConflict) {
+      // Keep server: refetch and return authoritative note (callers may toast).
+      try {
+        return await fetchNote(noteId);
+      } catch {
+        throw error;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
@@ -646,44 +675,12 @@ export async function uploadNotePdfViaApi(
     fileName: file.name,
   });
 
-  const { userId } = await ensureNotesUploadSession();
-  const { supabase } = await import('./supabase');
-  const storagePath = buildNoteStoragePath(userId, file.name);
-
-  try {
-    await uploadFileToNoteStorage(file, storagePath, 'application/pdf', onProgress);
-  } catch (err) {
-    throw new Error(
-      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
-    );
-  }
-
-  onProgress?.({
-    stage: 'processing',
-    percent: null,
-    label: 'Extracting text from PDF…',
-    fileName: file.name,
-  });
-
-  try {
-    const result = await notesRequest<{ note: StudyNote; attachment: NoteAttachment }>(
-      '/finalize-pdf',
-      {
-        method: 'POST',
-        body: JSON.stringify({ storagePath, fileName: file.name, folderId }),
-      }
-    );
-    onProgress?.({
-      stage: 'complete',
-      percent: 100,
-      label: 'Upload complete',
-      fileName: file.name,
-    });
-    return result;
-  } catch (err) {
-    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
+  const base64Data = await fileToBase64(file);
+  return notesUploadRequest<{ note: StudyNote; attachment: NoteAttachment }>(
+    '/upload-pdf',
+    { fileName: file.name, base64Data, folderId },
+    { onProgress, processingLabel: 'Extracting text from PDF…' }
+  );
 }
 
 export async function uploadPresentationViaApi(
@@ -699,46 +696,15 @@ export async function uploadPresentationViaApi(
     fileName: file.name,
   });
 
-  const { userId } = await ensureNotesUploadSession();
-  const { supabase } = await import('./supabase');
-  const storagePath = buildNoteStoragePath(userId, file.name);
-  const contentType = presentationContentType(file.name);
-
-  try {
-    await uploadFileToNoteStorage(file, storagePath, contentType, onProgress);
-  } catch (err) {
-    throw new Error(
-      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
-    );
-  }
-
-  onProgress?.({
-    stage: 'processing',
-    percent: null,
-    label: 'Saving slides…',
-    fileName: file.name,
+  const base64Data = await fileToBase64(file);
+  return notesUploadRequest<{
+    note: StudyNote;
+    attachment: NoteAttachment;
+    previewAvailable: boolean;
+  }>('/upload-presentation', { fileName: file.name, base64Data, folderId }, {
+    onProgress,
+    processingLabel: 'Saving slides…',
   });
-
-  try {
-    const result = await notesRequest<{
-      note: StudyNote;
-      attachment: NoteAttachment;
-      previewAvailable: boolean;
-    }>('/finalize-presentation', {
-      method: 'POST',
-      body: JSON.stringify({ storagePath, fileName: file.name, folderId }),
-    });
-    onProgress?.({
-      stage: 'complete',
-      percent: 100,
-      label: 'Upload complete',
-      fileName: file.name,
-    });
-    return result;
-  } catch (err) {
-    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
 }
 
 function imageContentTypeFromFileName(fileName: string): string {
@@ -783,6 +749,39 @@ export async function reorderNoteAttachments(
   });
 }
 
+async function encodeImagesForApiUpload(
+  files: File[],
+  onProgress?: NoteImportProgressCallback,
+  label?: string
+): Promise<Array<{ fileName: string; base64Data: string; contentType: string }>> {
+  const prepared: File[] = [];
+  for (const file of files) {
+    prepared.push(await prepareImageForUpload(file));
+  }
+
+  const images: Array<{ fileName: string; base64Data: string; contentType: string }> = [];
+  for (let i = 0; i < prepared.length; i++) {
+    const file = prepared[i];
+    const fileName = file.name || `photo-${i + 1}.jpg`;
+    onProgress?.({
+      stage: 'encoding',
+      percent: prepared.length > 1 ? Math.round(((i + 0.5) / prepared.length) * 100) : null,
+      label:
+        prepared.length > 1
+          ? `Preparing ${i + 1}/${prepared.length}…`
+          : 'Preparing photos…',
+      fileName: label,
+    });
+    const base64Data = await fileToBase64(file);
+    images.push({
+      fileName,
+      base64Data,
+      contentType: file.type || imageContentTypeFromFileName(fileName),
+    });
+  }
+  return images;
+}
+
 export async function uploadNoteImagesViaApi(
   files: File[],
   folderId?: string,
@@ -801,72 +800,12 @@ export async function uploadNoteImagesViaApi(
     fileName: label,
   });
 
-  const { userId } = await ensureNotesUploadSession();
-  const { supabase } = await import('./supabase');
-  const prepared: File[] = [];
-  for (const file of files) {
-    prepared.push(await prepareImageForUpload(file));
-  }
-
-  const storagePaths: string[] = [];
-  const fileNames: string[] = [];
-
-  try {
-    for (let i = 0; i < prepared.length; i++) {
-      const file = prepared[i];
-      const storagePath = buildNoteStoragePath(userId, file.name || `photo-${i + 1}.jpg`);
-      const contentType = file.type || imageContentTypeFromFileName(file.name);
-      await uploadFileToNoteStorage(file, storagePath, contentType, (progress) => {
-        const overall =
-          prepared.length > 1
-            ? Math.round(((i + (progress.percent ?? 0) / 100) / prepared.length) * 100)
-            : (progress.percent ?? null);
-        onProgress?.({
-          ...progress,
-          percent: overall,
-          label:
-            prepared.length > 1
-              ? `Uploading ${i + 1}/${prepared.length}…`
-              : progress.label,
-          fileName: label,
-        });
-      });
-      storagePaths.push(storagePath);
-      fileNames.push(file.name || `photo-${i + 1}.jpg`);
-    }
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw new Error(
-      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
-    );
-  }
-
-  onProgress?.({
-    stage: 'processing',
-    percent: null,
-    label: 'Saving photos…',
-    fileName: label,
-  });
-
-  try {
-    const result = await notesRequest<{ note: StudyNote; attachments: NoteAttachment[] }>(
-      '/finalize-images',
-      {
-        method: 'POST',
-        body: JSON.stringify({ storagePaths, fileNames, folderId, title }),
-      }
-    );
-    onProgress?.({
-      stage: 'complete',
-      percent: 100,
-      label: 'Upload complete',
-      fileName: label,
-    });
-    return result;
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
+  const images = await encodeImagesForApiUpload(files, onProgress, label);
+  return notesUploadRequest<{ note: StudyNote; attachments: NoteAttachment[] }>(
+    '/upload-images',
+    { images, folderId, title },
+    { onProgress, processingLabel: 'Saving photos…' }
+  );
 }
 
 export async function addImagesToPhotoNote(
@@ -886,103 +825,12 @@ export async function addImagesToPhotoNote(
     fileName: label,
   });
 
-  const { userId } = await ensureNotesUploadSession();
-  const { supabase } = await import('./supabase');
-  const prepared: File[] = [];
-  for (const file of files) {
-    prepared.push(await prepareImageForUpload(file));
-  }
-
-  const storagePaths: string[] = [];
-  const fileNames: string[] = [];
-
-  try {
-    for (let i = 0; i < prepared.length; i++) {
-      const file = prepared[i];
-      const storagePath = buildNoteStoragePath(userId, file.name || `photo-${i + 1}.jpg`);
-      const contentType = file.type || imageContentTypeFromFileName(file.name);
-      await uploadFileToNoteStorage(file, storagePath, contentType, (progress) => {
-        const overall =
-          prepared.length > 1
-            ? Math.round(((i + (progress.percent ?? 0) / 100) / prepared.length) * 100)
-            : (progress.percent ?? null);
-        onProgress?.({
-          ...progress,
-          percent: overall,
-          label:
-            prepared.length > 1
-              ? `Uploading ${i + 1}/${prepared.length}…`
-              : progress.label,
-          fileName: label,
-        });
-      });
-      storagePaths.push(storagePath);
-      fileNames.push(file.name || `photo-${i + 1}.jpg`);
-    }
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw new Error(
-      err instanceof Error ? err.message : 'Storage upload failed. Check your connection and try again.'
-    );
-  }
-
-  onProgress?.({
-    stage: 'processing',
-    percent: null,
-    label: 'Saving photos…',
-    fileName: label,
-  });
-
-  try {
-    const result = await notesRequest<{ attachments: NoteAttachment[] }>(
-      `/${noteId}/attachments/finalize-image`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ storagePaths, fileNames }),
-      }
-    );
-    onProgress?.({
-      stage: 'complete',
-      percent: 100,
-      label: 'Upload complete',
-      fileName: label,
-    });
-    return result;
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
-}
-
-function presentationContentType(fileName: string): string {
-  return /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
-    ? 'application/vnd.ms-powerpoint'
-    : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-}
-
-async function uploadFileToNoteStorage(
-  file: File,
-  storagePath: string,
-  contentType: string,
-  onProgress?: NoteImportProgressCallback
-): Promise<void> {
-  const { supabase } = await import('./supabase');
-  onProgress?.({
-    stage: 'uploading',
-    percent: null,
-    label: 'Uploading…',
-    fileName: file.name,
-  });
-
-  const { error } = await supabase.storage.from('note-files').upload(storagePath, file, {
-    contentType,
-    cacheControl: '3600',
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Storage upload failed.');
-  }
+  const images = await encodeImagesForApiUpload(files, onProgress, label);
+  return notesUploadRequest<{ attachments: NoteAttachment[] }>(
+    `/${noteId}/attachments/upload-images`,
+    { images },
+    { onProgress, processingLabel: 'Saving photos…' }
+  );
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -1002,31 +850,13 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** @deprecated Prefer uploadNotePdfViaApi — uploads via API base64 endpoint. */
 export async function uploadNotePdf(
-  userId: string,
-  file: File
-): Promise<{ fileUrl: string; extractedText: string; storagePath: string }> {
-  const { supabase } = await import('./supabase');
-  const path = `${userId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('note-files')
-    .upload(path, file, { upsert: false, contentType: 'application/pdf' });
-
-  if (uploadError) throw uploadError;
-
-  const { data: urlData } = supabase.storage.from('note-files').getPublicUrl(path);
-  const { data: signedData } = await supabase.storage
-    .from('note-files')
-    .createSignedUrl(path, 60 * 60 * 24 * 7);
-
-  const extractedText = await extractPdfText(file);
-
-  return {
-    fileUrl: signedData?.signedUrl || urlData.publicUrl,
-    extractedText,
-    storagePath: path,
-  };
+  _userId: string,
+  file: File,
+  folderId?: string
+): Promise<{ note: StudyNote; attachment: NoteAttachment }> {
+  return uploadNotePdfViaApi(file, folderId);
 }
 
 export async function extractPdfText(file: File): Promise<string> {

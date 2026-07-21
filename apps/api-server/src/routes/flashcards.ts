@@ -259,10 +259,18 @@ router.post(
     if (!userId) return;
 
     const { flashcardId } = req.params;
-    const { rating } = req.body as { rating: 'again' | 'hard' | 'good' | 'easy' };
+    const { rating, expectedVersion } = req.body as {
+      rating: 'again' | 'hard' | 'good' | 'easy';
+      expectedVersion?: number;
+    };
 
     try {
-      const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating);
+      const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating, {
+        expectedVersion:
+          expectedVersion != null && Number.isFinite(Number(expectedVersion))
+            ? Number(expectedVersion)
+            : undefined,
+      });
 
       if (!updatedFlashcard) {
         return res.status(404).json({
@@ -302,7 +310,8 @@ router.put(
     if (!userId) return;
 
     const { flashcardId } = req.params;
-    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags } = req.body;
+    const { front, back, clozeText, imageUrl, occlusionData, srsData, tags, expectedVersion } =
+      req.body;
 
     if (srsData !== undefined) {
       return res.status(400).json({
@@ -313,30 +322,51 @@ router.put(
 
     logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, userId });
 
-    const updatedFlashcard = await supabaseService.updateFlashcard(flashcardId, {
-      front,
-      back,
-      clozeText,
-      imageUrl,
-      occlusionData,
-      tags,
-    }, userId);
+    try {
+      const updatedFlashcard = await supabaseService.updateFlashcard(
+        flashcardId,
+        {
+          front,
+          back,
+          clozeText,
+          imageUrl,
+          occlusionData,
+          tags,
+        },
+        userId,
+        {
+          expectedVersion:
+            expectedVersion != null && Number.isFinite(Number(expectedVersion))
+              ? Number(expectedVersion)
+              : undefined,
+        }
+      );
 
-    if (!updatedFlashcard) {
-      return res.status(404).json({
-        success: false,
-        error: 'Flashcard not found',
+      if (!updatedFlashcard) {
+        return res.status(404).json({
+          success: false,
+          error: 'Flashcard not found',
+        });
+      }
+
+      await cacheService.delete(`flashcard:${flashcardId}`);
+      await cacheService.deletePattern(`flashcards:*`);
+
+      res.json({
+        success: true,
+        data: updatedFlashcard,
       });
+    } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        return res.status(409).json({
+          success: false,
+          error: error.message || 'Flashcard was updated by another request',
+          code: 'version_conflict',
+          data: error.current ?? null,
+        });
+      }
+      throw error;
     }
-
-    // Invalidate caches
-    await cacheService.delete(`flashcard:${flashcardId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    res.json({
-      success: true,
-      data: updatedFlashcard,
-    });
   })
 );
 

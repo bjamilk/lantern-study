@@ -229,6 +229,7 @@ export function createApiEndpoints(client: ApiClient) {
         clozeText?: string;
         srsData?: unknown;
         tags?: string[];
+        expectedVersion?: number;
       }
     ) =>
       apiRequest<{
@@ -239,6 +240,7 @@ export function createApiEndpoints(client: ApiClient) {
         back?: string;
         cloze_text?: string;
         tags?: string[];
+        version?: number;
         created_at: string;
         updated_at: string;
       }>(`/flashcards/${flashcardId}`, {
@@ -248,16 +250,21 @@ export function createApiEndpoints(client: ApiClient) {
 
     reviewFlashcard: (
       flashcardId: string,
-      rating: 'again' | 'hard' | 'good' | 'easy'
+      rating: 'again' | 'hard' | 'good' | 'easy',
+      expectedVersion?: number
     ) =>
       apiRequest<{
         id: string;
         deck_id: string;
         srs_data: unknown;
+        version?: number;
         updated_at: string;
       }>(`/flashcards/${flashcardId}/review`, {
         method: 'POST',
-        body: JSON.stringify({ rating }),
+        body: JSON.stringify({
+          rating,
+          ...(expectedVersion != null ? { expectedVersion } : {}),
+        }),
       }),
 
     deleteFlashcard: (flashcardId: string) =>
@@ -399,10 +406,17 @@ export function createApiEndpoints(client: ApiClient) {
 
     fetchUserSettings: (userId: string) => apiRequest<unknown>(`/users/${userId}/settings`),
 
-    updateUserSettings: (userId: string, settings: unknown) =>
-      apiRequest<unknown>(`/users/${userId}/settings`, {
+    updateUserSettings: (
+      userId: string,
+      settings: unknown,
+      expectedSettingsVersion?: number
+    ) =>
+      apiRequest<{ settings: unknown; settingsVersion?: number }>(`/users/${userId}/settings`, {
         method: 'PUT',
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({
+          settings,
+          ...(expectedSettingsVersion != null ? { expectedSettingsVersion } : {}),
+        }),
       }),
 
     searchUsers: (query: string, limit = 20) => {
@@ -426,7 +440,11 @@ export function createApiEndpoints(client: ApiClient) {
         error?: string;
       }>(`/users/check-username/${encodeURIComponent(username)}`),
 
-    updateUsername: (userId: string, username: string) =>
+    updateUsername: (
+      userId: string,
+      username: string,
+      extras?: { firstName?: string; lastName?: string }
+    ) =>
       apiRequest<{
         id: string;
         username: string;
@@ -436,7 +454,11 @@ export function createApiEndpoints(client: ApiClient) {
         name?: string;
       }>(`/users/${userId}/username`, {
         method: 'PUT',
-        body: JSON.stringify({ username }),
+        body: JSON.stringify({
+          username,
+          ...(extras?.firstName != null ? { firstName: extras.firstName } : {}),
+          ...(extras?.lastName != null ? { lastName: extras.lastName } : {}),
+        }),
       }),
 
     // ========== GROUPS API ==========
@@ -1179,15 +1201,18 @@ export function createApiEndpoints(client: ApiClient) {
         profiles?: { id: string; name: string; avatar_url?: string };
       }>(`/marketplace/listings/${listingId}`),
 
-    createMarketplaceListing: (data: {
-      category: string;
-      title: string;
-      description?: string;
-      price?: number;
-      location?: string;
-      images?: string[];
-      categorySpecificFields?: unknown;
-    }) =>
+    createMarketplaceListing: (
+      data: {
+        category: string;
+        title: string;
+        description?: string;
+        price?: number;
+        location?: string;
+        images?: string[];
+        categorySpecificFields?: unknown;
+      },
+      idempotencyKey?: string
+    ) =>
       apiRequest<{
         id: string;
         user_id: string;
@@ -1200,6 +1225,9 @@ export function createApiEndpoints(client: ApiClient) {
       }>('/marketplace/listings', {
         method: 'POST',
         body: JSON.stringify(data),
+        headers: {
+          'Idempotency-Key': idempotencyKey || createIdempotencyKey('create-listing'),
+        },
       }),
 
     updateMarketplaceListing: (
@@ -1402,7 +1430,12 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify(report),
       }),
 
-    createMarketplaceOffer: (listingId: string, amount: number, message?: string) =>
+    createMarketplaceOffer: (
+      listingId: string,
+      amount: number,
+      message?: string,
+      idempotencyKey?: string
+    ) =>
       apiRequest<{
         id: string;
         listing_id: string;
@@ -1415,6 +1448,10 @@ export function createApiEndpoints(client: ApiClient) {
       }>('/marketplace/offers', {
         method: 'POST',
         body: JSON.stringify({ listingId, amount, message }),
+        headers: {
+          'Idempotency-Key':
+            idempotencyKey || createIdempotencyKey(`create-offer-${listingId}`),
+        },
       }),
 
     respondToOffer: (
@@ -1542,6 +1579,9 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<import('../types').MarketplaceCoupon>('/marketplace/coupons', {
         method: 'POST',
         body: JSON.stringify(data),
+        headers: {
+          'Idempotency-Key': createIdempotencyKey(`create-coupon-${data.code}`),
+        },
       }),
 
     validateMarketplaceCoupon: (code: string, listingId: string) =>
@@ -1759,7 +1799,8 @@ export function createApiEndpoints(client: ApiClient) {
         category?: string;
         description?: string;
         date: string;
-      }
+      },
+      idempotencyKey?: string
     ) =>
       apiRequest<{
         transaction: unknown;
@@ -1774,6 +1815,10 @@ export function createApiEndpoints(client: ApiClient) {
           description: transaction.description,
           date: transaction.date,
         }),
+        headers: {
+          'Idempotency-Key':
+            idempotencyKey || createIdempotencyKey(`budget-tx-${transaction.id}`),
+        },
       }),
 
     deleteBudgetTransaction: (_userId: string, transactionId: string) =>
@@ -1801,7 +1846,7 @@ export function createApiEndpoints(client: ApiClient) {
     deleteSavingsGoal: (goalId: string) =>
       apiRequest<{ walletBalance: number }>(`/budget/goals/${goalId}`, { method: 'DELETE' }),
 
-    contributeToSavingsGoal: (goalId: string, amount: number) =>
+    contributeToSavingsGoal: (goalId: string, amount: number, idempotencyKey?: string) =>
       apiRequest<{
         goal: any;
         transaction: any;
@@ -1810,6 +1855,10 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/budget/goals/${goalId}/contribute`, {
         method: 'POST',
         body: JSON.stringify({ amount }),
+        headers: {
+          'Idempotency-Key':
+            idempotencyKey || createIdempotencyKey(`budget-contribute-${goalId}`),
+        },
       }),
 
     claimUnderBudgetAward: () =>

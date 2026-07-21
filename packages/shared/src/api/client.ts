@@ -3,6 +3,7 @@
 // ===========================================
 
 import { parseRetryAfterMs, RateLimitError } from './marketplaceCache';
+import { VersionConflictError } from './versionConflict';
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
@@ -115,6 +116,18 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         const errBody = error as { message?: string; error?: string };
         const detail = errBody.message || errBody.error || 'Rate limit exceeded';
         throw new RateLimitError(detail, parseRetryAfterMs(response));
+      }
+      if (response.status === 409) {
+        const errBody = error as {
+          message?: string;
+          error?: string;
+          code?: string;
+          data?: unknown;
+        };
+        throw new VersionConflictError(
+          errBody.error || errBody.message || 'Resource was updated elsewhere',
+          errBody.data ?? null
+        );
       }
       const errBody = error as { message?: string; error?: string };
       const genericErrors = new Set(['Error', 'ApiError', 'Request failed']);

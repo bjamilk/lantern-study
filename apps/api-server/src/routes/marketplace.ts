@@ -12,6 +12,7 @@ import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
+import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 
 const router = Router();
@@ -219,7 +220,8 @@ router.post(
   authMiddleware,
   validateMarketplaceListingWrite,
   handleValidationErrors,
-  asyncHandler(async (req: any, res: any) => {
+  idempotencyMiddleware({ operation: 'marketplace_create_listing' }),
+  asyncHandler(async (req: IdempotentRequest, res: any) => {
     const listingData = req.body;
     const userId = req.user?.id;
 
@@ -260,22 +262,23 @@ router.post(
     logger.debug('Creating marketplace listing', { userId, category: listingData.category, title: listingData.title });
 
     try {
-      const listing = await supabaseService.createMarketplaceListing(listingData, userId);
+      const listing = await req.runIdempotent!(async () => {
+        const created = await supabaseService.createMarketplaceListing(listingData, userId);
 
-      // Track custom category usage
-      if (listingData.category?.startsWith('custom:')) {
-        const categoryName = listingData.category.replace('custom:', '');
-        await supabaseService.createCustomCategory(categoryName, userId).catch(() => {});
-        await supabaseService.incrementCategoryUsage(categoryName).catch(() => {});
-        cacheService.deletePattern('marketplace:custom_categories');
-      }
+        if (listingData.category?.startsWith('custom:')) {
+          const categoryName = listingData.category.replace('custom:', '');
+          await supabaseService.createCustomCategory(categoryName, userId).catch(() => {});
+          await supabaseService.incrementCategoryUsage(categoryName).catch(() => {});
+          cacheService.deletePattern('marketplace:custom_categories');
+        }
 
-      // Invalidate caches
-      await cacheService.deletePattern('marketplace:listings:*');
+        await cacheService.deletePattern('marketplace:listings:*');
+        return { listing: created as Record<string, unknown> };
+      });
 
       res.status(201).json({
         success: true,
-        data: listing,
+        data: listing.listing,
       });
     } catch (error: any) {
       logger.error('Failed to create marketplace listing:', error);
@@ -899,8 +902,9 @@ router.get(
 router.post(
   '/offers',
   authMiddleware,
-  asyncHandler(async (req: any, res: any) => {
-    const userId = req.user.id;
+  idempotencyMiddleware({ operation: 'marketplace_create_offer' }),
+  asyncHandler(async (req: IdempotentRequest, res: any) => {
+    const userId = req.user!.id!;
     const { listingId, amount, message } = req.body;
 
     if (!listingId || !amount || amount <= 0) {
@@ -909,7 +913,6 @@ router.post(
 
     logger.info('Creating marketplace offer', { userId, listingId, amount });
 
-    // Get listing to find seller
     const listing = await supabaseService.getMarketplaceListingById(listingId);
     if (!listing) {
       return res.status(404).json({ success: false, error: 'Listing not found' });
@@ -920,50 +923,57 @@ router.post(
 
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await supabaseService.getClient()
-      .from('marketplace_offers')
-      .insert({
-        listing_id: listingId,
-        buyer_id: userId,
-        seller_id: listing.user_id,
-        amount,
-        message: message || null,
-        status: 'pending',
-        expires_at: expiresAt,
-      })
-      .select('*')
-      .single();
+    const result = await req.runIdempotent!(async () => {
+      const { data, error } = await supabaseService.getClient()
+        .from('marketplace_offers')
+        .insert({
+          listing_id: listingId,
+          buyer_id: userId,
+          seller_id: listing.user_id,
+          amount,
+          message: message || null,
+          status: 'pending',
+          expires_at: expiresAt,
+        })
+        .select('*')
+        .single();
 
-    if (error) {
-      if (error.code === '23505') {
-        const { data: existing, error: existingError } = await supabaseService.getClient()
-          .from('marketplace_offers')
-          .select('*')
-          .eq('listing_id', listingId)
-          .eq('buyer_id', userId)
-          .eq('status', 'pending')
-          .maybeSingle();
-        if (existingError) throw existingError;
-        if (existing) {
-          return res.status(200).json({ success: true, data: existing, existing: true });
+      if (error) {
+        if (error.code === '23505') {
+          const { data: existing, error: existingError } = await supabaseService.getClient()
+            .from('marketplace_offers')
+            .select('*')
+            .eq('listing_id', listingId)
+            .eq('buyer_id', userId)
+            .eq('status', 'pending')
+            .maybeSingle();
+          if (existingError) throw existingError;
+          if (existing) {
+            return { data: existing as Record<string, unknown>, existing: true, status: 200 };
+          }
         }
+        throw error;
       }
-      throw error;
-    }
 
-    // Create notification for seller
-    try {
-      await supabaseService.createNotification(listing.user_id, {
-        type: 'marketplace_order_update',
-        message: `New offer of ₦${Number(amount).toLocaleString()} on "${listing.title}"`,
-        link: `marketplace:offer:${data.id}`,
-        data: { offerId: data.id, listingId },
-      });
-    } catch (e) {
-      logger.warn('Failed to send offer notification', e);
-    }
+      try {
+        await supabaseService.createNotification(listing.user_id, {
+          type: 'marketplace_order_update',
+          message: `New offer of ₦${Number(amount).toLocaleString()} on "${listing.title}"`,
+          link: `marketplace:offer:${data.id}`,
+          data: { offerId: data.id, listingId },
+        });
+      } catch (e) {
+        logger.warn('Failed to send offer notification', e);
+      }
 
-    res.status(201).json({ success: true, data });
+      return { data: data as Record<string, unknown>, existing: false, status: 201 };
+    });
+
+    res.status(Number(result.status) || 201).json({
+      success: true,
+      data: result.data,
+      ...(result.existing ? { existing: true } : {}),
+    });
   })
 );
 
@@ -1725,13 +1735,17 @@ router.patch(
 router.post(
   '/orders/:id/payment-link',
   authMiddleware,
-  asyncHandler(async (req: any, res: any) => {
+  idempotencyMiddleware({ operation: 'marketplace_payment_link' }),
+  asyncHandler(async (req: IdempotentRequest, res: any) => {
     try {
-      const result = await getMarketplaceOrdersService(supabaseService).createPaymentLinkOrder(
-        req.params.id,
-        req.user.id
-      );
-      res.json({ success: true, data: result });
+      const result = await req.runIdempotent!(async () => {
+        const data = await getMarketplaceOrdersService(supabaseService).createPaymentLinkOrder(
+          req.params.id,
+          req.user!.id!
+        );
+        return { data: data as unknown as Record<string, unknown> };
+      });
+      res.json({ success: true, data: result.data });
     } catch (err: any) {
       res.status(400).json({ success: false, error: clientErrorMessage(err) });
     }
@@ -1785,22 +1799,26 @@ router.get(
 router.post(
   '/coupons',
   authMiddleware,
-  asyncHandler(async (req: any, res: any) => {
+  idempotencyMiddleware({ operation: 'marketplace_create_coupon' }),
+  asyncHandler(async (req: IdempotentRequest, res: any) => {
     const { code, discountType, discountValue, listingId, maxUses, startsAt, endsAt } = req.body;
     if (!code || !discountType || discountValue == null) {
       return res.status(400).json({ success: false, error: 'code, discountType, and discountValue are required' });
     }
     const { getMarketplaceCouponsService } = await import('../services/marketplaceCoupons');
-    const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user.id, {
-      code,
-      discountType,
-      discountValue: Number(discountValue),
-      listingId,
-      maxUses: maxUses != null ? Number(maxUses) : undefined,
-      startsAt,
-      endsAt,
+    const result = await req.runIdempotent!(async () => {
+      const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user!.id!, {
+        code,
+        discountType,
+        discountValue: Number(discountValue),
+        listingId,
+        maxUses: maxUses != null ? Number(maxUses) : undefined,
+        startsAt,
+        endsAt,
+      });
+      return { coupon: coupon as unknown as Record<string, unknown> };
     });
-    res.status(201).json({ success: true, data: coupon });
+    res.status(201).json({ success: true, data: result.coupon });
   })
 );
 

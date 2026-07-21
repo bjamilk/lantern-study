@@ -2743,7 +2743,8 @@ export class SupabaseService {
   async reviewFlashcard(
     flashcardId: string,
     userId: string,
-    rating: 'again' | 'hard' | 'good' | 'easy'
+    rating: 'again' | 'hard' | 'good' | 'easy',
+    options: { expectedVersion?: number } = {}
   ): Promise<any | null> {
     const existing = await this.getFlashcardForUser(flashcardId, userId);
     if (!existing) return null;
@@ -2757,7 +2758,10 @@ export class SupabaseService {
       maxInterval: getSrsMaxInterval(settings.study),
     });
 
-    const expectedVersion = Number(existing.version) || 1;
+    const expectedVersion =
+      options.expectedVersion != null && Number.isFinite(Number(options.expectedVersion))
+        ? Number(options.expectedVersion)
+        : Number(existing.version) || 1;
     return this.updateFlashcard(
       flashcardId,
       { srsData: newSrsData },

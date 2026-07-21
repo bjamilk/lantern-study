@@ -66,6 +66,17 @@ async function claimIdempotencySlot(
   operation: string,
   idempotencyKey: string
 ): Promise<'claimed' | 'cached' | 'wait'> {
+  // Advisory lock when available; unique index still owns cross-request safety.
+  try {
+    await client.rpc('claim_idempotency_lock', {
+      p_user_id: userId,
+      p_operation: operation,
+      p_idempotency_key: idempotencyKey,
+    });
+  } catch {
+    // Best-effort; insert conflict handling below remains authoritative.
+  }
+
   const { error } = await client.from('api_idempotency_keys').insert({
     user_id: userId,
     operation,

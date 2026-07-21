@@ -301,28 +301,30 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </button>
             </div>
         )}
-        <SectionHeader title="Library" />
-        <div className="px-2 space-y-1">
-          <NavButton navFunc={onNavigateToDashboard} icon={Squares2X2Icon} label="Dashboard" appMode={AppMode.DASHBOARD} />
-          {onNavigateToLibrary && (
-            <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} tipId="nav.library" />
-          )}
-        </div>
+        <nav aria-label="Primary">
+          <SectionHeader title="Library" />
+          <div className="px-2 space-y-1">
+            <NavButton navFunc={onNavigateToDashboard} icon={Squares2X2Icon} label="Dashboard" appMode={AppMode.DASHBOARD} />
+            {onNavigateToLibrary && (
+              <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} tipId="nav.library" />
+            )}
+          </div>
 
-        <SectionHeader title="Social" />
-        <div className="px-2 space-y-1">
-          <NavButton navFunc={onOpenNotificationModal} icon={BellAlertIcon} label="Notifications" badgeCount={unreadNotificationCount} />
-          <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} tipId="nav.marketplace" />
-        </div>
+          <SectionHeader title="Social" />
+          <div className="px-2 space-y-1">
+            <NavButton navFunc={onOpenNotificationModal} icon={BellAlertIcon} label="Notifications" badgeCount={unreadNotificationCount} />
+            <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} tipId="nav.marketplace" />
+          </div>
 
-        <SectionHeader title="Tools" />
-        <div className="px-2 space-y-1">
-          <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget Tracker" appMode={AppMode.BUDGET_TRACKER} tipId="nav.budget" />
-          <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} tipId="nav.offline" />
-          {isPlatformAdmin && onNavigateToAdmin && (
-            <NavButton navFunc={onNavigateToAdmin} icon={UsersIcon} label="Admin" appMode={AppMode.ADMIN} />
-          )}
-        </div>
+          <SectionHeader title="Tools" />
+          <div className="px-2 space-y-1">
+            <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget Tracker" appMode={AppMode.BUDGET_TRACKER} tipId="nav.budget" />
+            <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} tipId="nav.offline" />
+            {isPlatformAdmin && onNavigateToAdmin && (
+              <NavButton navFunc={onNavigateToAdmin} icon={UsersIcon} label="Admin" appMode={AppMode.ADMIN} />
+            )}
+          </div>
+        </nav>
 
         {isExpanded ? (
           <>

@@ -1,5 +1,6 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { FEATURE_TIP_CATALOG, type FeatureTipId } from '@lantern/shared/featureTips';
+import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import { getTipCopy, useFeatureTipStore } from '../../stores/featureTipStore';
 
 interface FeatureTipProps {
@@ -92,9 +93,10 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
   const visible = activeTipId === tipId;
   const copy = useMemo(() => getTipCopy(tipId) || FEATURE_TIP_CATALOG[tipId], [tipId]);
 
-  const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Position | null>(null);
   const [cookieBlocking, setCookieBlocking] = useState(false);
+  // Coach-mark overlays the UI with interactive controls — trap focus while visible.
+  const tipTrapRef = useModalFocusTrap(visible && !cookieBlocking, () => dismiss(tipId));
 
   useEffect(() => {
     if (!visible) {
@@ -116,7 +118,7 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
     }
 
     const update = () => {
-      const panel = panelRef.current;
+      const panel = tipTrapRef.current;
       const measuredW = panel?.offsetWidth || Math.min(320, window.innerWidth - VIEW_MARGIN * 2);
       const measuredH = panel?.offsetHeight || ESTIMATED_TIP_HEIGHT;
       const next = placeTip(tipId, measuredW, measuredH, anchorSelector);
@@ -145,12 +147,13 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [visible, cookieBlocking, tipId, anchorSelector, tipsVersion]);
+  }, [visible, cookieBlocking, tipId, anchorSelector, tipsVersion, tipTrapRef]);
 
   if (!visible || !copy || cookieBlocking) return null;
 
   return (
     <div
+      ref={tipTrapRef}
       className="fixed z-[90] pointer-events-none"
       style={
         pos
@@ -158,10 +161,10 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
           : { top: VIEW_MARGIN, left: VIEW_MARGIN, visibility: 'hidden' }
       }
       role="dialog"
+      aria-modal="true"
       aria-label={copy.title}
     >
       <div
-        ref={panelRef}
         className={`pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] max-h-[min(22rem,calc(100vh-5.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-lantern-primary/40 bg-lantern-surface shadow-xl p-3.5 ${
           reduceMotion ? '' : 'animate-in fade-in zoom-in-95 duration-200'
         }`}

@@ -441,10 +441,21 @@ export function useFlashcardHandlers() {
                     trackStudyActivity('flashcard_new', 1);
                 }
             } else {
-                const updated = await reviewFlashcard(cardId, performanceRating);
+                const updated = await reviewFlashcard(cardId, performanceRating, card.version);
                 const newSrsData = updated?.srs_data ?? updated?.srsData;
-                if (newSrsData) {
-                    updateFlashcards(prev => prev.map(fc => fc.id === cardId ? { ...fc, srsData: newSrsData } : fc));
+                const newVersion = updated?.version;
+                if (newSrsData || newVersion != null) {
+                    updateFlashcards(prev =>
+                      prev.map(fc =>
+                        fc.id === cardId
+                          ? {
+                              ...fc,
+                              ...(newSrsData ? { srsData: newSrsData } : {}),
+                              ...(newVersion != null ? { version: Number(newVersion) } : {}),
+                            }
+                          : fc
+                      )
+                    );
                 }
                 trackQuestProgress('review_cards');
                 trackStudyActivity('flashcard', 1);

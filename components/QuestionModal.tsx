@@ -262,7 +262,14 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     dispatch({ type: 'ADD_DIAGRAM_LABEL', x, y });
-  }
+  };
+
+  const handleImageKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    // Keyboard activation places a pin at the diagram center.
+    dispatch({ type: 'ADD_DIAGRAM_LABEL', x: 50, y: 50 });
+  };
 
 
   const isFormValid = () => {
@@ -641,7 +648,15 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                         ) : (
                             <div>
                                 <p className="text-sm font-medium text-lantern-text mb-2">Click on the image to add a label pin. Drag pins to reposition.</p>
-                                <div ref={imageContainerRef} onClick={handleImageClick} className="relative w-full cursor-crosshair border-2 border-dashed border-lantern-border rounded-md overflow-hidden">
+                                <div
+                                  ref={imageContainerRef}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label="Add diagram label pin"
+                                  onClick={handleImageClick}
+                                  onKeyDown={handleImageKeyDown}
+                                  className="relative w-full cursor-crosshair border-2 border-dashed border-lantern-border rounded-md overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                                >
                                     <img src={state.imagePreviewUrl} alt="Diagram preview" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                                     {state.diagramLabels.map((label, index) => (
                                         <div 

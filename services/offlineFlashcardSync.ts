@@ -1,5 +1,6 @@
 import { reviewFlashcard } from './supabase';
 import { useFlashcardStore } from '../stores/flashcardStore';
+import { isVersionConflictError } from '@lantern/shared/api';
 
 export interface FlashcardReviewSyncResult {
   synced: number;
@@ -18,15 +19,34 @@ export async function syncPendingFlashcardReviews(): Promise<FlashcardReviewSync
 
   for (const review of pendingFlashcardReviews) {
     try {
-      const updated = await reviewFlashcard(review.flashcardId, review.rating);
+      const card = store.flashcards.find((fc) => fc.id === review.flashcardId);
+      const updated = await reviewFlashcard(
+        review.flashcardId,
+        review.rating,
+        card?.version
+      );
       const newSrsData = updated?.srs_data ?? updated?.srsData;
-      if (newSrsData) {
+      const newVersion = updated?.version;
+      if (newSrsData || newVersion != null) {
         store.updateFlashcards(prev =>
-          prev.map(fc => (fc.id === review.flashcardId ? { ...fc, srsData: newSrsData } : fc))
+          prev.map(fc =>
+            fc.id === review.flashcardId
+              ? {
+                  ...fc,
+                  ...(newSrsData ? { srsData: newSrsData } : {}),
+                  ...(newVersion != null ? { version: Number(newVersion) } : {}),
+                }
+              : fc
+          )
         );
       }
       syncedIds.push(review.id);
     } catch (error) {
+      if (isVersionConflictError(error)) {
+        // Drop stale review; server already has a newer schedule.
+        syncedIds.push(review.id);
+        continue;
+      }
       console.error('[FlashcardReviewSync] Failed for', review.flashcardId, error);
       break;
     }

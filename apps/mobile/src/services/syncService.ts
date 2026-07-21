@@ -211,10 +211,19 @@ class SyncService {
       try {
         if (op.operation === 'create') {
           const rating = op.data.rating as 'again' | 'hard' | 'good' | 'easy';
-          await api.reviewFlashcard(op.entityId, rating);
+          const expectedVersion =
+            typeof op.data.expectedVersion === 'number' ? op.data.expectedVersion : undefined;
+          await api.reviewFlashcard(op.entityId, rating, expectedVersion);
         }
         return true;
-      } catch (error) {
+      } catch (error: any) {
+        // On CAS conflict: drop this review (server already advanced); do not blind retry.
+        if (error?.code === 'version_conflict' || error?.status === 409) {
+          console.warn('[SyncHandler:flashcard_review] version conflict — dropping stale review', {
+            flashcardId: op.entityId,
+          });
+          return true;
+        }
         console.error('[SyncHandler:flashcard_review] Error:', error);
         return false;
       }

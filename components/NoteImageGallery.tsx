@@ -10,6 +10,7 @@ import {
 } from '@heroicons/react/24/outline';
 import type { NoteAttachment } from '../types';
 import { refreshNoteAttachmentUrl, reorderNoteAttachments } from '../services/notes';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { Button } from './ui';
 
 interface NoteImageGalleryProps {
@@ -45,6 +46,11 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
   const [zoomIndex, setZoomIndex] = useState<number | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
   const zoomContainerRef = useRef<HTMLDivElement>(null);
+  const lightboxOpen = zoomIndex !== null;
+  const lightboxRef = useModalFocusTrap(lightboxOpen, () => {
+    setZoomIndex(null);
+    setZoomScale(1);
+  });
 
   useEffect(() => {
     setOrdered(
@@ -125,15 +131,6 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
     setZoomIndex(null);
     setZoomScale(1);
   };
-
-  useEffect(() => {
-    if (zoomIndex === null) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeZoom();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [zoomIndex]);
 
   useEffect(() => {
     if (zoomIndex === null) return;
@@ -244,6 +241,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
 
       {zoomIndex !== null && imageUrls[ordered[zoomIndex]?.id] && (
         <div
+          ref={lightboxRef}
           className="fixed inset-0 z-50 bg-black/90 flex flex-col"
           role="dialog"
           aria-modal="true"

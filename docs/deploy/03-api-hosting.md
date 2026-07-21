@@ -148,6 +148,7 @@ Then: `curl http://localhost:3001/health`
 - **Free Render** services spin down after inactivity; first request may take ~30s.
 - **Redis is required in production** — set `REDIS_ENABLED=true` and `REDIS_URL` (e.g. [Upstash](https://upstash.com/) free tier). Rate limits are shared across instances via namespaced Redis keys (`lantern:rl:*`). A single Render instance is not enough for very high concurrency; use multiple instances behind a load balancer plus Redis.
 - **~100k concurrent users is not a single-process target.** One Node API process can only hold a few hundred–low thousands of concurrent connections under load. Reach high concurrency by: (1) multiple always-on API replicas, (2) shared Redis, (3) Supabase/Postgres compute + pooler headroom, (4) BullMQ worker for heavy AI/file jobs. The API now enforces per-process `AI_MAX_INFLIGHT`, `COMPANION_STREAM_MAX`, `HTTP_MAX_CONNECTIONS`, and memory load-shedding (503 + `Retry-After`).
+- **Scale blueprint:** see [100k capacity plan](./100k-capacity-plan.md) and repo-root `render.scale.yaml` (paid multi-instance; do not confuse with live `render.yaml`).
 - Never put `SUPABASE_SERVICE_ROLE_KEY` in web/mobile env — API server only.
 - Rotate keys if a secret was ever pasted into a client env var.
 

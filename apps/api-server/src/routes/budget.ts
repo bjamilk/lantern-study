@@ -15,6 +15,7 @@ import {
   underBudgetAwardKey,
 } from '@lantern/shared/utils/walletCoins';
 import { logger } from '../utils/logger';
+import { idempotencyMiddleware } from '../middleware/idempotency';
 
 const router = Router();
 
@@ -114,6 +115,7 @@ router.delete(
 router.post(
   '/goals/:goalId/contribute',
   authMiddleware,
+  idempotencyMiddleware({ operation: 'budget_contribute' }),
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -130,68 +132,76 @@ router.post(
       return res.status(404).json({ success: false, error: 'Goal not found' });
     }
 
-    const goal = { ...extras.savingsGoals[goalIndex] };
-    const wasComplete = !!goal.completedAt || goal.currentAmount >= goal.targetAmount;
-    const newAmount = Math.min(goal.currentAmount + amount, goal.targetAmount);
-    goal.currentAmount = newAmount;
-    const nowComplete = newAmount >= goal.targetAmount;
-    if (nowComplete && !goal.completedAt) {
-      goal.completedAt = new Date().toISOString();
-    }
-    extras.savingsGoals[goalIndex] = goal;
-    await wallet.saveBudgetExtras(userId, extras);
+    try {
+      const data = await req.runIdempotent!(async () => {
+        const goal = { ...extras.savingsGoals[goalIndex] };
+        const wasComplete = !!goal.completedAt || goal.currentAmount >= goal.targetAmount;
+        const newAmount = Math.min(goal.currentAmount + amount, goal.targetAmount);
+        goal.currentAmount = newAmount;
+        const nowComplete = newAmount >= goal.targetAmount;
+        if (nowComplete && !goal.completedAt) {
+          goal.completedAt = new Date().toISOString();
+        }
+        extras.savingsGoals[goalIndex] = goal;
+        await wallet.saveBudgetExtras(userId, extras);
 
-    const txId = randomUUID();
-    const date = new Date().toISOString().split('T')[0];
-    const { error: txError } = await supabaseService.getClient()
-      .from('budget_transactions')
-      .insert({
-        id: txId,
-        user_id: userId,
-        type: 'investment',
-        amount,
-        category: 'savings',
-        description: `Savings: ${goal.name}`,
-        date,
+        const txId = randomUUID();
+        const date = new Date().toISOString().split('T')[0];
+        const { error: txError } = await supabaseService.getClient()
+          .from('budget_transactions')
+          .insert({
+            id: txId,
+            user_id: userId,
+            type: 'investment',
+            amount,
+            category: 'savings',
+            description: `Savings: ${goal.name}`,
+            date,
+          });
+
+        if (txError) {
+          logger.error('Failed to insert savings contribution transaction', { userId, goalId, txError });
+          throw new Error('Failed to record contribution transaction');
+        }
+
+        let walletBalance = extras.walletBalance;
+        let awarded = 0;
+        if (nowComplete && !wasComplete) {
+          const award = await wallet.awardWalletOnce(
+            userId,
+            goalAwardKey(goalId),
+            WALLET_COINS.GOAL_COMPLETE,
+            'savings_goal_complete'
+          );
+          walletBalance = award.walletBalance;
+          awarded = award.awarded;
+        }
+
+        await invalidatePrefsCache(userId);
+
+        return {
+          goal,
+          transaction: {
+            id: txId,
+            userId,
+            type: 'INVESTMENT',
+            amount,
+            category: 'savings',
+            description: `Savings: ${goal.name}`,
+            date,
+          },
+          walletBalance,
+          awarded,
+        };
       });
 
-    if (txError) {
-      logger.error('Failed to insert savings contribution transaction', { userId, goalId, txError });
-      return res.status(500).json({ success: false, error: 'Failed to record contribution transaction' });
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err?.message === 'Failed to record contribution transaction') {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      throw err;
     }
-
-    let walletBalance = extras.walletBalance;
-    let awarded = 0;
-    if (nowComplete && !wasComplete) {
-      const award = await wallet.awardWalletOnce(
-        userId,
-        goalAwardKey(goalId),
-        WALLET_COINS.GOAL_COMPLETE,
-        'savings_goal_complete'
-      );
-      walletBalance = award.walletBalance;
-      awarded = award.awarded;
-    }
-
-    await invalidatePrefsCache(userId);
-
-    res.json({
-      success: true,
-      data: {
-        goal,
-        transaction: {
-          id: txId,
-          userId,
-          type: 'INVESTMENT',
-          amount,
-          category: 'savings',
-          description: `Savings: ${goal.name}`,
-          date,
-        },
-        walletBalance,
-        awarded,
-      },
-    });
   })
 );
 
@@ -276,6 +286,7 @@ router.post(
 router.post(
   '/transactions',
   authMiddleware,
+  idempotencyMiddleware({ operation: 'budget_create_transaction' }),
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -311,47 +322,46 @@ router.post(
     const txDate = typeof date === 'string' && date ? date.split('T')[0] : new Date().toISOString().split('T')[0];
     const cat = typeof category === 'string' ? category : 'other';
 
-    const { error } = await supabaseService.getClient()
-      .from('budget_transactions')
-      .upsert(
-        {
-          id: txId,
-          user_id: userId,
-          type,
-          amount: amt,
-          category: cat,
-          description: typeof description === 'string' ? description : '',
-          date: txDate,
-        },
-        { onConflict: 'id' }
-      );
+    const data = await req.runIdempotent!(async () => {
+      const { error } = await supabaseService.getClient()
+        .from('budget_transactions')
+        .upsert(
+          {
+            id: txId,
+            user_id: userId,
+            type,
+            amount: amt,
+            category: cat,
+            description: typeof description === 'string' ? description : '',
+            date: txDate,
+          },
+          { onConflict: 'id' }
+        );
 
-    if (error) throw error;
+      if (error) throw error;
 
-    let categoryOverspend = false;
-    let categorySpent = 0;
-    let categoryLimit = 0;
-    if (type === 'expense') {
-      const extras = await getWalletService().getBudgetExtras(userId);
-      categoryLimit = Number(extras.categoryBudgets?.[cat]) || 0;
-      if (categoryLimit > 0) {
-        const monthYear = txDate.slice(0, 7);
-        const { data: monthTxs } = await supabaseService.getClient()
-          .from('budget_transactions')
-          .select('amount')
-          .eq('user_id', userId)
-          .eq('type', 'expense')
-          .eq('category', cat)
-          .gte('date', `${monthYear}-01`)
-          .lt('date', `${monthYear}-32`);
-        categorySpent = (monthTxs || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
-        categoryOverspend = categorySpent > categoryLimit;
+      let categoryOverspend = false;
+      let categorySpent = 0;
+      let categoryLimit = 0;
+      if (type === 'expense') {
+        const extras = await getWalletService().getBudgetExtras(userId);
+        categoryLimit = Number(extras.categoryBudgets?.[cat]) || 0;
+        if (categoryLimit > 0) {
+          const monthYear = txDate.slice(0, 7);
+          const { data: monthTxs } = await supabaseService.getClient()
+            .from('budget_transactions')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('type', 'expense')
+            .eq('category', cat)
+            .gte('date', `${monthYear}-01`)
+            .lt('date', `${monthYear}-32`);
+          categorySpent = (monthTxs || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+          categoryOverspend = categorySpent > categoryLimit;
+        }
       }
-    }
 
-    res.status(201).json({
-      success: true,
-      data: {
+      return {
         transaction: {
           id: txId,
           userId,
@@ -369,7 +379,12 @@ router.post(
               limit: categoryLimit,
             }
           : null,
-      },
+      };
+    });
+
+    res.status(201).json({
+      success: true,
+      data,
     });
   })
 );

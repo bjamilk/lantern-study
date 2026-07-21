@@ -14,6 +14,7 @@ import {
   type CookieCategoryId,
   type CookiePreferences,
 } from '@lantern/shared';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 type DraftPrefs = Pick<CookiePreferences, 'functional' | 'analytics' | 'advertising'>;
 
@@ -131,6 +132,7 @@ export function CookieNoticeBanner() {
   };
 
   const showLauncher = hasChoice && !bannerVisible && !centerOpen;
+  const centerPanelRef = useModalFocusTrap(centerOpen, closeCenterWithoutSaving);
 
   return (
     <>
@@ -198,12 +200,14 @@ export function CookieNoticeBanner() {
       {centerOpen && (
         <div
           className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cookie-preference-title"
+          role="presentation"
           onClick={closeCenterWithoutSaving}
         >
           <div
+            ref={centerPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cookie-preference-title"
             className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-lantern-border bg-lantern-surface text-lantern-text shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >

@@ -82,6 +82,12 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
 
   return (
     <div className="min-h-screen flex flex-col bg-lantern-background text-lantern-text">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-lantern-primary focus:px-4 focus:py-2 focus:text-white focus:outline-none"
+      >
+        Skip to main content
+      </a>
       <header className="shrink-0 border-b border-lantern-border bg-lantern-surface/90 dark:bg-lantern-background/90 backdrop-blur sticky top-0 z-20">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <a href="/" className="flex items-center gap-2 min-w-0">
@@ -103,7 +109,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           </p>
         </div>
       </header>
-      <main className="flex-1 min-h-0 flex flex-col">
+      <main id="main-content" tabIndex={-1} className="flex-1 min-h-0 flex flex-col">
         <Suspense fallback={<div className="p-6 text-sm text-lantern-text-secondary">Loading marketplace…</div>}>
           {renderContent()}
         </Suspense>

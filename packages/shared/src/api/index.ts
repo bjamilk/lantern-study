@@ -1,5 +1,6 @@
 export { createApiClient, type ApiClient, type ApiClientConfig } from './client';
 export { createIdempotencyKey } from './idempotency';
+export { VersionConflictError, isVersionConflictError } from './versionConflict';
 export {
   RateLimitError,
   parseRetryAfterMs,

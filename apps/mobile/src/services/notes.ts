@@ -1,11 +1,8 @@
 /** Mobile notes API client */
-import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
+import * as FileSystem from 'expo-file-system';
+import { API_BASE_URL, getAuthHeaders, getSession } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
-import {
-  assertNoteUploadSize,
-  buildNoteStoragePath,
-  wrapNoteFinalizeError,
-} from '@lantern/shared/utils/noteUpload';
+import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
@@ -66,6 +63,7 @@ export interface StudyNote {
   summary?: string;
   youtubeUrl?: string;
   youtubeVideoId?: string;
+  version?: number;
   updatedAt?: string;
   createdAt?: string;
 }
@@ -96,8 +94,16 @@ export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);
 export const createNote = (payload: Partial<StudyNote>) =>
   notesRequest<StudyNote>('/', { method: 'POST', body: JSON.stringify(payload) });
-export const updateNote = (noteId: string, updates: Partial<StudyNote>) =>
-  notesRequest<StudyNote>(`/${noteId}`, { method: 'PATCH', body: JSON.stringify(updates) });
+export const updateNote = (noteId: string, updates: Partial<StudyNote>) => {
+  const { version, ...rest } = updates;
+  return notesRequest<StudyNote>(`/${noteId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...rest,
+      ...(version != null ? { expectedVersion: version } : {}),
+    }),
+  });
+};
 export const deleteNote = (noteId: string) =>
   notesRequest<void>(`/${noteId}`, { method: 'DELETE' });
 export const transcribeAudioForNote = (
@@ -215,6 +221,26 @@ export const fetchNoteAttachmentContent = async (noteId: string, attachmentId: s
   return response.arrayBuffer();
 };
 
+async function readLocalFileAsBase64(fileUri: string, fileName: string): Promise<{
+  base64Data: string;
+  byteLength: number;
+}> {
+  const info = await FileSystem.getInfoAsync(fileUri);
+  const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
+  if (byteLength > 0) {
+    assertNoteUploadSize(byteLength, fileName);
+  }
+  const base64Data = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+  if (!base64Data) {
+    throw new Error('Could not read the selected file.');
+  }
+  if (byteLength <= 0) {
+    // Rough size check when FileSystem does not report size.
+    assertNoteUploadSize(Math.ceil((base64Data.length * 3) / 4), fileName);
+  }
+  return { base64Data, byteLength };
+}
+
 export const uploadNotePdfViaApi = async (
   fileUri: string,
   fileName: string,
@@ -225,32 +251,11 @@ export const uploadNotePdfViaApi = async (
     throw new Error('Must be signed in to upload files.');
   }
 
-  const storagePath = buildNoteStoragePath(session.user.id, fileName);
-
-  const fileResponse = await fetch(fileUri);
-  if (!fileResponse.ok) {
-    throw new Error('Could not read the selected PDF file.');
-  }
-  const blob = await fileResponse.blob();
-  assertNoteUploadSize(blob.size, fileName);
-
-  const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
-    contentType: 'application/pdf',
-    upsert: false,
+  const { base64Data } = await readLocalFileAsBase64(fileUri, fileName);
+  return notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/upload-pdf', {
+    method: 'POST',
+    body: JSON.stringify({ fileName, base64Data, folderId }),
   });
-  if (uploadError) {
-    throw new Error(uploadError.message || 'Storage upload failed.');
-  }
-
-  try {
-    return notesRequest<{ note: StudyNote; attachment: NoteAttachment }>('/finalize-pdf', {
-      method: 'POST',
-      body: JSON.stringify({ storagePath, fileName, folderId }),
-    });
-  } catch (err) {
-    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
 };
 
 export const uploadPresentationViaApi = async (
@@ -258,46 +263,19 @@ export const uploadPresentationViaApi = async (
   fileName: string,
   folderId?: string
 ) => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user?.id) {
+  const session = await getSession();
+  if (!session?.user?.id) {
     throw new Error('Must be signed in to upload slides.');
   }
 
-  const storagePath = buildNoteStoragePath(user.id, fileName);
-  const contentType =
-    /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
-      ? 'application/vnd.ms-powerpoint'
-      : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-
-  const fileResponse = await fetch(fileUri);
-  if (!fileResponse.ok) {
-    throw new Error('Could not read the selected presentation file.');
-  }
-  const blob = await fileResponse.blob();
-  assertNoteUploadSize(blob.size, fileName);
-
-  const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
-    contentType,
-    upsert: false,
-  });
-  if (uploadError) {
-    throw new Error(uploadError.message || 'Storage upload failed.');
-  }
-
-  try {
-    return notesRequest<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }>(
-      '/finalize-presentation',
-      {
-        method: 'POST',
-        body: JSON.stringify({ storagePath, fileName, folderId }),
-      }
-    );
-  } catch (err) {
-    await supabase.storage.from('note-files').remove([storagePath]).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
+  const { base64Data } = await readLocalFileAsBase64(fileUri, fileName);
+  return notesRequest<{ note: StudyNote; attachment: NoteAttachment; previewAvailable: boolean }>(
+    '/upload-presentation',
+    {
+      method: 'POST',
+      body: JSON.stringify({ fileName, base64Data, folderId }),
+    }
+  );
 };
 
 function imageContentTypeFromFileName(fileName: string): string {
@@ -321,40 +299,43 @@ type MobileImageUpload = {
   size?: number | null;
 };
 
-async function uploadImagesToStorage(
-  userId: string,
+async function encodeMobileImagesForApi(
   images: MobileImageUpload[]
-): Promise<{ storagePaths: string[]; fileNames: string[] }> {
-  const storagePaths: string[] = [];
-  const fileNames: string[] = [];
+): Promise<Array<{ fileName: string; base64Data: string; contentType: string }>> {
+  const encoded: Array<{ fileName: string; base64Data: string; contentType: string }> = [];
 
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
     const fileName = image.fileName || `photo-${i + 1}.jpg`;
-    const storagePath = buildNoteStoragePath(userId, `${i}-${fileName}`);
+    const contentType = image.mimeType || imageContentTypeFromFileName(fileName);
+    const info = await FileSystem.getInfoAsync(image.uri);
+    const byteLength =
+      typeof image.size === 'number' && image.size > 0
+        ? image.size
+        : info.exists && 'size' in info
+          ? Number(info.size) || 0
+          : 0;
+    assertAllowedImageUpload({ contentType, byteLength: byteLength || undefined });
+    if (byteLength > 0) {
+      assertNoteUploadSize(byteLength, fileName);
+    }
 
-    const fileResponse = await fetch(image.uri);
-    if (!fileResponse.ok) {
+    const base64Data = await FileSystem.readAsStringAsync(image.uri, { encoding: 'base64' });
+    if (!base64Data) {
       throw new Error('Could not read the selected image.');
     }
-    const blob = await fileResponse.blob();
-    const contentType = image.mimeType || blob.type || imageContentTypeFromFileName(fileName);
-    assertAllowedImageUpload({ contentType, byteLength: blob.size });
-    assertNoteUploadSize(blob.size, fileName);
-
-    const { error: uploadError } = await supabase.storage.from('note-files').upload(storagePath, blob, {
-      contentType,
-      upsert: false,
-    });
-    if (uploadError) {
-      throw new Error(uploadError.message || 'Storage upload failed.');
+    if (byteLength <= 0) {
+      assertNoteUploadSize(Math.ceil((base64Data.length * 3) / 4), fileName);
+      assertAllowedImageUpload({
+        contentType,
+        byteLength: Math.ceil((base64Data.length * 3) / 4),
+      });
     }
 
-    storagePaths.push(storagePath);
-    fileNames.push(fileName);
+    encoded.push({ fileName, base64Data, contentType });
   }
 
-  return { storagePaths, fileNames };
+  return encoded;
 }
 
 export const uploadNoteImagesViaApi = async (
@@ -370,17 +351,11 @@ export const uploadNoteImagesViaApi = async (
     throw new Error('Select at least one image.');
   }
 
-  const { storagePaths, fileNames } = await uploadImagesToStorage(session.user.id, images);
-
-  try {
-    return notesRequest<{ note: StudyNote; attachments: NoteAttachment[] }>('/finalize-images', {
-      method: 'POST',
-      body: JSON.stringify({ storagePaths, fileNames, folderId, title }),
-    });
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
+  const encoded = await encodeMobileImagesForApi(images);
+  return notesRequest<{ note: StudyNote; attachments: NoteAttachment[] }>('/upload-images', {
+    method: 'POST',
+    body: JSON.stringify({ images: encoded, folderId, title }),
+  });
 };
 
 export const addImagesToPhotoNote = async (noteId: string, images: MobileImageUpload[]) => {
@@ -392,15 +367,9 @@ export const addImagesToPhotoNote = async (noteId: string, images: MobileImageUp
     throw new Error('Select at least one image.');
   }
 
-  const { storagePaths, fileNames } = await uploadImagesToStorage(session.user.id, images);
-
-  try {
-    return notesRequest<{ attachments: NoteAttachment[] }>(`/${noteId}/attachments/finalize-image`, {
-      method: 'POST',
-      body: JSON.stringify({ storagePaths, fileNames }),
-    });
-  } catch (err) {
-    await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
-    throw wrapNoteFinalizeError(err);
-  }
+  const encoded = await encodeMobileImagesForApi(images);
+  return notesRequest<{ attachments: NoteAttachment[] }>(`/${noteId}/attachments/upload-images`, {
+    method: 'POST',
+    body: JSON.stringify({ images: encoded }),
+  });
 };

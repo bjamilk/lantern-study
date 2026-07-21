@@ -943,29 +943,30 @@ router.get(
 
     const cacheKey = `user:settings:${userId}`;
     let settings = await cacheService.get(cacheKey);
+    const user = await supabaseService.getUserById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
 
     if (!settings) {
-      const user = await supabaseService.getUserById(userId);
-      
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found',
-        });
-      }
-
       settings = user.settings || null;
 
       if (settings) {
         settings = parseUserSettings(settings) as unknown as typeof settings;
-        // Cache for 10 minutes
         await cacheService.set(cacheKey, settings, 600);
       }
     }
 
     res.json({
       success: true,
-      data: { settings },
+      data: {
+        settings,
+        settingsVersion: (user as { settingsVersion?: number }).settingsVersion ?? 1,
+      },
     });
   })
 );
@@ -1052,7 +1053,10 @@ router.put(
 
     res.json({
       success: true,
-      data: { settings: updatedUser.settings },
+      data: {
+        settings: updatedUser.settings,
+        settingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion,
+      },
       message: 'Settings updated successfully',
     });
   })

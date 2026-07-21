@@ -102,6 +102,8 @@ async function initializeServices() {
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     };
     supabaseService = new SupabaseService(dbConfig);
+    const { setIdempotencyClient } = await import('./middleware/idempotency');
+    setIdempotencyClient(() => supabaseService.getClient());
 
     // Initialize API key service (requires Supabase service role client)
     apiKeyService = new (await import('./services/apiKey')).ApiKeyService();
@@ -230,7 +232,7 @@ app.use(
 );
 
 app.use(
-  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|[^/]+\/regenerate-preview)$/,
+  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|upload-images|[^/]+\/regenerate-preview|[^/]+\/attachments\/upload-images)$/,
   express.json({ limit: '35mb' })
 );
 

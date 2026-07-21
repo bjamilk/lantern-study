@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
-import { supabase } from '../services/supabase';
+import { checkUsername, updateUsername } from '../services/api';
 
 interface User {
   id: string;
@@ -84,13 +84,8 @@ export default function UsernameRequiredModal({
     setCheckingUsername(true);
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase.rpc('is_username_available', { 
-          username_to_check: normalizedUsername 
-        });
-        
-        if (!error) {
-          setUsernameAvailable(data === true);
-        }
+        const result = await checkUsername(normalizedUsername);
+        setUsernameAvailable(result.available === true);
       } catch (err) {
         console.error('Error checking username:', err);
       } finally {
@@ -141,24 +136,10 @@ export default function UsernameRequiredModal({
 
     setIsSubmitting(true);
     try {
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          username: normalizedUsername,
-          first_name: trimmedFirstName,
-          last_name: trimmedLastName,
-          name: `${trimmedFirstName} ${trimmedLastName}`,
-        })
-        .eq('id', currentUser.id);
-
-      if (updateError) {
-        if (updateError.code === '23505') {
-          setError('This username is already taken');
-        } else {
-          setError(updateError.message || 'Failed to update profile');
-        }
-        return;
-      }
+      await updateUsername(currentUser.id, normalizedUsername, {
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
+      });
 
       Alert.alert(
         'Welcome!',
@@ -166,7 +147,12 @@ export default function UsernameRequiredModal({
         [{ text: 'Continue', onPress: () => onSuccess(normalizedUsername, trimmedFirstName, trimmedLastName) }]
       );
     } catch (err: any) {
-      setError(err.message || 'Failed to update profile');
+      const message = err?.message || 'Failed to update profile';
+      if (/taken|already/i.test(message)) {
+        setError('This username is already taken');
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSubmitting(false);
     }

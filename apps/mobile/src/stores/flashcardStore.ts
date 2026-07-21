@@ -645,7 +645,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         'flashcard_review',
         flashcardId,
         'create',
-        { rating, deckId },
+        { rating, deckId, expectedVersion: card.version },
         userId
       );
       // Keep pending until sync confirms — due count stays correct offline.
@@ -653,7 +653,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
 
     try {
-      const updated = await api.reviewFlashcard(flashcardId, rating);
+      const updated = await api.reviewFlashcard(flashcardId, rating, card.version);
       const mapped = mapFlashcardFromApi(updated);
       // Prefer server SRS when present; otherwise keep the local FSRS result.
       const finalCard =
@@ -675,12 +675,35 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       });
       await get().saveToStorage();
     } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        // Drop local optimistic grade; refetch would win — clear pending.
+        pendingLocalReviews.delete(flashcardId);
+        if (error.current) {
+          const mapped = mapFlashcardFromApi(error.current);
+          if (mapped?.id) {
+            set(current => {
+              const flashcards = {
+                ...current.flashcards,
+                [deckId]: (current.flashcards[deckId] || []).map(c =>
+                  c.id === flashcardId ? { ...c, ...mapped } : c
+                ),
+              };
+              return {
+                flashcards,
+                decks: enrichDecksWithStats(current.decks, flashcards),
+              };
+            });
+          }
+        }
+        await get().saveToStorage();
+        return;
+      }
       console.error('Failed to review flashcard on server:', error);
       await syncService.queueOperation(
         'flashcard_review',
         flashcardId,
         'create',
-        { rating, deckId },
+        { rating, deckId, expectedVersion: card.version },
         userId
       );
       // Keep pendingLocalReviews so refetch/sync cannot resurrect the old due state.
