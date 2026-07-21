@@ -927,7 +927,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                         <label htmlFor="username" className="sr-only">Username</label>
                                         <div className="relative">
                                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <span className="text-lantern-text-tertiary font-medium">@</span>
+                                                <span className="text-lantern-text-tertiary font-medium" aria-hidden="true">@</span>
                                             </div>
                                             <input 
                                                 id="username" 
@@ -936,6 +936,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                                 autoComplete="username" 
                                                 value={username} 
                                                 onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
+                                                aria-invalid={usernameError ? true : undefined}
+                                                aria-describedby={
+                                                    usernameError
+                                                        ? 'username-error'
+                                                        : username && usernameAvailable === true
+                                                          ? 'username-available'
+                                                          : undefined
+                                                }
                                                 className={`w-full pl-8 pr-10 py-2.5 border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 ${
                                                     usernameError ? 'border-red-500 focus:ring-red-500' : 
                                                     usernameAvailable === true ? 'border-green-500 focus:ring-green-500' : 
@@ -944,7 +952,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                                 placeholder="username"
                                                 maxLength={20}
                                             />
-                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none" aria-hidden="true">
                                                 {checkingUsername && (
                                                     <svg className="animate-spin h-5 w-5 text-lantern-text-tertiary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -960,18 +968,22 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                             </div>
                                         </div>
                                         {usernameError && (
-                                            <p className="mt-1 text-xs text-red-500">{usernameError}</p>
+                                            <p id="username-error" role="alert" aria-live="polite" className="mt-1 text-xs text-red-500">{usernameError}</p>
                                         )}
                                         {!usernameError && username && usernameAvailable === true && (
-                                            <p className="mt-1 text-xs text-green-500">@{username} is available!</p>
+                                            <p id="username-available" className="mt-1 text-xs text-green-500">@{username} is available!</p>
                                         )}
                                     </div>
                                     <div>
                                         <label htmlFor="phone" className="sr-only">Phone Number</label>
                                         <div className="flex min-w-0">
+                                            <label htmlFor="country-code" className="sr-only">Country code</label>
                                             <select
+                                                id="country-code"
+                                                name="countryCode"
                                                 value={countryCode}
                                                 onChange={(e) => setCountryCode(e.target.value)}
+                                                aria-label="Country code"
                                                 className="w-20 sm:w-24 shrink-0 px-2 sm:px-3 py-2.5 border border-lantern-border rounded-l-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
                                             >
                                                 {countryCodes.map((country) => (

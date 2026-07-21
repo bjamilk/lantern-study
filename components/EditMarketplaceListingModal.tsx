@@ -196,28 +196,39 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     }));
   };
 
-  const uploadImages = async (): Promise<string[]> => {
+  const uploadImages = async (): Promise<{ urls: string[]; failedNames: string[] }> => {
     const uploadedUrls: string[] = [];
+    const failedNames: string[] = [];
 
     for (const image of formData.images) {
       if (image.isExisting && image.url) {
         uploadedUrls.push(image.url);
       } else if (image.file && !image.uploaded) {
-        try {
-          const result = await uploadMarketplaceImage(image.file, listing.id);
-          uploadedUrls.push(result.url);
-          image.uploaded = true;
-          image.url = result.url;
-          image.path = result.path;
-        } catch (error) {
-          console.error('Error uploading image:', error);
+        let success = false;
+        for (let attempt = 1; attempt <= 2 && !success; attempt++) {
+          try {
+            const result = await uploadMarketplaceImage(image.file, listing.id);
+            uploadedUrls.push(result.url);
+            image.uploaded = true;
+            image.url = result.url;
+            image.path = result.path;
+            success = true;
+          } catch (error) {
+            console.error(`Error uploading image (attempt ${attempt}/2):`, error);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 400 * attempt));
+            }
+          }
+        }
+        if (!success) {
+          failedNames.push(image.file.name || 'image');
         }
       } else if (image.url) {
         uploadedUrls.push(image.url);
       }
     }
 
-    return uploadedUrls;
+    return { urls: uploadedUrls, failedNames };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -231,8 +242,24 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
     try {
       // Upload new images first
       setUploadingImages(true);
-      const imageUrls = await uploadImages();
+      const { urls: imageUrls, failedNames } = await uploadImages();
       setUploadingImages(false);
+
+      const hadNewUploads = formData.images.some((img) => img.file && !img.isExisting);
+      if (hadNewUploads && failedNames.length > 0) {
+        const anyNewSucceeded = formData.images.some((img) => img.file && img.uploaded);
+        if (!anyNewSucceeded) {
+          useToastStore.getState().showToast(
+            'Photo upload failed. Listing was not updated. Please try again.',
+            'error'
+          );
+          return;
+        }
+        useToastStore.getState().showToast(
+          `${failedNames.length} photo(s) failed to upload. Other changes will still be saved.`,
+          'error'
+        );
+      }
 
       // Update listing
       const resolvedCategory = formData.category === 'other' ? `custom:${customCategory.trim()}` : formData.category;

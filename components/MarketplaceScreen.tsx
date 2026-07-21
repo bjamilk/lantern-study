@@ -453,9 +453,15 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   const renderCategoryChips = (categories: typeof academicCategories) => (
     <div className={`px-3 sm:px-4 md:px-6 md:py-2 ${showCategoryPanel ? 'py-1' : 'py-0'}`}>
-      <div className={`gap-1.5 lg:gap-2 lg:overflow-x-auto lg:pb-1 lg:scrollbar-none lg:snap-x lg:snap-mandatory touch-pan-x ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}>
+      <div
+        role="radiogroup"
+        aria-label="Marketplace category"
+        className={`gap-1.5 lg:gap-2 lg:overflow-x-auto lg:pb-1 lg:scrollbar-none lg:snap-x lg:snap-mandatory touch-pan-x ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
+      >
         <button
           type="button"
+          role="radio"
+          aria-checked={selectedCategory === ''}
           onClick={() => selectCategory('')}
           className={categoryChipClass(selectedCategory === '')}
         >
@@ -468,10 +474,12 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             <button
               key={category.id}
               type="button"
+              role="radio"
+              aria-checked={isSelected}
               onClick={() => selectCategory(category.id)}
               className={categoryChipClass(isSelected)}
             >
-              <IconComponent className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+              <IconComponent className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" aria-hidden="true" />
               <span className="text-center lg:text-left leading-tight truncate">{category.name}</span>
             </button>
           );

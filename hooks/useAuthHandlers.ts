@@ -107,22 +107,34 @@ export function useAuthHandlers() {
         updates: Partial<UserSettings[K]>
     ) => {
         if (!currentUser) return;
-        const current = getUserSettings();
-        const next = mergeSettingsCategory(current, category, updates);
+        const previousSettings = getUserSettings();
+        const previousUser = currentUser;
+        const next = mergeSettingsCategory(previousSettings, category, updates);
+        // Optimistic UI — roll back if persist fails (REL-01).
         setCurrentUser({ ...currentUser, settings: next });
-        void persistUserSettings(next);
         if (category === 'appearance' || category === 'accessibility') {
             applySettingsToUi(next);
         }
-        if (category === 'appearance') {
-            const resolvedTheme =
-                next.appearance.theme === 'system' ? theme : next.appearance.theme;
-            void saveUserPreferences(currentUser.id, {
-                theme: resolvedTheme === 'dark' ? 'dark' : 'light',
-                lowDataMode: next.appearance.lowDataMode,
-                themePreference: next.appearance.theme,
-            });
-        }
+        void (async () => {
+            const saved = await persistUserSettings(next);
+            if (!saved) {
+                setCurrentUser(previousUser);
+                if (category === 'appearance' || category === 'accessibility') {
+                    applySettingsToUi(previousSettings);
+                }
+                useToastStore.getState().showToast('Failed to save settings. Please try again.', 'error');
+                return;
+            }
+            if (category === 'appearance') {
+                const resolvedTheme =
+                    next.appearance.theme === 'system' ? theme : next.appearance.theme;
+                void saveUserPreferences(currentUser.id, {
+                    theme: resolvedTheme === 'dark' ? 'dark' : 'light',
+                    lowDataMode: next.appearance.lowDataMode,
+                    themePreference: next.appearance.theme,
+                });
+            }
+        })();
     }, [currentUser, getUserSettings, persistUserSettings, applySettingsToUi, setCurrentUser, theme]);
 
     const handleUpdateNotificationSettings = useCallback((
@@ -176,16 +188,30 @@ export function useAuthHandlers() {
         useStudyGoalsStore.getState().reset();
     }, [setCurrentUser, setGroups, setAllMessages, setSelectedChat, setDmThreads, setAllDirectMessages]);
 
-    const handleUpdateProfile = useCallback((name: string, phone: string) => {
-        if (!currentUser) return;
+    const handleUpdateProfile = useCallback(async (name: string, phone: string): Promise<boolean> => {
+        if (!currentUser) return false;
+        const previous = currentUser;
         setCurrentUser({ ...currentUser, name, phoneNumber: phone });
         setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? { ...u, name, phoneNumber: phone } : u));
-        persistProfileUpdate({ name, phone }).catch(error => console.error('Failed to update user profile:', error));
-        alert("Profile updated successfully!");
-    }, [currentUser, setCurrentUser, persistProfileUpdate]);
+        try {
+            const ok = await persistProfileUpdate({ name, phone });
+            if (!ok) throw new Error('Profile persist failed');
+            useToastStore.getState().showToast('Profile updated successfully.', 'info');
+            return true;
+        } catch (error) {
+            console.error('Failed to update user profile:', error);
+            setCurrentUser(previous);
+            setUsers(prevUsers =>
+                prevUsers.map((u) => (u.id === previous.id ? { ...u, name: previous.name, phoneNumber: previous.phoneNumber } : u))
+            );
+            useToastStore.getState().showToast('Failed to update profile. Please try again.', 'error');
+            return false;
+        }
+    }, [currentUser, setCurrentUser, setUsers, persistProfileUpdate]);
 
     const handleUpdateCurrentUserAvatar = useCallback((avatarUrl: string) => {
         if (!currentUser) return;
+        const previousAvatar = currentUser.avatarUrl;
         // Local UI update immediately. Persist only when clearing or setting a
         // non-data URL (POST /avatar already writes the DB for uploads).
         setCurrentUser({ ...currentUser, avatarUrl });
@@ -194,12 +220,34 @@ export function useAuthHandlers() {
         );
         if (avatarUrl.startsWith('data:')) {
           console.error('Blocked local-only base64 avatar persist; use POST /users/:id/avatar');
+          setCurrentUser({ ...currentUser, avatarUrl: previousAvatar });
+          setUsers((prevUsers) =>
+            prevUsers.map((u) => (u.id === currentUser.id ? { ...u, avatarUrl: previousAvatar } : u))
+          );
           useToastStore.getState().showToast('Avatar upload failed. Please try again from Settings.', 'error');
           return;
         }
-        persistProfileUpdate({ avatar_url: avatarUrl || null }).catch((error) =>
-          console.error('Failed to update user avatar:', error)
-        );
+        void persistProfileUpdate({ avatar_url: avatarUrl || null }).then((ok) => {
+          if (ok) return;
+          const latest = useAuthStore.getState().currentUser;
+          if (latest?.id === currentUser.id) {
+            setCurrentUser({ ...latest, avatarUrl: previousAvatar });
+          }
+          setUsers((prevUsers) =>
+            prevUsers.map((u) => (u.id === currentUser.id ? { ...u, avatarUrl: previousAvatar } : u))
+          );
+          useToastStore.getState().showToast('Failed to update avatar. Please try again.', 'error');
+        }).catch((error) => {
+          console.error('Failed to update user avatar:', error);
+          const latest = useAuthStore.getState().currentUser;
+          if (latest?.id === currentUser.id) {
+            setCurrentUser({ ...latest, avatarUrl: previousAvatar });
+          }
+          setUsers((prevUsers) =>
+            prevUsers.map((u) => (u.id === currentUser.id ? { ...u, avatarUrl: previousAvatar } : u))
+          );
+          useToastStore.getState().showToast('Failed to update avatar. Please try again.', 'error');
+        });
     }, [currentUser, setCurrentUser, setUsers, persistProfileUpdate]);
 
     const handleUpdatePassword = useCallback((current: string, newPass: string): boolean => {

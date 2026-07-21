@@ -72,7 +72,7 @@ interface SettingsModalProps {
     category: K,
     updates: Partial<UserSettings[K]>
   ) => void;
-  onUpdateProfile: (name: string, phone: string) => void;
+  onUpdateProfile: (name: string, phone: string) => void | Promise<boolean>;
   onUpdateAvatar: (avatarUrl: string) => void;
   onUpdatePassword: (current: string, newPass: string) => boolean;
   onLogout: () => void;
@@ -235,10 +235,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateAvatar('');
     };
 
-    const handleProfileSave = (e: React.FormEvent) => {
+    const handleProfileSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        onUpdateProfile(profileData.name, profileData.phone);
-        setIsProfileDirty(false);
+        const result = onUpdateProfile(profileData.name, profileData.phone);
+        const ok = result instanceof Promise ? await result : true;
+        if (ok !== false) {
+            setIsProfileDirty(false);
+        }
     };
 
     const handlePasswordChange = (e: React.FormEvent) => {

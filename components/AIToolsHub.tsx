@@ -49,6 +49,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
       let flashcardCount = 0;
       let quizQuestionCount = 0;
+      const warnings: string[] = [];
 
       if (generateCards && hasEnoughNoteStudyContent(note)) {
         try {
@@ -57,8 +58,9 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
             count: normalizeFlashcardCount(),
           });
           if (flashcards?.length) flashcardCount = flashcards.length;
+          else warnings.push('Flashcard generation returned no cards.');
         } catch {
-          // non-fatal
+          warnings.push('Flashcard generation failed. You can retry from the note.');
         }
       }
 
@@ -71,8 +73,9 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
             5
           );
           quizQuestionCount = questions?.length ?? 0;
+          if (!quizQuestionCount) warnings.push('Quiz generation returned no questions.');
         } catch {
-          // non-fatal
+          warnings.push('Quiz generation failed. You can retry from the note.');
         }
       }
 
@@ -81,6 +84,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
         noteTitle: note.title,
         flashcardCount,
         quizQuestionCount,
+        warnings: warnings.length ? warnings : undefined,
       };
       setResult(res);
       setStep('done');
@@ -283,12 +287,26 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
 
         {step === 'done' && result && (
           <Card padding="lg" className="text-center space-y-4">
-            <div className="text-4xl text-emerald-500">✓</div>
-            <p className="font-semibold text-lg text-lantern-text">{result.noteTitle} ready!</p>
+            <div className={`text-4xl ${result.warnings?.length ? 'text-amber-500' : 'text-emerald-500'}`} aria-hidden>
+              {result.warnings?.length ? '!' : '✓'}
+            </div>
+            <p className="font-semibold text-lg text-lantern-text">
+              {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
+            </p>
             <div className="flex justify-center gap-4 text-sm text-lantern-text-secondary">
               {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
               {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz questions</span> : null}
+              {!result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
+                <span>Note saved</span>
+              ) : null}
             </div>
+            {result.warnings?.length ? (
+              <div role="status" aria-live="polite" className="text-left text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 space-y-1">
+                {result.warnings.map((w) => (
+                  <p key={w}>{w}</p>
+                ))}
+              </div>
+            ) : null}
             <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
               <Button onClick={() => onOpenNote(result.noteId)}>
                 Open note

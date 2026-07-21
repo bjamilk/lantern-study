@@ -22,6 +22,8 @@ export interface ImportAndStudyResult {
   noteTitle: string;
   flashcardCount?: number;
   quizQuestionCount?: number;
+  /** Non-fatal AI generator failures to surface on the done step (REL-01). */
+  warnings?: string[];
 }
 
 interface ImportAndStudyModalProps {
@@ -71,6 +73,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
       let flashcardCount = 0;
       let quizQuestionCount = 0;
+      const warnings: string[] = [];
 
       if (generateCards && studyText.length >= 50) {
         try {
@@ -78,8 +81,9 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             count: normalizeFlashcardCount(),
           });
           if (flashcards?.length) flashcardCount = flashcards.length;
+          else warnings.push('Flashcard generation returned no cards.');
         } catch {
-          // non-fatal
+          warnings.push('Flashcard generation failed. You can retry from the note.');
         }
       }
 
@@ -91,8 +95,9 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             5
           );
           quizQuestionCount = questions?.length ?? 0;
+          if (!quizQuestionCount) warnings.push('Quiz generation returned no questions.');
         } catch {
-          // non-fatal
+          warnings.push('Quiz generation failed. You can retry from the note.');
         }
       }
 
@@ -101,6 +106,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         noteTitle: note.title,
         flashcardCount,
         quizQuestionCount,
+        warnings: warnings.length ? warnings : undefined,
       };
       setResult(res);
       setStep('done');
@@ -309,12 +315,24 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
           {step === 'done' && result && (
             <div className="py-4 text-center space-y-4">
-              <div className="text-4xl" aria-hidden>✓</div>
-              <p className="font-semibold text-lantern-text">{result.noteTitle} ready!</p>
+              <div className="text-4xl" aria-hidden>{result.warnings?.length ? '!' : '✓'}</div>
+              <p className="font-semibold text-lantern-text">
+                {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
+              </p>
               <div className="flex justify-center gap-4 text-sm text-lantern-text-muted">
                 {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
                 {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz Qs</span> : null}
+                {!result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
+                  <span>Note saved</span>
+                ) : null}
               </div>
+              {result.warnings?.length ? (
+                <div role="status" aria-live="polite" className="text-left text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 space-y-1">
+                  {result.warnings.map((w) => (
+                    <p key={w}>{w}</p>
+                  ))}
+                </div>
+              ) : null}
               <Button onClick={() => { onOpenNote(result.noteId); handleClose(); }} className="w-full">
                 Open note
               </Button>

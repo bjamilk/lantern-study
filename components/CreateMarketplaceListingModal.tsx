@@ -241,8 +241,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     }));
   };
 
-  const uploadImages = async (listingId: string) => {
+  const uploadImages = async (listingId: string): Promise<{ urls: string[]; failedNames: string[] }> => {
     const uploadedUrls: string[] = [];
+    const failedNames: string[] = [];
 
     for (const image of formData.images) {
       if (!image.uploaded) {
@@ -257,19 +258,21 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             success = true;
           } catch (error) {
             console.error(`Error uploading image (attempt ${attempt}/2):`, error);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 400 * attempt));
+            }
           }
         }
 
         if (!success) {
-          // Continue with other uploads even if one image fails.
-          console.warn('Skipping image after retry failures:', image.file.name);
+          failedNames.push(image.file.name || 'image');
         }
       } else if (image.url) {
         uploadedUrls.push(image.url);
       }
     }
 
-    return uploadedUrls;
+    return { urls: uploadedUrls, failedNames };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -352,15 +355,26 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       // Then upload images if any
       if (formData.images.length > 0) {
         setUploadingImages(true);
-        const uploadedUrls = await uploadImages(listing.id);
+        const { urls: uploadedUrls, failedNames } = await uploadImages(listing.id);
 
-        // Update the existing listing with image URLs
         if (uploadedUrls.length > 0) {
           await updateMarketplaceListing(listing.id, {
             images: uploadedUrls
           });
         }
         setUploadingImages(false);
+
+        if (failedNames.length > 0 && uploadedUrls.length === 0) {
+          useToastStore.getState().showToast(
+            'Listing created, but all photos failed to upload. Edit the listing to add photos.',
+            'error'
+          );
+        } else if (failedNames.length > 0) {
+          useToastStore.getState().showToast(
+            `Listing created, but ${failedNames.length} photo(s) failed to upload.`,
+            'error'
+          );
+        }
       }
 
       onSuccess();
@@ -471,18 +485,21 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3" role="radiogroup" aria-labelledby="listing-category-label">
               {subcategories.map(subcat => {
                 const IconComponent = subcat.icon;
+                const selected = formData.subcategory === subcat.id;
                 return (
                   <button
                     key={subcat.id}
                     type="button"
+                    role="radio"
+                    aria-checked={selected}
                     onClick={() => setFormData(prev => ({ ...prev, subcategory: subcat.id }))}
                     className={`p-3 border rounded-lg text-left transition-all duration-200 ${
-                      formData.subcategory === subcat.id
+                      selected
                         ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary'
                         : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
                     }`}
                   >
-                    <IconComponent className="w-5 h-5 mb-2 text-lantern-text-secondary" />
+                    <IconComponent className="w-5 h-5 mb-2 text-lantern-text-secondary" aria-hidden="true" />
                     <span className="text-sm font-medium">{subcat.name}</span>
                   </button>
                 );
@@ -490,6 +507,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
               {/* Other / Custom Category */}
               <button
                 type="button"
+                role="radio"
+                aria-checked={formData.subcategory === 'other'}
                 onClick={() => setFormData(prev => ({ ...prev, subcategory: 'other' }))}
                 className={`p-3 border rounded-lg text-left transition-all duration-200 ${
                   formData.subcategory === 'other'
@@ -497,7 +516,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                     : 'border-lantern-border hover:border-lantern-border dark:hover:border-lantern-border bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text'
                 }`}
               >
-                <PlusIcon className="w-5 h-5 mb-2 text-lantern-text-secondary" />
+                <PlusIcon className="w-5 h-5 mb-2 text-lantern-text-secondary" aria-hidden="true" />
                 <span className="text-sm font-medium">Other</span>
               </button>
             </div>
