@@ -13,6 +13,7 @@ import { bootstrapAuthFromStorage } from './services/supabase';
 import { applyDesignTokensToDom } from './utils/applyDesignTokens';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import CookieNoticeBanner from './components/CookieNoticeBanner';
 import LegalPage from './components/LegalPage';
 
 bootstrapAuthFromStorage();
@@ -37,6 +38,8 @@ root.render(
           <Route path="/cookies" element={<LegalPage document="cookies" />} />
           <Route path="/*" element={<App />} />
         </Routes>
+        {/* Mounted at router root so legal pages can open the Preference Center */}
+        <CookieNoticeBanner />
       </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>

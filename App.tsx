@@ -6,7 +6,6 @@ import { useToastStore } from './stores/toastStore';
 import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
-import CookieNoticeBanner from './components/CookieNoticeBanner';
 import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
@@ -1543,7 +1542,6 @@ export const App: React.FC = () => {
                 onCancel={globalConfirm.handleCancel}
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
-            <CookieNoticeBanner />
             <FeatureTipsHost
                 onboardingComplete={!showOnboarding && Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('lantern_onboarding_complete'))}
                 appMode={appMode}

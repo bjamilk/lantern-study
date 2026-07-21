@@ -42,14 +42,34 @@ function writePrefs(prefs: CookiePreferences) {
   }
 }
 
+function readHasChoice(): boolean {
+  try {
+    return hasRecordedCookieChoice(
+      localStorage.getItem(COOKIE_PREFS_STORAGE_KEY),
+      localStorage.getItem(COOKIE_NOTICE_LEGACY_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function openCookiePreferenceCenter() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(OPEN_COOKIE_PREFERENCES_EVENT));
 }
 
+function CookieGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2a9.9 9.9 0 0 0-7.07 2.93A10 10 0 1 0 19.5 8.1 3.5 3.5 0 0 1 16 11.5a3.5 3.5 0 0 1-3.45-2.9A3.5 3.5 0 0 1 9.2 5.7 9.95 9.95 0 0 0 12 2Zm-3.25 8.75a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm4.5 1.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2ZM9.5 15.25a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm5.25.75a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" />
+    </svg>
+  );
+}
+
 export function CookieNoticeBanner() {
   const [bannerVisible, setBannerVisible] = useState(false);
   const [centerOpen, setCenterOpen] = useState(false);
+  const [hasChoice, setHasChoice] = useState(false);
   const [expanded, setExpanded] = useState<CookieCategoryId | null>('necessary');
   const [draft, setDraft] = useState<DraftPrefs>({
     functional: false,
@@ -66,32 +86,40 @@ export function CookieNoticeBanner() {
     });
   }, []);
 
+  const openCenter = useCallback(() => {
+    syncDraftFromStored();
+    setCenterOpen(true);
+  }, [syncDraftFromStored]);
+
   useEffect(() => {
     try {
-      const prefsRaw = localStorage.getItem(COOKIE_PREFS_STORAGE_KEY);
-      const legacyRaw = localStorage.getItem(COOKIE_NOTICE_LEGACY_KEY);
-      if (!hasRecordedCookieChoice(prefsRaw, legacyRaw)) {
-        setBannerVisible(true);
-      }
+      const choice = readHasChoice();
+      setHasChoice(choice);
+      if (!choice) setBannerVisible(true);
     } catch {
       setBannerVisible(true);
     }
   }, []);
 
   useEffect(() => {
-    const onOpen = () => {
-      syncDraftFromStored();
-      setCenterOpen(true);
-      setBannerVisible(true);
-    };
+    const onOpen = () => openCenter();
     window.addEventListener(OPEN_COOKIE_PREFERENCES_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_COOKIE_PREFERENCES_EVENT, onOpen);
-  }, [syncDraftFromStored]);
+  }, [openCenter]);
 
   const persistAndClose = (prefs: CookiePreferences) => {
     writePrefs(prefs);
+    setHasChoice(true);
     setBannerVisible(false);
     setCenterOpen(false);
+  };
+
+  const closeCenterWithoutSaving = () => {
+    setCenterOpen(false);
+    if (!hasChoice) {
+      // Keep the initial banner visible until the user records a choice.
+      setBannerVisible(true);
+    }
   };
 
   const confirmChoices = () => {
@@ -102,10 +130,22 @@ export function CookieNoticeBanner() {
     });
   };
 
-  if (!bannerVisible && !centerOpen) return null;
+  const showLauncher = hasChoice && !bannerVisible && !centerOpen;
 
   return (
     <>
+      {showLauncher && (
+        <button
+          type="button"
+          onClick={openCenter}
+          className="fixed z-[80] left-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border bg-lantern-surface/95 text-lantern-text shadow-lg backdrop-blur hover:bg-lantern-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+          aria-label="Manage cookie preferences"
+          title="Manage cookie preferences"
+        >
+          <CookieGlyph className="h-5 w-5" />
+        </button>
+      )}
+
       {bannerVisible && !centerOpen && (
         <div
           role="region"
@@ -124,10 +164,7 @@ export function CookieNoticeBanner() {
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  syncDraftFromStored();
-                  setCenterOpen(true);
-                }}
+                onClick={openCenter}
                 className="shrink-0 min-h-[44px] rounded-lg border border-lantern-border px-4 py-2 text-sm font-medium hover:bg-lantern-surface"
               >
                 Manage preferences
@@ -157,20 +194,40 @@ export function CookieNoticeBanner() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="cookie-preference-title"
+          onClick={closeCenterWithoutSaving}
         >
-          <div className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-lantern-border bg-lantern-surface text-lantern-text shadow-xl">
-            <div className="sticky top-0 z-[1] border-b border-lantern-border bg-lantern-surface px-4 py-3">
-              <h2 id="cookie-preference-title" className="text-lg font-semibold">
-                Lantern Study Cookie Preference Center
-              </h2>
-              <p className="mt-1 text-xs text-lantern-text-secondary leading-relaxed">
-                Choose which optional cookie categories to allow. Strictly Necessary cookies always stay on. Details in
-                our{' '}
-                <Link to="/cookies" className="underline text-lantern-primary" onClick={() => setCenterOpen(false)}>
-                  Cookie Policy
-                </Link>
-                .
-              </p>
+          <div
+            className="w-full sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-lantern-border bg-lantern-surface text-lantern-text shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-[1] border-b border-lantern-border bg-lantern-surface px-4 py-3 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 id="cookie-preference-title" className="text-lg font-semibold">
+                  Lantern Study Cookie Preference Center
+                </h2>
+                <p className="mt-1 text-xs text-lantern-text-secondary leading-relaxed">
+                  Choose which optional cookie categories to allow. Strictly Necessary cookies always stay on. Details in
+                  our{' '}
+                  <Link
+                    to="/cookies"
+                    className="underline text-lantern-primary"
+                    onClick={() => setCenterOpen(false)}
+                  >
+                    Cookie Policy
+                  </Link>
+                  .
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCenterWithoutSaving}
+                className="shrink-0 rounded-lg p-2 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+                aria-label="Close cookie preferences"
+              >
+                <span aria-hidden className="block text-xl leading-none">
+                  ×
+                </span>
+              </button>
             </div>
 
             <div className="px-4 py-3 space-y-2">
