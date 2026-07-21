@@ -1,12 +1,16 @@
 import {
+  COOKIE_NOTICE_LEGACY_KEY,
+  COOKIE_PREFS_STORAGE_KEY,
   COOKIE_PREFS_VERSION,
   acceptAllCookiePreferences,
   essentialOnlyCookiePreferences,
   hasRecordedCookieChoice,
   isCookieCategoryAllowed,
+  isCookieConsentStorageKey,
   parseCookiePreferences,
   resolveCookiePreferences,
   serializeCookiePreferences,
+  shouldClearClientStorageKeyOnLogout,
 } from './cookieConsent';
 
 describe('cookieConsent protocol', () => {
@@ -36,5 +40,16 @@ describe('cookieConsent protocol', () => {
     expect(resolved?.analytics).toBe(false);
     expect(isCookieCategoryAllowed(resolved, 'necessary')).toBe(true);
     expect(isCookieCategoryAllowed(resolved, 'advertising')).toBe(false);
+  });
+
+  it('preserves cookie consent keys across logout storage wipe', () => {
+    expect(isCookieConsentStorageKey(COOKIE_PREFS_STORAGE_KEY)).toBe(true);
+    expect(isCookieConsentStorageKey(COOKIE_NOTICE_LEGACY_KEY)).toBe(true);
+    expect(shouldClearClientStorageKeyOnLogout(COOKIE_PREFS_STORAGE_KEY)).toBe(false);
+    expect(shouldClearClientStorageKeyOnLogout(COOKIE_NOTICE_LEGACY_KEY)).toBe(false);
+    expect(shouldClearClientStorageKeyOnLogout('lantern_decks')).toBe(true);
+    expect(shouldClearClientStorageKeyOnLogout('sb-xxx-auth-token')).toBe(true);
+    expect(shouldClearClientStorageKeyOnLogout('auth-storage-v2')).toBe(true);
+    expect(shouldClearClientStorageKeyOnLogout('theme')).toBe(false);
   });
 });

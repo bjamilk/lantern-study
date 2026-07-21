@@ -166,3 +166,22 @@ export function isCookieCategoryAllowed(
 
 /** Browser custom event name — web Preference Center listens for this. */
 export const OPEN_COOKIE_PREFERENCES_EVENT = 'lantern:open-cookie-preferences';
+
+/** Consent records are device/browser preferences, not auth session data. */
+export function isCookieConsentStorageKey(key: string): boolean {
+  return key === COOKIE_PREFS_STORAGE_KEY || key === COOKIE_NOTICE_LEGACY_KEY;
+}
+
+/**
+ * Keys removed on logout / session wipe. Cookie consent must survive so users are
+ * not re-prompted after signing out and back in.
+ */
+export function shouldClearClientStorageKeyOnLogout(key: string): boolean {
+  if (isCookieConsentStorageKey(key)) return false;
+  return (
+    key.startsWith('sb-') ||
+    key.includes('supabase') ||
+    key.startsWith('lantern_') ||
+    key === 'auth-storage-v2'
+  );
+}

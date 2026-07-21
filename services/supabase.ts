@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Group, UserQuestionStats } from '../types'
-import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl } from '@lantern/shared'
+import { getSupabaseUrl, getSupabaseAnonKey, getApiBaseUrl, shouldClearClientStorageKeyOnLogout } from '@lantern/shared'
 import { mapUserFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils/apiMappers'
 import {
   listingsCacheKey,
@@ -149,13 +149,9 @@ export function clearAllClientAuthStorage(): void {
   } catch {
     // ignore
   }
+  // Preserve cookie consent (`lantern_cookie_*`) — it is not session data.
   Object.keys(localStorage).forEach((key) => {
-    if (
-      key.startsWith('sb-') ||
-      key.includes('supabase') ||
-      key.startsWith('lantern_') ||
-      key === 'auth-storage-v2'
-    ) {
+    if (shouldClearClientStorageKeyOnLogout(key)) {
       localStorage.removeItem(key);
     }
   });
