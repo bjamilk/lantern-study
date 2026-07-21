@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, UserQuestionStat, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData } from '../types';
 import DailyQuizWidget from './DailyQuizWidget';
 import { DailyGoalsProgress } from './DailyGoalsProgress';
@@ -721,9 +721,27 @@ export default function DashboardScreen({
     return streak;
   }, [filteredTestResults]);
 
-  return (
-    <div className="flex-1 flex flex-col bg-transparent text-lantern-text overflow-y-auto">
+  const dashboardScrollRef = useRef<HTMLDivElement>(null);
+  const dashboardScrollTopRef = useRef(0);
 
+  // Chart remounts / layout thrash were resetting scrollTop; restore after paint.
+  useLayoutEffect(() => {
+    const el = dashboardScrollRef.current;
+    if (!el) return;
+    if (Math.abs(el.scrollTop - dashboardScrollTopRef.current) > 1) {
+      el.scrollTop = dashboardScrollTopRef.current;
+    }
+  });
+
+  return (
+    <div
+      ref={dashboardScrollRef}
+      onScroll={(e) => {
+        dashboardScrollTopRef.current = e.currentTarget.scrollTop;
+      }}
+      className="flex-1 min-h-0 flex flex-col bg-transparent text-lantern-text overflow-y-auto overscroll-y-contain"
+      style={{ overflowAnchor: 'none' }}
+    >
       {/* ─── Daily Login Bonus Banner ─── */}
       {showDailyBonus && (
         <div className="bg-gradient-to-r from-lantern-accent to-amber-500 text-white px-4 py-3 flex items-center justify-between gap-3 shadow-lantern-md">

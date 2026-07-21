@@ -120,6 +120,15 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   setTipReady: (tipId, ready) => {
+    const already = get().readyTips.includes(tipId);
+    if (ready && already) {
+      get().recomputeActive();
+      return;
+    }
+    if (!ready && !already) {
+      get().recomputeActive();
+      return;
+    }
     set((s) => {
       const setReady = new Set(s.readyTips);
       if (ready) setReady.add(tipId);
@@ -138,7 +147,9 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
 
   recomputeActive: () => {
     const s = get();
-    set({ activeTipId: computeActive(s) });
+    const next = computeActive(s);
+    if (s.activeTipId === next) return;
+    set({ activeTipId: next });
   },
 
   dismiss: (tipId) => {
@@ -170,6 +181,7 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   markChecklist: (key, done = true) => {
+    if (get().tips.checklist[key] === done) return;
     const next = markChecklistItem(get().tips, key, done);
     set({ tips: next });
     schedulePersist(() => get().tips);

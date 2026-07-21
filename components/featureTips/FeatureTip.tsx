@@ -53,7 +53,21 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
       setPos(null);
       return;
     }
-    const update = () => setPos(measureAnchor(tipId, anchorSelector));
+    const update = () => {
+      const next = measureAnchor(tipId, anchorSelector);
+      setPos((prev) => {
+        if (
+          prev &&
+          next &&
+          prev.top === next.top &&
+          prev.left === next.left &&
+          prev.placement === next.placement
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);

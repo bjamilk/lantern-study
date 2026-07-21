@@ -41,12 +41,17 @@ const COLORS = {
 const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets, theme, type }) => {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<ChartType | null>(null);
+  const datasetsRef = useRef(datasets);
+  datasetsRef.current = datasets;
+  // Parents often pass a fresh `datasets={[...]}` each render; signature keeps Chart.js stable.
+  const datasetsSignature = JSON.stringify(datasets);
 
   useEffect(() => {
     let active = true;
     let localChartInstance: ChartType | null = null;
+    const currentDatasets = datasetsRef.current;
 
-    if (chartRef.current && datasets.length > 0 && datasets.some(d => d.data.length > 0)) {
+    if (chartRef.current && currentDatasets.length > 0 && currentDatasets.some(d => d.data.length > 0)) {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy(); // Destroy previous instance
         chartInstanceRef.current = null;
@@ -59,7 +64,7 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
         const tooltipBackgroundColor = theme === 'dark' ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.9)';
         const tooltipTitleColor = theme === 'dark' ? '#f1f5f9' : '#1e293b';
         const tooltipBodyColor = theme === 'dark' ? '#e2e8f0' : '#334155';
-        const uniqueLabels = [...new Set(datasets.flatMap(d => d.data.map(p => p.x)))].sort();
+        const uniqueLabels = [...new Set(currentDatasets.flatMap(d => d.data.map(p => p.x)))].sort();
         const chartColors = COLORS[theme];
 
         // Dynamic import
@@ -71,7 +76,7 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
             type: type,
             data: {
               labels: uniqueLabels,
-              datasets: datasets.map((dataset, index) => {
+              datasets: currentDatasets.map((dataset, index) => {
                   const color = chartColors[index % chartColors.length];
                   let datasetOptions: any;
 
@@ -110,6 +115,7 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
             options: {
               responsive: true,
               maintainAspectRatio: false,
+              animation: false,
               scales: {
                 y: {
                   beginAtZero: true,
@@ -185,7 +191,7 @@ const GroupPerformanceChart: React.FC<GroupPerformanceChartProps> = ({ datasets,
         chartInstanceRef.current = null;
       }
     };
-  }, [datasets, theme, type]);
+  }, [datasetsSignature, theme, type]);
 
   if (datasets.length === 0 || datasets.every(d => d.data.length === 0)) {
      return (
