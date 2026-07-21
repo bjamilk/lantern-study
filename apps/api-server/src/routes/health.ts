@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireOperationalAccess } from '../middleware/operationalAuth';
 import { isProductionEnv } from '../utils/safeError';
+import { concurrencySnapshots } from '../utils/concurrencyGate';
 
 const router = Router();
 const startTime = Date.now();
@@ -121,6 +122,7 @@ router.get('/metrics', requireOperationalAccess, (req: Request, res: Response) =
       user: cpuUsage.user,
       system: cpuUsage.system,
     },
+    concurrency: concurrencySnapshots(),
     pid: process.pid,
     nodeVersion: process.version,
     timestamp: new Date().toISOString(),

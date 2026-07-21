@@ -16,6 +16,7 @@ import {
   buildTrustedCompanionContext,
   fetchAuthorizedGroupSummaryMessages,
 } from '../services/companionContext';
+import { companionStreamGate } from '../utils/concurrencyGate';
 
 let supabaseService: SupabaseService;
 
@@ -247,6 +248,20 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     return;
   }
 
+  if (!companionStreamGate.tryAcquire()) {
+    res.setHeader('Retry-After', '5');
+    res.status(503).json({
+      error: 'Too many concurrent companion streams on this instance. Please retry shortly.',
+    });
+    return;
+  }
+
+  // Default 0: deliver tokens without artificial delay (avoids holding sockets for minutes).
+  const tokenDelayMs = Math.max(
+    0,
+    parseInt(process.env.COMPANION_STREAM_TOKEN_DELAY_MS || '0', 10) || 0
+  );
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -290,7 +305,9 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     for (const token of tokens) {
       if (res.writableEnded) break;
       sendEvent({ token });
-      await new Promise<void>(r => setTimeout(r, 18));
+      if (tokenDelayMs > 0) {
+        await new Promise<void>((r) => setTimeout(r, tokenDelayMs));
+      }
     }
 
     sendEvent({ done: true, actions, messageId: assistantMessageId, userMessageId });
@@ -299,6 +316,8 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     console.error('Companion stream error:', err.message);
     sendEvent({ error: clientErrorMessage(err, 'AI companion is temporarily unavailable') });
     res.end();
+  } finally {
+    companionStreamGate.release();
   }
 });
 

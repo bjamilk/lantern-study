@@ -15,6 +15,7 @@ import {
   assessCompanionMessageClarity,
   buildCompanionClarifyReply,
 } from './companionMessageClarity';
+import { aiInflightGate } from '../utils/concurrencyGate';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -23,6 +24,20 @@ async function aiFetch(url: string, init?: RequestInit): Promise<Response> {
     ...init,
     signal: AbortSignal.timeout(AI_FETCH_TIMEOUT_MS),
   });
+}
+
+async function withAiInflight<T>(fn: () => Promise<T>): Promise<T> {
+  if (!aiInflightGate.tryAcquire()) {
+    throw new ApiError(
+      'AI capacity temporarily exhausted. Please retry shortly.',
+      503
+    );
+  }
+  try {
+    return await fn();
+  } finally {
+    aiInflightGate.release();
+  }
 }
 
 // ─── Provider Interface ─────────────────────────────────────
@@ -365,28 +380,30 @@ async function chatCompletion(
   userPrompt: string,
   options: ChatOptions = {}
 ): Promise<{ text: string; provider: string }> {
-  const errors: string[] = [];
+  return withAiInflight(async () => {
+    const errors: string[] = [];
 
-  for (const provider of providers) {
-    const available = await syncProviderUsageFromRedis(provider, checkAndResetCounter);
-    if (!available) {
-      errors.push(`${provider.name}: unavailable (${provider.dailyUsed}/${provider.dailyLimit} used)`);
-      continue;
+    for (const provider of providers) {
+      const available = await syncProviderUsageFromRedis(provider, checkAndResetCounter);
+      if (!available) {
+        errors.push(`${provider.name}: unavailable (${provider.dailyUsed}/${provider.dailyLimit} used)`);
+        continue;
+      }
+
+      try {
+        const text = await provider.chat(systemPrompt, userPrompt, options);
+        await incrementProviderDailyUsage(provider.name);
+        return { text, provider: provider.name };
+      } catch (error: any) {
+        errors.push(`${provider.name}: ${error.message}`);
+        console.warn(`AI provider ${provider.name} failed:`, error.message);
+        continue;
+      }
     }
 
-    try {
-      const text = await provider.chat(systemPrompt, userPrompt, options);
-      await incrementProviderDailyUsage(provider.name);
-      return { text, provider: provider.name };
-    } catch (error: any) {
-      errors.push(`${provider.name}: ${error.message}`);
-      console.warn(`AI provider ${provider.name} failed:`, error.message);
-      continue;
-    }
-  }
-
-  console.error('All AI providers exhausted:', errors);
-  throw new Error('AI is temporarily unavailable. All providers are at capacity. Please try again later.');
+    console.error('All AI providers exhausted:', errors);
+    throw new Error('AI is temporarily unavailable. All providers are at capacity. Please try again later.');
+  });
 }
 
 // ─── JSON Extraction ────────────────────────────────────────
@@ -933,41 +950,43 @@ export async function transcribeAudioBase64(
   audioBase64: string,
   mimeType: string = 'audio/webm'
 ): Promise<{ transcript: string; provider: string }> {
-  if (!process.env.GROQ_API_KEY) {
-    throw new ApiError(
-      'Audio transcription is not configured. Add GROQ_API_KEY to apps/api-server/.env (free key at https://console.groq.com).',
-      503
-    );
-  }
+  return withAiInflight(async () => {
+    if (!process.env.GROQ_API_KEY) {
+      throw new ApiError(
+        'Audio transcription is not configured. Add GROQ_API_KEY to apps/api-server/.env (free key at https://console.groq.com).',
+        503
+      );
+    }
 
-  const buffer = Buffer.from(audioBase64, 'base64');
-  if (!buffer.length) {
-    throw new ApiError('Audio payload is empty.', 400);
-  }
+    const buffer = Buffer.from(audioBase64, 'base64');
+    if (!buffer.length) {
+      throw new ApiError('Audio payload is empty.', 400);
+    }
 
-  const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
-  const form = new FormData();
-  const extension = mimeType.includes('mp4') || mimeType.includes('m4a')
-    ? 'm4a'
-    : mimeType.includes('wav')
-      ? 'wav'
-      : 'webm';
-  form.append('file', blob, `lecture.${extension}`);
-  form.append('model', 'whisper-large-v3-turbo');
-  form.append('response_format', 'text');
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
+    const form = new FormData();
+    const extension = mimeType.includes('mp4') || mimeType.includes('m4a')
+      ? 'm4a'
+      : mimeType.includes('wav')
+        ? 'wav'
+        : 'webm';
+    form.append('file', blob, `lecture.${extension}`);
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('response_format', 'text');
 
-  const response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-    body: form,
+    const response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+      body: form,
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new ApiError(`Transcription failed: ${err.slice(0, 300)}`, 502);
+    }
+
+    const transcript = (await response.text()).trim();
+    if (!transcript) throw new ApiError('Empty transcription result.', 502);
+    return { transcript, provider: 'groq-whisper-turbo' };
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new ApiError(`Transcription failed: ${err.slice(0, 300)}`, 502);
-  }
-
-  const transcript = (await response.text()).trim();
-  if (!transcript) throw new ApiError('Empty transcription result.', 502);
-  return { transcript, provider: 'groq-whisper-turbo' };
 }

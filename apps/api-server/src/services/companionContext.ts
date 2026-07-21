@@ -46,9 +46,9 @@ export async function buildTrustedCompanionContext(
       .limit(20),
     db
       .from('flashcards')
-      .select('srs_data, deck_id, decks!inner(user_id)')
+      .select('srs_data, decks!inner(user_id)')
       .eq('decks.user_id', userId)
-      .limit(500),
+      .limit(120),
     db.from('user_preferences').select('preferences, theme').eq('user_id', userId).maybeSingle(),
   ]);
 

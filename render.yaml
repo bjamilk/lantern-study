@@ -93,6 +93,19 @@ services:
         value: "25"
       - key: AI_LIMIT_STUDY_RECOMMENDATIONS
         value: "25"
+      # Concurrency / scale guards (per instance — raise only with larger plans + more replicas)
+      - key: AI_MAX_INFLIGHT
+        value: "16"
+      - key: COMPANION_STREAM_MAX
+        value: "32"
+      - key: COMPANION_STREAM_TOKEN_DELAY_MS
+        value: "0"
+      - key: HTTP_MAX_CONNECTIONS
+        value: "512"
+      - key: HTTP_KEEP_ALIVE_TIMEOUT_MS
+        value: "65000"
+      - key: LOAD_SHED_HEAP_RATIO
+        value: "0.92"
 
   - type: worker
     name: lantern-study-worker

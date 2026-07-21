@@ -9,6 +9,7 @@ import {
 import { globalErrorHandler, notFoundHandler } from '../middleware/productionErrorHandler';
 import { logger } from '../services/logger';
 import healthRoutes from '../routes/health';
+import { markServerShuttingDown } from '../middleware/loadShed';
 
 /**
  * Apply production middleware stack to Express app
@@ -90,6 +91,7 @@ export function setupGracefulShutdown(server: any, cleanup?: () => Promise<void>
   const gracefulShutdown = async (signal: string) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
+    markServerShuttingDown();
     
     logger.info(`${signal} received, starting graceful shutdown...`);
     

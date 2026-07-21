@@ -60,16 +60,24 @@ export const extendedTimeout = requestTimeout(120000);
  */
 export const presentationTimeout = requestTimeout(180000);
 
-/** Routes that need no default timeout cap (upload, transcribe, PPT preview). */
+/** Routes that need no default timeout cap (upload, transcribe, PPT preview, AI companion). */
 export const LONG_RUNNING_NOTE_PATH =
   /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|finalize-pdf|finalize-presentation|warm-preview|daily-quiz|[^/]+\/(summarize|generate-flashcards|regenerate-preview|quiz))$/;
+
+export const LONG_RUNNING_AI_PATH =
+  /^\/api\/v1\/ai(\/|$)/;
 
 export const skipTimeoutForLongRunningNotes = (
   req: Request,
   res: Response,
   next: NextFunction
 ): void => {
-  if (LONG_RUNNING_NOTE_PATH.test(req.path)) {
+  if (LONG_RUNNING_NOTE_PATH.test(req.path) || LONG_RUNNING_AI_PATH.test(req.path)) {
+    // AI routes use their own AbortSignal / provider timeouts (up to AI_FETCH_TIMEOUT_MS).
+    if (LONG_RUNNING_AI_PATH.test(req.path)) {
+      extendedTimeout(req, res, next);
+      return;
+    }
     next();
     return;
   }

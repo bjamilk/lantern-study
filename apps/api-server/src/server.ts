@@ -28,9 +28,11 @@ import { sanitizationMiddleware } from './middleware/security';
 import { csrfProtectionMiddleware } from './middleware/csrf';
 import { validateBodyShape } from './middleware/validateBody';
 import { applyPublicRateLimits } from './middleware/publicRateLimitMiddleware';
+import { loadShedMiddleware } from './middleware/loadShed';
 import { getAllowedCorsOrigins } from './utils/corsOrigins';
 import healthRoutes from './routes/health';
 import { setupGracefulShutdown } from './config/production';
+import { configureHttpServer } from './config/httpServer';
 import { disconnectRedis } from './services/redisStore';
 
 // Import routes
@@ -215,6 +217,9 @@ app.use(cors({
 // Compression middleware
 app.use(compression());
 
+// Shed load early (after CORS/helmet) so saturated instances fail fast with Retry-After
+app.use(loadShedMiddleware);
+
 // Body parsing middleware — large routes MUST be registered before the 1mb default
 app.use(
   /^\/api\/v1\/(flashcards|marketplace)\/.*upload/,
@@ -331,6 +336,8 @@ async function startServer() {
       logger.info(`💾 Caching: ${process.env.REDIS_ENABLED === 'true' ? 'redis' : 'memory'}`);
       if (typeof process.send === 'function') process.send('ready');
     });
+
+    configureHttpServer(httpServer);
 
     setupGracefulShutdown(httpServer, async () => {
       if (cacheService) await cacheService.disconnect();

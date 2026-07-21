@@ -74,12 +74,33 @@ function Get-MigrationListRows {
     if ($result.ExitCode -ne 0) { throw "migration list failed: $($result.Output)" }
     $raw = $result.Output
     $rows = @()
+
+    # Newer CLI emits JSON: {"migrations":[{"local":"...","remote":"..."}, ...]}
+    $jsonStart = $raw.IndexOf('{')
+    if ($jsonStart -ge 0) {
+        try {
+            $parsed = $raw.Substring($jsonStart) | ConvertFrom-Json
+            foreach ($m in @($parsed.migrations)) {
+                $local = if ($m.local) { [string]$m.local } else { '' }
+                $remote = if ($m.remote) { [string]$m.remote } else { '' }
+                if ($local -or $remote) {
+                    $rows += [PSCustomObject]@{ Local = $local; Remote = $remote }
+                }
+            }
+            if ($rows.Count -gt 0) { return $rows }
+        } catch {
+            Write-Host "  JSON migration list parse failed; falling back to table parse." -ForegroundColor DarkYellow
+        }
+    }
+
+    # Legacy ASCII table: local | remote |
     foreach ($line in ($raw -split "`n")) {
         if ($line -notmatch '^\s+(\d{8,14})?\s+\|\s+(\d{8,14})?\s+\|') { continue }
-        $local = $Matches[1].Trim()
-        $remote = $Matches[2].Trim()
-        if ($local) { $rows += [PSCustomObject]@{ Local = $local; Remote = $remote } }
-        elseif ($remote) { $rows += [PSCustomObject]@{ Local = ''; Remote = $remote } }
+        $local = if ($Matches[1]) { $Matches[1].Trim() } else { '' }
+        $remote = if ($Matches[2]) { $Matches[2].Trim() } else { '' }
+        if ($local -or $remote) {
+            $rows += [PSCustomObject]@{ Local = $local; Remote = $remote }
+        }
     }
     return $rows
 }
@@ -88,11 +109,14 @@ function Invoke-RepairBatch([string]$Status, [string[]]$Versions) {
     if ($Versions.Count -eq 0) { return }
     for ($i = 0; $i -lt $Versions.Count; $i += $BatchSize) {
         $end = [Math]::Min($i + $BatchSize - 1, $Versions.Count - 1)
-        $batch = $Versions[$i..$end]
+        $batch = @($Versions[$i..$end])
         Write-Host "  repair --status $Status ($($batch.Count)): $($batch -join ', ')"
         if (-not $DryRun) {
-            $repair = Invoke-SupabaseCli @('migration', 'repair', '--status', $Status) + $batch
-            if ($repair.ExitCode -ne 0) { throw "migration repair failed for status=$Status" }
+            $cliArgs = @('migration', 'repair', '--status', $Status) + $batch
+            $repair = Invoke-SupabaseCli $cliArgs
+            if ($repair.ExitCode -ne 0) {
+                throw "migration repair failed for status=$Status`n$($repair.Output)"
+            }
         }
     }
 }
