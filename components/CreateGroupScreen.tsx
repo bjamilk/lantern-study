@@ -54,7 +54,7 @@ const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`${enabled ? 'bg-blue-600' : 'bg-lantern-background-secondary dark:bg-lantern-border'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 dark:focus:ring-offset-lantern-surface`}
+      className={`${enabled ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-border'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 dark:focus:ring-offset-lantern-surface`}
       role="switch"
       aria-checked={enabled}
     >
@@ -269,7 +269,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
                       <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" />
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-lantern-text truncate">{user.name}</p>
-                        {user.username && <p className="text-sm text-lantern-primary dark:text-blue-400">@{user.username}</p>}
+                        {user.username && <p className="text-sm text-lantern-primary">@{user.username}</p>}
                       </div>
                       <CheckIcon className="w-5 h-5 text-lantern-primary" />
                     </button>
@@ -298,7 +298,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
                         e.stopPropagation();
                         handleUserRemove(user.id);
                       }}
-                      className="ml-2 text-lantern-primary dark:text-blue-400 hover:text-blue-800"
+                      className="ml-2 text-lantern-primary hover:text-blue-800"
                     >
                       ×
                     </button>
@@ -315,7 +315,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             type="button"
             onClick={() => setStep('group_details')}
             className={`w-full py-3 text-white rounded-lg font-semibold flex items-center justify-center ${
-              selectedUserIds.length > 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-lantern-border hover:bg-lantern-surface-secondary'
+              selectedUserIds.length > 0 ? 'bg-lantern-primary hover:bg-lantern-primary-dark' : 'bg-lantern-border hover:bg-lantern-surface-secondary'
             }`}
           >
             {selectedUserIds.length > 0 ? (

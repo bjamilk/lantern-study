@@ -123,7 +123,7 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
                   <div>
                     <p className="font-medium text-lantern-text">{user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim()}</p>
                     {user.username && (
-                      <p className="text-sm text-lantern-primary dark:text-blue-400">@{user.username}</p>
+                      <p className="text-sm text-lantern-primary">@{user.username}</p>
                     )}
                   </div>
                   </button>

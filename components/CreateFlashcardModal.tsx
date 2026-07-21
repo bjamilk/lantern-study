@@ -840,7 +840,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <span className="text-xs text-lantern-text-secondary">Click+drag to draw. Drag shape to move, drag near edge to resize.</span>
-                                        <button type="button" onClick={clearOcclusions} className="text-lantern-primary dark:text-blue-400 hover:underline">Clear</button>
+                                        <button type="button" onClick={clearOcclusions} className="text-lantern-primary hover:underline">Clear</button>
                                       </div>
                                     </div>
 
@@ -970,7 +970,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                               setIsEnhancing(false);
                             }}
                             disabled={isEnhancing}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
                           >
                             <SparklesIcon className={`w-4 h-4 ${isEnhancing ? 'animate-pulse' : ''}`} />
                             {isEnhancing ? 'Enhancing...' : 'Enhance with AI'}
@@ -1133,7 +1133,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                       ? 'Click+drag to trace each area. Release to save the shape.'
                                       : 'Click+drag to draw. Drag shape to move, drag near edge to resize.'}
                                   </span>
-                                  <button type="button" onClick={clearOcclusions} className="text-lantern-primary dark:text-blue-400 hover:underline">Clear</button>
+                                  <button type="button" onClick={clearOcclusions} className="text-lantern-primary hover:underline">Clear</button>
                                 </div>
                               </div>
 

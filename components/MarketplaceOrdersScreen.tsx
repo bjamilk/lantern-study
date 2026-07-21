@@ -78,7 +78,7 @@ const MarketplaceOrdersScreen: React.FC<MarketplaceOrdersScreenProps> = ({ onBac
                 <p className="font-medium line-clamp-1">{order.listing?.title || 'Listing'}</p>
                 <p className="text-sm text-lantern-text-secondary mt-1">{STATUS_LABELS[order.status] || order.status}</p>
               </div>
-              <p className="font-semibold text-purple-600 dark:text-purple-400 shrink-0">
+              <p className="font-semibold text-lantern-primary shrink-0">
                 ₦{Number(order.amount).toLocaleString()}
               </p>
             </div>

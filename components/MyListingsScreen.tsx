@@ -684,7 +684,7 @@ const StatCard: React.FC<{
     indigo: 'bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-dark/40 dark:text-lantern-primary-light',
     green: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400',
     blue: 'bg-blue-100 text-lantern-primary dark:bg-blue-900/40 dark:text-blue-400',
-    purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400',
+    purple: 'bg-purple-100 text-lantern-primary dark:bg-purple-900/40 dark:text-lantern-primary-light',
     orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400',
     red: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400',
   };

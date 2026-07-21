@@ -343,7 +343,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             <div className="space-y-2">
                  <div>
                     <div className="flex justify-between text-xs mb-1 text-lantern-text-secondary">
-                        <span className="font-semibold text-lantern-primary dark:text-blue-400">Score: {session.userScore} pts <span className="text-lantern-text-tertiary">({session.userCorrectAnswers || 0} correct)</span></span>
+                        <span className="font-semibold text-lantern-primary">Score: {session.userScore} pts <span className="text-lantern-text-tertiary">({session.userCorrectAnswers || 0} correct)</span></span>
                         <span>Time: {session.userTime.toFixed(1)}s</span>
                     </div>
                     <div className="w-full bg-lantern-background-secondary rounded-full h-4 overflow-hidden">

@@ -424,7 +424,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                             )}
 
                             {offer.parent_offer_id && (
-                              <p className="text-xs text-purple-600 dark:text-purple-300 mt-1">
+                              <p className="text-xs text-lantern-primary mt-1">
                                 Counter-offer thread: {offer.parent_offer_id.slice(0, 8)}...
                               </p>
                             )}
@@ -474,7 +474,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     <button
                                       onClick={() => handleOfferAction(offer.id, 'counter')}
                                       disabled={respondingTo === offer.id}
-                                      className="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                      className="px-2.5 sm:px-3 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                                     >
                                       Counter
                                     </button>

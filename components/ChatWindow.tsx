@@ -837,7 +837,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         <MenuItem
                           onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
                           icon={<SparklesIcon className="w-4 h-4" />}
-                          className="text-purple-600 dark:text-purple-400"
+                          className="text-lantern-primary"
                         >
                           AI Generate Questions
                         </MenuItem>
@@ -845,7 +845,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       <MenuItem
                         onSelect={() => handleDropdownAction(handleSummarizeGroup)}
                         icon={<SparklesIcon className="w-4 h-4" />}
-                        className="text-purple-600 dark:text-purple-400"
+                        className="text-lantern-primary"
                       >
                         {isSummarizingChat ? 'Summarizing…' : 'Summarize Group Chat'}
                       </MenuItem>

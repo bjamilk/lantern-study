@@ -236,7 +236,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
         <div className="grid grid-cols-2 gap-6 border-t border-b border-lantern-border py-6 mb-8 text-left text-sm font-medium">
           {/* Your Stats */}
           <div className="space-y-3">
-            <h3 className="font-bold text-md text-lantern-primary dark:text-blue-400 flex items-center">
+            <h3 className="font-bold text-md text-lantern-primary flex items-center">
               <span>{currentUser.name} (You)</span>
             </h3>
             <ul className="space-y-1.5 text-lantern-text-secondary">

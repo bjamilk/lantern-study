@@ -63,7 +63,8 @@ const darkBase = {
   cardSecondary: '#1e293b',
   text: '#f8fafc',
   textSecondary: '#94a3b8',
-  textTertiary: '#64748b',
+  // UI-01: #64748b was ~3.5–3.9:1 on dark surfaces; #8494a8 clears 4.5:1 AA.
+  textTertiary: '#8494a8',
   textInverse: '#0f172a',
   primary: '#818cf8',
   primaryLight: '#a5b4fc',
@@ -84,17 +85,17 @@ const darkBase = {
   tabBar: '#151e2e',
   tabBarBorder: '#243044',
   tabBarActive: '#818cf8',
-  tabBarInactive: '#64748b',
+  tabBarInactive: '#8494a8',
   inputBackground: '#0b1220',
   inputBorder: '#243044',
   inputText: '#f8fafc',
-  inputPlaceholder: '#64748b',
+  inputPlaceholder: '#8494a8',
   modalOverlay: 'rgba(0, 0, 0, 0.7)',
   modalBackground: '#151e2e',
   switchTrackOn: '#818cf880',
   switchTrackOff: '#243044',
   switchThumbOn: '#818cf8',
-  switchThumbOff: '#64748b',
+  switchThumbOff: '#8494a8',
 } as const;
 
 export const lightTheme = lightBase;

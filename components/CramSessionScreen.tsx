@@ -100,7 +100,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary dark:text-blue-400">$1</strong>');
+        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary">$1</strong>');
         return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: revealedText }} />;
       } else {
         const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-background-secondary dark:bg-lantern-border rounded">[...]</span>');
@@ -200,7 +200,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
   if (isSessionComplete) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-2xl font-bold text-purple-500">Cram Session Complete!</h2>
+        <h2 className="text-2xl font-bold text-lantern-primary">Cram Session Complete!</h2>
         <p className="text-lantern-text-secondary mt-2">You reviewed {session.cardQueue.length} cards.</p>
         <div className="my-6 text-xl">
             <p>Correct: <span className="font-bold text-green-500">{correctCount}</span></p>
@@ -209,7 +209,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
         <div className="flex space-x-4">
             <button
               onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center font-semibold"
+              className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold"
             >
               <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Finish
             </button>
@@ -230,7 +230,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background-secondary dark:bg-lantern-background">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-purple-600 dark:text-purple-400">Cramming: {session.deck.name}</h1>
+          <h1 className="text-xl font-semibold text-lantern-primary">Cramming: {session.deck.name}</h1>
           {timeLeft !== null && (
             <div className="mt-1 text-sm font-medium text-lantern-text-secondary">
               Time left: <span className={isTimeLow ? 'text-rose-600 dark:text-rose-400' : ''}>{formatTime(timeLeft)}</span>
@@ -259,7 +259,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
             {!isAnswerShown ? (
               <button
                 onClick={() => setIsAnswerShown(true)}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-lg font-semibold transition"
+                className="w-full py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-lg font-semibold transition"
               >
                 Show Answer
               </button>

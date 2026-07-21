@@ -93,7 +93,7 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
               </div>
               <div className="text-right text-sm">
                 <p>{buyer.completedPurchases} purchase{buyer.completedPurchases !== 1 ? 's' : ''}</p>
-                <p className="text-purple-600 dark:text-purple-400">
+                <p className="text-lantern-primary">
                   ₦{Number(buyer.totalSpent).toLocaleString()} spent
                 </p>
               </div>

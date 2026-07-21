@@ -707,7 +707,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 type="button"
                 onClick={handleGenerateDescription}
                 disabled={isGeneratingDesc || !formData.title.trim()}
-                className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 hover:bg-purple-700 disabled:bg-lantern-border disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
                 title={formData.title.trim() ? 'Generate description with AI' : 'Enter a title first'}
               >
                 <SparklesIcon className="w-3.5 h-3.5" />

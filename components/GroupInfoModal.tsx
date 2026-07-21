@@ -208,7 +208,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                         <label htmlFor="groupInfoDescription" className="block text-sm font-medium text-lantern-text mb-1">Description</label>
                         <textarea id="groupInfoDescription" value={description} onChange={handleDescriptionChange} rows={3} className="w-full p-2 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-md" />
                     </div>
-                    {detailsChanged && <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">Save Changes</button>}
+                    {detailsChanged && <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md">Save Changes</button>}
                 </form>
             );
         case 'members':
@@ -223,7 +223,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                      )}
                      {isCurrentUserAdmin && (
                         <div className="p-4 bg-lantern-background dark:bg-lantern-surface-secondary/50 border border-lantern-border dark:border-lantern-border rounded-lg">
-                           <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>
+                           <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>
                         </div>
                      )}
 
@@ -255,7 +255,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                     <div className="flex items-center">
                                         <img src={member.avatarUrl} alt={member.name} className="w-8 h-8 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
                                         <span className="text-sm font-medium text-lantern-text dark:text-lantern-text">{member.name}</span>
-                                        {group.adminIds?.includes(member.id) && <ShieldCheckIcon className="w-4 h-4 text-lantern-primary dark:text-blue-400 ml-2" title="Admin"/>}
+                                        {group.adminIds?.includes(member.id) && <ShieldCheckIcon className="w-4 h-4 text-lantern-primary ml-2" title="Admin"/>}
                                         {member.id === currentUser.id && <span className="text-xs text-lantern-text-secondary ml-2">(You)</span>}
                                     </div>
                                     <div className="flex items-center space-x-1">

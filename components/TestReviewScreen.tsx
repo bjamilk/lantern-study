@@ -54,7 +54,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
     if (score >= 60) {
         return {
             message: "Great job! Keep reviewing to solidify your knowledge.",
-            colorClass: "text-lantern-primary dark:text-blue-400",
+            colorClass: "text-lantern-primary",
             icon: HandThumbUpIcon,
             showConfetti: false,
             rank: 'C', rankColor: 'bg-gradient-to-br from-lantern-primary-light to-lantern-primary text-white',
@@ -167,7 +167,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
           <button
             onClick={() => onPracticeFailedQuestions(failedQuestions)}
             disabled={failedQuestions.length === 0}
-            className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 text-white rounded-md focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 flex items-center justify-center text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={`Practice the ${failedQuestions.length} questions you failed`}
           >
             <AcademicCapIcon className="w-5 h-5 mr-2" />
@@ -359,7 +359,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               {onExplainAnswer && (
                 <div className="mt-2">
                   {aiExplanations[index] ? (
-                    <div className="p-3 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-md">
+                    <div className="p-3 bg-purple-50 dark:bg-purple-900/30 border border-lantern-primary/30 rounded-md">
                       <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-300 flex items-center mb-1">
                         <SparklesIcon className="w-4 h-4 mr-1" /> AI Explanation:
                       </h4>
@@ -389,7 +389,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                           setAiExplainLoading(prev => ({ ...prev, [index]: false }));
                         }}
                         disabled={aiExplainLoading[index]}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <SparklesIcon className="w-4 h-4" />
                         {aiExplainLoading[index] ? 'Explaining...' : 'Explain with AI'}

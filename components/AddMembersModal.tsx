@@ -216,7 +216,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
                       <div className="relative">
                         <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
                         {isSelected && (
-                          <div className="absolute bottom-0 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center border-2 border-white dark:border-lantern-border">
+                          <div className="absolute bottom-0 right-2 w-5 h-5 bg-lantern-primary rounded-full flex items-center justify-center border-2 border-white dark:border-lantern-border">
                             <CheckIcon className="w-3 h-3 text-white"/>
                           </div>
                         )}
@@ -224,7 +224,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-lantern-text truncate">{user.name}</p>
                         {user.username && (
-                          <p className="text-sm text-lantern-primary dark:text-blue-400">@{user.username}</p>
+                          <p className="text-sm text-lantern-primary">@{user.username}</p>
                         )}
                       </div>
                     </button>
@@ -261,7 +261,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-lg shadow-sm ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+              className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-lg shadow-sm ${isSubmitting ? 'bg-lantern-primary-light cursor-not-allowed' : 'bg-lantern-primary hover:bg-lantern-primary-dark'}`}
             >
               {isSubmitting ? 'Adding...' : `Add ${selectedUserIds.length} Member${selectedUserIds.length !== 1 ? 's' : ''}`}
             </button>

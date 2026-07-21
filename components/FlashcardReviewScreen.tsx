@@ -164,7 +164,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary dark:text-blue-400">$1</strong>');
+        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary">$1</strong>');
         return <div className="text-lg md:text-xl text-lantern-text" dangerouslySetInnerHTML={{ __html: revealedText }} />;
       } else {
         const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-border rounded text-lantern-text">[...]</span>');
@@ -266,7 +266,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
         <p className="text-lantern-text-secondary mt-2">You've reviewed all due cards for this deck. Great work!</p>
         <button
           onClick={onEndSession}
-          className="mt-6 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center font-semibold transition-colors"
+          className="mt-6 px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold transition-colors"
         >
           <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Back to Decks
         </button>

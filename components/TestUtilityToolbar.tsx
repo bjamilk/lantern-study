@@ -378,7 +378,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
             onChange={e => onNoteChange(e.target.value)}
             placeholder="Jot down your thought process for this question..."
             rows={3}
-            className="w-full p-2.5 text-sm bg-lantern-surface border border-blue-200 dark:border-blue-700 rounded-lg text-lantern-text placeholder:text-lantern-text-tertiary dark:placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+            className="w-full p-2.5 text-sm bg-lantern-surface border border-blue-200 dark:border-blue-700 rounded-lg text-lantern-text placeholder:text-lantern-text-tertiary dark:placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary resize-none"
           />
         </div>
       )}

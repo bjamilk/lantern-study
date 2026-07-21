@@ -351,32 +351,32 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">No Timer</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Take as long as you need</span>
+                <span className="ml-2 text-lantern-primary text-xs">— Take as long as you need</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Instant Feedback</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— See answer after each question</span>
+                <span className="ml-2 text-lantern-primary text-xs">— See answer after each question</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Not Recorded</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Practice without pressure</span>
+                <span className="ml-2 text-lantern-primary text-xs">— Practice without pressure</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Pause Anytime</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Take breaks when needed</span>
+                <span className="ml-2 text-lantern-primary text-xs">— Take breaks when needed</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Review Explanations</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Learn from each answer</span>
+                <span className="ml-2 text-lantern-primary text-xs">— Learn from each answer</span>
               </div>
               <div className="flex items-center text-sm text-blue-700 dark:text-blue-300">
                 <span className="text-green-500 mr-2">✓</span>
                 <span className="font-medium">Mark for Review</span>
-                <span className="ml-2 text-lantern-primary dark:text-blue-400 text-xs">— Flag difficult questions</span>
+                <span className="ml-2 text-lantern-primary text-xs">— Flag difficult questions</span>
               </div>
             </div>
           </div>
@@ -398,7 +398,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
             <div>
               <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-lantern-text flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-primary dark:text-blue-400"/>
+                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-primary"/>
                 Number of Questions 
                 <span className="ml-1 text-xs text-lantern-text-secondary">{`(${maxQuestions} available)`}</span>
               </label>
@@ -515,7 +515,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 </h3>
                 <div className="flex gap-2">
                   <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"/>
-                  <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50">Save</button>
+                  <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md disabled:opacity-50">Save</button>
                 </div>
               </div>
             )}
@@ -541,7 +541,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 type="button"
                 onClick={handleSubmit}
                 disabled={maxQuestions === 0 || numberOfQuestions < 1}
-                className="flex-1 sm:flex-none px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
+                className="flex-1 sm:flex-none px-6 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg"
               >
                 <span className="text-lg mr-2">📚</span>
                 Start Studying
@@ -580,7 +580,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 -mr-1 space-y-4">
         {/* Test Mode Features - Purple Theme */}
         {mode === 'test' && (
-          <div className="p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-700">
+          <div className="p-4 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-lantern-primary/30">
             <h3 className="font-semibold text-purple-800 dark:text-purple-200 mb-3 text-sm">Test Mode Features</h3>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center text-sm text-purple-700 dark:text-purple-300">
@@ -749,20 +749,20 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset</h3>
                 <div className="flex gap-2">
                   <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"/>
-                  <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className={`px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}`}>Save</button>
+                  <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className="px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 bg-lantern-primary hover:bg-lantern-primary-dark">Save</button>
                 </div>
             </div>
           )}
         </form>
         </div>
 
-        <div className={`flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))] ${mode === 'test' ? 'border-purple-200 dark:border-purple-700' : 'border-lantern-border'}`}>
+        <div className={`flex-shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4 pt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))] ${mode === 'test' ? 'border-lantern-primary/30' : 'border-lantern-border'}`}>
           {mode !== 'game' && (
               <button
                 type="button"
                 onClick={handleDownload}
                 disabled={isSubmitDisabled()}
-                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-purple-300 dark:border-purple-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-lantern-primary/40 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
                 <CloudArrowDownIcon className="w-5 h-5 mr-2" />
@@ -783,7 +783,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             <button
                 type="submit"
                 onClick={handleSubmit}
-                className={`flex-1 sm:flex-none px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg ${mode === 'test' ? 'bg-purple-600 hover:bg-purple-700' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                className={`flex-1 sm:flex-none px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg ${mode === 'test' ? 'bg-lantern-primary hover:bg-lantern-primary-dark' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                 disabled={isSubmitDisabled()}
             >
                 {mode === 'test' && <span className="text-lg mr-2">📝</span>}

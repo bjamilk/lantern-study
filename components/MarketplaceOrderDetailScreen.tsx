@@ -131,7 +131,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border">
-          <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+          <p className="text-2xl font-bold text-lantern-primary">
             ₦{Number(order.amount).toLocaleString()}
           </p>
           <p className="text-sm text-lantern-text-secondary mt-1 capitalize">{order.status.replace(/_/g, ' ')}</p>
@@ -149,7 +149,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
               <div
                 key={step}
                 className={`flex-1 h-2 rounded-full ${
-                  stepIndex > i ? 'bg-purple-500' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
+                  stepIndex > i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
                 }`}
               />
             ))}

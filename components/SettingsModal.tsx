@@ -297,7 +297,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                         <div className="flex flex-col gap-1.5">
                             <button type="button" onClick={() => avatarInputRef.current?.click()}
-                                className="text-sm font-medium text-lantern-primary dark:text-blue-400 hover:underline text-left">Change profile picture</button>
+                                className="text-sm font-medium text-lantern-primary hover:underline text-left">Change profile picture</button>
                             <button type="button" onClick={handleRemoveAvatar}
                                 className="text-sm text-lantern-text-secondary hover:text-red-500 dark:hover:text-red-400 text-left">Remove photo</button>
                         </div>
@@ -319,13 +319,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 className="mt-1 w-full p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                         </div>
                         {isProfileDirty && (
-                            <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm">Save Changes</button>
+                            <button type="submit" className="w-full px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md shadow-sm">Save Changes</button>
                         )}
                     </form>
                      <div className="border-t border-lantern-border pt-6">
                          <h3 className="text-lg font-semibold text-lantern-text dark:text-lantern-text">Change Password</h3>
                          {!showPasswordChange ? (
-                             <button onClick={() => setShowPasswordChange(true)} className="mt-2 text-sm text-lantern-primary dark:text-blue-400 hover:underline">Change your password</button>
+                             <button onClick={() => setShowPasswordChange(true)} className="mt-2 text-sm text-lantern-primary hover:underline">Change your password</button>
                          ) : (
                              <form onSubmit={handlePasswordChange} className="mt-4 space-y-4">
                                 <div>
@@ -357,7 +357,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         className="w-full p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                    <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md">Update Password</button>
+                                    <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-md">Update Password</button>
                                     <button type="button" onClick={() => setShowPasswordChange(false)} className="px-4 py-2 text-sm font-medium text-lantern-text dark:text-lantern-text bg-lantern-background-secondary dark:bg-lantern-border rounded-md">Cancel</button>
                                 </div>
                              </form>

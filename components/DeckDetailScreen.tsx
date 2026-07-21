@@ -234,7 +234,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             icon={<BoltIcon className="w-5 h-5" />}
             label="Cram"
             subtitle="Review every card"
-            colorClass="bg-purple-500 hover:bg-purple-600 w-full"
+            colorClass="bg-lantern-primary hover:bg-lantern-primary-dark w-full"
             className="w-full"
           />
           <DeckActionButton
@@ -319,7 +319,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           icon={<BoltIcon className="w-5 h-5" />}
           label="Cram Mode"
           subtitle="Review every card"
-          colorClass="bg-purple-500 hover:bg-purple-600"
+          colorClass="bg-lantern-primary hover:bg-lantern-primary-dark"
         />
         <DeckActionButton
           onClick={handleTimedCram}
@@ -379,7 +379,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                 <div className="text-lantern-text-secondary">Due Today</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold text-purple-600">{reviewedCards.length}</div>
+                <div className="font-semibold text-lantern-primary">{reviewedCards.length}</div>
                 <div className="text-lantern-text-secondary">Reviewed</div>
               </div>
               <div className="text-center">
@@ -414,7 +414,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                         }
                       }}
                       disabled={enhancingCardId === card.id}
-                      className="p-1.5 text-purple-400 hover:text-purple-600 rounded-md disabled:opacity-50"
+                      className="p-1.5 text-lantern-primary-light hover:text-lantern-primary rounded-md disabled:opacity-50"
                       title="Enhance with AI"
                     >
                       <SparklesIcon className={`w-5 h-5 ${enhancingCardId === card.id ? 'animate-pulse' : ''}`} />

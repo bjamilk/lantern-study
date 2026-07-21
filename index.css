@@ -61,7 +61,8 @@
   --color-surface-secondary: #1e293b;
   --color-text: #f8fafc;
   --color-text-secondary: #94a3b8;
-  --color-text-tertiary: #64748b;
+  /* UI-01: raised for WCAG AA (≥4.5:1) on dark surfaces */
+  --color-text-tertiary: #8494a8;
   --color-primary: #818cf8;
   --color-primary-light: #a5b4fc;
   --color-primary-dark: #6366f1;

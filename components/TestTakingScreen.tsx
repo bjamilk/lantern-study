@@ -518,8 +518,8 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     ? (session.isOffline ? '📝 Offline Test' : '📝 Test in Progress') 
     : (session.isOffline ? '📚 Offline Study' : '📚 Study Session');
   const headerIcon = mode === 'test' ? 
-    <QuestionMarkCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-purple-600 dark:text-purple-400" /> : 
-    <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary dark:text-blue-400" />;
+    <QuestionMarkCircleIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary" /> : 
+    <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 mr-2 sm:mr-3 text-lantern-primary" />;
 
   const isCurrentBookmarked = userAnswer?.isBookmarked || false;
   const BookmarkToggleIcon = isCurrentBookmarked ? BookmarkSolidIcon : BookmarkOutlineIcon;
@@ -652,15 +652,15 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         headerBorder: 'border-blue-200 dark:border-blue-800',
         infoBanner: 'bg-blue-100 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700',
         infoBannerText: 'text-blue-800 dark:text-blue-200',
-        infoBannerSubtext: 'text-lantern-primary dark:text-blue-400',
+        infoBannerSubtext: 'text-lantern-primary',
         navPalette: 'bg-blue-100 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800'
       }
     : { 
         bgGradient: 'bg-gradient-to-b from-lantern-primary-background to-lantern-background dark:from-lantern-primary-background dark:to-lantern-background',
         headerBorder: 'border-purple-200 dark:border-purple-800',
-        infoBanner: 'bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700',
+        infoBanner: 'bg-purple-100 dark:bg-purple-900/40 border-lantern-primary/30',
         infoBannerText: 'text-purple-800 dark:text-purple-200',
-        infoBannerSubtext: 'text-purple-600 dark:text-purple-400',
+        infoBannerSubtext: 'text-lantern-primary',
         navPalette: 'bg-purple-100 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800'
       };
 

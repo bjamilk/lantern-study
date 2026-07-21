@@ -461,7 +461,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
       panelClassName="max-h-[90vh] overflow-y-auto"
     >
         <div className="flex justify-between items-center mb-4">
-          <h2 id="question-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">Add Question to <span className="text-lantern-primary dark:text-blue-400">{groupName}</span></h2>
+          <h2 id="question-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">Add Question to <span className="text-lantern-primary">{groupName}</span></h2>
           <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:hover:text-lantern-text" aria-label="Close modal">
              <XCircleIcon className="w-6 h-6" />
           </button>
@@ -599,7 +599,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                             {state.promptItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('prompt', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-lantern-primary dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Prompt</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Prompt</button>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Answer Items</label>
@@ -609,7 +609,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                             {state.answerItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('answer', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-lantern-primary dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Answer</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Answer</button>
                     </div>
                     {state.promptItems.length > 0 && state.answerItems.length > 0 && state.promptItems.some(p => p.text.trim()) && state.answerItems.some(a => a.text.trim()) && (
                         <div>
@@ -710,7 +710,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             </button>
             <button
               type="submit"
-              className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary dark:focus:ring-blue-400 disabled:opacity-50"
+              className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary disabled:opacity-50"
               disabled={!isFormValid() || isSubmitting}
             >
               {isSubmitting && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />}
