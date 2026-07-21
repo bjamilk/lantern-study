@@ -34,9 +34,9 @@ describe('getActivityHeatLevel', () => {
 
 describe('getActivityHeatTailwindClass', () => {
   it('maps each level to distinct light and dark classes', () => {
-    expect(getActivityHeatTailwindClass(0, 'light')).toBe('bg-lantern-background-secondary');
+    expect(getActivityHeatTailwindClass(0, 'light')).toBe('bg-slate-300');
     expect(getActivityHeatTailwindClass(1, 'light')).toBe('bg-green-200');
-    expect(getActivityHeatTailwindClass(0, 'dark')).toBe('bg-lantern-surface-secondary');
+    expect(getActivityHeatTailwindClass(0, 'dark')).toBe('bg-slate-600');
     expect(getActivityHeatTailwindClass(4, 'dark')).toBe('bg-green-400');
   });
 });
@@ -45,6 +45,15 @@ describe('getActivityHeatHexColor', () => {
   it('returns a hex color for each level', () => {
     expect(getActivityHeatHexColor(0)).toMatch(/^#/);
     expect(getActivityHeatHexColor(4)).toMatch(/^#/);
+  });
+
+  it('keeps empty days distinct from typical card surfaces', () => {
+    // Light cards are ~#ffffff; dark surfaces are #151e2e
+    expect(getActivityHeatHexColor(0, 'light').toLowerCase()).not.toBe('#ffffff');
+    expect(getActivityHeatHexColor(0, 'light').toLowerCase()).not.toBe('#f4f6fb');
+    expect(getActivityHeatHexColor(0, 'dark').toLowerCase()).not.toBe('#151e2e');
+    expect(getActivityHeatHexColor(0, 'dark').toLowerCase()).not.toBe('#0b1220');
+    expect(getActivityHeatHexColor(0, 'dark').toLowerCase()).not.toBe('#1e293b');
   });
 });
 

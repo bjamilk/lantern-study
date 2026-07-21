@@ -12,8 +12,9 @@ export const lanternColors = {
 } as const;
 
 const lightBase = {
-  background: '#f4f6fb',
-  backgroundSecondary: '#e2e8f4',
+  // Warm off-white: hsl(30°, 50%, 96%) — easier on the eyes than cool alice-blue
+  background: '#faf5f0',
+  backgroundSecondary: '#f3ebe2',
   surface: '#ffffff',
   surfaceSecondary: '#f1f5f9',
   card: '#ffffff',

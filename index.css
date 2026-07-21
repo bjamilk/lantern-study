@@ -14,8 +14,9 @@
 
 /* ===== Lantern Design Tokens (CSS Variables) ===== */
 :root {
-  --color-background: #f4f6fb;
-  --color-background-secondary: #e2e8f4;
+  /* Warm off-white: hsl(30°, 50%, 96%) */
+  --color-background: #faf5f0;
+  --color-background-secondary: #f3ebe2;
   --color-surface: #ffffff;
   --color-surface-secondary: #f1f5f9;
   --color-text: #0f172a;
@@ -48,9 +49,9 @@
   --color-feature-tests: #0ea5e9;
   --color-feature-budget: #14b8a6;
   --app-atmosphere:
-    radial-gradient(1200px 600px at 12% -10%, rgba(79, 70, 229, 0.14), transparent 55%),
+    radial-gradient(1200px 600px at 12% -10%, rgba(79, 70, 229, 0.12), transparent 55%),
     radial-gradient(900px 500px at 88% 0%, rgba(217, 119, 6, 0.1), transparent 50%),
-    linear-gradient(180deg, #eef1f9 0%, #e8edf7 100%);
+    linear-gradient(180deg, hsl(30, 45%, 94%) 0%, hsl(30, 40%, 92%) 100%);
 }
 
 .dark {

@@ -13,8 +13,10 @@ export function getActivityHeatLevel(count: number): ActivityHeatLevel {
   return 4;
 }
 
+/** Tailwind classes — keep literals discoverable via content scan of this file. */
 const HEAT_TAILWIND_LIGHT: Record<ActivityHeatLevel, string> = {
-  0: 'bg-slate-300/80',
+  // Distinct from white surface / light card backgrounds
+  0: 'bg-slate-300',
   1: 'bg-green-200',
   2: 'bg-green-400',
   3: 'bg-green-500',
@@ -22,15 +24,17 @@ const HEAT_TAILWIND_LIGHT: Record<ActivityHeatLevel, string> = {
 };
 
 const HEAT_TAILWIND_DARK: Record<ActivityHeatLevel, string> = {
-  0: 'bg-lantern-surface-secondary',
+  // Distinct from dark surface (#151e2e) — not surface-secondary (#1e293b)
+  0: 'bg-slate-600',
   1: 'bg-green-900',
   2: 'bg-green-700',
   3: 'bg-green-500',
   4: 'bg-green-400',
 };
 
+/** Authoritative cell fills (prefer these over Tailwind for heatmap cells). */
 const HEAT_HEX_COLORS: Record<ActivityHeatLevel, string> = {
-  0: '#cbd5e1',
+  0: '#cbd5e1', // slate-300 — visible on white / light cards
   1: '#bbf7d0',
   2: '#4ade80',
   3: '#22c55e',
@@ -38,7 +42,7 @@ const HEAT_HEX_COLORS: Record<ActivityHeatLevel, string> = {
 };
 
 const HEAT_HEX_DARK: Record<ActivityHeatLevel, string> = {
-  0: '#334155',
+  0: '#475569', // slate-600 — visible on #151e2e surface
   1: '#14532d',
   2: '#15803d',
   3: '#22c55e',

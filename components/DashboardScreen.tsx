@@ -10,7 +10,7 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatColorForCount, getActivityHeatTailwindClass, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatHexColor, getActivityHeatHexColorForCount, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
 import { checkAnswerIsCorrect } from '../utils/helpers';
@@ -152,7 +152,8 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
                         <div
                         key={dateString}
                         title={`${count} activit${count !== 1 ? 'ies' : 'y'} on ${day.toLocaleDateString()}`}
-                        className={`w-3.5 h-3.5 rounded-sm ${getActivityHeatColorForCount(count, theme)}`}
+                        className="w-3.5 h-3.5 rounded-sm"
+                        style={{ backgroundColor: getActivityHeatHexColorForCount(count, theme) }}
                         />
                     );
                 })}
@@ -162,7 +163,8 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
                 {legendLevels.map(level => (
                     <div
                         key={level}
-                        className={`w-3 h-3 rounded-sm ${getActivityHeatTailwindClass(level, theme)}`}
+                        className="w-3 h-3 rounded-sm"
+                        style={{ backgroundColor: getActivityHeatHexColor(level, theme) }}
                         aria-hidden
                     />
                 ))}

@@ -11,6 +11,8 @@ module.exports = {
       "./services/**/*.{js,ts,jsx,tsx}",
       "./stores/**/*.{js,ts,jsx,tsx}",
       "./utils/**/*.{js,ts,jsx,tsx}",
+      // Heatmap / shared utility class maps (dynamic Tailwind strings)
+      "./packages/shared/src/utils/activity.ts",
     ],
   },
   darkMode: 'class',
