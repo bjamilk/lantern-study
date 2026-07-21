@@ -258,7 +258,11 @@ export default function AddMembersModal({
                 onPress={() => handleUserToggle(item.id)}
               >
                 <View style={styles.userAvatarContainer}>
-                  <Image source={{ uri: getAvatarUrl(item) }} style={styles.userAvatar} />
+                  <ResolvedAvatar
+                    name={item.name || item.firstName || 'User'}
+                    uri={getAvatarUrl(item)}
+                    size={44}
+                  />
                   {isSelected && (
                     <View style={[styles.checkBadge, { backgroundColor: colors.primary }]}>
                       <Ionicons name="checkmark" size={12} color="#fff" />

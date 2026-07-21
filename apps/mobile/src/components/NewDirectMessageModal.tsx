@@ -161,13 +161,7 @@ export default function NewDirectMessageModal({
       activeOpacity={0.7}
     >
       <View style={styles.avatarContainer}>
-        <Image
-          source={{
-            uri: item.avatarUrl ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name)}&background=6366f1&color=fff`
-          }}
-          style={styles.avatar}
-        />
+        <ResolvedAvatar name={item.name} uri={item.avatarUrl} size={44} />
         {!useApiSearch && (
           <View
             style={[
