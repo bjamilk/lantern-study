@@ -51,15 +51,27 @@ export function isAccountDeactivated(row: AccountLifecycleRow | null): boolean {
 }
 
 export function isDeactivatedLifecycleRoute(method: string, path: string, userId: string): boolean {
+  const normalized = path.replace(/\/+$/, '') || '/';
   const allowed: Array<[string, string]> = [
     ['GET', `/${userId}`],
     ['GET', `/${userId}/export`],
     ['GET', `/${userId}/lifecycle`],
+    ['POST', `/${userId}/deactivate`],
     ['POST', `/${userId}/reactivate`],
     ['POST', `/${userId}/delete-immediate`],
     ['POST', `/${userId}/import`],
+    ['POST', '/logout'],
+    ['GET', '/session'],
   ];
-  return allowed.some(([m, p]) => m === method && path === p);
+  return allowed.some(([m, p]) => {
+    if (m !== method) return false;
+    if (normalized === p) return true;
+    // Auth router may be seen as /logout or a prefixed path depending on mount.
+    if (p === '/logout' || p === '/session') {
+      return normalized === p || normalized.endsWith(p);
+    }
+    return false;
+  });
 }
 
 export async function scheduleAccountDeletion(

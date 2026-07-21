@@ -58,7 +58,14 @@ async function rejectIfDeactivated(
 ): Promise<boolean> {
   if (!supabaseService) return false;
   if (await isLivePlatformAdmin(userId)) return false;
-  if (isDeactivatedLifecycleRoute(req.method, req.path, userId)) return false;
+
+  // Always allow sign-out so pause/delete flows can finish after deactivation.
+  const path = (req.path || '').replace(/\/+$/, '') || '/';
+  if (req.method === 'POST' && (path === '/logout' || path.endsWith('/logout'))) {
+    return false;
+  }
+
+  if (isDeactivatedLifecycleRoute(req.method, path, userId)) return false;
 
   const row = await getAccountLifecycle(supabaseService, userId);
   if (!isAccountDeactivated(row)) return false;

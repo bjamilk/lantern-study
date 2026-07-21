@@ -41,6 +41,27 @@ type SettingsTab =
     | 'support'
     | 'account';
 
+type StudyDraft = {
+    dailyCardGoal: string;
+    dailyTestGoal: string;
+    srsNewCardsPerDay: string;
+    srsMaxInterval: string;
+};
+
+function studyToDraft(study: UserSettings['study']): StudyDraft {
+    return {
+        dailyCardGoal: String(study.dailyCardGoal ?? ''),
+        dailyTestGoal: String(study.dailyTestGoal ?? ''),
+        srsNewCardsPerDay: String(study.srsNewCardsPerDay ?? ''),
+        srsMaxInterval: String(study.srsMaxInterval ?? ''),
+    };
+}
+
+function parseStudyNumber(raw: string, fallback: number): number {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : fallback;
+}
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -113,6 +134,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [settingsTabOrientation, setSettingsTabOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
+    const [studyDraft, setStudyDraft] = useState<StudyDraft>(() => studyToDraft(userSettings.study));
+    const studySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         const mq = window.matchMedia('(min-width: 768px)');
@@ -122,22 +145,48 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return () => mq.removeEventListener('change', update);
     }, []);
 
-    // Reset to Profile only when the modal opens — not when currentUser updates from
-    // saving study/notification settings (that was bouncing users back to Profile).
+    // Reset to Profile only when the modal opens — never when currentUser/settings update.
     const wasOpenRef = useRef(false);
+    const currentUserRef = useRef(currentUser);
+    const userSettingsRef = useRef(userSettings);
+    currentUserRef.current = currentUser;
+    userSettingsRef.current = userSettings;
     useEffect(() => {
         const justOpened = isOpen && !wasOpenRef.current;
         wasOpenRef.current = isOpen;
         if (!justOpened) return;
 
+        const user = currentUserRef.current;
         setActiveTab('profile');
-        setProfileData({ name: currentUser.name, phone: currentUser.phoneNumber || '' });
+        setProfileData({ name: user.name, phone: user.phoneNumber || '' });
         setIsProfileDirty(false);
         setShowPasswordChange(false);
         setPasswordData({ current: '', newPass: '', confirmPass: '' });
         setAvatarPreview(null);
-    }, [isOpen, currentUser]);
-    
+        setStudyDraft(studyToDraft(userSettingsRef.current.study));
+    }, [isOpen]);
+
+    useEffect(() => () => {
+        if (studySaveTimerRef.current) clearTimeout(studySaveTimerRef.current);
+    }, []);
+
+    const commitStudyDraft = (draft: StudyDraft) => {
+        onUpdateSettingsCategory('study', {
+            dailyCardGoal: parseStudyNumber(draft.dailyCardGoal, study.dailyCardGoal),
+            dailyTestGoal: parseStudyNumber(draft.dailyTestGoal, study.dailyTestGoal),
+            srsNewCardsPerDay: parseStudyNumber(draft.srsNewCardsPerDay, study.srsNewCardsPerDay),
+            srsMaxInterval: parseStudyNumber(draft.srsMaxInterval, study.srsMaxInterval),
+        });
+    };
+
+    const handleStudyDraftChange = (field: keyof StudyDraft, value: string) => {
+        setStudyDraft((prev) => {
+            const next = { ...prev, [field]: value };
+            if (studySaveTimerRef.current) clearTimeout(studySaveTimerRef.current);
+            studySaveTimerRef.current = setTimeout(() => commitStudyDraft(next), 450);
+            return next;
+        });
+    };    
     useEffect(() => {
         setIsProfileDirty(profileData.name !== currentUser.name || profileData.phone !== (currentUser.phoneNumber || ''));
     }, [profileData, currentUser]);
@@ -345,26 +394,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">Daily card goal</label>
-                            <input type="number" min={5} max={100} step={5} value={study.dailyCardGoal}
-                                onChange={(e) => onUpdateSettingsCategory('study', { dailyCardGoal: Number(e.target.value) })}
+                            <input type="number" min={5} max={100} step={5} value={studyDraft.dailyCardGoal}
+                                onChange={(e) => handleStudyDraftChange('dailyCardGoal', e.target.value)}
+                                onBlur={() => commitStudyDraft(studyDraft)}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">Daily test goal</label>
-                            <input type="number" min={0} max={10} value={study.dailyTestGoal}
-                                onChange={(e) => onUpdateSettingsCategory('study', { dailyTestGoal: Number(e.target.value) })}
+                            <input type="number" min={0} max={10} value={studyDraft.dailyTestGoal}
+                                onChange={(e) => handleStudyDraftChange('dailyTestGoal', e.target.value)}
+                                onBlur={() => commitStudyDraft(studyDraft)}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">New SRS cards / day</label>
-                            <input type="number" min={5} max={50} step={5} value={study.srsNewCardsPerDay}
-                                onChange={(e) => onUpdateSettingsCategory('study', { srsNewCardsPerDay: Number(e.target.value) })}
+                            <input type="number" min={5} max={50} step={5} value={studyDraft.srsNewCardsPerDay}
+                                onChange={(e) => handleStudyDraftChange('srsNewCardsPerDay', e.target.value)}
+                                onBlur={() => commitStudyDraft(studyDraft)}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-lantern-text mb-1">Max SRS interval (days)</label>
-                            <input type="number" min={30} max={365} step={30} value={study.srsMaxInterval}
-                                onChange={(e) => onUpdateSettingsCategory('study', { srsMaxInterval: Number(e.target.value) })}
+                            <input type="number" min={30} max={365} step={30} value={studyDraft.srsMaxInterval}
+                                onChange={(e) => handleStudyDraftChange('srsMaxInterval', e.target.value)}
+                                onBlur={() => commitStudyDraft(studyDraft)}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                     </div>
@@ -644,7 +697,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             maxWidthClass="max-w-3xl"
             zIndexClass="z-[80]"
             panelClassName="!p-0 h-[90vh] md:h-[75vh] flex flex-col overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
-            focusContentKey={activeTab}
         >
             <Tabs
                 value={activeTab}
@@ -699,6 +751,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     await onPauseAccount();
                     showToast('Account paused. Sign in again within 30 days to reactivate.', 'info');
                     onClose();
+                } catch (err) {
+                    // Re-throw so AccountDeletionModal can show the message; avoid blank failures.
+                    const message = err instanceof Error ? err.message : 'Failed to pause account.';
+                    showToast(message, 'error');
+                    throw err instanceof Error ? err : new Error(message);
                 } finally {
                     setAccountActionLoading(false);
                 }

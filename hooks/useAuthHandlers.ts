@@ -219,8 +219,14 @@ export function useAuthHandlers() {
         if (!currentUser) return;
         await deactivateUserAccount(currentUser.id);
         setUsers((prev) => prev.filter((u) => u.id !== currentUser.id));
-        await handleLogout();
-    }, [currentUser, handleLogout]);
+        // Clear local session even if server logout is blocked for paused accounts.
+        try {
+            await handleLogout();
+        } catch (err) {
+            console.warn('Logout after pause failed; clearing local session anyway.', err);
+            setCurrentUser(null);
+        }
+    }, [currentUser, handleLogout, setCurrentUser, setUsers]);
 
     const handleDeleteAccountImmediate = useCallback(
         async (password: string) => {

@@ -1943,7 +1943,12 @@ export const deactivateUserAccount = async (userId: string): Promise<{
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.error || json.message || `Pause failed (${response.status})`);
+    throw new Error(
+      json.error ||
+        json.message ||
+        (typeof json.data?.message === 'string' ? json.data.message : null) ||
+        `Pause failed (${response.status})`
+    );
   }
   return json.data;
 };
