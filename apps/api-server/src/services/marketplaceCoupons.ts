@@ -130,21 +130,12 @@ export class MarketplaceCouponsService {
     return { coupon: row, baseAmount, discountAmount, finalAmount };
   }
 
-  async redeemCoupon(couponId: string): Promise<void> {
-    const { data, error } = await this.db
-      .from('marketplace_coupons')
-      .select('uses_count')
-      .eq('id', couponId)
-      .single();
-    if (error || !data) return;
-
-    await this.db
-      .from('marketplace_coupons')
-      .update({
-        uses_count: (data.uses_count || 0) + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', couponId);
+  async redeemCoupon(couponId: string): Promise<boolean> {
+    const { data, error } = await this.db.rpc('marketplace_redeem_coupon', {
+      p_coupon_id: couponId,
+    });
+    if (error) throw error;
+    return data === true;
   }
 }
 

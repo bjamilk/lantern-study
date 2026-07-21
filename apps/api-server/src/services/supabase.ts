@@ -212,42 +212,87 @@ export class SupabaseService {
     return value.replace(/[%_\\]/g, '\\$&');
   }
 
-  /** True when the user owns the deck or has collaborator/shared read access. */
+  /** True when stored image_url refers to exactly this storage object (not a substring plant). */
+  private storageUrlMatchesObject(
+    imageUrl: string | null | undefined,
+    bucket: string,
+    path: string
+  ): boolean {
+    if (!imageUrl) return false;
+    if (imageUrl === path || imageUrl === `${bucket}/${path}`) return true;
+    const parsed = parseStorageObjectUrl(imageUrl);
+    return !!parsed && parsed.bucket === bucket && parsed.path === path;
+  }
+
+  /**
+   * True when the user may read a flashcard image.
+   * Requires an exact object reference on a deck the user can read, and that the
+   * storage path owner is authorized to edit that deck (blocks confused-deputy URL planting).
+   */
   private async canAccessFlashcardImage(userId: string, path: string): Promise<boolean> {
+    const pathOwner = path.split('/')[0];
+    if (!pathOwner) return false;
+
     const escapedPath = this.escapeIlikePattern(path);
     const { data: cards, error } = await this.supabase
       .from('flashcards')
-      .select('deck_id')
+      .select('deck_id, image_url')
       .not('image_url', 'is', null)
       .ilike('image_url', `%${escapedPath}%`)
-      .limit(20);
+      .limit(50);
 
     if (error) throw error;
     if (!cards?.length) return false;
 
-    const deckIds = [...new Set(cards.map((c) => c.deck_id).filter(Boolean))];
+    const deckIds = [
+      ...new Set(
+        cards
+          .filter((c) => this.storageUrlMatchesObject(c.image_url, 'flashcard-images', path))
+          .map((c) => c.deck_id)
+          .filter(Boolean)
+      ),
+    ];
+
     for (const deckId of deckIds) {
-      if (await this.verifyDeckAccess(userId, deckId, 'read')) return true;
+      const canRead = await this.verifyDeckAccess(userId, deckId, 'read');
+      if (!canRead) continue;
+      // Path owner must be an editor/owner of the referencing deck — not merely mentioned in image_url.
+      if (await this.verifyDeckAccess(pathOwner, deckId, 'edit')) return true;
     }
     return false;
   }
 
-  /** True when the image is attached to a group message in a group the user belongs to. */
+  /**
+   * True when the image is on a group message the user can see, and the uploader
+   * (path owner) is also a member of that group (blocks URL planting).
+   */
   private async canAccessQuestionImage(userId: string, path: string): Promise<boolean> {
+    const pathOwner = path.split('/')[0];
+    if (!pathOwner) return false;
+
     const escapedPath = this.escapeIlikePattern(path);
     const { data: rows, error } = await this.supabase
       .from('messages')
-      .select('group_id')
+      .select('group_id, image_url')
       .not('image_url', 'is', null)
       .ilike('image_url', `%${escapedPath}%`)
-      .limit(20);
+      .limit(50);
 
     if (error) throw error;
     if (!rows?.length) return false;
 
-    const groupIds = [...new Set(rows.map((r) => r.group_id).filter(Boolean))];
+    const groupIds = [
+      ...new Set(
+        rows
+          .filter((r) => this.storageUrlMatchesObject(r.image_url, 'question-images', path))
+          .map((r) => r.group_id)
+          .filter(Boolean)
+      ),
+    ];
+
     for (const groupId of groupIds) {
-      if (await this.isGroupMember(groupId, userId)) return true;
+      if (!(await this.isGroupMember(groupId, userId))) continue;
+      if (await this.isGroupMember(groupId, pathOwner)) return true;
     }
     return false;
   }
@@ -1264,10 +1309,10 @@ export class SupabaseService {
     const { page = 1, limit = 50, requestingUserId } = options;
     const offset = (page - 1) * limit;
 
+    // Cache only public member fields — never phone/settings (SEC-04).
     const cacheKey = `group:members:${groupId}:${page}:${limit}`;
 
-    return cacheService.cached(cacheKey, async () => {
-      // First get the member user IDs
+    const publicMembers = await cacheService.cached(cacheKey, async () => {
       const { data: memberData, error: memberError } = await this.supabase
         .from('group_members')
         .select('user_id')
@@ -1283,11 +1328,10 @@ export class SupabaseService {
         return [];
       }
 
-      // Then fetch the profiles for those users (email is not in profiles table)
-      const userIds = memberData.map(m => m.user_id);
+      const userIds = memberData.map((m) => m.user_id);
       const { data: profileData, error: profileError } = await this.supabase
         .from('profiles')
-        .select('id, name, username, avatar_url, phone, points, stats, badges, settings')
+        .select('id, name, username, avatar_url, points, stats, badges')
         .in('id', userIds);
 
       if (profileError) {
@@ -1295,28 +1339,41 @@ export class SupabaseService {
         throw profileError;
       }
 
-      // Transform to User format; omit phone/settings for other members
-      return (profileData || []).map((profile: any) => {
-        const isSelf = requestingUserId && profile.id === requestingUserId;
-        const base = {
-          id: profile.id,
-          name: profile.name,
-          username: profile.username,
-          avatarUrl: profile.avatar_url,
-          points: profile.points || 0,
-          stats: profile.stats || {},
-          badges: profile.badges || [],
-        };
-        if (isSelf) {
-          return {
-            ...base,
-            phoneNumber: profile.phone,
-            settings: profile.settings,
-          };
-        }
-        return base;
-      });
-    }, { ttl: 300 }); // Cache for 5 minutes
+      return (profileData || []).map((profile: any) => ({
+        id: profile.id,
+        name: profile.name,
+        username: profile.username,
+        avatarUrl: profile.avatar_url,
+        points: profile.points || 0,
+        stats: profile.stats || {},
+        badges: profile.badges || [],
+      }));
+    }, { ttl: 300 });
+
+    if (!requestingUserId) return publicMembers as User[];
+
+    const selfInPage = publicMembers.some((m: any) => m.id === requestingUserId);
+    if (!selfInPage) return publicMembers as User[];
+
+    const { data: selfProfile, error: selfError } = await this.supabase
+      .from('profiles')
+      .select('phone, settings')
+      .eq('id', requestingUserId)
+      .maybeSingle();
+
+    if (selfError) {
+      logger.error('Error fetching self member profile:', selfError);
+      throw selfError;
+    }
+
+    return (publicMembers as User[]).map((member: any) => {
+      if (member.id !== requestingUserId) return member;
+      return {
+        ...member,
+        phoneNumber: selfProfile?.phone,
+        settings: selfProfile?.settings,
+      };
+    });
   }
 
   async getGroupStats(groupId: string): Promise<any> {
@@ -3493,14 +3550,11 @@ export class SupabaseService {
     const test = await this.getTestById(testId, userId);
     if (!test) throw new Error('Test not found');
 
-    // Check if test has already been completed
-    if (test.end_time) {
-      throw new Error('Test has already been completed');
-    }
-
     // Calculate score
     const score = this.calculateTestScore(test.questions, answers);
+    const correctAnswers = Math.round((score / 100) * test.questions.length);
 
+    // Atomic complete: only the first concurrent submit wins (CONC-02).
     const { data, error } = await this.supabase
       .from('test_sessions')
       .update({
@@ -3508,20 +3562,28 @@ export class SupabaseService {
         user_answers: answers,
       })
       .eq('id', testId)
+      .eq('user_id', userId)
+      .is('end_time', null)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw new Error('Test has already been completed');
+    }
 
-    // Create test result
+    // Upsert result — UNIQUE(session_id) prevents duplicates under races.
     const { error: resultError } = await this.supabase
       .from('test_results')
-      .insert({
-        session_id: testId,
-        score,
-        total_questions: test.questions.length,
-        correct_answers_count: score / 100 * test.questions.length,
-      });
+      .upsert(
+        {
+          session_id: testId,
+          score,
+          total_questions: test.questions.length,
+          correct_answers_count: correctAnswers,
+        },
+        { onConflict: 'session_id', ignoreDuplicates: true }
+      );
 
     if (resultError) throw resultError;
 
@@ -3537,7 +3599,7 @@ export class SupabaseService {
       test: data,
       score,
       totalQuestions: test.questions.length,
-      correctAnswers: Math.round(score / 100 * test.questions.length),
+      correctAnswers,
     };
   }
 
@@ -3560,12 +3622,15 @@ export class SupabaseService {
 
     const { data, error } = await this.supabase
       .from('test_results')
-      .insert({
-        session_id: testId,
-        score,
-        correct_answers_count: correctAnswersCount,
-        total_questions: totalQuestions,
-      })
+      .upsert(
+        {
+          session_id: testId,
+          score,
+          correct_answers_count: correctAnswersCount,
+          total_questions: totalQuestions,
+        },
+        { onConflict: 'session_id' }
+      )
       .select()
       .single();
 

@@ -9,7 +9,6 @@ import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
-import { User } from '../types/index';
 
 const router = Router();
 const DEFAULT_GROUP_PAGE_SIZE = 20;
@@ -593,19 +592,12 @@ router.get(
       });
     }
 
-    const cacheKey = `group:members:${groupId}:${page}:${limit}`;
-    let members = await cacheService.get(cacheKey) as User[];
-
-    if (!members) {
-      members = await supabaseService.getGroupMembers(groupId, {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-        requestingUserId: userId,
-      });
-
-      // Cache for 5 minutes
-      await cacheService.set(cacheKey, members, 300);
-    }
+    // Service caches public member rows only and attaches self PII after the cache hit (SEC-04).
+    const members = await supabaseService.getGroupMembers(groupId, {
+      page: parseInt(page as string),
+      limit: parseInt(limit as string),
+      requestingUserId: userId,
+    });
 
     res.json({
       success: true,

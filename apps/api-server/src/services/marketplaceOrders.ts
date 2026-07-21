@@ -286,10 +286,7 @@ export class MarketplaceOrdersService {
     if (orderError || !order) throw orderError || new Error('Order not found after creation');
     const row = order as MarketplaceOrderRow;
 
-    if (couponId) {
-      const { getMarketplaceCouponsService } = await import('./marketplaceCoupons');
-      await getMarketplaceCouponsService(this.supabaseService).redeemCoupon(couponId);
-    }
+    // Coupon uses_count is incremented inside marketplace_create_buy_now_order (CONC-03).
 
     await this.notifyOrderParty(listing.user_id, {
       type: 'marketplace_purchase',
