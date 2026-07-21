@@ -122,15 +122,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         return () => mq.removeEventListener('change', update);
     }, []);
 
+    // Reset to Profile only when the modal opens — not when currentUser updates from
+    // saving study/notification settings (that was bouncing users back to Profile).
+    const wasOpenRef = useRef(false);
     useEffect(() => {
-        if (isOpen) {
-            setActiveTab('profile');
-            setProfileData({ name: currentUser.name, phone: currentUser.phoneNumber || '' });
-            setIsProfileDirty(false);
-            setShowPasswordChange(false);
-            setPasswordData({ current: '', newPass: '', confirmPass: '' });
-            setAvatarPreview(null);
-        }
+        const justOpened = isOpen && !wasOpenRef.current;
+        wasOpenRef.current = isOpen;
+        if (!justOpened) return;
+
+        setActiveTab('profile');
+        setProfileData({ name: currentUser.name, phone: currentUser.phoneNumber || '' });
+        setIsProfileDirty(false);
+        setShowPasswordChange(false);
+        setPasswordData({ current: '', newPass: '', confirmPass: '' });
+        setAvatarPreview(null);
     }, [isOpen, currentUser]);
     
     useEffect(() => {
