@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
-import { CHECKLIST_ITEMS, shouldShowChecklist } from '@lantern/shared/featureTips';
+import { Pressable, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { CHECKLIST_ITEMS, shouldShowChecklist, type ChecklistItemKey } from '@lantern/shared/featureTips';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
+import { useTheme } from '../../theme';
 
 interface Props {
   hasDecks: boolean;
@@ -25,7 +26,7 @@ interface Props {
   onTryOffline?: () => void;
 }
 
-export const GettingStartedChecklist: React.FC<Props> = ({
+export function GettingStartedChecklist({
   hasDecks,
   hasTests,
   hasGroups,
@@ -44,7 +45,8 @@ export const GettingStartedChecklist: React.FC<Props> = ({
   onSubmitQuestion,
   onExploreMarketplace,
   onTryOffline,
-}) => {
+}: Props) {
+  const { colors } = useTheme();
   const tips = useFeatureTipStore((s) => s.tips);
   const hydrated = useFeatureTipStore((s) => s.hydrated);
   const markChecklist = useFeatureTipStore((s) => s.markChecklist);
@@ -52,7 +54,7 @@ export const GettingStartedChecklist: React.FC<Props> = ({
   const hydrate = useFeatureTipStore((s) => s.hydrate);
 
   useEffect(() => {
-    hydrate();
+    void hydrate();
   }, [hydrate]);
 
   useEffect(() => {
@@ -99,52 +101,57 @@ export const GettingStartedChecklist: React.FC<Props> = ({
     done: Boolean(tips.checklist[item.key]),
     onClick: actions[item.key],
   }));
-
   const doneCount = items.filter((i) => i.done).length;
 
   return (
-    <div className="rounded-2xl border border-lantern-primary/30 dark:border-lantern-primary/30 bg-lantern-primary-background/80 dark:bg-lantern-primary-background p-4 mb-4">
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div>
-          <h3 className="text-sm font-bold text-lantern-primary-dark dark:text-lantern-primary-light">Getting started</h3>
-          <p className="text-xs text-lantern-primary/80 dark:text-lantern-primary-light/80">
+    <View
+      className="rounded-2xl border p-4 mb-4"
+      style={{
+        borderColor: `${colors.primary}55`,
+        backgroundColor: `${colors.primary}14`,
+      }}
+    >
+      <View className="flex-row items-start justify-between mb-3">
+        <View className="flex-1 pr-2">
+          <Text className="text-sm font-bold" style={{ color: colors.primary }}>
+            Getting started
+          </Text>
+          <Text className="text-xs mt-0.5" style={{ color: colors.textSecondary }}>
             {doneCount} of {items.length} complete
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label="Dismiss getting started"
-          onClick={() => dismissGettingStarted()}
-          className="p-1 rounded-lg text-lantern-primary hover:bg-lantern-primary-background dark:hover:bg-lantern-primary-dark/40"
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => dismissGettingStarted()}
+          accessibilityLabel="Dismiss getting started"
+          className="p-1"
         >
-          <XMarkIcon className="w-4 h-4" />
-        </button>
-      </div>
-      <ul className="space-y-2">
+          <Ionicons name="close" size={18} color={colors.primary} />
+        </Pressable>
+      </View>
+      <View className="gap-1.5">
         {items.map((item) => (
-          <li key={item.key}>
-            <button
-              type="button"
-              onClick={() => item.onClick?.()}
-              disabled={item.done || !item.onClick}
-              className={`w-full flex items-center gap-2 text-left text-sm px-2 py-1.5 rounded-lg transition-colors ${
-                item.done
-                  ? 'text-emerald-700 dark:text-emerald-300'
-                  : 'text-lantern-primary-dark dark:text-lantern-primary-light hover:bg-lantern-primary-background/80 dark:hover:bg-lantern-primary-dark/40'
-              }`}
+          <Pressable
+            key={item.key}
+            onPress={() => item.onClick?.()}
+            disabled={item.done || !item.onClick}
+            className="flex-row items-center gap-2 px-2 py-2 rounded-lg"
+          >
+            <Ionicons
+              name={item.done ? 'checkmark-circle' : 'checkmark-circle-outline'}
+              size={20}
+              color={item.done ? '#10b981' : colors.primary}
+            />
+            <Text
+              className={`text-sm flex-1 ${item.done ? 'line-through opacity-80' : ''}`}
+              style={{ color: item.done ? '#059669' : colors.text }}
             >
-              {item.done ? (
-                <CheckCircleSolid className="w-5 h-5 text-emerald-500 shrink-0" />
-              ) : (
-                <CheckCircleIcon className="w-5 h-5 text-lantern-primary shrink-0" />
-              )}
-              <span className={item.done ? 'line-through opacity-80' : ''}>{item.label}</span>
-            </button>
-          </li>
+              {item.label}
+            </Text>
+          </Pressable>
         ))}
-      </ul>
-    </div>
+      </View>
+    </View>
   );
-};
+}
 
 export default GettingStartedChecklist;

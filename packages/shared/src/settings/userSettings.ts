@@ -69,6 +69,16 @@ export interface MarketplaceSettings {
   campus_id?: string | null;
 }
 
+/** First-time / returning-user coach tips + getting-started checklist progress. */
+export interface FeatureTipsSettings {
+  version: number;
+  dismissed: Record<string, boolean>;
+  skippedAll?: boolean;
+  dontShowAgain?: boolean;
+  checklistDismissed?: boolean;
+  checklist?: Record<string, boolean>;
+}
+
 export interface UserSettings {
   notifications: NotificationSettings;
   study: StudySettings;
@@ -77,6 +87,7 @@ export interface UserSettings {
   accessibility: AccessibilitySettings;
   sync: SyncSettings;
   marketplace?: MarketplaceSettings;
+  featureTips?: FeatureTipsSettings;
   version: number;
   updatedAt: string;
 }
@@ -153,6 +164,14 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     country_code: 'NG',
     campus_id: null,
   },
+  featureTips: {
+    version: 1,
+    dismissed: {},
+    skippedAll: false,
+    dontShowAgain: false,
+    checklistDismissed: false,
+    checklist: {},
+  },
   version: 1,
   updatedAt: new Date().toISOString(),
 };
@@ -190,33 +209,65 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
 
   const record = raw as Record<string, unknown>;
 
+  let merged: UserSettings;
   if (record.notifications && typeof record.notifications === 'object') {
-    return deepMerge(DEFAULT_USER_SETTINGS, record as Partial<UserSettings>);
+    merged = deepMerge(DEFAULT_USER_SETTINGS, record as Partial<UserSettings>);
+  } else {
+    const legacy = record as LegacyFlatNotificationSettings & {
+      privacy?: Partial<PrivacySettings>;
+      study?: Partial<StudySettings>;
+      appearance?: Partial<AppearanceSettings>;
+      accessibility?: Partial<AccessibilitySettings>;
+      sync?: Partial<SyncSettings>;
+      featureTips?: Partial<FeatureTipsSettings>;
+    };
+
+    merged = deepMerge(DEFAULT_USER_SETTINGS, {
+      notifications: {
+        ...(legacy.dailyReminder !== undefined ? { dailyReminder: legacy.dailyReminder } : {}),
+        ...(legacy.groupActivity !== undefined ? { groupActivity: legacy.groupActivity } : {}),
+        ...(legacy.marketplaceUpdates !== undefined ? { marketplaceUpdates: legacy.marketplaceUpdates } : {}),
+        ...(legacy.badgeUnlocks !== undefined ? { badgeUnlocks: legacy.badgeUnlocks } : {}),
+        ...(legacy.srsReminders !== undefined ? { srsReminders: legacy.srsReminders } : {}),
+        ...(legacy.testResults !== undefined ? { testResults: legacy.testResults } : {}),
+      },
+      ...(legacy.theme ? { appearance: { theme: legacy.theme } } : {}),
+      ...(legacy.privacy ? { privacy: legacy.privacy as Partial<PrivacySettings> } : {}),
+      ...(legacy.study ? { study: legacy.study as Partial<StudySettings> } : {}),
+      ...(legacy.accessibility ? { accessibility: legacy.accessibility as Partial<AccessibilitySettings> } : {}),
+      ...(legacy.sync ? { sync: legacy.sync as Partial<SyncSettings> } : {}),
+      ...(legacy.featureTips ? { featureTips: legacy.featureTips as FeatureTipsSettings } : {}),
+    } as Partial<UserSettings>);
   }
 
-  const legacy = record as LegacyFlatNotificationSettings & {
-    privacy?: Partial<PrivacySettings>;
-    study?: Partial<StudySettings>;
-    appearance?: Partial<AppearanceSettings>;
-    accessibility?: Partial<AccessibilitySettings>;
-    sync?: Partial<SyncSettings>;
-  };
+  // Normalize feature tips shape (version bump, dismissed map, checklist).
+  const tipsRaw = (record.featureTips ?? merged.featureTips) as unknown;
+  merged.featureTips = normalizeFeatureTipsSettings(tipsRaw);
+  return merged;
+}
 
-  return deepMerge(DEFAULT_USER_SETTINGS, {
-    notifications: {
-      ...(legacy.dailyReminder !== undefined ? { dailyReminder: legacy.dailyReminder } : {}),
-      ...(legacy.groupActivity !== undefined ? { groupActivity: legacy.groupActivity } : {}),
-      ...(legacy.marketplaceUpdates !== undefined ? { marketplaceUpdates: legacy.marketplaceUpdates } : {}),
-      ...(legacy.badgeUnlocks !== undefined ? { badgeUnlocks: legacy.badgeUnlocks } : {}),
-      ...(legacy.srsReminders !== undefined ? { srsReminders: legacy.srsReminders } : {}),
-      ...(legacy.testResults !== undefined ? { testResults: legacy.testResults } : {}),
-    },
-    ...(legacy.theme ? { appearance: { theme: legacy.theme } } : {}),
-    ...(legacy.privacy ? { privacy: legacy.privacy as Partial<PrivacySettings> } : {}),
-    ...(legacy.study ? { study: legacy.study as Partial<StudySettings> } : {}),
-    ...(legacy.accessibility ? { accessibility: legacy.accessibility as Partial<AccessibilitySettings> } : {}),
-    ...(legacy.sync ? { sync: legacy.sync as Partial<SyncSettings> } : {}),
-  } as Partial<UserSettings>);
+function normalizeFeatureTipsSettings(raw: unknown): FeatureTipsSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...DEFAULT_USER_SETTINGS.featureTips! };
+  }
+  const record = raw as Record<string, unknown>;
+  const dismissed =
+    record.dismissed && typeof record.dismissed === 'object' && !Array.isArray(record.dismissed)
+      ? (record.dismissed as Record<string, boolean>)
+      : {};
+  const checklist =
+    record.checklist && typeof record.checklist === 'object' && !Array.isArray(record.checklist)
+      ? (record.checklist as Record<string, boolean>)
+      : {};
+  const version = typeof record.version === 'number' ? record.version : 1;
+  return {
+    version: 1,
+    dismissed: version === 1 ? dismissed : {},
+    skippedAll: Boolean(record.skippedAll),
+    dontShowAgain: Boolean(record.dontShowAgain),
+    checklistDismissed: Boolean(record.checklistDismissed),
+    checklist,
+  };
 }
 
 export function getNotificationSettings(settings: UserSettings): NotificationSettings {

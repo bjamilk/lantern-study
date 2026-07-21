@@ -23,11 +23,14 @@ import { AICompanionPanel } from '../components/AICompanionPanel';
 
 import { AIUsageFloatingBadge } from '../components/AIUsageFloatingBadge';
 
+import { FeatureTipsHost } from '../components/featureTips/FeatureTipsHost';
+
 import { BootLoadingScreen } from '../components/BootLoadingScreen';
 
 import * as SplashScreen from 'expo-splash-screen';
 
 import { useAuthStore } from '../stores/authStore';
+import { useFeatureTipStore } from '../stores/featureTipStore';
 import { setSentryUser } from '../services/sentry';
 import { fetchAIUsage } from '../services/ai';
 
@@ -388,6 +391,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
   const openCompanion = useCompanionStore(s => s.open);
 
   const companionOpen = useCompanionStore(s => s.isOpen);
+  const onboardingComplete = useFeatureTipStore(s => s.onboardingComplete);
 
   const decks = useFlashcardStore(s => s.decks);
 
@@ -653,6 +657,19 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       />
 
       <AICompanionPanel />
+      <FeatureTipsHost
+        onboardingComplete={onboardingComplete}
+        activeTab={activeTab}
+        isGroupChat={focused === 'GroupChat'}
+        isLibrary={
+          focused === 'Library' ||
+          focused === 'NotesList' ||
+          focused === 'NoteEditor' ||
+          activeTab === 'Library'
+        }
+        moreOpen={moreOpen}
+        companionOpen={companionOpen}
+      />
       <View className="absolute top-12 right-3 z-40">
         <SyncStatusIndicator compact />
       </View>
@@ -803,8 +820,10 @@ function RootNavigatorInner() {
 
     AsyncStorage.getItem('lantern_onboarding_complete').then(v => {
       if (cancelled) return;
-      setShowOnboarding(v !== 'true');
+      const complete = v === 'true';
+      setShowOnboarding(!complete);
       setOnboardingChecked(true);
+      useFeatureTipStore.getState().setOnboardingComplete(complete);
     });
 
     return () => {
@@ -895,7 +914,14 @@ function RootNavigatorInner() {
         ) : showOnboarding ? (
 
           <RootStack.Screen name="Onboarding">
-            {() => <OnboardingScreen onComplete={() => setShowOnboarding(false)} />}
+            {() => (
+              <OnboardingScreen
+                onComplete={() => {
+                  setShowOnboarding(false);
+                  useFeatureTipStore.getState().setOnboardingComplete(true);
+                }}
+              />
+            )}
           </RootStack.Screen>
 
         ) : (

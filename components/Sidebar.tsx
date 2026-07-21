@@ -235,9 +235,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   
   const showText = isExpanded;
 
-  const NavButton = ({ navFunc, icon: Icon, label, appMode, badgeCount }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, badgeCount?: number }) => (
+  const NavButton = ({ navFunc, icon: Icon, label, appMode, badgeCount, tipId }: { navFunc: () => void, icon: React.ElementType, label: string, appMode?: AppMode, badgeCount?: number, tipId?: string }) => (
     <button
       onClick={navFunc}
+      data-tip-id={tipId}
       className={`w-full flex items-center p-3 rounded-xl text-lantern-text-secondary hover:bg-lantern-surface hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
           currentAppMode === appMode
             ? 'bg-lantern-primary-background text-lantern-primary font-semibold shadow-lantern'
@@ -304,20 +305,20 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="px-2 space-y-1">
           <NavButton navFunc={onNavigateToDashboard} icon={Squares2X2Icon} label="Dashboard" appMode={AppMode.DASHBOARD} />
           {onNavigateToLibrary && (
-            <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} />
+            <NavButton navFunc={onNavigateToLibrary} icon={BookOpenIcon} label="Library" appMode={AppMode.LIBRARY} badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined} tipId="nav.library" />
           )}
         </div>
 
         <SectionHeader title="Social" />
         <div className="px-2 space-y-1">
           <NavButton navFunc={onOpenNotificationModal} icon={BellAlertIcon} label="Notifications" badgeCount={unreadNotificationCount} />
-          <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} />
+          <NavButton navFunc={onNavigateToMarketplace} icon={ShoppingBagIcon} label="Explore" appMode={AppMode.MARKETPLACE} tipId="nav.marketplace" />
         </div>
 
         <SectionHeader title="Tools" />
         <div className="px-2 space-y-1">
-          <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget Tracker" appMode={AppMode.BUDGET_TRACKER} />
-          <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} />
+          <NavButton navFunc={onNavigateToBudgetTracker} icon={BanknotesIcon} label="Budget Tracker" appMode={AppMode.BUDGET_TRACKER} tipId="nav.budget" />
+          <NavButton navFunc={onNavigateToOfflineMode} icon={CloudArrowDownIcon} label="Offline Activity" appMode={AppMode.OFFLINE_MODE} badgeCount={pendingSyncCount} tipId="nav.offline" />
           {isPlatformAdmin && onNavigateToAdmin && (
             <NavButton navFunc={onNavigateToAdmin} icon={UsersIcon} label="Admin" appMode={AppMode.ADMIN} />
           )}
@@ -329,6 +330,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={toggleChatsSection}
+                data-tip-id="nav.chat"
                 className="flex items-center gap-1.5 min-w-0 flex-1 text-left rounded-md hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary px-1 py-0.5 -ml-1"
                 aria-expanded={isChatsSectionExpanded}
                 title={isChatsSectionExpanded ? 'Collapse chats' : 'Expand chats'}
@@ -546,6 +548,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                   onClick={onToggleCompanion}
+                  data-tip-id="nav.companion"
                   className={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-colors ${
                     isCompanionOpen
                       ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary-dark/50'

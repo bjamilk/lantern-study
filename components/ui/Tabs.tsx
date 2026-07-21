@@ -100,11 +100,12 @@ export function TabList({
   children,
   className = '',
   variant,
+  ...rest
 }: {
   children: React.ReactNode;
   className?: string;
   variant?: TabsVariant;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
   const ctx = useTabsContext();
   const listVariant = variant ?? ctx.variant;
   const variantClass =
@@ -120,6 +121,7 @@ export function TabList({
       aria-label={ctx.ariaLabel}
       aria-orientation={ctx.orientation}
       className={`flex ${ctx.orientation === 'vertical' ? 'flex-col' : 'flex-row'} ${variantClass} ${className}`}
+      {...rest}
     >
       {children}
     </div>

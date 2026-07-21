@@ -56,7 +56,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
             ) : null}
           </div>
         </FeatureHero>
-        <TabList>
+        <TabList data-tip-id="library.tabs">
           {tabs.map(({ id, label, icon: Icon }, index) => (
             <Tab
               key={id}

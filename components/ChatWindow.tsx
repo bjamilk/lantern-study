@@ -549,6 +549,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     ? (groups.find((g) => g.id === chat.id)?.members ?? chat.members ?? [])
     : [];
   const group = isGroup ? { ...chat, members: groupMemberList } : null;
+  const isGroupAdmin = Boolean(
+    isGroup &&
+      group &&
+      Array.isArray((group as Group).adminIds) &&
+      (group as Group).adminIds.includes(currentUser.id)
+  );
 
   const typingLabels = typingUserIds.map((userId) =>
     resolveGroupChatSenderLabel({ id: userId }, groupMemberList)
@@ -741,6 +747,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <div className="flex items-center gap-1 mr-2">
                 <button
                   onClick={onOpenQuestionModal}
+                  data-tip-id="chat.question"
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Submit question"
                   title="Submit Question"
@@ -750,6 +757,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </button>
                 <button
                   onClick={onOpenTestConfigModal}
+                  data-tip-id="chat.test"
                   className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Take a test"
                   title="Take a Test"
@@ -759,6 +767,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 </button>
                 <button
                   onClick={onOpenStudyConfigModal}
+                  data-tip-id="chat.study"
                   className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
                   aria-label="Study mode"
                   title="Study Mode"
@@ -769,6 +778,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button
                   onClick={handleSummarizeGroup}
                   disabled={isSummarizingChat}
+                  data-tip-id="chat.summarize"
                   className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed rounded-lantern transition-colors duration-200"
                   aria-label="Summarize group chat with AI"
                   title="AI Summary"
@@ -786,6 +796,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <MenuTrigger
                 className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                 aria-label="Chat options"
+                data-tip-id={isGroupAdmin ? 'chat.aiGenerate' : undefined}
               >
                 <EllipsisVerticalIcon className="w-5 h-5" />
               </MenuTrigger>
@@ -822,7 +833,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           Study Mode
                         </MenuItem>
                       </div>
-                      {onOpenAIGenerateModal && (
+                      {onOpenAIGenerateModal && isGroupAdmin && (
                         <MenuItem
                           onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
                           icon={<SparklesIcon className="w-4 h-4" />}

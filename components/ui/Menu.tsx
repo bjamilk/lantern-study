@@ -81,11 +81,12 @@ export function MenuTrigger({
   children,
   'aria-label': ariaLabel,
   className = '',
+  ...rest
 }: {
   children: React.ReactNode;
   'aria-label'?: string;
   className?: string;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const ctx = useMenuContext();
   return (
     <button
@@ -98,6 +99,7 @@ export function MenuTrigger({
       aria-label={ariaLabel}
       onClick={() => ctx.setOpen(!ctx.open)}
       className={className}
+      {...rest}
     >
       {children}
     </button>
@@ -195,6 +197,7 @@ export function MenuItem({
   destructive,
   disabled,
   className = '',
+  ...rest
 }: {
   children: React.ReactNode;
   onSelect?: () => void;
@@ -202,7 +205,7 @@ export function MenuItem({
   destructive?: boolean;
   disabled?: boolean;
   className?: string;
-}) {
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const ctx = useMenuContext();
   const index = ctx.itemIndex();
 
@@ -223,6 +226,7 @@ export function MenuItem({
           ? 'text-lantern-error hover:bg-lantern-error/10'
           : 'text-lantern-text hover:bg-lantern-background-secondary'
       } disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      {...rest}
     >
       {icon}
       {children}

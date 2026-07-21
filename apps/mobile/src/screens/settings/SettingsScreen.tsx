@@ -43,6 +43,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import { ContactSupportModal } from '../../components/ContactSupportModal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
+import { useFeatureTipStore } from '../../stores/featureTipStore';
 
 const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
@@ -1211,6 +1212,15 @@ export default function SettingsScreen() {
                 </View>
               ))}
             </ScrollView>
+            <TouchableOpacity
+              style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary + '18', borderWidth: 1, borderColor: colors.primary + '40' }]}
+              onPress={() => {
+                useFeatureTipStore.getState().replay();
+                Alert.alert('Feature tips reset', 'Explore the app to see navigation tips again.');
+              }}
+            >
+              <Text style={[styles.saveButtonText, { color: colors.primary }]}>Replay feature tips</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
               onPress={() => {

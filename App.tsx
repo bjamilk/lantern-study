@@ -7,6 +7,8 @@ import { useConfirmStore } from './stores/confirmStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import CookieNoticeBanner from './components/CookieNoticeBanner';
+import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
+import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
 import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle } from './services/supabase';
 import { getNoteStudyContent } from '@lantern/shared';
@@ -161,6 +163,7 @@ export const App: React.FC = () => {
     const { decks, flashcards, dueCardsCount, offlineDeckIds, pendingFlashcardReviews } = useFlashcardStore();
     const { transactions, budget } = useBudgetStore();
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
+    const markChecklist = useFeatureTipStore((s) => s.markChecklist);
 
     // ensure offline deck IDs and any cached decks/flashcards are loaded on web
     useEffect(() => {
@@ -192,6 +195,27 @@ export const App: React.FC = () => {
         isOnline,
         libraryTab, setLibraryTab,
     } = useUIStore();
+
+    useEffect(() => {
+        if (isCompanionOpen) markChecklist('tryCompanion');
+    }, [isCompanionOpen, markChecklist]);
+
+    useEffect(() => {
+        if (
+            appMode === AppMode.LIBRARY ||
+            appMode === AppMode.NOTES ||
+            appMode === AppMode.FLASHCARDS ||
+            appMode === AppMode.NOTE_EDITOR ||
+            appMode === AppMode.DECK_DETAIL
+        ) {
+            markChecklist('openLibrary');
+        }
+        if (appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL) {
+            markChecklist('exploreMarketplace');
+        }
+        if (appMode === AppMode.OFFLINE_MODE) markChecklist('tryOffline');
+    }, [appMode, markChecklist]);
+
     const {
         users, dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
         toggleTheme, handleLogout,
@@ -907,8 +931,18 @@ export const App: React.FC = () => {
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
+                    onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
+                    onNavigateToOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
+                    onToggleCompanion={toggleCompanion}
                     deckCount={decks.length}
                     hasBudgetSet={!!(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
+                    hasOpenedLibrary={appMode === AppMode.LIBRARY || appMode === AppMode.NOTES || appMode === AppMode.FLASHCARDS}
+                    hasTriedCompanion={isCompanionOpen}
+                    hasSubmittedQuestion={Object.values(messages).some((list) =>
+                      Array.isArray(list) && list.some((m: any) => m?.senderId === currentUser.id && m?.type === MessageType.QUESTION)
+                    )}
+                    hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
+                    hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
                     onNavigateToNotes={() => { setLibraryTab('notes'); navigateTo(AppMode.LIBRARY); }}
                     onOpenImportAndStudy={() => navigateTo(AppMode.AI_TOOLS)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
@@ -1506,6 +1540,22 @@ export const App: React.FC = () => {
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
             <CookieNoticeBanner />
+            <FeatureTipsHost
+                onboardingComplete={!showOnboarding && Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('lantern_onboarding_complete'))}
+                appMode={appMode}
+                isGroupChat={selectedChat?.chatType === 'group'}
+                isLibrary={
+                    appMode === AppMode.LIBRARY ||
+                    appMode === AppMode.NOTES ||
+                    appMode === AppMode.FLASHCARDS
+                }
+                isAdmin={Boolean(
+                    selectedChat?.chatType === 'group' &&
+                    Array.isArray((selectedChat as any).adminIds) &&
+                    (selectedChat as any).adminIds.includes(currentUser.id)
+                )}
+                userSettings={getUserSettings()}
+            />
         </AppShell>
         </Suspense>
         </ErrorBoundary>

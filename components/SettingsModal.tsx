@@ -26,6 +26,7 @@ import { AccountDeletionModal } from './AccountDeletionModal';
 import { AccountImportModal } from './AccountImportModal';
 import { ContactForm } from './ContactForm';
 import Modal from './ui/Modal';
+import { useFeatureTipStore } from '../stores/featureTipStore';
 
 type SettingsTab =
     | 'profile'
@@ -528,6 +529,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             defaultEmail={currentUser.email ?? ''}
                             onSuccess={(msg) => showToast(msg, 'success')}
                         />
+                    </div>
+                    <div className="border-t border-lantern-border pt-4 space-y-3">
+                        <h4 className="font-medium text-lantern-text mb-1">Feature tips</h4>
+                        <p className="text-sm text-lantern-text-secondary">
+                            Replay first-time navigation tips and the Getting Started checklist. Tips also appear for returning users until you choose &quot;Don&apos;t show again.&quot;
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                useFeatureTipStore.getState().replay();
+                                showToast('Feature tips reset. Explore the app to see them again.', 'success');
+                            }}
+                            className="w-full flex items-center justify-center p-3 text-sm font-medium text-lantern-primary bg-lantern-primary-background hover:opacity-90 rounded-md border border-lantern-primary/30"
+                        >
+                            Replay feature tips
+                        </button>
                     </div>
                     <button onClick={onResetSettings}
                         className="w-full flex items-center justify-center p-3 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-md border border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800">

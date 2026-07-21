@@ -83,6 +83,12 @@
       "require": "./dist/settings/index.js",
       "default": "./src/settings/index.ts"
     },
+    "./featureTips": {
+      "types": "./src/featureTips/index.ts",
+      "import": "./src/featureTips/index.ts",
+      "require": "./dist/featureTips/index.js",
+      "default": "./src/featureTips/index.ts"
+    },
     "./settings/*": {
       "types": "./src/settings/*.ts",
       "import": "./src/settings/*.ts",

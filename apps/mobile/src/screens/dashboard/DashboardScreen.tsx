@@ -31,6 +31,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 
 import { useGroupStore } from '../../stores/groupStore';
+import { useBudgetStore } from '../../stores/budgetStore';
 
 import { useStatsStore, type TimePeriod, type RecentTest } from '../../stores/statsStore';
 
@@ -49,6 +50,8 @@ import { Card, Button } from '../../components/ui';
 import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
 
 import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
+import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
+import { useCompanionStore } from '../../stores/companionStore';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
@@ -147,6 +150,11 @@ export function DashboardScreen({ navigation }: Props) {
   const { decks, fetchDecks } = useFlashcardStore();
 
   const { groups, fetchGroups } = useGroupStore();
+
+  const openCompanion = useCompanionStore(s => s.open);
+  const companionOpen = useCompanionStore(s => s.isOpen);
+  const budget = useBudgetStore(s => s.budget);
+  const transactions = useBudgetStore(s => s.transactions);
 
   const { notes, loadNotes } = useNotesStore();
 
@@ -452,6 +460,27 @@ export function DashboardScreen({ navigation }: Props) {
               ? `Review ${dueCount} due card${dueCount !== 1 ? 's' : ''}`
               : 'Import & study'
           }
+        />
+
+        <GettingStartedChecklist
+          hasDecks={decks.length > 0}
+          hasTests={(stats?.totalTestsTaken ?? 0) > 0}
+          hasGroups={groups.length > 0}
+          hasBudget={Boolean(budget?.targetAmount && budget.targetAmount > 0) || transactions.length > 0}
+          hasOpenedLibrary={false}
+          hasTriedCompanion={companionOpen}
+          onCreateDeck={() => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } })}
+          onTakeTest={() => parent?.navigate('StudyTab', { screen: 'TestsList' })}
+          onJoinGroup={() => parent?.navigate('ChatTab')}
+          onSetBudget={() => parent?.navigate('BudgetTab')}
+          onOpenLibrary={() => parent?.navigate('StudyTab', { screen: 'Library' })}
+          onTryCompanion={() => openCompanion()}
+          onSubmitQuestion={() => parent?.navigate('ChatTab')}
+          onExploreMarketplace={() => parent?.navigate('MarketTab')}
+          onTryOffline={() => {
+            const root = parent?.getParent?.() ?? parent;
+            (root as { navigate?: (name: string) => void } | undefined)?.navigate?.('Offline');
+          }}
         />
 
         {activeTest ? (

@@ -52,6 +52,7 @@ interface NavTab {
     activeIcon: React.ElementType;
     targetMode: AppMode;
     badge?: number;
+    tipId?: string;
 }
 
 const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadChatCount = 0, dueCardsCount = 0, unreadNotificationCount = 0, onOpenNotifications, onOpenSettings, onToggleTheme, theme, onLogout, onToggleCompanion, isCompanionOpen, isOnline = true, pendingSyncCount = 0, lowDataMode: lowDataProp }) => {
@@ -81,6 +82,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
             activeIcon: BookOpenIconSolid,
             targetMode: AppMode.LIBRARY,
             badge: dueCardsCount > 0 ? dueCardsCount : undefined,
+            tipId: 'nav.library',
         },
         {
             label: 'Chat',
@@ -89,6 +91,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
             activeIcon: ChatBubbleLeftRightIconSolid,
             targetMode: AppMode.CHAT,
             badge: unreadChatCount,
+            tipId: 'nav.chat',
         },
     ];
 
@@ -108,11 +111,11 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
     if (hiddenModes.includes(currentMode)) return null;
 
     const moreItems = [
-        { label: 'Explore', icon: ShoppingBagIcon, mode: AppMode.MARKETPLACE },
-        ...(onToggleCompanion ? [{ label: isCompanionOpen ? 'Close Lantern AI' : 'Lantern AI', icon: SparklesIcon, action: onToggleCompanion, isCompanion: true }] : []),
+        { label: 'Explore', icon: ShoppingBagIcon, mode: AppMode.MARKETPLACE, tipId: 'nav.marketplace' },
+        ...(onToggleCompanion ? [{ label: isCompanionOpen ? 'Close Lantern AI' : 'Lantern AI', icon: SparklesIcon, action: onToggleCompanion, isCompanion: true, tipId: 'nav.companion' }] : []),
         ...(onOpenNotifications ? [{ label: 'Notifications', icon: BellAlertIcon, action: onOpenNotifications, badge: unreadNotificationCount }] : []),
-        { label: 'Budget Tracker', icon: CreditCardIcon, mode: AppMode.BUDGET_TRACKER },
-        { label: 'Offline Mode', icon: CloudArrowDownIcon, mode: AppMode.OFFLINE_MODE },
+        { label: 'Budget Tracker', icon: CreditCardIcon, mode: AppMode.BUDGET_TRACKER, tipId: 'nav.budget' },
+        { label: 'Offline Mode', icon: CloudArrowDownIcon, mode: AppMode.OFFLINE_MODE, tipId: 'nav.offline' },
     ];
 
     const actionItems = [
@@ -134,6 +137,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                             type="button"
                             aria-label={tab.label}
                             aria-current={active ? 'page' : undefined}
+                            data-tip-id={tab.tipId}
                             onClick={() => { onNavigate(tab.targetMode); setIsMoreOpen(false); }}
                             className={`flex flex-col items-center justify-center flex-1 h-full relative transition-colors ${
                                 active ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
@@ -164,6 +168,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                 <div className="relative flex-1 h-full">
                     <MenuTrigger
                         aria-label="More"
+                        data-tip-id="nav.companion"
                         className={`flex flex-col items-center justify-center w-full h-full relative transition-colors ${
                             isMoreActive || isMoreOpen ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
                         }`}
@@ -186,6 +191,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                                         <MenuItem
                                             key={item.label}
                                             onSelect={() => item.action()}
+                                            data-tip-id={'tipId' in item ? (item as { tipId?: string }).tipId : undefined}
                                             icon={
                                                 <div className="relative">
                                                     <item.icon className="w-5 h-5" />
@@ -206,6 +212,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ currentMode, onNavigate, unreadCh
                                     <MenuItem
                                         key={item.label}
                                         onSelect={() => onNavigate(item.mode!)}
+                                        data-tip-id={'tipId' in item ? item.tipId : undefined}
                                         icon={<item.icon className="w-5 h-5" />}
                                         className={currentMode === item.mode ? 'bg-lantern-primary-background text-lantern-primary font-medium' : ''}
                                     >

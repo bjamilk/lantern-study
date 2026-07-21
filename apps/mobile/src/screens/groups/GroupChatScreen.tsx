@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../stores';
+import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
 import { useTestStore, type TestMode } from '../../stores/testStore';
 import TestConfigModal, { type TestConfigOptions, type TestConfigAvailableFilter } from '../../components/TestConfigModal';
@@ -360,6 +361,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const handleQuestionSubmit = async (question: any) => {
     if (!user?.id) throw new Error('You must be signed in to submit a question.');
     await submitQuestion(groupId, mapModalQuestionToPayload(question, user.id, user.user_metadata?.full_name || 'You'));
+    useFeatureTipStore.getState().markChecklist('submitQuestion');
     setShowQuestionModal(false);
     await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
   };
@@ -384,6 +386,24 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const isAdmin =
     group?.ownerId === user?.id || group?.adminIds?.includes(user?.id || '') || false;
   const memberCount = group?.memberCount || group?.members?.length || 0;
+
+  useEffect(() => {
+    const { setTipAllowed, setTipReady } = useFeatureTipStore.getState();
+    setTipReady('chat.question', true);
+    setTipReady('chat.test', true);
+    setTipReady('chat.study', true);
+    setTipReady('chat.summarize', true);
+    setTipReady('chat.aiGenerate', true);
+    setTipAllowed('chat.aiGenerate', isAdmin);
+    return () => {
+      setTipReady('chat.question', false);
+      setTipReady('chat.test', false);
+      setTipReady('chat.study', false);
+      setTipReady('chat.summarize', false);
+      setTipReady('chat.aiGenerate', false);
+      setTipAllowed('chat.aiGenerate', false);
+    };
+  }, [isAdmin]);
 
   const handleBack = useCallback(() => {
     if (navigation.canGoBack?.()) {

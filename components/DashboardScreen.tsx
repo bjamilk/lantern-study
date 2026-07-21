@@ -40,8 +40,16 @@ interface DashboardScreenProps {
   onNavigateToCreateGroup?: () => void;
   onNavigateToBudget?: () => void;
   onNavigateToStudyHub?: () => void;
+  onNavigateToLibrary?: () => void;
+  onNavigateToOffline?: () => void;
+  onToggleCompanion?: () => void;
   deckCount?: number;
   hasBudgetSet?: boolean;
+  hasOpenedLibrary?: boolean;
+  hasTriedCompanion?: boolean;
+  hasSubmittedQuestion?: boolean;
+  hasExploredMarketplace?: boolean;
+  hasTriedOffline?: boolean;
   dueCardsCount?: number;
   // Flashcard review activity for heatmap
   flashcards?: import('../types').Flashcard[];
@@ -179,8 +187,16 @@ export default function DashboardScreen({
   onNavigateToCreateGroup,
   onNavigateToBudget,
   onNavigateToStudyHub,
+  onNavigateToLibrary,
+  onNavigateToOffline,
+  onToggleCompanion,
   deckCount = 0,
   hasBudgetSet = false,
+  hasOpenedLibrary = false,
+  hasTriedCompanion = false,
+  hasSubmittedQuestion = false,
+  hasExploredMarketplace = false,
+  hasTriedOffline = false,
   onNavigateToNotes,
   onOpenImportAndStudy,
   onNavigateToAITools,
@@ -772,6 +788,11 @@ export default function DashboardScreen({
             hasTests={rawTestResults.length > 0}
             hasGroups={groups.length > 0}
             hasBudget={hasBudgetSet}
+            hasOpenedLibrary={hasOpenedLibrary}
+            hasTriedCompanion={hasTriedCompanion}
+            hasSubmittedQuestion={hasSubmittedQuestion}
+            hasExploredMarketplace={hasExploredMarketplace}
+            hasTriedOffline={hasTriedOffline}
             onCreateDeck={() => onNavigateToFlashcards?.()}
             onTakeTest={() => {
               if (onNavigateToStudyHub) onNavigateToStudyHub();
@@ -782,6 +803,11 @@ export default function DashboardScreen({
               else onNavigateToChat?.();
             }}
             onSetBudget={() => onNavigateToBudget?.()}
+            onOpenLibrary={() => onNavigateToLibrary?.() || onNavigateToFlashcards?.()}
+            onTryCompanion={() => onToggleCompanion?.()}
+            onSubmitQuestion={() => onNavigateToChat?.()}
+            onExploreMarketplace={() => onNavigateToMarketplace?.()}
+            onTryOffline={() => onNavigateToOffline?.()}
           />
         </div>
       </div>
