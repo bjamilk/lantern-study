@@ -171,7 +171,7 @@ We do not knowingly sell personal information of consumers under 16. We do not c
 
 ### "Sale" / sharing via advertising technologies
 
-If we disclose identifiers, internet activity, geolocation-related data, or inferences to advertising or ad-tech partners in a way that constitutes a "sale" or "sharing" under California law, you may opt out via the Cookie Preference Center (disable Advertising & Social) and by emailing **privacy@lanternstudy.com**. **As of the Last updated date, Lantern Study does not deploy advertising or social tracking cookies.**
+If we disclose identifiers, internet activity, geolocation-related data, or inferences to advertising or ad-tech partners in a way that constitutes a "sale" or "sharing" under California law, you may opt out via the Cookie Preference Center (disable Advertising & Marketing) and by emailing **privacy@lanternstudy.com**. **As of the Last updated date, Lantern Study does not deploy advertising or marketing tracking cookies.**
 
 ### Shine the Light
 
@@ -317,14 +317,14 @@ By clicking **Confirm my choices**, **Accept all**, or **Essential only**, you c
 
 ## Cookie protocol (categories)
 
-Lantern Study groups cookies and similar technologies into the following categories. Optional categories default to **off**. Technologies in a category are only loaded when (1) they are deployed in production and (2) your stored preference allows that category.
+Lantern Study groups cookies and similar technologies into the following categories. Optional categories default to **off**. The Cookie Preference Center is live and records your choices. Technologies in a category are only loaded when (1) they are deployed in production and (2) your stored preference allows that category.
 
 | Category | Can disable? | Currently deployed? | Purpose |
 |----------|--------------|---------------------|---------|
 | **Strictly Necessary** | No | Yes | Sign-in/session, security, cookie consent record, theme, core UI preferences |
 | **Functional** | Yes | No | Optional convenience preferences beyond core operation |
 | **Performance & Analytics** | Yes | No | Understand usage to improve reliability and product design |
-| **Advertising & Social** | Yes | No | Campaign measurement or interest-based advertising / social pixels |
+| **Advertising & Marketing** | Yes | No | Campaign measurement or interest-based advertising / marketing pixels |
 
 ### Storage we use today (Strictly Necessary)
 

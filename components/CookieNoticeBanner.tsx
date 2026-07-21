@@ -206,7 +206,9 @@ export function CookieNoticeBanner() {
                   Lantern Study Cookie Preference Center
                 </h2>
                 <p className="mt-1 text-xs text-lantern-text-secondary leading-relaxed">
-                  Choose which optional cookie categories to allow. Strictly Necessary cookies always stay on. Details in
+                  Choose which optional cookie categories to allow. Strictly Necessary cookies always stay on. Optional
+                  categories below are fully supported in this Preference Center — Lantern Study simply does not load
+                  those cookie types yet, so toggling them records your choice for when we introduce them. Details in
                   our{' '}
                   <Link
                     to="/cookies"
@@ -250,7 +252,7 @@ export function CookieNoticeBanner() {
                         <span className="block text-sm font-medium">{category.title}</span>
                         {!category.currentlyDeployed && category.id !== 'necessary' && (
                           <span className="block text-[11px] text-lantern-text-secondary mt-0.5">
-                            Not currently deployed
+                            Choice saved — no cookies of this type are loaded yet
                           </span>
                         )}
                       </button>

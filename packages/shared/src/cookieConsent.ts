@@ -59,7 +59,10 @@ export const COOKIE_CATEGORIES: CookieCategoryDefinition[] = [
       'Help remember choices that improve convenience beyond core operation (for example, optional layout or feature experiments). Turning these off may make some conveniences unavailable.',
     required: false,
     currentlyDeployed: false,
-    examples: ['Optional non-essential preference cookies (when introduced)'],
+    examples: [
+      'No functional cookies are loaded in Lantern Study today',
+      'If we add any later, they will only run when this category is allowed',
+    ],
   },
   {
     id: 'analytics',
@@ -68,16 +71,22 @@ export const COOKIE_CATEGORIES: CookieCategoryDefinition[] = [
       'Help us understand how Lantern Study is used so we can improve reliability and product design. These are not used for cross-site advertising.',
     required: false,
     currentlyDeployed: false,
-    examples: ['First-party or privacy-preserving analytics (when introduced)'],
+    examples: [
+      'No performance or analytics cookies are loaded in Lantern Study today',
+      'If we add privacy-preserving analytics later, they will only run when this category is allowed',
+    ],
   },
   {
     id: 'advertising',
-    title: 'Advertising & Social',
+    title: 'Advertising & Marketing',
     summary:
-      'Used by advertising or social platforms to measure campaigns or show relevant content. Lantern Study does not currently load advertising or social tracking pixels.',
+      'Used by advertising or social platforms to measure campaigns or show relevant content. Lantern Study does not currently load advertising or marketing tracking pixels.',
     required: false,
     currentlyDeployed: false,
-    examples: ['Ad / social pixels (not currently deployed)'],
+    examples: [
+      'No advertising or marketing cookies are loaded in Lantern Study today',
+      'If we add campaign or social pixels later, they will only run when this category is allowed',
+    ],
   },
 ];
 
