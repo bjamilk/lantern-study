@@ -261,22 +261,34 @@ router.post(
     const { flashcardId } = req.params;
     const { rating } = req.body as { rating: 'again' | 'hard' | 'good' | 'easy' };
 
-    const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating);
+    try {
+      const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating);
 
-    if (!updatedFlashcard) {
-      return res.status(404).json({
-        success: false,
-        error: 'Flashcard not found',
+      if (!updatedFlashcard) {
+        return res.status(404).json({
+          success: false,
+          error: 'Flashcard not found',
+        });
+      }
+
+      await cacheService.delete(`flashcard:${flashcardId}`);
+      await cacheService.deletePattern(`flashcards:*`);
+
+      res.json({
+        success: true,
+        data: updatedFlashcard,
       });
+    } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        return res.status(409).json({
+          success: false,
+          error: error.message || 'Flashcard was updated by another request',
+          code: 'version_conflict',
+          data: error.current ?? null,
+        });
+      }
+      throw error;
     }
-
-    await cacheService.delete(`flashcard:${flashcardId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    res.json({
-      success: true,
-      data: updatedFlashcard,
-    });
   })
 );
 

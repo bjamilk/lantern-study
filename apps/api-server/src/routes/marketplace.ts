@@ -428,7 +428,17 @@ router.post(
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
-    const listing = await supabaseService.boostMarketplaceListing(id, userId, durationHours);
+    const idempotencyKey =
+      normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+      `${userId}:boost:${id}:${Math.floor(Date.now() / 300_000)}`;
+
+    const listing = await withIdempotency(
+      supabaseService.getClient(),
+      userId,
+      'marketplace_boost',
+      idempotencyKey,
+      async () => supabaseService.boostMarketplaceListing(id, userId, durationHours)
+    );
 
     await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
@@ -1014,10 +1024,48 @@ router.put(
       } catch (e) {
         logger.warn('Failed to send counter notification', e);
       }
+    } else if (action === 'accept') {
+      // Atomic accept + order (RPC) with idempotency for retries (CONC-05).
+      const idempotencyKey =
+        normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+        `${userId}:offer_accept:${id}`;
+
+      try {
+        const result = await withIdempotency(
+          supabaseService.getClient(),
+          userId,
+          'marketplace_offer_accept',
+          idempotencyKey,
+          async () => {
+            const finalized = await supabaseService.finalizeOfferAcceptSale(id, userId);
+            const { data: acceptedOffer, error: acceptedErr } = await supabaseService
+              .getClient()
+              .from('marketplace_offers')
+              .select('*')
+              .eq('id', id)
+              .maybeSingle();
+            if (acceptedErr) throw acceptedErr;
+            if (!acceptedOffer) throw new Error('Offer not found after accept');
+            return {
+              offer: acceptedOffer,
+              orderId: finalized.orderId,
+            };
+          }
+        );
+
+        updatedOffer = result.offer;
+        await invalidateSellerAnalyticsCache(offer.seller_id);
+        // Buyer/seller notifications are sent inside createOrderFromOfferAccept.
+      } catch (finalizeErr) {
+        logger.error('Failed to finalize offer accept sale', finalizeErr);
+        return res.status(500).json({
+          success: false,
+          error: clientErrorMessage(finalizeErr, 'Failed to create order from accepted offer'),
+        });
+      }
     } else {
-      // accept, decline, or withdraw — conditional update prevents double-accept races
-      const nextStatus =
-        action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'withdrawn';
+      // decline or withdraw — conditional update prevents double-action races
+      const nextStatus = action === 'decline' ? 'declined' : 'withdrawn';
       const { data, error: updateErr } = await supabaseService.getClient()
         .from('marketplace_offers')
         .update({ status: nextStatus })
@@ -1035,28 +1083,8 @@ router.put(
       }
       updatedOffer = data;
 
-      if (action === 'accept') {
-        try {
-          await supabaseService.finalizeOfferAcceptSale(id);
-          await invalidateSellerAnalyticsCache(offer.seller_id);
-        } catch (finalizeErr) {
-          // Roll offer back to pending so the seller can retry; do not leave accepted-without-order.
-          await supabaseService.getClient()
-            .from('marketplace_offers')
-            .update({ status: 'pending' })
-            .eq('id', id)
-            .eq('status', 'accepted');
-          logger.error('Failed to finalize offer accept sale', finalizeErr);
-          return res.status(500).json({
-            success: false,
-            error: clientErrorMessage(finalizeErr, 'Failed to create order from accepted offer'),
-          });
-        }
-      }
-
-      // Notify the other party
       const notifyUserId = action === 'withdraw' ? offer.seller_id : offer.buyer_id;
-      const actionText = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'withdrawn';
+      const actionText = action === 'decline' ? 'declined' : 'withdrawn';
       try {
         await supabaseService.createNotification(notifyUserId, {
           type: 'marketplace_order_update',

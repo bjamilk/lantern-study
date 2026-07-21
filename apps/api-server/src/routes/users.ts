@@ -377,7 +377,30 @@ router.put(
       existingUser.settings as Record<string, unknown>,
       mergedSettings
     );
-    const updatedUser = await supabaseService.updateUser(userId, { settings: mergedSettings });
+
+    let updatedUser;
+    try {
+      updatedUser = await supabaseService.updateUser(
+        userId,
+        { settings: mergedSettings },
+        {
+          expectedSettingsVersion:
+            req.body?.expectedSettingsVersion != null
+              ? Number(req.body.expectedSettingsVersion)
+              : (existingUser as { settingsVersion?: number }).settingsVersion,
+        }
+      );
+    } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        return res.status(409).json({
+          success: false,
+          error: error.message || 'Settings were updated elsewhere',
+          code: 'version_conflict',
+          data: error.current ?? null,
+        });
+      }
+      throw error;
+    }
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -392,7 +415,10 @@ router.put(
 
     res.json({
       success: true,
-      data: { settings: updatedUser.settings },
+      data: {
+        settings: updatedUser.settings,
+        settingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion,
+      },
       message: 'Settings synced successfully',
     });
   })
@@ -988,7 +1014,30 @@ router.put(
       existingUser.settings as Record<string, unknown>,
       mergedSettings
     );
-    const updatedUser = await supabaseService.updateUser(userId, { settings: mergedSettings });
+
+    let updatedUser;
+    try {
+      updatedUser = await supabaseService.updateUser(
+        userId,
+        { settings: mergedSettings },
+        {
+          expectedSettingsVersion:
+            req.body?.expectedSettingsVersion != null
+              ? Number(req.body.expectedSettingsVersion)
+              : (existingUser as { settingsVersion?: number }).settingsVersion,
+        }
+      );
+    } catch (error: any) {
+      if (error?.code === 'version_conflict' || error?.status === 409) {
+        return res.status(409).json({
+          success: false,
+          error: error.message || 'Settings were updated elsewhere',
+          code: 'version_conflict',
+          data: error.current ?? null,
+        });
+      }
+      throw error;
+    }
 
     if (!updatedUser) {
       return res.status(404).json({

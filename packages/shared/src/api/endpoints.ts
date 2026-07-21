@@ -1421,7 +1421,8 @@ export function createApiEndpoints(client: ApiClient) {
       offerId: string,
       action: 'accept' | 'decline' | 'counter' | 'withdraw',
       counterAmount?: number,
-      message?: string
+      message?: string,
+      idempotencyKey?: string
     ) =>
       apiRequest<{
         id: string;
@@ -1432,6 +1433,13 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/marketplace/offers/${offerId}`, {
         method: 'PUT',
         body: JSON.stringify({ action, counterAmount, message }),
+        headers:
+          action === 'accept'
+            ? {
+                'Idempotency-Key':
+                  idempotencyKey || createIdempotencyKey(`offer-accept-${offerId}`),
+              }
+            : undefined,
       }),
 
     fetchListingOffers: (listingId: string) =>
@@ -1626,7 +1634,7 @@ export function createApiEndpoints(client: ApiClient) {
         { method: 'PATCH', body: JSON.stringify(updates) }
       ),
 
-    boostListing: (listingId: string) =>
+    boostListing: (listingId: string, idempotencyKey?: string) =>
       apiRequest<{
         id: string;
         category_specific_fields?: { boosted_until?: string; boost_level?: string };
@@ -1634,6 +1642,9 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/marketplace/listings/${listingId}/boost`, {
         method: 'POST',
         body: JSON.stringify({ durationHours: 72 }),
+        headers: {
+          'Idempotency-Key': idempotencyKey || createIdempotencyKey(`boost-${listingId}`),
+        },
       }),
 
     fetchSavedSearches: () =>

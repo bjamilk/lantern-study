@@ -21,7 +21,9 @@ import {
   generateFlashcardsFromNotes,
   transcribeAudioBase64,
 } from '../services/aiService';
-import { runNoteAiSync } from '../queue/enqueue';
+import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
+import { sendAsyncJobAccepted } from '../queue/respondAsync';
+import { isVersionConflictError } from '../utils/versionConflict';
 import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
   assertPdfSize,
@@ -929,9 +931,28 @@ router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async 
 router.patch('/:noteId', validateNoteId, validateNoteUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.updateNote(userId, req.params.noteId, req.body);
-  await cacheService.delete(`note:${req.params.noteId}`);
-  res.json({ success: true, data: note });
+  try {
+    const { expectedVersion, expectedUpdatedAt, ...updates } = req.body || {};
+    const note = await supabaseService.updateNote(userId, req.params.noteId, updates, {
+      expectedVersion:
+        expectedVersion != null && Number.isFinite(Number(expectedVersion))
+          ? Number(expectedVersion)
+          : undefined,
+      expectedUpdatedAt: typeof expectedUpdatedAt === 'string' ? expectedUpdatedAt : undefined,
+    });
+    await cacheService.delete(`note:${req.params.noteId}`);
+    res.json({ success: true, data: note });
+  } catch (error) {
+    if (isVersionConflictError(error)) {
+      return res.status(409).json({
+        success: false,
+        error: error.message,
+        code: 'version_conflict',
+        data: (error as { current?: unknown }).current ?? null,
+      });
+    }
+    throw error;
+  }
 }));
 
 router.delete('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
@@ -959,9 +980,26 @@ router.post('/:noteId/summarize', requirePermission('ai'), aiPostBurstRateLimit,
     res.status(400).json({ error: 'Note needs at least 30 characters to summarize.' });
     return;
   }
-  const result = await runNoteAiSync(() => summarizeNoteContent(content, note.title));
-  const updated = await supabaseService.updateNote(userId, note.id, { summary: result.summary });
-  res.json({ success: true, data: { summary: result.summary, provider: result.provider, note: updated } });
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.summarize',
+    { content, title: note.title, noteId: note.id },
+    userId,
+    async () => {
+      const result = await summarizeNoteContent(content, note.title);
+      const updated = await supabaseService.updateNote(
+        userId,
+        note.id,
+        { summary: result.summary },
+        { allowRetryOnConflict: true }
+      );
+      return { summary: result.summary, provider: result.provider, note: updated };
+    }
+  );
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  res.json({ success: true, data: outcome.result });
 }));
 
 // Note quiz (persisted)
@@ -982,23 +1020,33 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
     return;
   }
   const { studyGoal, count } = req.body || {};
-  const result = await runNoteAiSync(() =>
-    generateDailyQuiz(content.slice(0, 8000), { studyGoal, count })
+  const sliced = content.slice(0, 8000);
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.quiz',
+    { content: sliced, studyGoal, count, noteId: note.id },
+    userId,
+    async () => {
+      const result = await generateDailyQuiz(sliced, { studyGoal, count });
+      const questions = result.questions.map((q, index) => ({
+        id: `nq-${index}`,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation,
+        topic: q.topic,
+      }));
+      return supabaseService.upsertNoteQuiz(userId, note.id, {
+        studyGoal: studyGoal || 'retention',
+        questions,
+      });
+    }
   );
-  const questions = result.questions.map((q, index) => ({
-    id: `nq-${index}`,
-    text: q.text,
-    type: q.type,
-    options: q.options,
-    correctAnswer: q.correctAnswer,
-    explanation: q.explanation,
-    topic: q.topic,
-  }));
-  const session = await supabaseService.upsertNoteQuiz(userId, note.id, {
-    studyGoal: studyGoal || 'retention',
-    questions,
-  });
-  res.json({ success: true, data: session });
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  res.json({ success: true, data: outcome.result });
 }));
 
 router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) => {
@@ -1031,10 +1079,18 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   }
   const content = getNoteStudyContent(studyInput);
   const { count, style } = req.body || {};
-  const result = await runNoteAiSync(() =>
-    generateFlashcardsFromNotes(content.slice(0, 8000), { count, style })
+  const sliced = content.slice(0, 8000);
+  const outcome = await runSyncOrEnqueue(
+    'notes.ai.flashcards',
+    { content: sliced, count, style },
+    userId,
+    async () => generateFlashcardsFromNotes(sliced, { count, style })
   );
-  res.json({ success: true, data: result });
+  if (outcome.mode === 'async') {
+    sendAsyncJobAccepted(res, outcome.jobId);
+    return;
+  }
+  res.json({ success: true, data: outcome.result });
 }));
 
 router.post('/:noteId/reextract-text', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {

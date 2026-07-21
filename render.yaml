@@ -134,3 +134,10 @@ services:
         value: "true"
       - key: ENABLE_DATA_RETENTION_JOBS
         value: "true"
+      # Parallel AI jobs on the worker (keep ≤ AI_MAX_INFLIGHT / provider budget)
+      - key: AI_WORKER_CONCURRENCY
+        value: "4"
+      - key: AI_MAX_INFLIGHT
+        value: "16"
+      - key: FILE_WORKER_CONCURRENCY
+        value: "1"

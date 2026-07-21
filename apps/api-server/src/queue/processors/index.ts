@@ -133,7 +133,12 @@ async function processAiJob(job: Job): Promise<unknown> {
       const result = await summarizeNoteContent(content, title);
       await recordInference(userId, 'summarize-note', result);
       if (noteId && userId && supabaseService) {
-        const note = await supabaseService.updateNote(userId, noteId, { summary: result.summary });
+        const note = await supabaseService.updateNote(
+          userId,
+          noteId,
+          { summary: result.summary },
+          { allowRetryOnConflict: true }
+        );
         return { ...result, note };
       }
       return result;
@@ -263,22 +268,29 @@ function wrapProcessor(processor: (job: Job) => Promise<unknown>) {
   };
 }
 
+function envConcurrency(name: string, fallback: number, max = 32): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw < 1) return fallback;
+  return Math.min(max, Math.floor(raw));
+}
+
 export function startWorkers(): Worker[] {
   const connection = getQueueConnectionOptions();
+  const aiConcurrency = envConcurrency('AI_WORKER_CONCURRENCY', 2, 16);
 
   const aiWorker = new Worker(QUEUE_NAMES.AI_GENERATION, wrapProcessor(processAiJob), {
     connection,
-    concurrency: 2,
+    concurrency: aiConcurrency,
   });
 
   const fileWorker = new Worker(QUEUE_NAMES.FILE_PROCESSING, wrapProcessor(processFileJob), {
     connection,
-    concurrency: 1,
+    concurrency: envConcurrency('FILE_WORKER_CONCURRENCY', 1, 8),
   });
 
   const exportWorker = new Worker(QUEUE_NAMES.DATA_EXPORT, wrapProcessor(processExportJob), {
     connection,
-    concurrency: 1,
+    concurrency: envConcurrency('EXPORT_WORKER_CONCURRENCY', 1, 4),
   });
 
   const cronWorker = new Worker(QUEUE_NAMES.MARKETPLACE_ALERTS, wrapProcessor(processCronJob), {

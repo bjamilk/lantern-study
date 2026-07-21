@@ -17,6 +17,7 @@ import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
 import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
 import { assertImageMagicBytes, clampSignedUrlTtl, detectImageMime } from '../utils/fileValidation';
+import { VersionConflictError } from '../utils/versionConflict';
 
 type UserStats = typeof initialUserStats;
 
@@ -68,6 +69,8 @@ function mapProfileRowToUser(row: Record<string, unknown> | null | undefined): U
     badges: Array.isArray(row.badges) ? row.badges : [],
     stats: row.stats ?? {},
     settings: row.settings ?? {},
+    settingsVersion:
+      typeof row.settings_version === 'number' ? row.settings_version : Number(row.settings_version) || 1,
     // Aliases for clients that still read snake_case from GET /users/:id
     avatar_url: avatarUrl,
     phone: (row.phone as string | undefined) || undefined,
@@ -643,7 +646,17 @@ export class SupabaseService {
     return data;
   }
 
-  async updateUser(userId: string, updates: Partial<User> & { avatar_url?: string; phone?: string; first_name?: string; last_name?: string; test_presets?: any[] }): Promise<User | null> {
+  async updateUser(
+    userId: string,
+    updates: Partial<User> & {
+      avatar_url?: string;
+      phone?: string;
+      first_name?: string;
+      last_name?: string;
+      test_presets?: any[];
+    },
+    options: { expectedSettingsVersion?: number } = {}
+  ): Promise<User | null> {
     // Build update object, handling both camelCase and snake_case keys
     const updateData: any = {};
     
@@ -664,16 +677,39 @@ export class SupabaseService {
     if (updates.settings !== undefined) updateData.settings = updates.settings;
     if (updates.test_presets !== undefined) updateData.settings = { ...(updateData.settings || {}), test_presets: updates.test_presets };
 
-    const { data, error } = await this.supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', userId)
-      .select()
-      .single();
+    let expectedSettingsVersion = options.expectedSettingsVersion;
+    if (updateData.settings !== undefined && expectedSettingsVersion == null) {
+      const { data: current, error: currentError } = await this.supabase
+        .from('profiles')
+        .select('settings_version')
+        .eq('id', userId)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      if (!current) return null;
+      expectedSettingsVersion = Number(current.settings_version) || 1;
+    }
+
+    let query = this.supabase.from('profiles').update(updateData).eq('id', userId);
+    if (updateData.settings !== undefined && expectedSettingsVersion != null) {
+      query = query.eq('settings_version', expectedSettingsVersion);
+    }
+
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null; // Not found
       throw error;
+    }
+
+    if (!data) {
+      if (updateData.settings !== undefined) {
+        const current = await this.getUserById(userId);
+        throw new VersionConflictError(
+          'Settings were updated on another device. Refresh and try again.',
+          current
+        );
+      }
+      return null;
     }
 
     // Invalidate cache (exact user key + pattern)
@@ -2477,8 +2513,8 @@ export class SupabaseService {
     const offset = (safePage - 1) * safeLimit;
 
     const selectClause = profile === 'compact'
-      ? 'id, deck_id, type, front, image_url, tags, created_at'
-      : 'id, deck_id, type, front, back, cloze_text, image_url, occlusion_data, srs_data, tags, created_at';
+      ? 'id, deck_id, type, front, image_url, tags, created_at, version, updated_at'
+      : 'id, deck_id, type, front, back, cloze_text, image_url, occlusion_data, srs_data, tags, created_at, version, updated_at';
 
     const accessibleDeckIds = await this.getAccessibleDeckIds(userId);
 
@@ -2573,18 +2609,29 @@ export class SupabaseService {
       maxInterval: getSrsMaxInterval(settings.study),
     });
 
-    return this.updateFlashcard(flashcardId, { srsData: newSrsData }, userId);
+    const expectedVersion = Number(existing.version) || 1;
+    return this.updateFlashcard(
+      flashcardId,
+      { srsData: newSrsData },
+      userId,
+      { expectedVersion }
+    );
   }
 
-  async updateFlashcard(flashcardId: string, updates: { 
-    front?: string; 
-    back?: string; 
-    clozeText?: string;
-    imageUrl?: string;
-    occlusionData?: any;
-    srsData?: any;
-    tags?: string[];
-  }, userId?: string): Promise<any | null> {
+  async updateFlashcard(
+    flashcardId: string,
+    updates: {
+      front?: string;
+      back?: string;
+      clozeText?: string;
+      imageUrl?: string;
+      occlusionData?: any;
+      srsData?: any;
+      tags?: string[];
+    },
+    userId?: string,
+    options: { expectedVersion?: number } = {}
+  ): Promise<any | null> {
     const existing = userId
       ? await this.getFlashcardForUser(flashcardId, userId)
       : await this.getFlashcard(flashcardId);
@@ -2609,17 +2656,33 @@ export class SupabaseService {
       return existing;
     }
 
+    const expectedVersion =
+      options.expectedVersion != null
+        ? Number(options.expectedVersion)
+        : Number(existing.version) || 1;
+
     const { data, error } = await this.supabase
       .from('flashcards')
       .update(updateData)
       .eq('id', flashcardId)
+      .eq('version', expectedVersion)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null;
       logger.error('Error updating flashcard:', { error, flashcardId, updates });
       throw new Error(error.message || 'Failed to update flashcard');
+    }
+
+    if (!data) {
+      const current = userId
+        ? await this.getFlashcardForUser(flashcardId, userId)
+        : await this.getFlashcard(flashcardId);
+      throw new VersionConflictError(
+        'Flashcard was updated by another request. Retry the review.',
+        current
+      );
     }
 
     // Update cache and invalidate deck cache
@@ -5515,9 +5578,12 @@ export class SupabaseService {
     });
   }
 
-  async finalizeOfferAcceptSale(offerId: string): Promise<{ orderId: string; budgetLogged: boolean }> {
+  async finalizeOfferAcceptSale(
+    offerId: string,
+    actorId?: string
+  ): Promise<{ orderId: string; budgetLogged: boolean }> {
     const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
-    const order = await getMarketplaceOrdersService(this).createOrderFromOfferAccept(offerId);
+    const order = await getMarketplaceOrdersService(this).createOrderFromOfferAccept(offerId, actorId);
     return { orderId: order.id, budgetLogged: false };
   }
 
@@ -6356,6 +6422,7 @@ export class SupabaseService {
       shareToken: row.share_token || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      version: typeof row.version === 'number' ? row.version : Number(row.version) || 1,
     };
   }
 
@@ -6513,7 +6580,17 @@ export class SupabaseService {
     return Boolean(collab);
   }
 
-  async updateNote(userId: string, noteId: string, updates: Record<string, unknown>) {
+  async updateNote(
+    userId: string,
+    noteId: string,
+    updates: Record<string, unknown>,
+    options: {
+      expectedVersion?: number;
+      expectedUpdatedAt?: string;
+      /** AI/system writers may retry once after a concurrent user edit. */
+      allowRetryOnConflict?: boolean;
+    } = {}
+  ) {
     const allowed = await this.canEditNote(userId, noteId);
     if (!allowed) {
       const err = new Error('Note not found or access denied') as Error & { code?: string; status?: number };
@@ -6522,7 +6599,7 @@ export class SupabaseService {
       throw err;
     }
 
-    const dbUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined) dbUpdates.title = updates.title;
     if (updates.body !== undefined) dbUpdates.body = updates.body;
     if (updates.summary !== undefined) dbUpdates.summary = updates.summary;
@@ -6532,15 +6609,52 @@ export class SupabaseService {
     if (updates.youtubeUrl !== undefined) dbUpdates.youtube_url = updates.youtubeUrl;
     if (updates.youtubeVideoId !== undefined) dbUpdates.youtube_video_id = updates.youtubeVideoId;
 
-    // Update by note id after ACL check — do not require caller to be the owner row.
-    const { data, error } = await this.supabase
-      .from('notes')
-      .update(dbUpdates)
-      .eq('id', noteId)
-      .select()
-      .single();
-    if (error) throw error;
-    return this.mapNote(data);
+    const maxAttempts = options.allowRetryOnConflict ? 2 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const { data: current, error: currentError } = await this.supabase
+        .from('notes')
+        .select('updated_at, version')
+        .eq('id', noteId)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      if (!current) {
+        const err = new Error('Note not found or access denied') as Error & { code?: string; status?: number };
+        err.code = 'PGRST116';
+        err.status = 404;
+        throw err;
+      }
+
+      const expectedVersion =
+        options.expectedVersion != null && attempt === 0
+          ? Number(options.expectedVersion)
+          : Number(current.version) || 1;
+      const expectedUpdatedAt =
+        options.expectedUpdatedAt && attempt === 0
+          ? options.expectedUpdatedAt
+          : (current.updated_at as string);
+
+      // Trigger bumps version/updated_at; CAS against the values we last read.
+      let query = this.supabase.from('notes').update(dbUpdates).eq('id', noteId);
+      if (Number.isFinite(expectedVersion)) {
+        query = query.eq('version', expectedVersion);
+      } else if (expectedUpdatedAt) {
+        query = query.eq('updated_at', expectedUpdatedAt);
+      }
+
+      const { data, error } = await query.select().maybeSingle();
+      if (error) throw error;
+      if (data) return this.mapNote(data);
+
+      if (attempt + 1 >= maxAttempts) {
+        const latest = await this.getNote(noteId, userId).catch(() => null);
+        throw new VersionConflictError(
+          'Note was updated elsewhere. Refresh and try again.',
+          latest
+        );
+      }
+    }
+
+    throw new VersionConflictError('Note was updated elsewhere. Refresh and try again.');
   }
 
   async deleteNote(userId: string, noteId: string) {

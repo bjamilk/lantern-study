@@ -309,11 +309,11 @@ export class MarketplaceOrdersService {
     return row;
   }
 
-  async createOrderFromOfferAccept(offerId: string): Promise<MarketplaceOrderRow> {
+  async createOrderFromOfferAccept(offerId: string, actorId?: string): Promise<MarketplaceOrderRow> {
     const { data: offer, error } = await this.db
       .from('marketplace_offers')
       .select(
-        'id, listing_id, buyer_id, seller_id, amount, counter_amount, listing:marketplace_listings(id, title, price, sale_price, sale_ends_at, user_id, status)'
+        'id, listing_id, buyer_id, seller_id, amount, counter_amount, status, listing:marketplace_listings(id, title, price, sale_price, sale_ends_at, user_id, status)'
       )
       .eq('id', offerId)
       .single();
@@ -324,58 +324,46 @@ export class MarketplaceOrdersService {
     if (!listingRaw || Array.isArray(listingRaw)) {
       throw new Error('Listing not found for offer');
     }
-    if (listingRaw.status !== 'active' && listingRaw.status !== 'sold') {
-      throw new Error('Listing is not available');
-    }
-    this.assertListingInStock(listingRaw);
 
-    await this.assertNoOpenOrderForListing(offer.listing_id);
-
-    const amount = Number(offer.counter_amount ?? offer.amount) || 0;
+    const sellerId = offer.seller_id as string;
+    const actor = actorId || sellerId;
     const inquiryId = await this.findInquiryForDeal(offer.listing_id, offer.buyer_id);
-    const txn = await this.insertPendingTransaction(
-      offer.listing_id,
-      offer.buyer_id,
-      offer.seller_id,
-      amount
+    const initialStatus = await this.resolveInitialOrderStatus(sellerId);
+
+    const { data: rpcRows, error: rpcError } = await this.db.rpc(
+      'marketplace_create_offer_accept_order',
+      {
+        p_offer_id: offerId,
+        p_actor_id: actor,
+        p_inquiry_id: inquiryId,
+        p_initial_status: initialStatus,
+      }
     );
 
-    const initialStatus = await this.resolveInitialOrderStatus(offer.seller_id);
+    if (rpcError) {
+      if (this.isUniqueViolation(rpcError)) {
+        const byOffer = await this.getOrderByOfferId(offerId);
+        if (byOffer) return byOffer;
+      }
+      throw rpcError;
+    }
+
+    const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const orderId = rpcRow?.order_id as string | undefined;
+    if (!orderId) throw new Error('Failed to create order from offer');
 
     const { data: order, error: orderError } = await this.db
       .from('marketplace_orders')
-      .insert({
-        listing_id: offer.listing_id,
-        buyer_id: offer.buyer_id,
-        seller_id: offer.seller_id,
-        amount,
-        offer_id: offerId,
-        inquiry_id: inquiryId,
-        transaction_id: txn.id,
-        source: 'offer_accept',
-        status: initialStatus,
-        fulfillment_mode: 'campus_meetup',
-      })
       .select(this.orderSelect)
+      .eq('id', orderId)
       .single();
 
-    if (orderError) {
-      if (this.isUniqueViolation(orderError)) {
-        await this.voidOrphanPendingTransaction(txn.id);
-        const byOffer = await this.getOrderByOfferId(offerId);
-        if (byOffer) return byOffer;
-        const open = await this.getOpenOrderForListing(offer.listing_id);
-        if (open) {
-          if (open.buyer_id === offer.buyer_id) return open;
-          throw new Error('This listing already has an open order');
-        }
-      }
-      throw orderError;
-    }
+    if (orderError || !order) throw orderError || new Error('Order not found after offer accept');
     const row = order as MarketplaceOrderRow;
 
+    const amount = Number(row.amount) || Number(offer.counter_amount ?? offer.amount) || 0;
     const title = listingRaw.title || 'listing';
-    await this.notifyOrderParty(offer.seller_id, {
+    await this.notifyOrderParty(sellerId, {
       type: 'marketplace_purchase',
       message: `Offer accepted — order for "${title}" at ₦${amount.toLocaleString()}`,
       link: `marketplace:order:${row.id}`,
@@ -391,7 +379,7 @@ export class MarketplaceOrdersService {
       data: { orderId: row.id, offerId },
     });
 
-    await invalidateSellerAnalyticsCache(offer.seller_id);
+    await invalidateSellerAnalyticsCache(sellerId);
     return row;
   }
 

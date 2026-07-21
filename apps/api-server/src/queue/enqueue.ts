@@ -64,7 +64,10 @@ export async function runSyncOrEnqueue<T>(
   return { mode: 'sync', result };
 }
 
-/** Note learn tools (Smart Note, quiz, flashcards) must finish in the request — no background queue. */
+/**
+ * Force in-request AI (e.g. audio transcription that must return immediately).
+ * Prefer `runSyncOrEnqueue` for other note/AI tools so BullMQ can offload the web process.
+ */
 export async function runNoteAiSync<T>(syncFn: () => Promise<T>): Promise<T> {
   return syncFn();
 }
