@@ -1381,8 +1381,8 @@ export class SupabaseService {
     const { page = 1, limit = 50, requestingUserId } = options;
     const offset = (page - 1) * limit;
 
-    // Cache only public member fields — never phone/settings (SEC-04).
-    const cacheKey = `group:members:${groupId}:${page}:${limit}`;
+    // SEC-04: partition by viewer; payload stays public-only (phone/settings attached after).
+    const cacheKey = `group:members:${groupId}:${page}:${limit}:${requestingUserId || 'anon'}`;
 
     const publicMembers = await cacheService.cached(cacheKey, async () => {
       const { data: memberData, error: memberError } = await this.supabase
