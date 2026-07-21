@@ -84,6 +84,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           role: m.role,
           content: m.content,
           actions: m.actions,
+          feedback: m.feedback ?? null,
           created_at: m.created_at,
         })),
         isLoadingHistory: false,
@@ -162,13 +163,21 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         }));
       },
       // onDone
-      (actions) => {
+      ({ actions, messageId, userMessageId }) => {
         set(s => ({
-          messages: s.messages.map(m =>
-            m.id === tempAiId
-              ? { ...m, actions: actions.length ? actions : undefined }
-              : m
-          ),
+          messages: s.messages.map(m => {
+            if (m.id === tempAiId) {
+              return {
+                ...m,
+                id: messageId || m.id,
+                actions: actions.length ? actions : undefined,
+              };
+            }
+            if (userMessageId && m.id === tempUserMsg.id) {
+              return { ...m, id: userMessageId };
+            }
+            return m;
+          }),
           isStreaming: false,
         }));
       },

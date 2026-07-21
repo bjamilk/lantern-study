@@ -927,6 +927,8 @@ export interface CompanionMessage {
   role: 'user' | 'assistant';
   content: string;
   actions?: CompanionAction[];
+  /** User rating for assistant replies; null/undefined = none. */
+  feedback?: 'up' | 'down' | null;
   created_at: string;
 }
 

@@ -33,7 +33,7 @@ router.get('/history', async (req: Request, res: Response) => {
   try {
     const { data, error } = await supabaseService.getClient()
       .from('ai_companion_messages')
-      .select('id, role, content, actions, created_at')
+      .select('id, role, content, actions, feedback, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
       .limit(50);
@@ -65,23 +65,33 @@ router.delete('/history', async (req: Request, res: Response) => {
 router.post('/feedback', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   const { messageId, rating } = req.body as {
-    messageId: string;
-    rating: 'up' | 'down';
+    messageId?: string;
+    rating?: 'up' | 'down' | null;
   };
 
-  if (!messageId || !['up', 'down'].includes(rating)) {
-    res.status(400).json({ error: 'messageId and rating (up|down) are required' });
+  const cleared = rating === null;
+  if (!messageId || (!cleared && rating !== 'up' && rating !== 'down')) {
+    res.status(400).json({ error: 'messageId and rating (up|down|null) are required' });
     return;
   }
 
   try {
-    await supabaseService.getClient()
+    const { data, error } = await supabaseService.getClient()
       .from('ai_companion_messages')
-      .update({ feedback: rating })
+      .update({ feedback: cleared ? null : rating })
       .eq('id', messageId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('role', 'assistant')
+      .select('id')
+      .maybeSingle();
 
-    res.json({ success: true });
+    if (error) throw error;
+    if (!data) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+
+    res.json({ success: true, feedback: cleared ? null : rating });
   } catch (err: any) {
     console.error('Companion feedback error:', err.message);
     res.status(500).json({ error: 'Failed to save feedback' });
@@ -264,12 +274,17 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     const { reply, actions } = await companionChat(message.trim(), history, trustedContext);
 
     const now = new Date().toISOString();
-    await supabaseService.getClient()
+    const { data: inserted, error: insertError } = await supabaseService.getClient()
       .from('ai_companion_messages')
       .insert([
         { user_id: userId, role: 'user', content: message.trim(), created_at: now },
         { user_id: userId, role: 'assistant', content: reply, actions: actions.length ? actions : null, created_at: new Date(Date.now() + 1).toISOString() },
-      ]);
+      ])
+      .select('id, role');
+
+    if (insertError) throw insertError;
+    const assistantMessageId = inserted?.find((row) => row.role === 'assistant')?.id as string | undefined;
+    const userMessageId = inserted?.find((row) => row.role === 'user')?.id as string | undefined;
 
     const tokens = reply.split(/(\s+)/);
     for (const token of tokens) {
@@ -278,7 +293,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       await new Promise<void>(r => setTimeout(r, 18));
     }
 
-    sendEvent({ done: true, actions });
+    sendEvent({ done: true, actions, messageId: assistantMessageId, userMessageId });
     res.end();
   } catch (err: any) {
     console.error('Companion stream error:', err.message);

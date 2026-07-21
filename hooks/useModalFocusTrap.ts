@@ -20,8 +20,12 @@ export function useModalFocusTrap(
 ): RefObject<HTMLDivElement | null> {
   const containerRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
-  const loading = options?.loading ?? false;
+  const loadingRef = useRef(options?.loading ?? false);
+  const onCloseRef = useRef(onClose);
   const contentKey = options?.contentKey ?? '';
+
+  loadingRef.current = options?.loading ?? false;
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -32,9 +36,10 @@ export function useModalFocusTrap(
     focusable[0]?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) {
+      // Block Escape while a save/submit is in flight so users don't discard mid-save.
+      if (e.key === 'Escape' && !loadingRef.current) {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -58,7 +63,8 @@ export function useModalFocusTrap(
       document.removeEventListener('keydown', onKeyDown);
       previouslyFocused.current?.focus?.();
     };
-  }, [isOpen, loading, onClose, contentKey]);
+    // Intentionally omit `loading` — toggling it must not steal focus from inputs.
+  }, [isOpen, onClose, contentKey]);
 
   return containerRef;
 }

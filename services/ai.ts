@@ -287,7 +287,16 @@ export async function companionSendMessage(
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
 
-export async function fetchCompanionHistory(): Promise<{ messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; actions?: CompanionAction[]; created_at: string }> }> {
+export async function fetchCompanionHistory(): Promise<{
+  messages: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    actions?: CompanionAction[];
+    feedback?: 'up' | 'down' | null;
+    created_at: string;
+  }>;
+}> {
   return companionRequest('/history', 'GET', undefined, { trackUsage: false });
 }
 
@@ -295,15 +304,21 @@ export async function clearCompanionHistory(): Promise<{ success: boolean }> {
   return companionRequest('/history', 'DELETE', undefined, { trackUsage: false });
 }
 
+export type CompanionStreamDone = {
+  actions: CompanionAction[];
+  messageId?: string;
+  userMessageId?: string;
+};
+
 /**
  * Stream a companion message via SSE.
- * Calls `onToken` for each text chunk, `onDone` with final actions, `onError` on failure.
+ * Calls `onToken` for each text chunk, `onDone` with final actions + persisted IDs, `onError` on failure.
  */
 export async function companionSendMessageStream(
   message: string,
   context: CompanionUserContext | undefined,
   onToken: (token: string) => void,
-  onDone: (actions: CompanionAction[]) => void,
+  onDone: (result: CompanionStreamDone) => void,
   onError: (err: Error) => void
 ): Promise<void> {
   const userId = useAuthStore.getState().currentUser?.id;
@@ -357,7 +372,13 @@ export async function companionSendMessageStream(
           const data = JSON.parse(part.slice(6));
           if (data.error) { onError(new Error(data.error)); return; }
           if (data.token !== undefined) onToken(data.token as string);
-          if (data.done) onDone((data.actions as CompanionAction[]) || []);
+          if (data.done) {
+            onDone({
+              actions: (data.actions as CompanionAction[]) || [],
+              messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
+              userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+            });
+          }
         } catch { /* malformed chunk — skip */ }
       }
     }
@@ -368,18 +389,23 @@ export async function companionSendMessageStream(
 
 export async function submitCompanionFeedback(
   messageId: string,
-  rating: 'up' | 'down'
+  rating: 'up' | 'down' | null
 ): Promise<void> {
   const userId = useAuthStore.getState().currentUser?.id;
   if (!userId) return;
-  try {
-    const headers = await getAuthHeaders();
-    await fetch(`${API_BASE_URL}/api/v1/ai/companion/feedback`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ messageId, rating }),
-    });
-  } catch { /* non-critical */ }
+  if (messageId.startsWith('tmp-')) {
+    throw new Error('Message is still saving; try feedback again in a moment');
+  }
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/ai/companion/feedback`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ messageId, rating }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || 'Failed to save feedback');
+  }
 }
 
 export async function trackAIAnalyticsEvent(

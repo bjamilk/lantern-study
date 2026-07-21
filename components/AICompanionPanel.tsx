@@ -102,7 +102,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     ...context,
   }), [currentUser?.firstName, currentUser?.name, context]);
 
-  const isBusy = isLoading || isStreaming || isLoadingHistory;
+  const isSending = isLoading || isStreaming;
+  const isBusy = isSending || isLoadingHistory;
 
   const handleSend = useCallback(async (text?: string) => {
     const msg = (text ?? input).trim();
@@ -142,8 +143,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
       zIndexClass="z-[70]"
       backdropClassName="bg-black/20 md:hidden"
       panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
-      loading={isBusy}
-      closeOnBackdrop={!isBusy}
+      loading={isSending}
+      closeOnBackdrop={!isSending}
     >
 
         {/* Header */}
@@ -255,7 +256,6 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                 t.style.height = 'auto';
                 t.style.height = Math.min(t.scrollHeight, 96) + 'px';
               }}
-              disabled={isBusy}
             />
             <button
               onClick={() => handleSend()}
@@ -284,13 +284,30 @@ interface MessageBubbleProps {
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, isStreaming }) => {
   const isUser = message.role === 'user';
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(message.feedback ?? null);
+  const pendingRef = useRef(false);
+
+  useEffect(() => {
+    setFeedback(message.feedback ?? null);
+  }, [message.id, message.feedback]);
 
   const handleFeedback = async (rating: 'up' | 'down') => {
-    if (feedback) return; // already rated
-    setFeedback(rating);
-    await submitCompanionFeedback(message.id, rating);
-    trackAIAnalyticsEvent('companion_feedback', { rating, messageId: message.id });
+    if (pendingRef.current) return;
+    const next = feedback === rating ? null : rating;
+    pendingRef.current = true;
+    const previous = feedback;
+    setFeedback(next);
+    try {
+      await submitCompanionFeedback(message.id, next);
+      trackAIAnalyticsEvent('companion_feedback', {
+        rating: next,
+        messageId: message.id,
+      });
+    } catch {
+      setFeedback(previous);
+    } finally {
+      pendingRef.current = false;
+    }
   };
 
   return (
@@ -333,12 +350,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
         )}
         {/* Thumbs feedback (only on completed assistant messages) */}
         {!isUser && !isStreaming && message.content.length > 0 && (
-          <div className="flex items-center gap-1 mt-0.5">
+          <div className="flex items-center gap-1 mt-0.5" role="group" aria-label="Rate this response">
             <button
-              onClick={() => handleFeedback('up')}
-              title="Good response"
-              disabled={!!feedback}
-              className={`p-1 rounded transition-colors disabled:cursor-default
+              type="button"
+              onClick={() => void handleFeedback('up')}
+              title={feedback === 'up' ? 'Remove upvote' : 'Good response'}
+              aria-pressed={feedback === 'up'}
+              aria-label="Thumbs up"
+              className={`p-1 rounded transition-colors
                 ${feedback === 'up'
                   ? 'text-green-500'
                   : theme === 'dark' ? 'text-lantern-text-secondary hover:text-green-400' : 'text-lantern-text-tertiary hover:text-green-500'
@@ -347,10 +366,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
               {feedback === 'up' ? <ThumbUpSolid className="w-3.5 h-3.5" /> : <HandThumbUpIcon className="w-3.5 h-3.5" />}
             </button>
             <button
-              onClick={() => handleFeedback('down')}
-              title="Poor response"
-              disabled={!!feedback}
-              className={`p-1 rounded transition-colors disabled:cursor-default
+              type="button"
+              onClick={() => void handleFeedback('down')}
+              title={feedback === 'down' ? 'Remove downvote' : 'Poor response'}
+              aria-pressed={feedback === 'down'}
+              aria-label="Thumbs down"
+              className={`p-1 rounded transition-colors
                 ${feedback === 'down'
                   ? 'text-red-500'
                   : theme === 'dark' ? 'text-lantern-text-secondary hover:text-red-400' : 'text-lantern-text-tertiary hover:text-red-500'

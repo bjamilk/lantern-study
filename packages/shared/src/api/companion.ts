@@ -98,6 +98,7 @@ export function createCompanionClient(config: AIClientConfig) {
           role: 'user' | 'assistant';
           content: string;
           actions?: CompanionAction[];
+          feedback?: 'up' | 'down' | null;
           created_at: string;
         }>;
       }>('/history', 'GET', undefined, { trackUsage: false }),
@@ -109,7 +110,11 @@ export function createCompanionClient(config: AIClientConfig) {
       message: string,
       context: CompanionUserContext | undefined,
       onToken: (token: string) => void,
-      onDone: (actions: CompanionAction[]) => void,
+      onDone: (result: {
+        actions: CompanionAction[];
+        messageId?: string;
+        userMessageId?: string;
+      }) => void,
       onError: (err: Error) => void
     ): Promise<void> => {
       const headers = await config.getAuthHeaders();
@@ -153,7 +158,13 @@ export function createCompanionClient(config: AIClientConfig) {
                 return;
               }
               if (data.token !== undefined) onToken(data.token as string);
-              if (data.done) onDone((data.actions as CompanionAction[]) || []);
+              if (data.done) {
+                onDone({
+                  actions: (data.actions as CompanionAction[]) || [],
+                  messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
+                  userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
+                });
+              }
             } catch {
               /* malformed chunk — skip */
             }
@@ -164,16 +175,22 @@ export function createCompanionClient(config: AIClientConfig) {
       }
     },
 
-    submitCompanionFeedback: async (messageId: string, rating: 'up' | 'down'): Promise<void> => {
-      try {
-        const headers = await config.getAuthHeaders();
-        await fetch(`${config.getBaseUrl()}/api/v1/ai/companion/feedback`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ messageId, rating }),
-        });
-      } catch {
-        /* non-critical */
+    submitCompanionFeedback: async (
+      messageId: string,
+      rating: 'up' | 'down' | null
+    ): Promise<void> => {
+      if (messageId.startsWith('tmp-')) {
+        throw new Error('Message is still saving; try feedback again in a moment');
+      }
+      const headers = await config.getAuthHeaders();
+      const response = await fetch(`${config.getBaseUrl()}/api/v1/ai/companion/feedback`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ messageId, rating }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error || 'Failed to save feedback');
       }
     },
 
