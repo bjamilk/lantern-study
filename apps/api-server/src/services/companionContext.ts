@@ -72,10 +72,18 @@ export async function buildTrustedCompanionContext(
 
   const now = Date.now();
   const dueCardsCount = (flashcardsResult.data || []).filter((card: any) => {
-    const srs = card.srs_data as { nextReview?: string } | null | undefined;
-    if (!srs || !srs.nextReview) return true;
-    const next = Date.parse(srs.nextReview);
-    return !Number.isFinite(next) || next <= now;
+    const srs = (card.srs_data || card.srsData) as
+      | { nextReviewDate?: string; next_review_date?: string; nextReview?: string; repetitions?: number }
+      | null
+      | undefined;
+    if (!srs) return false;
+    const nextRaw = srs.nextReviewDate || srs.next_review_date || srs.nextReview;
+    if (!nextRaw) {
+      // New cards are not due; only corrupted learning cards without a date count
+      return (srs.repetitions ?? 0) > 0;
+    }
+    const next = Date.parse(nextRaw);
+    return Number.isFinite(next) && next <= now;
   }).length;
 
   const weakTopicSet = new Set<string>();

@@ -14,7 +14,10 @@ export function getDeckCardStats(
 ): DeckCardStats {
   const cards = flashcardsByDeck[deckId] || [];
   const newCards = cards.filter(card => !card.srsData?.repetitions).length;
-  const dueCards = cards.filter(card => isCardDue(card.srsData)).length;
+  // Due = scheduled cards past nextReviewDate (new cards are not due)
+  const dueCards = cards.filter(
+    card => Boolean(card.srsData?.repetitions) && isCardDue(card.srsData)
+  ).length;
   const mastered = cards.filter(card => (card.srsData?.repetitions || 0) >= 5).length;
 
   return {
@@ -54,7 +57,7 @@ export function getCardDisplayText(card: Flashcard): { front: string; back: stri
 export function getCardStatus(card: Flashcard): { label: string; color: string } {
   const isMastered = (card.srsData?.repetitions || 0) >= 5;
   if (isMastered) return { label: 'Mastered', color: '#10b981' };
-  if (isCardDue(card.srsData)) return { label: 'Due', color: '#f97316' };
   if (!card.srsData?.repetitions) return { label: 'New', color: '#6366f1' };
+  if (isCardDue(card.srsData)) return { label: 'Due', color: '#f97316' };
   return { label: 'Learning', color: '#8b5cf6' };
 }

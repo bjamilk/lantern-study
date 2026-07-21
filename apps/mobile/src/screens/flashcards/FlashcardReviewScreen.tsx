@@ -70,6 +70,11 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const fetchFlashcards = useFlashcardStore(s => s.fetchFlashcards);
   const reviewFlashcard = useFlashcardStore(s => s.reviewFlashcard);
 
+  const queueSnapshotRef = useRef<Flashcard[] | null>(null);
+  const [index, setIndex] = useState(0);
+  const [showBack, setShowBack] = useState(false);
+  const [grading, setGrading] = useState(false);
+
   useEffect(() => {
     if (!deckId) return;
     if (deckCards.length === 0) {
@@ -77,16 +82,19 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     }
   }, [deckId, deckCards.length, fetchFlashcards]);
 
-  const queueSnapshotRef = useRef<Flashcard[] | null>(null);
-  if (!queueSnapshotRef.current && deckCards.length > 0) {
+  // Reset session when switching decks
+  useEffect(() => {
+    queueSnapshotRef.current = null;
+    setIndex(0);
+    setShowBack(false);
+  }, [deckId]);
+
+  // Lock the queue once cards are available (=== null so an intentional empty queue stays locked)
+  if (queueSnapshotRef.current === null && !isLoading && deckCards.length > 0) {
     queueSnapshotRef.current = buildSessionQueue(deckCards);
   }
   const queue = queueSnapshotRef.current ?? EMPTY_CARDS;
   const sessionTotal = queue.length;
-
-  const [index, setIndex] = useState(0);
-  const [showBack, setShowBack] = useState(false);
-  const [grading, setGrading] = useState(false);
 
   const currentCard = queue[index];
   const isComplete = sessionTotal > 0 && index >= sessionTotal;
@@ -158,7 +166,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   }
 
   if (sessionTotal === 0) {
-    const stillLoading = isLoading || deckCards.length === 0;
+    const stillLoading = isLoading || (deckCards.length === 0 && queueSnapshotRef.current === null);
+    const hasNewLeft = deckCards.some((c) => isNewFlashcard(c));
     return (
       <SafeAreaView style={shellStyle} className="items-center justify-center px-6" edges={['top']}>
         <Text className="text-lg font-semibold text-lantern-text mb-2" style={{ color: colors.text }}>
@@ -170,7 +179,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         >
           {stillLoading
             ? 'Preparing your review session.'
-            : 'Add cards to this deck or come back when cards are due.'}
+            : hasNewLeft
+              ? "You've reached today's new-card limit. Try Cram or Match, or come back tomorrow for more new cards."
+              : 'No cards are due right now. Try Cram to practice every card, or come back later.'}
         </Text>
         <Button onPress={() => navigation.goBack()}>Back to Deck</Button>
       </SafeAreaView>

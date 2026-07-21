@@ -102,7 +102,9 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   }, [deck.id]);
 
   const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
-  const dueCards = cardsInDeck.filter(fc => isCardDue(fc.srsData)).length;
+  const dueCards = cardsInDeck.filter(
+    fc => Boolean(fc.srsData?.repetitions) && isCardDue(fc.srsData)
+  ).length;
   const reviewedCards = cardsInDeck.filter(fc => fc.srsData?.repetitions && fc.srsData.repetitions > 0);
   const avgEaseFactor = reviewedCards.length > 0 ? reviewedCards.reduce((sum, fc) => sum + (fc.srsData?.easeFactor || 0), 0) / reviewedCards.length : 0;
   const leechCards = cardsInDeck.filter(fc => fc.srsData?.isLeech).length;

@@ -1,0 +1,76 @@
+import { isCardDue, getCardsDue } from './srs';
+import type { SrsData } from '../types';
+
+describe('isCardDue', () => {
+  it('does not treat brand-new / unscheduled cards as due', () => {
+    expect(isCardDue(undefined)).toBe(false);
+    expect(isCardDue({} as SrsData)).toBe(false);
+    expect(
+      isCardDue({
+        interval: 0,
+        easeFactor: 2.5,
+        repetitions: 0,
+        nextReviewDate: undefined as unknown as string,
+      })
+    ).toBe(false);
+  });
+
+  it('treats scheduled cards as due when nextReviewDate is in the past', () => {
+    expect(
+      isCardDue({
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 2,
+        nextReviewDate: '2000-01-01T00:00:00.000Z',
+      })
+    ).toBe(true);
+  });
+
+  it('treats scheduled cards as not due when nextReviewDate is in the future', () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    expect(
+      isCardDue({
+        interval: 7,
+        easeFactor: 2.5,
+        repetitions: 3,
+        nextReviewDate: future,
+      })
+    ).toBe(false);
+  });
+
+  it('treats learning cards with repetitions but missing date as due', () => {
+    expect(
+      isCardDue({
+        interval: 1,
+        easeFactor: 2.5,
+        repetitions: 1,
+        nextReviewDate: undefined as unknown as string,
+      })
+    ).toBe(true);
+  });
+
+  it('getCardsDue excludes new cards', () => {
+    const cards = [
+      { id: 'new', srsData: undefined },
+      {
+        id: 'due',
+        srsData: {
+          interval: 1,
+          easeFactor: 2.5,
+          repetitions: 2,
+          nextReviewDate: '2000-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        id: 'later',
+        srsData: {
+          interval: 7,
+          easeFactor: 2.5,
+          repetitions: 2,
+          nextReviewDate: new Date(Date.now() + 86400000).toISOString(),
+        },
+      },
+    ];
+    expect(getCardsDue(cards).map((c) => c.id)).toEqual(['due']);
+  });
+});

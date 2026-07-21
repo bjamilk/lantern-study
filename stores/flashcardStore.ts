@@ -8,7 +8,7 @@
  */
 import { create } from 'zustand';
 import type { PendingFlashcardReview } from '@lantern/shared/utils/offlineReview';
-import { createPendingFlashcardReview } from '@lantern/shared/utils/offlineReview';
+import { createPendingFlashcardReview, getCardsDue } from '@lantern/shared/utils';
 import { Deck, Flashcard } from '../types';
 
 function isValidDeck(deck: Deck | null | undefined): deck is Deck {
@@ -163,12 +163,9 @@ export const useFlashcardStore = create<FlashcardState>()((set, get) => ({
   
   // SRS
   getDueCards: (deckId) => {
-    const now = new Date();
-    return get().flashcards.filter(f => {
-      if (deckId && f.deckId !== deckId) return false;
-      if (!f.srsData?.nextReviewDate) return true;
-      return new Date(f.srsData.nextReviewDate) <= now;
-    });
+    const cards = get().flashcards;
+    const scoped = deckId ? cards.filter((f) => f.deckId === deckId) : cards;
+    return getCardsDue(scoped);
   },
   
   setDueCardsCount: (count) => set({ dueCardsCount: count }),

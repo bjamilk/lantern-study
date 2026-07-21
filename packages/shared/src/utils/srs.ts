@@ -111,15 +111,21 @@ export const calculateSrsData = (
 };
 
 /**
- * Check if a flashcard is due for review
+ * True when a scheduled card is ready for review.
+ * New / never-scheduled cards are NOT due — they enter via the daily new-card budget.
+ * Learning cards with repetitions but a missing/invalid date are treated as due.
  */
 export const isCardDue = (srsData: SrsData | undefined): boolean => {
-    if (!srsData || !srsData.nextReviewDate) return true;
-    
-    const now = new Date();
+    if (!srsData?.nextReviewDate) {
+        return (srsData?.repetitions ?? 0) > 0;
+    }
+
     const nextReview = new Date(srsData.nextReviewDate);
-    
-    return now >= nextReview;
+    if (Number.isNaN(nextReview.getTime())) {
+        return (srsData.repetitions ?? 0) > 0;
+    }
+
+    return Date.now() >= nextReview.getTime();
 };
 
 /**

@@ -356,7 +356,16 @@ export function useFlashcardHandlers() {
         });
 
         if (cardQueue.length === 0) {
-            alert("No new or due cards in this deck to review right now.");
+            const hasNew = cardsInDeck.some((fc) => isNewFlashcard(fc));
+            if (hasNew) {
+                alert(
+                    "You've reached today's new-card limit for spaced repetition. Try Cram or Match to keep practicing, or come back tomorrow for more new cards."
+                );
+            } else {
+                alert(
+                    'No cards are due for spaced repetition right now. Try Cram to practice every card, or come back when cards are due.'
+                );
+            }
             return;
         }
         setActiveReviewSession({ deck, cardQueue });
