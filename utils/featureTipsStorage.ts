@@ -1,9 +1,12 @@
 import {
   FEATURE_TIPS_VERSION,
   FEATURE_TIPS_LOCAL_KEY,
+  FEATURE_TIPS_SESSION_KEY,
   LEGACY_GETTING_STARTED_KEY,
   normalizeFeatureTips,
   migrateLegacyGettingStarted,
+  toPersistentFeatureTips,
+  mergeFeatureTipsProgress,
   type FeatureTipsState,
   type FeatureTipId,
   type ChecklistItemKey,
@@ -17,7 +20,10 @@ import {
 
 function readLocalRaw(): unknown {
   try {
-    const raw = localStorage.getItem(FEATURE_TIPS_LOCAL_KEY);
+    // Prefer v2; fall back to v1 key once for migration.
+    const raw =
+      localStorage.getItem(FEATURE_TIPS_LOCAL_KEY) ||
+      localStorage.getItem('lantern_feature_tips_v1');
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -26,9 +32,37 @@ function readLocalRaw(): unknown {
 
 function writeLocal(state: FeatureTipsState): void {
   try {
-    localStorage.setItem(FEATURE_TIPS_LOCAL_KEY, JSON.stringify(state));
+    localStorage.setItem(
+      FEATURE_TIPS_LOCAL_KEY,
+      JSON.stringify(toPersistentFeatureTips(state))
+    );
+    localStorage.removeItem('lantern_feature_tips_v1');
   } catch {
     /* ignore quota */
+  }
+}
+
+function loadSessionDismissed(): Record<string, boolean> {
+  try {
+    const raw = sessionStorage.getItem(FEATURE_TIPS_SESSION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v === true) out[k] = true;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionDismissed(dismissed: Record<string, boolean>): void {
+  try {
+    sessionStorage.setItem(FEATURE_TIPS_SESSION_KEY, JSON.stringify(dismissed || {}));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -53,27 +87,23 @@ function migrateLegacyIfNeeded(state: FeatureTipsState): FeatureTipsState {
 }
 
 export function loadLocalFeatureTips(): FeatureTipsState {
-  const base = normalizeFeatureTips(readLocalRaw());
-  return migrateLegacyIfNeeded(base);
+  const base = migrateLegacyIfNeeded(normalizeFeatureTips(readLocalRaw()));
+  return {
+    ...toPersistentFeatureTips(base),
+    dismissed: loadSessionDismissed(),
+  };
 }
 
 export function saveLocalFeatureTips(state: FeatureTipsState): void {
-  writeLocal({ ...state, version: FEATURE_TIPS_VERSION });
+  writeLocal(state);
+  saveSessionDismissed(state.dismissed || {});
 }
 
 export function mergeRemoteFeatureTips(
   local: FeatureTipsState,
   remote: unknown
 ): FeatureTipsState {
-  const remoteNorm = normalizeFeatureTips(remote);
-  return {
-    version: FEATURE_TIPS_VERSION,
-    skippedAll: local.skippedAll || remoteNorm.skippedAll,
-    dontShowAgain: local.dontShowAgain || remoteNorm.dontShowAgain,
-    checklistDismissed: local.checklistDismissed || remoteNorm.checklistDismissed,
-    dismissed: { ...remoteNorm.dismissed, ...local.dismissed },
-    checklist: { ...remoteNorm.checklist, ...local.checklist },
-  };
+  return mergeFeatureTipsProgress(local, remote);
 }
 
 export {
@@ -83,6 +113,7 @@ export {
   replayHelper as replayFeatureTips,
   markChecklistHelper as markChecklistItem,
   dismissChecklistHelper as dismissChecklist,
+  toPersistentFeatureTips,
 };
 
 export type { FeatureTipsState, FeatureTipId, ChecklistItemKey };

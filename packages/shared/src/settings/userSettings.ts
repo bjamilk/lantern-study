@@ -168,7 +168,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     campus_other: null,
   },
   featureTips: {
-    version: 1,
+    version: 2,
     dismissed: {},
     skippedAll: false,
     dontShowAgain: false,
@@ -254,18 +254,14 @@ function normalizeFeatureTipsSettings(raw: unknown): FeatureTipsSettings {
     return { ...DEFAULT_USER_SETTINGS.featureTips! };
   }
   const record = raw as Record<string, unknown>;
-  const dismissed =
-    record.dismissed && typeof record.dismissed === 'object' && !Array.isArray(record.dismissed)
-      ? (record.dismissed as Record<string, boolean>)
-      : {};
   const checklist =
     record.checklist && typeof record.checklist === 'object' && !Array.isArray(record.checklist)
       ? (record.checklist as Record<string, boolean>)
       : {};
-  const version = typeof record.version === 'number' ? record.version : 1;
+  // Got-it dismissals are session-only — never keep them on the profile settings blob.
   return {
-    version: 1,
-    dismissed: version === 1 ? dismissed : {},
+    version: 2,
+    dismissed: {},
     skippedAll: Boolean(record.skippedAll),
     dontShowAgain: Boolean(record.dontShowAgain),
     checklistDismissed: Boolean(record.checklistDismissed),

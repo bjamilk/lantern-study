@@ -13,6 +13,11 @@ import {
 
 export interface FeatureTipsState {
   version: number;
+  /**
+   * Per-tip "Got it" dismissals for the current visit/session only.
+   * Not written to durable storage — returning users see tips again unless
+   * they chose Don't show again / Skip all.
+   */
   dismissed: Record<string, boolean>;
   /** Permanently hide coach tips until Replay (returning users). */
   skippedAll?: boolean;
@@ -36,30 +41,49 @@ export function normalizeFeatureTips(raw: unknown): FeatureTipsState {
     return { ...DEFAULT_FEATURE_TIPS, checklist: {} };
   }
   const record = raw as Record<string, unknown>;
-  const dismissed =
-    record.dismissed && typeof record.dismissed === 'object' && !Array.isArray(record.dismissed)
-      ? (record.dismissed as Record<string, boolean>)
-      : {};
   const checklist =
     record.checklist && typeof record.checklist === 'object' && !Array.isArray(record.checklist)
       ? (record.checklist as Partial<Record<ChecklistItemKey, boolean>>)
       : {};
 
-  const version =
-    typeof record.version === 'number' && Number.isFinite(record.version)
-      ? record.version
-      : FEATURE_TIPS_VERSION;
-
-  // Version bump clears old dismissals so critically changed tips can reappear.
-  const effectiveDismissed = version === FEATURE_TIPS_VERSION ? dismissed : {};
-
+  // Durable storage never keeps Got-it dismissals (session-only). Legacy v1 profiles
+  // that stored dismissed maps are cleared here so returning users see tips again.
   return {
     version: FEATURE_TIPS_VERSION,
-    dismissed: effectiveDismissed,
+    dismissed: {},
     skippedAll: Boolean(record.skippedAll),
     dontShowAgain: Boolean(record.dontShowAgain),
     checklistDismissed: Boolean(record.checklistDismissed),
     checklist: { ...checklist },
+  };
+}
+
+/** Shape written to localStorage / profile — never persist session Got-it map. */
+export function toPersistentFeatureTips(state: FeatureTipsState): FeatureTipsState {
+  return {
+    version: FEATURE_TIPS_VERSION,
+    dismissed: {},
+    skippedAll: Boolean(state.skippedAll),
+    dontShowAgain: Boolean(state.dontShowAgain),
+    checklistDismissed: Boolean(state.checklistDismissed),
+    checklist: { ...(state.checklist || {}) },
+  };
+}
+
+/** Merge remote durable flags with the current session's Got-it map. */
+export function mergeFeatureTipsProgress(
+  local: FeatureTipsState,
+  remote: unknown
+): FeatureTipsState {
+  const remoteNorm = normalizeFeatureTips(remote);
+  return {
+    version: FEATURE_TIPS_VERSION,
+    skippedAll: Boolean(local.skippedAll || remoteNorm.skippedAll),
+    dontShowAgain: Boolean(local.dontShowAgain || remoteNorm.dontShowAgain),
+    checklistDismissed: Boolean(local.checklistDismissed || remoteNorm.checklistDismissed),
+    // Keep in-visit Got it progress; never re-import legacy remote dismissals.
+    dismissed: { ...local.dismissed },
+    checklist: { ...remoteNorm.checklist, ...local.checklist },
   };
 }
 

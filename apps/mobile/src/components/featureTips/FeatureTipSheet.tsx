@@ -3,8 +3,10 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { FEATURE_TIP_CATALOG, type FeatureTipId } from '@lantern/shared/featureTips';
 import { useTheme } from '../../theme';

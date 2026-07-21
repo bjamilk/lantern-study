@@ -1,5 +1,6 @@
 /**
  * Mobile feature-tip progress — AsyncStorage cache + sync into profile.settings.featureTips.
+ * "Got it" is session-only (in-memory); Don't show again / Skip all persist until Replay.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +10,8 @@ import {
   FEATURE_TIPS_LOCAL_KEY,
   normalizeFeatureTips,
   pickActiveTip,
+  toPersistentFeatureTips,
+  mergeFeatureTipsProgress,
   dismissTip as dismissTipHelper,
   skipAllTips as skipAllTipsHelper,
   setDontShowAgain as setDontShowAgainHelper,
@@ -59,7 +62,12 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function writeLocal(tips: FeatureTipsState) {
   try {
-    await AsyncStorage.setItem(FEATURE_TIPS_LOCAL_KEY, JSON.stringify(tips));
+    await AsyncStorage.setItem(
+      FEATURE_TIPS_LOCAL_KEY,
+      JSON.stringify(toPersistentFeatureTips(tips))
+    );
+    // Drop legacy v1 key that stored permanent Got-it dismissals.
+    await AsyncStorage.removeItem('lantern_feature_tips_v1');
   } catch {
     /* ignore */
   }
@@ -69,28 +77,17 @@ function schedulePersist(getTips: () => FeatureTipsState) {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const tips = getTips();
+    const durable = toPersistentFeatureTips(tips);
     void writeLocal(tips);
     void useSettingsStore.getState().updateSettings('featureTips', {
-      version: tips.version,
-      dismissed: tips.dismissed,
-      skippedAll: tips.skippedAll,
-      dontShowAgain: tips.dontShowAgain,
-      checklistDismissed: tips.checklistDismissed,
-      checklist: tips.checklist as Record<string, boolean>,
+      version: durable.version,
+      dismissed: {},
+      skippedAll: durable.skippedAll,
+      dontShowAgain: durable.dontShowAgain,
+      checklistDismissed: durable.checklistDismissed,
+      checklist: durable.checklist as Record<string, boolean>,
     });
   }, 400);
-}
-
-function mergeTips(local: FeatureTipsState, remote: unknown): FeatureTipsState {
-  const remoteNorm = normalizeFeatureTips(remote);
-  return {
-    version: FEATURE_TIPS_VERSION,
-    skippedAll: local.skippedAll || remoteNorm.skippedAll,
-    dontShowAgain: local.dontShowAgain || remoteNorm.dontShowAgain,
-    checklistDismissed: local.checklistDismissed || remoteNorm.checklistDismissed,
-    dismissed: { ...remoteNorm.dismissed, ...local.dismissed },
-    checklist: { ...remoteNorm.checklist, ...local.checklist },
-  };
 }
 
 export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
@@ -104,10 +101,15 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   hydrate: async () => {
     if (get().hydrated) return;
     try {
-      const raw = await AsyncStorage.getItem(FEATURE_TIPS_LOCAL_KEY);
+      const raw =
+        (await AsyncStorage.getItem(FEATURE_TIPS_LOCAL_KEY)) ||
+        (await AsyncStorage.getItem('lantern_feature_tips_v1'));
       const local = normalizeFeatureTips(raw ? JSON.parse(raw) : null);
       const remote = useSettingsStore.getState().settings.featureTips;
-      const merged = remote ? mergeTips(local, remote) : local;
+      // Preserve in-memory session dismissals (none on cold start).
+      const merged = remote
+        ? mergeFeatureTipsProgress({ ...toPersistentFeatureTips(local), dismissed: {} }, remote)
+        : { ...toPersistentFeatureTips(local), dismissed: {} };
       set({ tips: merged, hydrated: true });
       get().recomputeActive();
       await writeLocal(merged);
@@ -118,7 +120,7 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   syncFromUserSettings: (raw) => {
-    const merged = mergeTips(get().tips, raw);
+    const merged = mergeFeatureTipsProgress(get().tips, raw);
     set({ tips: merged });
     void writeLocal(merged);
     get().recomputeActive();
@@ -152,6 +154,7 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   dismiss: (tipId) => {
+    // Session-only: advances tips this visit; not written as durable dismissals.
     const next = dismissTipHelper(get().tips, tipId);
     set({ tips: next });
     get().recomputeActive();
@@ -180,6 +183,7 @@ export const useFeatureTipStore = create<FeatureTipStore>((set, get) => ({
   },
 
   markChecklist: (key, done = true) => {
+    if (get().tips.checklist[key] === done) return;
     const next = markChecklistHelper(get().tips, key, done);
     set({ tips: next });
     schedulePersist(() => get().tips);

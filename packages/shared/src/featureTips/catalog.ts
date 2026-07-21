@@ -3,8 +3,11 @@
  * Tip IDs are stable — bump FEATURE_TIPS_VERSION to re-prompt after major UX changes.
  */
 
-export const FEATURE_TIPS_VERSION = 1;
-export const FEATURE_TIPS_LOCAL_KEY = 'lantern_feature_tips_v1';
+/** Bumped when persistence policy changes (v2: Got it is session-only). */
+export const FEATURE_TIPS_VERSION = 2;
+export const FEATURE_TIPS_LOCAL_KEY = 'lantern_feature_tips_v2';
+/** Session-scoped Got it dismissals (cleared when the browser/app session ends). */
+export const FEATURE_TIPS_SESSION_KEY = 'lantern_feature_tips_session_v2';
 export const LEGACY_GETTING_STARTED_KEY = 'lantern_getting_started_v1';
 
 export type FeatureTipId =

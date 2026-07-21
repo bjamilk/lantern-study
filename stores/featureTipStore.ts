@@ -21,6 +21,7 @@ import {
   loadLocalFeatureTips,
   saveLocalFeatureTips,
   mergeRemoteFeatureTips,
+  toPersistentFeatureTips,
 } from '../utils/featureTipsStorage';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import { saveUserSettings } from '../services/supabase';
@@ -68,19 +69,21 @@ function schedulePersist(getTips: () => FeatureTipsState) {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const tips = getTips();
+    // Session Got-it map stays in sessionStorage via saveLocal; profile gets durable flags only.
     saveLocalFeatureTips(tips);
+    const durable = toPersistentFeatureTips(tips);
     const user = useAuthStore.getState().currentUser;
     if (!user?.id) return;
     const current = normalizeUserSettings(user.settings);
     const next = {
       ...current,
       featureTips: {
-        version: tips.version,
-        dismissed: tips.dismissed,
-        skippedAll: tips.skippedAll,
-        dontShowAgain: tips.dontShowAgain,
-        checklistDismissed: tips.checklistDismissed,
-        checklist: tips.checklist as Record<string, boolean>,
+        version: durable.version,
+        dismissed: {},
+        skippedAll: durable.skippedAll,
+        dontShowAgain: durable.dontShowAgain,
+        checklistDismissed: durable.checklistDismissed,
+        checklist: durable.checklist as Record<string, boolean>,
       },
       updatedAt: new Date().toISOString(),
     };
