@@ -1,3 +1,4 @@
+import v8 from 'v8';
 import { Request, Response, NextFunction } from 'express';
 import { aiInflightGate, companionStreamGate } from '../utils/concurrencyGate';
 
@@ -13,6 +14,25 @@ export function isServerShuttingDown(): boolean {
 
 function isExemptPath(path: string): boolean {
   return path === '/health' || path === '/ready' || path === '/metrics';
+}
+
+/**
+ * Use heap_size_limit (true V8 ceiling), not heapTotal.
+ * heapUsed/heapTotal is often >90% on a cold process because V8 keeps
+ * heapTotal small until it needs to grow — that was falsely 503'ing all traffic.
+ */
+export function isUnderMemoryPressure(): boolean {
+  const mem = process.memoryUsage();
+  const heapStats = v8.getHeapStatistics();
+  const limit = heapStats.heap_size_limit || 0;
+  const used = heapStats.used_heap_size || mem.heapUsed;
+  const limitRatio = limit > 0 ? used / limit : 0;
+  const shedLimitRatio = parseFloat(process.env.LOAD_SHED_HEAP_RATIO || '0.90');
+  const rssLimit = parseInt(
+    process.env.LOAD_SHED_RSS_BYTES || String(1.5 * 1024 * 1024 * 1024),
+    10
+  );
+  return limitRatio >= shedLimitRatio || mem.rss >= rssLimit;
 }
 
 /**
@@ -34,13 +54,7 @@ export function loadShedMiddleware(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  const mem = process.memoryUsage();
-  const heapRatio = mem.heapTotal > 0 ? mem.heapUsed / mem.heapTotal : 0;
-  const heapPressure =
-    heapRatio >= parseFloat(process.env.LOAD_SHED_HEAP_RATIO || '0.92') ||
-    mem.rss >= parseInt(process.env.LOAD_SHED_RSS_BYTES || String(1.5 * 1024 * 1024 * 1024), 10);
-
-  if (heapPressure) {
+  if (isUnderMemoryPressure()) {
     res.setHeader('Retry-After', '10');
     res.status(503).json({
       error: 'Service Unavailable',

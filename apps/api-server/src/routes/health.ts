@@ -1,3 +1,4 @@
+import v8 from 'v8';
 import { Router, Request, Response } from 'express';
 import { requireOperationalAccess } from '../middleware/operationalAuth';
 import { isProductionEnv } from '../utils/safeError';
@@ -48,7 +49,12 @@ router.get('/ready', requireOperationalAccess, async (req: Request, res: Respons
   }
 
   const memUsage = process.memoryUsage();
-  const memUsedPercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+  // Compare against V8 heap_size_limit — heapUsed/heapTotal is misleading on cold processes.
+  const heapStats = v8.getHeapStatistics();
+  const memUsedPercent =
+    heapStats.heap_size_limit > 0
+      ? (heapStats.used_heap_size / heapStats.heap_size_limit) * 100
+      : (memUsage.heapUsed / Math.max(memUsage.heapTotal, 1)) * 100;
 
   checks.memory = {
     status: memUsedPercent < 90 ? 'ok' : 'error',
@@ -56,7 +62,7 @@ router.get('/ready', requireOperationalAccess, async (req: Request, res: Respons
   };
 
   if (memUsedPercent >= 90) {
-    checks.memory.error = 'Memory usage above 90%';
+    checks.memory.error = 'Memory usage above 90% of heap limit';
     isHealthy = false;
   }
 
