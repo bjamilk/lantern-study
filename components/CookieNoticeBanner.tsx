@@ -138,7 +138,7 @@ export function CookieNoticeBanner() {
         <button
           type="button"
           onClick={openCenter}
-          className="fixed z-[80] left-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border bg-lantern-surface/95 text-lantern-text shadow-lg backdrop-blur hover:bg-lantern-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+          className="fixed z-[80] left-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-auto md:right-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border bg-lantern-surface/95 text-lantern-text shadow-lg backdrop-blur hover:bg-lantern-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Manage cookie preferences"
           title="Manage cookie preferences"
         >
