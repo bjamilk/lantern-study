@@ -134,6 +134,11 @@ export function evictAuthTokenCache(token: string): void {
   tokenCache.delete(hashToken(token));
 }
 
+/** Drop all cached JWT verifications (e.g. after platform-admin role changes). */
+export function clearAuthTokenCache(): void {
+  tokenCache.clear();
+}
+
 async function rejectIfSessionCutoff(
   token: string,
   userId: string,
@@ -398,17 +403,13 @@ export const requirePlatformAdmin = async (
     return;
   }
 
-  if (!req.user.isAdmin) {
+  // SEC-09: Never trust JWT/app_metadata isAdmin from the token cache.
+  // Always resolve against platform_admins (live), then mirror onto req.user.
+  const isAdmin = await isLivePlatformAdmin(req.user.id);
+  req.user.isAdmin = isAdmin;
+  if (!isAdmin) {
     res.status(403).json({ success: false, error: 'Platform admin access required' });
     return;
-  }
-
-  if (supabaseService) {
-    const isAdmin = await supabaseService.isPlatformAdmin(req.user.id);
-    if (!isAdmin) {
-      res.status(403).json({ success: false, error: 'Platform admin access required' });
-      return;
-    }
   }
 
   next();

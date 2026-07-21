@@ -16,7 +16,9 @@ export function cacheKey(scope: string, ...parts: string[]): string {
 export const CacheKeys = {
   unreadGroups: (userId: string) => cacheKey('unread', 'groups', userId),
   unreadDm: (userId: string) => cacheKey('unread', 'dm', userId),
-  sellerProfile: (userId: string) => cacheKey('seller', 'profile', userId),
+  /** Separate keys so owner-private metrics never leak via shared public cache. */
+  sellerProfile: (userId: string, scope: 'public' | 'owner' = 'public') =>
+    cacheKey('seller', 'profile', userId, scope),
   challengeList: (userId: string, status?: string) =>
     cacheKey('challenges', 'list', userId, status || 'all'),
 } as const;

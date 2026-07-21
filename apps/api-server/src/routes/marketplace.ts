@@ -1500,14 +1500,17 @@ router.get(
 // ============================================================
 
 // GET /api/v1/marketplace/sellers/:userId/profile - Get seller profile
+// SEC-08: Public viewers get reputation-safe aggregates only; owner gets private metrics.
 router.get(
   '/sellers/:userId/profile',
   validateUserId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { userId } = req.params;
+    const isOwner = req.user?.id === userId;
+    const profileScope = isOwner ? 'owner' : 'public';
 
-    const cacheKey = CacheKeys.sellerProfile(userId);
+    const cacheKey = CacheKeys.sellerProfile(userId, profileScope);
     const cached = await cacheService.get<any>(cacheKey);
     if (cached) {
       return res.json({ success: true, data: cached });
@@ -1532,47 +1535,29 @@ router.get(
       .order('created_at', { ascending: false });
 
     const listings = allListings || [];
-    const isOwner = req.user?.id === userId;
-    const visibleListings = isOwner ? listings : listings.filter((l) => l.status === 'active');
-    const activeListings = visibleListings.filter((l) => l.status === 'active');
-    const soldListings = isOwner ? listings.filter((l) => l.status === 'sold') : visibleListings.filter((l) => l.status === 'sold');
+    const activeListings = listings.filter((l) => l.status === 'active');
+    const soldCount = listings.filter((l) => l.status === 'sold').length;
+    // Public: active listings only. Owner: full inventory for private dashboard stats.
+    const visibleListings = isOwner ? listings : activeListings;
 
-    // Get all reviews across this seller's listings
-    const listingIds = visibleListings.map((l) => l.id);
+    // Reviews only on listings the viewer is allowed to know about
+    const reviewListingIds = isOwner
+      ? listings.map((l) => l.id)
+      : activeListings.map((l) => l.id);
     let allReviews: any[] = [];
-    if (listingIds.length > 0) {
+    if (reviewListingIds.length > 0) {
       const { data: reviews } = await supabaseService.getClient()
         .from('marketplace_reviews')
         .select('id, listing_id, reviewer_id, rating, comment, created_at, reviewer:profiles!marketplace_reviews_reviewer_id_fkey(id, name, avatar_url)')
-        .in('listing_id', listingIds)
+        .in('listing_id', reviewListingIds)
         .order('created_at', { ascending: false });
       allReviews = reviews || [];
     }
 
-    // Get favorites count
-    let totalFavorites = 0;
-    if (listingIds.length > 0) {
-      const { count } = await supabaseService.getClient()
-        .from('marketplace_favorites')
-        .select('id', { count: 'exact', head: true })
-        .in('listing_id', listingIds);
-      totalFavorites = count || 0;
-    }
-
-    // Get inquiries count
-    let totalInquiries = 0;
-    if (listingIds.length > 0) {
-      const { count } = await supabaseService.getClient()
-        .from('marketplace_inquiries')
-        .select('id', { count: 'exact', head: true })
-        .in('listing_id', listingIds);
-      totalInquiries = count || 0;
-    }
-
-    const totalViews = visibleListings.reduce((sum, l) => sum + (l.views_count || 0), 0);
     const avgRating = allReviews.length > 0
       ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
       : 0;
+    const roundedAvg = Math.round(avgRating * 10) / 10;
 
     // Add listing title to reviews for display
     const reviewsWithTitle = allReviews.slice(0, 10).map(r => ({
@@ -1580,30 +1565,63 @@ router.get(
       listing_title: visibleListings.find(l => l.id === r.listing_id)?.title || 'Unknown listing',
     }));
 
+    const isVerified = soldCount >= 5 && avgRating >= 4.5 && allReviews.length >= 3;
+    const badges = [
+      ...(soldCount >= 5 && avgRating >= 4.5
+        ? [{ id: 'trusted_seller', label: 'Trusted seller', icon: 'shield' }]
+        : []),
+      ...(soldCount >= 10
+        ? [{ id: 'top_seller', label: 'Top seller', icon: 'star' }]
+        : []),
+    ];
+
+    let stats: Record<string, number | boolean>;
+    if (isOwner) {
+      let totalFavorites = 0;
+      let totalInquiries = 0;
+      const ownerListingIds = listings.map((l) => l.id);
+      if (ownerListingIds.length > 0) {
+        const [{ count: favCount }, { count: inquiryCount }] = await Promise.all([
+          supabaseService.getClient()
+            .from('marketplace_favorites')
+            .select('id', { count: 'exact', head: true })
+            .in('listing_id', ownerListingIds),
+          supabaseService.getClient()
+            .from('marketplace_inquiries')
+            .select('id', { count: 'exact', head: true })
+            .in('listing_id', ownerListingIds),
+        ]);
+        totalFavorites = favCount || 0;
+        totalInquiries = inquiryCount || 0;
+      }
+      const totalViews = listings.reduce((sum, l) => sum + (l.views_count || 0), 0);
+      stats = {
+        totalListings: listings.length,
+        activeListings: activeListings.length,
+        soldListings: soldCount,
+        totalViews,
+        totalInquiries,
+        totalFavorites,
+        avgRating: roundedAvg,
+        totalReviews: allReviews.length,
+        isVerified,
+      };
+    } else {
+      // Public: no inquiries, favorites, views, or sold/inventory internals
+      stats = {
+        activeListings: activeListings.length,
+        avgRating: roundedAvg,
+        totalReviews: allReviews.length,
+        isVerified,
+      };
+    }
+
     const responseData = {
-        user: profile,
-        stats: {
-          totalListings: visibleListings.length,
-          activeListings: activeListings.length,
-          soldListings: soldListings.length,
-          totalViews,
-          totalInquiries,
-          totalFavorites,
-          avgRating: Math.round(avgRating * 10) / 10,
-          totalReviews: allReviews.length,
-          isVerified:
-            soldListings.length >= 5 && avgRating >= 4.5 && allReviews.length >= 3,
-        },
-        badges: [
-          ...(soldListings.length >= 5 && avgRating >= 4.5
-            ? [{ id: 'trusted_seller', label: 'Trusted seller', icon: 'shield' }]
-            : []),
-          ...(soldListings.length >= 10
-            ? [{ id: 'top_seller', label: 'Top seller', icon: 'star' }]
-            : []),
-        ],
-        recentListings: activeListings.slice(0, 6),
-        recentReviews: reviewsWithTitle,
+      user: profile,
+      stats,
+      badges,
+      recentListings: activeListings.slice(0, 6),
+      recentReviews: reviewsWithTitle,
     };
 
     await cacheService.set(cacheKey, responseData, CacheTTL.sellerProfile);

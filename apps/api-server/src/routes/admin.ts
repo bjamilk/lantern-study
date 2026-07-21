@@ -19,6 +19,7 @@ import { getAIUsage, resetAIUsageForUser, getAllAIUsageForUser } from '../middle
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
 import { setUserSessionCutoff } from '../services/tokenDenylist';
+import { clearAuthTokenCache } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 
@@ -396,6 +397,9 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
       }
       await setUserSessionCutoff(id);
     }
+
+    // SEC-09: drop JWT verification cache so grant/revoke is not delayed by TTL.
+    clearAuthTokenCache();
 
     res.json({ success: true, data: { id, is_platform_admin: isPlatformAdmin === true } });
   } catch (err: any) {
