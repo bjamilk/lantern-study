@@ -31,6 +31,9 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
       maxWidthClass="max-w-2xl"
       loading={isGenerating}
       closeOnBackdrop={!isGenerating}
+      alignClass="items-end sm:items-center"
+      paddingClass="p-0 sm:p-4"
+      panelClassName="rounded-t-2xl sm:rounded-lg max-h-[min(92dvh,920px)]"
     >
       <div className="flex justify-between items-center mb-4">
         <h2 id="generate-cards-modal-title" className="text-xl font-semibold text-lantern-text flex items-center">
@@ -57,8 +60,8 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
             id="notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={10}
-            className="w-full p-2 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
+            rows={8}
+            className="w-full p-2 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent min-h-[9rem] max-h-[40dvh]"
             placeholder="Paste your lecture notes, a chapter summary, or any text here..."
             required
           />
@@ -76,7 +79,7 @@ const GenerateFlashcardsModal: React.FC<GenerateFlashcardsModalProps> = ({ isOpe
             className="w-full min-h-[44px] p-2 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
           />
         </div>
-        <div className="flex justify-end gap-3 pt-2">
+        <div className="flex justify-end gap-3 pt-2 sticky bottom-0 bg-lantern-surface">
           <button
             type="button"
             onClick={onClose}

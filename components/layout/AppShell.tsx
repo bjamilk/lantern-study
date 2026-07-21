@@ -77,7 +77,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
     const bottomNavHidden = [
         AppMode.TEST_ACTIVE, AppMode.STUDY_ACTIVE, AppMode.GAME_ACTIVE,
         AppMode.GAME_RESULTS, AppMode.TEST_REVIEW,
-    ].includes(appMode);
+    ].includes(appMode) || isCompanionOpen;
 
   return (
     <div className="flex h-screen overflow-hidden bg-lantern-background text-lantern-text transition-colors">
@@ -93,7 +93,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             </div>
 
             {/* Main content area */}
-            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'pb-16'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && (
@@ -230,7 +230,8 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
 
             </main>
 
-            {/* Mobile bottom nav - hidden on desktop */}
+            {/* Mobile bottom nav - hidden on desktop and while AI companion / immersive modes are open */}
+            {!bottomNavHidden ? (
             <BottomNav
                 currentMode={appMode}
                 onNavigate={onNavigate}
@@ -248,6 +249,7 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                 pendingSyncCount={sidebarProps.pendingSyncCount}
                 lowDataMode={lowDataMode}
             />
+            ) : null}
         </div>
     );
 };

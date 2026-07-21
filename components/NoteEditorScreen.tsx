@@ -721,7 +721,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           </div>
         </div>
 
-        <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-6 lg:pb-6 ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
+        <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-[max(1.5rem,calc(1rem+env(safe-area-inset-bottom,0px)))] lg:pb-6 ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
           <NoteLearnPanel
             note={{ ...note, title, body }}
             studyContentLength={studyContentLength}

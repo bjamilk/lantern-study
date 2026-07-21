@@ -139,7 +139,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
       onClose={close}
       ariaLabelledBy="ai-companion-title"
       maxWidthClass="max-w-sm"
-      zIndexClass="z-50"
+      zIndexClass="z-[70]"
       backdropClassName="bg-black/20 md:hidden"
       panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
       loading={isBusy}
@@ -235,8 +235,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input area */}
-        <div className={`px-4 py-3 border-t flex-shrink-0
+        {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
+        <div className={`px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] border-t flex-shrink-0
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
           <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
             ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>

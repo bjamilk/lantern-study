@@ -29,7 +29,7 @@ export function Drawer({
   loading = false,
   closeOnBackdrop = true,
   panelClassName = '',
-  zIndexClass = 'z-50',
+  zIndexClass = 'z-[70]',
   backdropClassName = 'bg-black/40',
   side = 'right',
 }: DrawerProps) {
