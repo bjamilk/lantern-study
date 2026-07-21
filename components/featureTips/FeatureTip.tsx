@@ -17,6 +17,8 @@ type Position = {
 };
 
 const VIEW_MARGIN = 12;
+/** Keep tips clear of mobile bottom nav (+ optional cookie strip). */
+const BOTTOM_CHROME_RESERVE = 72;
 const TIP_GAP = 10;
 const ESTIMATED_TIP_HEIGHT = 200;
 
@@ -45,10 +47,14 @@ function placeTip(
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const bottomReserve = vw < 768 ? BOTTOM_CHROME_RESERVE : VIEW_MARGIN;
   const width = Math.min(tipWidth || 320, vw - VIEW_MARGIN * 2);
-  const height = Math.min(tipHeight || ESTIMATED_TIP_HEIGHT, vh - VIEW_MARGIN * 2);
+  const height = Math.min(
+    tipHeight || ESTIMATED_TIP_HEIGHT,
+    vh - VIEW_MARGIN - bottomReserve
+  );
 
-  const spaceBelow = vh - rect.bottom - TIP_GAP;
+  const spaceBelow = vh - bottomReserve - rect.bottom - TIP_GAP;
   const spaceAbove = rect.top - TIP_GAP;
   const placement: 'below' | 'above' =
     spaceBelow >= height || spaceBelow >= spaceAbove ? 'below' : 'above';
@@ -57,7 +63,7 @@ function placeTip(
     placement === 'below'
       ? rect.bottom + TIP_GAP
       : rect.top - TIP_GAP - height;
-  top = Math.max(VIEW_MARGIN, Math.min(top, vh - height - VIEW_MARGIN));
+  top = Math.max(VIEW_MARGIN, Math.min(top, vh - height - bottomReserve));
 
   const anchorCenterX = rect.left + rect.width / 2;
   let left = anchorCenterX - width / 2;
@@ -88,9 +94,23 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<Position | null>(null);
+  const [cookieBlocking, setCookieBlocking] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setCookieBlocking(false);
+      return;
+    }
+    const check = () => {
+      setCookieBlocking(Boolean(document.querySelector('[aria-label="Cookie notice"]')));
+    };
+    check();
+    const id = window.setInterval(check, 400);
+    return () => window.clearInterval(id);
+  }, [visible]);
 
   useLayoutEffect(() => {
-    if (!visible) {
+    if (!visible || cookieBlocking) {
       setPos(null);
       return;
     }
@@ -125,9 +145,9 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [visible, tipId, anchorSelector, tipsVersion]);
+  }, [visible, cookieBlocking, tipId, anchorSelector, tipsVersion]);
 
-  if (!visible || !copy) return null;
+  if (!visible || !copy || cookieBlocking) return null;
 
   return (
     <div
@@ -142,7 +162,7 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
     >
       <div
         ref={panelRef}
-        className={`pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] max-h-[min(22rem,calc(100vh-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-lantern-primary/40 bg-lantern-surface shadow-xl p-3.5 ${
+        className={`pointer-events-auto w-[min(20rem,calc(100vw-1.5rem))] max-h-[min(22rem,calc(100vh-5.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-lantern-primary/40 bg-lantern-surface shadow-xl p-3.5 ${
           reduceMotion ? '' : 'animate-in fade-in zoom-in-95 duration-200'
         }`}
       >
@@ -158,25 +178,25 @@ export const FeatureTip: React.FC<FeatureTipProps> = ({
           />
         )}
         <p className="text-sm font-semibold text-lantern-text mb-1">{copy.title}</p>
-        <p className="text-xs text-lantern-text-secondary leading-relaxed mb-3">{copy.body}</p>
+        <p className="text-xs text-lantern-text-secondary leading-relaxed mb-3 break-words">{copy.body}</p>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-lantern-primary text-white hover:opacity-90"
+            className="min-h-10 px-3 py-2 text-xs font-medium rounded-md bg-lantern-primary text-white hover:opacity-90"
             onClick={() => dismiss(tipId)}
           >
             {copy.gotItLabel || 'Got it'}
           </button>
           <button
             type="button"
-            className="px-2 py-1.5 text-xs font-medium rounded-md text-lantern-text-secondary hover:bg-lantern-background-secondary"
+            className="min-h-10 px-2 py-2 text-xs font-medium rounded-md text-lantern-text-secondary hover:bg-lantern-background-secondary"
             onClick={() => dontShowAgain()}
           >
             {copy.dontShowAgainLabel || "Don't show again"}
           </button>
           <button
             type="button"
-            className="ml-auto px-2 py-1.5 text-xs text-lantern-text-tertiary hover:text-lantern-text-secondary"
+            className="ml-auto min-h-10 px-2 py-2 text-xs text-lantern-text-tertiary hover:text-lantern-text-secondary"
             onClick={() => skipAll()}
           >
             Skip all

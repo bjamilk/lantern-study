@@ -37,4 +37,12 @@ describe('getDashboardFirstName', () => {
       })
     ).toBe('Mindi');
   });
+
+  it('does not use long email-like local parts as a greeting name', () => {
+    expect(
+      getDashboardFirstName({
+        name: 'responsive.audit.1784645242',
+      })
+    ).toBe('Student');
+  });
 });

@@ -217,6 +217,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const [resendLoading, setResendLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [authSubmitLoading, setAuthSubmitLoading] = useState(false);
+  const [editingVerifyEmail, setEditingVerifyEmail] = useState(true);
+
+  useEffect(() => {
+    if (!isVerifyEmailView) return;
+    // Prefilled (post-signup): show wrapping display. Cold visit: keep the editable field.
+    setEditingVerifyEmail(!email.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reset edit mode when entering verify view
+  }, [isVerifyEmailView]);
 
   const formatAuthError = (err: unknown, context: 'signup' | 'resend' | 'reset' | 'login' = 'login'): string => {
     if (isAuthRateLimitError(err)) {
@@ -302,6 +310,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
   const goToVerifyEmail = (verifyEmail: string) => {
     setEmail(verifyEmail);
+    setEditingVerifyEmail(!verifyEmail.trim());
     setOtpCode('');
     setVerifyMessage('');
     setError('');
@@ -821,7 +830,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 </h1>
                 <p className="mt-2 text-sm text-lantern-text-secondary">
                     {isVerifyEmailView
-                      ? `Enter the 6-digit code sent to ${email || 'your email'}. You can also confirm via the link in the email.`
+                      ? 'Enter the 6-digit code sent to your email. You can also confirm via the link in the email.'
                       : isForgotPasswordView
                         ? 'Enter your email to receive a reset link.'
                         : isLoginView
@@ -829,15 +838,52 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                           : 'Join us to illuminate your mind.'}
                 </p>
 
-                <form className="mt-8 space-y-5" onSubmit={handleAuthAction} noValidate aria-describedby={error ? 'auth-form-error' : undefined}>
+                <form className="mt-8 space-y-5 min-w-0" onSubmit={handleAuthAction} noValidate aria-describedby={error ? 'auth-form-error' : undefined}>
                     {isVerifyEmailView && (
                         <>
-                            <div>
+                            <div className="min-w-0">
                                 <label htmlFor="verifyEmail" className="sr-only">Email address</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                    <input id="verifyEmail" name="verifyEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
-                                </div>
+                                {email.trim() ? (
+                                  <p
+                                    className="mb-2 rounded-lg border border-lantern-border bg-lantern-background dark:bg-lantern-surface-secondary px-3 py-2.5 text-sm text-lantern-text break-all"
+                                    data-testid="verify-email-display"
+                                  >
+                                    {email}
+                                  </p>
+                                ) : null}
+                                {editingVerifyEmail || !email.trim() ? (
+                                  <div className="relative min-w-0">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                      <AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" />
+                                    </div>
+                                    <input
+                                      id="verifyEmail"
+                                      name="verifyEmail"
+                                      type="email"
+                                      autoComplete="email"
+                                      required
+                                      value={email}
+                                      onChange={(e) => setEmail(e.target.value)}
+                                      onBlur={() => {
+                                        if (email.trim()) setEditingVerifyEmail(false);
+                                      }}
+                                      title={email}
+                                      className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm"
+                                      placeholder="Email address"
+                                    />
+                                  </div>
+                                ) : (
+                                  <>
+                                    <input type="hidden" name="verifyEmail" value={email} required />
+                                    <button
+                                      type="button"
+                                      className="min-h-10 text-xs text-lantern-primary underline"
+                                      onClick={() => setEditingVerifyEmail(true)}
+                                    >
+                                      Edit email
+                                    </button>
+                                  </>
+                                )}
                             </div>
                             <div>
                                 <label htmlFor="otpCode" className="sr-only">Verification code</label>
@@ -860,20 +906,20 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                     {!isForgotPasswordView && !isVerifyEmailView && (
                         <>
                             {!isLoginView && (
-                            <div className="space-y-5">
-                                    <div className="flex space-x-4">
-                                        <div className="w-1/2">
+                            <div className="space-y-5 min-w-0">
+                                    <div className="flex gap-2 sm:gap-4 min-w-0">
+                                        <div className="w-1/2 min-w-0">
                                             <label htmlFor="firstName" className="sr-only">First Name</label>
-                                            <div className="relative">
+                                            <div className="relative min-w-0">
                                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="firstName" name="firstName" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="First Name"/>
+                                                <input id="firstName" name="firstName" type="text" autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} title={firstName} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="First Name"/>
                                             </div>
                                         </div>
-                                        <div className="w-1/2">
+                                        <div className="w-1/2 min-w-0">
                                             <label htmlFor="lastName" className="sr-only">Last Name</label>
-                                            <div className="relative">
+                                            <div className="relative min-w-0">
                                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><UserIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="lastName" name="lastName" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Last Name"/>
+                                                <input id="lastName" name="lastName" type="text" autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} title={lastName} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Last Name"/>
                                             </div>
                                         </div>
                                     </div>
@@ -922,11 +968,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                     </div>
                                     <div>
                                         <label htmlFor="phone" className="sr-only">Phone Number</label>
-                                        <div className="flex">
+                                        <div className="flex min-w-0">
                                             <select
                                                 value={countryCode}
                                                 onChange={(e) => setCountryCode(e.target.value)}
-                                                className="w-24 px-3 py-2.5 border border-lantern-border rounded-l-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+                                                className="w-20 sm:w-24 shrink-0 px-2 sm:px-3 py-2.5 border border-lantern-border rounded-l-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
                                             >
                                                 {countryCodes.map((country) => (
                                                     <option key={country.code} value={country.code}>
@@ -934,9 +980,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                                     </option>
                                                 ))}
                                             </select>
-                                            <div className="relative flex-1">
+                                            <div className="relative flex-1 min-w-0">
                                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><PhoneIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Phone Number"/>
+                                                <input id="phone" name="phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className="w-full min-w-0 pl-10 pr-3 py-2.5 border-l-0 border border-lantern-border rounded-r-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Phone Number"/>
                                             </div>
                                         </div>
                                     </div>
@@ -947,7 +993,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 <label htmlFor="email" className="sr-only">Email address</label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
-                                    <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
+                                    <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} title={email} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Email address"/>
                                 </div>
                             </div>
                             

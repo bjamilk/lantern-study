@@ -54,22 +54,34 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
 
     setUsernameError('');
     setCheckingUsername(true);
+    let cancelled = false;
 
     const timeoutId = setTimeout(async () => {
       try {
-        const available = await checkUsernameAvailability(normalizedUsername);
+        const available = await Promise.race([
+          checkUsernameAvailability(normalizedUsername),
+          new Promise<boolean>((_, reject) =>
+            setTimeout(() => reject(new Error('Username availability check timed out')), 8000)
+          ),
+        ]);
+        if (cancelled) return;
         setUsernameAvailable(available);
         if (!available) {
           setUsernameError('Username is already taken');
         }
       } catch (err) {
         console.error('Username check failed:', err);
+        // Don't hard-block Save if the availability probe fails; server still validates.
+        if (!cancelled) setUsernameAvailable(null);
       } finally {
-        setCheckingUsername(false);
+        if (!cancelled) setCheckingUsername(false);
       }
     }, 500);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [username]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -135,12 +147,12 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="p-6 space-y-5 bg-lantern-surface">
-        <div className="flex gap-4">
-          <div className="w-1/2">
+        <div className="flex gap-2 sm:gap-4 min-w-0">
+          <div className="w-1/2 min-w-0">
             <label htmlFor="modalFirstName" className="block text-sm font-medium text-lantern-text mb-1">
               First Name
             </label>
-            <div className="relative">
+            <div className="relative min-w-0">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <UserIcon className="h-5 w-5 text-lantern-text-muted" aria-hidden />
               </div>
@@ -149,16 +161,17 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                className="w-full min-h-[44px] pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+                title={firstName}
+                className="w-full min-w-0 min-h-[44px] pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm"
                 placeholder="First"
               />
             </div>
           </div>
-          <div className="w-1/2">
+          <div className="w-1/2 min-w-0">
             <label htmlFor="modalLastName" className="block text-sm font-medium text-lantern-text mb-1">
               Last Name
             </label>
-            <div className="relative">
+            <div className="relative min-w-0">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <UserIcon className="h-5 w-5 text-lantern-text-muted" aria-hidden />
               </div>
@@ -167,7 +180,8 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                className="w-full min-h-[44px] pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+                title={lastName}
+                className="w-full min-w-0 min-h-[44px] pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-surface text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm"
                 placeholder="Last"
               />
             </div>
@@ -228,7 +242,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
 
         <button
           type="submit"
-          disabled={isSubmitting || !username || !firstName || !lastName || usernameAvailable === false || checkingUsername}
+          disabled={isSubmitting || !username.trim() || !firstName.trim() || !lastName.trim() || usernameAvailable === false}
           className="w-full min-h-[44px] flex justify-center py-3 px-4 text-sm font-semibold rounded-lg text-white bg-lantern-primary hover:bg-lantern-primary-dark focus:outline-none focus:ring-2 focus:ring-lantern-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSubmitting ? (

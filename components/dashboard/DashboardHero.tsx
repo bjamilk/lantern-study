@@ -50,9 +50,13 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
       <div className="w-full">
         <Card className={`${lowDataMode ? 'border-l-4 border-l-lantern-accent' : 'border-l-4 border-l-lantern-primary border border-lantern-primary/20 bg-gradient-to-br from-lantern-primary/[0.14] via-lantern-primary-background/80 to-lantern-accent/[0.12]'}`} padding="lg" variant="elevated">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-lantern-text">
-                {greeting}, {userName}
+            <div className="min-w-0">
+              <h1
+                className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-lantern-text break-words"
+                title={`${greeting}, ${userName}`}
+              >
+                {greeting},{' '}
+                <span className="inline-block max-w-full align-bottom truncate">{userName}</span>
               </h1>
               <p className="text-lantern-text-secondary mt-1.5 text-sm md:text-base leading-relaxed">
                 {dueCardsCount > 0

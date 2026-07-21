@@ -31,8 +31,11 @@ export function getDashboardFirstName(
     const looksLikeUsername =
       Boolean(username) &&
       (normalizedName === username || normalizedName === `@${username}`);
+    const looksLikeEmailLocal =
+      fullName.includes('@') ||
+      (fullName.length > 20 && !/\s/.test(fullName) && fullName.includes('.'));
 
-    if (!looksLikeUsername) {
+    if (!looksLikeUsername && !looksLikeEmailLocal) {
       const firstWord = fullName.split(/\s+/)[0];
       if (firstWord) return firstWord;
     }

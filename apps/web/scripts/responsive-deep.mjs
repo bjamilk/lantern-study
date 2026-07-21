@@ -84,9 +84,24 @@ for (const vp of viewports) {
   if (vp.w < 768) {
     await page.goto(`${BASE}/dashboard`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(600);
-    const more = page.getByRole('button', { name: /more/i }).first();
+    for (const label of ['Accept all', 'Essential only', 'Skip for now', 'Got it', 'Skip all']) {
+      const b = page.getByRole('button', { name: new RegExp(`^${label}$`, 'i') }).first();
+      if (await b.isVisible().catch(() => false)) await b.click().catch(() => {});
+    }
+    const profileTitle = page.getByRole('heading', { name: /complete your profile/i });
+    if (await profileTitle.isVisible().catch(() => false)) {
+      const stamp = Date.now().toString(36).slice(-6);
+      await page.locator('#modalFirstName').fill('Responsive').catch(() => {});
+      await page.locator('#modalLastName').fill('Auditor').catch(() => {});
+      await page.locator('#modalUsername').fill(`rqa_${stamp}`).catch(() => {});
+      await page.waitForTimeout(1200);
+      const save = page.getByRole('button', { name: /save & continue/i });
+      if (await save.isEnabled().catch(() => false)) await save.click().catch(() => {});
+      await page.waitForTimeout(800);
+    }
+    const more = page.locator('[aria-label="More"]').first();
     if (await more.isVisible().catch(() => false)) {
-      await more.click();
+      await more.click({ force: true }).catch(() => {});
       await page.waitForTimeout(400);
       const menu = page.locator('[role="menu"], [data-radix-menu-content], .lantern-menu').first();
       const visible = await menu.isVisible().catch(() => false);
@@ -95,7 +110,6 @@ for (const vp of viewports) {
       await page.screenshot({ path: path.join(OUT, `more_${vp.w}.png`) }).catch(() => {});
       await page.keyboard.press('Escape').catch(() => {});
       if (!visible) {
-        // Menu might render as absolute panel without role=menu
         const panelText = await page.locator('body').innerText();
         if (!/Settings|Budget|Marketplace|Offline/i.test(panelText)) {
           fail({ case: 'more-menu-empty', ...vp });
@@ -167,7 +181,7 @@ await page.setViewportSize({ width: 320, height: 700 });
 await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
 await page.fill('#email', 'verylongemailaddressforoverflowtesting.user.name.extra@example-institution.edu');
 await page.fill('#password', 'x'.repeat(40));
-ov = await docOverflow(page);
+let ov = await docOverflow(page);
 if (ov.has) fail({ case: 'login-long-email-overflow', overflow: ov.overflow });
 await page.screenshot({ path: path.join(OUT, 'login_long_email_320.png') });
 

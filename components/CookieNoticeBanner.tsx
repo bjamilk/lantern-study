@@ -150,36 +150,43 @@ export function CookieNoticeBanner() {
         <div
           role="region"
           aria-label="Cookie notice"
-          className="fixed inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-4 py-3 shadow-lg bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:bottom-0"
+          className="fixed inset-x-0 z-[80] border-t border-lantern-border bg-lantern-surface/95 dark:bg-lantern-background/95 backdrop-blur px-3 py-2.5 sm:px-4 sm:py-3 shadow-lg bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] md:bottom-0 max-h-[min(38vh,16rem)] overflow-y-auto"
         >
-          <div className="max-w-4xl mx-auto flex flex-col gap-3 text-sm text-lantern-text">
-            <p className="min-w-0 leading-snug">
-              Lantern Study uses strictly necessary cookies and local storage so the site works (sign-in, theme, and
-              remembering your choices). Optional analytics, functional, and advertising cookies are off by default and
-              not currently deployed.{' '}
+          <div className="max-w-4xl mx-auto flex flex-col gap-2 sm:gap-3 text-sm text-lantern-text">
+            <p className="min-w-0 leading-snug text-xs sm:text-sm">
+              <span className="sm:hidden">
+                We use necessary cookies for sign-in and preferences. Optional cookies stay off unless you enable them.{' '}
+              </span>
+              <span className="hidden sm:inline">
+                Lantern Study uses strictly necessary cookies and local storage so the site works (sign-in, theme, and
+                remembering your choices). Optional analytics, functional, and advertising cookies are off by default and
+                not currently deployed.{' '}
+              </span>
               <Link to="/cookies" className="underline text-lantern-primary">
                 Cookie Policy
               </Link>
             </p>
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:justify-end">
+            <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-row sm:flex-wrap sm:gap-2 sm:justify-end">
               <button
                 type="button"
                 onClick={openCenter}
-                className="shrink-0 min-h-[44px] rounded-lg border border-lantern-border px-4 py-2 text-sm font-medium hover:bg-lantern-surface"
+                className="min-w-0 min-h-[44px] rounded-lg border border-lantern-border px-1.5 sm:px-4 py-2 text-[11px] sm:text-sm font-medium hover:bg-lantern-surface leading-tight"
               >
-                Manage preferences
+                <span className="sm:hidden">Manage</span>
+                <span className="hidden sm:inline">Manage preferences</span>
               </button>
               <button
                 type="button"
                 onClick={() => persistAndClose(essentialOnlyCookiePreferences())}
-                className="shrink-0 min-h-[44px] rounded-lg border border-lantern-border px-4 py-2 text-sm font-medium hover:bg-lantern-surface"
+                className="min-w-0 min-h-[44px] rounded-lg border border-lantern-border px-1.5 sm:px-4 py-2 text-[11px] sm:text-sm font-medium hover:bg-lantern-surface leading-tight"
               >
-                Essential only
+                <span className="sm:hidden">Essential</span>
+                <span className="hidden sm:inline">Essential only</span>
               </button>
               <button
                 type="button"
                 onClick={() => persistAndClose(acceptAllCookiePreferences())}
-                className="shrink-0 min-h-[44px] rounded-lg bg-lantern-primary hover:bg-lantern-primary text-white px-4 py-2 text-sm font-medium"
+                className="min-w-0 min-h-[44px] rounded-lg bg-lantern-primary hover:bg-lantern-primary text-white px-1.5 sm:px-4 py-2 text-[11px] sm:text-sm font-medium leading-tight"
               >
                 Accept all
               </button>

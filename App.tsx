@@ -1474,7 +1474,7 @@ export const App: React.FC = () => {
                     />
                 </Suspense>
             )}
-            {showOnboarding && currentUser && (
+            {showOnboarding && currentUser && !modals.usernameRequired && (
                 <Suspense fallback={null}>
                     <OnboardingFlow
                         isOpen={showOnboarding}
