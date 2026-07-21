@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validatePagination, validateListingId, validateMarketplaceListingWrite, validateMarketplaceListingUpdate, validateUserId } from '../middleware/validation';
+import { requireAuthUserId } from '../utils/requestAuth';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -162,6 +164,52 @@ router.get(
       success: true,
       data: listing,
     });
+  })
+);
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
+
+// POST /api/v1/marketplace/upload-image — SEC-07 server-side MIME + magic-byte validation
+router.post(
+  '/upload-image',
+  authMiddleware,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { fileName, base64Data, contentType, listingId } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    const normalizedType = contentType === 'image/jpg' ? 'image/jpeg' : contentType;
+    if (!normalizedType || !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+    const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
+    if (estimatedBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+
+    try {
+      const result = await supabaseService.uploadMarketplaceImage({
+        fileName,
+        base64Data,
+        contentType: normalizedType,
+        userId,
+        listingId: typeof listingId === 'string' ? listingId : undefined,
+      });
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      logger.error('Failed to upload marketplace image', { error, userId });
+      res.status(400).json({
+        success: false,
+        error: clientErrorMessage(error, 'Failed to upload image'),
+      });
+    }
   })
 );
 

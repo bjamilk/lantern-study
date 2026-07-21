@@ -138,6 +138,7 @@ let _dataExportRateLimit: RateLimitRequestHandler | null = null;
 let _contactFormRateLimit: RateLimitRequestHandler | null = null;
 let _searchRateLimit: RateLimitRequestHandler | null = null;
 let _usernameCheckRateLimit: RateLimitRequestHandler | null = null;
+let _collaboratorInviteRateLimit: RateLimitRequestHandler | null = null;
 let _storageBurstRateLimit: RateLimitRequestHandler | null = null;
 let _authLoginRateLimit: RateLimitRequestHandler | null = null;
 let _authSessionRateLimit: RateLimitRequestHandler | null = null;
@@ -320,6 +321,14 @@ function buildAllLimiters(): void {
     keyScope: 'ip',
     redisPrefix: 'unamechk',
   });
+
+  _collaboratorInviteRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: prodOrDev(10, 60),
+    message: 'Too many collaborator invites. Please wait before trying again.',
+    keyScope: 'user',
+    redisPrefix: 'collabinvite',
+  });
 }
 
 buildAllLimiters();
@@ -384,6 +393,10 @@ export const searchRateLimit: RequestHandler = (req, res, next) => {
 
 export const usernameCheckRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_usernameCheckRateLimit, 'usernameCheckRateLimit')(req, res, next);
+};
+
+export const collaboratorInviteRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_collaboratorInviteRateLimit, 'collaboratorInviteRateLimit')(req, res, next);
 };
 
 export const authLoginRateLimit: RequestHandler = (req, res, next) => {

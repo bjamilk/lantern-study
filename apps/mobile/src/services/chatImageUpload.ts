@@ -1,38 +1,27 @@
-import { supabase } from './supabase';
+import * as FileSystem from 'expo-file-system';
 import { assertAllowedImageUpload } from '@lantern/shared';
-
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
+import { api } from './api';
 
 export async function uploadChatImage(
   uri: string,
   mimeType?: string | null,
   chatId?: string
 ): Promise<{ url: string }> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) throw new Error('Must be signed in to upload images');
+  const contentType =
+    (mimeType || 'image/jpeg') === 'image/jpg' ? 'image/jpeg' : mimeType || 'image/jpeg';
+  const info = await FileSystem.getInfoAsync(uri);
+  const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
+  assertAllowedImageUpload({ contentType, byteLength: byteLength || undefined });
 
-  const response = await fetch(uri);
-  const blob = await response.blob();
-  const resolvedMime = mimeType || blob.type || 'image/jpeg';
-  assertAllowedImageUpload({ contentType: resolvedMime, byteLength: blob.size });
-
-  const ext = resolvedMime.split('/')[1] || 'jpg';
+  const base64Data = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+  const ext = contentType.split('/')[1] || 'jpg';
   const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const filePath = `${user.id}/chat/${chatId || 'general'}/${fileName}`;
 
-  const { error } = await supabase.storage.from('note-files').upload(filePath, blob, {
-    contentType: resolvedMime,
-    upsert: false,
+  const result = await api.uploadChatImage({
+    fileName,
+    base64Data,
+    contentType,
+    groupId: chatId,
   });
-  if (error) throw error;
-
-  const { data: signed, error: signError } = await supabase.storage
-    .from('note-files')
-    .createSignedUrl(filePath, SIGNED_URL_TTL_SECONDS);
-
-  if (signError || !signed?.signedUrl) {
-    throw signError ?? new Error('Failed to create signed URL for chat image');
-  }
-
-  return { url: signed.signedUrl };
+  return { url: result.url };
 }

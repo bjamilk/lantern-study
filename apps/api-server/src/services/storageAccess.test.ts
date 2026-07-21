@@ -57,4 +57,22 @@ describe('canAccessStorageObject profile-avatars', () => {
     expect(allowed).toBe(true);
     expect(visibilitySpy).toHaveBeenCalledWith('viewer', 'target');
   });
+
+  it('denies unknown buckets (no fail-open)', async () => {
+    const allowed = await service.canAccessStorageObject(
+      'user-a',
+      'totally-unknown-bucket',
+      'user-a/secret.bin'
+    );
+    expect(allowed).toBe(false);
+  });
+
+  it('denies path traversal attempts', async () => {
+    const allowed = await service.canAccessStorageObject(
+      'user-a',
+      'note-files',
+      'user-a/../other/file.png'
+    );
+    expect(allowed).toBe(false);
+  });
 });

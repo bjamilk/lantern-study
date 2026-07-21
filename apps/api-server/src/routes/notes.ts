@@ -2,7 +2,11 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { requireNoteAccess } from '../middleware/authorizeResource';
 import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
-import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
+import {
+  aiPostBurstRateLimit,
+  collaboratorInviteRateLimit,
+  uploadBurstRateLimit,
+} from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
 import {
@@ -1150,7 +1154,10 @@ router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Resp
   res.json({ success: true, data: collaborators });
 }));
 
-router.post('/:noteId/collaborators', asyncHandler(async (req: Request, res: Response) => {
+router.post(
+  '/:noteId/collaborators',
+  collaboratorInviteRateLimit,
+  asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { collaboratorUserId, role } = req.body;
@@ -1167,11 +1174,20 @@ router.post('/:noteId/collaborators', asyncHandler(async (req: Request, res: Res
     );
     res.json({ success: true, data: collab });
   } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
     const message = error instanceof Error ? error.message : 'Failed to add collaborator.';
-    const status = message.includes('not found') || message.includes('Enter a') || message.includes('Multiple users') || message.includes('cannot add yourself')
-      ? 400
-      : 500;
-    res.status(status).json({ error: message });
+    const clientSafe =
+      code === 'collaborator_not_found' ||
+      code === 'collaborator_invalid' ||
+      code === 'collaborator_ambiguous' ||
+      message.includes('cannot add yourself') ||
+      message.includes('Only the note owner');
+    // SEC-06: never echo distinct "email not found" style messages.
+    res.status(clientSafe ? 400 : 500).json({
+      error: clientSafe
+        ? message
+        : 'Unable to add that collaborator. Check the @username and try again.',
+    });
   }
 }));
 

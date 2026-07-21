@@ -222,7 +222,7 @@ app.use(loadShedMiddleware);
 
 // Body parsing middleware — large routes MUST be registered before the 1mb default
 app.use(
-  /^\/api\/v1\/(flashcards|marketplace)\/.*upload/,
+  /^\/api\/v1\/(flashcards|marketplace|messages)\/.*upload/,
   express.json({
     limit: '50mb',
     verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },

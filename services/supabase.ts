@@ -3446,57 +3446,61 @@ export const uploadFlashcardImage = async (file: File) => {
   return { url, path: filePath };
 };
 
-/** Upload a question attachment; path must be scoped under auth uid for storage RLS. */
+async function fileToBase64Payload(file: File): Promise<{
+  fileName: string;
+  base64Data: string;
+  contentType: string;
+}> {
+  const contentType = file.type || 'image/jpeg';
+  const base64Data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+  return {
+    fileName: file.name || `upload-${Date.now()}.jpg`,
+    base64Data,
+    contentType: contentType === 'image/jpg' ? 'image/jpeg' : contentType,
+  };
+}
+
+/** Upload a question attachment via API (SEC-07 magic-byte validation). */
 export const uploadQuestionImage = async (file: File) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) throw new Error('Must be signed in to upload images');
-
-  const fileExt = file.name.split('.').pop() || 'jpg';
-  const fileName = `question-${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-  const filePath = `${user.id}/questions/${fileName}`;
-
-  const { error } = await supabase.storage
-    .from('question-images')
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
-
-  if (error) {
-    console.error('Error uploading question image:', error);
-    throw new Error(error.message);
+  const headers = await getAuthHeaders();
+  if (!headers.Authorization) throw new Error('Must be signed in to upload images');
+  const payload = await fileToBase64Payload(file);
+  const response = await fetch(`${getApiRoot()}/api/v1/messages/upload-question-image`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json?.success) {
+    throw new Error(json?.error || 'Failed to upload question image');
   }
-
-  const url = await fetchSignedStorageUrl('question-images', filePath);
-  return { url, path: filePath };
+  return json.data as { url: string; path: string };
 };
 
+/** Upload a marketplace listing image via API (SEC-07 magic-byte validation). */
 export const uploadMarketplaceImage = async (file: File, listingId?: string) => {
-  console.log('Uploading marketplace image:', file.name);
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.id) throw new Error('Must be signed in to upload images');
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = listingId
-      ? `${user.id}/listings/${listingId}/${fileName}`
-      : `${user.id}/temp/${fileName}`;
-
-    const { data, error } = await supabase.storage
-      .from('marketplace-images')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const url = await fetchSignedStorageUrl('marketplace-images', filePath);
-    console.log('Image uploaded successfully:', url);
-    return { url, path: filePath };
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    throw error;
+  const headers = await getAuthHeaders();
+  if (!headers.Authorization) throw new Error('Must be signed in to upload images');
+  const payload = await fileToBase64Payload(file);
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/upload-image`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, listingId }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || !json?.success) {
+    throw new Error(json?.error || 'Failed to upload marketplace image');
   }
+  return json.data as { url: string; path: string };
 };
 
 export const deleteMarketplaceImage = async (filePath: string) => {

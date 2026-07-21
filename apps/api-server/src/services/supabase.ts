@@ -146,6 +146,12 @@ export class SupabaseService {
     path: string,
     expiresInSeconds = 60 * 60 * 24
   ): Promise<string> {
+    if (!isPrivateStorageBucket(bucket)) {
+      throw new Error('Signing is only allowed for known private storage buckets');
+    }
+    if (!path || path.includes('..') || path.startsWith('/') || path.includes('\\')) {
+      throw new Error('Invalid storage path');
+    }
     const ttl = clampSignedUrlTtl(expiresInSeconds);
     const { data, error } = await this.supabase.storage
       .from(bucket)
@@ -159,6 +165,7 @@ export class SupabaseService {
   async signStorageDisplayUrl(url: string, expiresInSeconds = 60 * 60 * 24): Promise<string> {
     if (!url || url.startsWith('data:')) return url;
     const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
+    // Unknown / non-private buckets: never mint service-role signed URLs for them.
     if (!parsed || !isPrivateStorageBucket(parsed.bucket)) {
       return this.normalizeStorageUrl(url);
     }
@@ -170,12 +177,18 @@ export class SupabaseService {
     bucket: string,
     path: string
   ): Promise<boolean> {
-    if (!isPrivateStorageBucket(bucket)) return true;
-    const ownerId = path.split('/')[0];
+    // SEC-05: deny-by-default — never grant access to unknown / non-allowlisted buckets.
+    if (!isPrivateStorageBucket(bucket)) return false;
+    if (!path || path.includes('..') || path.startsWith('/') || path.includes('\\')) {
+      return false;
+    }
+
+    const parts = path.split('/').filter(Boolean);
+    const ownerId = parts[0];
+    if (!ownerId) return false;
     if (userId && ownerId === userId) return true;
 
     if (bucket === 'marketplace-images') {
-      const parts = path.split('/');
       if (parts[1] === 'listings' && parts[2]) {
         const listingId = parts[2];
         const { data } = await this.supabase
@@ -200,7 +213,11 @@ export class SupabaseService {
     }
 
     if (bucket === 'note-files') {
-      return !!userId && ownerId === userId;
+      // Chat attachments: {ownerId}/chat/{groupId}/...
+      if (userId && parts[1] === 'chat' && parts[2]) {
+        return this.isGroupMember(parts[2], userId);
+      }
+      return false;
     }
 
     if (bucket === 'profile-avatars') {
@@ -589,25 +606,39 @@ export class SupabaseService {
     return mapProfileRowToUser(data as Record<string, unknown>);
   }
 
-  /** Resolve a UUID, @username, email, or display name to a profile id. */
+  /**
+   * Resolve a UUID, @username, email, or display name to a profile id.
+   * SEC-06: resolution failures use one generic message (no email/ID existence leak).
+   */
   async resolveCollaboratorUserId(identifier: string): Promise<string> {
     const trimmed = identifier.trim();
+    const notFound = () => {
+      const err = new Error(
+        'Unable to add that collaborator. Check the @username and try again.'
+      ) as Error & { code?: string };
+      err.code = 'collaborator_not_found';
+      throw err;
+    };
+
     if (!trimmed) {
-      throw new Error('Enter a username, email, or user ID.');
+      const err = new Error('Enter a @username to add a collaborator.') as Error & { code?: string };
+      err.code = 'collaborator_invalid';
+      throw err;
     }
 
     const uuidPattern =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (uuidPattern.test(trimmed)) {
       const user = await this.getUserById(trimmed);
-      if (!user) throw new Error('No user found with that ID.');
-      return user.id;
+      if (!user) notFound();
+      return user!.id;
     }
 
+    // Email lookups must not reveal whether the address is registered (SEC-06).
     if (trimmed.includes('@') && trimmed.includes('.')) {
       const user = await this.getUserByEmail(trimmed);
-      if (!user) throw new Error('No user found with that email.');
-      return user.id;
+      if (!user) notFound();
+      return user!.id;
     }
 
     const username = trimmed.replace(/^@/, '').toLowerCase();
@@ -622,10 +653,15 @@ export class SupabaseService {
     const matches = await this.getUsers({ search: trimmed, limit: 5 });
     if (matches.length === 1) return matches[0].id;
     if (matches.length > 1) {
-      throw new Error('Multiple users match. Use @username or email instead.');
+      const err = new Error(
+        'Multiple users match that name. Use an exact @username instead.'
+      ) as Error & { code?: string };
+      err.code = 'collaborator_ambiguous';
+      throw err;
     }
 
-    throw new Error('No user found. Try @username or their email address.');
+    notFound();
+    return ''; // unreachable
   }
 
   async createUser(userData: Partial<User> & {
@@ -2294,6 +2330,118 @@ export class SupabaseService {
 
     return {
       url: signedUrl,
+      path: filePath,
+    };
+  }
+
+  /** SEC-07: marketplace images — magic-byte validated server upload. */
+  async uploadMarketplaceImage(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+    listingId?: string;
+  }): Promise<{ url: string; path: string }> {
+    const bucket = 'marketplace-images';
+    const timestamp = Date.now();
+    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
+    const listingSegment = params.listingId
+      ? `listings/${params.listingId.replace(/[^a-zA-Z0-9_-]/g, '')}/`
+      : 'temp/';
+    const filePath = `${ownerPrefix}${listingSegment}${timestamp}-${safeName}`;
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image exceeds 10 MB limit');
+    }
+    assertImageMagicBytes(buffer, params.contentType);
+
+    const { error } = await this.supabase.storage.from(bucket).upload(filePath, buffer, {
+      contentType: params.contentType,
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) {
+      logger.error('Error uploading marketplace image:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    return {
+      url: await this.createSignedStorageUrl(bucket, filePath),
+      path: filePath,
+    };
+  }
+
+  /** SEC-07: chat images stored under note-files/{userId}/chat/{groupId}/... */
+  async uploadChatImage(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+    groupId?: string;
+  }): Promise<{ url: string; path: string }> {
+    const bucket = 'note-files';
+    const timestamp = Date.now();
+    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
+    const chatId = (params.groupId || 'general').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (params.groupId) {
+      const member = await this.isGroupMember(params.groupId, params.userId);
+      if (!member) throw new Error('Not a member of this group');
+    }
+    const filePath = `${ownerPrefix}chat/${chatId}/${timestamp}-${safeName}`;
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image exceeds 10 MB limit');
+    }
+    assertImageMagicBytes(buffer, params.contentType);
+
+    const { error } = await this.supabase.storage.from(bucket).upload(filePath, buffer, {
+      contentType: params.contentType,
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) {
+      logger.error('Error uploading chat image:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    return {
+      url: await this.createSignedStorageUrl(bucket, filePath, 60 * 60 * 24 * 7),
+      path: filePath,
+    };
+  }
+
+  /** SEC-07: question/message images — magic-byte validated server upload. */
+  async uploadQuestionImage(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+  }): Promise<{ url: string; path: string }> {
+    const bucket = 'question-images';
+    const timestamp = Date.now();
+    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
+    const filePath = `${ownerPrefix}questions/${timestamp}-${safeName}`;
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image exceeds 10 MB limit');
+    }
+    assertImageMagicBytes(buffer, params.contentType);
+
+    const { error } = await this.supabase.storage.from(bucket).upload(filePath, buffer, {
+      contentType: params.contentType,
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) {
+      logger.error('Error uploading question image:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    return {
+      url: await this.createSignedStorageUrl(bucket, filePath),
       path: filePath,
     };
   }

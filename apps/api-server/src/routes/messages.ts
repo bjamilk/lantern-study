@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePagination } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -10,6 +11,8 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { AuthenticatedRequest, Message } from '../types';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 
 const router = Router();
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
@@ -26,6 +29,93 @@ export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheS
   supabaseService = supabase;
   cacheService = cache;
 };
+
+// POST /api/v1/messages/upload-image — SEC-07 chat image upload with magic-byte checks
+router.post(
+  '/upload-image',
+  authMiddleware,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { fileName, base64Data, contentType, groupId } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    const normalizedType = contentType === 'image/jpg' ? 'image/jpeg' : contentType;
+    if (!normalizedType || !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+    const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
+    if (estimatedBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+
+    try {
+      const result = await supabaseService.uploadChatImage({
+        fileName,
+        base64Data,
+        contentType: normalizedType,
+        userId,
+        groupId: typeof groupId === 'string' ? groupId : undefined,
+      });
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      logger.error('Failed to upload chat image', { error, userId });
+      res.status(400).json({
+        success: false,
+        error: clientErrorMessage(error, 'Failed to upload image'),
+      });
+    }
+  })
+);
+
+// POST /api/v1/messages/upload-question-image — SEC-07 question image upload
+router.post(
+  '/upload-question-image',
+  authMiddleware,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { fileName, base64Data, contentType } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    const normalizedType = contentType === 'image/jpg' ? 'image/jpeg' : contentType;
+    if (!normalizedType || !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+    const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
+    if (estimatedBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+
+    try {
+      const result = await supabaseService.uploadQuestionImage({
+        fileName,
+        base64Data,
+        contentType: normalizedType,
+        userId,
+      });
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      logger.error('Failed to upload question image', { error, userId });
+      res.status(400).json({
+        success: false,
+        error: clientErrorMessage(error, 'Failed to upload image'),
+      });
+    }
+  })
+);
 
 // GET /api/v1/messages/group/:groupId/user-votes - Get user votes for a group
 // This route MUST be defined before /group/:groupId to avoid being caught by that route

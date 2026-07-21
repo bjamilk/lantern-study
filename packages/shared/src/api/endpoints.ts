@@ -1647,6 +1647,38 @@ export function createApiEndpoints(client: ApiClient) {
         },
       }),
 
+    uploadMarketplaceImage: (payload: {
+      fileName: string;
+      base64Data: string;
+      contentType: string;
+      listingId?: string;
+    }) =>
+      apiRequest<{ url: string; path: string }>('/marketplace/upload-image', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    uploadChatImage: (payload: {
+      fileName: string;
+      base64Data: string;
+      contentType: string;
+      groupId?: string;
+    }) =>
+      apiRequest<{ url: string; path: string }>('/messages/upload-image', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    uploadQuestionImage: (payload: {
+      fileName: string;
+      base64Data: string;
+      contentType: string;
+    }) =>
+      apiRequest<{ url: string; path: string }>('/messages/upload-question-image', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
     fetchSavedSearches: () =>
       apiRequest<
         Array<{
