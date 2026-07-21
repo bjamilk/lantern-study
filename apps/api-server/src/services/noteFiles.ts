@@ -6,23 +6,40 @@ const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const MAX_PRESENTATION_BYTES = 25 * 1024 * 1024;
 
 export function sanitizeNoteFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const base = String(name || 'file').replace(/^.*[\\/]/, '');
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    // Collapse ".." so path-traversal checks don't reject normal names like "Lecture 1..pdf"
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 180);
+  return cleaned || 'file';
 }
 
 export function buildNoteStoragePath(userId: string, fileName: string): string {
   return `${userId}/${Date.now()}-${sanitizeNoteFileName(fileName)}`;
 }
 
-/** Reject path traversal and paths outside the authenticated user's folder. */
+/**
+ * Reject path traversal and paths outside the authenticated user's folder.
+ * Only treats `..` / `.` as dangerous when they are full path segments — filenames
+ * may contain consecutive dots (e.g. "notes..final.pdf") without being traversal.
+ */
 export function assertUserOwnedNoteStoragePath(storagePath: string, userId: string): void {
   if (!storagePath || typeof storagePath !== 'string') {
     throw new Error('Storage path is required.');
   }
-  if (storagePath.includes('..') || storagePath.startsWith('/')) {
+  if (storagePath.includes('\\') || storagePath.startsWith('/')) {
     throw new Error('Invalid storage path.');
   }
-  const prefix = `${userId}/`;
-  if (!storagePath.startsWith(prefix) || storagePath.length <= prefix.length) {
+  const parts = storagePath.split('/').filter((part) => part.length > 0);
+  if (parts.length < 2) {
+    throw new Error('Invalid storage path.');
+  }
+  if (parts.some((part) => part === '.' || part === '..')) {
+    throw new Error('Invalid storage path.');
+  }
+  if (parts[0] !== userId) {
     throw new Error('Invalid storage path.');
   }
 }

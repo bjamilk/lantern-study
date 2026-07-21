@@ -16,6 +16,7 @@ const API_BASE_URL = getApiBaseUrl();
 import {
   MAX_NOTE_UPLOAD_BYTES,
   assertNoteUploadSize,
+  buildNoteStoragePath,
   wrapNoteFinalizeError,
 } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
@@ -951,14 +952,6 @@ export async function addImagesToPhotoNote(
     await supabase.storage.from('note-files').remove(storagePaths).catch(() => {});
     throw wrapNoteFinalizeError(err);
   }
-}
-
-function sanitizeNoteFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-function buildNoteStoragePath(userId: string, fileName: string): string {
-  return `${userId}/${Date.now()}-${sanitizeNoteFileName(fileName)}`;
 }
 
 function presentationContentType(fileName: string): string {

@@ -39,3 +39,18 @@ export function wrapNoteFinalizeError(err: unknown): Error {
   }
   return new Error(NOTE_FINALIZE_FAILED_MESSAGE);
 }
+
+/** Strip directories and unsafe characters for note-files object keys. */
+export function sanitizeNoteFileName(name: string): string {
+  const base = String(name || 'file').replace(/^.*[\\/]/, '');
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 180);
+  return cleaned || 'file';
+}
+
+export function buildNoteStoragePath(userId: string, fileName: string): string {
+  return `${userId}/${Date.now()}-${sanitizeNoteFileName(fileName)}`;
+}

@@ -38,11 +38,18 @@ describe('noteFiles presentation helpers', () => {
     expect(() =>
       assertUserOwnedNoteStoragePath(`${userId}/123-deck.pptx`, userId)
     ).not.toThrow();
+    // Filenames may contain consecutive dots without being path traversal
+    expect(() =>
+      assertUserOwnedNoteStoragePath(`${userId}/123-Lecture_1..pdf`, userId)
+    ).not.toThrow();
     expect(() => assertUserOwnedNoteStoragePath('other-user/deck.pptx', userId)).toThrow(
       /invalid storage path/i
     );
     expect(() => assertUserOwnedNoteStoragePath('../etc/passwd', userId)).toThrow(
       /invalid storage path/i
     );
+    expect(() =>
+      assertUserOwnedNoteStoragePath(`${userId}/../other/deck.pptx`, userId)
+    ).toThrow(/invalid storage path/i);
   });
 });

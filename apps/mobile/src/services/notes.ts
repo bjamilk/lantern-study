@@ -1,7 +1,11 @@
 /** Mobile notes API client */
 import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
-import { assertNoteUploadSize, wrapNoteFinalizeError } from '@lantern/shared/utils/noteUpload';
+import {
+  assertNoteUploadSize,
+  buildNoteStoragePath,
+  wrapNoteFinalizeError,
+} from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 
 async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
@@ -221,7 +225,7 @@ export const uploadNotePdfViaApi = async (
     throw new Error('Must be signed in to upload files.');
   }
 
-  const storagePath = `${session.user.id}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const storagePath = buildNoteStoragePath(session.user.id, fileName);
 
   const fileResponse = await fetch(fileUri);
   if (!fileResponse.ok) {
@@ -261,7 +265,7 @@ export const uploadPresentationViaApi = async (
     throw new Error('Must be signed in to upload slides.');
   }
 
-  const storagePath = `${user.id}/${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const storagePath = buildNoteStoragePath(user.id, fileName);
   const contentType =
     /\.ppt$/i.test(fileName) && !/\.pptx$/i.test(fileName)
       ? 'application/vnd.ms-powerpoint'
@@ -327,7 +331,7 @@ async function uploadImagesToStorage(
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
     const fileName = image.fileName || `photo-${i + 1}.jpg`;
-    const storagePath = `${userId}/${Date.now()}-${i}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const storagePath = buildNoteStoragePath(userId, `${i}-${fileName}`);
 
     const fileResponse = await fetch(image.uri);
     if (!fileResponse.ok) {
