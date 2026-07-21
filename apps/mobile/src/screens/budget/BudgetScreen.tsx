@@ -110,9 +110,9 @@ export default function BudgetScreen() {
       'Delete Transaction',
       `Are you sure you want to delete "${transaction.description}"?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'No', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Yes',
           style: 'destructive',
           onPress: () => deleteTransaction(transaction.id),
         },

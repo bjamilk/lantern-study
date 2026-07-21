@@ -12,6 +12,7 @@ import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { FeatureHero, StatChip, Tabs, TabList, Tab, TabPanel } from './ui';
 import { BudgetQuickLinks } from './budget/BudgetQuickLinks';
 import { featureAccents } from '@lantern/shared/design';
+import { confirmDialog } from '../stores/confirmStore';
 
 type BudgetTab = 'overview' | 'transactions' | 'goals' | 'insights';
 
@@ -62,6 +63,18 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   const { refreshBudgetTransactions, refreshBudgetWallet, claimUnderBudgetAward } = useBudgetHandlers();
   const [budgetBanner, setBudgetBanner] = useState<string | null>(null);
   const [awardToast, setAwardToast] = useState<string | null>(null);
+
+  const handleConfirmDeleteTransaction = async (transaction: Transaction) => {
+    const amountLabel = `₦${transaction.amount.toLocaleString('en-NG')}`;
+    const ok = await confirmDialog({
+      title: 'Delete transaction?',
+      message: `Are you sure you want to delete "${transaction.description}" (${amountLabel})? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Yes',
+      cancelLabel: 'No',
+    });
+    if (ok) onDeleteTransaction(transaction.id);
+  };
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -449,7 +462,12 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                           <span className={`font-semibold text-sm ${t.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-red-500'}`}>
                             {t.type === TransactionType.INCOME ? '+' : '-'}₦{t.amount.toLocaleString('en-NG')}
                           </span>
-                          <button onClick={() => onDeleteTransaction(t.id)} className="text-lantern-text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors">
+                          <button
+                            type="button"
+                            onClick={() => void handleConfirmDeleteTransaction(t)}
+                            aria-label={`Delete transaction ${t.description}`}
+                            className="text-lantern-text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                          >
                             <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
