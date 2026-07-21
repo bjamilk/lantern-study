@@ -22,6 +22,7 @@ interface FeatureTipSheetProps {
  */
 export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
   const { colors } = useTheme();
+  const { height: windowHeight } = useWindowDimensions();
   const dismiss = useFeatureTipStore((s) => s.dismiss);
   const skipAll = useFeatureTipStore((s) => s.skipAll);
   const dontShowAgain = useFeatureTipStore((s) => s.dontShowAgain);
@@ -52,39 +53,46 @@ export function FeatureTipSheet({ tipId }: FeatureTipSheetProps) {
             paddingBottom: Platform.OS === 'ios' ? 28 : 20,
             borderTopWidth: 2,
             borderTopColor: colors.primary,
+            maxHeight: Math.min(windowHeight * 0.7, 420),
           }}
           onPress={(e) => e.stopPropagation()}
         >
           <View className="w-10 h-1 rounded-full self-center mb-3" style={{ backgroundColor: colors.border }} />
-          <Text className="text-base font-semibold mb-1" style={{ color: colors.text }}>
-            {copy.title}
-          </Text>
-          <Text className="text-sm leading-5 mb-4" style={{ color: colors.textSecondary }}>
-            {copy.body}
-          </Text>
-          <View className="flex-row flex-wrap gap-2 items-center">
-            <Pressable
-              onPress={() => dismiss(tipId)}
-              className="px-4 py-2.5 rounded-lg"
-              style={{ backgroundColor: colors.primary }}
-            >
-              <Text className="text-sm font-medium text-white">{copy.gotItLabel || 'Got it'}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => dontShowAgain()}
-              className="px-3 py-2.5 rounded-lg"
-              style={{ backgroundColor: colors.backgroundSecondary }}
-            >
-              <Text className="text-sm font-medium" style={{ color: colors.textSecondary }}>
-                {copy.dontShowAgainLabel || "Don't show again"}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => skipAll()} className="ml-auto px-2 py-2.5">
-              <Text className="text-xs" style={{ color: colors.textTertiary }}>
-                Skip all
-              </Text>
-            </Pressable>
-          </View>
+          <ScrollView
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text className="text-base font-semibold mb-1" style={{ color: colors.text }}>
+              {copy.title}
+            </Text>
+            <Text className="text-sm leading-5 mb-4" style={{ color: colors.textSecondary }}>
+              {copy.body}
+            </Text>
+            <View className="flex-row flex-wrap gap-2 items-center">
+              <Pressable
+                onPress={() => dismiss(tipId)}
+                className="px-4 py-2.5 rounded-lg"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <Text className="text-sm font-medium text-white">{copy.gotItLabel || 'Got it'}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => dontShowAgain()}
+                className="px-3 py-2.5 rounded-lg"
+                style={{ backgroundColor: colors.backgroundSecondary }}
+              >
+                <Text className="text-sm font-medium" style={{ color: colors.textSecondary }}>
+                  {copy.dontShowAgainLabel || "Don't show again"}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => skipAll()} className="ml-auto px-2 py-2.5">
+                <Text className="text-xs" style={{ color: colors.textTertiary }}>
+                  Skip all
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
