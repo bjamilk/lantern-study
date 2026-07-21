@@ -67,6 +67,8 @@ export interface SyncSettings {
 export interface MarketplaceSettings {
   country_code: string;
   campus_id?: string | null;
+  /** Free-text city when campus is "Other (city in Nigeria)". */
+  campus_other?: string | null;
 }
 
 /** First-time / returning-user coach tips + getting-started checklist progress. */
@@ -163,6 +165,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   marketplace: {
     country_code: 'NG',
     campus_id: null,
+    campus_other: null,
   },
   featureTips: {
     version: 1,

@@ -15,6 +15,8 @@ import { Avatar, Button, Toggle, Tabs, TabList, Tab, TabPanel } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { LEGAL_PATHS, MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
 import { fetchMarketplaceCampuses, uploadProfileAvatar } from '../services/supabase';
+import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
+import { isOtherCityCampus } from '@lantern/shared/marketplace';
 import { CloudArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import {
     type UserSettings,
@@ -91,9 +93,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const study = userSettings.study;
     const appearance = userSettings.appearance;
     const privacy = userSettings.privacy;
-    const marketplace = userSettings.marketplace || { country_code: 'NG', campus_id: null };
+    const marketplace = userSettings.marketplace || { country_code: 'NG', campus_id: null, campus_other: null };
     const accessibility = userSettings.accessibility;
-    const [campusOptions, setCampusOptions] = useState<Array<{ id: string; name: string; city: string }>>([]);
+    const [campusOptions, setCampusOptions] = useState<Array<{ id: string; name: string; city: string; state?: string; slug?: string }>>([]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -470,18 +472,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Your campus</label>
-                        <select
+                        <CampusSearchSelect
+                            campuses={campusOptions.map((c) => ({
+                              id: c.id,
+                              name: c.name,
+                              city: c.city,
+                              state: c.state || '',
+                              slug: c.slug || '',
+                            }))}
                             value={marketplace.campus_id || ''}
-                            onChange={(e) => onUpdateSettingsCategory('marketplace', { campus_id: e.target.value || null })}
-                            className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text"
-                        >
-                            <option value="">All campuses (no default filter)</option>
-                            {campusOptions.map((campus) => (
-                                <option key={campus.id} value={campus.id}>
-                                    {campus.name} ({campus.city})
-                                </option>
-                            ))}
-                        </select>
+                            otherCity={marketplace.campus_other || ''}
+                            onChange={(campusId) => {
+                              const selected = campusOptions.find((c) => c.id === campusId);
+                              const keepOther = isOtherCityCampus(selected as { slug?: string; name: string } | undefined);
+                              onUpdateSettingsCategory('marketplace', {
+                                campus_id: campusId,
+                                campus_other: keepOther ? marketplace.campus_other || null : null,
+                              });
+                            }}
+                            onOtherCityChange={(city) =>
+                              onUpdateSettingsCategory('marketplace', { campus_other: city || null })
+                            }
+                        />
                     </div>
                 </div>
             );

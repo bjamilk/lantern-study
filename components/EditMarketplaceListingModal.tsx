@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
-import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
+import { type MarketplaceCampus } from '@lantern/shared';
+import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
 import {
@@ -414,19 +415,12 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
                 <MapPinIcon className="w-4 h-4 inline mr-2" />
                 Campus <span className="text-red-500">*</span>
               </label>
-              <select
+              <CampusSearchSelect
+                campuses={campuses}
                 value={formData.campusId}
-                onChange={(e) => setFormData(prev => ({ ...prev, campusId: e.target.value }))}
-                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
-                required
-              >
-                <option value="">Select campus</option>
-                {campuses.map((campus) => (
-                  <option key={campus.id} value={campus.id}>
-                    {formatCampusLabel(campus)}
-                  </option>
-                ))}
-              </select>
+                emptyLabel="Select campus"
+                onChange={(campusId) => setFormData((prev) => ({ ...prev, campusId: campusId || '' }))}
+              />
             </div>
           </div>
 

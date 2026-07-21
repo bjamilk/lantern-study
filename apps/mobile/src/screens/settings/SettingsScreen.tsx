@@ -37,6 +37,7 @@ import { supabase } from '../../services/supabase';
 import { exportUserData, fetchMarketplaceCampuses } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { MARKETPLACE_COMPLIANCE_BANNER } from '@lantern/shared';
+import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
 import { AccountLifecycleModals, AccountPausedBannerMobile } from '../../components/AccountLifecycleModals';
 import { reactivateUserAccount } from '../../services/accountLifecycle';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -179,8 +180,9 @@ export default function SettingsScreen() {
   const [accountLifecycle, setAccountLifecycle] = useState<AccountLifecycleInfo | null>(null);
   const [reactivatingAccount, setReactivatingAccount] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [campuses, setCampuses] = useState<Array<{ id: string; name: string; city: string }>>([]);
+  const [campuses, setCampuses] = useState<Array<{ id: string; name: string; city: string; state?: string; slug?: string }>>([]);
   const [campusesLoading, setCampusesLoading] = useState(false);
+  const [campusSearch, setCampusSearch] = useState('');
   
   // Temp values for modals
   const [tempDailyCardGoal, setTempDailyCardGoal] = useState(settings.study.dailyCardGoal);
@@ -216,8 +218,22 @@ export default function SettingsScreen() {
     const campusId = settings.marketplace?.campus_id;
     if (!campusId) return 'All campuses (no default filter)';
     const match = campuses.find((c) => c.id === campusId);
-    return match ? `${match.name} (${match.city})` : 'Campus selected';
-  }, [campuses, settings.marketplace?.campus_id]);
+    if (!match) return 'Campus selected';
+    if (isOtherCityCampus(match) && settings.marketplace?.campus_other) {
+      return `Other — ${settings.marketplace.campus_other}`;
+    }
+    return `${match.name} (${match.city})`;
+  }, [campuses, settings.marketplace?.campus_id, settings.marketplace?.campus_other]);
+
+  const filteredCampuses = useMemo(
+    () => filterCampusesByQuery(campuses, campusSearch),
+    [campuses, campusSearch]
+  );
+
+  const selectedCampus = useMemo(
+    () => campuses.find((c) => c.id === settings.marketplace?.campus_id) || null,
+    [campuses, settings.marketplace?.campus_id]
+  );
 
   // Sync indicator
   const SyncIndicator = () => {
@@ -1257,13 +1273,28 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowCampusModal(false)}
       >
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
-          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '80%' }]}>
+          <View style={[styles.modalContent, modalTheme.content, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, modalTheme.title]}>Your campus</Text>
               <TouchableOpacity onPress={() => setShowCampusModal(false)}>
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+            <TextInput
+              value={campusSearch}
+              onChangeText={setCampusSearch}
+              placeholder="Search universities, polytechnics, or cities…"
+              placeholderTextColor={colors.textTertiary}
+              style={[
+                styles.textInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  marginBottom: 10,
+                },
+              ]}
+            />
             <ScrollView>
               <TouchableOpacity
                 style={[
@@ -1275,8 +1306,10 @@ export default function SettingsScreen() {
                   void updateSettings('marketplace', {
                     country_code: settings.marketplace?.country_code || 'NG',
                     campus_id: null,
+                    campus_other: null,
                   });
                   setShowCampusModal(false);
+                  setCampusSearch('');
                 }}
               >
                 <Text style={[styles.optionTitle, modalTheme.optionTitle]}>All campuses</Text>
@@ -1284,7 +1317,7 @@ export default function SettingsScreen() {
                   No default campus filter
                 </Text>
               </TouchableOpacity>
-              {campuses.map((campus) => {
+              {filteredCampuses.map((campus) => {
                 const selected = settings.marketplace?.campus_id === campus.id;
                 return (
                   <TouchableOpacity
@@ -1295,21 +1328,67 @@ export default function SettingsScreen() {
                       selected && modalTheme.optionItemActive,
                     ]}
                     onPress={() => {
+                      const keepOther = isOtherCityCampus(campus);
                       void updateSettings('marketplace', {
                         country_code: settings.marketplace?.country_code || 'NG',
                         campus_id: campus.id,
+                        campus_other: keepOther ? settings.marketplace?.campus_other || null : null,
                       });
-                      setShowCampusModal(false);
+                      if (!keepOther) {
+                        setShowCampusModal(false);
+                        setCampusSearch('');
+                      }
                     }}
                   >
                     <Text style={[styles.optionTitle, modalTheme.optionTitle]}>{campus.name}</Text>
                     <Text style={[styles.optionDescription, modalTheme.optionDescription]}>
-                      {campus.city}
+                      {campus.city}{campus.state ? ` · ${campus.state}` : ''}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
+              {campusSearch.trim() && filteredCampuses.length === 0 ? (
+                <Text style={[styles.optionDescription, modalTheme.optionDescription, { padding: 12 }]}>
+                  No matches. Try another spelling, or choose Other (city in Nigeria).
+                </Text>
+              ) : null}
             </ScrollView>
+            {isOtherCityCampus(selectedCampus || undefined) ? (
+              <View style={{ marginTop: 10 }}>
+                <Text style={[styles.optionTitle, modalTheme.optionTitle, { marginBottom: 6 }]}>
+                  Your city
+                </Text>
+                <TextInput
+                  value={settings.marketplace?.campus_other || ''}
+                  onChangeText={(text) => {
+                    void updateSettings('marketplace', {
+                      country_code: settings.marketplace?.country_code || 'NG',
+                      campus_id: settings.marketplace?.campus_id || null,
+                      campus_other: text || null,
+                    });
+                  }}
+                  placeholder="e.g. Abeokuta, Nsukka, Warri"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[
+                    styles.textInput,
+                    {
+                      color: colors.text,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                />
+                <TouchableOpacity
+                  style={[styles.saveButton, { marginTop: 8, backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    setShowCampusModal(false);
+                    setCampusSearch('');
+                  }}
+                >
+                  <Text style={styles.saveButtonText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -1784,6 +1863,13 @@ const styles = StyleSheet.create({
   },
   optionDescription: {
     fontSize: 13,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
   },
   themeOptionContent: {
     flexDirection: 'row',
