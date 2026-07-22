@@ -1812,6 +1812,68 @@ export const fetchUserQuestionStats = async (userId: string) => {
   }
 };
 
+// --- Dashboard Aggregate ---
+
+/**
+ * One round trip replacing fetchTestResults + fetchUserQuestionStats during
+ * bootstrap (GET /api/v1/dashboard/summary). Returns null on any failure so
+ * callers can fall back to the individual requests.
+ */
+export const fetchDashboardSummary = async (): Promise<{
+  testResults: any[];
+  userQuestionStats: UserQuestionStats;
+} | null> => {
+  try {
+    if (!(await hasValidSession())) {
+      return null;
+    }
+
+    const response = await fetch(`${getApiRoot()}/api/v1/dashboard/summary`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const result = await response.json();
+    const data = result?.data;
+    if (!data) return null;
+
+    const testResults = (Array.isArray(data.testResults) ? data.testResults : []).map((item: any) => {
+      if (!item?.session) return item;
+      const normalized = normalizeTestResultSession(item.session);
+      return {
+        ...item,
+        session: {
+          ...item.session,
+          questions: normalized.questions,
+          userAnswers: normalized.userAnswers,
+        },
+      };
+    });
+
+    const userQuestionStats: UserQuestionStats = {};
+    if (Array.isArray(data.userQuestionStats)) {
+      data.userQuestionStats.forEach((stat: any) => {
+        const id = stat?.question_id || stat?.questionId;
+        if (!id) return;
+        userQuestionStats[id] = {
+          correctAttempts: stat.correct_attempts ?? stat.correctAttempts ?? stat.correct_count ?? 0,
+          incorrectAttempts: stat.incorrect_attempts ?? stat.incorrectAttempts ?? stat.incorrect_count ?? 0,
+          lastAttempted: stat.last_attempted ?? stat.lastAttempted ?? stat.last_reviewed_at ?? null,
+        };
+      });
+    }
+
+    return { testResults, userQuestionStats };
+  } catch (error) {
+    console.debug('Dashboard summary unavailable, falling back to individual calls:', error);
+    return null;
+  }
+};
+
 // --- Profile/User Functions ---
 
 export const fetchUserProfile = async (userId: string) => {

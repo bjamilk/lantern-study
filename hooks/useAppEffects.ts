@@ -14,6 +14,7 @@ import {
     fetchGroups, fetchGroupMembers,
     fetchDecks, fetchAllFlashcards,
     fetchTestResults, fetchUserQuestionStats,
+    fetchDashboardSummary,
     fetchNotifications,
     fetchGroupUnreadCounts, fetchDMUnreadCounts, fetchDmThreads,
     fetchOfflineBundles,
@@ -605,12 +606,25 @@ export function useAppEffects({
                 fetchUserPreferences(userId),
             ]);
 
+            // One aggregate round trip for test results + question stats,
+            // falling back to the individual requests when the summary
+            // endpoint is unavailable (e.g. older API deployments).
+            const dashboardInputsPromise = (async () => {
+                const summary = await fetchDashboardSummary();
+                if (summary) return summary;
+                const [testResults, userQuestionStats] = await Promise.all([
+                    fetchTestResults(userId, { limit: 50 }),
+                    fetchUserQuestionStats(userId),
+                ]);
+                return { testResults, userQuestionStats };
+            })();
+
             // Phase 2: deferred heavy loads (paginated / background)
             const deferredResults = await Promise.allSettled([
                 fetchDecks(userId),
                 fetchAllFlashcards(undefined, userId),
-                fetchTestResults(userId, { limit: 50 }),
-                fetchUserQuestionStats(userId),
+                dashboardInputsPromise.then(inputs => inputs.testResults),
+                dashboardInputsPromise.then(inputs => inputs.userQuestionStats),
                 fetchOfflineBundles(userId),
                 fetchUserBudget(userId, currentMonthYear),
                 syncBudgetTransactionsToCloud(userId, scopedTransactions),

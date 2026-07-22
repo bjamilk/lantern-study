@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
-import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, UserQuestionStat, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData } from '../types';
+import { TestResult, Group, User, Badge, UserStats, QuestionType, UserQuestionStats, Message, UserAnswerRecord, AppMode, OfflineSessionBundle, DailyQuizSession, StudyGoalMode, TestSessionData, StudySessionData } from '../types';
 import DailyQuizWidget from './DailyQuizWidget';
 import { DailyGoalsProgress } from './DailyGoalsProgress';
 import { normalizeUserSettings } from '@lantern/shared/settings';
@@ -11,9 +11,9 @@ import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
 import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatHexColor, getActivityHeatHexColorForCount, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildDashboardStats, type RawTestResult } from '@lantern/shared/utils/buildDashboardStats';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
-import { checkAnswerIsCorrect } from '../utils/helpers';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DailyQuestsWidget } from './DailyQuestsWidget';
 import { DashboardHero } from './dashboard/DashboardHero';
@@ -348,6 +348,25 @@ export default function DashboardScreen({
   }, [initialTestResults, selectedTimePeriod, customStartDate, customEndDate]);
   
   const totalTestsTakenOverall = filteredTestResults.length;
+
+  // Shared web/mobile stats builder so both surfaces compute identical
+  // metrics. Results are already filtered by the period selector above
+  // (including custom ranges), so the builder runs with period 'all'.
+  const sharedStats = useMemo(
+    () =>
+      buildDashboardStats({
+        testResults: filteredTestResults as unknown as RawTestResult[],
+        period: 'all',
+        groups: groups.map(g => ({ id: g.id, name: g.name })),
+        userQuestionStats,
+        totalPoints: currentUser.points ?? 0,
+        badges: [],
+        currentStreak: 0,
+        longestStreak: 0,
+        cardsReviewed: 0,
+      }),
+    [filteredTestResults, groups, userQuestionStats, currentUser.points]
+  );
   
   const getGroupName = (groupId: string, storedName?: string): string => {
     const group = groups.find(g => g.id === groupId);
@@ -468,34 +487,24 @@ export default function DashboardScreen({
         return { strongestTopics: [], weakestTopics: [], speedAnalysis: [] };
     }
 
-    const tagStats: Map<string, { correct: number; total: number }> = new Map();
-    const speedStats: Map<QuestionType, { totalTime: number; count: number }> = new Map();
+    // Topic insights come from the shared builder (same numbers and
+    // selection rules as the mobile dashboard).
+    const rankedTopics = sharedStats.topicPerformance
+        .filter(t => t.totalQuestions >= 3)
+        .map(t => ({ tag: t.tag, accuracy: t.accuracy, count: t.totalQuestions }));
+    const strongestTopics = rankedTopics.slice(0, 3);
+    const weakestTopics = rankedTopics.length > 3 ? rankedTopics.slice(-3).reverse() : [];
 
+    // Speed-by-question-type is web-only and stays computed inline.
+    const speedStats: Map<QuestionType, { totalTime: number; count: number }> = new Map();
     for (const result of filteredTestResults) {
-        // Skip if session or questions is undefined
         if (!result.session?.questions) continue;
-        
         for (const question of result.session.questions) {
             const answer = result.session.userAnswers?.[question.id] as UserAnswerRecord | undefined;
             if (!answer) continue;
 
             const normalizedQuestion = normalizeTestQuestionForSession(question as Record<string, unknown>, 0);
             const normalizedAnswer = normalizeStoredUserAnswer(answer, question.id);
-
-            // Topic performance calculation
-            if (question.tags) {
-                for (const tag of question.tags) {
-                    const stats = tagStats.get(tag) || { correct: 0, total: 0 };
-                    const correct = checkAnswerIsCorrect(normalizedQuestion, normalizedAnswer);
-                    stats.total++;
-                    if (correct) {
-                        stats.correct++;
-                    }
-                    tagStats.set(tag, stats);
-                }
-            }
-            
-            // Speed analysis calculation
             if (normalizedQuestion.questionType && normalizedAnswer.timeSpentSeconds !== undefined) {
                 const stats = speedStats.get(normalizedQuestion.questionType) || { totalTime: 0, count: 0 };
                 stats.totalTime += normalizedAnswer.timeSpentSeconds;
@@ -504,18 +513,6 @@ export default function DashboardScreen({
             }
         }
     }
-    
-    const topicPerformance = Array.from(tagStats.entries())
-        .map(([tag, { correct, total }]) => ({
-            tag,
-            accuracy: total > 0 ? (correct / total) * 100 : 0,
-            count: total,
-        }))
-        .filter(item => item.count >= 2)
-        .sort((a, b) => b.accuracy - a.accuracy);
-
-    const strongestTopics = [...topicPerformance].slice(0, 3);
-    const weakestTopics = [...topicPerformance].filter(t => t.accuracy < 100).sort((a, b) => a.accuracy - b.accuracy).slice(0, 3);
 
     const speedAnalysis = Array.from(speedStats.entries())
         .map(([type, { totalTime, count }]) => ({
@@ -526,45 +523,28 @@ export default function DashboardScreen({
 
     return { strongestTopics, weakestTopics, speedAnalysis };
 
-  }, [filteredTestResults]);
+  }, [filteredTestResults, sharedStats]);
   
   const troublesomeQuestions = useMemo(() => {
-    // Build question stem map from TWO sources:
-    // 1. Test results (always loaded at startup — most reliable)
-    // 2. Chat messages (only loaded when a group chat is opened)
-    const questionMap = new Map<string, string>();
-
-    // Source 1: test results — each result embeds the full question objects
-    for (const result of filteredTestResults) {
-      if (!result.session?.questions) continue;
-      for (const q of result.session.questions) {
-        if (q.questionStem && !questionMap.has(q.id)) {
-          questionMap.set(q.id, q.questionStem);
-        }
-      }
-    }
-
-    // Source 2: chat messages (fallback for questions not yet in any test result)
-    const allQuestionsList: Message[] = (Object.values(allMessages) as Message[][]).flat().filter((m: Message) => m.type === 'QUESTION');
-    allQuestionsList.forEach((q: Message) => {
-        if (q.questionStem && !questionMap.has(q.id)) {
-            questionMap.set(q.id, q.questionStem);
+    // Selection and counts come from the shared builder (same list as the
+    // mobile dashboard). Chat messages remain a web-only stem fallback for
+    // questions not embedded in any loaded test result.
+    const messageStems = new Map<string, string>();
+    (Object.values(allMessages) as Message[][]).flat().forEach((m: Message) => {
+        if (m.type === 'QUESTION' && m.questionStem && !messageStems.has(m.id)) {
+            messageStems.set(m.id, m.questionStem);
         }
     });
 
-    return Object.entries(userQuestionStats)
-        .filter(([, stats]: [string, UserQuestionStat]) => (stats.incorrectAttempts > 0))
-        .map(([questionId, stats]: [string, UserQuestionStat]) => ({
-            id: questionId,
-            stem: questionMap.get(questionId) || 'Question not found.',
-            incorrectAttempts: stats.incorrectAttempts,
-            accuracy: (stats.correctAttempts + stats.incorrectAttempts > 0)
-                ? (stats.correctAttempts / (stats.correctAttempts + stats.incorrectAttempts)) * 100
-                : 0,
-        }))
-        .sort((a, b) => b.incorrectAttempts - a.incorrectAttempts)
-        .slice(0, 5); // Top 5
-    }, [filteredTestResults, allMessages, userQuestionStats]);
+    return sharedStats.troublesomeQuestions.map(q => ({
+        id: q.id,
+        stem: q.stem !== 'Question not found.' ? q.stem : (messageStems.get(q.id) || 'Question not found.'),
+        incorrectAttempts: q.incorrectAttempts,
+        accuracy: q.totalAttempts > 0
+            ? ((q.totalAttempts - q.incorrectAttempts) / q.totalAttempts) * 100
+            : 0,
+    }));
+    }, [sharedStats, allMessages]);
 
   const heatmapData = useMemo(() => {
     const map = buildActivityMap(studyActivityDays);
@@ -589,19 +569,8 @@ export default function DashboardScreen({
     setIsRecentTestsExpanded(prev => !prev);
   };
   
-  let overallTotalTimeSpent = 0;
-  let overallQuestionsWithTime = 0;
-  filteredTestResults.forEach(result => {
-    Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
-        if (answer.timeSpentSeconds !== undefined) {
-            overallTotalTimeSpent += answer.timeSpentSeconds;
-            overallQuestionsWithTime++;
-        }
-    });
-  });
-  const overallAverageTimePerQuestion = overallQuestionsWithTime > 0 
-    ? (overallTotalTimeSpent / overallQuestionsWithTime)
-    : 0;
+  // Same computation as the mobile dashboard (shared builder).
+  const overallAverageTimePerQuestion = sharedStats.averageTimePerQuestion;
 
   const recentTests = [...filteredTestResults].sort((a,b) => new Date(b.session.startTime).getTime() - new Date(a.session.startTime).getTime()).slice(0, 5);
 
