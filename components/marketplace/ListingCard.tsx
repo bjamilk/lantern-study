@@ -14,7 +14,14 @@ export interface ListingCardProps {
   onToggleFavorite: (e: React.MouseEvent) => void;
 }
 
-export const ListingCard: React.FC<ListingCardProps> = ({
+// Off-screen cards skip layout/paint work entirely; the intrinsic size keeps the
+// scrollbar stable. Ignored by browsers without content-visibility support.
+const cardRenderStyle: React.CSSProperties = {
+  contentVisibility: 'auto',
+  containIntrinsicSize: 'auto 320px',
+};
+
+const ListingCardComponent: React.FC<ListingCardProps> = ({
   listing,
   isFavorite,
   isOwner,
@@ -37,6 +44,7 @@ export const ListingCard: React.FC<ListingCardProps> = ({
 
   return (
     <article
+      style={cardRenderStyle}
       className={`min-w-0 rounded-lantern-xl shadow-lantern border overflow-hidden hover:shadow-lantern-md hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 group focus-within:ring-2 focus-within:ring-lantern-primary ${
         isOwner
           ? 'bg-lantern-primary-background border-lantern-primary/30'
@@ -55,6 +63,8 @@ export const ListingCard: React.FC<ListingCardProps> = ({
             <img
               src={listing.images[0]}
               alt=""
+              loading="lazy"
+              decoding="async"
               className="w-full h-full max-w-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
               onError={e => {
                 e.currentTarget.style.display = 'none';
@@ -155,3 +165,18 @@ export const ListingCard: React.FC<ListingCardProps> = ({
     </article>
   );
 };
+
+/**
+ * Memoized against data props only. The grid passes fresh inline handlers each
+ * render, but they close over the same listing object, so skipping re-render
+ * when the data props are unchanged is safe.
+ */
+export const ListingCard = React.memo(
+  ListingCardComponent,
+  (prev, next) =>
+    prev.listing === next.listing &&
+    prev.isFavorite === next.isFavorite &&
+    prev.isOwner === next.isOwner &&
+    prev.categoryName === next.categoryName &&
+    prev.CategoryIcon === next.CategoryIcon
+);

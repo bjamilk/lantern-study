@@ -54,6 +54,8 @@ router.get(
       page = 1,
       limit = 20,
       category,
+      categories,
+      includeCustom,
       search,
       minPrice,
       maxPrice,
@@ -65,17 +67,23 @@ router.get(
       responseProfile,
     } = req.query;
     const profile = resolveResponseProfile(responseProfile);
+    const categoryList = typeof categories === 'string' && categories.trim()
+      ? categories.split(',').map((c: string) => c.trim()).filter(Boolean).slice(0, 20)
+      : undefined;
+    const includeCustomCategories = includeCustom === '1' || includeCustom === 'true';
 
     logger.debug('Fetching marketplace listings', { page, limit, category, search, profile, campusId, countryCode });
 
-    const cacheKey = `marketplace:listings:${page}:${limit}:${category || ''}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
-    let listings = await cacheService.get(cacheKey);
+    const cacheKey = `marketplace:listings:v2:${page}:${limit}:${category || ''}:${categoryList ? categoryList.join('|') : ''}:${includeCustomCategories ? 1 : 0}:${search || ''}:${minPrice || ''}:${maxPrice || ''}:${location || ''}:${campusId || ''}:${countryCode || ''}:${sortBy}:${sortOrder}:profile:${profile}`;
+    let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
-    if (!listings) {
-      listings = await supabaseService.getMarketplaceListings({
+    if (!result) {
+      result = await supabaseService.getMarketplaceListings({
         page: parseInt(page),
         limit: parseInt(limit),
         category,
+        categories: categoryList,
+        includeCustomCategories,
         search,
         minPrice: minPrice ? parseFloat(minPrice) : undefined,
         maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
@@ -88,19 +96,44 @@ router.get(
       });
 
       // Cache for 5 minutes
-      await cacheService.set(cacheKey, listings, 300);
+      await cacheService.set(cacheKey, result, 300);
     }
 
     res.json({
       success: true,
-      data: listings,
+      data: result.data,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: (listings as any[]).length, // In production, get total count separately for efficiency
+        total: result.total,
       },
       responseProfile: profile,
     });
+  })
+);
+
+// GET /api/v1/marketplace/listings/batch?ids=a,b,c - Batch fetch active listings
+// (recently-viewed rail). Registered before /listings/:id so "batch" is not
+// treated as a listing id.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+router.get(
+  '/listings/batch',
+  asyncHandler(async (req: any, res: any) => {
+    const raw = typeof req.query.ids === 'string' ? req.query.ids : '';
+    const ids = [...new Set(raw.split(',').map((id: string) => id.trim()).filter((id: string) => UUID_RE.test(id)))].slice(0, 20) as string[];
+
+    if (ids.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const cacheKey = `marketplace:listings:batch:${[...ids].sort().join(',')}`;
+    let listings = await cacheService.get<any[]>(cacheKey);
+    if (!listings) {
+      listings = await supabaseService.getMarketplaceListingsByIds(ids);
+      await cacheService.set(cacheKey, listings, 300);
+    }
+
+    res.json({ success: true, data: listings });
   })
 );
 

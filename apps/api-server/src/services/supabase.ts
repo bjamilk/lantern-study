@@ -2366,10 +2366,39 @@ export class SupabaseService {
       throw new Error(error.message);
     }
 
+    // Grid thumbnail at a deterministic sibling path (<path>.thumb.webp).
+    // Compact list responses prefer it and fall back to the original, so
+    // failures here (or older listings without thumbs) degrade gracefully.
+    try {
+      const sharp = (await import('sharp')).default;
+      const thumb = await sharp(buffer)
+        .rotate()
+        .resize({ width: 320, height: 320, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 72 })
+        .toBuffer();
+      const { error: thumbError } = await this.supabase.storage
+        .from(bucket)
+        .upload(this.marketplaceThumbPath(filePath), thumb, {
+          contentType: 'image/webp',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+      if (thumbError) {
+        logger.warn('Marketplace thumbnail upload failed', { filePath, error: thumbError.message });
+      }
+    } catch (thumbErr: any) {
+      logger.warn('Marketplace thumbnail generation failed', { filePath, error: thumbErr?.message });
+    }
+
     return {
       url: await this.createSignedStorageUrl(bucket, filePath),
       path: filePath,
     };
+  }
+
+  /** Deterministic grid-thumbnail path for a marketplace image object path. */
+  private marketplaceThumbPath(path: string): string {
+    return `${path}.thumb.webp`;
   }
 
   /** SEC-07: chat images stored under note-files/{userId}/chat/{groupId}/... */
@@ -5170,10 +5199,96 @@ export class SupabaseService {
     return data;
   }
 
+  /**
+   * Compact card payloads: keep only the first image per listing (cards render one),
+   * signing private-bucket URLs in a single batched createSignedUrls call per bucket
+   * instead of one storage round-trip per image. Prefers the 320px grid thumbnail
+   * (<path>.thumb.webp, generated at upload) and falls back to the original for
+   * listings created before thumbnails existed.
+   */
+  private async toListingCardRecords(listings: any[]): Promise<any[]> {
+    const entries = listings.map((listing) => {
+      const images = Array.isArray(listing.images) ? listing.images : [];
+      const first = images.length > 0 ? this.normalizeStorageUrl(images[0]) : null;
+      let parsed: { bucket: string; path: string } | null = null;
+      if (first && !first.startsWith('data:')) {
+        const candidate = parseStorageObjectUrl(first);
+        if (candidate && isPrivateStorageBucket(candidate.bucket)) parsed = candidate;
+      }
+      return { first, parsed, imageCount: images.length };
+    });
+
+    const byBucket = new Map<string, Array<{ index: number; thumbPath: string; path: string }>>();
+    entries.forEach((entry, index) => {
+      if (!entry.parsed) return;
+      const group = byBucket.get(entry.parsed.bucket) || [];
+      group.push({
+        index,
+        thumbPath: this.marketplaceThumbPath(entry.parsed.path),
+        path: entry.parsed.path,
+      });
+      byBucket.set(entry.parsed.bucket, group);
+    });
+
+    const signedByIndex = new Map<number, string>();
+    for (const [bucket, items] of byBucket) {
+      try {
+        // One request signs thumb + original candidates; missing objects come
+        // back as per-path errors, which is how old listings fall back.
+        const paths = items.flatMap((item) => [item.thumbPath, item.path]);
+        const { data, error } = await this.supabase.storage
+          .from(bucket)
+          .createSignedUrls(paths, 60 * 60 * 24);
+        if (error || !data) continue;
+        items.forEach((item, i) => {
+          const thumbResult = data[i * 2];
+          const originalResult = data[i * 2 + 1];
+          const signedUrl =
+            (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
+            (originalResult && !originalResult.error && originalResult.signedUrl) ||
+            null;
+          if (signedUrl) {
+            signedByIndex.set(item.index, this.normalizeStorageUrl(signedUrl));
+          }
+        });
+      } catch {
+        // Bucket is publicly readable; unsigned URLs still work as a fallback.
+      }
+    }
+
+    return listings.map((listing, index) => {
+      const entry = entries[index];
+      const cardImage = entry ? signedByIndex.get(index) ?? entry.first : null;
+      return {
+        ...this.normalizeListingRecord(listing),
+        images: cardImage ? [cardImage] : [],
+        image_count: entry?.imageCount ?? 0,
+      };
+    });
+  }
+
+  /** Trim a normalized listing row to the fields listing cards actually render. */
+  private pickCompactListingFields(listing: any): any {
+    const {
+      id, user_id, category, title, description, price,
+      sale_price, sale_ends_at, promo_label, effective_price, is_on_sale,
+      location, campus_id, country_code, images, image_count,
+      status, created_at, views_count, seller, is_boosted,
+    } = listing;
+    return {
+      id, user_id, category, title, description, price,
+      sale_price, sale_ends_at, promo_label, effective_price, is_on_sale,
+      location, campus_id, country_code, images, image_count,
+      status, created_at, views_count, seller, is_boosted,
+    };
+  }
+
   async getMarketplaceListings(options: {
     page?: number;
     limit?: number;
     category?: string;
+    categories?: string[];
+    includeCustomCategories?: boolean;
     search?: string;
     minPrice?: number;
     maxPrice?: number;
@@ -5183,11 +5298,13 @@ export class SupabaseService {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     responseProfile?: 'compact' | 'full';
-  } = {}): Promise<any[]> {
+  } = {}): Promise<{ data: any[]; total: number }> {
     const {
       page = 1,
       limit = 20,
       category,
+      categories,
+      includeCustomCategories = false,
       search,
       minPrice,
       maxPrice,
@@ -5201,8 +5318,13 @@ export class SupabaseService {
     const profile = this.getResponseProfile(responseProfile);
 
     const offset = (page - 1) * limit;
+    const categoryList = categories && categories.length > 0 ? categories : undefined;
 
-    if (search || category || minPrice !== undefined || maxPrice !== undefined || location) {
+    const useSearchRpc =
+      Boolean(search) || Boolean(category) || Boolean(categoryList) ||
+      minPrice !== undefined || maxPrice !== undefined || Boolean(location);
+
+    if (useSearchRpc) {
       const { data: rpcRows, error: rpcError } = await this.supabase.rpc('marketplace_search_listings', {
         p_search: search || '',
         p_page: page,
@@ -5213,13 +5335,24 @@ export class SupabaseService {
         p_location: location || null,
         p_sort_by: sortBy,
         p_sort_order: sortOrder,
+        p_campus_id: campusId || null,
+        p_country_code: countryCode || null,
+        p_categories: categoryList ?? null,
+        p_include_custom: includeCustomCategories,
       });
 
       if (!rpcError && rpcRows) {
-        return (rpcRows as any[]).map((row) => ({
-          ...row,
-          seller: row.profiles || row.seller,
-        }));
+        const rows = rpcRows as any[];
+        const total = rows.length > 0 ? Number(rows[0].total_count) || rows.length : 0;
+        const mapped = rows.map((row) => {
+          const { total_count: _totalCount, profiles, ...rest } = row;
+          return { ...rest, seller: profiles || row.seller };
+        });
+        if (profile === 'compact') {
+          const cards = await this.toListingCardRecords(mapped);
+          return { data: cards.map((row) => this.pickCompactListingFields(row)), total };
+        }
+        return { data: mapped, total };
       }
       if (rpcError) {
         console.warn('marketplace_search_listings RPC failed, falling back to ilike query', rpcError.message);
@@ -5232,11 +5365,18 @@ export class SupabaseService {
         user_id,
         category,
         title,
+        description,
         price,
+        sale_price,
+        sale_ends_at,
+        promo_label,
         location,
+        campus_id,
+        country_code,
         images,
         created_at,
         status,
+        views_count,
         seller:profiles!user_id (
           id,
           name,
@@ -5254,7 +5394,7 @@ export class SupabaseService {
 
     let query = this.supabase
       .from('marketplace_listings')
-      .select(selectClause)
+      .select(selectClause, { count: 'exact' })
       .eq('status', 'active')
       .range(offset, offset + limit - 1);
 
@@ -5268,6 +5408,11 @@ export class SupabaseService {
 
     if (category) {
       query = query.eq('category', category);
+    } else if (categoryList) {
+      const inList = `category.in.(${categoryList.join(',')})`;
+      query = includeCustomCategories
+        ? query.or(`${inList},category.like.custom:*`)
+        : query.or(inList);
     }
 
     if (search) {
@@ -5289,10 +5434,57 @@ export class SupabaseService {
     // Apply sorting
     query = query.order(sortBy, { ascending: sortOrder === 'asc' });
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) throw error;
 
-    return Promise.all((data || []).map((listing: any) => this.normalizeListingRecordAsync(listing)));
+    const rows = data || [];
+    const total = count ?? rows.length;
+
+    if (profile === 'compact') {
+      const cards = await this.toListingCardRecords(rows);
+      return { data: cards.map((row) => this.pickCompactListingFields(row)), total };
+    }
+
+    const normalized = await Promise.all(rows.map((listing: any) => this.normalizeListingRecordAsync(listing)));
+    return { data: normalized, total };
+  }
+
+  /** Batch fetch of active listings by id (recently-viewed rail). Card-shaped payloads. */
+  async getMarketplaceListingsByIds(ids: string[]): Promise<any[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('marketplace_listings')
+      .select(`
+        id,
+        user_id,
+        category,
+        title,
+        description,
+        price,
+        sale_price,
+        sale_ends_at,
+        promo_label,
+        location,
+        campus_id,
+        country_code,
+        images,
+        created_at,
+        status,
+        views_count,
+        seller:profiles!user_id (
+          id,
+          name,
+          avatar_url
+        )
+      `)
+      .in('id', ids)
+      .eq('status', 'active');
+    if (error) throw error;
+
+    const cards = await this.toListingCardRecords(data || []);
+    const byId = new Map(cards.map((row: any) => [row.id, this.pickCompactListingFields(row)]));
+    // Preserve the caller's id order (most recently viewed first).
+    return ids.map((id) => byId.get(id)).filter(Boolean);
   }
 
   async getMarketplaceCategoryAnalytics(): Promise<Array<{
@@ -5301,13 +5493,26 @@ export class SupabaseService {
     active: number;
     sold: number;
   }>> {
-    const { data, error } = await this.supabase
+    const { data, error } = await this.supabase.rpc('marketplace_category_analytics');
+    if (!error && data) {
+      return (data as any[]).map((row) => ({
+        category: String(row.category || 'unknown'),
+        total: Number(row.total) || 0,
+        active: Number(row.active) || 0,
+        sold: Number(row.sold) || 0,
+      }));
+    }
+    if (error) {
+      console.warn('marketplace_category_analytics RPC failed, falling back to full scan', error.message);
+    }
+
+    const { data: rows, error: scanError } = await this.supabase
       .from('marketplace_listings')
       .select('category, status');
-    if (error) throw error;
+    if (scanError) throw scanError;
 
     const counts = new Map<string, { total: number; active: number; sold: number }>();
-    for (const row of data || []) {
+    for (const row of rows || []) {
       const category = String(row.category || 'unknown');
       const entry = counts.get(category) || { total: 0, active: 0, sold: 0 };
       entry.total += 1;

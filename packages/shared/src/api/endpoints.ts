@@ -1126,12 +1126,20 @@ export function createApiEndpoints(client: ApiClient) {
       page?: number;
       limit?: number;
       category?: string;
+      /** Filter to a set of categories (server-side tab filter). Serialized comma-separated. */
+      categories?: string[];
+      /** Also include seller-defined `custom:` categories alongside `categories`. */
+      includeCustom?: boolean;
       search?: string;
       minPrice?: number;
       maxPrice?: number;
       location?: string;
+      campus_id?: string;
+      country_code?: string;
       sortBy?: string;
       sortOrder?: 'asc' | 'desc';
+      /** `compact` returns card-shaped rows (first image only) for grids. */
+      responseProfile?: 'compact' | 'full';
     } = {}) => {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -1222,6 +1230,24 @@ export function createApiEndpoints(client: ApiClient) {
         seller?: { id: string; name: string; avatar_url?: string };
         profiles?: { id: string; name: string; avatar_url?: string };
       }>(`/marketplace/listings/${listingId}`),
+
+    /** Batch fetch of active listings by id (single request for the recently-viewed rail). */
+    fetchMarketplaceListingsByIds: (ids: string[]) =>
+      apiRequest<
+        Array<{
+          id: string;
+          user_id: string;
+          category: string;
+          title: string;
+          description?: string;
+          price?: number;
+          location?: string;
+          images?: string[];
+          status: 'active' | 'sold' | 'inactive';
+          created_at: string;
+          seller?: { id: string; name: string; avatar_url?: string };
+        }>
+      >(`/marketplace/listings/batch?ids=${ids.map(encodeURIComponent).join(',')}`, {}, 5000),
 
     createMarketplaceListing: (
       data: {

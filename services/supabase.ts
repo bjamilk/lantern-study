@@ -2446,6 +2446,10 @@ export const fetchMarketplaceListingsPage = async (filters: {
   page?: number;
   limit?: number;
   category?: string;
+  /** Server-side tab filter: only these categories (comma-serialized). */
+  categories?: string[];
+  /** Include seller-defined `custom:` categories alongside `categories`. */
+  includeCustom?: boolean;
   search?: string;
   minPrice?: number;
   maxPrice?: number;
@@ -2454,6 +2458,8 @@ export const fetchMarketplaceListingsPage = async (filters: {
   country_code?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  /** `compact` returns card-shaped rows (first image only) for the browse grid. */
+  responseProfile?: 'compact' | 'full';
 } = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {
   const cacheKey = listingsCacheKey(filters as Record<string, unknown>);
   const emptyPagination = {
@@ -2505,6 +2511,21 @@ export const fetchMarketplaceListingsPage = async (filters: {
     console.error('Error fetching listings:', error);
     return { data: [], pagination: emptyPagination };
   }
+};
+
+/** Batch fetch of active listings by id — one request for the recently-viewed rail. */
+export const fetchMarketplaceListingsByIds = async (ids: string[]): Promise<any[]> => {
+  if (ids.length === 0) return [];
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/listings/batch?ids=${ids.map(encodeURIComponent).join(',')}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000
+  );
+  if (!response.ok) {
+    throw new Error('Failed to fetch listings batch');
+  }
+  const result = await response.json();
+  return (result.data || []).map(normalizeListingRecord);
 };
 
 export const fetchMarketplaceListing = async (listingId: string) => {

@@ -657,16 +657,22 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         sortOrder,
       } = get();
 
+      const categoryFilter = selectedCategory || filters?.category;
+      const tabCategoryIds = (activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES).map(c => c.id);
+
       const raw = await api.fetchMarketplaceListings({
         page,
         limit: 20,
-        category: selectedCategory || filters?.category,
+        category: categoryFilter,
+        // Tab filtering happens server-side so pages come back full.
+        ...(categoryFilter ? {} : { categories: tabCategoryIds, includeCustom: true }),
         search: searchQuery || filters?.search,
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
         location: locationFilter || undefined,
         sortBy,
         sortOrder,
+        responseProfile: 'compact',
       });
 
       const apiListings = unwrapListings(raw);
@@ -675,15 +681,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
           ? (raw as { pagination?: { page: number; limit: number; total: number } }).pagination
           : undefined;
 
-      const listings = apiListings.map(mapRemoteListing);
-      const academicCategories = ACADEMIC_CATEGORIES.map(c => c.id);
-      const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
-      const filtered = listings.filter(listing => {
-        if (activeTab === 'academic') {
-          return academicCategories.includes(listing.category as MarketplaceCategory) || listing.category.startsWith('custom:');
-        }
-        return studentLifeCategories.includes(listing.category as MarketplaceCategory) || listing.category.startsWith('custom:');
-      });
+      const filtered = apiListings.map(mapRemoteListing);
 
       const total = pagination?.total ?? filtered.length;
       const limit = pagination?.limit ?? 20;

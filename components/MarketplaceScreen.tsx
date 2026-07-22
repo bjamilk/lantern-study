@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import {
-  fetchMarketplaceListings, fetchMyFavorites, addToFavorites, removeFromFavorites,
-  getRecentlyViewed, removeRecentlyViewed, fetchMarketplaceListing,
+  fetchMyFavorites, addToFavorites, removeFromFavorites,
+  getRecentlyViewed, removeRecentlyViewed, fetchMarketplaceListingsByIds,
   fetchSavedSearches, saveSearch, deleteSavedSearch, checkSavedSearchMatches,
   fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics, fetchMarketplaceCampuses
 } from '../services/supabase';
@@ -168,19 +168,15 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   const loadRecentlyViewed = async () => {
     try {
-      const ids = getRecentlyViewed().filter(id => !missingRecentlyViewed.has(id));
+      const ids = getRecentlyViewed().filter(id => !missingRecentlyViewed.has(id)).slice(0, 10);
       if (ids.length === 0) return;
 
-      const missingIds: string[] = [];
-      const listingPromises = ids.slice(0, 10).map(async (id) => {
-        const listing = await fetchMarketplaceListing(id).catch(() => null);
-        if (!listing) missingIds.push(id);
-        return listing;
-      });
+      // One batch request instead of a detail fetch per listing.
+      const results: MarketplaceListing[] = await fetchMarketplaceListingsByIds(ids);
+      const foundIds = new Set(results.map((l) => l.id));
+      const missingIds = ids.filter((id) => !foundIds.has(id));
 
-      const results = await Promise.all(listingPromises);
-      const validListings = results.filter((l): l is MarketplaceListing => l !== null && l.status === 'active');
-      setRecentlyViewed(validListings);
+      setRecentlyViewed(results.filter((l) => l.status === 'active'));
 
       if (missingIds.length > 0) {
         setMissingRecentlyViewed((prev) => new Set([...prev, ...missingIds]));
@@ -195,16 +191,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     try {
       const data = await fetchSavedSearches();
       setSavedSearches(data);
-      let totalMatches = 0;
-      for (const search of data) {
-        try {
-          const result = await checkSavedSearchMatches(search.id);
-          totalMatches += result.count || 0;
-        } catch {
-          // ignore per-search errors
-        }
-      }
-      setSavedSearchNewMatches(totalMatches);
+      const counts = await Promise.all(
+        data.map((search) =>
+          checkSavedSearchMatches(search.id)
+            .then((result) => result.count || 0)
+            .catch(() => 0)
+        )
+      );
+      setSavedSearchNewMatches(counts.reduce((sum, count) => sum + count, 0));
     } catch (error) {
       console.error('Error loading saved searches:', error);
     }
@@ -303,22 +297,19 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       if (locationFilter) filters.location = locationFilter;
       if (campusIdFilter) filters.campus_id = campusIdFilter;
       filters.country_code = 'NG';
+      filters.responseProfile = 'compact';
+
+      // Tab filtering happens server-side so pages come back full.
+      if (!selectedCategory) {
+        filters.categories = (activeTab === 'academic' ? academicCategories : studentLifeCategories).map(c => c.id);
+        filters.includeCustom = true;
+      }
 
       const { data, pagination } = await fetchMarketplaceListingsPage(filters);
       if (requestId !== undefined && requestId !== listingsRequestId.current) return;
       setTotalListingsCount(pagination?.total || 0);
-      
-      // Filter by tab if no specific category is selected
-      const academicCategoryIds = ['textbook_exchange', 'pq_bank', 'lecture_notes', 'project_thesis', 'data_collection', 'equipment_rental'];
-      const studentLifeCategoryIds = ['accommodation', 'travel_transport', 'personal_goods', 'aso_ebi', 'campus_services', 'events_social'];
-      
-      let filteredData = data || [];
-      if (!selectedCategory && data) {
-        const relevantCategories = activeTab === 'academic' ? academicCategoryIds : studentLifeCategoryIds;
-        filteredData = data.filter((listing: MarketplaceListing) => 
-          relevantCategories.includes(listing.category) || listing.category.startsWith('custom:')
-        );
-      }
+
+      const filteredData = data || [];
       
       if (reset) {
         setListings(filteredData);
