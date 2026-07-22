@@ -47,13 +47,45 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
 
   const runStudyGenerators = useCallback(
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
+      let summarized = false;
       let flashcardCount = 0;
       let quizQuestionCount = 0;
       const warnings: string[] = [];
+      const studyText = getNoteStudyContent(note);
+
+      // PDF Summarizer and import flows must call summarize — previously only flashcards/quiz ran.
+      if (hasEnoughNoteStudyContent(note) || studyText.length >= 30) {
+        try {
+          const { summary, note: updated } = await notesApi.summarizeNote(note.id);
+          summarized = Boolean(summary?.trim());
+          const notesState = useNotesStore.getState();
+          notesState.setNotes(
+            notesState.notes.map((n) =>
+              n.id === updated.id
+                ? { ...n, ...updated, summary, attachments: note.attachments ?? n.attachments }
+                : n
+            )
+          );
+          if (notesState.selectedNote?.id === updated.id) {
+            notesState.setSelectedNote({
+              ...notesState.selectedNote,
+              ...updated,
+              summary,
+              attachments: note.attachments ?? notesState.selectedNote.attachments,
+            });
+          }
+          if (!summarized) warnings.push('Summary generation returned empty content.');
+        } catch {
+          warnings.push('Summary generation failed. You can retry Smart Notes from the note.');
+        }
+      } else {
+        warnings.push(
+          'Could not extract enough text to summarize. Try a text-based PDF, or open the note and use Smart Notes after adding content.'
+        );
+      }
 
       if (generateCards && hasEnoughNoteStudyContent(note)) {
         try {
-          const studyText = getNoteStudyContent(note);
           const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
             count: normalizeFlashcardCount(),
           });
@@ -66,7 +98,6 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
 
       if (generateQuiz && hasEnoughNoteStudyContent(note)) {
         try {
-          const studyText = getNoteStudyContent(note);
           const { questions } = await notesApi.generateDailyQuizFromContent(
             studyText.slice(0, 8000),
             'retention',
@@ -82,6 +113,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       const res: ImportAndStudyResult = {
         noteId: note.id,
         noteTitle: note.title,
+        summarized,
         flashcardCount,
         quizQuestionCount,
         warnings: warnings.length ? warnings : undefined,
@@ -281,7 +313,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
           <Card padding="lg" className="text-center py-12">
             <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" />
             <p className="font-medium text-lantern-text">Creating your study materials...</p>
-            <p className="text-sm text-lantern-text-secondary mt-1">Note + flashcards + quiz</p>
+            <p className="text-sm text-lantern-text-secondary mt-1">Summary + flashcards + quiz</p>
           </Card>
         )}
 
@@ -294,9 +326,10 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
               {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
             </p>
             <div className="flex justify-center gap-4 text-sm text-lantern-text-secondary">
+              {result.summarized ? <span>AI summary</span> : null}
               {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
               {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz questions</span> : null}
-              {!result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
+              {!result.summarized && !result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
                 <span>Note saved</span>
               ) : null}
             </div>

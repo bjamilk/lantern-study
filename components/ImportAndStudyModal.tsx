@@ -5,7 +5,7 @@ import {
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { Button } from './ui';
@@ -20,6 +20,8 @@ import type { NoteAttachment, StudyNote } from '../types';
 export interface ImportAndStudyResult {
   noteId: string;
   noteTitle: string;
+  /** True when AI Smart Notes summary was written to the note. */
+  summarized?: boolean;
   flashcardCount?: number;
   quizQuestionCount?: number;
   /** Non-fatal AI generator failures to surface on the done step (REL-01). */
@@ -64,16 +66,46 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   const runStudyGenerators = useCallback(
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
-      const studyText = getNoteStudyContent({
+      const studyInput = {
         sourceType: note.sourceType,
         body: note.body,
         summary: note.summary,
         attachments: note.attachments,
-      });
+      };
+      const studyText = getNoteStudyContent(studyInput);
 
+      let summarized = false;
       let flashcardCount = 0;
       let quizQuestionCount = 0;
       const warnings: string[] = [];
+
+      if (hasEnoughNoteStudyContent(studyInput) || studyText.length >= 30) {
+        try {
+          const { summary, note: updated } = await notesApi.summarizeNote(note.id);
+          summarized = Boolean(summary?.trim());
+          const notesState = useNotesStore.getState();
+          notesState.setNotes(
+            notesState.notes.map((n) =>
+              n.id === updated.id ? { ...n, ...updated, summary, attachments: note.attachments ?? n.attachments } : n
+            )
+          );
+          if (notesState.selectedNote?.id === updated.id) {
+            notesState.setSelectedNote({
+              ...notesState.selectedNote,
+              ...updated,
+              summary,
+              attachments: note.attachments ?? notesState.selectedNote.attachments,
+            });
+          }
+          if (!summarized) warnings.push('Summary generation returned empty content.');
+        } catch {
+          warnings.push('Summary generation failed. You can retry Smart Notes from the note.');
+        }
+      } else {
+        warnings.push(
+          'Could not extract enough text to summarize. Try a text-based PDF, or open the note and use Smart Notes after adding content.'
+        );
+      }
 
       if (generateCards && studyText.length >= 50) {
         try {
@@ -104,6 +136,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       const res: ImportAndStudyResult = {
         noteId: note.id,
         noteTitle: note.title,
+        summarized,
         flashcardCount,
         quizQuestionCount,
         warnings: warnings.length ? warnings : undefined,
@@ -309,7 +342,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             <div className="py-8 text-center">
               <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" aria-hidden />
               <p className="font-medium text-lantern-text">Creating your study materials...</p>
-              <p className="text-sm text-lantern-text-muted mt-1">Note + flashcards + quiz</p>
+              <p className="text-sm text-lantern-text-muted mt-1">Summary + flashcards + quiz</p>
             </div>
           )}
 
@@ -320,9 +353,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
               </p>
               <div className="flex justify-center gap-4 text-sm text-lantern-text-muted">
+                {result.summarized ? <span>AI summary</span> : null}
                 {result.flashcardCount ? <span>{result.flashcardCount} flashcards</span> : null}
                 {result.quizQuestionCount ? <span>{result.quizQuestionCount} quiz Qs</span> : null}
-                {!result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
+                {!result.summarized && !result.flashcardCount && !result.quizQuestionCount && !result.warnings?.length ? (
                   <span>Note saved</span>
                 ) : null}
               </div>
