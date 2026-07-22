@@ -57,6 +57,7 @@ import {
   showWebNotification,
 } from '../utils/webNotifications';
 import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
+import { syncPendingTestResults } from '../services/offlineTestSync';
 import { useToastStore } from '../stores/toastStore';
 import {
   INITIAL_BOOTSTRAP_LOAD_STATE,
@@ -1414,6 +1415,44 @@ export function useAppEffects({
             })
             .catch((error) => {
                 console.error('[FlashcardReviewSync] Auto-sync error:', error);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUser?.id, isOnline]);
+
+    // Auto-sync queued offline test results when back online
+    useEffect(() => {
+        if (!currentUser?.id || !isOnline) return;
+        const pending = useTestStore.getState().pendingSyncResults;
+        if (pending.length === 0) return;
+
+        let cancelled = false;
+        syncPendingTestResults(currentUser.id)
+            .then(({ synced, remaining, gamification }) => {
+                if (cancelled || synced === 0) return;
+                console.log(`[TestResultSync] Auto-synced ${synced} result(s)`);
+                if (gamification) {
+                    const user = useAuthStore.getState().currentUser;
+                    if (user) {
+                        useAuthStore.getState().setCurrentUser({
+                            ...user,
+                            points: gamification.points,
+                            badges: gamification.badges,
+                            stats: gamification.stats,
+                        });
+                    }
+                }
+                useToastStore.getState().showToast(
+                    remaining === 0
+                        ? `${synced} offline test result(s) synced.`
+                        : `Synced ${synced} offline test result(s); ${remaining} still pending.`,
+                    'success'
+                );
+            })
+            .catch((error) => {
+                console.error('[TestResultSync] Auto-sync error:', error);
             });
 
         return () => {

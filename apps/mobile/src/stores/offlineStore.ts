@@ -99,8 +99,6 @@ interface OfflineState {
 const STORAGE_KEY = '@lantern_offline_data';
 const RESULTS_KEY = '@lantern_pending_results';
 
-const ALL_QUESTION_TYPES = ['mcq-single', 'mcq-multiple', 'true-false', 'fill-blank'] as const;
-
 type ApiOfflineBundle = Awaited<ReturnType<typeof api.fetchOfflineBundles>>[number];
 
 const mapApiBundleToOfflineTest = (bundle: ApiOfflineBundle): OfflineTest => {
@@ -129,37 +127,6 @@ const persistLocalTests = async (downloadedTests: OfflineTest[]) => {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(downloadedTests));
   const totalStorageUsed = downloadedTests.reduce((sum, t) => sum + t.size, 0);
   return totalStorageUsed;
-};
-
-// Mock questions — dev fallback only when group has no question messages
-const generateMockQuestions = (count: number, allowedTypes?: string[], recentlyAddedDays?: number): OfflineQuestion[] => {
-  const types = allowedTypes && allowedTypes.length > 0 
-    ? allowedTypes 
-    : ALL_QUESTION_TYPES;
-  const tags = ['Biology', 'Chemistry', 'Physics', 'Anatomy', 'Genetics'];
-  
-  return Array.from({ length: count }, (_, i) => {
-    // Generate random createdAt date - some recent, some older
-    const daysAgo = recentlyAddedDays && recentlyAddedDays > 0
-      ? Math.floor(Math.random() * recentlyAddedDays) // All within the filter range
-      : Math.floor(Math.random() * 60); // Random from last 60 days
-    const createdAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
-    
-    return {
-      id: `q-${Date.now()}-${i}`,
-      stem: `Sample question ${i + 1}: What is the correct answer for this practice question about ${tags[i % tags.length]}?`,
-      type: types[i % types.length],
-      options: [
-        { id: 'a', text: 'Option A', isCorrect: i % 4 === 0 },
-        { id: 'b', text: 'Option B', isCorrect: i % 4 === 1 },
-        { id: 'c', text: 'Option C', isCorrect: i % 4 === 2 },
-        { id: 'd', text: 'Option D', isCorrect: i % 4 === 3 },
-      ],
-      explanation: 'This is the explanation for why this answer is correct.',
-      tags: [tags[i % tags.length]],
-      createdAt,
-    };
-  });
 };
 
 const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuestion | null => {
@@ -270,28 +237,12 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     set({ isDownloading: true, downloadProgress: 0 });
     
     try {
-      // Simulate download progress
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        set({ downloadProgress: i });
-      }
-      
-      set({ downloadProgress: 30 });
+      // Real progress checkpoints: fetch questions → persist locally → sync to cloud.
+      set({ downloadProgress: 10 });
 
-      let questions: OfflineQuestion[];
-      try {
-        questions = await fetchGroupQuestionsForOffline(groupId, options);
-      } catch (fetchError) {
-        if (__DEV__) {
-          console.warn('[OfflineStore] Falling back to sample questions in dev:', fetchError);
-          const questionCount = options?.questionCount || 10;
-          questions = generateMockQuestions(questionCount, options?.questionTypes, options?.recentlyAddedDays);
-        } else {
-          throw fetchError;
-        }
-      }
+      let questions = await fetchGroupQuestionsForOffline(groupId, options);
       
-      set({ downloadProgress: 70 });
+      set({ downloadProgress: 60 });
       
       // Shuffle if requested
       if (options?.shuffleQuestions) {
@@ -335,6 +286,8 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       
       const downloadedTests = [...get().downloadedTests, newTest];
       const totalStorageUsed = await persistLocalTests(downloadedTests);
+
+      set({ downloadProgress: 85 });
 
       if (userId) {
         try {

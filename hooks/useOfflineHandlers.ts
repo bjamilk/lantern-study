@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import {
     AppMode, TestConfig, TestQuestion, TestSessionData, StudySessionData,
-    Message, QuestionType, OfflineQuestion, OfflineSessionBundle, UserAnswerRecord,
-    UserQuestionStats, ChatItem
+    Message, QuestionType, OfflineQuestion, OfflineSessionBundle,
 } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
@@ -10,13 +9,9 @@ import { useTestStore } from '../stores/testStore';
 import { useUIStore } from '../stores/uiStore';
 import { shuffleArray, isQuestionTestable, createShuffledQuestionSet } from '../utils/helpers';
 import { BADGE_DEFINITIONS } from '../gamification';
-import {
-    createTestSession, createTestResult, upsertUserQuestionStat,
-    saveOfflineBundle, deleteOfflineBundle,
-    markPendingSyncResultAsSynced,
-} from '../services/supabase';
-import { formatActivityLocalDate } from '@lantern/shared/utils';
+import { saveOfflineBundle, deleteOfflineBundle } from '../services/supabase';
 import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
+import { syncPendingTestResults } from '../services/offlineTestSync';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,11 +24,10 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
     const { messages } = useGroupStore();
     const {
         offlineBundles, updateOfflineBundles,
-        pendingSyncResults, setPendingSyncResults,
-        userQuestionStats, setUserQuestionStats,
-        updateTestResults,
-        activeTestSession, setActiveTestSession,
-        activeStudySession, setActiveStudySession,
+        pendingSyncResults,
+        userQuestionStats,
+        setActiveTestSession,
+        setActiveStudySession,
     } = useTestStore();
     const {
         setAppMode, isOnline, selectedChat,
@@ -280,101 +274,35 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
             return;
         }
         if (pendingSyncResults.length === 0 || !currentUser) return;
-        
-        const syncedIds: string[] = [];
-        let lastGamification: {
-            points: number;
-            badges: typeof currentUser.badges;
-            stats: typeof currentUser.stats;
-            awardedBadges?: typeof currentUser.badges;
-        } | undefined;
 
-        try {
-            for (const result of pendingSyncResults) {
-                const sessionData = {
-                    config: result.session.config,
-                    questions: result.session.questions,
-                    user_answers: result.session.userAnswers,
-                    start_time: new Date(result.session.startTime).toISOString(),
-                    end_time: result.session.endTime ? new Date(result.session.endTime).toISOString() : undefined,
-                    is_offline: result.session.isOffline || false
-                };
-                const savedSession = await createTestSession(sessionData, currentUser.id);
-                
-                const resultData = {
-                    session_id: savedSession.id,
-                    score: result.score,
-                    correct_answers_count: result.correctAnswersCount,
-                    total_questions: result.totalQuestions,
-                    activityDate: result.session.endTime
-                        ? formatActivityLocalDate(new Date(result.session.endTime))
-                        : formatActivityLocalDate(new Date()),
-                };
-                const saved = await createTestResult(resultData);
-                if ((saved as { gamification?: typeof lastGamification })?.gamification) {
-                    lastGamification = (saved as { gamification: typeof lastGamification }).gamification;
-                }
-                await markPendingSyncResultAsSynced(result.id);
-                syncedIds.push(result.id);
-            }
-        } catch (error) {
-            console.error('Error syncing results:', error);
-            if (syncedIds.length === 0) {
-                alert('Failed to sync results. Please try again.');
-                return;
-            }
-            addNotification(`Synced ${syncedIds.length} of ${pendingSyncResults.length} result(s). Retry to sync the rest.`);
+        const total = pendingSyncResults.length;
+        const { synced, remaining, gamification } = await syncPendingTestResults(currentUser.id);
+
+        if (synced === 0) {
+            alert('Failed to sync results. Please try again.');
+            return;
         }
 
-        if (syncedIds.length === 0) return;
-
-        const syncedResults = pendingSyncResults.filter(r => syncedIds.includes(r.id));
-        const remaining = pendingSyncResults.filter(r => !syncedIds.includes(r.id));
-
-        updateTestResults(prev => {
-            const existingIds = new Set(prev.map(r => r.id));
-            const toAdd = syncedResults.filter(r => !existingIds.has(r.id));
-            return [...toAdd, ...prev];
-        });
-        
-        const newUserQuestionStats = { ...userQuestionStats };
-        
-        syncedResults.forEach(result => {
-            Object.values(result.session.userAnswers).forEach((answer: UserAnswerRecord) => {
-                const questionId = answer.questionId;
-                const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
-                if (answer.isCorrect) stats.correctAttempts++;
-                else stats.incorrectAttempts++;
-                stats.lastAttempted = result.session.endTime ? new Date(result.session.endTime).toISOString() : new Date().toISOString();
-                newUserQuestionStats[questionId] = stats;
-
-                upsertUserQuestionStat(currentUser.id, questionId, stats).catch(error => {
-                    console.error('Error saving user question stat during sync:', error);
-                });
-            });
-        });
-
-        if (lastGamification) {
+        if (gamification) {
             setCurrentUser({
                 ...currentUser,
-                points: lastGamification.points,
-                badges: lastGamification.badges,
-                stats: lastGamification.stats,
+                points: gamification.points,
+                badges: gamification.badges,
+                stats: gamification.stats,
             });
-            (lastGamification.awardedBadges || []).forEach(badge => {
+            (gamification.awardedBadges || []).forEach(badge => {
                 const badgeDef = BADGE_DEFINITIONS[badge.id];
                 const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
                 addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
             });
         }
-        
-        setUserQuestionStats(newUserQuestionStats);
-        setPendingSyncResults(remaining);
 
-        if (remaining.length === 0) {
-            addNotification(`${syncedIds.length} offline result(s) synced successfully!`);
+        if (remaining === 0) {
+            addNotification(`${synced} offline result(s) synced successfully!`);
+        } else {
+            addNotification(`Synced ${synced} of ${total} result(s). Retry to sync the rest.`);
         }
-    }, [isOnline, pendingSyncResults, currentUser, userQuestionStats, updateTestResults, setPendingSyncResults, setUserQuestionStats, setCurrentUser, addNotification]);
+    }, [isOnline, pendingSyncResults, currentUser, setCurrentUser, addNotification]);
 
     const handleImportBundle = useCallback((bundle: OfflineSessionBundle): string | null => {
         // Assign a fresh bundleId so it never collides with an existing one

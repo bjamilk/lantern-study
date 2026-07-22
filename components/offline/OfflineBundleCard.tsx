@@ -3,6 +3,7 @@ import { OfflineSessionBundle } from '../../types';
 import {
   ArrowDownTrayIcon,
   PlayIcon,
+  BookOpenIcon,
   TrashIcon,
   PencilIcon,
   CheckIcon,
@@ -20,6 +21,7 @@ interface OfflineBundleCardProps {
   onCancelEdit: () => void;
   onExport: () => void;
   onStartTest: () => void;
+  onStartStudy: () => void;
   onDelete: () => void;
 }
 
@@ -33,6 +35,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
   onCancelEdit,
   onExport,
   onStartTest,
+  onStartStudy,
   onDelete,
 }) => (
   <div
@@ -97,6 +100,15 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         title="Export bundle"
       >
         <ArrowDownTrayIcon className="w-5 h-5" />
+      </button>
+      <button
+        type="button"
+        onClick={onStartStudy}
+        className="px-3 py-2 min-h-[44px] border border-lantern-primary text-lantern-primary hover:bg-lantern-primary-background rounded-lantern text-sm flex items-center transition-colors"
+        title="Study these questions without scoring"
+      >
+        <BookOpenIcon className="w-4 h-4 mr-1.5" />
+        Study
       </button>
       <button
         type="button"

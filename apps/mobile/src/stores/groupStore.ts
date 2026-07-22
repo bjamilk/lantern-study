@@ -7,7 +7,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
 import { resolveQuestionStatusAfterVote, normalizeStorageUrl, formatChatSenderLabel } from '@lantern/shared/utils';
 import * as api from '../services/api';
-import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 
 export type DMThread = SharedDMThread;

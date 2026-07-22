@@ -5,6 +5,28 @@
 import { useState, useEffect, useCallback } from 'react';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { syncService } from '../services/syncService';
+import { useOfflineStore } from '../stores/offlineStore';
+
+/**
+ * Replay offline test results saved in the offline store (these live outside
+ * the SyncQueue). Loads the local cache first so results queued before this
+ * app session are picked up too.
+ */
+async function syncOfflineTestResults(userId: string): Promise<void> {
+  const store = useOfflineStore.getState();
+  if (store.isSyncing) return;
+  if (store.pendingResults.length === 0) {
+    await store.loadOfflineData();
+  }
+  const { pendingResults, isSyncing, syncPendingResults } = useOfflineStore.getState();
+  if (isSyncing || !pendingResults.some(r => !r.synced)) return;
+  try {
+    await syncPendingResults(userId);
+    console.log('[useAutoSync] Offline test results synced');
+  } catch (error) {
+    console.warn('[useAutoSync] Offline test result sync failed:', error);
+  }
+}
 
 // ============================================
 // useNetworkStatus Hook
@@ -187,6 +209,7 @@ export function useAutoSync(
   useEffect(() => {
     if (syncOnMount && userId && network.isConnected) {
       syncService.syncNow();
+      void syncOfflineTestResults(userId);
     }
   }, [syncOnMount, userId]);
 
@@ -194,6 +217,7 @@ export function useAutoSync(
   useOnlineEffect(() => {
     if (syncOnReconnect && userId) {
       syncService.syncNow();
+      void syncOfflineTestResults(userId);
     }
   }, [syncOnReconnect, userId]);
 

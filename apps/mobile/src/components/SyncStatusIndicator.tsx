@@ -172,7 +172,7 @@ export function SyncBanner({
         />
         <Text style={styles.bannerText}>
           {isOffline
-            ? 'You are offline. Changes will sync when connected.'
+            ? 'You are offline. Study progress will sync when you reconnect.'
             : `${sync.pendingCount} changes waiting to sync`}
         </Text>
       </View>

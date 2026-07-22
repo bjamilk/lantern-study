@@ -96,7 +96,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background text-lantern-text overflow-y-auto">
       <FeatureHero
         title="Offline Activity"
-        subtitle="Download test bundles from groups and study without a connection."
+        subtitle="Download test bundles and flashcard decks to study without a connection. Results and reviews sync automatically when you're back online."
         accentColor={featureAccents.offline}
         icon={<CloudArrowDownIcon className="w-6 h-6" />}
         actions={
@@ -219,6 +219,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                 onCancelEdit={cancelEditing}
                 onExport={() => handleExportBundle(bundle)}
                 onStartTest={() => onStartOfflineSession(bundle.bundleId, 'test')}
+                onStartStudy={() => onStartOfflineSession(bundle.bundleId, 'study')}
                 onDelete={() => onDeleteBundle(bundle.bundleId)}
               />
             ))}

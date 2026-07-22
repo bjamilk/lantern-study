@@ -121,7 +121,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Can I use Lantern Study offline?',
-    a: 'Download decks and bundles from Settings > Offline. Changes sync automatically when you reconnect.',
+    a: 'Download test bundles and flashcard decks from Settings > Offline to study without a connection. Test results and reviews sync automatically when you reconnect. Chat, notes, and marketplace need an internet connection.',
   },
 ];
 

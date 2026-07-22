@@ -14,7 +14,6 @@ import {
 } from '@lantern/shared';
 import * as api from './api';
 import { supabase, saveBudgetTransaction, deleteBudgetTransaction } from './supabase';
-import * as notesApi from './notes';
 
 // ============================================
 // ASYNC STORAGE ADAPTER
@@ -253,31 +252,6 @@ class SyncService {
       }
     });
 
-    // Message handler
-    this.queue.registerHandler('message', async (op: SyncOperation) => {
-      try {
-        switch (op.operation) {
-          case 'create':
-            await api.sendMessage(
-              op.data.groupId as string, 
-              op.userId, 
-              op.data as { content: string; type?: 'TEXT' | 'QUESTION' }
-            );
-            break;
-          case 'update':
-            // Message updates not commonly needed
-            break;
-          case 'delete':
-            // Message deletion
-            break;
-        }
-        return true;
-      } catch (error) {
-        console.error('[SyncHandler:message] Error:', error);
-        return false;
-      }
-    });
-
     // Transaction handler (Supabase — same path as web)
     this.queue.registerHandler('transaction', async (op: SyncOperation) => {
       try {
@@ -349,17 +323,6 @@ class SyncService {
       }
     });
 
-    // Settings handler
-    this.queue.registerHandler('settings', async (op: SyncOperation) => {
-      try {
-        // Settings are synced through the settingsStore directly
-        return true;
-      } catch (error) {
-        console.error('[SyncHandler:settings] Error:', error);
-        return false;
-      }
-    });
-
     // Marketplace listing handler
     this.queue.registerHandler('listing', async (op: SyncOperation) => {
       try {
@@ -412,27 +375,6 @@ class SyncService {
         return true;
       } catch (error) {
         console.error('[SyncHandler:group] Error:', error);
-        return false;
-      }
-    });
-
-    // Notes handler (API-backed, same as web)
-    this.queue.registerHandler('note', async (op: SyncOperation) => {
-      try {
-        switch (op.operation) {
-          case 'create':
-            await notesApi.createNote(op.data as { title: string; body?: string; folderId?: string });
-            break;
-          case 'update':
-            await notesApi.updateNote(op.entityId, op.data);
-            break;
-          case 'delete':
-            await notesApi.deleteNote(op.entityId);
-            break;
-        }
-        return true;
-      } catch (error) {
-        console.error('[SyncHandler:note] Error:', error);
         return false;
       }
     });

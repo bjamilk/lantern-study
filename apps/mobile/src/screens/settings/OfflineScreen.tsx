@@ -91,12 +91,12 @@ export default function OfflineScreen() {
   const { groups } = useGroupStore();
 
   useEffect(() => {
-    loadOfflineData();
-  }, []);
+    loadOfflineData(userId || undefined);
+  }, [userId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadOfflineData();
+    await loadOfflineData(userId || undefined);
     setRefreshing(false);
   };
 
