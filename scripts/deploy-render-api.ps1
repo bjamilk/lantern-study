@@ -152,6 +152,10 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'BULLMQ_ENABLED'; value = 'true' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
+    # Optional: YouTube transcript managed fallback (set in apps/api-server/.env or Render dashboard)
+    if ($ApiEnv['SUPADATA_API_KEY']) {
+        $vars += @{ key = 'SUPADATA_API_KEY'; value = $ApiEnv['SUPADATA_API_KEY'] }
+    }
     if ($ApiEnv['SENTRY_DSN']) {
         $vars += @(
             @{ key = 'SENTRY_DSN'; value = $ApiEnv['SENTRY_DSN'] },
@@ -181,7 +185,7 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
 }
 
 function Build-WorkerEnvVars([hashtable]$ApiEnv) {
-    return @(
+    $vars = @(
         @{ key = 'NODE_ENV'; value = 'production' },
         @{ key = 'BULLMQ_ENABLED'; value = 'true' },
         @{ key = 'REDIS_ENABLED'; value = 'true' },
@@ -192,6 +196,10 @@ function Build-WorkerEnvVars([hashtable]$ApiEnv) {
         @{ key = 'ENABLE_MARKETPLACE_JOBS'; value = 'true' },
         @{ key = 'ENABLE_DATA_RETENTION_JOBS'; value = 'true' }
     )
+    if ($ApiEnv['SUPADATA_API_KEY']) {
+        $vars += @{ key = 'SUPADATA_API_KEY'; value = $ApiEnv['SUPADATA_API_KEY'] }
+    }
+    return $vars
 }
 
 function Get-ExistingServiceByName([string]$OwnerId, [string]$Name) {
