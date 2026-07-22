@@ -19,9 +19,15 @@ import {
   formatMaxNoteUploadLabel,
 } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
+import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
-import { uploadNotePdfViaApi, uploadPresentationViaApi, uploadNoteImagesViaApi } from '../../services/notes';
+import {
+  createNoteFromYoutube,
+  uploadNotePdfViaApi,
+  uploadPresentationViaApi,
+  uploadNoteImagesViaApi,
+} from '../../services/notes';
 import { trackNoteCreated } from '../../services/productAnalytics';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -146,6 +152,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   const loadData = useCallback(async () => {
     await Promise.all([loadFolders(), loadNotes(selectedFolderId || undefined)]);
@@ -287,6 +296,31 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       { text: 'Camera', onPress: () => void handleTakePhoto() },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  };
+
+  const handleYoutubeImport = async () => {
+    const url = youtubeUrl.trim();
+    if (!url || !youtubeUrlValid) return;
+    try {
+      setImportingFile(true);
+      setError(null);
+      const result = await createNoteFromYoutube(url, selectedFolderId || undefined);
+      trackNoteCreated('youtube');
+      setYoutubeOpen(false);
+      setYoutubeUrl('');
+      if (result.status === 'failed') {
+        setError(
+          result.transcriptError ||
+            'Note created, but the transcript could not be fetched for this video.'
+        );
+      }
+      await loadNotes(selectedFolderId || undefined);
+      navigation.navigate('NoteEditor', { noteId: result.note.id });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'YouTube import failed');
+    } finally {
+      setImportingFile(false);
+    }
   };
 
   const handleConfirmImport = async () => {
@@ -446,6 +480,52 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
               </Button>
             </View>
           </Card>
+        ) : youtubeOpen ? (
+          <Card className="border-lantern-primary/30 mb-2">
+            <Text className="text-sm font-semibold text-lantern-text">Note from YouTube</Text>
+            <Text className="text-xs text-lantern-text-secondary mt-1">
+              Paste a video link — we'll fetch its transcript so AI tools can use it.
+            </Text>
+            <TextInput
+              value={youtubeUrl}
+              onChangeText={setYoutubeUrl}
+              placeholder="https://www.youtube.com/watch?v=…"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              editable={!importingFile}
+              className="mt-2 px-3 py-2 rounded-lg border border-lantern-border bg-lantern-background text-sm text-lantern-text"
+              placeholderTextColor={colors.inputPlaceholder}
+            />
+            {youtubeUrl.trim() && !youtubeUrlValid ? (
+              <Text className="text-xs text-red-500 mt-1">
+                That doesn't look like a YouTube link.
+              </Text>
+            ) : null}
+            <View className="flex-row gap-2 mt-3">
+              <Button
+                size="sm"
+                loading={importingFile}
+                disabled={!youtubeUrlValid}
+                onPress={() => void handleYoutubeImport()}
+                className="flex-1"
+              >
+                Import
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={importingFile}
+                onPress={() => {
+                  setYoutubeOpen(false);
+                  setYoutubeUrl('');
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </View>
+          </Card>
         ) : (
           <View className="flex-row flex-wrap gap-2">
             <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => void handlePickFile('pdf')}>
@@ -456,6 +536,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             </Button>
             <Button size="sm" variant="secondary" disabled={importingFile} onPress={handlePickPhotos}>
               Import photos
+            </Button>
+            <Button size="sm" variant="secondary" disabled={importingFile} onPress={() => setYoutubeOpen(true)}>
+              From YouTube
             </Button>
           </View>
         )}
