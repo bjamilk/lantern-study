@@ -479,6 +479,7 @@ export class SupabaseService {
       'badge_unlock',
       'test_result',
       'srs_reminder',
+      'dm_message',
     ]);
     if (notification.type && !pushTypes.has(notification.type)) return;
 
@@ -3255,7 +3256,8 @@ export class SupabaseService {
         throw new Error(`Failed to send DM: ${error.message}`);
       }
 
-      // Un-archive for recipient and update thread's last message
+      // Un-archive for recipient, un-hide for everyone, and update the
+      // thread's last message. A new message resurrects a "deleted" thread.
       const { data: threadRow } = await this.supabase
         .from('dm_threads')
         .select('archived_by')
@@ -3271,6 +3273,7 @@ export class SupabaseService {
           last_message: content,
           last_message_time: new Date().toISOString(),
           archived_by: updatedArchivedBy,
+          hidden_by: [],
         })
         .eq('id', threadId);
 
@@ -6177,6 +6180,19 @@ export class SupabaseService {
   // Mark DM thread as read for a user
   async markDMAsRead(threadId: string, userId: string): Promise<boolean> {
     try {
+      // Only participants may write read status for a thread.
+      const { data: thread, error: threadError } = await this.supabase
+        .from('dm_threads')
+        .select('participant_ids')
+        .eq('id', threadId)
+        .single();
+
+      const participantIds = Array.isArray(thread?.participant_ids) ? thread.participant_ids : [];
+      if (threadError || !participantIds.includes(userId)) {
+        console.error('markDMAsRead: user is not a participant of this thread');
+        return false;
+      }
+
       const { error } = await this.supabase
         .from('dm_read_status')
         .upsert({
@@ -6197,13 +6213,15 @@ export class SupabaseService {
     }
   }
 
-  // Delete a DM thread and all associated messages (cascade)
+  // "Delete" a DM thread for one user: soft-delete via hidden_by so the other
+  // participant keeps their history and marketplace inquiries aren't cascaded.
+  // A new message in the thread clears hidden_by and resurrects it.
   async deleteDmThread(threadId: string, userId: string): Promise<boolean> {
     try {
       // Verify the user is a participant of this thread
       const { data: thread, error: fetchError } = await this.supabase
         .from('dm_threads')
-        .select('participant_ids')
+        .select('participant_ids, hidden_by')
         .eq('id', threadId)
         .single();
 
@@ -6218,14 +6236,16 @@ export class SupabaseService {
         return false;
       }
 
-      // Delete the thread — dm_messages, dm_read_status, marketplace_inquiries cascade
-      const { error: deleteError } = await this.supabase
+      const hiddenBy: string[] = Array.isArray(thread.hidden_by) ? thread.hidden_by : [];
+      if (hiddenBy.includes(userId)) return true; // Already hidden
+
+      const { error: updateError } = await this.supabase
         .from('dm_threads')
-        .delete()
+        .update({ hidden_by: [...hiddenBy, userId] })
         .eq('id', threadId);
 
-      if (deleteError) {
-        console.error('Error deleting DM thread:', deleteError);
+      if (updateError) {
+        console.error('Error hiding DM thread:', updateError);
         return false;
       }
 

@@ -29,6 +29,7 @@ import {
   type GroupChatHeaderAction,
 } from '../../components/chat';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
+import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useTheme } from '../../theme';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import { summarizeGroupChat } from '../../services/ai';
@@ -204,6 +205,18 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const displayName = groupName || currentGroup?.name || 'Group chat';
   const messageLimit = lowDataMode ? 30 : 100;
   const hasMoreMessages = messagePagination[groupId]?.hasMore ?? true;
+  const { typingUserIds, broadcastTyping } = useTypingIndicator(groupId, user?.id);
+
+  const typingLabel = useMemo(() => {
+    if (typingUserIds.length === 0) return null;
+    const members = currentGroup?.members || [];
+    const names = typingUserIds.map(
+      id => members.find(m => m.userId === id)?.name || 'Someone'
+    );
+    return names.length === 1
+      ? `${names[0]} is typing…`
+      : `${names.slice(0, 2).join(' and ')} are typing…`;
+  }, [typingUserIds, currentGroup?.members]);
 
   const handleLoadOlderMessages = useCallback(() => {
     if (!hasMoreMessages || isLoadingMore) return;
@@ -559,9 +572,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
           />
         )}
 
+        {typingLabel ? (
+          <Text className="px-4 py-1 text-xs text-lantern-text-secondary">{typingLabel}</Text>
+        ) : null}
         <ChatComposer
           value={text}
-          onChangeText={setText}
+          onChangeText={value => {
+            setText(value);
+            broadcastTyping();
+          }}
           onSend={() => void handleSend()}
           sending={sending}
           onAttachImage={async (uri, mimeType) => {

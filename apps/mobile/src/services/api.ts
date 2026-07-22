@@ -118,6 +118,7 @@ export const {
   removeFromFavorites,
   checkIfFavorited,
   fetchMyInquiries,
+  fetchInquiryByThread,
   createInquiry,
   updateInquiryStatus,
   addMarketplaceReview,

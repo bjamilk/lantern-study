@@ -288,8 +288,8 @@ router.get(
       // Get all threads where user is a participant
       const { data: threads, error } = await supabaseService.getClient()
         .from('dm_threads')
-        .select('id, participant_ids, participants, last_message, last_message_time, archived_by')
-        .contains('participant_ids', JSON.stringify([userId]))
+        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by')
+        .contains('participant_ids', [userId])
         .order('last_message_time', { ascending: false });
 
       if (error) {
@@ -297,10 +297,12 @@ router.get(
         return res.status(500).json({ success: false, error: 'Failed to fetch DM threads' });
       }
 
-      // Filter to threads that include this user
+      // Keep only threads that include this user and were not "deleted" by them
       const userThreads = (threads || []).filter((t: any) => {
         const pids = t.participant_ids;
-        return Array.isArray(pids) && pids.includes(userId);
+        if (!Array.isArray(pids) || !pids.includes(userId)) return false;
+        const hiddenBy = Array.isArray(t.hidden_by) ? t.hidden_by : [];
+        return !hiddenBy.includes(userId);
       });
 
       // Look up participant profiles

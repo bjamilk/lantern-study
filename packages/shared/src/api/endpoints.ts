@@ -1399,6 +1399,28 @@ export function createApiEndpoints(client: ApiClient) {
       >(`/marketplace/inquiries?${params.toString()}`);
     },
 
+    /** Marketplace inquiry attached to a DM thread (null when the thread is a plain DM). */
+    fetchInquiryByThread: (threadId: string) =>
+      apiRequest<{
+        id: string;
+        listing_id: string;
+        dm_thread_id: string;
+        buyer_id: string;
+        seller_id: string;
+        status: 'open' | 'negotiating' | 'closed' | 'purchased';
+        initial_message?: string;
+        created_at: string;
+        updated_at?: string;
+        listing?: {
+          id: string;
+          title: string;
+          price?: number;
+          images?: string[];
+          category?: string;
+          user_id?: string;
+        } | null;
+      } | null>(`/marketplace/inquiries/thread/${encodeURIComponent(threadId)}`),
+
     createInquiry: (listingId: string, message: string) =>
       apiRequest<{
         id: string;

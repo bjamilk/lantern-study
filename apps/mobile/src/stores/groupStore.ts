@@ -19,9 +19,6 @@ const messagesFetchSeqByGroup: Record<string, number> = {};
 const dmFetchSeqByThread: Record<string, number> = {};
 const sendingGroupIds = new Set<string>();
 
-// Demo mode - use mock data without API
-const DEMO_MODE = false;
-
 // Storage keys
 const GROUPS_STORAGE_KEY = 'lantern_groups';
 const MESSAGES_STORAGE_KEY = 'lantern_messages';
@@ -441,161 +438,6 @@ function mapDirectMessage(m: any, threadId: string): DirectMessage {
   };
 }
 
-// Mock data
-const mockMembers: GroupMember[] = [
-  { id: '1', userId: 'demo-user', name: 'Demo User', role: 'owner', joinedAt: new Date().toISOString() },
-  { id: '2', userId: '2', name: 'Alice Johnson', avatarUrl: 'https://ui-avatars.com/api/?name=Alice+Johnson&background=6366f1&color=fff', role: 'admin', joinedAt: new Date().toISOString() },
-  { id: '3', userId: '3', name: 'Bob Smith', avatarUrl: 'https://ui-avatars.com/api/?name=Bob+Smith&background=10b981&color=fff', role: 'member', joinedAt: new Date().toISOString() },
-  { id: '4', userId: '4', name: 'Carol Davis', avatarUrl: 'https://ui-avatars.com/api/?name=Carol+Davis&background=f97316&color=fff', role: 'member', joinedAt: new Date().toISOString() },
-];
-
-const mockGroups: Group[] = [
-  {
-    id: 'group-1',
-    name: 'Biology 101 Study Group',
-    description: 'Study group for intro biology course',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Biology+101&background=10b981&color=fff',
-    ownerId: 'demo-user',
-    members: mockMembers.slice(0, 3),
-    memberCount: 3,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastMessage: {
-      id: 'msg-1',
-      groupId: 'group-1',
-      senderId: '2',
-      senderName: 'Alice Johnson',
-      text: 'Who wants to study chapter 5 together?',
-      type: 'text',
-      createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    }
-  },
-  // Subgroups of Biology 101
-  {
-    id: 'group-1-sub-1',
-    name: 'Cell Biology',
-    description: 'Focus on cell structures and functions',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Cell+Bio&background=34d399&color=fff',
-    ownerId: 'demo-user',
-    parentId: 'group-1', // Subgroup of Biology 101
-    members: mockMembers.slice(0, 2),
-    memberCount: 2,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'group-1-sub-2',
-    name: 'Genetics',
-    description: 'DNA, RNA, and heredity',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Genetics&background=22c55e&color=fff',
-    ownerId: '2',
-    parentId: 'group-1', // Subgroup of Biology 101
-    members: mockMembers.slice(0, 3),
-    memberCount: 3,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    lastMessage: {
-      id: 'msg-sub-1',
-      groupId: 'group-1-sub-2',
-      senderId: '2',
-      senderName: 'Alice Johnson',
-      text: 'Let\'s review Punnett squares',
-      type: 'text',
-      createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    }
-  },
-  {
-    id: 'group-2',
-    name: 'Med School Prep',
-    description: 'MCAT preparation and study sessions',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Med+School&background=6366f1&color=fff',
-    ownerId: '2',
-    members: mockMembers,
-    memberCount: 4,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    lastMessage: {
-      id: 'msg-2',
-      groupId: 'group-2',
-      senderId: '3',
-      senderName: 'Bob Smith',
-      text: 'Just finished the practice test! 🎉',
-      type: 'text',
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    }
-  },
-  // Subgroups of Med School Prep
-  {
-    id: 'group-2-sub-1',
-    name: 'MCAT Biology',
-    description: 'Biology section prep',
-    avatarUrl: 'https://ui-avatars.com/api/?name=MCAT+Bio&background=818cf8&color=fff',
-    ownerId: '2',
-    parentId: 'group-2',
-    members: mockMembers.slice(0, 3),
-    memberCount: 3,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'group-2-sub-2',
-    name: 'MCAT Chemistry',
-    description: 'Chemistry section prep',
-    avatarUrl: 'https://ui-avatars.com/api/?name=MCAT+Chem&background=a78bfa&color=fff',
-    ownerId: '2',
-    parentId: 'group-2',
-    members: mockMembers,
-    memberCount: 4,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'group-3',
-    name: 'Chemistry Champions',
-    description: 'Organic chemistry study group',
-    avatarUrl: 'https://ui-avatars.com/api/?name=Chemistry&background=f97316&color=fff',
-    ownerId: 'demo-user',
-    members: mockMembers.slice(0, 2),
-    memberCount: 2,
-    isArchived: false,
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    lastMessage: {
-      id: 'msg-3',
-      groupId: 'group-3',
-      senderId: 'demo-user',
-      senderName: 'Demo User',
-      text: 'Let\'s review the naming conventions',
-      type: 'text',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    }
-  },
-];
-
-const mockMessages: Record<string, Message[]> = {
-  'group-1': [
-    { id: 'm1', groupId: 'group-1', senderId: '2', senderName: 'Alice Johnson', text: 'Hey everyone! Ready for the exam?', type: 'text', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-    { id: 'm2', groupId: 'group-1', senderId: '3', senderName: 'Bob Smith', text: 'Still reviewing chapter 4', type: 'text', createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString() },
-    { id: 'm3', groupId: 'group-1', senderId: 'demo-user', senderName: 'Demo User', text: 'I can help with chapter 4!', type: 'text', createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
-    { id: 'm4', groupId: 'group-1', senderId: '2', senderName: 'Alice Johnson', text: 'Who wants to study chapter 5 together?', type: 'text', createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString() },
-  ],
-  'group-2': [
-    { id: 'm5', groupId: 'group-2', senderId: '4', senderName: 'Carol Davis', text: 'Just shared some new flashcards', type: 'text', createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString() },
-    { id: 'm6', groupId: 'group-2', senderId: 'demo-user', senderName: 'Demo User', text: 'Thanks! These look great', type: 'text', createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString() },
-    { id: 'm7', groupId: 'group-2', senderId: '3', senderName: 'Bob Smith', text: 'Just finished the practice test! 🎉', type: 'text', createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-  ],
-  'group-3': [
-    { id: 'm8', groupId: 'group-3', senderId: '2', senderName: 'Alice Johnson', text: 'Organic chem is tough!', type: 'text', createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString() },
-    { id: 'm9', groupId: 'group-3', senderId: 'demo-user', senderName: 'Demo User', text: 'Let\'s review the naming conventions', type: 'text', createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-  ],
-};
-
 export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
   currentGroup: null,
@@ -650,14 +492,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     
     // Load from local storage first for instant UI
     await get().loadFromStorage();
-    
-    if (DEMO_MODE) {
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      set({ groups: mockGroups, isLoading: false });
-      return;
-    }
-    
+
     try {
       const [apiGroups, unreadCounts] = await Promise.all([
         api.fetchGroups(userId, { limit: 50 }),
@@ -737,7 +572,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           name: 'Group',
           adminIds: [],
           permissions: {},
-        } as Group),
+          ownerId: '',
+          members: [],
+          memberCount: 0,
+          isArchived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as unknown as Group),
       messages: cached,
     });
     void get().fetchGroupMembers(groupId);
@@ -753,19 +594,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set({ isLoadingMessages: true, error: null });
     } else {
       set({ isLoadingMore: true });
-    }
-
-    if (DEMO_MODE) {
-      await new Promise(resolve => setTimeout(resolve, 300));
-      const demoMessages = mockMessages[groupId] || [];
-      set({
-        messages: demoMessages,
-        messagesCache: { ...get().messagesCache, [groupId]: demoMessages },
-        messagePagination: { ...get().messagePagination, [groupId]: { page: 1, hasMore: false } },
-        isLoadingMessages: false,
-        isLoadingMore: false,
-      });
-      return;
     }
 
     try {
@@ -863,27 +691,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       downvotes: 0,
       flaggedAsSimilarUserIds: [],
     };
-    
-    if (DEMO_MODE) {
-      // Add message locally
-      const currentMessages = get().messages;
-      set({ messages: [...currentMessages, newMessage] });
-      
-      // Update group's last message
-      const groups = get().groups.map(g => {
-        if (g.id === groupId) {
-          return { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() };
-        }
-        return g;
-      });
-      set({ groups });
-      
-      // Also update mock data for persistence within session
-      if (mockMessages[groupId]) {
-        mockMessages[groupId].push(newMessage);
-      }
-      return;
-    }
     
     // Optimistic update for immediate feedback
     const previousMessages = get().messages;
@@ -986,15 +793,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     
-    if (DEMO_MODE) {
-      const groups = [...get().groups, newGroup];
-      set({ groups });
-      mockGroups.push(newGroup);
-      mockMessages[newGroup.id] = [];
-      await get().saveToStorage(); // Persist to storage
-      return newGroup;
-    }
-    
     try {
       const apiGroup = await api.createGroup({
         name: groupInput.name,
@@ -1032,17 +830,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   leaveGroup: async (groupId: string, userId: string) => {
-    if (DEMO_MODE) {
-      const groups = get().groups.filter(g => g.id !== groupId);
-      set(state => ({
-        groups,
-        currentGroup: state.currentGroup?.id === groupId ? null : state.currentGroup,
-        activeGroupId: state.activeGroupId === groupId ? null : state.activeGroupId,
-        messages: state.activeGroupId === groupId ? [] : state.messages,
-      }));
-      return;
-    }
-    
     try {
       await api.leaveGroup(groupId, userId);
       const groups = get().groups.filter(g => g.id !== groupId);
@@ -1059,20 +846,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   // Admin actions
   updateGroupDetails: async (groupId: string, name: string, description: string) => {
-    if (DEMO_MODE) {
-      const groups = get().groups.map(g => 
-        g.id === groupId ? { ...g, name, description, updatedAt: new Date().toISOString() } : g
-      );
-      const currentGroup = get().currentGroup;
-      set({ 
-        groups,
-        currentGroup: currentGroup?.id === groupId 
-          ? { ...currentGroup, name, description, updatedAt: new Date().toISOString() }
-          : currentGroup
-      });
-      return;
-    }
-    
     try {
       await api.updateGroup(groupId, { name, description });
       const groups = get().groups.map(g => 
@@ -1109,12 +882,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       });
     };
 
-    if (DEMO_MODE) {
-      const group = get().groups.find(g => g.id === groupId);
-      applyAdminUpdate([...(group?.adminIds || []), userId]);
-      return;
-    }
-
     try {
       const result = await api.promoteGroupAdmin(groupId, userId) as any;
       const adminIds = result?.adminIds || result?.admin_ids || [];
@@ -1143,12 +910,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       });
     };
 
-    if (DEMO_MODE) {
-      const group = get().groups.find(g => g.id === groupId);
-      applyAdminUpdate((group?.adminIds || []).filter(id => id !== userId));
-      return;
-    }
-
     try {
       const result = await api.demoteGroupAdmin(groupId, userId) as any;
       const adminIds = result?.adminIds || result?.admin_ids
@@ -1168,28 +929,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   removeMember: async (groupId: string, userId: string) => {
-    if (DEMO_MODE) {
-      const groups = get().groups.map(g => {
-        if (g.id === groupId) {
-          const updatedMembers = g.members.filter(m => m.userId !== userId);
-          return {
-            ...g,
-            members: updatedMembers,
-            memberCount: updatedMembers.length,
-          };
-        }
-        return g;
-      });
-      const currentGroup = get().currentGroup;
-      set({
-        groups,
-        currentGroup: currentGroup?.id === groupId
-          ? groups.find(g => g.id === groupId) || currentGroup
-          : currentGroup,
-      });
-      return;
-    }
-
     try {
       await api.removeGroupMember(groupId, userId);
       const groups = get().groups.map(g => {
@@ -1210,14 +949,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   archiveGroup: async (groupId: string) => {
-    if (DEMO_MODE) {
-      const groups = get().groups.map(g => 
-        g.id === groupId ? { ...g, isArchived: !g.isArchived } : g
-      );
-      set({ groups, currentGroup: null });
-      return;
-    }
-    
     try {
       const group = get().groups.find(g => g.id === groupId);
       await api.updateGroup(groupId, { isArchived: !group?.isArchived });
@@ -1231,13 +962,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   deleteGroup: async (groupId: string) => {
-    if (DEMO_MODE) {
-      // Also delete subgroups
-      const groups = get().groups.filter(g => g.id !== groupId && g.parentId !== groupId);
-      set({ groups, currentGroup: null });
-      return;
-    }
-    
     try {
       await api.deleteGroup(groupId);
       const groups = get().groups.filter(g => g.id !== groupId && g.parentId !== groupId);
@@ -1248,11 +972,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   inviteByEmail: async (groupId: string, emails: string[]) => {
-    if (DEMO_MODE) {
-      console.log(`Invitations sent to ${emails.join(', ')} for group ${groupId}`);
-      return;
-    }
-
     for (const email of emails) {
       const trimmed = email.trim();
       if (!trimmed) continue;
@@ -1272,28 +991,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   submitQuestion: async (groupId: string, question: any) => {
     const user = question.senderId ? { id: question.senderId, name: question.senderName || 'You' } : null;
-
-    if (DEMO_MODE) {
-      const newMessage: Message = {
-        id: `msg-q-${Date.now()}`,
-        groupId,
-        senderId: user?.id || 'demo-user',
-        senderName: user?.name || 'Demo User',
-        text: `📝 New Question: ${question.stem || question.questionStem}`,
-        type: 'question',
-        createdAt: new Date().toISOString(),
-        questionStem: question.stem || question.questionStem,
-        questionStatus: 'PENDING',
-        questionType: question.questionType,
-        options: question.options?.map((o: any) => (typeof o === 'string' ? o : o.text)),
-        correctAnswerIds: question.correctAnswerIds,
-        tags: question.tags,
-      };
-
-      const currentMessages = get().messages;
-      set({ messages: [...currentMessages, newMessage] });
-      return;
-    }
 
     const payload = {
       type: 'QUESTION',
@@ -1340,7 +1037,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
     for (const gid of uniqueIds) {
       let cached = get().messagesCache[gid];
-      if (!cached?.length && !DEMO_MODE) {
+      if (!cached?.length) {
         try {
           const result = await api.fetchMessages(gid, { page: 1, limit: 500 });
           const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
@@ -1396,8 +1093,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   fetchDmThreads: async (userId: string) => {
-    if (DEMO_MODE) return;
-
     try {
       const [threads, unreadCounts] = await Promise.all([
         api.fetchDMThreads(userId),
