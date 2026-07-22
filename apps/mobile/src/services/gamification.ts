@@ -1,5 +1,6 @@
 import type { ActivityType, StudyActivityDay } from '@lantern/shared';
 import { ACTIVITY_DAYS, formatActivityLocalDate } from '@lantern/shared/utils';
+import { createIdempotencyKey } from '@lantern/shared/api';
 import { getAuthHeaders, API_BASE_URL } from './supabase';
 
 function normalizeStudyActivityDay(row: Record<string, unknown>): StudyActivityDay {
@@ -55,6 +56,36 @@ export const incrementQuestProgress = (questType: string, increment = 1) =>
 export function trackQuestProgress(questType: string, increment = 1): void {
   incrementQuestProgress(questType, increment).catch(() => {});
 }
+
+export interface LeaderboardEntry {
+  rank: number;
+  user: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    points: number;
+    stats: Record<string, unknown>;
+  };
+}
+
+export const fetchLeaderboard = (options?: { page?: number; limit?: number }) => {
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 50;
+  return gamificationRequest<LeaderboardEntry[]>(`/leaderboard?page=${page}&limit=${limit}`);
+};
+
+/** Spends wallet coins for a streak freeze. Server enforces balance + cost. */
+export const purchaseStreakFreeze = () =>
+  gamificationRequest<{
+    streak_freezes?: number;
+    streakFreezes?: number;
+    cost?: number;
+    walletBalance?: number;
+  }>('/streak/freeze/purchase', {
+    method: 'POST',
+    body: '{}',
+    headers: { 'Idempotency-Key': createIdempotencyKey('streak-freeze-purchase') },
+  });
 
 export const recordStudyActivity = (type: ActivityType, amount = 1) =>
   gamificationRequest<any>('/activity/record', {

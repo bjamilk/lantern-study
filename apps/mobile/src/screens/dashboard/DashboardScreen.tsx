@@ -60,7 +60,9 @@ import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
 import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
-import { fetchDailyQuests, recordLoginStreak, type DailyQuest } from '../../services/gamification';
+import { fetchDailyQuests, recordLoginStreak, purchaseStreakFreeze, type DailyQuest } from '../../services/gamification';
+import { WALLET_COINS } from '@lantern/shared/utils';
+import { useToastStore } from '../../stores/toastStore';
 
 import { HomeStackParamList, MainTabParamList } from '../../navigation/types';
 import { featureAccents } from '@lantern/shared/design';
@@ -194,6 +196,10 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [serverStreak, setServerStreak] = useState(0);
 
+  const [streakFreezes, setStreakFreezes] = useState(0);
+
+  const [purchasingFreeze, setPurchasingFreeze] = useState(false);
+
   const [quizLoading, setQuizLoading] = useState(false);
 
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
@@ -254,6 +260,8 @@ export function DashboardScreen({ navigation }: Props) {
         streakRes?.current_streak ?? streakRes?.currentStreak ?? streakRes?.current ?? stats?.currentStreak ?? 0
       );
 
+      setStreakFreezes(streakRes?.streak_freezes ?? streakRes?.streakFreezes ?? 0);
+
     } catch {
 
       setServerStreak(stats?.currentStreak ?? 0);
@@ -303,6 +311,31 @@ export function DashboardScreen({ navigation }: Props) {
     setRefreshing(false);
 
   };
+
+  const handlePurchaseFreeze = useCallback(async () => {
+    const { walletBalance } = useBudgetStore.getState();
+    const { showToast } = useToastStore.getState();
+    if (walletBalance < WALLET_COINS.STREAK_FREEZE_COST) {
+      showToast(
+        `You need ${WALLET_COINS.STREAK_FREEZE_COST} coins for a streak freeze (you have ${walletBalance}). Earn coins by studying daily.`,
+        'error'
+      );
+      return;
+    }
+    setPurchasingFreeze(true);
+    try {
+      const result = await purchaseStreakFreeze();
+      setStreakFreezes(result?.streak_freezes ?? result?.streakFreezes ?? 1);
+      if (typeof result?.walletBalance === 'number') {
+        useBudgetStore.setState({ walletBalance: result.walletBalance });
+      }
+      showToast('Streak freeze purchased! It protects your streak for one missed day.', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Could not purchase streak freeze.', 'error');
+    } finally {
+      setPurchasingFreeze(false);
+    }
+  }, []);
 
 
 
@@ -874,7 +907,29 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        <DailyQuestsWidget quests={quests} streak={streak} />
+        <DailyQuestsWidget
+          quests={quests}
+          streak={streak}
+          streakFreezes={streakFreezes}
+          onPurchaseFreeze={() => void handlePurchaseFreeze()}
+          purchasingFreeze={purchasingFreeze}
+        />
+
+        <Pressable
+          onPress={() => navigation.navigate('Leaderboard')}
+          className="flex-row items-center gap-3 bg-lantern-surface border border-lantern-border rounded-2xl p-4 mb-4 active:opacity-80"
+          accessibilityRole="button"
+          accessibilityLabel="Open leaderboard"
+        >
+          <View className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 items-center justify-center">
+            <Ionicons name="trophy" size={20} color="#f59e0b" />
+          </View>
+          <View className="flex-1">
+            <Text className="font-semibold text-lantern-text">Leaderboard</Text>
+            <Text className="text-xs text-lantern-text-secondary">See how you rank against other students</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+        </Pressable>
 
 
 

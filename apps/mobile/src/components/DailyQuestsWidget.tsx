@@ -14,9 +14,12 @@ const QUEST_LABELS: Record<string, string> = {
 interface Props {
   quests: DailyQuest[];
   streak: number;
+  streakFreezes?: number;
+  onPurchaseFreeze?: () => void;
+  purchasingFreeze?: boolean;
 }
 
-export function DailyQuestsWidget({ quests, streak }: Props) {
+export function DailyQuestsWidget({ quests, streak, streakFreezes = 0, onPurchaseFreeze, purchasingFreeze }: Props) {
   if (quests.length === 0) return null;
   const completedCount = quests.filter(q => q.completed).length;
 
@@ -24,9 +27,27 @@ export function DailyQuestsWidget({ quests, streak }: Props) {
     <Card className="mb-4 p-4">
       <View className="flex-row items-center justify-between mb-3">
         <Text className="font-semibold text-lantern-text">Daily Quests</Text>
-        <View className="flex-row items-center gap-1">
+        <View className="flex-row items-center gap-1.5">
           <Ionicons name="flame" size={16} color="#f97316" />
           <Text className="text-sm font-bold text-orange-600">{streak} day streak</Text>
+          {streakFreezes > 0 ? (
+            <View className="flex-row items-center gap-0.5 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30">
+              <Ionicons name="snow" size={12} color="#3b82f6" />
+              <Text className="text-xs font-semibold text-blue-600 dark:text-blue-400">{streakFreezes}</Text>
+            </View>
+          ) : onPurchaseFreeze ? (
+            <Pressable
+              onPress={onPurchaseFreeze}
+              disabled={purchasingFreeze}
+              className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 active:opacity-70"
+              accessibilityRole="button"
+              accessibilityLabel="Buy streak freeze for 50 coins"
+            >
+              <Text className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                {purchasingFreeze ? 'Buying…' : 'Buy freeze (50 coins)'}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
       <Text className="text-xs text-lantern-text-secondary mb-3">

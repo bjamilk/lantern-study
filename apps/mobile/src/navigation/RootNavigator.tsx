@@ -76,6 +76,8 @@ import LegalDocumentScreen from '../screens/legal/LegalDocumentScreen';
 
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
 
+import { LeaderboardScreen } from '../screens/dashboard/LeaderboardScreen';
+
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 
 import {
@@ -225,6 +227,8 @@ function HomeNavigator() {
     <HomeStack.Navigator screenOptions={{ headerShown: false }}>
 
       <HomeStack.Screen name="Dashboard" component={DashboardScreen} />
+
+      <HomeStack.Screen name="Leaderboard" component={LeaderboardScreen} />
 
     </HomeStack.Navigator>
 

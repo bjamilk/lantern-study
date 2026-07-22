@@ -19,6 +19,7 @@ export type AuthStackParamList = {
 
 export type HomeStackParamList = {
   Dashboard: undefined;
+  Leaderboard: undefined;
 };
 
 export type StudyStackParamList = {
