@@ -992,7 +992,19 @@ export function RootNavigator() {
   );
 
   return (
-    <NavigationContainer ref={navigationRef} linking={linkingConfig} theme={navigationTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linkingConfig}
+      theme={navigationTheme}
+      onStateChange={() => {
+        const route = navigationRef.getCurrentRoute();
+        if (route?.name) {
+          void import('../services/productAnalytics').then(({ trackScreenView }) => {
+            trackScreenView(route.name);
+          });
+        }
+      }}
+    >
       <RootNavigatorInner />
     </NavigationContainer>
   );

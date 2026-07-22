@@ -43,4 +43,5 @@ export * from './notifications';
 // Legal documents & URLs (single file — Metro-friendly)
 export * from './legal';
 export * from './cookieConsent';
+export * from './analytics';
 export * from './auth';

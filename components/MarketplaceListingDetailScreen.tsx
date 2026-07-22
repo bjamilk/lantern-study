@@ -148,6 +148,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     if (!guestMode) {
       addRecentlyViewed(listingId);
     }
+    void import('../services/productAnalytics').then(({ trackListingView }) => {
+      trackListingView(listingId, guestMode ? 'guest' : 'app');
+    });
     return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, [listingId, guestMode]);
 
@@ -249,6 +252,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     try {
       // Create inquiry to link the conversation to the listing
       await createInquiry(listing.id, contactMessage.trim());
+      void import('../services/productAnalytics').then(({ trackInquiryStarted }) => {
+        trackInquiryStarted(listing.id);
+      });
       
       // Navigate to direct messages with seller
       onNavigate('DirectMessages', { userId: listing.seller_id });
@@ -293,6 +299,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
     setBuyingNow(true);
     try {
+      void import('../services/productAnalytics').then(({ trackCheckoutStarted }) => {
+        trackCheckoutStarted(listing.id);
+      });
       const result = await buyMarketplaceListingNow(
         listing.id,
         couponPreview ? couponCode.trim() : undefined

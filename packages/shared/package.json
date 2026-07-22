@@ -112,6 +112,12 @@
       "import": "./src/marketplace/index.ts",
       "require": "./dist/marketplace/index.js",
       "default": "./src/marketplace/index.ts"
+    },
+    "./analytics": {
+      "types": "./src/analytics/index.ts",
+      "import": "./src/analytics/index.ts",
+      "require": "./dist/analytics/index.js",
+      "default": "./src/analytics/index.ts"
     }
   },
   "scripts": {

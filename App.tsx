@@ -1483,6 +1483,9 @@ export const App: React.FC = () => {
                             localStorage.setItem('lantern_onboarding_complete', '1');
                             localStorage.setItem('lantern_streak_target', String(streakTarget));
                             setShowOnboarding(false);
+                            void import('./services/productAnalytics').then(({ trackOnboardingCompleted }) => {
+                                trackOnboardingCompleted();
+                            });
                         }}
                         onGenerateStarter={async (notes) => {
                             const { flashcards: cards } = await aiGenerateFlashcards(notes, {

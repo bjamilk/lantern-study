@@ -860,12 +860,106 @@ export class MarketplaceOrdersService {
       .sort((a, b) => b.favoritesCount - a.favoritesCount)
       .slice(0, 5);
 
+    const listingIds = listings.map((l) => l.id);
+    let viewsByDay: Array<{ date: string; views: number; uniqueViewers: number }> = [];
+    let funnel30d:
+      | {
+          impressions: number;
+          views: number;
+          inquiries: number;
+          offers: number;
+          sales: number;
+        }
+      | undefined;
+    let conversionRate30d: number | null = null;
+
+    if (listingIds.length > 0) {
+      try {
+        const { data: viewEvents } = await this.db
+          .from('product_events')
+          .select('event, props, anon_id, user_id, created_at')
+          .in('event', ['listing_view', 'listing_impression'])
+          .gte('created_at', thirtyIso)
+          .limit(5000);
+
+        const sellerViewEvents = (viewEvents || []).filter((ev) => {
+          const lid = (ev.props as { listingId?: string } | null)?.listingId;
+          return lid && listingIds.includes(lid);
+        });
+
+        const dayMap = new Map<string, { views: number; viewers: Set<string> }>();
+        for (let i = 29; i >= 0; i--) {
+          const d = new Date();
+          d.setUTCDate(d.getUTCDate() - i);
+          dayMap.set(d.toISOString().slice(0, 10), { views: 0, viewers: new Set() });
+        }
+
+        let impressions = 0;
+        let views = 0;
+        for (const ev of sellerViewEvents) {
+          const day = String(ev.created_at || '').slice(0, 10);
+          const viewerKey = ev.user_id || ev.anon_id || 'unknown';
+          if (ev.event === 'listing_impression') impressions += 1;
+          if (ev.event === 'listing_view') {
+            views += 1;
+            const bucket = dayMap.get(day);
+            if (bucket) {
+              bucket.views += 1;
+              bucket.viewers.add(viewerKey);
+            }
+          }
+        }
+
+        viewsByDay = Array.from(dayMap.entries()).map(([date, v]) => ({
+          date,
+          views: v.views,
+          uniqueViewers: v.viewers.size,
+        }));
+
+        const { data: inquiry30 } = await this.db
+          .from('marketplace_inquiries')
+          .select('id')
+          .eq('seller_id', userId)
+          .gte('created_at', thirtyIso);
+        const { data: offers30 } = await this.db
+          .from('marketplace_offers')
+          .select('id')
+          .eq('seller_id', userId)
+          .gte('created_at', thirtyIso);
+        const sales30 = completed.filter(
+          (o) => o.completed_at && o.completed_at >= thirtyIso
+        ).length;
+
+        funnel30d = {
+          impressions,
+          views,
+          inquiries: inquiry30?.length || 0,
+          offers: offers30?.length || 0,
+          sales: sales30,
+        };
+
+        if (views > 0) {
+          conversionRate30d = Math.round((sales30 / views) * 10000) / 100;
+        } else if (impressions === 0 && views === 0) {
+          conversionRate30d = null;
+        } else {
+          conversionRate30d = 0;
+        }
+      } catch {
+        // product_events may not exist yet before migration — keep null/empty
+        viewsByDay = [];
+        funnel30d = undefined;
+        conversionRate30d = null;
+      }
+    }
+
     return {
       totalRevenue,
       revenue30d,
       avgSalePrice,
       avgTimeToSellDays,
       conversionRate,
+      conversionRate30d,
       offerAcceptRate,
       pendingOrders,
       openInquiries,
@@ -878,6 +972,8 @@ export class MarketplaceOrdersService {
       staleListings,
       highViewsLowEngagement,
       favoriteHighlights,
+      viewsByDay,
+      funnel30d,
     };
   }
 

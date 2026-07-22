@@ -207,6 +207,20 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     listingMatchesFilters,
   ]);
 
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    const timer = setTimeout(() => {
+      void import('../../services/productAnalytics').then(({ trackMarketplaceSearch }) => {
+        trackMarketplaceSearch({
+          query: searchQuery,
+          resultCount: displayListings.length,
+          category: selectedCategory || undefined,
+        });
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery, displayListings.length, selectedCategory]);
+
   const handleSaveSearch = async () => {
     try {
       await createSavedSearch(

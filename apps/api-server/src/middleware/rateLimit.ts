@@ -142,6 +142,7 @@ let _collaboratorInviteRateLimit: RateLimitRequestHandler | null = null;
 let _storageBurstRateLimit: RateLimitRequestHandler | null = null;
 let _authLoginRateLimit: RateLimitRequestHandler | null = null;
 let _authSessionRateLimit: RateLimitRequestHandler | null = null;
+let _analyticsEventsRateLimit: RateLimitRequestHandler | null = null;
 
 function buildAllLimiters(): void {
   const anonMax = parseInt(
@@ -329,6 +330,14 @@ function buildAllLimiters(): void {
     keyScope: 'user',
     redisPrefix: 'collabinvite',
   });
+
+  _analyticsEventsRateLimit = createScopedRateLimit({
+    windowMs: 60 * 1000,
+    max: prodOrDev(60, 500),
+    message: 'Too many analytics requests. Please wait before trying again.',
+    keyScope: 'ip',
+    redisPrefix: 'prodevents',
+  });
 }
 
 buildAllLimiters();
@@ -405,4 +414,8 @@ export const authLoginRateLimit: RequestHandler = (req, res, next) => {
 
 export const authSessionRateLimit: RequestHandler = (req, res, next) => {
   void requireLimiter(_authSessionRateLimit, 'authSessionRateLimit')(req, res, next);
+};
+
+export const analyticsEventsRateLimit: RequestHandler = (req, res, next) => {
+  void requireLimiter(_analyticsEventsRateLimit, 'analyticsEventsRateLimit')(req, res, next);
 };

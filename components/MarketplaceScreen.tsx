@@ -325,6 +325,24 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       } else {
         setListings(prev => [...prev, ...filteredData]);
       }
+
+      if (reset && searchTerm.trim()) {
+        void import('../services/productAnalytics').then(({ trackMarketplaceSearch }) => {
+          trackMarketplaceSearch({
+            query: searchTerm,
+            resultCount: pagination?.total ?? filteredData.length,
+            category: selectedCategory || undefined,
+            campus: campusIdFilter || undefined,
+          });
+        });
+      }
+      if (reset && filteredData.length > 0) {
+        void import('../services/productAnalytics').then(({ trackListingImpression }) => {
+          filteredData.slice(0, 20).forEach((listing, index) => {
+            trackListingImpression(listing.id, index, searchTerm ? 'search' : 'browse');
+          });
+        });
+      }
       
       setHasMore((pageNum * ITEMS_PER_PAGE) < (pagination?.total || 0));
       setPage(pageNum);

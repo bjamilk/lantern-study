@@ -16,7 +16,11 @@ import {
 import { SupabaseService } from '../../services/supabase';
 import { parseApkgBuffer } from '../../services/apkgImport';
 import { runPresentationPreviewJob } from '../../services/presentationPreview';
-import { purgeExpiredAIAnalytics, purgeExpiredAIInferenceLogs } from '../../services/dataRetention';
+import {
+  purgeExpiredAIAnalytics,
+  purgeExpiredAIInferenceLogs,
+  purgeExpiredProductEvents,
+} from '../../services/dataRetention';
 import {
   processAbandonedCheckoutReminders,
   processReviewReminders,
@@ -241,7 +245,8 @@ async function processCronJob(job: Job): Promise<unknown> {
   if (job.name === 'cron.dataRetention') {
     const logs = await purgeExpiredAIInferenceLogs(supabaseService);
     const analytics = await purgeExpiredAIAnalytics(supabaseService);
-    return { logs, analytics };
+    const productEvents = await purgeExpiredProductEvents(supabaseService);
+    return { logs, analytics, productEvents };
   }
   if (job.name === 'cron.marketplaceAlerts') {
     const saved = await processSavedSearchAlerts(supabaseService);

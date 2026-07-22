@@ -243,6 +243,10 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
       const fullPhoneNumber = phoneNumber.trim() ? `${countryCode}${phoneNumber.trim()}` : '';
       const normalizedUsername = username.toLowerCase().trim();
+
+      void import('../../services/productAnalytics').then(({ trackSignupStarted }) => {
+        trackSignupStarted();
+      });
       
       // Sign up with Supabase Auth
       const { data, error } = await supabase.auth.signUp({

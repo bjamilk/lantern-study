@@ -68,12 +68,13 @@ export const COOKIE_CATEGORIES: CookieCategoryDefinition[] = [
     id: 'analytics',
     title: 'Performance & Analytics',
     summary:
-      'Help us understand how Lantern Study is used so we can improve reliability and product design. These are not used for cross-site advertising.',
+      'Help us understand how Lantern Study is used so we can improve reliability and product design. First-party only — not used for cross-site advertising.',
     required: false,
-    currentlyDeployed: false,
+    currentlyDeployed: true,
     examples: [
-      'No performance or analytics cookies are loaded in Lantern Study today',
-      'If we add privacy-preserving analytics later, they will only run when this category is allowed',
+      'Anonymous product events (page/screen views, marketplace search and listing interactions)',
+      'Stored only on Lantern servers for about 90 days; no third-party analytics pixels',
+      'A random device id used only while this category is allowed',
     ],
   },
   {
@@ -187,6 +188,8 @@ export function isCookieConsentStorageKey(key: string): boolean {
  */
 export function shouldClearClientStorageKeyOnLogout(key: string): boolean {
   if (isCookieConsentStorageKey(key)) return false;
+  // Keep analytics ids across logout when the user previously opted in (cleared on consent revoke).
+  if (key === 'lantern_analytics_anon_id' || key === 'lantern_analytics_session_id') return false;
   return (
     key.startsWith('sb-') ||
     key.includes('supabase') ||

@@ -39,6 +39,9 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
 
     try {
       await createOffer(listing.id, offerAmount, message || undefined);
+      void import('../services/productAnalytics').then(({ trackOfferMade }) => {
+        trackOfferMade(listing.id);
+      });
       onSuccess(offerAmount);
       onClose();
     } catch (err: unknown) {

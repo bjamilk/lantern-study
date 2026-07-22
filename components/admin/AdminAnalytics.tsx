@@ -243,9 +243,16 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
         aiEvents: row.aiEvents,
         newListings: row.newListings,
         orders: row.orders,
+        gmv: row.gmv ?? 0,
       }))
     );
   };
+
+  const mk = analytics.marketplaceKpis;
+  const retention = analytics.retentionCohorts;
+  const search = analytics.searchAnalytics;
+  const funnel = analytics.acquisitionFunnel;
+  const platformEvents = analytics.platformFromEvents;
 
   const streakLabels = STREAK_ORDER.filter((k) => analytics.streakDistribution[k] != null);
   const streakData = streakLabels.map((k) => analytics.streakDistribution[k] ?? 0);
@@ -281,8 +288,8 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
       </div>
 
       <p className="text-xs text-lantern-text-muted">
-        Aggregated from existing study, chat, AI, and marketplace data. Web vs mobile split uses users who have
-        installed the mobile app (push token) — per-action platform attribution is not tracked.
+        Aggregated from study activity, marketplace orders, and consent-gated first-party product events.
+        Push-token platform split is approximate; event-based DAU is preferred when available.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
@@ -294,6 +301,138 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
         <StatPill label="Mobile app users" value={analytics.kpis.mobileAppUsers} accent="accent" />
         <StatPill label="Messages (period)" value={messagesTotal} accent="neutral" />
       </div>
+
+      {mk && (
+        <Card variant="elevated">
+          <h3 className="text-sm font-semibold text-lantern-text mb-3">Marketplace (period)</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <StatPill label="GMV" value={`₦${Number(mk.gmv).toLocaleString()}`} accent="primary" />
+            <StatPill label="Completed orders" value={mk.ordersCount} accent="success" />
+            <StatPill label="AOV" value={`₦${Number(mk.aov).toLocaleString()}`} accent="neutral" />
+            <StatPill label="Dispute rate" value={`${mk.disputedRate}%`} accent="accent" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">GMV by category</p>
+              {(mk.gmvByCategory?.length ?? 0) === 0 ? (
+                <p className="text-sm text-lantern-text-muted">No completed sales in period.</p>
+              ) : (
+                <div className="space-y-1">
+                  {mk.gmvByCategory.map((row) => (
+                    <div key={row.category} className="flex justify-between text-sm">
+                      <span className="text-lantern-text-muted capitalize">{row.category.replace(/_/g, ' ')}</span>
+                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">GMV by campus</p>
+              {(mk.gmvByCampus?.length ?? 0) === 0 ? (
+                <p className="text-sm text-lantern-text-muted">No campus-attributed sales yet.</p>
+              ) : (
+                <div className="space-y-1">
+                  {mk.gmvByCampus.map((row) => (
+                    <div key={row.campus} className="flex justify-between text-sm">
+                      <span className="text-lantern-text-muted">{row.campus}</span>
+                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {(retention || funnel || platformEvents) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {retention && (
+            <Card variant="elevated">
+              <h3 className="text-sm font-semibold text-lantern-text mb-2">Retention cohorts</h3>
+              <p className="text-xs text-lantern-text-muted mb-3">
+                Signups 30–60 days ago ({retention.signups}). % with study activity by day.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <StatPill label="D1" value={`${retention.d1}%`} accent="primary" />
+                <StatPill label="D7" value={`${retention.d7}%`} accent="success" />
+                <StatPill label="D30" value={`${retention.d30}%`} accent="accent" />
+              </div>
+            </Card>
+          )}
+          {funnel && (
+            <Card variant="elevated">
+              <h3 className="text-sm font-semibold text-lantern-text mb-3">Acquisition funnel</h3>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Guest listing views</span><span className="font-medium">{funnel.guestListingViews}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Signup started</span><span className="font-medium">{funnel.signupStarted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Signups completed</span><span className="font-medium">{funnel.signupsCompleted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Onboarding done</span><span className="font-medium">{funnel.onboardingCompleted}</span></div>
+              </div>
+            </Card>
+          )}
+          {platformEvents && (
+            <Card variant="elevated">
+              <h3 className="text-sm font-semibold text-lantern-text mb-3">Platform (from events)</h3>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Web DAU</span><span className="font-medium">{platformEvents.webDau}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Mobile DAU</span><span className="font-medium">{platformEvents.mobileDau}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Web active (period)</span><span className="font-medium">{platformEvents.webActivePeriod}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Mobile active (period)</span><span className="font-medium">{platformEvents.mobileActivePeriod}</span></div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {search && (
+        <Card variant="elevated">
+          <h3 className="text-sm font-semibold text-lantern-text mb-1">Search analytics</h3>
+          <p className="text-xs text-lantern-text-muted mb-3">{search.totalSearches} searches in period (consent-gated events)</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Top queries</p>
+              {(search.topQueries?.length ?? 0) === 0 ? (
+                <p className="text-sm text-lantern-text-muted">No search events yet.</p>
+              ) : (
+                search.topQueries.map((row) => (
+                  <div key={row.query} className="flex justify-between text-sm mb-1">
+                    <span className="text-lantern-text truncate mr-2">{row.query}</span>
+                    <span className="font-medium">{row.count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Zero-result queries</p>
+              {(search.zeroResultQueries?.length ?? 0) === 0 ? (
+                <p className="text-sm text-lantern-text-muted">None recorded.</p>
+              ) : (
+                search.zeroResultQueries.map((row) => (
+                  <div key={row.query} className="flex justify-between text-sm mb-1">
+                    <span className="text-lantern-text truncate mr-2">{row.query}</span>
+                    <span className="font-medium">{row.count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Searches by campus</p>
+              {(search.searchesByCampus?.length ?? 0) === 0 ? (
+                <p className="text-sm text-lantern-text-muted">No campus tags yet.</p>
+              ) : (
+                search.searchesByCampus.map((row) => (
+                  <div key={row.campus} className="flex justify-between text-sm mb-1">
+                    <span className="text-lantern-text-muted">{row.campus}</span>
+                    <span className="font-medium">{row.count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <LineChart

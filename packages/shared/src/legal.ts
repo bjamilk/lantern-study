@@ -295,7 +295,7 @@ We may update these Terms. Continued use after changes constitutes acceptance of
 
 export const COOKIE_NOTICE_MD = `# Cookie Policy
 
-**Last updated:** July 17, 2026
+**Last updated:** July 21, 2026
 
 This Cookie Policy explains how Lantern Study ("we," "our," or "us") uses cookies and similar technologies on [lanternstudy.com](https://lanternstudy.com) and related web experiences, and how the **Cookie Preference Center** works. It supplements our [Privacy Policy](/privacy).
 
@@ -303,7 +303,7 @@ This Cookie Policy explains how Lantern Study ("we," "our," or "us") uses cookie
 
 When you visit Lantern Study, we store cookies and similar data on your browser to collect information. That information may relate to you, your preferences, or your device, and is mostly used to make the site work as you expect and to provide a more personalized experience when you allow it.
 
-We may share information about your use of our site with analytics or advertising partners **only if those technologies are deployed and you have opted in** through the Preference Center. You can choose not to allow certain types of cookies, which may affect optional features.
+When you opt in to **Performance & Analytics**, Lantern Study records first-party product events on our own servers (for example page/screen views and marketplace search or listing interactions). We do **not** send these events to third-party advertising networks. You can turn analytics off anytime in the Preference Center.
 
 Click category headings in the Preference Center (opened from the cookie banner or via **Manage cookie preferences** on this site) to learn more and change defaults. You **cannot** opt out of Strictly Necessary cookies — they are required for the site to function (including showing the banner, remembering your settings, keeping you signed in, and applying theme/UI preferences).
 
@@ -323,7 +323,7 @@ Lantern Study groups cookies and similar technologies into the following categor
 |----------|--------------|---------------------|---------|
 | **Strictly Necessary** | No | Yes | Sign-in/session, security, cookie consent record, theme, core UI preferences |
 | **Functional** | Yes | No | Optional convenience preferences beyond core operation |
-| **Performance & Analytics** | Yes | No | Understand usage to improve reliability and product design |
+| **Performance & Analytics** | Yes | Yes | First-party product events to improve reliability and product design |
 | **Advertising & Marketing** | Yes | No | Campaign measurement or interest-based advertising / marketing pixels |
 
 ### Storage we use today (Strictly Necessary)
@@ -335,17 +335,27 @@ Lantern Study groups cookies and similar technologies into the following categor
 | \`theme\` | Local storage | Dark / light mode | Until cleared |
 | \`ui-storage\` | Local storage | Core UI preferences (e.g. low-data mode) | Until cleared |
 
+### Storage we use when Analytics is allowed
+
+| Name / storage | Type | Purpose | Duration |
+|----------------|------|---------|----------|
+| \`lantern_analytics_anon_id\` | Local storage | Random device id for anonymous event attribution | Until cleared or analytics opted out |
+| \`lantern_analytics_session_id\` | Local storage | Session id for event batching | Until cleared or analytics opted out |
+| Product event rows (server) | Database | Aggregated product analytics (no advertising use) | About 90 days, then deleted |
+
+**Operational records that are not cookie-gated:** marketplace order rows, listing view counters used for seller tooling, and study activity used for streaks/heatmaps are part of providing the service and are described in the Privacy Policy.
+
 Legacy note: older clients may still have \`lantern_cookie_notice_v1\` (dismissed). That is treated as an **Essential only** choice until you set new preferences.
 
 ### Similar technologies
 
 - **Local storage / session storage** — used like cookies for preferences and sessions on the web app.  
-- **Pixels / beacons** — not currently deployed; if introduced, they fall under Analytics or Advertising and require opt-in where required by law.  
-- **SDKs (mobile)** — the mobile apps store session tokens and preferences in on-device storage (e.g. AsyncStorage), not browser cookies. The same category rules apply to optional SDKs if added later.
+- **Pixels / beacons** — first-party event batching may use \`navigator.sendBeacon\` when analytics is allowed; third-party advertising pixels are not deployed.  
+- **SDKs (mobile)** — the mobile apps store session tokens and preferences in on-device storage (e.g. AsyncStorage), not browser cookies. The same category rules apply to optional analytics when allowed.
 
 ## Behavioral advertising and analytics
 
-If we enable Google Analytics or similar tools in the future, we will gate them behind the **Performance & Analytics** preference and update this Policy. You will be able to opt out in the Preference Center. We do not currently modify experiences based on browser "Do Not Track" signals alone; use the Preference Center for control.
+Lantern Study uses **first-party** analytics only when you opt in. We do not currently load Google Analytics, Meta Pixel, or similar third-party marketing trackers. If we add such tools later, they will remain behind the Preference Center. We do not currently modify experiences based on browser "Do Not Track" signals alone; use the Preference Center for control.
 
 ## Mobile apps
 

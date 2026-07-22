@@ -195,8 +195,24 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
               <Text className="font-bold text-lantern-primary">{formatPrice(analytics.revenue30d)}</Text>
             </View>
             <View className="px-3 py-2 rounded-lg bg-lantern-surface">
-              <Text className="text-xs text-lantern-text-secondary">View-to-sale</Text>
-              <Text className="font-bold">{analytics.conversionRate}%</Text>
+              <Text className="text-xs text-lantern-text-secondary">Total revenue</Text>
+              <Text className="font-bold">{formatPrice(analytics.totalRevenue)}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Avg sale</Text>
+              <Text className="font-bold">{formatPrice(analytics.avgSalePrice)}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Days to sell</Text>
+              <Text className="font-bold">{analytics.avgTimeToSellDays}</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">
+                {analytics.conversionRate30d != null ? 'View-to-sale (30d)' : 'View-to-sale'}
+              </Text>
+              <Text className="font-bold">
+                {analytics.conversionRate30d != null ? analytics.conversionRate30d : analytics.conversionRate}%
+              </Text>
             </View>
             <View className="px-3 py-2 rounded-lg bg-lantern-surface">
               <Text className="text-xs text-lantern-text-secondary">Pending orders</Text>
@@ -205,6 +221,10 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             <View className="px-3 py-2 rounded-lg bg-lantern-surface">
               <Text className="text-xs text-lantern-text-secondary">Offer accept rate</Text>
               <Text className="font-bold">{analytics.offerAcceptRate}%</Text>
+            </View>
+            <View className="px-3 py-2 rounded-lg bg-lantern-surface">
+              <Text className="text-xs text-lantern-text-secondary">Discounts given</Text>
+              <Text className="font-bold">{formatPrice(analytics.discountsGiven)}</Text>
             </View>
           </>
         ) : null}
@@ -240,6 +260,36 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
 
       {analytics && showAnalytics ? (
         <View className="px-4 pb-3">
+          {analytics.funnel30d ? (
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Funnel (30d)</Text>
+              <Text className="text-xs text-lantern-text-secondary">
+                {analytics.funnel30d.impressions} impressions → {analytics.funnel30d.views} views →{' '}
+                {analytics.funnel30d.inquiries} inquiries → {analytics.funnel30d.offers} offers →{' '}
+                {analytics.funnel30d.sales} sales
+              </Text>
+            </View>
+          ) : null}
+
+          {analytics.viewsByDay && analytics.viewsByDay.some(d => d.views > 0) ? (
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Listing views (30d)</Text>
+              <View className="flex-row items-end gap-0.5 h-14">
+                {analytics.viewsByDay.map(day => {
+                  const max = Math.max(...analytics.viewsByDay!.map(d => d.views), 1);
+                  const height = Math.max(2, (day.views / max) * 100);
+                  return (
+                    <View
+                      key={day.date}
+                      className="flex-1 bg-emerald-500/80 rounded-t"
+                      style={{ height: `${height}%` }}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
           {analytics.salesByWeek.length > 0 ? (
             <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
               <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Weekly sales</Text>
@@ -262,6 +312,38 @@ export function MyListingsScreen({ navigation }: { navigation: NavigationProp })
             <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
               <Text className="text-xs text-lantern-text-secondary">Inquiry → sale rate</Text>
               <Text className="text-lg font-bold">{analytics.inquiryToSaleRate}%</Text>
+            </View>
+          ) : null}
+
+          {analytics.salesBySource && analytics.salesBySource.length > 0 ? (
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Sales by channel</Text>
+              {analytics.salesBySource.map(row => (
+                <View key={row.source} className="flex-row justify-between mb-1">
+                  <Text className="text-sm text-lantern-text capitalize">
+                    {row.source.replace(/_/g, ' ')}
+                  </Text>
+                  <Text className="text-sm text-lantern-text-secondary">
+                    {row.count} · {formatPrice(row.revenue)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {analytics.topListings && analytics.topListings.length > 0 ? (
+            <View className="p-3 mb-2 rounded-xl bg-lantern-surface border border-lantern-border">
+              <Text className="text-xs font-semibold text-lantern-text-secondary mb-2">Top listings</Text>
+              {analytics.topListings.slice(0, 6).map(l => (
+                <View key={l.id} className="mb-2 pb-2 border-b border-lantern-border/60 last:border-0 last:mb-0 last:pb-0">
+                  <Text className="text-sm text-lantern-text" numberOfLines={1}>
+                    {l.title}{l.sold ? ' · sold' : ''}
+                  </Text>
+                  <Text className="text-xs text-lantern-text-secondary">
+                    {l.views} views · {l.inquiries} inquiries · {l.offers} offers · {formatPrice(l.revenue)}
+                  </Text>
+                </View>
+              ))}
             </View>
           ) : null}
 

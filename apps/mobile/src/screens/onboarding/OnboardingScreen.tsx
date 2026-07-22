@@ -41,6 +41,11 @@ export function OnboardingScreen({ onComplete }: Props) {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
       await AsyncStorage.setItem('lantern_onboarding_streak_target', String(streakTarget));
       await AsyncStorage.setItem('lantern_onboarding_goal', studyGoal);
+      if (!skipped) {
+        void import('../../services/productAnalytics').then(({ trackOnboardingCompleted }) => {
+          trackOnboardingCompleted();
+        });
+      }
       onComplete?.();
     } finally {
       setSaving(false);

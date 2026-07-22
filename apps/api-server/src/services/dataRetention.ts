@@ -46,6 +46,29 @@ export async function purgeExpiredAIAnalytics(supabaseService: SupabaseService):
   return data?.length ?? 0;
 }
 
+export async function purgeExpiredProductEvents(supabaseService: SupabaseService): Promise<number> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
+  const cutoffIso = cutoff.toISOString();
+
+  const { data, error } = await supabaseService
+    .getClient()
+    .from('product_events')
+    .delete()
+    .lt('created_at', cutoffIso)
+    .select('id');
+
+  if (error) {
+    logger.warn('Failed to purge product_events', { error: error.message });
+    return 0;
+  }
+  const count = data?.length ?? 0;
+  if (count > 0) {
+    logger.info('Purged expired product_events', { count, cutoffIso });
+  }
+  return count;
+}
+
 export function startDataRetentionJobs(supabaseService: SupabaseService): void {
   if (process.env.ENABLE_DATA_RETENTION_JOBS !== 'true') {
     return;
@@ -55,6 +78,7 @@ export function startDataRetentionJobs(supabaseService: SupabaseService): void {
   const run = async () => {
     await purgeExpiredAIInferenceLogs(supabaseService);
     await purgeExpiredAIAnalytics(supabaseService);
+    await purgeExpiredProductEvents(supabaseService);
     const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
     await purgeScheduledAccountDeletions(supabaseService);
   };

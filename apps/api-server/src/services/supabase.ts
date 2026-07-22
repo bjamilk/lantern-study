@@ -7196,6 +7196,42 @@ export interface AdminAnalyticsPayload {
     webOnlyUsers: number;
     activeGroups: number;
   };
+  marketplaceKpis?: {
+    gmv: number;
+    ordersCount: number;
+    aov: number;
+    disputedRate: number;
+    disputedCount: number;
+    gmvByCategory: Array<{ category: string; gmv: number; orders: number }>;
+    gmvByCampus: Array<{ campus: string; gmv: number; orders: number }>;
+  };
+  retentionCohorts?: {
+    signups: number;
+    d1: number;
+    d7: number;
+    d30: number;
+    d1Count: number;
+    d7Count: number;
+    d30Count: number;
+  };
+  searchAnalytics?: {
+    topQueries: Array<{ query: string; count: number }>;
+    zeroResultQueries: Array<{ query: string; count: number }>;
+    searchesByCampus: Array<{ campus: string; count: number }>;
+    totalSearches: number;
+  };
+  acquisitionFunnel?: {
+    guestListingViews: number;
+    signupStarted: number;
+    signupsCompleted: number;
+    onboardingCompleted: number;
+  };
+  platformFromEvents?: {
+    webDau: number;
+    mobileDau: number;
+    webActivePeriod: number;
+    mobileActivePeriod: number;
+  };
   streakDistribution: Record<string, number>;
   featureTotals: {
     tests: number;
@@ -7226,6 +7262,7 @@ export interface AdminAnalyticsPayload {
     aiEvents: number;
     newListings: number;
     orders: number;
+    gmv?: number;
   }>;
 }
 

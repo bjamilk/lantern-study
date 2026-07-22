@@ -15,6 +15,7 @@ import {
   type CookiePreferences,
 } from '@lantern/shared';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { notifyProductAnalyticsConsentChange } from '../services/productAnalytics';
 
 type DraftPrefs = Pick<CookiePreferences, 'functional' | 'analytics' | 'advertising'>;
 
@@ -110,6 +111,7 @@ export function CookieNoticeBanner() {
 
   const persistAndClose = (prefs: CookiePreferences) => {
     writePrefs(prefs);
+    void notifyProductAnalyticsConsentChange(prefs);
     setHasChoice(true);
     setBannerVisible(false);
     setCenterOpen(false);
@@ -161,8 +163,8 @@ export function CookieNoticeBanner() {
               </span>
               <span className="hidden sm:inline">
                 Lantern Study uses strictly necessary cookies and local storage so the site works (sign-in, theme, and
-                remembering your choices). Optional analytics, functional, and advertising cookies are off by default and
-                not currently deployed.{' '}
+                remembering your choices). Optional analytics (first-party only), functional, and advertising cookies are
+                off by default — analytics only runs if you opt in.{' '}
               </span>
               <Link to="/cookies" className="underline text-lantern-primary">
                 Cookie Policy

@@ -728,7 +728,10 @@ export interface SellerAnalytics {
   revenue30d: number;
   avgSalePrice: number;
   avgTimeToSellDays: number;
+  /** All-time completed sales / all-time listing views. Prefer conversionRate30d when available. */
   conversionRate: number;
+  /** Period-aligned conversion from product_events (null until event pipeline has data). */
+  conversionRate30d?: number | null;
   offerAcceptRate: number;
   pendingOrders: number;
   openInquiries: number;
@@ -755,6 +758,16 @@ export interface SellerAnalytics {
     offers: number;
   }>;
   favoriteHighlights?: Array<{ id: string; title: string; favoritesCount: number }>;
+  /** Daily listing_view counts over last 30 days (from product_events). */
+  viewsByDay?: Array<{ date: string; views: number; uniqueViewers: number }>;
+  /** Period funnel: impressions → views → inquiries → offers → sales (30d). */
+  funnel30d?: {
+    impressions: number;
+    views: number;
+    inquiries: number;
+    offers: number;
+    sales: number;
+  };
 }
 
 export interface SellerBuyerContact {

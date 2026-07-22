@@ -14,6 +14,7 @@ import { applyDesignTokensToDom } from './utils/applyDesignTokens';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import CookieNoticeBanner from './components/CookieNoticeBanner';
+import ProductAnalyticsRouteListener from './components/ProductAnalyticsRouteListener';
 import LegalPage from './components/LegalPage';
 
 bootstrapAuthFromStorage();
@@ -39,6 +40,7 @@ root.render(
           <Route path="/*" element={<App />} />
         </Routes>
         {/* Mounted at router root so legal pages can open the Preference Center */}
+        <ProductAnalyticsRouteListener />
         <CookieNoticeBanner />
       </BrowserRouter>
     </ErrorBoundary>

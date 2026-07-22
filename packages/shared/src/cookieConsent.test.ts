@@ -47,9 +47,12 @@ describe('cookieConsent protocol', () => {
     expect(isCookieConsentStorageKey(COOKIE_NOTICE_LEGACY_KEY)).toBe(true);
     expect(shouldClearClientStorageKeyOnLogout(COOKIE_PREFS_STORAGE_KEY)).toBe(false);
     expect(shouldClearClientStorageKeyOnLogout(COOKIE_NOTICE_LEGACY_KEY)).toBe(false);
+    expect(shouldClearClientStorageKeyOnLogout('lantern_analytics_anon_id')).toBe(false);
+    expect(shouldClearClientStorageKeyOnLogout('lantern_analytics_session_id')).toBe(false);
     expect(shouldClearClientStorageKeyOnLogout('lantern_decks')).toBe(true);
     expect(shouldClearClientStorageKeyOnLogout('sb-xxx-auth-token')).toBe(true);
     expect(shouldClearClientStorageKeyOnLogout('auth-storage-v2')).toBe(true);
     expect(shouldClearClientStorageKeyOnLogout('theme')).toBe(false);
   });
 });
+

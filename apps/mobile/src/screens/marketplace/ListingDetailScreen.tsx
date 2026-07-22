@@ -133,7 +133,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    if (listingId) {
+      void import('../../services/productAnalytics').then(({ trackListingView }) => {
+        trackListingView(listingId);
+      });
+    }
+  }, [load, listingId]);
 
   const listing = currentListing;
   const category = listing ? getCategoryInfo(listing.category) : null;
@@ -153,6 +158,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     setSending(true);
     try {
       const result = await sendInquiry(listing.id, contactMessage.trim());
+      void import('../../services/productAnalytics').then(({ trackInquiryStarted }) => {
+        trackInquiryStarted(listing.id);
+      });
       setShowContact(false);
       setContactMessage('');
       Alert.alert('Message sent', 'Opening chat with the seller.');
@@ -193,6 +201,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           text: 'Confirm',
           onPress: async () => {
             setActionLoading(true);
+            void import('../../services/productAnalytics').then(({ trackCheckoutStarted }) => {
+              trackCheckoutStarted(listing.id);
+            });
             try {
               const result = await buyNowListing(
                 listing.id,

@@ -61,6 +61,7 @@ import storageRoutes, { initializeStorageRoutes } from './routes/storage';
 import jobsRoutes from './routes/jobs';
 import budgetRoutes from './routes/budget';
 import contactRoutes from './routes/contact';
+import analyticsRoutes, { initializeAnalyticsRoutes } from './routes/analytics';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -154,6 +155,7 @@ async function initializeServices() {
     initializeChallengeRoutes(supabaseService, cacheService);
     initializeAuthRoutes(supabaseService, cacheService);
     initializeStorageRoutes(supabaseService);
+    initializeAnalyticsRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -302,6 +304,7 @@ async function startServer() {
     app.use('/api/v1/jobs', jobsRoutes);
     app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/contact', contactRoutes);
+    app.use('/api/v1/analytics', analyticsRoutes);
     app.use('/api/v1/groups', optionalAuthMiddleware, applyPublicRateLimits, groupRoutes);
     app.use('/api/v1/messages', messageRoutes);
     app.use('/api/v1/notifications', notificationRoutes);

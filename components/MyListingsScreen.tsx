@@ -335,8 +335,24 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               <p className="text-lg font-bold text-lantern-primary">₦{analytics.revenue30d.toLocaleString()}</p>
             </div>
             <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">View-to-sale rate</p>
-              <p className="text-lg font-bold">{analytics.conversionRate}%</p>
+              <p className="text-xs text-lantern-text-secondary">Total revenue</p>
+              <p className="text-lg font-bold">₦{analytics.totalRevenue.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Avg sale price</p>
+              <p className="text-lg font-bold">₦{analytics.avgSalePrice.toLocaleString()}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Avg days to sell</p>
+              <p className="text-lg font-bold">{analytics.avgTimeToSellDays}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">
+                {analytics.conversionRate30d != null ? 'View-to-sale (30d)' : 'View-to-sale (all-time)'}
+              </p>
+              <p className="text-lg font-bold">
+                {analytics.conversionRate30d != null ? analytics.conversionRate30d : analytics.conversionRate}%
+              </p>
             </div>
             <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
               <p className="text-xs text-lantern-text-secondary">Pending orders</p>
@@ -346,7 +362,55 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               <p className="text-xs text-lantern-text-secondary">Offer accept rate</p>
               <p className="text-lg font-bold">{analytics.offerAcceptRate}%</p>
             </div>
+            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs text-lantern-text-secondary">Discounts given</p>
+              <p className="text-lg font-bold">₦{analytics.discountsGiven.toLocaleString()}</p>
+            </div>
           </div>
+          {analytics.funnel30d && (
+            <div className="mb-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Funnel (30d)</p>
+              <div className="grid grid-cols-5 gap-1 text-center text-xs">
+                {(
+                  [
+                    ['Impressions', analytics.funnel30d.impressions],
+                    ['Views', analytics.funnel30d.views],
+                    ['Inquiries', analytics.funnel30d.inquiries],
+                    ['Offers', analytics.funnel30d.offers],
+                    ['Sales', analytics.funnel30d.sales],
+                  ] as const
+                ).map(([label, value]) => (
+                  <div key={label} className="p-2 rounded-lg bg-lantern-background">
+                    <p className="text-lantern-text-secondary">{label}</p>
+                    <p className="font-bold text-lantern-text">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {analytics.viewsByDay && analytics.viewsByDay.some((d) => d.views > 0) && (
+            <div className="mb-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
+              <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
+                <ChartBarIcon className="w-4 h-4" /> Listing views (30d)
+              </p>
+              <div className="flex items-end gap-0.5 h-16">
+                {analytics.viewsByDay.map((day) => {
+                  const max = Math.max(...analytics.viewsByDay!.map((d) => d.views), 1);
+                  const height = Math.max(2, (day.views / max) * 100);
+                  return (
+                    <div
+                      key={day.date}
+                      className="flex-1 bg-emerald-500/80 rounded-t"
+                      style={{ height: `${height}%` }}
+                      title={`${day.date}: ${day.views} views · ${day.uniqueViewers} unique`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {analytics.salesByWeek.length > 0 && (
             <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
               <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
@@ -419,6 +483,36 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   "{l.title}" — {l.favoritesCount} favorite{l.favoritesCount === 1 ? '' : 's'}. Consider reaching out with a coupon.
                 </p>
               ))}
+            </div>
+          )}
+
+          {analytics.topListings && analytics.topListings.length > 0 && (
+            <div className="mt-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border overflow-x-auto">
+              <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Top listings</p>
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="text-lantern-text-secondary border-b border-lantern-border">
+                    <th className="py-1 pr-2 font-medium">Listing</th>
+                    <th className="py-1 px-1 font-medium">Views</th>
+                    <th className="py-1 px-1 font-medium">Inquiries</th>
+                    <th className="py-1 px-1 font-medium">Offers</th>
+                    <th className="py-1 pl-1 font-medium">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analytics.topListings.slice(0, 8).map((l) => (
+                    <tr key={l.id} className="border-b border-lantern-border/60 last:border-0">
+                      <td className="py-1.5 pr-2 text-lantern-text max-w-[10rem] truncate" title={l.title}>
+                        {l.title}{l.sold ? ' · sold' : ''}
+                      </td>
+                      <td className="py-1.5 px-1">{l.views}</td>
+                      <td className="py-1.5 px-1">{l.inquiries}</td>
+                      <td className="py-1.5 px-1">{l.offers}</td>
+                      <td className="py-1.5 pl-1">₦{l.revenue.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 

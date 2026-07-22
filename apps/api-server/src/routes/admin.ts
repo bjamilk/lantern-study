@@ -135,8 +135,17 @@ router.get('/stats', async (req: any, res: any) => {
       client.from('marketplace_orders').select('id', { count: 'exact', head: true }).eq('status', 'disputed'),
     ]);
 
-    const { data: recentAiUsers } = await client.from('ai_analytics').select('user_id').gte('created_at', last7d).limit(5000);
-    const activeUsers7d = new Set((recentAiUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
+    // Distinct study_activity users in the last 7 days (same definition as Analytics tab WAU/DAU family).
+    const sevenDaysAgoDate = new Date();
+    sevenDaysAgoDate.setUTCDate(sevenDaysAgoDate.getUTCDate() - 6);
+    const sevenDaysAgoYmd = sevenDaysAgoDate.toISOString().slice(0, 10);
+    const { data: recentStudyUsers } = await client
+      .from('study_activity')
+      .select('user_id')
+      .gte('activity_date', sevenDaysAgoYmd)
+      .gt('count', 0)
+      .limit(10000);
+    const activeUsers7d = new Set((recentStudyUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
 
     const estimatedAiCost7d = Number(((aiEventsLast7d ?? 0) * AI_EVENT_ESTIMATED_COST_USD).toFixed(4));
 

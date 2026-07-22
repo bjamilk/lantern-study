@@ -651,6 +651,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           username: normalizedUsername,
           ...(signupPhone ? { phone: signupPhone } : {}),
         };
+
+        void import('../services/productAnalytics').then(({ trackSignupStarted }) => {
+          trackSignupStarted();
+        });
         
         const { data, error } = await supabase.auth.signUp({
           email,

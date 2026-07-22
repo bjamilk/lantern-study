@@ -61,6 +61,9 @@ export function MakeOfferScreen({ navigation, route }: Props) {
 
     try {
       await createMarketplaceOffer(listing.id, parsedAmount, message.trim() || undefined);
+      void import('../../services/productAnalytics').then(({ trackOfferMade }) => {
+        trackOfferMade(listing.id);
+      });
       Alert.alert('Offer sent', 'The seller will review your offer.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);

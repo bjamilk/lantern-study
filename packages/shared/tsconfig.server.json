@@ -30,8 +30,10 @@
     "src/utils/apiMappers.ts",
     "src/settings/**/*.ts",
     "src/marketplace/**/*.ts",
+    "src/analytics/**/*.ts",
+    "src/cookieConsent.ts",
     "src/accountLifecycle.ts",
     "src/contactForm.ts"
   ],
-  "exclude": ["node_modules", "dist", "__tests__"]
+  "exclude": ["node_modules", "dist", "__tests__", "**/*.test.ts"]
 }
