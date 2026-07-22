@@ -3743,7 +3743,10 @@ export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<str
 };
 
 // Mark a group as read
-export const markGroupAsRead = async (groupId: string, userId: string): Promise<boolean> => {
+export const markGroupAsRead = async (
+  groupId: string,
+  userId: string
+): Promise<{ success: boolean; previousLastReadAt: string | null }> => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/read`, {
       method: 'POST',
@@ -3751,15 +3754,24 @@ export const markGroupAsRead = async (groupId: string, userId: string): Promise<
       body: JSON.stringify({ userId }),
     });
 
+    const body = await response.json().catch(() => ({})) as {
+      success?: boolean;
+      previousLastReadAt?: string | null;
+      data?: { previousLastReadAt?: string | null };
+    };
+
     if (!response.ok) {
       console.error('Failed to mark group as read');
-      return false;
+      return { success: false, previousLastReadAt: null };
     }
 
-    return true;
+    return {
+      success: body.success !== false,
+      previousLastReadAt: body.previousLastReadAt ?? body.data?.previousLastReadAt ?? null,
+    };
   } catch (error) {
     console.error('Error marking group as read:', error);
-    return false;
+    return { success: false, previousLastReadAt: null };
   }
 };
 

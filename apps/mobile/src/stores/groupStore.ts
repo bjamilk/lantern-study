@@ -192,7 +192,7 @@ interface GroupState {
   fetchGroups: (userId: string) => Promise<void>;
   fetchGroupMembers: (groupId: string) => Promise<GroupMember[]>;
   fetchGroupUnreadCounts: (userId: string) => Promise<void>;
-  markGroupAsRead: (groupId: string, userId: string) => Promise<void>;
+  markGroupAsRead: (groupId: string, userId: string) => Promise<string | null>;
   selectGroup: (groupId: string) => void;
   fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
   loadMoreMessages: (groupId: string) => Promise<number>;
@@ -549,13 +549,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   markGroupAsRead: async (groupId: string, userId: string) => {
     try {
-      await api.markGroupAsRead(groupId, userId);
+      const result = await api.markGroupAsRead(groupId, userId);
       set(state => ({
         groupUnreadCounts: { ...state.groupUnreadCounts, [groupId]: 0 },
         groups: state.groups.map(g => g.id === groupId ? { ...g, unreadCount: 0 } : g),
       }));
+      return result?.previousLastReadAt ?? result?.data?.previousLastReadAt ?? null;
     } catch (error) {
       console.warn('[GroupStore] Failed to mark group as read:', error);
+      return null;
     }
   },
 

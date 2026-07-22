@@ -599,7 +599,12 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<Record<string, number>>('/groups/unread/all'),
 
     markGroupAsRead: (groupId: string, userId: string) =>
-      apiRequest<void>(`/groups/${groupId}/read`, {
+      apiRequestRaw<{
+        success: boolean;
+        previousLastReadAt: string | null;
+        data?: { previousLastReadAt: string | null };
+        message?: string;
+      }>(`/groups/${groupId}/read`, {
         method: 'POST',
         body: JSON.stringify({ userId }),
       }),

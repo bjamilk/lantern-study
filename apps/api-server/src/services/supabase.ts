@@ -6055,8 +6055,27 @@ export class SupabaseService {
   }
 
   // Mark group as read for a user
-  async markGroupAsRead(groupId: string, userId: string): Promise<boolean> {
+  async markGroupAsRead(
+    groupId: string,
+    userId: string
+  ): Promise<{ success: boolean; previousLastReadAt: string | null }> {
     try {
+      // Capture the prior marker before overwriting so clients can scroll to first unread.
+      const { data: membership, error: readError } = await this.supabase
+        .from('group_members')
+        .select('last_read_at, joined_at')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (readError) {
+        console.error('Error reading group membership for mark-as-read:', readError);
+        return { success: false, previousLastReadAt: null };
+      }
+
+      const previousLastReadAt: string | null =
+        membership?.last_read_at || membership?.joined_at || null;
+
       const { error } = await this.supabase
         .from('group_members')
         .update({ last_read_at: new Date().toISOString() })
@@ -6065,17 +6084,17 @@ export class SupabaseService {
 
       if (error) {
         console.error('Error marking group as read:', error);
-        return false;
+        return { success: false, previousLastReadAt };
       }
 
       // Invalidate cache
       cacheService.delete(`group:unread:${groupId}:${userId}`);
       cacheService.delete(`user:unread:${userId}`);
 
-      return true;
+      return { success: true, previousLastReadAt };
     } catch (error) {
       console.error('Error in markGroupAsRead:', error);
-      return false;
+      return { success: false, previousLastReadAt: null };
     }
   }
 

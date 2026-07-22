@@ -665,16 +665,19 @@ router.post(
 
       const { groupId } = req.params;
 
-      const success = await supabaseService.markGroupAsRead(groupId, userId);
+      const result = await supabaseService.markGroupAsRead(groupId, userId);
 
       res.json({
-        success,
-        message: success ? 'Group marked as read' : 'Failed to mark group as read',
+        success: result.success,
+        previousLastReadAt: result.previousLastReadAt,
+        data: { previousLastReadAt: result.previousLastReadAt },
+        message: result.success ? 'Group marked as read' : 'Failed to mark group as read',
       });
     } catch (error) {
       console.error('Error marking group as read:', error);
       res.status(500).json({
         success: false,
+        previousLastReadAt: null,
         error: 'Failed to mark group as read',
       });
     }

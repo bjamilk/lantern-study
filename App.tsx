@@ -264,7 +264,7 @@ export const App: React.FC = () => {
         onOpenTestConfigModal, onOpenStudyConfigModal,
         handleChallengeUser, addNotification,
         handleMarkNotificationAsRead, handleMarkAllNotificationsAsRead,
-        handleLoadMoreMessages, handleChatBack
+        handleLoadMoreMessages, handleChatBack, unreadAnchorAt,
     } = useGroupHandlers({ users });
     const {
         handleTestSubmit, handleUpdateAnswer, handleChangeQuestion,
@@ -891,7 +891,8 @@ export const App: React.FC = () => {
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
                     onUnarchiveDmThread={handleUnarchiveDmThread}
-                    onLoadMoreMessages={handleLoadMoreMessages} />
+                    onLoadMoreMessages={handleLoadMoreMessages}
+                    unreadAnchorAt={unreadAnchorAt} />
                     </div>
                 );
             case AppMode.TEST_ACTIVE:

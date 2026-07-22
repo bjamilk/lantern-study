@@ -23,7 +23,6 @@ export function useGroupHandlers() {
     messagePagination,
     loadMoreMessages,
     sendMessage,
-    markGroupAsRead,
     fetchUserVotesForGroup,
     fetchGroupMembers,
     markDMAsRead,
@@ -50,12 +49,13 @@ export function useGroupHandlers() {
       groupName: group.name,
     });
 
+    // Mark-as-read (and unread scroll anchor) is owned by GroupChatScreen.loadChat
+    // so we don't race two mark calls and lose the prior last_read_at marker.
     await Promise.all([
       fetchUserVotesForGroup(group.id, user.id),
       fetchGroupMembers(group.id),
-      markGroupAsRead(group.id, user.id),
     ]);
-  }, [user?.id, navigation, fetchUserVotesForGroup, fetchGroupMembers, markGroupAsRead]);
+  }, [user?.id, navigation, fetchUserVotesForGroup, fetchGroupMembers]);
 
   const handleInitiateDm = useCallback(async (otherUserId: string, otherUserName: string) => {
     if (!user?.id || otherUserId === user.id) return;

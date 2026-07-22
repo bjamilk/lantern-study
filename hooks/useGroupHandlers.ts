@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, QuestionStatus, ChatItem, MatchingItem, DiagramLabel } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -58,6 +58,12 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const pendingCreatedGroupRef = useRef<any>(null);
     const groupMessagesFetchSeqRef = useRef(0);
     const dmFetchSeqRef = useRef(0);
+    /** Prior last_read_at for the open group — used to scroll to first unread. */
+    const [groupUnreadAnchor, setGroupUnreadAnchor] = useState<{
+        chatId: string;
+        at: string | null;
+    } | null>(null);
+    const markedReadChatIdRef = useRef<string | null>(null);
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
         groups, setGroups, updateGroups,
@@ -104,13 +110,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     console.error('Error fetching user votes:', error);
                 });
                 
-                markGroupAsRead(chat.id, currentUser.id).then(() => {
-                    updateGroups(prevGroups => prevGroups.map(g => 
-                        g.id === chat.id ? { ...g, unreadCount: 0 } : g
-                    ));
-                }).catch(error => {
-                    console.error('Error marking group as read:', error);
-                });
+                // Mark-as-read (and unread anchor) runs in the selectedChat effect
+                // so deep links and list taps share one path without racing.
             }
             
             fetchGroupMembers(chat.id, { bustCache: true }).then(fetchedMembers => {
@@ -158,6 +159,18 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const handleChatBack = useCallback(() => {
         navigateForAppMode(AppMode.CHAT, {}, { replace: true });
     }, []);
+
+    // Clear unread anchor when leaving or switching groups so the next open re-anchors.
+    useEffect(() => {
+        if (!selectedChat || selectedChat.chatType !== 'group') {
+            markedReadChatIdRef.current = null;
+            setGroupUnreadAnchor(null);
+            return;
+        }
+        if (markedReadChatIdRef.current !== selectedChat.id) {
+            setGroupUnreadAnchor(null);
+        }
+    }, [selectedChat?.id, selectedChat?.chatType]);
 
     // Load messages when a chat is selected (covers deep links / refresh, not only list taps).
     useEffect(() => {
@@ -208,15 +221,23 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         console.error('[selectedChat] Error fetching user votes:', error);
                     });
 
-                markGroupAsRead(chatId, currentUser.id)
-                    .then(() => {
-                        updateGroups((prevGroups) =>
-                            prevGroups.map((g) => (g.id === chatId ? { ...g, unreadCount: 0 } : g))
-                        );
-                    })
-                    .catch((error) => {
-                        console.error('[selectedChat] Error marking group as read:', error);
-                    });
+                if (markedReadChatIdRef.current !== chatId) {
+                    markedReadChatIdRef.current = chatId;
+                    markGroupAsRead(chatId, currentUser.id)
+                        .then((result) => {
+                            if (cancelled) return;
+                            setGroupUnreadAnchor({
+                                chatId,
+                                at: result.previousLastReadAt,
+                            });
+                            updateGroups((prevGroups) =>
+                                prevGroups.map((g) => (g.id === chatId ? { ...g, unreadCount: 0 } : g))
+                            );
+                        })
+                        .catch((error) => {
+                            console.error('[selectedChat] Error marking group as read:', error);
+                        });
+                }
             } else if (selectedChat.chatType === 'dm') {
                 const threadId = selectedChat.id;
                 markDMAsRead(threadId, currentUser.id)
@@ -1341,10 +1362,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [messages, lowDataMode, updateMessages]);
 
+    // undefined = mark-as-read still pending for this group; null = no prior marker / fully read.
+    const unreadAnchorAt: string | null | undefined =
+        selectedChat?.chatType === 'group'
+            ? groupUnreadAnchor?.chatId === selectedChat.id
+                ? groupUnreadAnchor.at
+                : undefined
+            : null;
+
     return {
         addNotification,
         handleLoadMoreMessages,
         handleChatBack,
+        unreadAnchorAt,
         handleSelectChat,
         handleInitiateDm,
         handleSendDm,

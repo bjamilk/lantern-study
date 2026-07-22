@@ -150,6 +150,18 @@ function ChatDateSeparator({ label }: { label: string }) {
   );
 }
 
+function NewMessagesDivider() {
+  return (
+    <View className="flex-row items-center my-3 gap-2">
+      <View className="flex-1 h-px bg-lantern-primary/40" />
+      <Text className="text-[11px] font-semibold text-lantern-primary">New messages</Text>
+      <View className="flex-1 h-px bg-lantern-primary/40" />
+    </View>
+  );
+}
+
+const NEAR_BOTTOM_PX = 120;
+
 export function GroupChatScreen({ navigation, route }: Props) {
   const { groupId, groupName, openAddMembers } = route.params;
   const user = useAuthStore(s => s.user);
@@ -200,7 +212,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [summarizing, setSummarizing] = useState(false);
   const [challengeMember, setChallengeMember] = useState<GroupMember | null>(null);
   const [cachedGroupMessages, setCachedGroupMessages] = useState<Message[]>([]);
+  const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
+  const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const listRef = useRef<FlatList<Message>>(null);
+  const isNearBottomRef = useRef(true);
+  const initialAnchorDoneRef = useRef(false);
+  const lastMessageIdRef = useRef<string | null>(null);
+  const prevMessageCountRef = useRef(0);
+  const suppressLoadOlderRef = useRef(true);
 
   const displayName = groupName || currentGroup?.name || 'Group chat';
   const messageLimit = lowDataMode ? 30 : 100;
@@ -219,6 +239,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [typingUserIds, currentGroup?.members]);
 
   const handleLoadOlderMessages = useCallback(() => {
+    if (suppressLoadOlderRef.current) return;
     if (!hasMoreMessages || isLoadingMore) return;
     void loadMoreMessages(groupId);
   }, [groupId, hasMoreMessages, isLoadingMore, loadMoreMessages]);
@@ -283,17 +304,117 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const loadChat = useCallback(async () => {
     if (!user?.id) return;
+    // Reset per-open scroll state
+    setUnreadAnchorAt(undefined);
+    setFirstUnreadId(null);
+    setNewMessagesBelow(0);
+    initialAnchorDoneRef.current = false;
+    lastMessageIdRef.current = null;
+    prevMessageCountRef.current = 0;
+    isNearBottomRef.current = true;
+    suppressLoadOlderRef.current = true;
+
     selectGroup(groupId);
-    await Promise.all([
+    const [, previousLastReadAt] = await Promise.all([
       fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit }),
       markGroupAsRead(groupId, user.id),
       fetchUserVotesForGroup(groupId, user.id),
     ]);
+    setUnreadAnchorAt(previousLastReadAt ?? null);
   }, [user?.id, groupId, selectGroup, fetchMessages, markGroupAsRead, fetchUserVotesForGroup, messageLimit]);
 
   useEffect(() => {
     void loadChat();
   }, [loadChat]);
+
+  // Find first unread once messages + prior marker are ready.
+  useEffect(() => {
+    if (unreadAnchorAt === undefined) return;
+    if (displayMessages.length === 0) {
+      setFirstUnreadId(null);
+      return;
+    }
+    if (unreadAnchorAt == null) {
+      setFirstUnreadId(null);
+      return;
+    }
+    const anchorMs = new Date(unreadAnchorAt).getTime();
+    if (Number.isNaN(anchorMs)) {
+      setFirstUnreadId(null);
+      return;
+    }
+    const first = displayMessages.find((msg) => {
+      if (msg.senderId && msg.senderId === user?.id) return false;
+      const ts = new Date(msg.createdAt).getTime();
+      return !Number.isNaN(ts) && ts > anchorMs;
+    });
+    setFirstUnreadId(first?.id ?? null);
+  }, [displayMessages, unreadAnchorAt, user?.id]);
+
+  // Initial open: scroll to first unread or bottom.
+  useEffect(() => {
+    if (initialAnchorDoneRef.current) return;
+    if (unreadAnchorAt === undefined) return;
+    if (displayMessages.length === 0 && !isLoadingMessages) {
+      initialAnchorDoneRef.current = true;
+      suppressLoadOlderRef.current = false;
+      return;
+    }
+    if (displayMessages.length === 0) return;
+
+    const timer = setTimeout(() => {
+      if (initialAnchorDoneRef.current) return;
+      initialAnchorDoneRef.current = true;
+      lastMessageIdRef.current = displayMessages[displayMessages.length - 1]?.id ?? null;
+      prevMessageCountRef.current = displayMessages.length;
+
+      if (firstUnreadId) {
+        const index = displayMessages.findIndex((m) => m.id === firstUnreadId);
+        if (index >= 0) {
+          try {
+            listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false });
+            isNearBottomRef.current = false;
+          } catch {
+            listRef.current?.scrollToEnd({ animated: false });
+          }
+        } else {
+          listRef.current?.scrollToEnd({ animated: false });
+        }
+      } else {
+        listRef.current?.scrollToEnd({ animated: false });
+        isNearBottomRef.current = true;
+      }
+      // Allow load-older after the initial anchor settles.
+      setTimeout(() => {
+        suppressLoadOlderRef.current = false;
+      }, 400);
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [displayMessages, firstUnreadId, unreadAnchorAt, isLoadingMessages]);
+
+  // Live updates: auto-scroll only when near bottom or own message.
+  useEffect(() => {
+    if (!initialAnchorDoneRef.current) return;
+    const last = displayMessages[displayMessages.length - 1];
+    const lastId = last?.id ?? null;
+    if (!lastId || lastId === lastMessageIdRef.current) {
+      lastMessageIdRef.current = lastId;
+      prevMessageCountRef.current = displayMessages.length;
+      return;
+    }
+
+    const isOwn = last?.senderId === user?.id;
+    if (isOwn || isNearBottomRef.current) {
+      listRef.current?.scrollToEnd({ animated: true });
+      setNewMessagesBelow(0);
+      isNearBottomRef.current = true;
+    } else {
+      const added = Math.max(1, displayMessages.length - prevMessageCountRef.current);
+      setNewMessagesBelow((n) => n + added);
+    }
+    lastMessageIdRef.current = lastId;
+    prevMessageCountRef.current = displayMessages.length;
+  }, [displayMessages, user?.id]);
 
   useEffect(() => {
     if (!openAddMembers) return;
@@ -343,8 +464,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
     if (!trimmed || !user?.id || sending) return;
     setSending(true);
     setText('');
+    isNearBottomRef.current = true;
     try {
       await sendMessage(groupId, trimmed, user.id);
+      listRef.current?.scrollToEnd({ animated: true });
+      setNewMessagesBelow(0);
     } finally {
       setSending(false);
     }
@@ -502,6 +626,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
         ) : (
+          <View className="flex-1 relative">
           <FlatList
             ref={listRef}
             data={displayMessages}
@@ -509,11 +634,32 @@ export function GroupChatScreen({ navigation, route }: Props) {
             className="flex-1"
             contentContainerClassName="px-4 py-4 flex-grow"
             onScroll={(e) => {
-              if (e.nativeEvent.contentOffset.y <= 16) {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              if (contentOffset.y <= 16) {
                 handleLoadOlderMessages();
+              }
+              const distanceFromBottom =
+                contentSize.height - contentOffset.y - layoutMeasurement.height;
+              const nearBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
+              isNearBottomRef.current = nearBottom;
+              if (nearBottom && newMessagesBelow > 0) {
+                setNewMessagesBelow(0);
               }
             }}
             scrollEventThrottle={200}
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: Math.max(0, info.averageItemLength * info.index),
+                animated: false,
+              });
+              setTimeout(() => {
+                listRef.current?.scrollToIndex({
+                  index: info.index,
+                  viewPosition: 0,
+                  animated: false,
+                });
+              }, 100);
+            }}
             ListHeaderComponent={
               isLoadingMore ? (
                 <View className="py-2 items-center">
@@ -531,9 +677,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
               const showDate =
                 index === 0 ||
                 (previous && isDifferentChatDay(previous.createdAt, item.createdAt));
+              const showUnreadDivider = firstUnreadId === item.id;
               const isGroupedWithPrevious =
                 !!previous &&
                 !showDate &&
+                !showUnreadDivider &&
                 previous.senderId === item.senderId &&
                 new Date(item.createdAt).getTime() - new Date(previous.createdAt).getTime() < 5 * 60 * 1000;
 
@@ -542,6 +690,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                   {showDate ? (
                     <ChatDateSeparator label={formatChatDateLabel(item.createdAt)} />
                   ) : null}
+                  {showUnreadDivider ? <NewMessagesDivider /> : null}
                   <MessageBubble
                     message={item}
                     isOwn={item.senderId === user?.id}
@@ -570,6 +719,23 @@ export function GroupChatScreen({ navigation, route }: Props) {
               );
             }}
           />
+          {newMessagesBelow > 0 ? (
+            <View className="absolute bottom-3 left-0 right-0 items-center" pointerEvents="box-none">
+              <Pressable
+                onPress={() => {
+                  listRef.current?.scrollToEnd({ animated: true });
+                  setNewMessagesBelow(0);
+                  isNearBottomRef.current = true;
+                }}
+                className="px-3 py-1.5 rounded-full bg-lantern-primary"
+              >
+                <Text className="text-xs font-semibold text-white">
+                  ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+          </View>
         )}
 
         {typingLabel ? (

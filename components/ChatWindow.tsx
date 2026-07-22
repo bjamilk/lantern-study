@@ -73,7 +73,16 @@ interface ChatWindowProps {
   onArchiveDmThread?: (threadId: string) => void;
   onUnarchiveDmThread?: (threadId: string) => void;
   onLoadMoreMessages?: (groupId: string) => Promise<number>;
+  /**
+   * Prior last_read_at for the open group chat.
+   * - undefined: mark-as-read still pending (wait before anchoring)
+   * - null: no prior marker / fully read → open at bottom
+   * - string: scroll to first message after this timestamp
+   */
+  unreadAnchorAt?: string | null;
 }
+
+const NEAR_BOTTOM_PX = 120;
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
   chat, messages: messagesProp, currentUser, userVotes,
@@ -88,6 +97,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onBack,
   onCreateGroup,
   onOpenNewDmModal,
+  unreadAnchorAt,
   onDeleteDmThread,
   onArchiveDmThread,
   onUnarchiveDmThread,
@@ -98,9 +108,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const prevMessageCountRef = useRef(messages.length);
   const lastMessageIdRef = useRef<string | null>(null);
+  const isNearBottomRef = useRef(true);
+  const initialAnchorDoneRef = useRef<string | null>(null);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
@@ -108,11 +121,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isSummarizingChat, setIsSummarizingChat] = useState(false);
   const [awaitingMessages, setAwaitingMessages] = useState(false);
+  const [newMessagesBelow, setNewMessagesBelow] = useState(0);
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
 
-  // Reset loading/hasMore states when the chat changes
+  // Reset loading/hasMore/scroll state when the chat changes
   useEffect(() => {
     setHasMore(true);
     setIsLoadingMore(false);
+    setNewMessagesBelow(0);
+    setFirstUnreadId(null);
+    isNearBottomRef.current = true;
+    initialAnchorDoneRef.current = null;
     if (chat) {
       setAwaitingMessages(true);
     }
@@ -198,6 +217,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const nearBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
+    isNearBottomRef.current = nearBottom;
+    if (nearBottom && newMessagesBelow > 0) {
+      setNewMessagesBelow(0);
+    }
+
     // Load more when scrolled to the top
     if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat && chat.chatType === 'group') {
       setIsLoadingMore(true);
@@ -409,33 +436,101 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     );
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    setNewMessagesBelow(0);
+    isNearBottomRef.current = true;
   };
-
-  // Only auto-scroll when a new message is appended at the end, not when older messages are prepended
-  useEffect(() => {
-    const lastId = messages.length > 0 ? messages[messages.length - 1].id : null;
-    if (lastId && lastId !== lastMessageIdRef.current) {
-      scrollToBottom();
-    }
-    lastMessageIdRef.current = lastId;
-    prevMessageCountRef.current = messages.length;
-  }, [messages]);
-
-  // Scroll to bottom on initial load / chat switch
-  useEffect(() => {
-    lastMessageIdRef.current = messages.length > 0 ? messages[messages.length - 1].id : null;
-    prevMessageCountRef.current = messages.length;
-    scrollToBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat?.id]);
 
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
     () => messages.filter((msg) => !isGroupChat || !msg.isArchived),
     [messages, isGroupChat]
   );
+
+  // Compute first unread once the prior marker and messages are available.
+  useEffect(() => {
+    if (!chat?.id || !isGroupChat) {
+      setFirstUnreadId(null);
+      return;
+    }
+    if (unreadAnchorAt === undefined) return;
+    if (visibleMessages.length === 0) return;
+
+    if (unreadAnchorAt == null) {
+      setFirstUnreadId(null);
+      return;
+    }
+
+    const anchorMs = new Date(unreadAnchorAt).getTime();
+    if (Number.isNaN(anchorMs)) {
+      setFirstUnreadId(null);
+      return;
+    }
+
+    const first = visibleMessages.find((msg) => {
+      const senderId = msg.sender?.id;
+      if (senderId && senderId === currentUser.id) return false;
+      const ts = new Date(msg.timestamp).getTime();
+      return !Number.isNaN(ts) && ts > anchorMs;
+    });
+    setFirstUnreadId(first?.id ?? null);
+  }, [chat?.id, isGroupChat, unreadAnchorAt, visibleMessages, currentUser.id]);
+
+  // Initial open: scroll to first unread (or bottom when fully read).
+  useEffect(() => {
+    if (!chat?.id) return;
+    if (visibleMessages.length === 0) return;
+    if (initialAnchorDoneRef.current === chat.id) return;
+
+    // For group chats wait until mark-as-read has reported a marker (null = none / fully read).
+    if (isGroupChat && unreadAnchorAt === undefined) return;
+    // Wait a tick so the unread divider DOM node exists when needed.
+    const timer = window.setTimeout(() => {
+      if (initialAnchorDoneRef.current === chat.id) return;
+      initialAnchorDoneRef.current = chat.id;
+      lastMessageIdRef.current =
+        visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].id : null;
+      prevMessageCountRef.current = visibleMessages.length;
+
+      if (firstUnreadId && firstUnreadRef.current) {
+        firstUnreadRef.current.scrollIntoView({ behavior: 'auto', block: 'start' });
+        isNearBottomRef.current = false;
+      } else {
+        scrollToBottom('auto');
+      }
+    }, 50);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt, isGroupChat]);
+
+  // Live updates: only auto-scroll when near bottom or the new message is ours.
+  useEffect(() => {
+    const last = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
+    const lastId = last?.id ?? null;
+    if (!lastId || lastId === lastMessageIdRef.current) {
+      lastMessageIdRef.current = lastId;
+      prevMessageCountRef.current = visibleMessages.length;
+      return;
+    }
+
+    // Skip the very first paint for a chat — handled by the initial-anchor effect.
+    if (initialAnchorDoneRef.current !== chat?.id) {
+      lastMessageIdRef.current = lastId;
+      prevMessageCountRef.current = visibleMessages.length;
+      return;
+    }
+
+    const isOwn = last?.sender?.id === currentUser.id;
+    if (isOwn || isNearBottomRef.current) {
+      scrollToBottom('smooth');
+    } else {
+      const added = Math.max(1, visibleMessages.length - prevMessageCountRef.current);
+      setNewMessagesBelow((n) => n + added);
+    }
+    lastMessageIdRef.current = lastId;
+    prevMessageCountRef.current = visibleMessages.length;
+  }, [visibleMessages, currentUser.id, chat?.id]);
 
   if (!chat) {
     // Desktop: show placeholder
@@ -594,6 +689,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const chatPanelContent = (
     <>
+      <div className="relative flex-1 min-h-0 flex flex-col">
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         {isLoadingMore && (
           <div className="flex justify-center py-2" aria-live="polite">
@@ -635,6 +731,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <div className="flex-1 h-px bg-lantern-background-secondary" />
                 </div>
               )}
+              {firstUnreadId === msg.id && (
+                <div
+                  ref={firstUnreadRef}
+                  className="flex items-center gap-3 py-2"
+                  data-testid="unread-divider"
+                >
+                  <div className="flex-1 h-px bg-lantern-primary/40" />
+                  <span className="text-xs font-semibold text-lantern-primary whitespace-nowrap px-2">
+                    New messages
+                  </span>
+                  <div className="flex-1 h-px bg-lantern-primary/40" />
+                </div>
+              )}
               <MessageItem
                 message={msg}
                 isCurrentUserMessage={msg.sender?.id === currentUser.id}
@@ -644,7 +753,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
                 group={group}
                 currentUser={currentUser}
-                isGroupedWithPrevious={isGroupedWithPrevious}
+                isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
               />
             </React.Fragment>
           );
@@ -674,6 +783,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             )}
           </div>
         )}
+      </div>
+      {newMessagesBelow > 0 && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom('smooth')}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-lantern-primary text-white text-xs font-semibold shadow-lg hover:bg-lantern-primary-dark transition-colors"
+        >
+          ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
+        </button>
+      )}
       </div>
 
       {isArchived ? (
