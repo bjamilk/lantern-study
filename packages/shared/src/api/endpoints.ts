@@ -1000,6 +1000,28 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/user-stats/${encodeURIComponent(userId)}`),
 
+    // ========== DASHBOARD AGGREGATE API ==========
+
+    /** One round trip for everything the dashboard needs (self only). */
+    fetchDashboardSummary: (options?: { days?: number; activityDate?: string }) => {
+      const params = new URLSearchParams();
+      if (options?.days) params.set('days', String(options.days));
+      if (options?.activityDate) params.set('activityDate', options.activityDate);
+      const query = params.toString();
+      return apiRequest<{
+        testResults: unknown[];
+        userQuestionStats: unknown[];
+        profile: { points: number; badges: unknown[]; stats: unknown } | null;
+        streak: {
+          current_streak?: number;
+          longest_streak?: number;
+          currentStreak?: number;
+          longestStreak?: number;
+        } | null;
+        activityDays: Array<Record<string, unknown>>;
+      }>(`/dashboard/summary${query ? `?${query}` : ''}`);
+    },
+
     upsertUserQuestionStat: (
       userId: string,
       questionId: string,

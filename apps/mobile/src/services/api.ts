@@ -95,6 +95,7 @@ export const {
   clearTestHistory,
   fetchUserQuestionStats,
   upsertUserQuestionStat,
+  fetchDashboardSummary,
   fetchNotifications,
   createNotification,
   markNotificationAsRead,

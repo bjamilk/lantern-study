@@ -45,6 +45,7 @@ import gamificationRoutes from './routes/gamification';
 import deckRoutes from './routes/decks';
 import { router as flashcardRoutes } from './routes/flashcards';
 import userStatsRoutes from './routes/user-stats';
+import dashboardRoutes from './routes/dashboard';
 import preferencesRoutes from './routes/preferences';
 import marketplaceRoutes from './routes/marketplace';
 import sitemapRoutes from './routes/sitemap';
@@ -131,6 +132,7 @@ async function initializeServices() {
     const { initializeDeckRoutes } = await import('./routes/decks');
     const { initializeFlashcardRoutes } = await import('./routes/flashcards');
     const { initializeUserStatsRoutes } = await import('./routes/user-stats');
+    const { initializeDashboardRoutes } = await import('./routes/dashboard');
     const { initializePreferencesRoutes } = await import('./routes/preferences');
     const { initializeMarketplaceRoutes } = await import('./routes/marketplace');
     const { initializeSitemapRoutes } = await import('./routes/sitemap');
@@ -144,6 +146,7 @@ async function initializeServices() {
     initializeDeckRoutes(supabaseService, cacheService);
     initializeFlashcardRoutes(supabaseService, cacheService);
     initializeUserStatsRoutes(supabaseService, cacheService);
+    initializeDashboardRoutes(supabaseService, cacheService);
     initializePreferencesRoutes(supabaseService, cacheService);
     initializeMarketplaceRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(supabaseService, cacheService);
@@ -313,6 +316,7 @@ async function startServer() {
     app.use('/api/v1/decks', deckRoutes);
     app.use('/api/v1/flashcards', flashcardRoutes);
     app.use('/api/v1/user-stats', userStatsRoutes);
+    app.use('/api/v1/dashboard', dashboardRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
     app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
     app.use('/api/v1/sitemap', sitemapRoutes);

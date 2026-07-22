@@ -112,16 +112,35 @@ function mapBadgeIcon(emoji: string): string {
   return iconMap[emoji] || 'ribbon';
 }
 
-async function loadUserGamificationSnapshot(userId: string): Promise<{
-  badges: Badge[];
-  totalPoints: number;
-}> {
-  const profile = await api.fetchUserProfile(userId);
+function mapGamificationSnapshot(profile: {
+  points?: number;
+  badges?: unknown[];
+  stats?: unknown;
+}): { badges: Badge[]; totalPoints: number } {
   const stats = { ...initialUserStats, ...(profile.stats as Partial<SharedUserStats>) };
   return {
     badges: mapSharedBadgesToDashboard((profile.badges as SharedBadge[]) || [], stats),
     totalPoints: profile.points ?? 0,
   };
+}
+
+async function loadUserGamificationSnapshot(userId: string): Promise<{
+  badges: Badge[];
+  totalPoints: number;
+}> {
+  const profile = await api.fetchUserProfile(userId);
+  return mapGamificationSnapshot(profile);
+}
+
+function normalizeSummaryActivityDays(raw: unknown): Array<{ date: string; count: number }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row: any) => ({
+      date: String(row?.date || row?.activity_date || ''),
+      count: Number(row?.count) || 0,
+      ...(row?.breakdown ? { breakdown: row.breakdown } : {}),
+    }))
+    .filter(day => Boolean(day.date));
 }
 
 function syncBadgesInBackground(userId: string): void {
@@ -530,16 +549,43 @@ export const useStatsStore = create<StatsState>((set, get) => ({
       const forceRefresh = context?.force === true;
 
       try {
-        const [testResultsRaw, questionStatsRaw, loginStreak, gamification, activityDaysRaw] = await Promise.all([
-          fetchTestResultsCached(userId, api.fetchTestResults, {
-            limit: 50,
-            force: forceRefresh,
-          }).catch(() => []),
-          api.fetchUserQuestionStats(userId).catch(() => []),
-          recordLoginStreak(userId),
-          loadUserGamificationSnapshot(userId).catch(() => ({ badges: [], totalPoints: 0 })),
-          fetchStudyActivity().catch(() => []),
-        ]);
+        // Preferred path: one aggregate request replaces the five parallel calls below.
+        let summary: Awaited<ReturnType<typeof api.fetchDashboardSummary>> | null = null;
+        try {
+          summary = await api.fetchDashboardSummary();
+        } catch {
+          summary = null;
+        }
+
+        let testResultsRaw: unknown;
+        let questionStatsRaw: unknown;
+        let loginStreak: { current: number; longest: number };
+        let gamification: { badges: Badge[]; totalPoints: number };
+        let activityDaysRaw: unknown;
+
+        if (summary) {
+          testResultsRaw = summary.testResults;
+          questionStatsRaw = summary.userQuestionStats;
+          loginStreak = {
+            current: summary.streak?.current_streak ?? summary.streak?.currentStreak ?? 0,
+            longest: summary.streak?.longest_streak ?? summary.streak?.longestStreak ?? 0,
+          };
+          gamification = summary.profile
+            ? mapGamificationSnapshot(summary.profile)
+            : { badges: [], totalPoints: 0 };
+          activityDaysRaw = normalizeSummaryActivityDays(summary.activityDays);
+        } else {
+          [testResultsRaw, questionStatsRaw, loginStreak, gamification, activityDaysRaw] = await Promise.all([
+            fetchTestResultsCached(userId, api.fetchTestResults, {
+              limit: 50,
+              force: forceRefresh,
+            }).catch(() => []),
+            api.fetchUserQuestionStats(userId).catch(() => []),
+            recordLoginStreak(userId),
+            loadUserGamificationSnapshot(userId).catch(() => ({ badges: [], totalPoints: 0 })),
+            fetchStudyActivity().catch(() => []),
+          ]);
+        }
 
         syncBadgesInBackground(userId);
 
