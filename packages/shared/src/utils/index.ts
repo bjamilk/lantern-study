@@ -17,6 +17,7 @@ export * from './marketplacePromo';
 export * from './storageUrl';
 export * from './sentryScrub';
 export * from './noteStudyContent';
+export * from './youtube';
 export * from './noteUpload';
 export * from './photoNoteTitle';
 export * from './displayNames';

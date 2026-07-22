@@ -827,6 +827,13 @@ export const App: React.FC = () => {
                     // Sticky toast shown by runNoteImagesImport
                 }
             }}
+            onYoutubeImport={async (url) => {
+                try {
+                    await noteHandlers.handleYoutubeImport(url, selectedFolderId || undefined);
+                } catch {
+                    // Sticky toast shown by runNoteYoutubeImport
+                }
+            }}
         />
     );
 

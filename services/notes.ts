@@ -662,6 +662,63 @@ export async function fetchNoteAttachmentContent(
   return response.arrayBuffer();
 }
 
+export interface YoutubeNoteImportResult {
+  note: StudyNote;
+  attachment: NoteAttachment;
+  status: 'ready' | 'failed' | 'processing';
+  transcriptError?: string;
+}
+
+export async function createNoteFromYoutube(
+  url: string,
+  folderId?: string,
+  onProgress?: NoteImportProgressCallback
+): Promise<YoutubeNoteImportResult> {
+  onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Fetching video transcript…',
+    fileName: url,
+  });
+
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/v1/notes/from-youtube`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, folderId }),
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok && response.status !== 202) {
+    throw new Error(
+      data.message ||
+        (typeof data.error === 'string' && data.error !== 'Error' ? data.error : null) ||
+        `YouTube import failed (${response.status})`
+    );
+  }
+
+  const base = (data.data ?? {}) as YoutubeNoteImportResult;
+  if (!base.note) {
+    throw new Error('YouTube import failed — no note was created.');
+  }
+
+  if (response.status === 202 && typeof data.jobId === 'string') {
+    // Queue mode: the note exists already; wait for the transcript job.
+    const jobResult = await pollApiJob<{ status?: 'ready' | 'failed'; error?: string }>(
+      data.jobId,
+      { timeoutMs: 120_000 }
+    );
+    return {
+      note: base.note,
+      attachment: base.attachment,
+      status: jobResult.status === 'ready' ? 'ready' : 'failed',
+      transcriptError: jobResult.error,
+    };
+  }
+
+  return base;
+}
+
 export async function uploadNotePdfViaApi(
   file: File,
   folderId?: string,

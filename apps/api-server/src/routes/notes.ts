@@ -49,6 +49,9 @@ import {
   hasEnoughNoteStudyContent,
 } from '@lantern/shared/utils/noteStudyContent';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
+import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
+import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
+import { runYoutubeTranscriptJob } from '../services/youtubeNote';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -758,6 +761,79 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   }
 
   res.json({ success: true, data: result });
+}));
+
+router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const { url, folderId } = req.body;
+  const videoId = parseYoutubeVideoId(typeof url === 'string' ? url : '');
+  if (!videoId) {
+    res.status(400).json({ error: 'Please paste a valid YouTube link.' });
+    return;
+  }
+
+  const canonicalUrl = canonicalYoutubeUrl(videoId);
+  const metadata = await fetchYoutubeMetadata(videoId);
+  const noteTitle = metadata?.title || 'YouTube video';
+
+  const attachmentMeta: Record<string, unknown> = {
+    videoId,
+    authorName: metadata?.authorName || null,
+    thumbnailUrl: metadata?.thumbnailUrl || null,
+    transcriptStatus: 'processing',
+    transcriptStartedAt: new Date().toISOString(),
+  };
+
+  const note = await supabaseService.createNote(userId, {
+    title: noteTitle,
+    body: '',
+    folderId,
+    sourceType: 'youtube',
+    youtubeUrl: canonicalUrl,
+    youtubeVideoId: videoId,
+  });
+  const attachment = await supabaseService.addNoteAttachment(note.id, {
+    type: 'youtube',
+    fileUrl: canonicalUrl,
+    fileName: noteTitle,
+    metadata: attachmentMeta,
+  });
+
+  const outcome = await runSyncOrEnqueue(
+    'notes.youtube.transcript',
+    { noteId: note.id, attachmentId: attachment.id, videoId, meta: attachmentMeta },
+    userId,
+    () =>
+      runYoutubeTranscriptJob(supabaseService, {
+        noteId: note.id,
+        attachmentId: attachment.id,
+        videoId,
+        meta: attachmentMeta,
+      })
+  );
+
+  if (outcome.mode === 'async') {
+    res.status(202).json({
+      success: true,
+      data: { note, attachment, status: 'processing' },
+      jobId: outcome.jobId,
+    });
+    return;
+  }
+
+  const jobResult = outcome.result;
+  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const updatedAttachment = attachments.find((a) => a.id === attachment.id) || attachment;
+  res.json({
+    success: true,
+    data: {
+      note,
+      attachment: updatedAttachment,
+      status: jobResult.status,
+      ...(jobResult.status === 'failed' ? { transcriptError: jobResult.error } : {}),
+    },
+  });
 }));
 
 // Note-scoped ownership checks (must be after static paths like /folders, /upload-pdf)

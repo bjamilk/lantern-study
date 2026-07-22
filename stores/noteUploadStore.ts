@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type NoteUploadKind = 'pdf' | 'presentation' | 'photos';
+export type NoteUploadKind = 'pdf' | 'presentation' | 'photos' | 'youtube';
 export type NoteUploadJobStatus = 'uploading' | 'processing' | 'complete' | 'failed';
 
 export interface NoteUploadJob {
@@ -88,7 +88,12 @@ export const useNoteUploadStore = create<NoteUploadState>()(
           fileName,
           kind,
           status: 'uploading',
-          label: kind === 'pdf' ? 'Preparing PDF…' : 'Preparing slides…',
+          label:
+            kind === 'pdf'
+              ? 'Preparing PDF…'
+              : kind === 'youtube'
+                ? 'Fetching transcript…'
+                : 'Preparing slides…',
           startedAt: now,
           updatedAt: now,
           dismissed: false,

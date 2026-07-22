@@ -5,14 +5,16 @@ import {
   MagnifyingGlassIcon,
   DocumentTextIcon,
   DocumentArrowUpIcon,
+  PlayCircleIcon,
   ArrowPathIcon,
   ExclamationCircleIcon,
   CheckCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import type { NoteFolder, StudyNote } from '../types';
-import { ScreenHeader, Button, EmptyState, FolderNameModal } from './ui';
+import { ScreenHeader, Button, EmptyState, FolderNameModal, Modal, Input } from './ui';
 import { useUIStore } from '../stores/uiStore';
 import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
 
@@ -29,6 +31,7 @@ interface NotesScreenProps {
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
   onPhotosImport?: (files: File[]) => void;
+  onYoutubeImport?: (url: string) => void;
   selectedFolderId?: string | null;
   onSelectFolder: (folderId: string | null) => void;
   /** When true, hides the page header (used inside Library tabs). */
@@ -54,12 +57,16 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onPdfImport,
   onPresentationImport,
   onPhotosImport,
+  onYoutubeImport,
   selectedFolderId,
   onSelectFolder,
   embedded = false,
 }) => {
   const [search, setSearch] = useState('');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
   const importProgress = useUIStore((s) => s.importProgress);
   const uploadJobList = useNoteUploadStore((s) => s.jobs);
   const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
@@ -96,6 +103,15 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     e.target.value = '';
   };
 
+  const handleYoutubeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = youtubeUrl.trim();
+    if (!url || !youtubeUrlValid || !onYoutubeImport) return;
+    setYoutubeModalOpen(false);
+    setYoutubeUrl('');
+    onYoutubeImport(url);
+  };
+
   const sourceBadge = (note: StudyNote) => {
     if (note.sourceType === 'youtube') return 'YouTube';
     if (note.sourceType === 'pdf') return 'PDF';
@@ -129,6 +145,46 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         onClose={() => setFolderModalOpen(false)}
         onSubmit={onCreateFolder}
       />
+
+      <Modal
+        isOpen={youtubeModalOpen}
+        onClose={() => setYoutubeModalOpen(false)}
+        ariaLabelledBy="youtube-import-title"
+        maxWidthClass="max-w-sm"
+      >
+        <h2 id="youtube-import-title" className="text-lg font-bold text-lantern-text mb-1">
+          Note from YouTube
+        </h2>
+        <p className="text-sm text-lantern-text-secondary mb-4">
+          Paste a video link — we'll fetch its transcript so you can summarize, quiz, and make
+          flashcards from it.
+        </p>
+        <form onSubmit={handleYoutubeSubmit} className="space-y-4">
+          <Input
+            autoFocus
+            value={youtubeUrl}
+            onChange={(e) => setYoutubeUrl(e.target.value)}
+            placeholder="https://www.youtube.com/watch?v=…"
+            aria-label="YouTube link"
+          />
+          {youtubeUrl.trim() && !youtubeUrlValid && (
+            <p className="text-xs text-red-500">That doesn't look like a YouTube link.</p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setYoutubeModalOpen(false)}
+              className="min-h-[44px]"
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!youtubeUrlValid} className="min-h-[44px]">
+              Import
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {!embedded && (
         <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
@@ -224,6 +280,21 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 Import photos
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} disabled={Boolean(importProgress)} />
               </label>
+            )}
+            {onYoutubeImport && (
+              <button
+                type="button"
+                onClick={() => setYoutubeModalOpen(true)}
+                disabled={Boolean(importProgress)}
+                className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border text-sm shrink-0 w-full sm:w-auto border-lantern-border ${
+                  importProgress
+                    ? 'bg-lantern-background-secondary text-lantern-text-secondary cursor-not-allowed opacity-60'
+                    : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
+                }`}
+              >
+                <PlayCircleIcon className="w-5 h-5" />
+                From YouTube
+              </button>
             )}
           </div>
 

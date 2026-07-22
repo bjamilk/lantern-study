@@ -5,7 +5,7 @@ import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoal
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useAppNavigation } from './useAppNavigation';
-import { runNoteFileImport } from '../utils/runNoteFileImport';
+import { runNoteFileImport, runNoteYoutubeImport } from '../utils/runNoteFileImport';
 import { runNoteImagesImport } from '../utils/runNoteImagesImport';
 import { AppMode, FlashcardType } from '../types';
 import * as notesApi from '../services/notes';
@@ -303,6 +303,19 @@ export function useNoteHandlers(currentUserId?: string) {
     [setSelectedNote, loadNote, loadNotes, navigateTo]
   );
 
+  const handleYoutubeImport = useCallback(
+    async (url: string, folderId?: string) =>
+      runNoteYoutubeImport({
+        url,
+        folderId,
+        setSelectedNote,
+        loadNote,
+        loadNotes,
+        navigateToEditor: (noteId) => navigateTo(AppMode.NOTE_EDITOR, { noteId }),
+      }),
+    [setSelectedNote, loadNote, loadNotes, navigateTo]
+  );
+
   const handlePhotosImport = useCallback(
     async (files: File[], folderId?: string) =>
       runNoteImagesImport({
@@ -355,6 +368,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handlePdfImport,
     handlePresentationImport,
     handlePhotosImport,
+    handleYoutubeImport,
     handleStartDailyQuiz,
     handleShareWithGroup,
     handleAddCollaborator,

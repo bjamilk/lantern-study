@@ -16,6 +16,7 @@ import {
 import { SupabaseService } from '../../services/supabase';
 import { parseApkgBuffer } from '../../services/apkgImport';
 import { runPresentationPreviewJob } from '../../services/presentationPreview';
+import { runYoutubeTranscriptJob } from '../../services/youtubeNote';
 import {
   purgeExpiredAIAnalytics,
   purgeExpiredAIInferenceLogs,
@@ -228,6 +229,21 @@ async function processFileJob(job: Job): Promise<unknown> {
       extractedText,
     });
     return { success: true, attachmentId };
+  }
+  if (job.name === 'notes.youtube.transcript') {
+    const { noteId, attachmentId, videoId, meta } = job.data as {
+      noteId: string;
+      attachmentId: string;
+      videoId: string;
+      meta?: Record<string, unknown>;
+    };
+    const result = await runYoutubeTranscriptJob(supabaseService, {
+      noteId,
+      attachmentId,
+      videoId,
+      meta: meta || {},
+    });
+    return { success: result.status === 'ready', ...result };
   }
   throw new Error(`Unknown file job: ${job.name}`);
 }

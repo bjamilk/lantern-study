@@ -1,6 +1,7 @@
 import type { NoteAttachment, StudyNote } from '../types';
 import type { NoteImportProgress } from '../services/notes';
 import {
+  createNoteFromYoutube,
   uploadNotePdfViaApi,
   uploadPresentationViaApi,
 } from '../services/notes';
@@ -108,6 +109,59 @@ export async function runNoteFileImport({
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Import failed';
+    uploadStore.failJob(jobId, message);
+    useUIStore.getState().clearImportProgress();
+    useToastStore.getState().showStickyToast(message, 'error');
+    throw err;
+  }
+}
+
+export interface RunNoteYoutubeImportOptions {
+  url: string;
+  folderId?: string;
+  setSelectedNote: (note: StudyNote & { attachments?: NoteAttachment[] }) => void;
+  loadNote: (noteId: string) => Promise<boolean>;
+  loadNotes: () => Promise<void>;
+  navigateToEditor: (noteId: string) => void;
+}
+
+export async function runNoteYoutubeImport({
+  url,
+  folderId,
+  setSelectedNote,
+  loadNote,
+  loadNotes,
+  navigateToEditor,
+}: RunNoteYoutubeImportOptions): Promise<StudyNote> {
+  const uploadStore = useNoteUploadStore.getState();
+  const jobId = uploadStore.startJob(url, 'youtube');
+  const onProgress = makeProgressCallback(jobId);
+
+  try {
+    const result = await createNoteFromYoutube(url, folderId, onProgress);
+    const note = await finalizeImport(
+      // finalizeImport only uses file.name for toasts/progress labels
+      { name: result.note.title } as File,
+      jobId,
+      onProgress,
+      result,
+      setSelectedNote,
+      loadNote,
+      loadNotes,
+      navigateToEditor
+    );
+    if (result.status === 'failed') {
+      useToastStore
+        .getState()
+        .showStickyToast(
+          result.transcriptError ||
+            'Note created, but the transcript could not be fetched for this video.',
+          'error'
+        );
+    }
+    return note;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'YouTube import failed';
     uploadStore.failJob(jobId, message);
     useUIStore.getState().clearImportProgress();
     useToastStore.getState().showStickyToast(message, 'error');

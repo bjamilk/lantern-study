@@ -17,6 +17,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   'notes.ai.flashcards': 'ai-generation',
   'deck.importApkg': 'file-processing',
   'notes.presentation.preview': 'file-processing',
+  'notes.youtube.transcript': 'file-processing',
   'export.userData': 'data-export',
   'cron.dataRetention': 'marketplace-alerts',
   'cron.marketplaceAlerts': 'marketplace-alerts',
