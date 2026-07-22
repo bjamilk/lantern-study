@@ -51,8 +51,9 @@ router.post(
 
     for (const item of rawEvents) {
       if (!item || typeof item !== 'object') continue;
-      const eventName = (item as { event?: unknown }).event;
-      if (!isProductEventName(eventName)) continue;
+      const eventRaw = (item as { event?: unknown }).event;
+      if (!isProductEventName(eventRaw)) continue;
+      const eventName = eventRaw;
 
       const surface: ProductEventSurface =
         (item as { surface?: unknown }).surface === 'mobile' ? 'mobile' : defaultSurface;

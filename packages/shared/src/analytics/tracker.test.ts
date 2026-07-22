@@ -55,7 +55,7 @@ describe('createProductTracker', () => {
     tracker.track({ event: 'page_view', props: { route: '/marketplace' } });
     await new Promise((r) => setTimeout(r, 40));
     expect(transported).toHaveLength(1);
-    expect(transported[0].event).toBe('page_view');
+    expect(transported[0]?.event).toBe('page_view');
     expect(storage.map.get(ANALYTICS_ANON_ID_KEY)).toBe('test-id');
   });
 

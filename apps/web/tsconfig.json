@@ -22,5 +22,6 @@
     "baseUrl": "."
   },
   "include": ["src", "../../packages/shared/src"],
+  "exclude": ["../../packages/shared/src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
