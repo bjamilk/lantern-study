@@ -697,6 +697,46 @@ Keep answers clear, under 150 words. Use bullet points for complex topics.`;
   return { answer: text, provider };
 }
 
+export async function generateListingDescription(details: {
+  title: string;
+  category?: string;
+  subcategory?: string;
+  price?: string;
+  condition?: string;
+  courseCode?: string;
+  isbn?: string;
+  edition?: string;
+  bedrooms?: string;
+  furnished?: string;
+  distanceToCampus?: string;
+}): Promise<{ description: string; provider: string }> {
+  const facts = [
+    details.category ? `Category: ${details.category}` : null,
+    details.subcategory ? `Subcategory: ${details.subcategory}` : null,
+    details.price ? `Price: ₦${details.price}` : null,
+    details.condition ? `Condition: ${details.condition}` : null,
+    details.courseCode ? `Course code: ${details.courseCode}` : null,
+    details.isbn ? `ISBN: ${details.isbn}` : null,
+    details.edition ? `Edition: ${details.edition}` : null,
+    details.bedrooms ? `Bedrooms: ${details.bedrooms}` : null,
+    details.furnished ? `Furnished: ${details.furnished}` : null,
+    details.distanceToCampus ? `Distance to campus: ${details.distanceToCampus}` : null,
+  ].filter(Boolean).join('\n');
+
+  const systemPrompt = `You write short marketplace listing descriptions for a Nigerian student marketplace app.
+Write 2-4 sentences that are friendly, honest, and specific to the provided details.
+Do not invent details (condition, defects, extras) that were not provided.
+Do not include a title, headings, hashtags, or emojis. Return only the description text.`;
+
+  const { text, provider } = await chatCompletion(
+    systemPrompt,
+    `Item title: ${details.title}\n${facts}`,
+    { temperature: 0.7, maxTokens: 250 }
+  );
+
+  return { description: text.trim(), provider };
+}
+
 export async function enhanceFlashcard(
   front: string,
   back: string

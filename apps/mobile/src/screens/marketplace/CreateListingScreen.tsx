@@ -1,11 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Pressable,
-  RefreshControl,
   ScrollView,
   Text,
   TextInput,
@@ -13,28 +11,47 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useMarketplaceStore,
   useAuthStore,
   ACADEMIC_CATEGORIES,
   STUDENT_LIFE_CATEGORIES,
-  getCategoryInfo,
   type MarketplaceListing,
   type MarketplaceCategory,
 } from '../../stores';
-import { fetchMarketplaceListing } from '../../services/api';
+import { fetchMarketplaceCampuses } from '../../services/api';
+import { aiGenerateListingDescription } from '../../services/ai';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
-import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
-import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
 const MAX_IMAGES = 5;
+
+type Campus = { id: string; name: string; city: string; state: string };
+
+interface ListingDraft {
+  title: string;
+  category: MarketplaceCategory;
+  price: string;
+  salePrice: string;
+  saleEndsPreset: 'none' | '24h' | '7d';
+  promoLabel: string;
+  description: string;
+  location: string;
+  quantity: string;
+  campusId: string;
+  images: string[];
+  savedAt: number;
+}
+
+function draftStorageKey(userId?: string | null): string {
+  return `lantern_listing_draft_${userId ?? 'anonymous'}`;
+}
 
 export function CreateListingScreen({ navigation }: { navigation: NavigationProp & { goBack: () => void } }) {
   const { user } = useAuthStore();
@@ -52,9 +69,137 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const [generatingDesc, setGeneratingDesc] = useState(false);
+
+  const [campuses, setCampuses] = useState<Campus[]>([]);
+  const [campusId, setCampusId] = useState('');
+  const [campusQuery, setCampusQuery] = useState('');
+  const [showCampuses, setShowCampuses] = useState(false);
+
+  // Draft persistence: survive app switches / process death mid-creation.
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftKey = draftStorageKey(user?.id);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
+  const selectedCampus = campuses.find(c => c.id === campusId);
+
+  useEffect(() => {
+    fetchMarketplaceCampuses('NG')
+      .then(rows => setCampuses(rows))
+      .catch(() => {});
+  }, []);
+
+  // Restore a saved draft once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(draftKey)
+      .then(raw => {
+        if (cancelled || !raw) return;
+        const draft = JSON.parse(raw) as ListingDraft;
+        const hasContent =
+          draft.title || draft.description || draft.price || (draft.images?.length ?? 0) > 0;
+        if (!hasContent) return;
+        setTitle(draft.title || '');
+        setCategory(draft.category || 'textbook_exchange');
+        setPrice(draft.price || '');
+        setSalePrice(draft.salePrice || '');
+        setSaleEndsPreset(draft.saleEndsPreset || 'none');
+        setPromoLabel(draft.promoLabel || '');
+        setDescription(draft.description || '');
+        setLocation(draft.location || '');
+        setQuantity(draft.quantity || '');
+        setCampusId(draft.campusId || '');
+        setImages(Array.isArray(draft.images) ? draft.images : []);
+        setDraftRestored(true);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Autosave the draft (debounced) whenever any field changes.
+  useEffect(() => {
+    if (!draftLoaded) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const hasContent = title || description || price || images.length > 0;
+      if (!hasContent) {
+        AsyncStorage.removeItem(draftKey).catch(() => {});
+        return;
+      }
+      const draft: ListingDraft = {
+        title,
+        category,
+        price,
+        salePrice,
+        saleEndsPreset,
+        promoLabel,
+        description,
+        location,
+        quantity,
+        campusId,
+        images,
+        savedAt: Date.now(),
+      };
+      AsyncStorage.setItem(draftKey, JSON.stringify(draft)).catch(() => {});
+    }, 500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [
+    draftLoaded,
+    draftKey,
+    title,
+    category,
+    price,
+    salePrice,
+    saleEndsPreset,
+    promoLabel,
+    description,
+    location,
+    quantity,
+    campusId,
+    images,
+  ]);
+
+  const clearDraft = () => AsyncStorage.removeItem(draftKey).catch(() => {});
+
+  const resetForm = () => {
+    setTitle('');
+    setCategory('textbook_exchange');
+    setPrice('');
+    setSalePrice('');
+    setSaleEndsPreset('none');
+    setPromoLabel('');
+    setDescription('');
+    setLocation('');
+    setQuantity('');
+    setCampusId('');
+    setImages([]);
+    setDraftRestored(false);
+    void clearDraft();
+  };
+
+  const filteredCampuses = useMemo(() => {
+    const q = campusQuery.trim().toLowerCase();
+    const rows = q
+      ? campuses.filter(
+          c =>
+            c.name.toLowerCase().includes(q) ||
+            c.city?.toLowerCase().includes(q) ||
+            c.state?.toLowerCase().includes(q)
+        )
+      : campuses;
+    return rows.slice(0, 25);
+  }, [campuses, campusQuery]);
 
   const pickImages = async () => {
     if (images.length >= MAX_IMAGES) {
@@ -88,6 +233,30 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     }
   };
 
+  const handleGenerateDescription = async () => {
+    if (!title.trim()) {
+      Alert.alert('Add a title first', 'Enter a title so AI knows what you are selling.');
+      return;
+    }
+    setGeneratingDesc(true);
+    try {
+      const { description: generated } = await aiGenerateListingDescription({
+        title: title.trim(),
+        category: selectedCategory?.name ?? category,
+        subcategory: category,
+        price: price.trim() || undefined,
+      });
+      if (generated) setDescription(generated);
+    } catch (e: unknown) {
+      Alert.alert(
+        'Could not generate description',
+        e instanceof Error ? e.message : 'Please try again in a moment.'
+      );
+    } finally {
+      setGeneratingDesc(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!user?.id) {
       Alert.alert('Sign in required', 'Please sign in to create a listing.');
@@ -95,6 +264,10 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     }
     if (!title.trim()) {
       Alert.alert('Missing title', 'Please enter a title for your listing.');
+      return;
+    }
+    if (!campusId) {
+      Alert.alert('Missing campus', 'Please select your campus so buyers know where to meet.');
       return;
     }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
@@ -111,7 +284,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
             ).toISOString();
       const parsedSalePrice = salePrice.trim() ? parseFloat(salePrice.replace(/,/g, '')) : undefined;
       const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
-      const listing = await createListing(
+      const { listing, queued } = await createListing(
         {
           user_id: user.id,
           category,
@@ -122,16 +295,29 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           sale_ends_at: parsedSalePrice ? saleEndsAt : undefined,
           promo_label: promoLabel.trim() || undefined,
           location: location.trim() || undefined,
+          campus_id: campusId,
           quantity: parsedQuantity,
           images,
           status: 'active',
         } as Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>,
         user.id
       );
-      Alert.alert('Listing created', 'Your listing is now live.');
-      navigation.navigate('ListingDetail', { listingId: listing.id });
-    } catch {
-      Alert.alert('Error', 'Failed to create listing. Please try again.');
+      await clearDraft();
+      if (queued) {
+        Alert.alert(
+          'Saved for publishing',
+          'You appear to be offline. Your listing will publish automatically when you reconnect.'
+        );
+        navigation.goBack();
+      } else {
+        Alert.alert('Listing published', 'Your listing is now live.');
+        navigation.navigate('ListingDetail', { listingId: listing.id });
+      }
+    } catch (e: unknown) {
+      Alert.alert(
+        'Could not publish listing',
+        e instanceof Error && e.message ? e.message : 'Failed to create listing. Please try again.'
+      );
     }
   };
 
@@ -141,10 +327,24 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
           <Ionicons name="arrow-back" size={22} color="#64748b" />
         </Pressable>
-        <Text className="text-xl font-bold text-lantern-text">Create Listing</Text>
+        <Text className="text-xl font-bold text-lantern-text flex-1">Create Listing</Text>
       </View>
 
       <ScrollView className="flex-1 px-4" contentContainerStyle={{ paddingBottom: 32 }}>
+        {draftRestored ? (
+          <View className="flex-row items-center justify-between bg-lantern-primary-background rounded-xl px-3 py-2 mb-4">
+            <View className="flex-row items-center flex-1 mr-2">
+              <Ionicons name="save-outline" size={16} color="#64748b" />
+              <Text className="text-xs text-lantern-text-secondary ml-2 flex-1">
+                Draft restored — we saved your progress automatically.
+              </Text>
+            </View>
+            <Pressable onPress={resetForm} hitSlop={8}>
+              <Text className="text-xs font-semibold text-red-500">Discard</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <Text className="text-sm font-semibold text-lantern-text mb-2">Photos</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
           {images.map((uri, i) => (
@@ -164,7 +364,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               className="w-20 h-20 rounded-xl border border-dashed border-lantern-border items-center justify-center"
             >
               {uploading ? (
-                <Text className="text-xs text-lantern-text-secondary">…</Text>
+                <ActivityIndicator size="small" color="#64748b" />
               ) : (
                 <Ionicons name="add" size={24} color="#64748b" />
               )}
@@ -210,6 +410,52 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           </View>
         ) : (
           <View className="mb-4" />
+        )}
+
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Campus *</Text>
+        <Pressable
+          onPress={() => setShowCampuses(v => !v)}
+          className="p-3 rounded-xl border border-lantern-border bg-lantern-surface mb-2 flex-row items-center justify-between"
+        >
+          <Text className={selectedCampus ? 'text-lantern-text' : 'text-lantern-text-secondary'}>
+            {selectedCampus ? selectedCampus.name : 'Select your campus'}
+          </Text>
+          <Ionicons name={showCampuses ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
+        </Pressable>
+        {showCampuses ? (
+          <View className="mb-4 border border-lantern-border rounded-xl bg-lantern-surface overflow-hidden">
+            <TextInput
+              value={campusQuery}
+              onChangeText={setCampusQuery}
+              placeholder="Search campuses…"
+              placeholderTextColor="#94a3b8"
+              className="p-3 border-b border-lantern-border text-lantern-text"
+            />
+            {campuses.length === 0 ? (
+              <Text className="p-3 text-sm text-lantern-text-secondary">Loading campuses…</Text>
+            ) : filteredCampuses.length === 0 ? (
+              <Text className="p-3 text-sm text-lantern-text-secondary">No campuses match your search.</Text>
+            ) : (
+              filteredCampuses.map(c => (
+                <Pressable
+                  key={c.id}
+                  onPress={() => {
+                    setCampusId(c.id);
+                    setShowCampuses(false);
+                    setCampusQuery('');
+                  }}
+                  className={`p-3 border-b border-lantern-border/50 ${campusId === c.id ? 'bg-lantern-primary-background' : ''}`}
+                >
+                  <Text className="text-sm text-lantern-text">{c.name}</Text>
+                  <Text className="text-xs text-lantern-text-secondary">
+                    {[c.city, c.state].filter(Boolean).join(', ')}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </View>
+        ) : (
+          <View className="mb-2" />
         )}
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Price (₦)</Text>
@@ -264,16 +510,34 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Location</Text>
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Meetup detail (optional)</Text>
         <TextInput
           value={location}
           onChangeText={setLocation}
-          placeholder="Campus or city"
+          placeholder="Faculty gate, hall, landmark…"
           placeholderTextColor="#94a3b8"
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Description</Text>
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-sm font-semibold text-lantern-text">Description</Text>
+          <Pressable
+            onPress={handleGenerateDescription}
+            disabled={generatingDesc || !title.trim()}
+            className={`flex-row items-center px-3 py-1.5 rounded-lg ${
+              generatingDesc || !title.trim() ? 'bg-lantern-border' : 'bg-lantern-primary'
+            }`}
+          >
+            {generatingDesc ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="sparkles" size={14} color="#fff" />
+            )}
+            <Text className="text-xs font-semibold text-white ml-1.5">
+              {generatingDesc ? 'Generating…' : 'AI Generate'}
+            </Text>
+          </Pressable>
+        </View>
         <TextInput
           value={description}
           onChangeText={setDescription}

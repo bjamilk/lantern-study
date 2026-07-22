@@ -19,6 +19,7 @@ import {
   getStudyRecommendations,
   askTutor,
   enhanceFlashcard,
+  generateListingDescription,
   getProviderStatus,
 } from '../services/aiService';
 import { handleValidationErrors, validateAIMessage } from '../middleware/validation';
@@ -243,6 +244,37 @@ router.post('/enhance-flashcard', aiRateLimitForFeature('enhance_flashcard'), as
   } catch (error: any) {
     console.error('AI enhance flashcard error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to enhance flashcard.') });
+  }
+});
+
+// Generate marketplace listing description from listing details
+router.post('/generate-listing-description', aiRateLimitForFeature('listing_description'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { title, category, subcategory, price, condition, courseCode, isbn, edition, bedrooms, furnished, distanceToCampus } = req.body;
+    if (!title || typeof title !== 'string' || title.trim().length < 3) {
+      res.status(400).json({ error: 'Title must be at least 3 characters.' });
+      return;
+    }
+    const toStr = (value: unknown): string | undefined =>
+      typeof value === 'string' || typeof value === 'number' ? String(value).slice(0, 200) : undefined;
+    const result = await generateListingDescription({
+      title: title.trim().slice(0, 200),
+      category: toStr(category),
+      subcategory: toStr(subcategory),
+      price: toStr(price),
+      condition: toStr(condition),
+      courseCode: toStr(courseCode),
+      isbn: toStr(isbn),
+      edition: toStr(edition),
+      bedrooms: toStr(bedrooms),
+      furnished: toStr(furnished),
+      distanceToCampus: toStr(distanceToCampus),
+    });
+    await recordInference(req, 'generate-listing-description', result);
+    res.json(result);
+  } catch (error: any) {
+    console.error('AI listing description error:', error.message);
+    res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate description.') });
   }
 });
 

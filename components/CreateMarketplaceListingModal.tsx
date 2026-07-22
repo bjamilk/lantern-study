@@ -35,13 +35,45 @@ interface ImageFile {
   path?: string;
 }
 
+const DRAFT_STORAGE_KEY = 'lantern_marketplace_listing_draft';
+
+/** Draft persists everything except images (File objects can't be serialized). */
+type ListingDraft = Omit<CreateListingFormData, 'images'> & {
+  customCategory: string;
+  savedAt: number;
+};
+
+interface CreateListingFormData {
+  title: string;
+  description: string;
+  price: string;
+  salePrice: string;
+  saleEndsAt: string;
+  promoLabel: string;
+  quantity: string;
+  location: string;
+  campusId: string;
+  complianceConfirmed: boolean;
+  subcategory: string;
+  images: ImageFile[];
+  condition: '' | 'new' | 'like-new' | 'good' | 'fair';
+  courseCode: string;
+  year: string;
+  semester: '' | '1st' | '2nd';
+  edition: string;
+  isbn: string;
+  bedrooms: string;
+  furnished: '' | 'yes' | 'no';
+  distanceToCampus: string;
+}
+
 const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps> = ({
   isOpen,
   onClose,
   category,
   onSuccess
 }) => {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<CreateListingFormData>({
     title: '',
     description: '',
     price: '',
@@ -78,6 +110,45 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       fetchMarketplaceCampuses('NG').then(setCampuses).catch(() => {});
     }
   }, [isOpen]);
+
+  // Restore a saved draft when the modal opens with a pristine form.
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(prev => {
+      const pristine = !prev.title && !prev.description && prev.images.length === 0;
+      if (!pristine) return prev;
+      try {
+        const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (!raw) return prev;
+        const draft = JSON.parse(raw) as ListingDraft;
+        if (!draft.title && !draft.description && !draft.price) return prev;
+        const { customCategory: draftCustomCategory, savedAt: _savedAt, ...fields } = draft;
+        setCustomCategory(draftCustomCategory || '');
+        useToastStore.getState().showToast('Draft restored — your progress was saved.');
+        return { ...prev, ...fields, images: prev.images };
+      } catch {
+        return prev;
+      }
+    });
+  }, [isOpen]);
+
+  // Autosave the draft (debounced) while the modal is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      const hasContent = formData.title || formData.description || formData.price;
+      try {
+        if (!hasContent) {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+          return;
+        }
+        const { images: _images, ...fields } = formData;
+        const draft: ListingDraft = { ...fields, customCategory, savedAt: Date.now() };
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch { /* storage full or unavailable — draft is best-effort */ }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isOpen, formData, customCategory]);
 
   const handleGenerateDescription = async () => {
     if (!formData.title.trim()) { useToastStore.getState().showToast('Please enter a title first.'); return; }
@@ -374,9 +445,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             `Listing created, but ${failedNames.length} photo(s) failed to upload.`,
             'error'
           );
+        } else {
+          useToastStore.getState().showToast('Listing published — it is now live!', 'success');
         }
+      } else {
+        useToastStore.getState().showToast('Listing published — it is now live!', 'success');
       }
 
+      try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch { /* best-effort */ }
       onSuccess();
       onClose();
 

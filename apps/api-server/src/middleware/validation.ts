@@ -241,17 +241,35 @@ export const validateAdminNotification = [
 
 export const validateMarketplaceListingWrite = [
   body('title').trim().isLength({ min: 1, max: 200 }).withMessage('Title must be 1-200 characters'),
-  body('category').isIn(['academic', 'student-life', 'textbooks', 'electronics', 'furniture', 'services', 'other']).withMessage('Invalid category'),
-  body('price').isFloat({ min: 0, max: 10000000 }).withMessage('Price must be between 0 and 10,000,000'),
+  // Categories include marketplace subcategories (e.g. textbook_exchange) and
+  // user-defined "custom:<name>" values, so validate shape rather than an enum.
+  body('category')
+    .isString()
+    .trim()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Category must be 1-100 characters'),
+  body('price')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0, max: 10000000 })
+    .withMessage('Price must be between 0 and 10,000,000'),
+  body('sale_price')
+    .optional({ values: 'null' })
+    .isFloat({ min: 0, max: 10000000 })
+    .withMessage('Sale price must be between 0 and 10,000,000'),
+  body('quantity')
+    .optional({ values: 'null' })
+    .isInt({ min: 0, max: 1000000 })
+    .withMessage('Quantity must be between 0 and 1,000,000'),
   body('description').optional().isString().isLength({ max: 10000 }),
   body('location').optional().isString().isLength({ max: 200 }),
+  body('promo_label').optional({ values: 'null' }).isString().isLength({ max: 100 }),
 ];
 
 export const validateMarketplaceListingUpdate = [
   body('title').optional().trim().isLength({ min: 1, max: 200 }),
-  body('price').optional().isFloat({ min: 0, max: 10000000 }),
+  body('price').optional({ values: 'null' }).isFloat({ min: 0, max: 10000000 }),
   body('description').optional().isString().isLength({ max: 10000 }),
-  body('status').optional().isIn(['active', 'sold', 'archived', 'draft']),
+  body('status').optional().isIn(['active', 'sold', 'inactive', 'archived', 'draft']),
 ];
 
 export const validateDeckCreate = [

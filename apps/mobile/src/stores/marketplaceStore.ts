@@ -143,6 +143,7 @@ export interface MarketplaceListing {
   listing_kind?: 'single' | 'bundle';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
+  campus_id?: string;
   images?: string[];
   status: 'active' | 'sold' | 'inactive';
   views_count?: number;
@@ -475,7 +476,7 @@ interface MarketplaceState {
   deleteSavedSearch: (id: string) => Promise<void>;
   fetchSellerProfile: (sellerId: string) => Promise<void>;
   fetchSellerStats: () => Promise<void>;
-  createListing: (listing: Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>, userId: string) => Promise<MarketplaceListing>;
+  createListing: (listing: Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
   updateListing: (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => Promise<void>;
   deleteListing: (listingId: string, userId: string) => Promise<void>;
   toggleFavorite: (listingId: string, userId: string) => Promise<void>;
@@ -830,7 +831,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     await get().saveToStorage();
     
     if (DEMO_MODE) {
-      return tempListing;
+      return { listing: tempListing, queued: false };
     }
     
     try {
@@ -839,11 +840,13 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         title: listingData.title,
         description: listingData.description,
         price: listingData.price,
+        quantity: listingData.quantity ?? undefined,
         location: listingData.location,
+        campus_id: listingData.campus_id,
         images: listingData.images,
-        sale_price: (listingData as any).sale_price,
-        sale_ends_at: (listingData as any).sale_ends_at,
-        promo_label: (listingData as any).promo_label,
+        sale_price: listingData.sale_price,
+        sale_ends_at: listingData.sale_ends_at,
+        promo_label: listingData.promo_label,
       });
       
       const newListing: MarketplaceListing = mapRemoteListing({
@@ -858,12 +861,24 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }));
       await get().saveToStorage();
       
-      return newListing;
+      return { listing: newListing, queued: false };
     } catch (error: any) {
       console.error('Failed to create listing on server:', error);
-      // Queue for later sync
-      await syncService.queueOperation('listing', tempId, 'create', listingData, userId);
-      return tempListing;
+      const message = String(error?.message || '');
+      const isNetworkError = /network request failed|network error|timed out|failed to fetch/i.test(message);
+      if (isNetworkError) {
+        // Offline: queue for later sync and keep the optimistic listing.
+        await syncService.queueOperation('listing', tempId, 'create', listingData, userId);
+        return { listing: tempListing, queued: true };
+      }
+      // Server rejected the listing — roll back the optimistic insert and
+      // surface the real error instead of pretending it was published.
+      set(state => ({
+        myListings: state.myListings.filter(l => l.id !== tempId),
+        listings: state.listings.filter(l => l.id !== tempId),
+      }));
+      await get().saveToStorage();
+      throw error;
     }
   },
   

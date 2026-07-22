@@ -309,6 +309,18 @@ router.post(
         return { listing: created as Record<string, unknown> };
       });
 
+      const createdListing = listing.listing as { id?: string; title?: string };
+      try {
+        await supabaseService.createNotification(userId, {
+          type: 'marketplace_order_update',
+          message: `Your listing "${createdListing.title || listingData.title}" is now live.`,
+          link: createdListing.id ? `marketplace:listing:${createdListing.id}` : undefined,
+          data: { listingId: createdListing.id },
+        });
+      } catch (e) {
+        logger.warn('Failed to send listing published notification', e);
+      }
+
       res.status(201).json({
         success: true,
         data: listing.listing,

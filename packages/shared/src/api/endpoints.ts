@@ -1255,7 +1255,12 @@ export function createApiEndpoints(client: ApiClient) {
         title: string;
         description?: string;
         price?: number;
+        sale_price?: number;
+        sale_ends_at?: string;
+        promo_label?: string;
+        quantity?: number;
         location?: string;
+        campus_id?: string;
         images?: string[];
         categorySpecificFields?: unknown;
       },
