@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as api from '../services/api';
 import { trackStudyActivity } from '../services/gamification';
+import { trackTestCompleted } from '../services/productAnalytics';
 import { syncService } from '../services/syncService';
 import { fetchTestResultsCached, clearTestResultsCache } from '../services/dashboardCache';
 import { normalizeApiQuestions, flashcardsToQuestions, filterTestQuestions, formatCorrectAnswerDisplay, resolveCorrectAnswerLabel } from '../utils/questionHelpers';
@@ -1162,7 +1163,13 @@ export const useTestStore = create<TestState>((set, get) => ({
     if (testMode !== 'study') {
       trackStudyActivity('test', 1);
     }
-    
+
+    trackTestCompleted({
+      score: percentage,
+      totalQuestions: activeTest.questions.length,
+      offline: options?.isOffline ?? false,
+    });
+
     return attempt;
   },
 

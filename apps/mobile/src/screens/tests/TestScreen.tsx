@@ -22,6 +22,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
+import { trackTestStarted } from '../../services/productAnalytics';
 
 type TabType = 'tests' | 'history';
 
@@ -61,6 +62,10 @@ export default function TestScreen() {
   const handleStartTest = useCallback(async (test: Test, mode: TestMode) => {
     try {
       await startTest(test.id, mode);
+      trackTestStarted({
+        mode: mode === 'test' ? 'test' : 'study',
+        questionCount: useTestStore.getState().activeTest?.questions.length ?? 0,
+      });
       navigation.navigate('TestTaking', { 
         testId: test.id, 
         testName: test.name,
@@ -86,6 +91,10 @@ export default function TestScreen() {
       spacedRepetition: config.useSpacedRepetition,
       focusOnNew: config.focusOnNew,
     }).then(() => {
+      trackTestStarted({
+        mode: mode === 'test' ? 'test' : 'study',
+        questionCount: useTestStore.getState().activeTest?.questions.length ?? 0,
+      });
       navigation.navigate('TestTaking', {
         testId: test.id,
         testName: test.name,

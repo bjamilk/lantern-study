@@ -177,6 +177,17 @@ export interface AdminAnalytics {
     signupsCompleted: number;
     onboardingCompleted: number;
   };
+  studyFunnel?: {
+    testsStarted: number;
+    testsCompleted: number;
+    testsCompletedWeb: number;
+    testsCompletedMobile: number;
+    flashcardSessionsStarted: number;
+    flashcardSessionsCompleted: number;
+    notesCreated: number;
+    aiToolUses: number;
+    aiToolsByType: Record<string, number>;
+  };
   platformFromEvents?: {
     webDau: number;
     mobileDau: number;

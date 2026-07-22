@@ -252,6 +252,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
   const retention = analytics.retentionCohorts;
   const search = analytics.searchAnalytics;
   const funnel = analytics.acquisitionFunnel;
+  const studyFunnel = analytics.studyFunnel;
   const platformEvents = analytics.platformFromEvents;
 
   const streakLabels = STREAK_ORDER.filter((k) => analytics.streakDistribution[k] != null);
@@ -428,6 +429,52 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
                     <span className="font-medium">{row.count}</span>
                   </div>
                 ))
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {studyFunnel && (
+        <Card variant="elevated">
+          <h3 className="text-sm font-semibold text-lantern-text mb-1">Study funnel</h3>
+          <p className="text-xs text-lantern-text-muted mb-3">
+            Consent-gated study events in period. Feature totals below remain the full study_activity volume.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Tests</p>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Started</span><span className="font-medium">{studyFunnel.testsStarted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Completed</span><span className="font-medium">{studyFunnel.testsCompleted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Completion rate</span><span className="font-medium">{studyFunnel.testsStarted > 0 ? Math.round((studyFunnel.testsCompleted / studyFunnel.testsStarted) * 100) : 0}%</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Web / Mobile</span><span className="font-medium">{studyFunnel.testsCompletedWeb} / {studyFunnel.testsCompletedMobile}</span></div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Flashcards &amp; notes</p>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Review sessions started</span><span className="font-medium">{studyFunnel.flashcardSessionsStarted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Review sessions finished</span><span className="font-medium">{studyFunnel.flashcardSessionsCompleted}</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Completion rate</span><span className="font-medium">{studyFunnel.flashcardSessionsStarted > 0 ? Math.round((studyFunnel.flashcardSessionsCompleted / studyFunnel.flashcardSessionsStarted) * 100) : 0}%</span></div>
+                <div className="flex justify-between"><span className="text-lantern-text-muted">Notes created</span><span className="font-medium">{studyFunnel.notesCreated}</span></div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">AI tools ({studyFunnel.aiToolUses} uses)</p>
+              {Object.keys(studyFunnel.aiToolsByType ?? {}).length === 0 ? (
+                <p className="text-sm text-lantern-text-muted">No AI tool events yet.</p>
+              ) : (
+                <div className="space-y-1 text-sm">
+                  {Object.entries(studyFunnel.aiToolsByType)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([tool, count]) => (
+                      <div key={tool} className="flex justify-between">
+                        <span className="text-lantern-text-muted capitalize">{tool.replace(/_/g, ' ')}</span>
+                        <span className="font-medium">{count}</span>
+                      </div>
+                    ))}
+                </div>
               )}
             </div>
           </div>

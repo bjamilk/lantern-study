@@ -170,3 +170,47 @@ export function trackOfferMade(listingId: string): void {
 export function trackCheckoutStarted(listingId: string): void {
   trackProductEvent({ event: 'checkout_started', props: { listingId } });
 }
+
+// ========== Study events ==========
+
+export function trackTestStarted(opts: {
+  mode: 'test' | 'study';
+  questionCount: number;
+  groupId?: string;
+}): void {
+  trackProductEvent({
+    event: 'test_started',
+    props: { mode: opts.mode, questionCount: opts.questionCount, groupId: opts.groupId },
+  });
+}
+
+export function trackTestCompleted(opts: {
+  score: number;
+  totalQuestions: number;
+  offline?: boolean;
+}): void {
+  trackProductEvent({
+    event: 'test_completed',
+    props: {
+      score: Math.round(opts.score),
+      totalQuestions: opts.totalQuestions,
+      offline: opts.offline ?? false,
+    },
+  });
+}
+
+export function trackFlashcardReviewStarted(queueSize: number, deckId?: string): void {
+  trackProductEvent({ event: 'flashcard_review_started', props: { queueSize, deckId } });
+}
+
+export function trackFlashcardReviewCompleted(reviewedCount: number): void {
+  trackProductEvent({ event: 'flashcard_review_completed', props: { reviewedCount } });
+}
+
+export function trackNoteCreated(source?: string): void {
+  trackProductEvent({ event: 'note_created', props: { source: source?.slice(0, 40) } });
+}
+
+export function trackAIToolUsed(tool: string): void {
+  trackProductEvent({ event: 'ai_tool_used', props: { tool: tool.slice(0, 40) } });
+}

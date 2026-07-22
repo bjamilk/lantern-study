@@ -11,6 +11,12 @@ export const PRODUCT_EVENT_NAMES = [
   'checkout_started',
   'signup_started',
   'onboarding_completed',
+  'test_started',
+  'test_completed',
+  'flashcard_review_started',
+  'flashcard_review_completed',
+  'note_created',
+  'ai_tool_used',
 ] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];

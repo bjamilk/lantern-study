@@ -14,6 +14,7 @@ import { Button } from '../../components/ui';
 import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
+import { trackFlashcardReviewStarted, trackFlashcardReviewCompleted } from '../../services/productAnalytics';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useStatsStore } from '../../stores/statsStore';
@@ -71,6 +72,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const reviewFlashcard = useFlashcardStore(s => s.reviewFlashcard);
 
   const queueSnapshotRef = useRef<Flashcard[] | null>(null);
+  const startTrackedRef = useRef(false);
+  const completeTrackedRef = useRef(false);
   const [index, setIndex] = useState(0);
   const [showBack, setShowBack] = useState(false);
   const [grading, setGrading] = useState(false);
@@ -85,6 +88,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   // Reset session when switching decks
   useEffect(() => {
     queueSnapshotRef.current = null;
+    startTrackedRef.current = false;
+    completeTrackedRef.current = false;
     setIndex(0);
     setShowBack(false);
   }, [deckId]);
@@ -100,6 +105,20 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const isComplete = sessionTotal > 0 && index >= sessionTotal;
   const progress = sessionTotal ? Math.min(index + 1, sessionTotal) : 0;
   const nextCard = queue[index + 1];
+
+  useEffect(() => {
+    if (sessionTotal > 0 && !startTrackedRef.current) {
+      startTrackedRef.current = true;
+      trackFlashcardReviewStarted(sessionTotal, deckId);
+    }
+  }, [sessionTotal, deckId]);
+
+  useEffect(() => {
+    if (isComplete && !completeTrackedRef.current) {
+      completeTrackedRef.current = true;
+      trackFlashcardReviewCompleted(sessionTotal);
+    }
+  }, [isComplete, sessionTotal]);
 
   useConfirmBeforeExit(sessionTotal > 0 && !isComplete, {
     title: 'Exit Review?',

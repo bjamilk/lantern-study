@@ -17,6 +17,7 @@ import { syncGamificationProgress } from '../services/gamificationStreak';
 import { formatActivityLocalDate } from '@lantern/shared/utils';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
+import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 
 
@@ -165,7 +166,13 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             setActiveStudySession(sessionData);
             setAppMode(AppMode.STUDY_ACTIVE);
         }
-    
+
+        trackTestStarted({
+            mode,
+            questionCount: testQuestions.length,
+            groupId: sessionConfig.groupId,
+        });
+
         closeModal('testConfig');
     }, [activeTestSession, activeStudySession, selectedChat, messages, userQuestionStats, setActiveTestSession, setActiveStudySession, setAppMode, closeModal]);
     
@@ -331,6 +338,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 setActiveTestSession(null);
                 trackQuestProgress('complete_test');
                 trackStudyActivity('test', 1);
+                trackTestCompleted({ score, totalQuestions: finalSessionData.questions.length, offline: true });
                 addNotification(`Offline test complete! Score: ${Math.round(score)}%. Your result will sync when you go online.`);
             } else {
                 // ── ONLINE PATH ───────────────────────────────────────────
@@ -414,6 +422,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 setAppMode(AppMode.TEST_REVIEW);
                 setActiveTestSession(null);
                 trackQuestProgress('complete_test');
+                trackTestCompleted({ score, totalQuestions: finalSessionData.questions.length });
                 // Study activity recorded server-side with createTestResult
                 // Post-test debrief via Lantern companion
                 const __tagStats: Record<string, { correct: number; total: number }> = {};

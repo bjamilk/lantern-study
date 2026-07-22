@@ -16,6 +16,7 @@ import {
   type AIStudyRecommendation,
 } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
+import { trackAIToolUsed } from '../services/productAnalytics';
 
 export function useAIHandlers() {
   const [isAILoading, setIsAILoading] = useState(false);
@@ -32,6 +33,7 @@ export function useAIHandlers() {
       setAiError(null);
       try {
         const { questions } = await aiGenerateQuestions(notes, options);
+        trackAIToolUsed('generate_questions');
         return questions;
       } catch (err: any) {
         setAiError(err.message || 'Failed to generate questions');
@@ -57,6 +59,7 @@ export function useAIHandlers() {
           ...options,
           count: normalizeFlashcardCount(options?.count),
         });
+        trackAIToolUsed('generate_flashcards');
         return flashcards;
       } catch (err: any) {
         setAiError(err.message || 'Failed to generate flashcards');
@@ -81,6 +84,7 @@ export function useAIHandlers() {
       setAiError(null);
       try {
         const { explanation } = await aiExplainAnswer(question, userAnswer, correctAnswer, options);
+        trackAIToolUsed('explain_answer');
         return explanation;
       } catch (err: any) {
         setAiError(err.message || 'Failed to explain answer');
@@ -104,6 +108,7 @@ export function useAIHandlers() {
       setAiError(null);
       try {
         const { recommendations } = await aiGetStudyRecommendations(performanceData);
+        trackAIToolUsed('study_recommendations');
         return recommendations;
       } catch (err: any) {
         setAiError(err.message || 'Failed to get recommendations');
@@ -126,6 +131,7 @@ export function useAIHandlers() {
       setAiError(null);
       try {
         const { answer } = await aiAskTutor(question, context);
+        trackAIToolUsed('ask_tutor');
         return answer;
       } catch (err: any) {
         setAiError(err.message || 'Failed to ask tutor');
@@ -145,6 +151,7 @@ export function useAIHandlers() {
       setAiError(null);
       try {
         const { enhanced } = await aiEnhanceFlashcard(front, back);
+        trackAIToolUsed('enhance_flashcard');
         return enhanced;
       } catch (err: any) {
         setAiError(err.message || 'Failed to enhance flashcard');

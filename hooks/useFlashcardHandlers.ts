@@ -14,6 +14,7 @@ import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
 import { normalizeUserSettings } from '@lantern/shared/settings/userSettings';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
+import { trackFlashcardReviewStarted } from '../services/productAnalytics';
 import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
@@ -370,6 +371,7 @@ export function useFlashcardHandlers() {
         }
         setActiveReviewSession({ deck, cardQueue });
         setAppMode(AppMode.FLASHCARD_REVIEW);
+        trackFlashcardReviewStarted(cardQueue.length, deck.id);
     }, [currentUser, flashcards, setActiveReviewSession, setAppMode]);
 
     const handleStartCram = useCallback((deck: Deck, timerSeconds?: number) => {

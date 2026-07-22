@@ -12,6 +12,7 @@ import * as notesApi from '../services/notes';
 import { aiGenerateQuestions } from '../services/ai';
 import { createDeck, createFlashcard, fetchAllFlashcards } from '../services/supabase';
 import { trackQuestProgress } from '../services/questProgress';
+import { trackNoteCreated } from '../services/productAnalytics';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useToastStore } from '../stores/toastStore';
 
@@ -63,6 +64,7 @@ export function useNoteHandlers(currentUserId?: string) {
     setSelectedNote(note);
     navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
     trackQuestProgress('create_note');
+    trackNoteCreated('editor');
     return note;
   }, [createNote, setSelectedNote, navigateTo]);
 

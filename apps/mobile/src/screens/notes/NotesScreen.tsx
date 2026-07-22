@@ -22,6 +22,7 @@ import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import { uploadNotePdfViaApi, uploadPresentationViaApi, uploadNoteImagesViaApi } from '../../services/notes';
+import { trackNoteCreated } from '../../services/productAnalytics';
 import { Button, Card, ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -184,6 +185,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       body: '',
       folderId: selectedFolderId || undefined,
     });
+    trackNoteCreated('editor');
     navigation.navigate('NoteEditor', { noteId: note.id });
   };
 

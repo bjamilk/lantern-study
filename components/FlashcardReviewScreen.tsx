@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
 import { useCompanionStore } from '../stores/companionStore';
+import { trackFlashcardReviewCompleted } from '../services/productAnalytics';
 
 interface FlashcardReviewScreenProps {
   session: FlashcardSession;
@@ -36,6 +37,14 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     // Reset answer visibility when card changes
     setIsAnswerShown(false);
   }, [currentIndex]);
+
+  const completionTrackedRef = useRef(false);
+  useEffect(() => {
+    if (isSessionComplete && !completionTrackedRef.current) {
+      completionTrackedRef.current = true;
+      trackFlashcardReviewCompleted(ratedCardIdsRef.current.size);
+    }
+  }, [isSessionComplete]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
