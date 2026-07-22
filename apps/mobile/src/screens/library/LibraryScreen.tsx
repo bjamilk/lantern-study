@@ -10,6 +10,7 @@ import { FeatureHero } from '../../components/ui';
 import { useUIStore, type LibraryTab } from '../../stores/uiStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useNotesStore } from '../../stores/notesStore';
+import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useTheme } from '../../theme';
 
 type Tab = LibraryTab;
@@ -48,6 +49,20 @@ export function LibraryScreen({ navigation, route }: Props) {
         setLibraryTab(paramTab);
       }
     }, [route?.params?.tab, setLibraryTab])
+  );
+
+  // Getting-started checklist: visiting the Library counts as "open library".
+  useFocusEffect(
+    React.useCallback(() => {
+      const store = useFeatureTipStore.getState();
+      if (!store.hydrated) {
+        void store.hydrate().then(() => {
+          useFeatureTipStore.getState().markChecklist('openLibrary');
+        });
+      } else {
+        store.markChecklist('openLibrary');
+      }
+    }, [])
   );
 
   return (

@@ -51,6 +51,8 @@ import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard'
 
 import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
 import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
+import { DashboardInsights } from '../../components/dashboard/DashboardInsights';
+import { AIStudyCoachCard } from '../../components/dashboard/AIStudyCoachCard';
 import { useCompanionStore } from '../../stores/companionStore';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
@@ -158,7 +160,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const { notes, loadNotes } = useNotesStore();
 
-  const { stats, selectedPeriod, isLoading: statsLoading, fetchStats, setSelectedPeriod } = useStatsStore();
+  const { stats, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
 
   const activeTest = useTestStore(s => s.activeTest);
 
@@ -467,7 +469,6 @@ export function DashboardScreen({ navigation }: Props) {
           hasTests={(stats?.totalTestsTaken ?? 0) > 0}
           hasGroups={groups.length > 0}
           hasBudget={Boolean(budget?.targetAmount && budget.targetAmount > 0) || transactions.length > 0}
-          hasOpenedLibrary={false}
           hasTriedCompanion={companionOpen}
           onCreateDeck={() => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } })}
           onTakeTest={() => parent?.navigate('StudyTab', { screen: 'TestsList' })}
@@ -560,6 +561,31 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
+        {statsError && !statsLoading ? (
+          <Card className="mb-4 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800">
+            <View className="flex-row items-center gap-3">
+              <Ionicons name="cloud-offline-outline" size={20} color="#dc2626" />
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-red-700 dark:text-red-300">
+                  Couldn't refresh your stats
+                </Text>
+                <Text className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                  Showing your latest saved data.
+                </Text>
+              </View>
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => {
+                  if (user?.id) void fetchStats(user.id, selectedPeriod, { force: true }).catch(() => {});
+                }}
+              >
+                Retry
+              </Button>
+            </View>
+          </Card>
+        ) : null}
+
         <DailyGoalsProgress
           study={studySettings}
           activityDays={stats?.activityDays ?? []}
@@ -567,6 +593,16 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
+        {statsLoading && !stats ? (
+          <View className="flex-row gap-3 mb-4">
+            {[0, 1, 2].map(i => (
+              <Card key={`stat-skeleton-${i}`} className="flex-1 items-center py-3">
+                <View className="w-10 h-7 rounded-md bg-lantern-border/60" />
+                <View className="w-16 h-3 rounded bg-lantern-border/40 mt-2" />
+              </Card>
+            ))}
+          </View>
+        ) : (
         <View className="flex-row gap-3 mb-4">
 
           <Card className="flex-1 items-center py-3">
@@ -604,6 +640,11 @@ export function DashboardScreen({ navigation }: Props) {
           </Card>
 
         </View>
+        )}
+
+
+
+        <AIStudyCoachCard stats={stats} streak={streak} />
 
 
 
@@ -772,6 +813,10 @@ export function DashboardScreen({ navigation }: Props) {
           </View>
 
         ) : null}
+
+
+
+        <DashboardInsights stats={stats} />
 
 
 
