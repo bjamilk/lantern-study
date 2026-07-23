@@ -96,7 +96,13 @@ router.post(
     if (!fileName || !base64Data) {
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
-    if (!contentType || !ALLOWED_AUDIO_TYPES.includes(contentType)) {
+    // Browsers often send MediaRecorder types with codec params (audio/webm;codecs=opus).
+    const normalizedType = String(contentType || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    const resolvedType = normalizedType === 'audio/x-m4a' ? 'audio/mp4' : normalizedType;
+    if (!resolvedType || !ALLOWED_AUDIO_TYPES.includes(resolvedType)) {
       return res.status(400).json({
         success: false,
         error: 'contentType is required. Use webm, mp4/m4a, ogg, or wav.',
@@ -111,7 +117,7 @@ router.post(
       const result = await supabaseService.uploadChatAudio({
         fileName,
         base64Data,
-        contentType,
+        contentType: resolvedType,
         userId,
         groupId: typeof groupId === 'string' ? groupId : undefined,
         threadId: typeof threadId === 'string' ? threadId : undefined,

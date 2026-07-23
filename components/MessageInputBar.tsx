@@ -189,11 +189,20 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     setRecordError(null);
     try {
       const base64Data = await blobToBase64(blob);
-      const ext = mimeType.includes('mp4') || mimeType.includes('m4a') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+      // Strip codec params (e.g. audio/webm;codecs=opus) — API allowlists bare MIME types.
+      const contentType = (mimeType || 'audio/webm').split(';')[0].trim().toLowerCase() || 'audio/webm';
+      const ext =
+        contentType.includes('mp4') || contentType.includes('m4a')
+          ? 'm4a'
+          : contentType.includes('ogg')
+            ? 'ogg'
+            : contentType.includes('wav')
+              ? 'wav'
+              : 'webm';
       const { url } = await uploadChatAudio({
         fileName: `voice-${Date.now()}.${ext}`,
         base64Data,
-        contentType: mimeType || 'audio/webm',
+        contentType,
         groupId,
         threadId,
       });
