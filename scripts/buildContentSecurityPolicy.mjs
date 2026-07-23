@@ -1,6 +1,6 @@
 /**
  * Build Content-Security-Policy for the web app (production _headers + dev server).
- * Keep connect-src in sync with third-party services the client actually uses.
+ * Keep connect-src / media-src in sync with third-party services the client actually uses.
  */
 export function buildContentSecurityPolicy(env = {}) {
   const supabaseUrl = (env.VITE_SUPABASE_URL || 'http://127.0.0.1:55421').replace(/\/$/, '');
@@ -20,6 +20,10 @@ export function buildContentSecurityPolicy(env = {}) {
     'https://*.ingest.sentry.io',
   ]);
 
+  // Chat voice notes / lecture audio use <audio src> against private Supabase signed URLs.
+  // Without media-src, browsers fall back to default-src 'self' and block playback.
+  const mediaSrc = new Set(["'self'", 'blob:', 'data:', supabaseUrl, 'https://*.supabase.co']);
+
   if (sentryDsn) {
     try {
       const host = new URL(sentryDsn);
@@ -35,6 +39,7 @@ export function buildContentSecurityPolicy(env = {}) {
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     `connect-src ${[...connectSrc].join(' ')}`,
     "img-src 'self' data: blob: https:",
+    `media-src ${[...mediaSrc].join(' ')}`,
     "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
     "frame-src https://www.youtube-nocookie.com",
     "object-src 'none'",
