@@ -12,7 +12,20 @@ import {
   segmentMentions,
 } from '@lantern/shared/utils';
 import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
-import { HandThumbUpIcon as HandThumbUpSolidIcon, HandThumbDownIcon as HandThumbDownSolidIcon } from '@heroicons/react/24/solid';
+import {
+  HandThumbUpIcon as HandThumbUpSolidIcon,
+  HandThumbDownIcon as HandThumbDownSolidIcon,
+  PlayIcon,
+  PauseIcon,
+} from '@heroicons/react/24/solid';
+
+function formatChatAudioTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
 
 function formatSenderLabel(
   sender: { id?: string; username?: string | null } | undefined,
@@ -126,8 +139,23 @@ function MentionedText({
 function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  const syncDuration = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    const next = el.duration;
+    if (Number.isFinite(next) && next > 0) setDuration(next);
+  };
+
+  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  const trackClass = onPrimary ? 'bg-white/25' : 'bg-lantern-primary/15';
+  const fillClass = onPrimary ? 'bg-white' : 'bg-lantern-primary';
+  const timeClass = onPrimary ? 'text-white/80' : 'text-lantern-text-secondary';
+
   return (
-    <div className="flex items-center gap-2 min-w-[180px]">
+    <div className="flex items-center gap-2.5 min-w-[200px] w-full max-w-[260px]">
       <button
         type="button"
         onClick={() => {
@@ -135,25 +163,53 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
           if (!el) return;
           if (el.paused) {
             void el.play();
-            setPlaying(true);
           } else {
             el.pause();
-            setPlaying(false);
           }
         }}
-        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${
+        className={`shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full ${
           onPrimary ? 'bg-white/20 text-white' : 'bg-lantern-primary-background text-lantern-primary'
         }`}
         aria-label={playing ? 'Pause voice note' : 'Play voice note'}
       >
-        {playing ? 'Pause' : 'Play'}
+        {playing ? (
+          <PauseIcon className="w-4 h-4" aria-hidden />
+        ) : (
+          <PlayIcon className="w-4 h-4 translate-x-0.5" aria-hidden />
+        )}
       </button>
-      <span className={`text-xs ${onPrimary ? 'text-white/80' : 'text-lantern-text-secondary'}`}>Voice note</span>
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        <div
+          className={`h-1.5 rounded-full overflow-hidden ${trackClass}`}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(currentTime)}
+          aria-label="Voice note playback progress"
+        >
+          <div
+            className={`h-full rounded-full transition-[width] duration-100 ease-linear ${fillClass}`}
+            style={{ width: `${progress * 100}%` }}
+          />
+        </div>
+        <div className={`flex items-center justify-between text-[11px] tabular-nums leading-none ${timeClass}`}>
+          <span>{formatChatAudioTime(currentTime)}</span>
+          <span>{formatChatAudioTime(duration)}</span>
+        </div>
+      </div>
       <audio
         ref={audioRef}
         src={url}
         preload="metadata"
-        onEnded={() => setPlaying(false)}
+        onLoadedMetadata={syncDuration}
+        onDurationChange={syncDuration}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setCurrentTime(0);
+        }}
         className="hidden"
       />
     </div>

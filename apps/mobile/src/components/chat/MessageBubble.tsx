@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 import type { Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
 import { normalizeStorageUrl, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
@@ -9,6 +10,14 @@ import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+
+function formatChatAudioTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -54,52 +63,153 @@ function MentionText({
 function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; colors: any }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [durationMs, setDurationMs] = useState(0);
+  const [positionMs, setPositionMs] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: false, progressUpdateIntervalMillis: 100 },
+          (status) => {
+            if (!status.isLoaded) return;
+            if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
+              setDurationMs(status.durationMillis);
+            }
+            setPositionMs(status.positionMillis ?? 0);
+            setPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setPlaying(false);
+              setPositionMs(0);
+              void sound.setPositionAsync(0);
+            }
+          }
+        );
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+        soundRef.current = sound;
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded && typeof status.durationMillis === 'number') {
+          setDurationMs(status.durationMillis);
+        }
+      } catch {
+        // Playback will retry on press if preload fails (e.g. expired signed URL race).
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      const sound = soundRef.current;
+      soundRef.current = null;
+      if (sound) void sound.unloadAsync();
+    };
+  }, [url]);
 
   const toggle = async () => {
     try {
-      if (playing && soundRef.current) {
-        await soundRef.current.pauseAsync();
-        setPlaying(false);
-        return;
-      }
-      if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri: url });
-        soundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (!status.isLoaded) return;
-          if (status.didJustFinish) {
-            setPlaying(false);
+      let sound = soundRef.current;
+      if (!sound) {
+        const created = await Audio.Sound.createAsync(
+          { uri: url },
+          { shouldPlay: false, progressUpdateIntervalMillis: 100 },
+          (status) => {
+            if (!status.isLoaded) return;
+            if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
+              setDurationMs(status.durationMillis);
+            }
+            setPositionMs(status.positionMillis ?? 0);
+            setPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              setPlaying(false);
+              setPositionMs(0);
+              void created.sound.setPositionAsync(0);
+            }
           }
-        });
+        );
+        sound = created.sound;
+        soundRef.current = sound;
       }
-      await soundRef.current.playAsync();
-      setPlaying(true);
+      const status = await sound.getStatusAsync();
+      if (!status.isLoaded) return;
+      if (status.isPlaying) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playAsync();
+      }
     } catch {
       setPlaying(false);
     }
   };
 
+  const durationSec = durationMs / 1000;
+  const positionSec = positionMs / 1000;
+  const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
+  const iconColor = isOwn ? '#ffffff' : colors.primary;
+  const trackColor = isOwn ? 'rgba(255,255,255,0.25)' : colors.primaryBackground;
+  const fillColor = isOwn ? '#ffffff' : colors.primary;
+  const timeColor = isOwn ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
+
   return (
-    <Pressable
-      onPress={() => void toggle()}
-      className="flex-row items-center gap-2 py-1"
-      accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
-    >
-      <View
-        className="px-2.5 py-1.5 rounded-lg"
-        style={{ backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground }}
+    <View className="flex-row items-center gap-2.5 py-1 min-w-[200px]" style={{ maxWidth: 260 }}>
+      <Pressable
+        onPress={() => void toggle()}
+        accessibilityRole="button"
+        accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
+        className="items-center justify-center rounded-full"
+        style={{
+          width: 36,
+          height: 36,
+          backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground,
+        }}
       >
-        <Text
-          className="text-xs font-semibold"
-          style={{ color: isOwn ? colors.textInverse : colors.primary }}
+        <Ionicons
+          name={playing ? 'pause' : 'play'}
+          size={18}
+          color={iconColor}
+          style={playing ? undefined : { marginLeft: 2 }}
+        />
+      </Pressable>
+      <View className="flex-1 min-w-0" style={{ gap: 6 }}>
+        <View
+          style={{
+            height: 6,
+            borderRadius: 999,
+            overflow: 'hidden',
+            backgroundColor: trackColor,
+          }}
+          accessibilityRole="progressbar"
+          accessibilityValue={{
+            min: 0,
+            max: Math.round(durationSec),
+            now: Math.round(positionSec),
+          }}
         >
-          {playing ? 'Pause' : 'Play'}
-        </Text>
+          <View
+            style={{
+              height: '100%',
+              width: `${progress * 100}%`,
+              borderRadius: 999,
+              backgroundColor: fillColor,
+            }}
+          />
+        </View>
+        <View className="flex-row items-center justify-between">
+          <Text style={{ color: timeColor, fontSize: 11, fontVariant: ['tabular-nums'] }}>
+            {formatChatAudioTime(positionSec)}
+          </Text>
+          <Text style={{ color: timeColor, fontSize: 11, fontVariant: ['tabular-nums'] }}>
+            {formatChatAudioTime(durationSec)}
+          </Text>
+        </View>
       </View>
-      <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
-        Voice note
-      </Text>
-    </Pressable>
+    </View>
   );
 }
 
