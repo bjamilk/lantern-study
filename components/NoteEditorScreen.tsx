@@ -586,6 +586,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               currentBody: bodyRef.current,
               durationMs,
               clientByteLength: audioBlob.size,
+              audioBlob,
               useStoragePath: true,
               onProgress: (progress) => {
                 if (progress.stage === 'uploading') setTranscribeStage('uploading');

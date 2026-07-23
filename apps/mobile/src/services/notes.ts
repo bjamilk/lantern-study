@@ -1,6 +1,6 @@
 /** Mobile notes API client */
-import * as FileSystem from 'expo-file-system';
-import { API_BASE_URL, getAuthHeaders, getSession } from './supabase';
+import * as FileSystem from 'expo-file-system/legacy';
+import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
@@ -164,6 +164,102 @@ function estimateLectureByteLength(audioBase64: string, clientByteLength?: numbe
   return Math.ceil((audioBase64.length * 3) / 4);
 }
 
+function lectureAudioBytesFromBase64(audioBase64: string): Uint8Array {
+  // Prefer Buffer when available (Hermes / metro polyfills often provide it).
+  const Buf = (globalThis as { Buffer?: { from: (s: string, enc: string) => Uint8Array } }).Buffer;
+  if (Buf) return new Uint8Array(Buf.from(audioBase64, 'base64'));
+  const atobFn = (globalThis as { atob?: (s: string) => string }).atob;
+  if (!atobFn) throw new Error('Base64 decode unavailable');
+  const binary = atobFn(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Device → Supabase signed-URL upload (skips API proxy body for large lectures).
+ * Prefers FileSystem.uploadAsync when a local recording URI is available.
+ */
+export async function uploadLectureAudioViaSignedUrl(
+  audioBase64: string,
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    clientByteLength?: number;
+    localFileUri?: string;
+  }
+): Promise<{ storagePath: string; mimeType: string; byteLength: number; fileName: string }> {
+  const estimatedBytes = estimateLectureByteLength(audioBase64, options?.clientByteLength);
+  if (options?.signal?.aborted) {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    throw err;
+  }
+
+  const prepared = await notesLongTimedRequest<{
+    storagePath: string;
+    signedUrl: string;
+    token: string;
+    mimeType: string;
+    fileName: string;
+    bucket: string;
+  }>(
+    '/prepare-lecture-audio-upload',
+    {
+      mimeType: options?.mimeType,
+      noteId: options?.noteId,
+      fileName: options?.fileName,
+      byteLength: estimatedBytes,
+    },
+    { signal: options?.signal, timeoutMs: 60_000 }
+  );
+
+  const contentType = prepared.mimeType || options?.mimeType || 'audio/webm';
+
+  if (options?.localFileUri && prepared.signedUrl) {
+    const uploadResult = await FileSystem.uploadAsync(prepared.signedUrl, options.localFileUri, {
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        'Content-Type': contentType,
+        'x-upsert': 'false',
+      },
+    });
+    if (uploadResult.status >= 200 && uploadResult.status < 300) {
+      return {
+        storagePath: prepared.storagePath,
+        mimeType: contentType,
+        byteLength: estimatedBytes,
+        fileName: prepared.fileName,
+      };
+    }
+    console.warn(
+      '[uploadLectureAudioViaSignedUrl] FileSystem PUT failed',
+      uploadResult.status,
+      String(uploadResult.body || '').slice(0, 200)
+    );
+  }
+
+  const bytes = lectureAudioBytesFromBase64(audioBase64);
+  const { error } = await supabase.storage
+    .from(prepared.bucket || 'note-files')
+    .uploadToSignedUrl(prepared.storagePath, prepared.token, bytes, {
+      contentType,
+    });
+  if (error) {
+    throw new Error(error.message || 'Direct storage upload failed');
+  }
+
+  return {
+    storagePath: prepared.storagePath,
+    mimeType: contentType,
+    byteLength: bytes.length,
+    fileName: prepared.fileName,
+  };
+}
+
 export const transcribeAudioForNote = async (
   audioBase64: string,
   options?: {
@@ -174,6 +270,8 @@ export const transcribeAudioForNote = async (
     currentBody?: string;
     durationMs?: number;
     clientByteLength?: number;
+    /** Local recording file for signed-URL PUT via FileSystem.uploadAsync. */
+    localFileUri?: string;
     useStoragePath?: boolean;
   }
 ) => {
@@ -187,16 +285,36 @@ export const transcribeAudioForNote = async (
 
   if (useStoragePath) {
     try {
-      const uploaded = await uploadLectureAudioForNote(audioBase64, {
-        mimeType,
-        noteId: options?.noteId,
-        fileName,
-        signal: options?.signal,
-      });
-      storagePath = uploaded.storagePath;
-      mimeType = uploaded.mimeType || mimeType;
-      fileName = uploaded.fileName || fileName;
-      clientByteLength = uploaded.byteLength;
+      try {
+        const direct = await uploadLectureAudioViaSignedUrl(audioBase64, {
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          signal: options?.signal,
+          clientByteLength,
+          localFileUri: options?.localFileUri,
+        });
+        storagePath = direct.storagePath;
+        mimeType = direct.mimeType || mimeType;
+        fileName = direct.fileName || fileName;
+        clientByteLength = direct.byteLength;
+      } catch (directErr) {
+        if (directErr instanceof Error && directErr.name === 'AbortError') throw directErr;
+        console.warn(
+          '[transcribeAudioForNote] signed-URL upload failed; trying API proxy upload',
+          directErr
+        );
+        const uploaded = await uploadLectureAudioForNote(audioBase64, {
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          signal: options?.signal,
+        });
+        storagePath = uploaded.storagePath;
+        mimeType = uploaded.mimeType || mimeType;
+        fileName = uploaded.fileName || fileName;
+        clientByteLength = uploaded.byteLength;
+      }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') throw err;
       console.warn('[transcribeAudioForNote] storage upload failed; falling back to base64', err);

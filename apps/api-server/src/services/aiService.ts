@@ -1023,8 +1023,16 @@ export function resolveAudioUploadMeta(
   return { mimeType: declared || 'audio/webm', extension: 'webm' };
 }
 
-export function isTranscriptionConfigured(): boolean {
+function hasGroqTranscriptionKey(): boolean {
   return Boolean(process.env.GROQ_API_KEY && String(process.env.GROQ_API_KEY).trim());
+}
+
+function hasOpenAITranscriptionKey(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim());
+}
+
+export function isTranscriptionConfigured(): boolean {
+  return hasGroqTranscriptionKey() || hasOpenAITranscriptionKey();
 }
 
 export type TranscribeAudioLogContext = {
@@ -1036,6 +1044,136 @@ export type TranscribeAudioLogContext = {
   clientMimeType?: string | null;
 };
 
+type WhisperProviderResult = {
+  transcript: string;
+  provider: string;
+  sniffedMimeType: string;
+  byteLength: number;
+};
+
+function buildWhisperForm(
+  buffer: Buffer,
+  meta: { mimeType: string; extension: string },
+  model: string
+): FormData {
+  const form = new FormData();
+  const bytes = new Uint8Array(buffer);
+  const filename = `lecture.${meta.extension}`;
+  // Prefer File when available; fall back to Blob+filename for older runtimes.
+  if (typeof File !== 'undefined') {
+    form.append('file', new File([bytes], filename, { type: meta.mimeType }));
+  } else {
+    form.append('file', new Blob([bytes], { type: meta.mimeType }), filename);
+  }
+  form.append('model', model);
+  form.append('response_format', 'text');
+  return form;
+}
+
+async function callOpenAiCompatibleWhisper(params: {
+  url: string;
+  apiKey: string;
+  model: string;
+  providerLabel: string;
+  buffer: Buffer;
+  meta: { mimeType: string; extension: string };
+  logContext?: TranscribeAudioLogContext;
+}): Promise<WhisperProviderResult> {
+  const { url, apiKey, model, providerLabel, buffer, meta, logContext } = params;
+  logger.info(`transcribe-audio starting ${providerLabel}`, {
+    requestId: logContext?.requestId,
+    noteId: logContext?.noteId,
+    storagePath: logContext?.storagePath,
+    byteLength: buffer.length,
+    sniffedMimeType: meta.mimeType,
+    sniffedExtension: meta.extension,
+    clientDurationMs: logContext?.clientDurationMs,
+    clientByteLength: logContext?.clientByteLength,
+    clientMimeType: logContext?.clientMimeType,
+  });
+
+  const form = buildWhisperForm(buffer, meta, model);
+  let response: Response;
+  try {
+    response = await aiFetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+  } catch (err) {
+    const timedOut =
+      err instanceof Error &&
+      (err.name === 'TimeoutError' || /aborted|timeout/i.test(err.message));
+    logger.warn(`transcribe-audio ${providerLabel} fetch failed`, {
+      requestId: logContext?.requestId,
+      timedOut,
+      message: err instanceof Error ? err.message : String(err),
+      byteLength: buffer.length,
+      sniffedMimeType: meta.mimeType,
+    });
+    throw new ApiError(
+      timedOut
+        ? 'Transcription timed out. Try a shorter recording.'
+        : 'Could not reach the transcription service. Please try again.',
+      timedOut ? 504 : 502,
+      true
+    );
+  }
+
+  if (!response.ok) {
+    const err = await response.text();
+    const detail = err.slice(0, 300);
+    logger.warn(`transcribe-audio ${providerLabel} rejected file`, {
+      requestId: logContext?.requestId,
+      status: response.status,
+      detail,
+      byteLength: buffer.length,
+      sniffedMimeType: meta.mimeType,
+    });
+    if (/could not process file|invalid.*media|unsupported/i.test(detail)) {
+      throw new ApiError(
+        'Could not read that recording. Try again, or use a different browser/mic.',
+        422,
+        true
+      );
+    }
+    throw new ApiError(`Transcription failed: ${detail}`, 502);
+  }
+
+  const transcript = (await response.text()).trim();
+  if (!transcript) {
+    logger.warn(`transcribe-audio empty ${providerLabel} result`, {
+      requestId: logContext?.requestId,
+      status: response.status,
+      byteLength: buffer.length,
+      sniffedMimeType: meta.mimeType,
+    });
+    throw new ApiError('Empty transcription result.', 502);
+  }
+
+  logger.info(`transcribe-audio ${providerLabel} ok`, {
+    requestId: logContext?.requestId,
+    noteId: logContext?.noteId,
+    status: response.status,
+    byteLength: buffer.length,
+    sniffedMimeType: meta.mimeType,
+    transcriptChars: transcript.length,
+  });
+
+  return {
+    transcript,
+    provider: providerLabel,
+    sniffedMimeType: meta.mimeType,
+    byteLength: buffer.length,
+  };
+}
+
+function isRetryableWhisperError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  // Keep hard client validation failures; retry provider/media failures on the secondary.
+  return error.statusCode !== 400 && error.statusCode !== 401 && error.statusCode !== 403;
+}
+
 export async function transcribeAudioBuffer(
   buffer: Buffer,
   mimeType: string = 'audio/webm',
@@ -1044,7 +1182,7 @@ export async function transcribeAudioBuffer(
   return withAiInflight(async () => {
     if (!isTranscriptionConfigured()) {
       throw new ApiError(
-        'Audio transcription is not configured. Add GROQ_API_KEY to apps/api-server/.env (free key at https://console.groq.com).',
+        'Audio transcription is not configured. Add GROQ_API_KEY (https://console.groq.com) or OPENAI_API_KEY to apps/api-server/.env.',
         503
       );
     }
@@ -1064,102 +1202,50 @@ export async function transcribeAudioBuffer(
     }
 
     const meta = resolveAudioUploadMeta(buffer, mimeType);
-    logger.info('transcribe-audio starting Groq Whisper', {
-      requestId: logContext?.requestId,
-      noteId: logContext?.noteId,
-      storagePath: logContext?.storagePath,
-      byteLength: buffer.length,
-      sniffedMimeType: meta.mimeType,
-      sniffedExtension: meta.extension,
-      declaredMimeType: mimeType,
-      clientDurationMs: logContext?.clientDurationMs,
-      clientByteLength: logContext?.clientByteLength,
-      clientMimeType: logContext?.clientMimeType,
-    });
+    const groqKey = hasGroqTranscriptionKey() ? String(process.env.GROQ_API_KEY).trim() : '';
+    const openaiKey = hasOpenAITranscriptionKey() ? String(process.env.OPENAI_API_KEY).trim() : '';
 
-    const form = new FormData();
-    const bytes = new Uint8Array(buffer);
-    const filename = `lecture.${meta.extension}`;
-    // Prefer File when available; fall back to Blob+filename for older runtimes.
-    if (typeof File !== 'undefined') {
-      form.append('file', new File([bytes], filename, { type: meta.mimeType }));
-    } else {
-      form.append('file', new Blob([bytes], { type: meta.mimeType }), filename);
-    }
-    form.append('model', 'whisper-large-v3-turbo');
-    form.append('response_format', 'text');
+    let lastError: unknown;
 
-    let response: Response;
-    try {
-      response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-        body: form,
-      });
-    } catch (err) {
-      const timedOut =
-        err instanceof Error &&
-        (err.name === 'TimeoutError' || /aborted|timeout/i.test(err.message));
-      logger.warn('transcribe-audio Groq fetch failed', {
-        requestId: logContext?.requestId,
-        timedOut,
-        message: err instanceof Error ? err.message : String(err),
-        byteLength: buffer.length,
-        sniffedMimeType: meta.mimeType,
-      });
-      throw new ApiError(
-        timedOut
-          ? 'Transcription timed out. Try a shorter recording.'
-          : 'Could not reach the transcription service. Please try again.',
-        timedOut ? 504 : 502,
-        true
-      );
-    }
-
-    if (!response.ok) {
-      const err = await response.text();
-      const detail = err.slice(0, 300);
-      logger.warn('transcribe-audio Groq rejected file', {
-        requestId: logContext?.requestId,
-        groqStatus: response.status,
-        detail,
-        byteLength: buffer.length,
-        sniffedMimeType: meta.mimeType,
-      });
-      if (/could not process file|invalid.*media|unsupported/i.test(detail)) {
-        throw new ApiError(
-          'Could not read that recording. Try again, or use a different browser/mic.',
-          422,
-          true
-        );
+    if (groqKey) {
+      try {
+        return await callOpenAiCompatibleWhisper({
+          url: 'https://api.groq.com/openai/v1/audio/transcriptions',
+          apiKey: groqKey,
+          model: 'whisper-large-v3-turbo',
+          providerLabel: 'groq-whisper-turbo',
+          buffer,
+          meta,
+          logContext,
+        });
+      } catch (err) {
+        lastError = err;
+        if (!openaiKey || !isRetryableWhisperError(err)) throw err;
+        logger.warn('transcribe-audio Groq failed; trying OpenAI Whisper', {
+          requestId: logContext?.requestId,
+          noteId: logContext?.noteId,
+          message: err instanceof Error ? err.message : String(err),
+          byteLength: buffer.length,
+          sniffedMimeType: meta.mimeType,
+        });
       }
-      throw new ApiError(`Transcription failed: ${detail}`, 502);
     }
 
-    const transcript = (await response.text()).trim();
-    if (!transcript) {
-      logger.warn('transcribe-audio empty Whisper result', {
-        requestId: logContext?.requestId,
-        groqStatus: response.status,
-        byteLength: buffer.length,
-        sniffedMimeType: meta.mimeType,
+    if (openaiKey) {
+      return callOpenAiCompatibleWhisper({
+        url: 'https://api.openai.com/v1/audio/transcriptions',
+        apiKey: openaiKey,
+        model: 'whisper-1',
+        providerLabel: 'openai-whisper-1',
+        buffer,
+        meta,
+        logContext,
       });
-      throw new ApiError('Empty transcription result.', 502);
     }
-    logger.info('transcribe-audio Whisper ok', {
-      requestId: logContext?.requestId,
-      noteId: logContext?.noteId,
-      groqStatus: response.status,
-      byteLength: buffer.length,
-      sniffedMimeType: meta.mimeType,
-      transcriptChars: transcript.length,
-    });
-    return {
-      transcript,
-      provider: 'groq-whisper-turbo',
-      sniffedMimeType: meta.mimeType,
-      byteLength: buffer.length,
-    };
+
+    throw lastError instanceof Error
+      ? lastError
+      : new ApiError('Transcription failed.', 502);
   });
 }
 

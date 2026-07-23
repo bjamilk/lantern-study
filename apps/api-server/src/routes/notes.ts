@@ -719,6 +719,125 @@ const ALLOWED_LECTURE_AUDIO_TYPES = new Set([
   'audio/x-m4a',
 ]);
 
+function resolveLectureMimeFromDeclared(mimeType: unknown): { mimeType: string; extension: string } {
+  // Empty buffer skips magic sniffing; declared MIME drives extension selection.
+  return resolveAudioUploadMeta(
+    Buffer.alloc(0),
+    typeof mimeType === 'string' && mimeType.trim() ? mimeType : 'audio/webm'
+  );
+}
+
+/**
+ * Mint a signed Supabase upload URL so the browser can PUT lecture audio
+ * directly to storage (avoids CF proxy / API body limits for large clips).
+ */
+router.post('/prepare-lecture-audio-upload', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const requestId = (req as { requestId?: string }).requestId;
+  const { mimeType, fileName, noteId, byteLength } = req.body || {};
+
+  if (noteId) {
+    try {
+      const canEdit = await supabaseService.canEditNote(userId, noteId);
+      if (!canEdit) {
+        res.status(403).json({
+          success: false,
+          error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+          message: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+        });
+        return;
+      }
+    } catch (error) {
+      logger.warn('prepare-lecture-audio-upload canEditNote failed', {
+        requestId,
+        userId,
+        noteId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      res.status(400).json({
+        success: false,
+        error: 'Could not verify note edit access. Check the note id and try again.',
+        message: 'Could not verify note edit access. Check the note id and try again.',
+      });
+      return;
+    }
+  }
+
+  if (typeof byteLength === 'number') {
+    if (byteLength < 64) {
+      res.status(400).json({
+        success: false,
+        error: 'Recording was empty or too short. Hold for at least 2 seconds, then stop.',
+        message: 'Recording was empty or too short. Hold for at least 2 seconds, then stop.',
+      });
+      return;
+    }
+    if (byteLength > MAX_LECTURE_AUDIO_BYTES) {
+      res.status(413).json({
+        success: false,
+        error: 'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
+        message: 'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
+      });
+      return;
+    }
+  }
+
+  const meta = resolveLectureMimeFromDeclared(mimeType);
+  const normalizedMime = meta.mimeType === 'audio/x-m4a' ? 'audio/mp4' : meta.mimeType;
+  if (!ALLOWED_LECTURE_AUDIO_TYPES.has(meta.mimeType) && !ALLOWED_LECTURE_AUDIO_TYPES.has(normalizedMime)) {
+    res.status(400).json({
+      success: false,
+      error: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+      message: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+    });
+    return;
+  }
+
+  const safeName =
+    typeof fileName === 'string' && fileName.trim()
+      ? fileName
+      : `lecture-${Date.now()}.${meta.extension}`;
+  const storagePath = buildNoteStoragePath(userId, safeName);
+
+  try {
+    const signed = await supabaseService.createSignedNoteFileUploadUrl(storagePath);
+    logger.info('prepare-lecture-audio-upload minted', {
+      requestId,
+      userId,
+      noteId: noteId || null,
+      storagePath: signed.path,
+      mimeType: normalizedMime,
+      byteLength: typeof byteLength === 'number' ? byteLength : null,
+    });
+    res.json({
+      success: true,
+      data: {
+        storagePath: signed.path,
+        signedUrl: signed.signedUrl,
+        token: signed.token,
+        mimeType: normalizedMime,
+        fileName: safeName,
+        bucket: 'note-files',
+      },
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.error('prepare-lecture-audio-upload failed', {
+      requestId,
+      userId,
+      noteId: noteId || null,
+      storagePath,
+      message: detail,
+    });
+    res.status(502).json({
+      success: false,
+      error: 'Could not prepare recording upload. Please try again.',
+      message: clientErrorMessage(error, 'Could not prepare recording upload. Please try again.'),
+    });
+  }
+}));
+
 router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;

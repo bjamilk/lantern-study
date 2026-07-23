@@ -434,6 +434,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         currentBody: body,
         durationMs: elapsed,
         clientByteLength: byteLength || undefined,
+        localFileUri: uri,
         useStoragePath: true,
       });
 

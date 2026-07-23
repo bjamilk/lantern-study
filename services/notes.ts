@@ -8,7 +8,7 @@ import type {
   StudyGoalMode,
   StudyNote,
 } from '../types';
-import { getAuthHeaders } from './supabase';
+import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
 
 const API_BASE_URL = getApiBaseUrl();
@@ -595,6 +595,113 @@ function estimateLectureByteLength(audioBase64: string, clientByteLength?: numbe
   return Math.ceil((audioBase64.length * 3) / 4);
 }
 
+function lectureAudioBytesFromBase64(audioBase64: string): Uint8Array {
+  const binary = atob(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Browser → Supabase signed-URL PUT (skips CF proxy body for large lectures).
+ * Falls back to caller when prepare or PUT fails.
+ */
+export async function uploadLectureAudioViaSignedUrl(
+  audioBase64: string,
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    clientByteLength?: number;
+    audioBlob?: Blob;
+    onProgress?: NoteImportProgressCallback;
+  }
+): Promise<{ storagePath: string; mimeType: string; byteLength: number; fileName: string }> {
+  const estimatedBytes = estimateLectureByteLength(audioBase64, options?.clientByteLength);
+  options?.onProgress?.({
+    stage: 'uploading',
+    percent: null,
+    label: 'Preparing direct upload…',
+    fileName: options?.fileName,
+  });
+
+  const prepared = await notesLongRequest<{
+    storagePath: string;
+    signedUrl: string;
+    token: string;
+    mimeType: string;
+    fileName: string;
+    bucket: string;
+  }>('/prepare-lecture-audio-upload', {
+    body: {
+      mimeType: options?.mimeType,
+      noteId: options?.noteId,
+      fileName: options?.fileName,
+      byteLength: estimatedBytes,
+    },
+    processingLabel: 'Preparing direct upload…',
+    timeoutMs: 60_000,
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+  });
+
+  if (options?.signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
+  const body: Blob =
+    options?.audioBlob ??
+    new Blob([lectureAudioBytesFromBase64(audioBase64)], {
+      type: prepared.mimeType || options?.mimeType || 'audio/webm',
+    });
+
+  options?.onProgress?.({
+    stage: 'uploading',
+    percent: null,
+    label: 'Uploading recording…',
+    fileName: prepared.fileName,
+  });
+
+  // Prefer PUT to the signed URL so AbortSignal works; fall back to supabase-js helper.
+  let uploadOk = false;
+  if (prepared.signedUrl) {
+    const response = await fetch(prepared.signedUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': prepared.mimeType || options?.mimeType || 'audio/webm',
+        'x-upsert': 'false',
+      },
+      body,
+      signal: options?.signal,
+    });
+    if (response.ok) {
+      uploadOk = true;
+    } else {
+      const detail = (await response.text().catch(() => '')).slice(0, 200);
+      console.warn('[uploadLectureAudioViaSignedUrl] signed PUT failed', response.status, detail);
+    }
+  }
+
+  if (!uploadOk) {
+    const { error } = await supabase.storage
+      .from(prepared.bucket || 'note-files')
+      .uploadToSignedUrl(prepared.storagePath, prepared.token, body, {
+        contentType: prepared.mimeType || options?.mimeType || 'audio/webm',
+      });
+    if (error) {
+      throw new Error(error.message || 'Direct storage upload failed');
+    }
+  }
+
+  return {
+    storagePath: prepared.storagePath,
+    mimeType: prepared.mimeType || options?.mimeType || 'audio/webm',
+    byteLength: typeof body.size === 'number' && body.size > 0 ? body.size : estimatedBytes,
+    fileName: prepared.fileName,
+  };
+}
+
 export async function transcribeAudioForNote(
   audioBase64: string,
   options?: {
@@ -605,6 +712,8 @@ export async function transcribeAudioForNote(
     currentBody?: string;
     durationMs?: number;
     clientByteLength?: number;
+    /** When set (web), used for signed-URL PUT without re-decoding base64. */
+    audioBlob?: Blob;
     /** Prefer storage upload then path-based Whisper (default true when noteId is set). */
     useStoragePath?: boolean;
     onProgress?: NoteImportProgressCallback;
@@ -626,17 +735,39 @@ export async function transcribeAudioForNote(
       fileName,
     });
     try {
-      const uploaded = await uploadLectureAudioForNote(audioBase64, {
-        mimeType,
-        noteId: options?.noteId,
-        fileName,
-        signal: options?.signal,
-        onProgress: options?.onProgress,
-      });
-      storagePath = uploaded.storagePath;
-      mimeType = uploaded.mimeType || mimeType;
-      fileName = uploaded.fileName || fileName;
-      clientByteLength = uploaded.byteLength;
+      // Prefer browser → Supabase signed URL (avoids CF proxy timeouts on large clips).
+      try {
+        const direct = await uploadLectureAudioViaSignedUrl(audioBase64, {
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          signal: options?.signal,
+          clientByteLength,
+          audioBlob: options?.audioBlob,
+          onProgress: options?.onProgress,
+        });
+        storagePath = direct.storagePath;
+        mimeType = direct.mimeType || mimeType;
+        fileName = direct.fileName || fileName;
+        clientByteLength = direct.byteLength;
+      } catch (directErr) {
+        if (directErr instanceof DOMException && directErr.name === 'AbortError') throw directErr;
+        console.warn(
+          '[transcribeAudioForNote] signed-URL upload failed; trying API proxy upload',
+          directErr
+        );
+        const uploaded = await uploadLectureAudioForNote(audioBase64, {
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          signal: options?.signal,
+          onProgress: options?.onProgress,
+        });
+        storagePath = uploaded.storagePath;
+        mimeType = uploaded.mimeType || mimeType;
+        fileName = uploaded.fileName || fileName;
+        clientByteLength = uploaded.byteLength;
+      }
     } catch (err) {
       // Unblock transcription: storage hop is best-effort; Whisper still accepts base64.
       if (err instanceof DOMException && err.name === 'AbortError') throw err;

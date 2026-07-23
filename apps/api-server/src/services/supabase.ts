@@ -8220,6 +8220,49 @@ export class SupabaseService {
     return { path: params.storagePath };
   }
 
+  /**
+   * Mint a short-lived signed upload URL so browsers can PUT lecture audio
+   * directly to Supabase Storage (avoids CF Worker / API body size & timeout).
+   */
+  async createSignedNoteFileUploadUrl(storagePath: string): Promise<{
+    signedUrl: string;
+    token: string;
+    path: string;
+  }> {
+    const bucket = 'note-files';
+    if (!storagePath || storagePath.includes('..') || storagePath.startsWith('/') || storagePath.includes('\\')) {
+      throw new Error('Invalid storage path');
+    }
+
+    const attempt = async () =>
+      this.supabase.storage.from(bucket).createSignedUploadUrl(storagePath);
+
+    let result = await attempt();
+    if (
+      result.error &&
+      typeof result.error.message === 'string' &&
+      result.error.message.toLowerCase().includes('bucket') &&
+      result.error.message.toLowerCase().includes('not found')
+    ) {
+      await this.supabase.storage.createBucket(bucket, { public: false });
+      result = await attempt();
+    }
+
+    if (result.error || !result.data?.signedUrl || !result.data?.token) {
+      logger.error('Error creating signed note-file upload URL:', {
+        error: result.error,
+        path: storagePath,
+      });
+      throw new Error(result.error?.message || 'Failed to create signed upload URL');
+    }
+
+    return {
+      signedUrl: this.normalizeStorageUrl(result.data.signedUrl),
+      token: result.data.token,
+      path: result.data.path || storagePath,
+    };
+  }
+
   async createSignedNoteFileUrl(storagePath: string, expiresInSeconds = 60 * 60 * 24): Promise<string> {
     return this.createSignedStorageUrl('note-files', storagePath, expiresInSeconds);
   }
