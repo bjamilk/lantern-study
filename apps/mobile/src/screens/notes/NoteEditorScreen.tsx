@@ -323,7 +323,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         Alert.alert('Permission needed', 'Microphone access is required to record lectures.');
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: false,
+      });
       const { recording: rec } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
@@ -376,24 +380,59 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       setRecording(null);
       if (!uri) throw new Error('No recording file');
 
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+      });
+      if (!base64 || base64.length < 64) {
+        throw new Error('Recording was empty. Hold a bit longer, then stop again.');
+      }
+
+      const lowerUri = uri.toLowerCase();
+      const mimeType = lowerUri.endsWith('.webm')
+        ? 'audio/webm'
+        : lowerUri.endsWith('.wav')
+          ? 'audio/wav'
+          : lowerUri.endsWith('.ogg')
+            ? 'audio/ogg'
+            : 'audio/mp4';
+      const ext = lowerUri.endsWith('.webm')
+        ? 'webm'
+        : lowerUri.endsWith('.wav')
+          ? 'wav'
+          : lowerUri.endsWith('.ogg')
+            ? 'ogg'
+            : 'm4a';
 
       const result = await transcribeAudioForNote(base64, {
-        mimeType: 'audio/m4a',
+        mimeType,
         noteId,
-        fileName: `lecture-${Date.now()}.m4a`,
+        fileName: `lecture-${Date.now()}.${ext}`,
         signal: abortController.signal,
         currentBody: body,
       });
 
       if (result.transcript) {
-        setBody((prev) => [prev, result.transcript].filter(Boolean).join('\n\n'));
+        setBody((prev) =>
+          prev.includes(result.transcript)
+            ? prev
+            : [prev, result.transcript].filter(Boolean).join('\n\n')
+        );
+      }
+      if (result.persistWarning) {
+        Alert.alert('Transcript ready', result.persistWarning);
       }
       // Refresh attachments/metadata without re-hydrating the draft (see lastHydratedNoteIdRef).
       await loadNote(noteId);
     } catch (e: unknown) {
-      if (e instanceof Error && e.name === 'AbortError') return;
-      Alert.alert('Transcription failed', e instanceof Error ? e.message : 'Could not transcribe audio');
+      // User tapped cancel — AbortController was cleared in cancelTranscription.
+      if (!transcribeAbortRef.current && e instanceof Error && e.name === 'AbortError') return;
+      const message =
+        e instanceof Error && e.name === 'AbortError'
+          ? 'Transcription timed out. Try a shorter recording.'
+          : e instanceof Error
+            ? e.message
+            : 'Could not transcribe audio';
+      Alert.alert('Transcription failed', message);
     } finally {
       transcribeAbortRef.current = null;
       setTranscribing(false);

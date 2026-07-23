@@ -115,18 +115,33 @@ export const transcribeAudioForNote = (
     signal?: AbortSignal;
     currentBody?: string;
   }
-) =>
-  notesRequest<{ transcript: string; note?: StudyNote }>('/transcribe-audio', {
-    method: 'POST',
-    body: JSON.stringify({
-      audioBase64,
-      mimeType: options?.mimeType,
-      noteId: options?.noteId,
-      fileName: options?.fileName,
-      currentBody: options?.currentBody,
-    }),
-    signal: options?.signal,
+) => {
+  const timeoutMs = 120_000;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (options?.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return notesRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>(
+    '/transcribe-audio',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        audioBase64,
+        mimeType: options?.mimeType,
+        noteId: options?.noteId,
+        fileName: options?.fileName,
+        currentBody: options?.currentBody,
+      }),
+      signal: controller.signal,
+    }
+  ).finally(() => {
+    clearTimeout(timer);
+    options?.signal?.removeEventListener('abort', onAbort);
   });
+};
 
 export const summarizeNote = (noteId: string) =>
   notesRequest<{ summary: string; note: StudyNote }>(`/${noteId}/summarize`, {

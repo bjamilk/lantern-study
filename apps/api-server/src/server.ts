@@ -227,32 +227,48 @@ app.use(compression());
 // Shed load early (after CORS/helmet) so saturated instances fail fast with Retry-After
 app.use(loadShedMiddleware);
 
-// Body parsing middleware — large routes MUST be registered before the 1mb default
-app.use(
-  /^\/api\/v1\/(flashcards|marketplace|messages)\/.*upload/,
-  express.json({
-    limit: '50mb',
-    verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },
-  })
-);
+// Body parsing middleware — large routes MUST be registered before the 1mb default.
+// Use path checks (not only RegExp mounts): Express RegExp layers can miss paths and
+// silently fall through to the 1mb parser, which breaks lecture transcription.
+const json50mb = express.json({
+  limit: '50mb',
+  verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },
+});
+const json35mb = express.json({ limit: '35mb' });
+const json4mb = express.json({ limit: '4mb' });
+const json1mb = express.json({ limit: '1mb' });
 
-app.use(
-  /^\/api\/v1\/notes\/(transcribe-audio|upload-pdf|upload-presentation|upload-images|[^/]+\/regenerate-preview|[^/]+\/attachments\/upload-images)$/,
-  express.json({ limit: '35mb' })
-);
+function isLargeUploadPath(pathname: string): boolean {
+  return /^\/api\/v1\/(flashcards|marketplace|messages)\/.*upload/.test(pathname);
+}
 
-app.use(
-  /^\/api\/v1\/offline-bundles(\/|$)/,
-  express.json({ limit: '50mb' })
-);
+function isLargeNotesPath(pathname: string): boolean {
+  return (
+    pathname === '/api/v1/notes/transcribe-audio' ||
+    pathname === '/api/v1/notes/upload-pdf' ||
+    pathname === '/api/v1/notes/upload-presentation' ||
+    pathname === '/api/v1/notes/upload-images' ||
+    /^\/api\/v1\/notes\/[^/]+\/regenerate-preview$/.test(pathname) ||
+    /^\/api\/v1\/notes\/[^/]+\/attachments\/upload-images$/.test(pathname)
+  );
+}
 
-// Avatar uploads are base64 JSON payloads (~1.3x file size); allow headroom under the 2 MB decoded cap.
-app.use(
-  /^\/api\/v1\/(users|groups)\/[^/]+\/avatar$/,
-  express.json({ limit: '4mb' })
-);
+function isOfflineBundlePath(pathname: string): boolean {
+  return pathname === '/api/v1/offline-bundles' || pathname.startsWith('/api/v1/offline-bundles/');
+}
 
-app.use(express.json({ limit: '1mb' }));
+function isAvatarUploadPath(pathname: string): boolean {
+  return /^\/api\/v1\/(users|groups)\/[^/]+\/avatar$/.test(pathname);
+}
+
+app.use((req, res, next) => {
+  const pathname = (req.originalUrl || req.url || '').split('?')[0];
+  if (isLargeUploadPath(pathname)) return json50mb(req, res, next);
+  if (isLargeNotesPath(pathname)) return json35mb(req, res, next);
+  if (isOfflineBundlePath(pathname)) return json50mb(req, res, next);
+  if (isAvatarUploadPath(pathname)) return json4mb(req, res, next);
+  return json1mb(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 app.use(csrfProtectionMiddleware);

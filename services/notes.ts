@@ -567,8 +567,8 @@ export async function transcribeAudioForNote(
     signal?: AbortSignal;
     currentBody?: string;
   }
-): Promise<{ transcript: string; note?: StudyNote }> {
-  return notesLongRequest<{ transcript: string; note?: StudyNote }>('/transcribe-audio', {
+): Promise<{ transcript: string; note?: StudyNote; persistWarning?: string }> {
+  return notesLongRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>('/transcribe-audio', {
     body: {
       audioBase64,
       mimeType: options?.mimeType,

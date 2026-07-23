@@ -709,7 +709,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { audioBase64, mimeType, noteId, fileName, currentBody } = req.body;
-  if (!audioBase64) {
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
     res.status(400).json({ error: 'audioBase64 is required.' });
     return;
   }
@@ -739,28 +739,61 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     requestId: (req as any).requestId,
   });
 
-  if (noteId) {
-    const note = await supabaseService.getNote(noteId, userId);
-    const baseBody =
-      typeof currentBody === 'string' ? currentBody : (note.body || '');
-    // Avoid duplicating if the client already appended the same transcript.
-    const alreadyHasTranscript =
-      Boolean(result.transcript) && baseBody.includes(result.transcript);
-    const mergedBody = alreadyHasTranscript
-      ? baseBody
-      : [baseBody, result.transcript].filter(Boolean).join('\n\n');
-    const updatedNote = await supabaseService.updateNote(userId, noteId, { body: mergedBody });
+  if (!noteId) {
+    res.json({ success: true, data: result });
+    return;
+  }
+
+  // Persist transcript with CAS-safe retries. Always return the Whisper text so the
+  // client can still show it if note write races with autosave.
+  let updatedNote: Awaited<ReturnType<typeof supabaseService.updateNote>> | undefined;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const note = await supabaseService.getNote(noteId, userId);
+      const preferredBody =
+        attempt === 0 && typeof currentBody === 'string' ? currentBody : (note.body || '');
+      const alreadyHasTranscript =
+        Boolean(result.transcript) && preferredBody.includes(result.transcript);
+      const mergedBody = alreadyHasTranscript
+        ? preferredBody
+        : [preferredBody, result.transcript].filter(Boolean).join('\n\n');
+      try {
+        updatedNote = await supabaseService.updateNote(
+          userId,
+          noteId,
+          { body: mergedBody },
+          { allowRetryOnConflict: true }
+        );
+        break;
+      } catch (error) {
+        if (!isVersionConflictError(error) || attempt === 2) throw error;
+      }
+    }
+
     await supabaseService.addNoteAttachment(noteId, {
       type: 'audio',
       fileName: fileName || 'lecture-recording.webm',
       extractedText: result.transcript,
       metadata: { provider: result.provider, mimeType: mimeType || null },
     });
-    res.json({ success: true, data: { ...result, note: updatedNote } });
+  } catch (error) {
+    logger.warn('Transcript persist failed after successful Whisper', {
+      noteId,
+      userId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        persistWarning:
+          'Transcript ready, but saving to the note failed. It was added in your editor — tap Save if it does not stick.',
+      },
+    });
     return;
   }
 
-  res.json({ success: true, data: result });
+  res.json({ success: true, data: { ...result, note: updatedNote } });
 }));
 
 router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {

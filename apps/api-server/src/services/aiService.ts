@@ -986,6 +986,42 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
   };
 }
 
+function resolveAudioUploadMeta(
+  buffer: Buffer,
+  mimeType: string
+): { mimeType: string; extension: string } {
+  const declared = (mimeType || '').split(';')[0].trim().toLowerCase();
+  // Prefer container sniffing — clients often send audio/m4a (non-standard) or the wrong type.
+  if (buffer.length >= 12) {
+    const riff = buffer.toString('ascii', 0, 4);
+    const wave = buffer.toString('ascii', 8, 12);
+    if (riff === 'RIFF' && wave === 'WAVE') {
+      return { mimeType: 'audio/wav', extension: 'wav' };
+    }
+    if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+      return { mimeType: 'audio/webm', extension: 'webm' };
+    }
+    // ISO BMFF (mp4/m4a): size + 'ftyp' at offset 4
+    if (buffer.toString('ascii', 4, 8) === 'ftyp') {
+      return { mimeType: 'audio/mp4', extension: 'm4a' };
+    }
+    if (buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53) {
+      return { mimeType: 'audio/ogg', extension: 'ogg' };
+    }
+  }
+
+  if (declared.includes('wav')) return { mimeType: 'audio/wav', extension: 'wav' };
+  if (declared.includes('ogg')) return { mimeType: 'audio/ogg', extension: 'ogg' };
+  if (declared.includes('mpeg') || declared.includes('mp3')) {
+    return { mimeType: 'audio/mpeg', extension: 'mp3' };
+  }
+  if (declared.includes('mp4') || declared.includes('m4a') || declared.includes('aac')) {
+    return { mimeType: 'audio/mp4', extension: 'm4a' };
+  }
+  if (declared.includes('webm')) return { mimeType: 'audio/webm', extension: 'webm' };
+  return { mimeType: declared || 'audio/webm', extension: 'webm' };
+}
+
 export async function transcribeAudioBase64(
   audioBase64: string,
   mimeType: string = 'audio/webm'
@@ -999,18 +1035,17 @@ export async function transcribeAudioBase64(
     }
 
     const buffer = Buffer.from(audioBase64, 'base64');
-    if (!buffer.length) {
-      throw new ApiError('Audio payload is empty.', 400);
+    if (buffer.length < 64) {
+      throw new ApiError('Audio payload is empty or too short to transcribe.', 400);
     }
 
-    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
+    const meta = resolveAudioUploadMeta(buffer, mimeType);
     const form = new FormData();
-    const extension = mimeType.includes('mp4') || mimeType.includes('m4a')
-      ? 'm4a'
-      : mimeType.includes('wav')
-        ? 'wav'
-        : 'webm';
-    form.append('file', blob, `lecture.${extension}`);
+    // File (not bare Blob) keeps filename/MIME for Groq's multipart parser.
+    const file = new File([new Uint8Array(buffer)], `lecture.${meta.extension}`, {
+      type: meta.mimeType,
+    });
+    form.append('file', file);
     form.append('model', 'whisper-large-v3-turbo');
     form.append('response_format', 'text');
 

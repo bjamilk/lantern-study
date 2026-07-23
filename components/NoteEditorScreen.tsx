@@ -444,8 +444,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             if (result.transcript) {
               // Apply locally so we do not rely on store re-hydration (which no longer
               // overwrites the draft on every save).
-              setBody((prev) => [prev, result.transcript].filter(Boolean).join('\n\n'));
+              setBody((prev) =>
+                prev.includes(result.transcript)
+                  ? prev
+                  : [prev, result.transcript].filter(Boolean).join('\n\n')
+              );
               userEditedRef.current = false;
+            }
+            if (result.persistWarning) {
+              useToastStore.getState().showToast(result.persistWarning, 'info');
             }
             onTranscriptReady(result.transcript || '');
           } catch (err: unknown) {
@@ -460,7 +467,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         reader.readAsDataURL(blob);
       };
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      // Timeslice ensures browsers (esp. Safari) emit chunks before stop.
+      recorder.start(1000);
       setRecording(true);
     } catch {
       useToastStore.getState().showToast('Microphone access is required to record lectures.', 'error');
