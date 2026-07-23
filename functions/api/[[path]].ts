@@ -85,15 +85,16 @@ export async function onRequest(context: {
   };
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    // Buffer the body before the upstream fetch. Streaming `request.body` with
-    // duplex: 'half' has dropped bodies in production (Express then sees
-    // req.body === undefined → opaque 500 on routes that destructure it).
+    // Buffer into a TypedArray so the runtime can set Content-Length correctly.
+    // Streaming request.body (duplex:half) and manually setting Content-Length have
+    // both produced empty upstream bodies in production for larger POSTs.
     const buf = await request.arrayBuffer();
-    init.body = buf.byteLength > 0 ? buf : undefined;
+    headers.delete('content-length');
+    headers.delete('Content-Length');
+    headers.delete('transfer-encoding');
+    headers.delete('Transfer-Encoding');
     if (buf.byteLength > 0) {
-      headers.set('Content-Length', String(buf.byteLength));
-    } else {
-      headers.delete('Content-Length');
+      init.body = new Uint8Array(buf);
     }
   }
 

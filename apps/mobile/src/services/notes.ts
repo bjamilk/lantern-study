@@ -157,8 +157,8 @@ export const uploadLectureAudioForNote = (
   );
 
 /** Skip storage hop for short lectures; keeps typical clips on the proven base64 path. */
-/** Prefer signed-URL storage for anything above a tiny clip — avoids large JSON via the API. */
-const LECTURE_STORAGE_PATH_MIN_BYTES = 64 * 1024;
+/** Always prefer signed-URL storage when noteId is set — keeps Whisper payloads small. */
+const LECTURE_STORAGE_PATH_MIN_BYTES = 0;
 
 function estimateLectureByteLength(audioBase64: string, clientByteLength?: number): number {
   if (typeof clientByteLength === 'number' && clientByteLength > 0) return clientByteLength;
@@ -323,6 +323,11 @@ export const transcribeAudioForNote = async (
     }
   }
 
+  const compactCurrentBody =
+    typeof options?.currentBody === 'string' && options.currentBody.length <= 32_000
+      ? options.currentBody
+      : undefined;
+
   return notesLongTimedRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>(
     '/transcribe-audio',
     storagePath
@@ -331,7 +336,7 @@ export const transcribeAudioForNote = async (
           mimeType,
           noteId: options?.noteId,
           fileName,
-          currentBody: options?.currentBody,
+          currentBody: compactCurrentBody,
           durationMs: options?.durationMs,
           clientByteLength,
         }
@@ -340,7 +345,7 @@ export const transcribeAudioForNote = async (
           mimeType,
           noteId: options?.noteId,
           fileName,
-          currentBody: options?.currentBody,
+          currentBody: compactCurrentBody,
           durationMs: options?.durationMs,
           clientByteLength,
         },

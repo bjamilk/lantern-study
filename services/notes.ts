@@ -12,6 +12,23 @@ import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
 
 const API_BASE_URL = getApiBaseUrl();
+/** Direct Render origin — used when same-origin CF proxy cannot carry large JSON bodies. */
+const RENDER_API_BASE_URL = 'https://lantern-study-api.onrender.com';
+const CF_PROXY_UNSAFE_BODY_CHARS = 48 * 1024;
+
+function notesApiUrl(path: string, bodyJson: string): string {
+  const relative = `/api/v1/notes${path}`;
+  // Deployed web uses empty API_BASE_URL (same-origin CF Pages proxy). Large POSTs
+  // have arrived upstream with an empty body; send those directly to Render with Bearer.
+  if (
+    typeof window !== 'undefined' &&
+    !API_BASE_URL &&
+    bodyJson.length >= CF_PROXY_UNSAFE_BODY_CHARS
+  ) {
+    return `${RENDER_API_BASE_URL}${relative}`;
+  }
+  return `${API_BASE_URL}${relative}`;
+}
 
 import {
   MAX_NOTE_UPLOAD_BYTES,
@@ -138,7 +155,7 @@ async function notesLongRequest<T>(
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(method, `${API_BASE_URL}/api/v1/notes${path}`);
+    xhr.open(method, notesApiUrl(path, json));
     xhr.responseType = 'json';
     xhr.timeout = timeoutMs;
 
@@ -587,9 +604,12 @@ export async function uploadLectureAudioForNote(
   });
 }
 
-/** Skip storage hop for short lectures; keeps typical clips on the proven base64 path. */
-/** Prefer signed-URL storage for anything above a tiny clip — avoids large JSON via CF proxy. */
-const LECTURE_STORAGE_PATH_MIN_BYTES = 64 * 1024;
+/**
+ * Always prefer signed-URL storage when a noteId is present.
+ * Large audioBase64 JSON through the CF Pages → Render proxy often arrives with an
+ * empty body (API then returns "audioBase64 or storagePath is required").
+ */
+const LECTURE_STORAGE_PATH_MIN_BYTES = 0;
 
 function estimateLectureByteLength(audioBase64: string, clientByteLength?: number): number {
   if (typeof clientByteLength === 'number' && clientByteLength > 0) return clientByteLength;
@@ -790,26 +810,38 @@ export async function transcribeAudioForNote(
     fileName,
   });
 
+  // Keep the JSON small — large currentBody + audioBase64 through the CF proxy is unreliable.
+  const compactCurrentBody =
+    typeof options?.currentBody === 'string' && options.currentBody.length <= 32_000
+      ? options.currentBody
+      : undefined;
+
+  const transcribeBody = storagePath
+    ? {
+        storagePath,
+        mimeType,
+        noteId: options?.noteId,
+        fileName,
+        currentBody: compactCurrentBody,
+        durationMs: options?.durationMs,
+        clientByteLength,
+      }
+    : {
+        audioBase64,
+        mimeType,
+        noteId: options?.noteId,
+        fileName,
+        currentBody: compactCurrentBody,
+        durationMs: options?.durationMs,
+        clientByteLength,
+      };
+
+  if (!storagePath && !audioBase64) {
+    throw new Error('Recording upload produced no audio data. Please try again.');
+  }
+
   return notesLongRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>('/transcribe-audio', {
-    body: storagePath
-      ? {
-          storagePath,
-          mimeType,
-          noteId: options?.noteId,
-          fileName,
-          currentBody: options?.currentBody,
-          durationMs: options?.durationMs,
-          clientByteLength,
-        }
-      : {
-          audioBase64,
-          mimeType,
-          noteId: options?.noteId,
-          fileName,
-          currentBody: options?.currentBody,
-          durationMs: options?.durationMs,
-          clientByteLength,
-        },
+    body: transcribeBody,
     processingLabel: 'Transcribing audio…',
     timeoutMs: 120_000,
     signal: options?.signal,
