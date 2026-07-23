@@ -285,15 +285,21 @@ router.get(
     if (!userId) return;
 
     try {
-      // Get all threads where user is a participant
+      // participant_ids is jsonb — pass a JSON string so PostgREST uses cs.["uuid"]
+      // (a JS array becomes Postgres {uuid} and fails with 22P02 invalid json).
       const { data: threads, error } = await supabaseService.getClient()
         .from('dm_threads')
         .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by')
-        .contains('participant_ids', [userId])
-        .order('last_message_time', { ascending: false });
+        .contains('participant_ids', JSON.stringify([userId]))
+        .order('last_message_time', { ascending: false, nullsFirst: false });
 
       if (error) {
-        logger.error('Error fetching DM threads', { error, userId });
+        logger.error('Error fetching DM threads', {
+          userId,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        });
         return res.status(500).json({ success: false, error: 'Failed to fetch DM threads' });
       }
 
@@ -327,7 +333,7 @@ router.get(
         .from('profiles')
         .select('id, name, avatar_url')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       const result = userThreads.map((t: any) => {
         const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
