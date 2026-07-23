@@ -14,7 +14,11 @@ import {
     createNotification
 } from '../services/supabase';
 import { syncGamificationProgress } from '../services/gamificationStreak';
-import { formatActivityLocalDate } from '@lantern/shared/utils';
+import {
+    formatActivityLocalDate,
+    loadQuestionVisibilityMode,
+    messagePassesStudyQuestionPool,
+} from '@lantern/shared/utils';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
@@ -66,7 +70,17 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         let candidateQuestions: Message[] = [];
         let finalSelectedQuestions: Message[] = [];
         const allSourceMessages = [...new Set(sourceGroupIds)].flatMap(id => messages[id] || []);
-        const allTestableQuestions = allSourceMessages.filter(isQuestionTestable);
+        const visibilityMode =
+            typeof localStorage !== 'undefined'
+                ? loadQuestionVisibilityMode((key) => localStorage.getItem(key))
+                : 'all';
+        // Graded tests always use verified bank; study respects visibility preference.
+        const allTestableQuestions =
+            mode === 'study'
+                ? allSourceMessages.filter((msg) =>
+                      messagePassesStudyQuestionPool(msg, visibilityMode)
+                  )
+                : allSourceMessages.filter(isQuestionTestable);
     
         if (useSpacedRepetition) {
             candidateQuestions = allTestableQuestions.filter((q: Message) => {

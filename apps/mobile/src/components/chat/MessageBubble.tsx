@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
+import { Audio } from 'expo-av';
 import type { Message } from '../../stores/groupStore';
 import { Avatar } from '../ui';
 import { useTheme } from '../../theme';
-import { normalizeStorageUrl } from '@lantern/shared/utils';
+import { normalizeStorageUrl, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
+import { ReceiptTicks } from './ReceiptTicks';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 
 interface MessageBubbleProps {
@@ -19,6 +21,86 @@ interface MessageBubbleProps {
   onFlag?: () => void;
   canFlag?: boolean;
   isGroupedWithPrevious?: boolean;
+  onReply?: (message: Message) => void;
+  onScrollToMessage?: (messageId: string) => void;
+  onOpenThread?: (rootId: string) => void;
+}
+
+function MentionText({
+  text,
+  color,
+  mentionColor,
+}: {
+  text: string;
+  color: string;
+  mentionColor: string;
+}) {
+  const segments = segmentMentions(text);
+  return (
+    <Text className="text-sm leading-relaxed" style={{ color }}>
+      {segments.map((seg, i) =>
+        seg.type === 'mention' ? (
+          <Text key={i} style={{ color: mentionColor, fontWeight: '700' }}>
+            {seg.value}
+          </Text>
+        ) : (
+          <Text key={i}>{seg.value}</Text>
+        )
+      )}
+    </Text>
+  );
+}
+
+function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; colors: any }) {
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const toggle = async () => {
+    try {
+      if (playing && soundRef.current) {
+        await soundRef.current.pauseAsync();
+        setPlaying(false);
+        return;
+      }
+      if (!soundRef.current) {
+        const { sound } = await Audio.Sound.createAsync({ uri: url });
+        soundRef.current = sound;
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) {
+            setPlaying(false);
+          }
+        });
+      }
+      await soundRef.current.playAsync();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  };
+
+  return (
+    <Pressable
+      onPress={() => void toggle()}
+      className="flex-row items-center gap-2 py-1"
+      accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
+    >
+      <View
+        className="px-2.5 py-1.5 rounded-lg"
+        style={{ backgroundColor: isOwn ? 'rgba(255,255,255,0.2)' : colors.primaryBackground }}
+      >
+        <Text
+          className="text-xs font-semibold"
+          style={{ color: isOwn ? colors.textInverse : colors.primary }}
+        >
+          {playing ? 'Pause' : 'Play'}
+        </Text>
+      </View>
+      <Text className="text-xs" style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}>
+        Voice note
+      </Text>
+    </Pressable>
+  );
 }
 
 export function MessageBubble({
@@ -32,6 +114,9 @@ export function MessageBubble({
   onFlag,
   canFlag,
   isGroupedWithPrevious = false,
+  onReply,
+  onScrollToMessage,
+  onOpenThread,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
   const [imageFailed, setImageFailed] = useState(false);
@@ -40,6 +125,7 @@ export function MessageBubble({
     hour: '2-digit',
     minute: '2-digit',
   });
+  const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
 
   const optionItems =
     message.optionItems?.length
@@ -70,7 +156,9 @@ export function MessageBubble({
   const questionImageUri = useResolvedStorageUrl(message.imageUrl);
 
   return (
-    <View
+    <Pressable
+      onLongPress={onReply ? () => onReply(message) : undefined}
+      delayLongPress={350}
       className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
     >
       {!isOwn ? (
@@ -108,6 +196,32 @@ export function MessageBubble({
                 : otherTextBubbleStyle
           }
         >
+          {message.replyTo ? (
+            <Pressable
+              onPress={() => message.replyTo?.id && onScrollToMessage?.(message.replyTo.id)}
+              className="mb-2 rounded-lg px-2.5 py-1.5 border-l-2"
+              style={{
+                backgroundColor: isOwn && !isQuestion ? 'rgba(255,255,255,0.15)' : colors.backgroundSecondary,
+                borderLeftColor: isOwn && !isQuestion ? '#fff' : colors.primary,
+              }}
+            >
+              <Text
+                className="text-[11px] font-semibold"
+                numberOfLines={1}
+                style={{ color: isOwn && !isQuestion ? colors.textInverse : colors.primary }}
+              >
+                {message.replyTo.senderName || 'Message'}
+              </Text>
+              <Text
+                className="text-xs"
+                numberOfLines={1}
+                style={{ color: isOwn && !isQuestion ? '#c7d2fe' : colors.textSecondary }}
+              >
+                {(message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+              </Text>
+            </Pressable>
+          ) : null}
+
           {isQuestion ? (
             <View className="gap-2">
               <View className="flex-row items-center flex-wrap gap-1.5">
@@ -183,6 +297,8 @@ export function MessageBubble({
                 canFlag={canFlag}
               />
             </View>
+          ) : audioUrl ? (
+            <VoiceNotePlayer url={audioUrl} isOwn={isOwn} colors={colors} />
           ) : (
             (() => {
               const imageMatch = message.text?.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/);
@@ -200,35 +316,59 @@ export function MessageBubble({
                     />
                   ) : null}
                   {textWithoutImage ? (
-                    <Text
-                      className="text-sm leading-relaxed"
-                      style={{ color: isOwn ? colors.textInverse : colors.text }}
-                    >
-                      {textWithoutImage}
-                    </Text>
+                    <MentionText
+                      text={textWithoutImage}
+                      color={isOwn ? colors.textInverse : colors.text}
+                      mentionColor={isOwn ? '#fff' : colors.primary}
+                    />
                   ) : null}
                 </View>
               );
             })()
           )}
 
-          <Text
-            className="text-[10px] mt-1.5 text-right"
-            style={{
-              color: isOwn
-                ? isQuestion
-                  ? colors.textTertiary
-                  : '#c7d2fe'
-                : colors.textTertiary,
-            }}
-          >
-            {timeLabel}
-            {isOwn ? ' · Sent' : ''}
-          </Text>
+          <View className="flex-row items-center justify-end mt-1.5 gap-0.5">
+            <Text
+              className="text-[10px]"
+              style={{
+                color: isOwn
+                  ? isQuestion
+                    ? colors.textTertiary
+                    : '#c7d2fe'
+                  : colors.textTertiary,
+              }}
+            >
+              {timeLabel}
+            </Text>
+            {isOwn ? (
+              <ReceiptTicks
+                status={message.receiptStatus || 'sent'}
+                seenByCount={message.seenByCount}
+                seenByTotal={message.seenByTotal}
+                isGroupChat
+                onPrimary={!isQuestion}
+              />
+            ) : null}
+          </View>
         </View>
+
+        {(message.replyCount ?? 0) > 0 && onOpenThread ? (
+          <Pressable
+            onPress={() => onOpenThread(message.threadRootId || message.id)}
+            className="mt-1.5"
+            accessibilityLabel={`${message.replyCount} replies`}
+          >
+            <Text
+              className="text-xs font-semibold"
+              style={{ color: isOwn ? colors.primary : colors.primary }}
+            >
+              {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {isOwn ? <View className="w-7" /> : null}
-    </View>
+    </Pressable>
   );
 }

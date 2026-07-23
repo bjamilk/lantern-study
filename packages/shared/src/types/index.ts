@@ -210,6 +210,16 @@ export enum QuestionStatus {
   REJECTED = 'REJECTED',
 }
 
+/** Compact preview of a message being replied to. */
+export interface MessageReplyPreview {
+  id: string;
+  senderId?: string;
+  senderName?: string;
+  type?: MessageType | string;
+  text?: string;
+  questionStem?: string;
+}
+
 export interface Message {
   id: string;
   groupId: string;
@@ -234,6 +244,17 @@ export interface Message {
   matchingAnswerItems?: MatchingItem[];
   correctMatches?: { promptItemId: string; answerItemId: string }[];
   diagramLabels?: DiagramLabel[];
+  replyToMessageId?: string;
+  mentionedUserIds?: string[];
+  replyTo?: MessageReplyPreview | null;
+  /** Root message id for nested reply threads (null if not part of a thread). */
+  threadRootId?: string;
+  /** Number of replies in this thread (on root or any member). */
+  replyCount?: number;
+  /** Sender-facing receipt for own messages. */
+  receiptStatus?: 'sent' | 'read';
+  seenByCount?: number;
+  seenByTotal?: number;
 }
 
 export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });
@@ -513,6 +534,11 @@ export interface DirectMessage {
   senderId: string;
   text: string;
   timestamp: Date | string;
+  replyToMessageId?: string;
+  replyTo?: MessageReplyPreview | null;
+  threadRootId?: string;
+  replyCount?: number;
+  receiptStatus?: 'sent' | 'read';
 }
 
 export interface AppNotification {

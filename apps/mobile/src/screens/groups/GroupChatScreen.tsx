@@ -22,6 +22,7 @@ import AddMembersModal from '../../components/AddMembersModal';
 import AIGenerateQuestionsModal from '../../components/AIGenerateQuestionsModal';
 import {
   ChatComposer,
+  ChatThreadModal,
   GroupChatHeader,
   MessageBubble,
   formatChatDateLabel,
@@ -30,10 +31,16 @@ import {
 } from '../../components/chat';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
+import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
+import { useQuestionVisibilityMode } from '../../hooks/useQuestionVisibilityMode';
 import { useTheme } from '../../theme';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
+import {
+  QUESTION_VISIBILITY_MODE_OPTIONS,
+  messagePassesQuestionVisibility,
+} from '@lantern/shared/utils';
 
 type NavigationProp = {
   goBack: () => void;
@@ -199,6 +206,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
     getSubgroupsWithLevel,
     getMessagesForGroups,
     messagePagination,
+    fetchThread,
+    applyPeerChatRead,
   } = useGroupStore();
 
   const [text, setText] = useState('');
@@ -215,6 +224,14 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
+  const [replyTo, setReplyTo] = useState<{
+    id: string;
+    senderName?: string;
+    text?: string;
+  } | null>(null);
+  const [threadRootId, setThreadRootId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const initialAnchorDoneRef = useRef(false);
@@ -226,6 +243,39 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const messageLimit = lowDataMode ? 30 : 100;
   const hasMoreMessages = messagePagination[groupId]?.hasMore ?? true;
   const { typingUserIds, broadcastTyping } = useTypingIndicator(groupId, user?.id);
+  const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
+
+  const onPeerRead = useCallback(
+    (payload: { userId: string; lastReadAt: string }) => {
+      applyPeerChatRead({ chatId: groupId, ...payload });
+    },
+    [applyPeerChatRead, groupId]
+  );
+  useChatReadReceipts(groupId, user?.id, onPeerRead);
+
+  const reloadThread = useCallback(async () => {
+    if (!threadRootId) return;
+    const msgs = (await fetchThread(threadRootId, { groupId })) as Message[];
+    setThreadMessages(msgs);
+  }, [fetchThread, groupId, threadRootId]);
+
+  const handleOpenThread = useCallback(
+    async (rootId: string) => {
+      setThreadRootId(rootId);
+      setThreadLoading(true);
+      try {
+        const msgs = (await fetchThread(rootId, { groupId })) as Message[];
+        setThreadMessages(msgs);
+      } catch {
+        Alert.alert('Thread', 'Could not load thread.');
+        setThreadRootId(null);
+        setThreadMessages([]);
+      } finally {
+        setThreadLoading(false);
+      }
+    },
+    [fetchThread, groupId]
+  );
 
   const typingLabel = useMemo(() => {
     if (typingUserIds.length === 0) return null;
@@ -254,25 +304,45 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const displayMessages = useMemo(() => {
     // Per-group cache is the source of truth — global `messages` can lag or hold another chat.
-    return messagesCache[groupId] || [];
-  }, [messagesCache, groupId]);
+    const raw = messagesCache[groupId] || [];
+    return raw.filter((msg) => messagePassesQuestionVisibility(msg, questionVisibilityMode));
+  }, [messagesCache, groupId, questionVisibilityMode]);
 
   const allGroupMessages = useMemo(() => {
-    const combined = [...displayMessages];
-    const seen = new Set(displayMessages.map(m => m.id));
+    const combined = [...(messagesCache[groupId] || [])];
+    const seen = new Set(combined.map((m) => m.id));
     for (const msg of cachedGroupMessages) {
       if (!seen.has(msg.id)) {
         seen.add(msg.id);
         combined.push(msg);
       }
     }
-    return combined;
-  }, [displayMessages, cachedGroupMessages]);
+    return combined.filter((msg) =>
+      messagePassesQuestionVisibility(msg, questionVisibilityMode)
+    );
+  }, [messagesCache, groupId, cachedGroupMessages, questionVisibilityMode]);
 
-  const availableTags = useMemo(() => extractTagsFromQuestions(allGroupMessages), [allGroupMessages]);
+  const availableTags = useMemo(
+    () =>
+      extractTagsFromQuestions(
+        allGroupMessages,
+        questionVisibilityMode,
+        questionVisibilityMode === 'unverified' ? 'study' : 'test'
+      ),
+    [allGroupMessages, questionVisibilityMode]
+  );
   const testableCount = useMemo(
-    () => selectGroupQuestions(allGroupMessages, { numberOfQuestions: 999 }, userQuestionStats).length,
-    [allGroupMessages, userQuestionStats]
+    () =>
+      selectGroupQuestions(
+        allGroupMessages,
+        {
+          numberOfQuestions: 999,
+          visibilityMode: questionVisibilityMode,
+          sessionMode: questionVisibilityMode === 'unverified' ? 'study' : 'test',
+        },
+        userQuestionStats
+      ).length,
+    [allGroupMessages, userQuestionStats, questionVisibilityMode]
   );
 
   const getAvailableCount = useCallback((filter: TestConfigAvailableFilter) => {
@@ -280,8 +350,16 @@ export function GroupChatScreen({ navigation, route }: Props) {
     const sourceMessages = allGroupMessages.filter(
       m => m.groupId === groupId || !m.groupId || subgroupIds.includes(m.groupId)
     );
-    return countMatchingQuestions(sourceMessages, filter, userQuestionStats);
-  }, [allGroupMessages, groupId, userQuestionStats]);
+    return countMatchingQuestions(
+      sourceMessages,
+      {
+        ...filter,
+        visibilityMode: filter.visibilityMode ?? questionVisibilityMode,
+        sessionMode: filter.sessionMode,
+      },
+      userQuestionStats
+    );
+  }, [allGroupMessages, groupId, userQuestionStats, questionVisibilityMode]);
 
   useEffect(() => {
     if (!showTestConfig || !user?.id) return;
@@ -308,6 +386,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     setUnreadAnchorAt(undefined);
     setFirstUnreadId(null);
     setNewMessagesBelow(0);
+    setReplyTo(null);
     initialAnchorDoneRef.current = false;
     lastMessageIdRef.current = null;
     prevMessageCountRef.current = 0;
@@ -436,6 +515,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
         selectedTags: config.selectedTags,
         useSpacedRepetition: config.useSpacedRepetition,
         focusOnNew: config.focusOnNew,
+        visibilityMode: questionVisibilityMode,
+        sessionMode: mode === 'study' ? 'study' : 'test',
       },
       userQuestionStats
     );
@@ -459,14 +540,18 @@ export function GroupChatScreen({ navigation, route }: Props) {
     });
   };
 
-  const handleSend = async () => {
-    const trimmed = text.trim();
+  const handleSend = async (overrideText?: string) => {
+    const trimmed = (overrideText ?? text).trim();
     if (!trimmed || !user?.id || sending) return;
     setSending(true);
-    setText('');
+    if (!overrideText) setText('');
     isNearBottomRef.current = true;
+    const replyId = replyTo?.id;
+    setReplyTo(null);
     try {
-      await sendMessage(groupId, trimmed, user.id);
+      await sendMessage(groupId, trimmed, user.id, undefined, {
+        replyToMessageId: replyId,
+      });
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
     } finally {
@@ -580,13 +665,22 @@ export function GroupChatScreen({ navigation, route }: Props) {
           setShowTestConfig(true);
         },
       },
+      ...QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => ({
+        id: `qvis-${opt.value}`,
+        label:
+          questionVisibilityMode === opt.value
+            ? `Questions: ${opt.label} ✓`
+            : `Questions: ${opt.label}`,
+        icon: 'filter-outline' as const,
+        onPress: () => setQuestionVisibilityMode(opt.value),
+      })),
       {
         id: 'summarize',
         label: summarizing ? 'Summarizing…' : 'Summarize chat',
         icon: 'sparkles-outline',
-        iconColor: '#a855f7',
-        disabled: summarizing,
         onPress: () => void handleSummarize(),
+        disabled: summarizing,
+        iconColor: '#a855f7',
       },
       {
         id: 'info',
@@ -607,7 +701,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     }
 
     return actions;
-  }, [isAdmin, summarizing, colors.warning]);
+  }, [isAdmin, summarizing, colors.warning, questionVisibilityMode, setQuestionVisibilityMode]);
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
@@ -724,6 +818,20 @@ export function GroupChatScreen({ navigation, route }: Props) {
                         : undefined
                     }
                     canFlag={item.senderId !== user?.id}
+                    onReply={(m) =>
+                      setReplyTo({
+                        id: m.id,
+                        senderName: m.senderName,
+                        text: m.questionStem || m.text,
+                      })
+                    }
+                    onScrollToMessage={(messageId) => {
+                      const index = displayMessages.findIndex((m) => m.id === messageId);
+                      if (index >= 0) {
+                        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+                      }
+                    }}
+                    onOpenThread={handleOpenThread}
                   />
                 </View>
               );
@@ -759,6 +867,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
           }}
           onSend={() => void handleSend()}
           sending={sending}
+          groupId={groupId}
+          replyTo={replyTo}
+          onClearReply={() => setReplyTo(null)}
+          mentionCandidates={(currentGroup?.members || [])
+            .filter((m) => m.userId !== user?.id && m.username)
+            .map((m) => ({ id: m.userId, username: m.username!, name: m.name }))}
+          onSendAudioMarkdown={async (markdown) => {
+            await handleSend(markdown);
+          }}
           onAttachImage={async (uri, mimeType) => {
             if (!user?.id) return;
             try {
@@ -768,8 +885,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
                 groupId,
                 `![image](${url})`,
                 user.id,
-                user.user_metadata?.full_name || user.email || 'User'
+                user.user_metadata?.full_name || user.email || 'User',
+                { replyToMessageId: replyTo?.id }
               );
+              setReplyTo(null);
             } catch {
               const { useToastStore } = await import('../../stores/toastStore');
               useToastStore.getState().showToast('Failed to send image.', 'error');
@@ -921,6 +1040,37 @@ export function GroupChatScreen({ navigation, route }: Props) {
           }}
         />
       ) : null}
+
+      <ChatThreadModal
+        visible={!!threadRootId}
+        onClose={() => {
+          setThreadRootId(null);
+          setThreadMessages([]);
+        }}
+        rootId={threadRootId}
+        loading={threadLoading}
+        messages={threadMessages}
+        onReload={reloadThread}
+        onSend={async (text, replyToMessageId) => {
+          if (!user?.id) return;
+          await sendMessage(groupId, text, user.id, undefined, { replyToMessageId });
+        }}
+        currentUserId={user?.id}
+        isGroup
+        memberCount={memberCount}
+        userVotes={userVotes}
+        onVote={(messageId, vote) => {
+          if (!user?.id) return;
+          void voteOnMessage(groupId, messageId, user.id, vote);
+        }}
+        onFlag={messageId => {
+          if (!user?.id) return;
+          void flagMessageAsSimilar(messageId, groupId, user.id);
+        }}
+        canFlag={msg => msg.senderId !== user?.id}
+        userFlagged={msg => (user?.id ? msg.flaggedAsSimilarUserIds?.includes(user.id) ?? false : false)}
+        groupId={groupId}
+      />
     </SafeAreaView>
   );
 }

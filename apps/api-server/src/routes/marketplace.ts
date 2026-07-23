@@ -220,10 +220,17 @@ router.post(
     const normalizedType = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
     // Reject HEIC early with a clear message. Other declared types are optional —
     // uploadMarketplaceImage sniffs magic bytes (camera apps often send octet-stream).
-    if (normalizedType.includes('heic') || normalizedType.includes('heif')) {
+    const fileNameLower = typeof fileName === 'string' ? fileName.toLowerCase() : '';
+    if (
+      normalizedType.includes('heic') ||
+      normalizedType.includes('heif') ||
+      fileNameLower.endsWith('.heic') ||
+      fileNameLower.endsWith('.heif')
+    ) {
       return res.status(400).json({
         success: false,
-        error: 'HEIC/HEIF photos are not supported. Export or retake as JPEG/PNG.',
+        error:
+          'HEIC photos are not supported. Please convert or export the image as JPEG or PNG, then try again.',
       });
     }
     if (normalizedType && !ALLOWED_IMAGE_TYPES.includes(normalizedType) && !normalizedType.includes('octet-stream')) {

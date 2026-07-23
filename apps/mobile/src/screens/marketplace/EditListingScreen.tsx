@@ -21,6 +21,7 @@ import {
   type MarketplaceCategory,
 } from '../../stores';
 import { Button } from '../../components/ui';
+import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 
 type NavigationProp = {
@@ -93,10 +94,22 @@ export function EditListingScreen({
       selectionLimit: MAX_IMAGES - images.length,
     });
     if (result.canceled) return;
+    const accepted = result.assets.filter(
+      (asset) =>
+        !isHeicImageUpload({
+          contentType: asset.mimeType || 'image/jpeg',
+          fileName: asset.uri || asset.fileName,
+        })
+    );
+    if (accepted.length < result.assets.length) {
+      Alert.alert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
+    }
+    if (accepted.length === 0) return;
+
     setUploading(true);
     try {
       const uploaded: string[] = [];
-      for (const asset of result.assets) {
+      for (const asset of accepted) {
         const resultUpload = await uploadMarketplaceImage(
           asset.uri,
           asset.mimeType || 'image/jpeg',

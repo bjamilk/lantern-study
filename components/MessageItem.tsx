@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Message, MessageType, QuestionType, MatchingItem, User, Group, QuestionStatus } from '../types';
 import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { featureAccents } from '@lantern/shared/design';
-import { resolveGroupChatSenderLabel, getQuestionVerificationThreshold } from '@lantern/shared/utils';
-import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon } from '@heroicons/react/24/outline';
+import {
+  resolveGroupChatSenderLabel,
+  getQuestionVerificationThreshold,
+  parseChatAudioUrl,
+  segmentMentions,
+} from '@lantern/shared/utils';
+import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import { HandThumbUpIcon as HandThumbUpSolidIcon, HandThumbDownIcon as HandThumbDownSolidIcon } from '@heroicons/react/24/solid';
 
 function formatSenderLabel(
@@ -26,11 +31,126 @@ interface MessageItemProps {
   group: Group | null;
   currentUser: User;
   isGroupedWithPrevious?: boolean;
+  onReply?: (message: Message) => void;
+  onScrollToMessage?: (messageId: string) => void;
+  onOpenThread?: (rootId: string) => void;
+  /** When true, show group-style seen-by tooltip on ticks. */
+  isGroupChat?: boolean;
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false }) => {
+function ReceiptTicks({
+  status,
+  seenByCount,
+  seenByTotal,
+  isGroupChat,
+  onPrimary,
+}: {
+  status?: 'sent' | 'read';
+  seenByCount?: number;
+  seenByTotal?: number;
+  isGroupChat?: boolean;
+  onPrimary?: boolean;
+}) {
+  if (!status) return null;
+  const isRead = status === 'read';
+  const title =
+    isGroupChat && typeof seenByTotal === 'number'
+      ? `Seen by ${seenByCount ?? 0} of ${seenByTotal}`
+      : isRead
+        ? 'Read'
+        : 'Sent';
+  const color = isRead
+    ? 'text-sky-400'
+    : onPrimary
+      ? 'text-white/70'
+      : 'text-lantern-text-tertiary';
+  return (
+    <span className={`inline-flex items-center ml-1 ${color}`} title={title} aria-label={title}>
+      {isRead ? (
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden>
+          <path d="M1 6.5L4.5 10L11 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 6.5L8.5 10L15 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+          <path d="M1.5 6.5L4.5 9.5L10.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+function MentionedText({
+  text,
+  onPrimary,
+}: {
+  text: string;
+  onPrimary?: boolean;
+}) {
+  const segments = segmentMentions(text);
+  return (
+    <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
+      {segments.map((seg, i) =>
+        seg.type === 'mention' ? (
+          <span
+            key={i}
+            className={
+              onPrimary
+                ? 'font-semibold text-white underline decoration-white/50'
+                : 'font-semibold text-lantern-primary'
+            }
+          >
+            {seg.value}
+          </span>
+        ) : (
+          <React.Fragment key={i}>{seg.value}</React.Fragment>
+        )
+      )}
+    </p>
+  );
+}
+
+function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  return (
+    <div className="flex items-center gap-2 min-w-[180px]">
+      <button
+        type="button"
+        onClick={() => {
+          const el = audioRef.current;
+          if (!el) return;
+          if (el.paused) {
+            void el.play();
+            setPlaying(true);
+          } else {
+            el.pause();
+            setPlaying(false);
+          }
+        }}
+        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${
+          onPrimary ? 'bg-white/20 text-white' : 'bg-lantern-primary-background text-lantern-primary'
+        }`}
+        aria-label={playing ? 'Pause voice note' : 'Play voice note'}
+      >
+        {playing ? 'Pause' : 'Play'}
+      </button>
+      <span className={`text-xs ${onPrimary ? 'text-white/80' : 'text-lantern-text-secondary'}`}>Voice note</span>
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="metadata"
+        onEnded={() => setPlaying(false)}
+        className="hidden"
+      />
+    </div>
+  );
+}
+
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onScrollToMessage, onOpenThread, isGroupChat = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
+  const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
 
   if (isOfferNotice) {
     const cleanText = message.text.replace(/^\[Offer\]\s*/, '');
@@ -129,15 +249,49 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
       )}
 
       {/* Bubble */}
-      <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 ${bubbleClasses}`}>
+      <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 relative ${bubbleClasses}`}>
+        {onReply && (
+          <button
+            type="button"
+            onClick={() => onReply(message)}
+            className={`absolute -top-2 ${isCurrentUserMessage ? 'left-2' : 'right-2'} opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-md bg-lantern-surface border border-lantern-border shadow-sm text-lantern-text-secondary hover:text-lantern-primary transition-opacity`}
+            aria-label="Reply to message"
+            title="Reply"
+          >
+            <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+          </button>
+        )}
         {/* Sender name for other users */}
         {!isCurrentUserMessage && !isGroupedWithPrevious && (
           <p className="text-xs font-semibold mb-0.5 text-lantern-primary">{formatSenderLabel(message.sender, group?.members)}</p>
         )}
 
-        {/* Text message */}
+        {message.replyTo && (
+          <button
+            type="button"
+            onClick={() => message.replyTo?.id && onScrollToMessage?.(message.replyTo.id)}
+            className={`mb-2 w-full text-left rounded-lg px-2.5 py-1.5 border-l-2 ${
+              onPrimaryChrome
+                ? 'bg-white/15 border-white/70 text-white/90'
+                : 'bg-lantern-background-secondary border-lantern-primary text-lantern-text-secondary'
+            }`}
+          >
+            <p className="text-[11px] font-semibold truncate">
+              {message.replyTo.senderName || 'Message'}
+            </p>
+            <p className="text-xs truncate">
+              {(message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+            </p>
+          </button>
+        )}
+
+        {/* Text / voice message */}
         {message.type === MessageType.TEXT && message.text && (
-          <p className="text-sm leading-relaxed break-words">{message.text}</p>
+          audioUrl ? (
+            <ChatAudioPlayer url={audioUrl} onPrimary={onPrimaryChrome} />
+          ) : (
+            <MentionedText text={message.text} onPrimary={onPrimaryChrome} />
+          )
         )}
 
         {/* Question message */}
@@ -299,9 +453,32 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
           </div>
         )}
 
-        {/* Timestamp */}
-        <p className={`text-[11px] mt-1.5 ${onPrimaryChrome ? 'text-white/80' : 'text-lantern-text-tertiary'} text-right`}>
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        {(message.replyCount ?? 0) > 0 && onOpenThread && (
+          <button
+            type="button"
+            onClick={() => onOpenThread(message.threadRootId || message.id)}
+            className={`mt-1.5 text-xs font-semibold ${
+              onPrimaryChrome ? 'text-white/90 hover:text-white' : 'text-lantern-primary hover:underline'
+            }`}
+          >
+            {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+          </button>
+        )}
+
+        {/* Timestamp + receipts */}
+        <p className={`text-[11px] mt-1.5 ${onPrimaryChrome ? 'text-white/80' : 'text-lantern-text-tertiary'} text-right flex items-center justify-end gap-0.5`}>
+          <span>
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          {isCurrentUserMessage && (
+            <ReceiptTicks
+              status={message.receiptStatus || 'sent'}
+              seenByCount={message.seenByCount}
+              seenByTotal={message.seenByTotal}
+              isGroupChat={isGroupChat}
+              onPrimary={onPrimaryChrome}
+            />
+          )}
         </p>
       </div>
 

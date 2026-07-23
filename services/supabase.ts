@@ -852,13 +852,20 @@ export const sendMessage = async (
   groupId: string,
   userId: string,
   content: string,
-  clientMessageId?: string
+  clientMessageId?: string,
+  options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
 ) => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({ content, userId, clientMessageId }),
+      body: JSON.stringify({
+        content,
+        userId,
+        clientMessageId,
+        replyToMessageId: options?.replyToMessageId,
+        mentionedUserIds: options?.mentionedUserIds,
+      }),
     });
 
     if (!response.ok) {
@@ -953,6 +960,38 @@ export const fetchMessages = async (groupId: string, page?: number, limit?: numb
   const list = Array.isArray(data) ? data : [];
   console.log('Fetched messages count:', list.length);
   return list;
+};
+
+export const fetchGroupThread = async (groupId: string, rootId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/group/${encodeURIComponent(groupId)}/thread/${encodeURIComponent(rootId)}`,
+    {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error((error as any).message || (error as any).error || 'Failed to fetch thread');
+  }
+  const result = await response.json();
+  return Array.isArray(result?.data) ? result.data : [];
+};
+
+export const fetchDmThread = async (threadId: string, rootId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/thread/${encodeURIComponent(rootId)}`,
+    {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error((error as any).message || (error as any).error || 'Failed to fetch thread');
+  }
+  const result = await response.json();
+  return Array.isArray(result?.data) ? result.data : [];
 };
 
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {
@@ -3657,6 +3696,18 @@ export const uploadQuestionImage = async (file: File) => {
 export const uploadMarketplaceImage = async (file: File, listingId?: string) => {
   const headers = await getAuthHeaders();
   if (!headers.Authorization) throw new Error('Must be signed in to upload images');
+  const type = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  if (
+    type.includes('heic') ||
+    type.includes('heif') ||
+    name.endsWith('.heic') ||
+    name.endsWith('.heif')
+  ) {
+    throw new Error(
+      'HEIC photos are not supported. Please convert or export the image as JPEG or PNG, then try again.'
+    );
+  }
   const payload = await fileToBase64Payload(file);
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/upload-image`, {
     method: 'POST',
@@ -3759,7 +3810,8 @@ export const sendDirectMessage = async (
   senderId: string,
   recipientId: string,
   content: string,
-  clientMessageId?: string
+  clientMessageId?: string,
+  options?: { replyToMessageId?: string }
 ) => {
   console.log('Sending direct message from:', senderId, 'to:', recipientId);
   try {
@@ -3770,6 +3822,7 @@ export const sendDirectMessage = async (
         content,
         recipientId,
         clientMessageId,
+        replyToMessageId: options?.replyToMessageId,
       }),
     });
 
@@ -3879,7 +3932,10 @@ export const fetchDMUnreadCounts = async (userId: string): Promise<Record<string
 };
 
 // Mark a DM thread as read
-export const markDMAsRead = async (threadId: string, userId: string): Promise<boolean> => {
+export const markDMAsRead = async (
+  threadId: string,
+  userId: string
+): Promise<{ success: boolean; previousLastReadAt: string | null }> => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/${threadId}/read`, {
       method: 'POST',
@@ -3887,16 +3943,44 @@ export const markDMAsRead = async (threadId: string, userId: string): Promise<bo
       body: JSON.stringify({ userId }),
     });
 
+    const body = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      previousLastReadAt?: string | null;
+      data?: { previousLastReadAt?: string | null };
+    };
+
     if (!response.ok) {
       console.error('Failed to mark DM as read');
-      return false;
+      return { success: false, previousLastReadAt: null };
     }
 
-    return true;
+    return {
+      success: body.success !== false,
+      previousLastReadAt: body.previousLastReadAt ?? body.data?.previousLastReadAt ?? null,
+    };
   } catch (error) {
     console.error('Error marking DM as read:', error);
-    return false;
+    return { success: false, previousLastReadAt: null };
   }
+};
+
+export const uploadChatAudio = async (payload: {
+  fileName: string;
+  base64Data: string;
+  contentType: string;
+  groupId?: string;
+  threadId?: string;
+}): Promise<{ url: string; path: string }> => {
+  const response = await fetch(`${getApiRoot()}/api/v1/messages/upload-audio`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || result.message || 'Failed to upload audio');
+  }
+  return result.data;
 };
 
 // Delete a DM thread

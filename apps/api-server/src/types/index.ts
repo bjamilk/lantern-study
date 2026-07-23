@@ -101,6 +101,21 @@ export interface Message {
   upvotes: number;
   downvotes: number;
   flaggedAsSimilarUserIds?: string[];
+  replyToMessageId?: string;
+  mentionedUserIds?: string[];
+  replyTo?: {
+    id: string;
+    senderId?: string;
+    senderName?: string;
+    type?: string;
+    text?: string;
+    questionStem?: string;
+  } | null;
+  threadRootId?: string;
+  replyCount?: number;
+  receiptStatus?: 'sent' | 'read';
+  seenByCount?: number;
+  seenByTotal?: number;
 }
 
 export interface TestResult {

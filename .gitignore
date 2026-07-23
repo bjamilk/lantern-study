@@ -34,7 +34,8 @@ supabase/.branches/
 
 # Expo / mobile build output
 apps/mobile/.expo/
-apps/mobile/.expo-export*/
+apps/mobile/.expo-*/
+apps/mobile/.diagnostic-export/
 apps/mobile/dist/
 
 # Responsive audit artifacts

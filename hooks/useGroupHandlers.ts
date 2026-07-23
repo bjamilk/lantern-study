@@ -5,7 +5,14 @@ import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { initialUserStats } from '../utils/helpers';
-import { resolveQuestionStatusAfterVote, formatActorLabel, mapMessagesFromApi, mapMessageFromApi } from '@lantern/shared/utils';
+import {
+    resolveQuestionStatusAfterVote,
+    formatActorLabel,
+    mapMessagesFromApi,
+    mapMessageFromApi,
+    computeDmReceiptStatus,
+    resolveThreadRootId,
+} from '@lantern/shared/utils';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
@@ -59,8 +66,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const pendingCreatedGroupRef = useRef<any>(null);
     const groupMessagesFetchSeqRef = useRef(0);
     const dmFetchSeqRef = useRef(0);
-    /** Prior last_read_at for the open group — used to scroll to first unread. */
-    const [groupUnreadAnchor, setGroupUnreadAnchor] = useState<{
+    /** Prior last_read_at for the open chat (group or DM) — used to scroll to first unread. */
+    const [chatUnreadAnchor, setChatUnreadAnchor] = useState<{
         chatId: string;
         at: string | null;
     } | null>(null);
@@ -147,6 +154,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         senderId: m.senderId || m.sender_id,
                         text: m.text,
                         timestamp: new Date(m.timestamp),
+                        replyToMessageId: m.replyToMessageId || m.reply_to_message_id,
+                        replyTo: m.replyTo || m.reply_to,
+                        threadRootId: m.threadRootId || m.thread_root_id,
+                        replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
+                        receiptStatus: m.receiptStatus || m.receipt_status,
                     }));
                     updateDirectMessages(prev => ({ ...prev, [chat.id]: mappedMessages }));
                 }).catch(error => {
@@ -161,15 +173,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         navigateForAppMode(AppMode.CHAT, {}, { replace: true });
     }, []);
 
-    // Clear unread anchor when leaving or switching groups so the next open re-anchors.
+    // Clear unread anchor when leaving or switching chats so the next open re-anchors.
     useEffect(() => {
-        if (!selectedChat || selectedChat.chatType !== 'group') {
+        if (!selectedChat) {
             markedReadChatIdRef.current = null;
-            setGroupUnreadAnchor(null);
+            setChatUnreadAnchor(null);
             return;
         }
         if (markedReadChatIdRef.current !== selectedChat.id) {
-            setGroupUnreadAnchor(null);
+            setChatUnreadAnchor(null);
         }
     }, [selectedChat?.id, selectedChat?.chatType]);
 
@@ -227,7 +239,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     markGroupAsRead(chatId, currentUser.id)
                         .then((result) => {
                             if (cancelled) return;
-                            setGroupUnreadAnchor({
+                            setChatUnreadAnchor({
                                 chatId,
                                 at: result.previousLastReadAt,
                             });
@@ -241,15 +253,23 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 }
             } else if (selectedChat.chatType === 'dm') {
                 const threadId = selectedChat.id;
-                markDMAsRead(threadId, currentUser.id)
-                    .then(() => {
-                        updateDmThreads((prevThreads) =>
-                            prevThreads.map((t) => (t.id === threadId ? { ...t, unreadCount: 0 } : t))
-                        );
-                    })
-                    .catch((error) => {
-                        console.error('[selectedChat] Error marking DM as read:', error);
-                    });
+                if (markedReadChatIdRef.current !== threadId) {
+                    markedReadChatIdRef.current = threadId;
+                    markDMAsRead(threadId, currentUser.id)
+                        .then((result) => {
+                            if (cancelled) return;
+                            setChatUnreadAnchor({
+                                chatId: threadId,
+                                at: result.previousLastReadAt ?? null,
+                            });
+                            updateDmThreads((prevThreads) =>
+                                prevThreads.map((t) => (t.id === threadId ? { ...t, unreadCount: 0 } : t))
+                            );
+                        })
+                        .catch((error) => {
+                            console.error('[selectedChat] Error marking DM as read:', error);
+                        });
+                }
 
                 const otherUserId = Array.isArray((selectedChat as DMThread).participantIds)
                     ? (selectedChat as DMThread).participantIds.find((id) => id !== currentUser.id)
@@ -267,6 +287,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                                 senderId: m.senderId || m.sender_id,
                                 text: m.text,
                                 timestamp: new Date(m.timestamp),
+                                replyToMessageId: m.replyToMessageId || m.reply_to_message_id,
+                                replyTo: m.replyTo || m.reply_to,
+                                threadRootId: m.threadRootId || m.thread_root_id,
+                                replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
+                                receiptStatus: m.receiptStatus || m.receipt_status,
                             }));
                             updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
                         })
@@ -334,7 +359,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, dmThreads, users, groups, updateDmThreads, handleSelectChat]);
 
-    const handleSendDm = useCallback(async (threadId: string, text: string) => {
+    const handleSendDm = useCallback(async (
+        threadId: string,
+        text: string,
+        options?: { replyToMessageId?: string }
+    ) => {
         if (!currentUser) return;
         if (sendingThreadIds.has(threadId)) return;
         sendingThreadIds.add(threadId);
@@ -352,24 +381,50 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
         
         const clientMessageId = uuidv4();
+        const existing = useGroupStore.getState().directMessages[threadId] || [];
+        const parent = options?.replyToMessageId
+            ? existing.find((m) => m.id === options.replyToMessageId)
+            : undefined;
+        const threadRootId = parent
+            ? resolveThreadRootId({ id: parent.id, threadRootId: parent.threadRootId })
+            : undefined;
+        const rootReplyCount = threadRootId
+            ? (existing.find((m) => m.id === threadRootId)?.replyCount || 0) + 1
+            : 0;
         const optimisticMessage: DirectMessage = {
             id: clientMessageId,
             threadId,
             senderId: currentUser.id,
             text,
             timestamp: new Date(),
+            replyToMessageId: options?.replyToMessageId,
+            threadRootId,
+            replyCount: threadRootId ? rootReplyCount : 0,
+            receiptStatus: 'sent',
         };
         
-        updateDirectMessages(prev => ({
-            ...prev,
-            [threadId]: [...(prev[threadId] || []), optimisticMessage],
-        }));
+        updateDirectMessages(prev => {
+            const list = prev[threadId] || [];
+            const withOptimistic = [...list, optimisticMessage];
+            if (!threadRootId) return { ...prev, [threadId]: withOptimistic };
+            return {
+                ...prev,
+                [threadId]: withOptimistic.map((m) => {
+                    if (m.id === clientMessageId) return m;
+                    const rootKey = m.threadRootId || m.id;
+                    if (rootKey !== threadRootId) return m;
+                    return { ...m, replyCount: rootReplyCount };
+                }),
+            };
+        });
         updateDmThreads(prevThreads => prevThreads.map(t => 
             t.id === threadId ? { ...t, lastMessage: text, lastMessageTimestamp: new Date() } : t
         ));
         
         try {
-            await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId);
+            await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId, {
+                replyToMessageId: options?.replyToMessageId,
+            });
             const [fetchedThreads, dmUnreadCounts] = await Promise.all([
                 fetchDmThreads(currentUser.id),
                 fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
@@ -723,7 +778,65 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, selectedChat, messages, updateMessages, setCurrentUser, openModal, closeModal, setDuplicateInfo, addNotification]);
 
-    const onSendMessage = useCallback(async (text: string) => {
+    const onPeerChatRead = useCallback((payload: { userId: string; lastReadAt: string }) => {
+        const chat = useUIStore.getState().selectedChat;
+        if (!chat || !currentUser) return;
+        const { userId, lastReadAt } = payload;
+        if (!userId || userId === currentUser.id || !lastReadAt) return;
+
+        if (chat.chatType === 'dm') {
+            updateDirectMessages((prev) => {
+                const list = prev[chat.id] || [];
+                if (!list.length) return prev;
+                return {
+                    ...prev,
+                    [chat.id]: list.map((m) => {
+                        if (m.senderId !== currentUser.id) return m;
+                        return {
+                            ...m,
+                            receiptStatus: computeDmReceiptStatus(m.timestamp, lastReadAt),
+                        };
+                    }),
+                };
+            });
+            return;
+        }
+
+        updateMessages((prev) => {
+            const list = prev[chat.id] || [];
+            if (!list.length) return prev;
+            return {
+                ...prev,
+                [chat.id]: list.map((m) => {
+                    if (m.sender?.id !== currentUser.id) return m;
+                    const msgMs = new Date(m.timestamp).getTime();
+                    const readMs = new Date(lastReadAt).getTime();
+                    if (!Number.isFinite(msgMs) || !Number.isFinite(readMs) || readMs < msgMs) {
+                        return m;
+                    }
+                    const total = typeof m.seenByTotal === 'number'
+                        ? m.seenByTotal
+                        : Math.max(0, (groups.find((g) => g.id === chat.id)?.members?.length || 1) - 1);
+                    const prevCount = m.seenByCount || 0;
+                    // Advance by one peer when watermark covers this message (best-effort without per-user set).
+                    const seenByCount = m.receiptStatus === 'read'
+                        ? total
+                        : Math.max(prevCount, Math.min(total, prevCount + 1));
+                    return {
+                        ...m,
+                        seenByCount,
+                        seenByTotal: total,
+                        receiptStatus: seenByCount >= total && total > 0 ? 'read' : 'sent',
+                    };
+                }),
+            };
+        });
+    }, [currentUser, groups, updateDirectMessages, updateMessages]);
+
+    const onSendMessage = useCallback(async (
+        text: string,
+        options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+    ) => {
         if (!currentUser || !selectedChat) return;
 
         if (selectedChat.chatType === 'group') {
@@ -736,6 +849,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             // Optimistic update - show message immediately
             const optimisticId = uuidv4();
+            const existingGroupMsgs = useGroupStore.getState().messages[selectedChat.id] || [];
+            const parent = options?.replyToMessageId
+                ? existingGroupMsgs.find((m) => m.id === options.replyToMessageId)
+                : undefined;
+            const threadRootId = parent
+                ? resolveThreadRootId({ id: parent.id, threadRootId: parent.threadRootId })
+                : undefined;
+            const rootReplyCount = threadRootId
+                ? (existingGroupMsgs.find((m) => m.id === threadRootId)?.replyCount || 0) + 1
+                : 0;
             const newMessage: Message = {
                 id: optimisticId,
                 groupId: selectedChat.id,
@@ -745,16 +868,36 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 text,
                 upvotes: 0,
                 downvotes: 0,
+                replyToMessageId: options?.replyToMessageId,
+                mentionedUserIds: options?.mentionedUserIds,
+                threadRootId,
+                replyCount: threadRootId ? rootReplyCount : 0,
+                receiptStatus: 'sent',
+                seenByCount: 0,
+                seenByTotal: Math.max(0, (groupBefore?.members?.length || 1) - 1),
             };
-            updateMessages(prev => ({
-                ...prev,
-                [selectedChat.id]: [...(prev[selectedChat.id] || []), newMessage]
-            }));
+            updateMessages(prev => {
+                const list = prev[selectedChat.id] || [];
+                const withOptimistic = [...list, newMessage];
+                if (!threadRootId) return { ...prev, [selectedChat.id]: withOptimistic };
+                return {
+                    ...prev,
+                    [selectedChat.id]: withOptimistic.map((m) => {
+                        if (m.id === optimisticId) return m;
+                        const rootKey = m.threadRootId || m.id;
+                        if (rootKey !== threadRootId) return m;
+                        return { ...m, replyCount: rootReplyCount };
+                    }),
+                };
+            });
             updateGroups(prev => prev.map(g => g.id === selectedChat.id ? { ...g, lastMessage: text, lastMessageTime: new Date().toISOString() } : g));
 
             // Send to API in background
             try {
-                const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text, optimisticId);
+                const sentMessage = await sendMessage(selectedChat.id, currentUser.id, text, optimisticId, {
+                    replyToMessageId: options?.replyToMessageId,
+                    mentionedUserIds: options?.mentionedUserIds,
+                });
                 if (!sentMessage) {
                     throw new Error('Message failed to send. Please try again.');
                 }
@@ -786,7 +929,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 sendingGroupIds.delete(selectedChat.id);
             }
         } else if (selectedChat.chatType === 'dm') {
-            handleSendDm(selectedChat.id, text);
+            await handleSendDm(selectedChat.id, text, {
+                replyToMessageId: options?.replyToMessageId,
+            });
         }
     }, [currentUser, selectedChat, groups, updateMessages, updateGroups, handleSendDm, addNotification]);
 
@@ -809,6 +954,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         let newDownvotes = message.downvotes;
         let newUserVote: 'up' | 'down' | undefined = undefined;
 
+        let serverQuestionStatus: string | undefined;
         try {
             if (currentUserVote === voteType) {
                 const removeResult = await removeVote(messageId, currentUser.id);
@@ -819,6 +965,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     if (voteType === 'up') newUpvotes--;
                     else newDownvotes--;
                 }
+                serverQuestionStatus = removeResult?.questionStatus;
                 newUserVote = undefined;
             } else {
                 const voteResult = await voteQuestion(messageId, currentUser.id, voteType);
@@ -831,6 +978,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     if (voteType === 'up') newUpvotes++;
                     else newDownvotes++;
                 }
+                serverQuestionStatus = voteResult?.questionStatus;
                 newUserVote = voteType;
             }
         } catch (error) {
@@ -846,17 +994,24 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (updatedMessage.type === MessageType.QUESTION) {
             const group = groups.find(g => g.id === selectedChat.id);
             const memberCount = group?.members?.length ?? 0;
-            const resolvedStatus = resolveQuestionStatusAfterVote({
-                upvotes: newUpvotes,
-                downvotes: newDownvotes,
-                memberCount,
-            });
+            // Prefer server-persisted status (any member's vote can verify); fall back to local resolve.
+            const resolvedStatus =
+                (serverQuestionStatus as QuestionStatus | undefined) ||
+                resolveQuestionStatusAfterVote({
+                    upvotes: newUpvotes,
+                    downvotes: newDownvotes,
+                    memberCount,
+                });
             if (resolvedStatus !== updatedMessage.questionStatus) {
                 updatedMessage.questionStatus = resolvedStatus;
-                try {
-                    await updateQuestionStatus(messageId, resolvedStatus);
-                } catch (error) {
-                    console.error('Failed to update question status:', error);
+                // Server already persists status on vote. Keep author/admin PUT as a best-effort
+                // fallback for older API builds only when the response omitted questionStatus.
+                if (!serverQuestionStatus) {
+                    try {
+                        await updateQuestionStatus(messageId, resolvedStatus);
+                    } catch (error) {
+                        console.error('Failed to update question status:', error);
+                    }
                 }
 
                 if (resolvedStatus === QuestionStatus.VERIFIED) {
@@ -1396,13 +1551,13 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [messages, lowDataMode, updateMessages]);
 
-    // undefined = mark-as-read still pending for this group; null = no prior marker / fully read.
+    // undefined = mark-as-read still pending; null = no prior marker / fully read.
     const unreadAnchorAt: string | null | undefined =
-        selectedChat?.chatType === 'group'
-            ? groupUnreadAnchor?.chatId === selectedChat.id
-                ? groupUnreadAnchor.at
-                : undefined
-            : null;
+        selectedChat && chatUnreadAnchor?.chatId === selectedChat.id
+            ? chatUnreadAnchor.at
+            : selectedChat
+              ? undefined
+              : null;
 
     return {
         addNotification,
@@ -1421,6 +1576,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleEnterCreatedGroup,
         handleQuestionSubmit,
         onSendMessage,
+        onPeerChatRead,
         onVoteQuestion,
         handleUpvoteDuplicateAndClose,
         onFlagAsSimilar,

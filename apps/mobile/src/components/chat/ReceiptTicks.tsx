@@ -1,0 +1,61 @@
+import React from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../theme';
+
+interface ReceiptTicksProps {
+  status?: 'sent' | 'read';
+  seenByCount?: number;
+  seenByTotal?: number;
+  isGroupChat?: boolean;
+  onPrimary?: boolean;
+}
+
+export function ReceiptTicks({
+  status = 'sent',
+  seenByCount,
+  seenByTotal,
+  isGroupChat,
+  onPrimary,
+}: ReceiptTicksProps) {
+  const { colors } = useTheme();
+  const isRead = status === 'read';
+  const color = isRead ? '#38bdf8' : onPrimary ? 'rgba(255,255,255,0.7)' : colors.textTertiary;
+  const label =
+    isGroupChat && typeof seenByTotal === 'number'
+      ? `Seen by ${seenByCount ?? 0} of ${seenByTotal}`
+      : isRead
+        ? 'Read'
+        : 'Sent';
+
+  const showSeenDetail =
+    isGroupChat &&
+    typeof seenByTotal === 'number' &&
+    seenByTotal > 0 &&
+    !isRead &&
+    (seenByCount ?? 0) < seenByTotal;
+
+  const handleLongPress = () => {
+    if (!showSeenDetail) return;
+    Alert.alert('Read receipts', label);
+  };
+
+  const icon = (
+    <Ionicons
+      name={isRead ? 'checkmark-done' : 'checkmark'}
+      size={14}
+      color={color}
+      accessibilityLabel={label}
+    />
+  );
+
+  if (!showSeenDetail) {
+    return <View className="ml-0.5">{icon}</View>;
+  }
+
+  return (
+    <Pressable onLongPress={handleLongPress} delayLongPress={300} className="ml-0.5">
+      {icon}
+    </Pressable>
+  );
+}

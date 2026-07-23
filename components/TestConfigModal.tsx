@@ -5,6 +5,12 @@ import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStat
 import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
 import { featureAccents } from '@lantern/shared/design';
+import {
+  QUESTION_VISIBILITY_MODE_OPTIONS,
+  messagePassesStudyQuestionPool,
+  type QuestionVisibilityMode,
+} from '@lantern/shared/utils';
+import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
 import Modal from './ui/Modal';
 
 interface TestConfigModalProps {
@@ -59,6 +65,12 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const [focusOnNew, setFocusOnNew] = useState(false);
   const [selectedSubgroupIDs, setSelectedSubgroupIDs] = useState<string[]>([]);
   const [presetName, setPresetName] = useState('');
+  const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
+
+  /** Unverified pool is study-only; starting Test with that filter becomes Study. */
+  const forcesStudyFromVisibility =
+    mode === 'test' && questionVisibilityMode === 'unverified';
+  const effectiveMode: 'test' | 'study' | 'game' = forcesStudyFromVisibility ? 'study' : mode;
   
   const getSubgroupsWithLevel = useCallback((parentId: string, allGroups: Group[], level = 0): { group: Group; level: number }[] => {
     const subgroups: { group: Group; level: number }[] = [];
@@ -107,15 +119,27 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const uniqueTagsFromGroup = useMemo(() => {
     const tagsSet = new Set<string>();
     scopedGroupMessages.forEach((msg: Message) => {
-      if (isQuestionTestable(msg) && msg.tags?.length) {
+      const inPool =
+        effectiveMode === 'study'
+          ? messagePassesStudyQuestionPool(msg, questionVisibilityMode)
+          : isQuestionTestable(msg);
+      if (inPool && msg.tags?.length) {
         msg.tags.forEach(tag => tagsSet.add(tag));
       }
     });
     return Array.from(tagsSet).sort();
-  }, [scopedGroupMessages]);
+  }, [scopedGroupMessages, effectiveMode, questionVisibilityMode]);
   
   const { normalModeQuestions, spacedRepetitionQuestions, focusOnNewQuestions } = useMemo(() => {
-    const validQuestionsForFilter = scopedGroupMessages.filter(isQuestionTestable);
+    const validQuestionsForFilter =
+      questionVisibilityMode === 'none'
+        ? []
+        : effectiveMode === 'study'
+          ? scopedGroupMessages.filter((msg) =>
+              messagePassesStudyQuestionPool(msg, questionVisibilityMode)
+            )
+          : // Graded test / game: verified bank only (All still uses verified subset)
+            scopedGroupMessages.filter(isQuestionTestable);
     
     const applyBaseFilters = (questions: Message[]) => {
       return questions.filter(msg => {
@@ -144,7 +168,14 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     const focusSet = new Set([...recentQuestions, ...unattemptedQuestions]);
 
     return { normalModeQuestions: normal, spacedRepetitionQuestions: spaced, focusOnNewQuestions: Array.from(focusSet) };
-  }, [scopedGroupMessages, selectedQuestionTypes, selectedTagsInModal, userQuestionStats]);
+  }, [
+    scopedGroupMessages,
+    selectedQuestionTypes,
+    selectedTagsInModal,
+    userQuestionStats,
+    effectiveMode,
+    questionVisibilityMode,
+  ]);
 
   const availableQuestions = useSpacedRepetition ? spacedRepetitionQuestions : (focusOnNew ? focusOnNewQuestions : normalModeQuestions);
   const maxQuestions = availableQuestions.length;
@@ -244,9 +275,16 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     if (isDownloading) return true;
     if (maxQuestions === 0) return true;
     if (numberOfQuestions <= 0) return true;
-    if (mode === 'test' && selectedTimerSeconds <= 0) return true;
+    if (effectiveMode === 'test' && selectedTimerSeconds <= 0) return true;
     // Study mode doesn't require question type selection - it shows all questions
-    if (mode !== 'study' && !useSpacedRepetition && !focusOnNew && selectedQuestionTypes.length === 0) return true;
+    if (
+      effectiveMode !== 'study' &&
+      !useSpacedRepetition &&
+      !focusOnNew &&
+      selectedQuestionTypes.length === 0
+    ) {
+      return true;
+    }
     if (numberOfQuestions > maxQuestions) return true;
     return false;
   };
@@ -265,8 +303,51 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         useToastStore.getState().showToast(`Please ensure you have selected question types, set a timer (for tests), there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`, 'error');
         return;
     }
-    onSubmit(getCurrentConfig(), mode, useSpacedRepetition, selectedSubgroupIDs);
+    if (forcesStudyFromVisibility) {
+      useToastStore.getState().showToast(
+        'Unverified questions are study-only. Starting a study session instead.',
+        'info'
+      );
+    }
+    if (questionVisibilityMode === 'none') {
+      useToastStore.getState().showToast('Question visibility is set to hide all. Change the filter to start.', 'error');
+      return;
+    }
+    onSubmit(getCurrentConfig(), effectiveMode, useSpacedRepetition, selectedSubgroupIDs);
   };
+
+  const visibilityControl = (
+    <div className="p-3 rounded-md border border-lantern-border bg-lantern-background-secondary/60">
+      <label htmlFor="question-visibility-mode" className="block text-sm font-medium text-lantern-text mb-1">
+        Question visibility
+      </label>
+      <select
+        id="question-visibility-mode"
+        value={questionVisibilityMode}
+        onChange={(e) => setQuestionVisibilityMode(e.target.value as QuestionVisibilityMode)}
+        className="w-full p-2 border border-lantern-border rounded-md bg-lantern-surface text-lantern-text text-sm"
+      >
+        {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-xs text-lantern-text-secondary">
+        {QUESTION_VISIBILITY_MODE_OPTIONS.find((o) => o.value === questionVisibilityMode)?.helper}
+      </p>
+      {forcesStudyFromVisibility && (
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+          Unverified pool is practice-only — Start will open Study mode.
+        </p>
+      )}
+      {mode === 'test' && questionVisibilityMode === 'all' && (
+        <p className="mt-1 text-xs text-lantern-text-tertiary">
+          Graded tests still use the verified subset only.
+        </p>
+      )}
+    </div>
+  );
 
   const handleDownload = () => {
     if (isSubmitDisabled()) {
@@ -306,7 +387,9 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
   const questionAvailabilityHint = (
     <>
       <p className="mt-1 text-xs text-lantern-text-secondary">
-        Only group-verified questions are included. Pending and rejected questions stay in chat but are not used in tests.
+        {effectiveMode === 'study'
+          ? 'Pool follows your question visibility filter. Unverified items hide automatically once verified.'
+          : 'Graded tests use group-verified questions only. Pending and rejected stay out of scored tests.'}
       </p>
       {(questionStatusBreakdown.verified + questionStatusBreakdown.pending + questionStatusBreakdown.rejected) > 0 && (
         <p className="mt-0.5 text-xs text-lantern-text-tertiary">
@@ -382,6 +465,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {visibilityControl}
             {/* Load Preset */}
             {testPresets.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
@@ -612,6 +696,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         )}
         
         <form onSubmit={handleSubmit} className="space-y-6">
+          {visibilityControl}
           {mode !== 'game' && testPresets.length > 0 && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
               <label htmlFor="preset-select" className="text-sm font-medium text-lantern-text flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>

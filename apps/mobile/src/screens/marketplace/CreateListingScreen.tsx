@@ -23,6 +23,7 @@ import {
 } from '../../stores';
 import { fetchMarketplaceCampuses } from '../../services/api';
 import { aiGenerateListingDescription } from '../../services/ai';
+import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
 
@@ -228,12 +229,25 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       selectionLimit: MAX_IMAGES - pendingImages.length,
     });
     if (result.canceled) return;
-    const next = result.assets.map((asset) => ({
-      uri: asset.uri,
-      mimeType: asset.mimeType || 'image/jpeg',
-      base64: asset.base64,
-    }));
-    setPendingImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
+    const accepted: Array<{ uri: string; mimeType?: string; base64?: string | null }> = [];
+    let rejectedHeic = 0;
+    for (const asset of result.assets) {
+      const mimeType = asset.mimeType || 'image/jpeg';
+      if (isHeicImageUpload({ contentType: mimeType, fileName: asset.uri || asset.fileName })) {
+        rejectedHeic += 1;
+        continue;
+      }
+      accepted.push({
+        uri: asset.uri,
+        mimeType,
+        base64: asset.base64,
+      });
+    }
+    if (rejectedHeic > 0) {
+      Alert.alert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
+    }
+    if (accepted.length === 0) return;
+    setPendingImages((prev) => [...prev, ...accepted].slice(0, MAX_IMAGES));
   };
 
   const handleGenerateDescription = async () => {
@@ -322,6 +336,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
       let uploadedUrls: string[] = [];
       let failedUploads = 0;
+      let heicFailures = 0;
       if (!queued && pendingImages.length > 0) {
         for (const img of pendingImages) {
           try {
@@ -332,8 +347,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               img.base64
             );
             uploadedUrls.push(result.storageUrl || result.path || result.url);
-          } catch {
+          } catch (err: unknown) {
             failedUploads += 1;
+            const message = err instanceof Error ? err.message : '';
+            if (message.includes('HEIC') || isHeicImageUpload({ contentType: img.mimeType, fileName: img.uri })) {
+              heicFailures += 1;
+            }
           }
         }
         if (uploadedUrls.length > 0) {
@@ -356,13 +375,17 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       } else if (failedUploads > 0 && uploadedUrls.length === 0) {
         Alert.alert(
           'Listing created, photos failed',
-          'Your textbook listing is live, but photos failed to upload. Edit the listing to add photos.'
+          heicFailures > 0
+            ? HEIC_IMAGE_UPLOAD_ERROR
+            : 'Your listing is live, but photos failed to upload. Edit the listing to add photos.'
         );
         navigation.navigate('ListingDetail', { listingId: listing.id });
       } else if (failedUploads > 0) {
         Alert.alert(
           'Listing published',
-          `${failedUploads} photo(s) failed to upload. You can add them from Edit listing.`
+          heicFailures > 0
+            ? `${failedUploads} photo(s) failed. ${HEIC_IMAGE_UPLOAD_ERROR}`
+            : `${failedUploads} photo(s) failed to upload. You can add them from Edit listing.`
         );
         navigation.navigate('ListingDetail', { listingId: listing.id });
       } else {

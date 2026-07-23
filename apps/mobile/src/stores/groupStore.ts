@@ -5,9 +5,16 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
-import { resolveQuestionStatusAfterVote, normalizeStorageUrl, formatChatSenderLabel } from '@lantern/shared/utils';
+import {
+  resolveQuestionStatusAfterVote,
+  normalizeStorageUrl,
+  formatChatSenderLabel,
+  resolveThreadRootId,
+  computeDmReceiptStatus,
+} from '@lantern/shared/utils';
 import * as api from '../services/api';
 import * as Crypto from 'expo-crypto';
+import { useAuthStore } from './authStore';
 
 export type DMThread = SharedDMThread;
 export type DirectMessage = SharedDirectMessage;
@@ -107,6 +114,21 @@ export interface Message {
   diagramLabels?: Array<{ id: string; text: string; x?: number; y?: number; label?: string }>;
   imageUrl?: string;
   explanation?: string;
+  replyToMessageId?: string;
+  mentionedUserIds?: string[];
+  replyTo?: {
+    id: string;
+    senderId?: string;
+    senderName?: string;
+    type?: string;
+    text?: string;
+    questionStem?: string;
+  } | null;
+  threadRootId?: string;
+  replyCount?: number;
+  receiptStatus?: 'sent' | 'read';
+  seenByCount?: number;
+  seenByTotal?: number;
 }
 
 function mapApiMember(m: any, adminIds: string[]): GroupMember {
@@ -196,15 +218,27 @@ interface GroupState {
   selectGroup: (groupId: string) => void;
   fetchMessages: (groupId: string, options?: { page?: number; refresh?: boolean; limit?: number }) => Promise<void>;
   loadMoreMessages: (groupId: string) => Promise<number>;
-  sendMessage: (groupId: string, text: string, senderId: string, senderName?: string) => Promise<void>;
+  sendMessage: (
+    groupId: string,
+    text: string,
+    senderId: string,
+    senderName?: string,
+    options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+  ) => Promise<void>;
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
 
   fetchDmThreads: (userId: string) => Promise<void>;
   fetchDMUnreadCounts: (userId: string) => Promise<void>;
   fetchDirectMessagesForThread: (userId: string, otherUserId: string, threadId: string) => Promise<void>;
-  sendDirectMessageTo: (senderId: string, recipientId: string, text: string, threadId: string) => Promise<void>;
-  markDMAsRead: (threadId: string, userId: string) => Promise<void>;
+  sendDirectMessageTo: (
+    senderId: string,
+    recipientId: string,
+    text: string,
+    threadId: string,
+    options?: { replyToMessageId?: string }
+  ) => Promise<void>;
+  markDMAsRead: (threadId: string, userId: string) => Promise<string | null>;
   archiveDmThread: (threadId: string, userId: string) => Promise<void>;
   unarchiveDmThread: (threadId: string, userId: string) => Promise<void>;
   deleteDmThread: (threadId: string, userId: string) => Promise<void>;
@@ -212,6 +246,11 @@ interface GroupState {
   addDirectMessage: (threadId: string, message: DirectMessage) => void;
   appendGroupMessage: (groupId: string, rawMessage: unknown) => void;
   mergeGroupMessage: (groupId: string, rawMessage: unknown) => void;
+  fetchThread: (
+    rootId: string,
+    context: { groupId: string } | { threadId: string }
+  ) => Promise<Message[] | DirectMessage[]>;
+  applyPeerChatRead: (payload: { chatId: string; userId: string; lastReadAt: string }) => void;
 
   updateGroupDetails: (groupId: string, name: string, description: string) => Promise<void>;
   promoteToAdmin: (groupId: string, userId: string) => Promise<void>;
@@ -402,6 +441,14 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     })(),
     explanation:
       m.explanation || questionData.explanation || parsed.explanation,
+    replyToMessageId: m.reply_to_message_id || m.replyToMessageId,
+    mentionedUserIds: m.mentioned_user_ids || m.mentionedUserIds,
+    replyTo: m.replyTo || m.reply_to || null,
+    threadRootId: m.threadRootId || m.thread_root_id || undefined,
+    replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
+    receiptStatus: m.receiptStatus || m.receipt_status || undefined,
+    seenByCount: typeof m.seenByCount === 'number' ? m.seenByCount : m.seen_by_count,
+    seenByTotal: typeof m.seenByTotal === 'number' ? m.seenByTotal : m.seen_by_total,
   };
 }
 
@@ -434,6 +481,11 @@ function mapDirectMessage(m: any, threadId: string): DirectMessage {
     senderId: m.sender_id || m.senderId,
     text: m.content || m.text || '',
     timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+    replyToMessageId: m.reply_to_message_id || m.replyToMessageId,
+    replyTo: m.replyTo || m.reply_to || null,
+    threadRootId: m.threadRootId || m.thread_root_id || undefined,
+    replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
+    receiptStatus: m.receiptStatus || m.receipt_status || undefined,
   };
 }
 
@@ -648,7 +700,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return Math.max(0, afterCount - beforeCount);
   },
 
-  sendMessage: async (groupId: string, text: string, senderId: string, _senderName?: string) => {
+  sendMessage: async (
+    groupId: string,
+    text: string,
+    senderId: string,
+    _senderName?: string,
+    options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
+  ) => {
     if (sendingGroupIds.has(groupId)) {
       throw new Error('Another message is still sending. Please wait a moment and try again.');
     }
@@ -673,6 +731,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const questionStem = parsed.questionStem || parsed.question_stem;
 
     const clientMessageId = Crypto.randomUUID();
+    const existing = get().messagesCache[groupId] || [];
+    const parent = options?.replyToMessageId
+      ? existing.find((m) => m.id === options.replyToMessageId)
+      : undefined;
+    const threadRootId = parent
+      ? resolveThreadRootId({ id: parent.id, threadRootId: parent.threadRootId })
+      : undefined;
+    const rootReplyCount = threadRootId
+      ? (existing.find((m) => m.id === threadRootId)?.replyCount || 0) + 1
+      : 0;
+    const seenByTotal = Math.max(0, (group?.members?.length || group?.memberCount || 1) - 1);
+
     const newMessage: Message = {
       id: clientMessageId,
       groupId,
@@ -691,6 +761,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       upvotes: 0,
       downvotes: 0,
       flaggedAsSimilarUserIds: [],
+      replyToMessageId: options?.replyToMessageId,
+      mentionedUserIds: options?.mentionedUserIds,
+      threadRootId,
+      replyCount: 0,
+      receiptStatus: 'sent',
+      seenByCount: 0,
+      seenByTotal,
     };
     
     // Optimistic update for immediate feedback
@@ -698,20 +775,39 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const previousGroups = get().groups;
     const previousCache = get().messagesCache[groupId] || [];
     const isActiveGroup = get().activeGroupId === groupId;
+    const withOptimistic = [...previousCache, newMessage];
+    const optimisticCache = threadRootId
+      ? withOptimistic.map((m) => {
+          const rootKey = m.threadRootId || m.id;
+          if (rootKey !== threadRootId) return m;
+          return { ...m, replyCount: rootReplyCount };
+        })
+      : withOptimistic;
+    const optimisticMessages = threadRootId
+      ? (isActiveGroup ? [...previousMessages, newMessage] : previousMessages).map((m) => {
+          const rootKey = m.threadRootId || m.id;
+          if (rootKey !== threadRootId) return m;
+          return { ...m, replyCount: rootReplyCount };
+        })
+      : isActiveGroup
+        ? [...previousMessages, newMessage]
+        : previousMessages;
     set({
-      messages: isActiveGroup ? [...previousMessages, newMessage] : previousMessages,
+      messages: optimisticMessages,
       groups: previousGroups.map(g =>
         g.id === groupId
           ? { ...g, lastMessage: newMessage, updatedAt: new Date().toISOString() }
           : g
       ),
-      messagesCache: { ...get().messagesCache, [groupId]: [...previousCache, newMessage] },
+      messagesCache: { ...get().messagesCache, [groupId]: optimisticCache },
     });
 
     try {
       const serverPayload = await api.sendMessage(groupId, senderId, {
         content: text,
         clientMessageId,
+        replyToMessageId: options?.replyToMessageId,
+        mentionedUserIds: options?.mentionedUserIds,
       });
       const serverMessage = mapApiMessage(serverPayload, groupId);
       set((state) => {
@@ -1165,20 +1261,50 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
-  sendDirectMessageTo: async (senderId: string, recipientId: string, text: string, threadId: string) => {
+  sendDirectMessageTo: async (
+    senderId: string,
+    recipientId: string,
+    text: string,
+    threadId: string,
+    options?: { replyToMessageId?: string }
+  ) => {
     const clientMessageId = Crypto.randomUUID();
+    const existing = get().directMessages[threadId] || [];
+    const parent = options?.replyToMessageId
+      ? existing.find((m) => m.id === options.replyToMessageId)
+      : undefined;
+    const threadRootId = parent
+      ? resolveThreadRootId({ id: parent.id, threadRootId: parent.threadRootId })
+      : undefined;
+    const rootReplyCount = threadRootId
+      ? (existing.find((m) => m.id === threadRootId)?.replyCount || 0) + 1
+      : 0;
+
     const optimistic: DirectMessage = {
       id: clientMessageId,
       threadId,
       senderId,
       text,
       timestamp: new Date().toISOString(),
+      replyToMessageId: options?.replyToMessageId,
+      threadRootId,
+      replyCount: 0,
+      receiptStatus: 'sent',
     };
+
+    const withOptimistic = [...existing, optimistic];
+    const updatedList = threadRootId
+      ? withOptimistic.map((m) => {
+          const rootKey = m.threadRootId || m.id;
+          if (rootKey !== threadRootId) return m;
+          return { ...m, replyCount: rootReplyCount };
+        })
+      : withOptimistic;
 
     set(state => ({
       directMessages: {
         ...state.directMessages,
-        [threadId]: [...(state.directMessages[threadId] || []), optimistic],
+        [threadId]: updatedList,
       },
       dmThreads: state.dmThreads.map(t =>
         t.id === threadId
@@ -1188,7 +1314,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }));
 
     try {
-      const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId);
+      const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId, {
+        replyToMessageId: options?.replyToMessageId,
+      });
       const confirmed = mapDirectMessage(sent, threadId);
       set(state => ({
         directMessages: {
@@ -1211,13 +1339,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   markDMAsRead: async (threadId: string, userId: string) => {
     try {
-      await api.markDMAsRead(threadId, userId);
+      const result = await api.markDMAsRead(threadId, userId);
       set(state => ({
         dmUnreadCounts: { ...state.dmUnreadCounts, [threadId]: 0 },
         dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, unreadCount: 0 } : t),
       }));
+      return result?.previousLastReadAt ?? null;
     } catch (error) {
       console.warn('[GroupStore] Failed to mark DM as read:', error);
+      return null;
     }
   },
 
@@ -1313,10 +1443,102 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       }
       if (idx === -1) return state;
       const updated = [...cached];
-      updated[idx] = { ...updated[idx], ...message, id: message.id };
+      const prev = updated[idx];
+      const merged = { ...prev, ...message, id: message.id };
+      if ((!message.options || message.options.length === 0) && prev.options?.length) {
+        merged.options = prev.options;
+      }
+      if (
+        (!message.correctAnswerIds || message.correctAnswerIds.length === 0) &&
+        prev.correctAnswerIds?.length
+      ) {
+        merged.correctAnswerIds = prev.correctAnswerIds;
+      }
+      if (!message.questionStem && prev.questionStem) merged.questionStem = prev.questionStem;
+      if (!message.questionType && prev.questionType) merged.questionType = prev.questionType;
+      if (!message.questionStatus && prev.questionStatus) {
+        merged.questionStatus = prev.questionStatus;
+      }
+      if ((!message.optionItems || message.optionItems.length === 0) && prev.optionItems?.length) {
+        merged.optionItems = prev.optionItems;
+      }
+      updated[idx] = merged;
       return {
         messagesCache: { ...state.messagesCache, [groupId]: updated },
         messages: state.activeGroupId === groupId ? updated : state.messages,
+      };
+    });
+  },
+
+  fetchThread: async (rootId, context) => {
+    if ('groupId' in context) {
+      const raw = await api.fetchGroupThread(context.groupId, rootId);
+      const roster = get().groups.find(g => g.id === context.groupId)?.members;
+      const apiMessages = Array.isArray(raw) ? raw : [];
+      return apiMessages.map((m: any) => mapApiMessage(m, context.groupId, roster));
+    }
+    const raw = await api.fetchDmThread(context.threadId, rootId);
+    const apiMessages = Array.isArray(raw) ? raw : [];
+    return apiMessages.map((m: any) => mapDirectMessage(m, context.threadId));
+  },
+
+  applyPeerChatRead: ({ chatId, userId, lastReadAt }) => {
+    const currentUserId = useAuthStore.getState().user?.id;
+    if (!currentUserId || !userId || !lastReadAt || userId === currentUserId) return;
+
+    const isDmThread = Boolean(get().directMessages[chatId]?.length)
+      || get().dmThreads.some(t => t.id === chatId);
+
+    if (isDmThread) {
+      set(state => {
+        const list = state.directMessages[chatId] || [];
+        if (!list.length) return state;
+        return {
+          directMessages: {
+            ...state.directMessages,
+            [chatId]: list.map(m => {
+              if (m.senderId !== currentUserId) return m;
+              return {
+                ...m,
+                receiptStatus: computeDmReceiptStatus(m.timestamp, lastReadAt),
+              };
+            }),
+          },
+        };
+      });
+      return;
+    }
+
+    set(state => {
+      const list = state.messagesCache[chatId] || [];
+      if (!list.length) return state;
+      const group = state.groups.find(g => g.id === chatId);
+      const defaultTotal = Math.max(0, (group?.members?.length || group?.memberCount || 1) - 1);
+      const updated = list.map(m => {
+        if (m.senderId !== currentUserId) return m;
+        const msgMs = new Date(m.createdAt).getTime();
+        const readMs = new Date(lastReadAt).getTime();
+        if (!Number.isFinite(msgMs) || !Number.isFinite(readMs) || readMs < msgMs) {
+          return m;
+        }
+        const total = typeof m.seenByTotal === 'number' ? m.seenByTotal : defaultTotal;
+        const prevCount = m.seenByCount || 0;
+        const seenByCount =
+          m.receiptStatus === 'read'
+            ? total
+            : Math.max(prevCount, Math.min(total, prevCount + 1));
+        const receiptStatus: 'sent' | 'read' =
+          seenByCount >= total && total > 0 ? 'read' : 'sent';
+        return {
+          ...m,
+          seenByCount,
+          seenByTotal: total,
+          receiptStatus,
+        };
+      });
+      return {
+        messagesCache: { ...state.messagesCache, [chatId]: updated },
+        messages: state.activeGroupId === chatId ? updated : state.messages,
       };
     });
   },
@@ -1423,6 +1645,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     let newUserVote: 'up' | 'down' | undefined;
     let newQuestionStatus = message.questionStatus;
 
+    let serverQuestionStatus: string | undefined;
     try {
       if (currentVote === voteType) {
         const removeResult = await api.removeVote(messageId, userId) as any;
@@ -1434,6 +1657,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         } else {
           newDownvotes--;
         }
+        serverQuestionStatus = removeResult?.questionStatus;
         newUserVote = undefined;
       } else {
         const result = await api.voteOnMessage(messageId, userId, voteType) as any;
@@ -1446,6 +1670,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           if (voteType === 'up') newUpvotes++;
           else newDownvotes++;
         }
+        serverQuestionStatus = result?.questionStatus;
         newUserVote = voteType;
       }
     } catch (error) {
@@ -1456,17 +1681,22 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     if (message.type === 'question') {
       const group = get().groups.find(g => g.id === groupId);
       const memberCount = group?.memberCount || group?.members?.length || 0;
-      const resolvedStatus = resolveQuestionStatusAfterVote({
-        upvotes: newUpvotes,
-        downvotes: newDownvotes,
-        memberCount,
-      });
+      // Server persists verification on vote for any member; prefer that status.
+      const resolvedStatus =
+        serverQuestionStatus ||
+        resolveQuestionStatusAfterVote({
+          upvotes: newUpvotes,
+          downvotes: newDownvotes,
+          memberCount,
+        });
       if (resolvedStatus !== newQuestionStatus) {
         newQuestionStatus = resolvedStatus;
-        try {
-          await api.updateQuestionStatus(messageId, resolvedStatus);
-        } catch (error) {
-          console.warn('[GroupStore] Failed to update question status:', error);
+        if (!serverQuestionStatus) {
+          try {
+            await api.updateQuestionStatus(messageId, resolvedStatus);
+          } catch (error) {
+            console.warn('[GroupStore] Failed to update question status:', error);
+          }
         }
       }
     }

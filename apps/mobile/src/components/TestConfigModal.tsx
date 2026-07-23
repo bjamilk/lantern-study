@@ -19,6 +19,11 @@ import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '
 import { useTheme } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mobileQuestionTypesToWeb, webQuestionTypesToMobile } from '../utils/questionHelpers';
+import {
+  QUESTION_VISIBILITY_MODE_OPTIONS,
+  type QuestionVisibilityMode,
+} from '@lantern/shared/utils';
+import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -57,6 +62,8 @@ export interface TestConfigAvailableFilter {
   useSpacedRepetition: boolean;
   focusOnNew: boolean;
   subgroupIds: string[];
+  visibilityMode?: QuestionVisibilityMode;
+  sessionMode?: 'test' | 'study';
 }
 
 interface TestConfigModalProps {
@@ -100,8 +107,11 @@ export default function TestConfigModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
 
-  const isStudyMode = mode === 'study';
+  const forcesStudyFromVisibility = mode === 'test' && questionVisibilityMode === 'unverified';
+  const isStudyMode = mode === 'study' || forcesStudyFromVisibility;
+  const effectiveSessionMode: 'test' | 'study' = isStudyMode ? 'study' : 'test';
 
   const liveAvailableCount = useMemo(() => {
     if (!getAvailableCount) return maxQuestions;
@@ -111,6 +121,8 @@ export default function TestConfigModal({
       useSpacedRepetition,
       focusOnNew,
       subgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
+      visibilityMode: questionVisibilityMode,
+      sessionMode: effectiveSessionMode,
     });
   }, [
     getAvailableCount,
@@ -120,6 +132,8 @@ export default function TestConfigModal({
     useSpacedRepetition,
     focusOnNew,
     selectedSubgroupIds,
+    questionVisibilityMode,
+    effectiveSessionMode,
   ]);
 
   const effectiveMaxQuestions = getAvailableCount ? liveAvailableCount : maxQuestions;
@@ -277,16 +291,29 @@ export default function TestConfigModal({
 
   const handleSubmit = useCallback(() => {
     if (!isValid) return;
-    
-    onSubmit({
-      numberOfQuestions,
-      timerDuration: isStudyMode ? 0 : timerDuration,
-      selectedQuestionTypes: useSpacedRepetition || focusOnNew ? [] : selectedQuestionTypes,
-      selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTags,
-      useSpacedRepetition,
-      focusOnNew,
-      selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
-    }, mode);
+    if (questionVisibilityMode === 'none') {
+      Alert.alert('No questions', 'Question visibility is set to hide all. Change the filter to start.');
+      return;
+    }
+    if (forcesStudyFromVisibility) {
+      Alert.alert(
+        'Study session',
+        'Unverified questions are study-only. Starting a study session instead.'
+      );
+    }
+
+    onSubmit(
+      {
+        numberOfQuestions,
+        timerDuration: isStudyMode ? 0 : timerDuration,
+        selectedQuestionTypes: useSpacedRepetition || focusOnNew ? [] : selectedQuestionTypes,
+        selectedTags: useSpacedRepetition || focusOnNew ? [] : selectedTags,
+        useSpacedRepetition,
+        focusOnNew,
+        selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
+      },
+      effectiveSessionMode
+    );
   }, [
     isValid,
     numberOfQuestions,
@@ -297,6 +324,10 @@ export default function TestConfigModal({
     focusOnNew,
     selectedSubgroupIds,
     mode,
+    questionVisibilityMode,
+    forcesStudyFromVisibility,
+    isStudyMode,
+    effectiveSessionMode,
     isStudyMode,
     onSubmit,
   ]);
@@ -358,6 +389,49 @@ export default function TestConfigModal({
                   : 'Timed assessment with scoring. Submit when ready or when time runs out.'
                 }
               </Text>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="filter" size={20} color={colors.primary} />
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Question visibility</Text>
+              </View>
+              <View style={{ gap: 8, marginTop: 8 }}>
+                {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => {
+                  const selected = questionVisibilityMode === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      onPress={() => setQuestionVisibilityMode(opt.value)}
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? `${colors.primary}14` : colors.background,
+                      }}
+                    >
+                      <Text style={{ color: colors.text, fontWeight: selected ? '700' : '500' }}>
+                        {opt.label}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                        {opt.helper}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {forcesStudyFromVisibility ? (
+                <Text style={[styles.availableHint, { color: colors.warning || '#b45309', marginTop: 8 }]}>
+                  Unverified pool is practice-only — Start opens Study mode.
+                </Text>
+              ) : null}
+              {mode === 'test' && questionVisibilityMode === 'all' ? (
+                <Text style={[styles.availableHint, { color: colors.textSecondary, marginTop: 8 }]}>
+                  Graded tests still use the verified subset only.
+                </Text>
+              ) : null}
             </View>
 
             {/* Number of Questions */}

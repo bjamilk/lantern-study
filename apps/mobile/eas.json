@@ -7,16 +7,29 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "node": "20.19.4",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
+      },
+      "android": {
+        "resourceClass": "medium",
+        "buildType": "apk"
       }
     },
     "emulator": {
       "distribution": "internal",
+      "node": "20.19.4",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
       },
       "android": {
+        "resourceClass": "medium",
         "buildType": "apk"
       }
     },
@@ -24,18 +37,30 @@
       "distribution": "internal",
       "channel": "preview",
       "autoIncrement": true,
+      "node": "20.19.4",
       "env": {
-        "APP_VARIANT": "preview"
+        "APP_VARIANT": "preview",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
       },
       "android": {
+        "resourceClass": "medium",
         "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
+      "node": "20.19.4",
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "NODE_OPTIONS": "--max-old-space-size=3072",
+        "npm_config_maxsockets": "1",
+        "npm_config_fetch_retries": "5"
+      },
+      "android": {
+        "resourceClass": "medium"
       }
     }
   },

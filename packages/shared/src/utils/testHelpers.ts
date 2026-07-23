@@ -10,6 +10,10 @@ import type {
     QuestionOption,
 } from '../types';
 import { QuestionType, MessageType, QuestionStatus } from '../types';
+import {
+  type QuestionVisibilityMode,
+  isUnverifiedQuestion,
+} from './questionVisibility';
 import { BADGE_DEFINITIONS } from './gamification';
 
 export const initialUserStats: UserStats = {
@@ -158,6 +162,23 @@ export const isQuestionTestable = (msg: Message): boolean => {
     if (!isQuestionVoteBalanceAcceptable(msg)) return false;
     return isQuestionStructurallyValid(msg);
 };
+
+/**
+ * Study / practice pool filter by visibility mode.
+ * Graded tests should keep using `isQuestionTestable` only.
+ */
+export function messagePassesStudyQuestionPool(
+    msg: Message,
+    mode: QuestionVisibilityMode
+): boolean {
+    if (msg.isArchived) return false;
+    if (!isQuestionStructurallyValid(msg)) return false;
+    if (mode === 'none') return false;
+    if (mode === 'verified') return isQuestionTestable(msg);
+    if (mode === 'unverified') return isUnverifiedQuestion(msg.questionStatus);
+    // all: verified bank + unverified practice items
+    return isQuestionTestable(msg) || isUnverifiedQuestion(msg.questionStatus);
+}
 
 export const createShuffledQuestionSet = (questions: Message[]): TestQuestion[] => {
     return shuffleArray(questions).map((q, i) => {

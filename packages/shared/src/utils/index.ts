@@ -22,3 +22,5 @@ export * from './noteUpload';
 export * from './photoNoteTitle';
 export * from './displayNames';
 export * from './uploadValidation';
+export * from './chatMedia';
+export * from './questionVisibility';

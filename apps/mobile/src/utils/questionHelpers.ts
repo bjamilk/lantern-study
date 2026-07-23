@@ -1,4 +1,9 @@
-import { shuffleArray, isQuestionVoteBalanceAcceptable } from '@lantern/shared/utils';
+import {
+  shuffleArray,
+  isQuestionVoteBalanceAcceptable,
+  isUnverifiedQuestion,
+  type QuestionVisibilityMode,
+} from '@lantern/shared/utils';
 import { QuestionStatus } from '@lantern/shared/types';
 import type { Message } from '../stores/groupStore';
 import type { TestQuestion, QuestionType } from '../stores/testStore';
@@ -60,18 +65,8 @@ export function matchesOfflineQuestionTypeFilter(questionType: string, filters: 
 
 export { normalizeQuestionType };
 
-export function isQuestionTestable(msg: GroupQuestionMessage): boolean {
+export function isQuestionStructurallySelectable(msg: GroupQuestionMessage): boolean {
   if (msg.type !== 'question' || msg.isArchived) return false;
-  if (!msg.questionStatus || !VERIFIED_STATUSES.has(msg.questionStatus)) return false;
-  if (
-    !isQuestionVoteBalanceAcceptable({
-      upvotes: msg.upvotes ?? 0,
-      downvotes: msg.downvotes ?? 0,
-    })
-  ) {
-    return false;
-  }
-
   const qType = normalizeQuestionType(msg.questionType);
   if (!qType) return false;
 
@@ -102,6 +97,46 @@ export function isQuestionTestable(msg: GroupQuestionMessage): boolean {
     default:
       return false;
   }
+}
+
+export function isQuestionTestable(msg: GroupQuestionMessage): boolean {
+  if (!isQuestionStructurallySelectable(msg)) return false;
+  if (!msg.questionStatus || !VERIFIED_STATUSES.has(msg.questionStatus)) return false;
+  if (
+    !isQuestionVoteBalanceAcceptable({
+      upvotes: msg.upvotes ?? 0,
+      downvotes: msg.downvotes ?? 0,
+    })
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Study/practice pool by visibility mode (graded tests should keep using isQuestionTestable). */
+export function messagePassesMobileStudyPool(
+  msg: GroupQuestionMessage,
+  mode: QuestionVisibilityMode
+): boolean {
+  if (!isQuestionStructurallySelectable(msg)) return false;
+  if (mode === 'none') return false;
+  if (mode === 'verified') return isQuestionTestable(msg);
+  if (mode === 'unverified') return isUnverifiedQuestion(msg.questionStatus);
+  return isQuestionTestable(msg) || isUnverifiedQuestion(msg.questionStatus);
+}
+
+function poolForVisibility(
+  messages: GroupQuestionMessage[],
+  visibilityMode: QuestionVisibilityMode | undefined,
+  sessionMode: 'test' | 'study' | undefined
+): GroupQuestionMessage[] {
+  const vis = visibilityMode || 'verified';
+  if (vis === 'none') return [];
+  if (sessionMode === 'study') {
+    return messages.filter((m) => messagePassesMobileStudyPool(m, vis));
+  }
+  // Graded test: verified bank only (All still uses verified subset)
+  return messages.filter(isQuestionTestable);
 }
 
 function normalizeTrueFalseLabel(text: string): string {
@@ -278,6 +313,8 @@ export interface TestConfigFilter {
   selectedTags?: string[];
   useSpacedRepetition?: boolean;
   focusOnNew?: boolean;
+  visibilityMode?: QuestionVisibilityMode;
+  sessionMode?: 'test' | 'study';
 }
 
 export interface CountFilterOptions {
@@ -285,6 +322,8 @@ export interface CountFilterOptions {
   selectedTags?: string[];
   useSpacedRepetition?: boolean;
   focusOnNew?: boolean;
+  visibilityMode?: QuestionVisibilityMode;
+  sessionMode?: 'test' | 'study';
 }
 
 export const MOBILE_TO_WEB_QUESTION_TYPE: Record<QuestionType, string> = {
@@ -310,7 +349,7 @@ export function countMatchingQuestions(
   filter: CountFilterOptions,
   userQuestionStats: Record<string, { correctAttempts: number; incorrectAttempts: number }> = {}
 ): number {
-  const allTestable = messages.filter(isQuestionTestable);
+  const allTestable = poolForVisibility(messages, filter.visibilityMode, filter.sessionMode);
 
   const typeFilter = (msg: GroupQuestionMessage) => {
     if (!filter.selectedQuestionTypes?.length) return true;
@@ -357,7 +396,7 @@ export function selectGroupQuestions(
   config: TestConfigFilter,
   userQuestionStats: Record<string, { correctAttempts: number; incorrectAttempts: number }> = {}
 ): TestQuestion[] {
-  const allTestable = messages.filter(isQuestionTestable);
+  const allTestable = poolForVisibility(messages, config.visibilityMode, config.sessionMode);
 
   const typeFilter = (msg: GroupQuestionMessage) => {
     if (!config.selectedQuestionTypes?.length) return true;
@@ -415,9 +454,15 @@ export function selectGroupQuestions(
   return createShuffledQuestionSet(selected.slice(0, config.numberOfQuestions));
 }
 
-export function extractTagsFromQuestions(messages: GroupQuestionMessage[]): string[] {
+export function extractTagsFromQuestions(
+  messages: GroupQuestionMessage[],
+  visibilityMode: QuestionVisibilityMode = 'verified',
+  sessionMode: 'test' | 'study' = 'test'
+): string[] {
   const tags = new Set<string>();
-  messages.filter(isQuestionTestable).forEach(m => m.tags?.forEach(t => tags.add(t)));
+  poolForVisibility(messages, visibilityMode, sessionMode).forEach((m) =>
+    m.tags?.forEach((t) => tags.add(t))
+  );
   return Array.from(tags).sort();
 }
 

@@ -694,6 +694,8 @@ export function createApiEndpoints(client: ApiClient) {
       data: {
         content: string;
         clientMessageId?: string;
+        replyToMessageId?: string;
+        mentionedUserIds?: string[];
         type?: 'TEXT' | 'QUESTION';
         questionType?: string;
         questionStem?: string;
@@ -716,6 +718,26 @@ export function createApiEndpoints(client: ApiClient) {
         method: 'POST',
         body: JSON.stringify({ ...data, userId }),
       }),
+
+    fetchGroupThread: (groupId: string, rootId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          group_id?: string;
+          groupId?: string;
+          sender_id?: string;
+          senderId?: string;
+          text?: string;
+          type?: 'TEXT' | 'QUESTION';
+          timestamp?: string;
+          thread_root_id?: string;
+          threadRootId?: string;
+          replyCount?: number;
+          receiptStatus?: 'sent' | 'read';
+          seenByCount?: number;
+          seenByTotal?: number;
+        }>
+      >(`/messages/group/${encodeURIComponent(groupId)}/thread/${encodeURIComponent(rootId)}`),
 
     updateMessage: (
       messageId: string,
@@ -816,7 +838,8 @@ export function createApiEndpoints(client: ApiClient) {
       senderId: string,
       recipientId: string,
       content: string,
-      clientMessageId?: string
+      clientMessageId?: string,
+      options?: { replyToMessageId?: string }
     ) =>
       apiRequest<{
         id: string;
@@ -826,14 +849,43 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
       }>(`/messages/user/${senderId}`, {
         method: 'POST',
-        body: JSON.stringify({ content, recipientId, clientMessageId }),
+        body: JSON.stringify({
+          content,
+          recipientId,
+          clientMessageId,
+          replyToMessageId: options?.replyToMessageId,
+        }),
       }),
 
     markDMAsRead: (threadId: string, userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}/read`, {
+      apiRequestRaw<{
+        success: boolean;
+        previousLastReadAt?: string | null;
+        data?: { previousLastReadAt?: string | null };
+      }>(`/messages/dm/${threadId}/read`, {
         method: 'POST',
         body: JSON.stringify({ userId }),
-      }),
+      }).then((body) => ({
+        success: body.success !== false,
+        previousLastReadAt: body.previousLastReadAt ?? body.data?.previousLastReadAt ?? null,
+      })),
+
+    fetchDmThread: (threadId: string, rootId: string) =>
+      apiRequest<
+        Array<{
+          id: string;
+          thread_id?: string;
+          threadId?: string;
+          sender_id?: string;
+          senderId?: string;
+          text?: string;
+          timestamp?: string;
+          thread_root_id?: string;
+          threadRootId?: string;
+          replyCount?: number;
+          receiptStatus?: 'sent' | 'read';
+        }>
+      >(`/messages/dm/${encodeURIComponent(threadId)}/thread/${encodeURIComponent(rootId)}`),
 
     fetchDMUnreadCounts: (_userId: string) =>
       apiRequest<Record<string, number>>('/messages/dm/unread/all'),
@@ -1820,6 +1872,18 @@ export function createApiEndpoints(client: ApiClient) {
       groupId?: string;
     }) =>
       apiRequest<{ url: string; path: string }>('/messages/upload-image', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    uploadChatAudio: (payload: {
+      fileName: string;
+      base64Data: string;
+      contentType: string;
+      groupId?: string;
+      threadId?: string;
+    }) =>
+      apiRequest<{ url: string; path: string }>('/messages/upload-audio', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),

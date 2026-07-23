@@ -9,11 +9,29 @@ export const ALLOWED_IMAGE_MIME_TYPES = [
 
 export const DEFAULT_MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+export const HEIC_IMAGE_UPLOAD_ERROR =
+  'HEIC photos are not supported. Please convert or export the image as JPEG or PNG, then try again.';
+
 export type ImageUploadValidationInput = {
   contentType?: string | null;
+  fileName?: string | null;
   byteLength?: number | null;
   maxBytes?: number;
 };
+
+export function isHeicImageUpload(input: {
+  contentType?: string | null;
+  fileName?: string | null;
+}): boolean {
+  const contentType = (input.contentType || '').toLowerCase();
+  const fileName = (input.fileName || '').toLowerCase();
+  return (
+    contentType.includes('heic') ||
+    contentType.includes('heif') ||
+    fileName.endsWith('.heic') ||
+    fileName.endsWith('.heif')
+  );
+}
 
 export function isAllowedImageMimeType(contentType?: string | null): boolean {
   if (!contentType) return false;
@@ -23,6 +41,10 @@ export function isAllowedImageMimeType(contentType?: string | null): boolean {
 export function assertAllowedImageUpload(input: ImageUploadValidationInput): void {
   const maxBytes = input.maxBytes ?? DEFAULT_MAX_IMAGE_UPLOAD_BYTES;
   const contentType = input.contentType?.toLowerCase();
+
+  if (isHeicImageUpload(input)) {
+    throw new Error(HEIC_IMAGE_UPLOAD_ERROR);
+  }
 
   if (!isAllowedImageMimeType(contentType)) {
     throw new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.');
@@ -34,7 +56,9 @@ export function assertAllowedImageUpload(input: ImageUploadValidationInput): voi
   }
 }
 
-export function validateImageUpload(input: ImageUploadValidationInput): { ok: true } | { ok: false; error: string } {
+export function validateImageUpload(
+  input: ImageUploadValidationInput
+): { ok: true } | { ok: false; error: string } {
   try {
     assertAllowedImageUpload(input);
     return { ok: true };

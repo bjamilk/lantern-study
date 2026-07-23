@@ -87,6 +87,9 @@ export const validateSendMessage = [
   // Keep aligned with Joi createMessage (50k) so MCQ submissions are not rejected.
   body('content').trim().isLength({ min: 1, max: 50000 }).withMessage('Message content must be 1-50000 characters'),
   body('clientMessageId').optional().isUUID().withMessage('clientMessageId must be a valid UUID'),
+  body('replyToMessageId').optional().isUUID().withMessage('replyToMessageId must be a valid UUID'),
+  body('mentionedUserIds').optional().isArray().withMessage('mentionedUserIds must be an array'),
+  body('mentionedUserIds.*').optional().isUUID().withMessage('Each mentioned user ID must be a valid UUID'),
 ];
 
 export const validateMessageId = [

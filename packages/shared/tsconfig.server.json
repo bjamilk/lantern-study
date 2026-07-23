@@ -29,6 +29,7 @@
     "src/utils/server.ts",
     "src/utils/storageUrl.ts",
     "src/utils/apiMappers.ts",
+    "src/utils/chatMedia.ts",
     "src/settings/**/*.ts",
     "src/marketplace/**/*.ts",
     "src/analytics/**/*.ts",

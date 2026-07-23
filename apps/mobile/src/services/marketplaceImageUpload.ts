@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system';
+import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import { api } from './api';
 
 function normalizeMime(mimeType?: string | null): string {
@@ -18,10 +19,8 @@ export async function uploadMarketplaceImage(
   base64Override?: string | null
 ): Promise<{ url: string; path: string; storageUrl?: string }> {
   const contentType = normalizeMime(mimeType);
-  if (contentType.includes('heic') || contentType.includes('heif')) {
-    throw new Error(
-      'This photo format (HEIC) is not supported. Please retake or export the photo as JPEG/PNG.'
-    );
+  if (isHeicImageUpload({ contentType, fileName: localUri })) {
+    throw new Error(HEIC_IMAGE_UPLOAD_ERROR);
   }
 
   let base64Data = base64Override || null;

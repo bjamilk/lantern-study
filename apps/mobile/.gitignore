@@ -39,15 +39,3 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-
-# Local APKs (never upload or commit these)
-*.apk
-*.aab
-
-# Ephemeral export/test dirs
-.expo-export*/
-.expo-bundle-check/
-.expo-tmp-export/
-.expo-verify-export*/
-.expo-test-export/
-

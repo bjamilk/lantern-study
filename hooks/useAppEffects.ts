@@ -1042,6 +1042,8 @@ export function useAppEffects({
                             text: string;
                             timestamp: string;
                             client_message_id?: string;
+                            reply_to_message_id?: string;
+                            thread_root_id?: string;
                         };
                         if (raw.sender_id === currentUser.id) return;
                         const message: DirectMessage = {
@@ -1050,6 +1052,9 @@ export function useAppEffects({
                             senderId: raw.sender_id,
                             text: raw.text,
                             timestamp: new Date(raw.timestamp),
+                            replyToMessageId: raw.reply_to_message_id,
+                            threadRootId: raw.thread_root_id,
+                            replyCount: 0,
                         };
                         updateDirectMessages(prev => {
                             const existing = prev[thread.id] || [];
@@ -1116,20 +1121,44 @@ export function useAppEffects({
                 };
             }
 
+            const mergeQuestionMessage = (prevMsg: typeof mapped, nextMsg: typeof mapped) => {
+                const merged = { ...prevMsg, ...nextMsg };
+                // Never clobber a full local/question payload with empty remap fields.
+                if ((!nextMsg.options || nextMsg.options.length === 0) && prevMsg.options?.length) {
+                    merged.options = prevMsg.options;
+                }
+                if (
+                    (!nextMsg.correctAnswerIds || nextMsg.correctAnswerIds.length === 0) &&
+                    prevMsg.correctAnswerIds?.length
+                ) {
+                    merged.correctAnswerIds = prevMsg.correctAnswerIds;
+                }
+                if (!nextMsg.questionStem && prevMsg.questionStem) {
+                    merged.questionStem = prevMsg.questionStem;
+                }
+                if (!nextMsg.questionType && prevMsg.questionType) {
+                    merged.questionType = prevMsg.questionType;
+                }
+                if (!nextMsg.questionStatus && prevMsg.questionStatus) {
+                    merged.questionStatus = prevMsg.questionStatus;
+                }
+                return merged;
+            };
+
             updateMessages((prev) => {
                 const existing = prev[groupId] || [];
                 if (isUpdate) {
                     const idx = existing.findIndex((m) => m.id === mapped.id);
                     if (idx === -1) return prev;
                     const updated = [...existing];
-                    updated[idx] = { ...updated[idx], ...mapped };
+                    updated[idx] = mergeQuestionMessage(updated[idx], mapped);
                     return { ...prev, [groupId]: updated };
                 }
                 if (existing.some((m) => m.id === mapped.id)) {
                     return {
                         ...prev,
                         [groupId]: existing.map((m) =>
-                            m.id === mapped.id ? { ...m, ...mapped } : m
+                            m.id === mapped.id ? mergeQuestionMessage(m, mapped) : m
                         ),
                     };
                 }

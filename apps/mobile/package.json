@@ -28,6 +28,7 @@
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
+    "eas-build-pre-install": "node ../../scripts/eas-prepare-mobile-install.js",
     "postinstall": "node ./scripts/ensure-expo-native-deps.js"
   },
   "dependencies": {

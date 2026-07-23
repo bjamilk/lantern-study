@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
-import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder } from '../types';
+import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
 import MessageItem from './MessageItem';
-import MessageInputBar from './MessageInputBar';
+import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
 import GroupListItem from './GroupListItem';
 import { summarizeGroupChat } from '../services/ai';
 import { useCompanionStore } from '../stores/companionStore';
@@ -41,9 +41,19 @@ import {
   updateMarketplaceOrder,
   requestOrderPayment,
   supabase,
+  fetchGroupThread,
+  fetchDmThread,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
+import {
+  mapMessagesFromApi,
+  QUESTION_VISIBILITY_MODE_OPTIONS,
+  messagePassesQuestionVisibility,
+  type QuestionVisibilityMode,
+} from '@lantern/shared/utils';
+import { XMarkIcon } from '@heroicons/react/24/solid';
+import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
 
 
 interface ChatWindowProps {
@@ -51,7 +61,9 @@ interface ChatWindowProps {
   messages: Message[];
   currentUser: User;
   userVotes: Record<string, 'up' | 'down' | undefined>;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, options?: SendMessageOptions) => void;
+  /** Apply peer read watermark updates to local own-message receipts. */
+  onPeerChatRead?: (payload: { userId: string; lastReadAt: string }) => void;
   onOpenQuestionModal: () => void;
   onOpenGroupInfoModal: () => void;
   onOpenTestConfigModal: () => void;
@@ -74,7 +86,7 @@ interface ChatWindowProps {
   onUnarchiveDmThread?: (threadId: string) => void;
   onLoadMoreMessages?: (groupId: string) => Promise<number>;
   /**
-   * Prior last_read_at for the open group chat.
+   * Prior last_read_at for the open group or DM chat.
    * - undefined: mark-as-read still pending (wait before anchoring)
    * - null: no prior marker / fully read → open at bottom
    * - string: scroll to first message after this timestamp
@@ -102,10 +114,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onArchiveDmThread,
   onUnarchiveDmThread,
   onLoadMoreMessages,
+  onPeerChatRead,
 }) => {
   const messages = Array.isArray(messagesProp) ? messagesProp : [];
   const { lowDataMode } = useUIStore();
   const { refreshBudgetTransactions } = useBudgetHandlers();
+  const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
@@ -123,6 +137,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [awaitingMessages, setAwaitingMessages] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<MessageReplyPreview | null>(null);
+  const [threadRootId, setThreadRootId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
+  const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Reset loading/hasMore/scroll state when the chat changes
   useEffect(() => {
@@ -130,6 +150,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setIsLoadingMore(false);
     setNewMessagesBelow(0);
     setFirstUnreadId(null);
+    setReplyTo(null);
+    setThreadRootId(null);
+    setThreadMessages([]);
+    setThreadReplyTo(null);
+    messageNodeRefs.current = {};
     isNearBottomRef.current = true;
     initialAnchorDoneRef.current = null;
     if (chat) {
@@ -183,6 +208,76 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       event: 'typing',
       payload: { userId: currentUser.id },
     });
+  };
+
+  // Peer mark-read broadcasts → refresh blue ticks on own messages
+  useEffect(() => {
+    if (!chat?.id || lowDataMode) return;
+    const channel = supabase.channel(`chat-read:${chat.id}`);
+    channel
+      .on('broadcast', { event: 'read' }, ({ payload }) => {
+        const userId = payload?.userId as string | undefined;
+        const lastReadAt = payload?.lastReadAt as string | undefined;
+        if (!userId || !lastReadAt || userId === currentUser.id) return;
+        onPeerChatRead?.({ userId, lastReadAt });
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [chat?.id, currentUser.id, lowDataMode, onPeerChatRead]);
+
+  const loadThread = async (rootId: string) => {
+    if (!chat) return;
+    setThreadLoading(true);
+    try {
+      const raw =
+        chat.chatType === 'group'
+          ? await fetchGroupThread(chat.id, rootId)
+          : await fetchDmThread(chat.id, rootId);
+      const mapped = mapMessagesFromApi(raw);
+      setThreadMessages(mapped);
+      const root = mapped.find((m) => m.id === rootId) || mapped[0];
+      if (root) {
+        setThreadReplyTo({
+          id: root.id,
+          senderId: root.sender?.id,
+          senderName: root.sender?.username || root.sender?.name,
+          type: root.type,
+          text: root.text,
+          questionStem: root.questionStem,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load thread', err);
+      useToastStore.getState().showToast('Could not load thread', 'error');
+      setThreadRootId(null);
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!threadRootId) {
+      setThreadMessages([]);
+      setThreadReplyTo(null);
+      return;
+    }
+    void loadThread(threadRootId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when root/chat changes
+  }, [threadRootId, chat?.id]);
+
+  const handleOpenThread = (rootId: string) => {
+    setThreadRootId(rootId);
+  };
+
+  const handleThreadSend = async (text: string, options?: SendMessageOptions) => {
+    const replyId = options?.replyToMessageId || threadReplyTo?.id || threadRootId || undefined;
+    await onSendMessage(text, { ...options, replyToMessageId: replyId });
+    if (threadRootId) {
+      // Brief delay so the new message is queryable, then refresh panel + bump feed counts
+      window.setTimeout(() => void loadThread(threadRootId), 350);
+    }
   };
 
   const handleSummarizeGroup = async () => {
@@ -444,13 +539,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
-    () => messages.filter((msg) => !isGroupChat || !msg.isArchived),
-    [messages, isGroupChat]
+    () =>
+      messages.filter((msg) => {
+        if (isGroupChat && msg.isArchived) return false;
+        if (isGroupChat && !messagePassesQuestionVisibility(msg, questionVisibilityMode)) {
+          return false;
+        }
+        return true;
+      }),
+    [messages, isGroupChat, questionVisibilityMode]
   );
 
-  // Compute first unread once the prior marker and messages are available.
+  // Compute first unread once the prior marker and messages are available (group + DM).
   useEffect(() => {
-    if (!chat?.id || !isGroupChat) {
+    if (!chat?.id) {
       setFirstUnreadId(null);
       return;
     }
@@ -475,7 +577,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       return !Number.isNaN(ts) && ts > anchorMs;
     });
     setFirstUnreadId(first?.id ?? null);
-  }, [chat?.id, isGroupChat, unreadAnchorAt, visibleMessages, currentUser.id]);
+  }, [chat?.id, unreadAnchorAt, visibleMessages, currentUser.id]);
 
   // Initial open: scroll to first unread (or bottom when fully read).
   useEffect(() => {
@@ -483,8 +585,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     if (visibleMessages.length === 0) return;
     if (initialAnchorDoneRef.current === chat.id) return;
 
-    // For group chats wait until mark-as-read has reported a marker (null = none / fully read).
-    if (isGroupChat && unreadAnchorAt === undefined) return;
+    // Wait until mark-as-read has reported a marker (null = none / fully read).
+    if (unreadAnchorAt === undefined) return;
     // Wait a tick so the unread divider DOM node exists when needed.
     const timer = window.setTimeout(() => {
       if (initialAnchorDoneRef.current === chat.id) return;
@@ -502,7 +604,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }, 50);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt, isGroupChat]);
+  }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt]);
 
   // Live updates: only auto-scroll when near bottom or the new message is ours.
   useEffect(() => {
@@ -744,17 +846,41 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <div className="flex-1 h-px bg-lantern-primary/40" />
                 </div>
               )}
-              <MessageItem
-                message={msg}
-                isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                currentUserVote={userVotes[msg.id]}
-                onVoteQuestion={onVoteQuestion}
-                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
-                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                group={group}
-                currentUser={currentUser}
-                isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
-              />
+              <div
+                ref={(el) => {
+                  messageNodeRefs.current[msg.id] = el;
+                }}
+              >
+                <MessageItem
+                  message={msg}
+                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
+                  currentUserVote={userVotes[msg.id]}
+                  onVoteQuestion={onVoteQuestion}
+                  onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                  group={group}
+                  currentUser={currentUser}
+                  isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
+                  isGroupChat={isGroup}
+                  onOpenThread={handleOpenThread}
+                  onReply={(m) =>
+                    setReplyTo({
+                      id: m.id,
+                      senderId: m.sender?.id,
+                      senderName: m.sender?.username || m.sender?.name,
+                      type: m.type,
+                      text: m.text,
+                      questionStem: m.questionStem,
+                    })
+                  }
+                  onScrollToMessage={(messageId) => {
+                    messageNodeRefs.current[messageId]?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'center',
+                    });
+                  }}
+                />
+              </div>
             </React.Fragment>
           );
         })}
@@ -822,14 +948,113 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
             onAIQuery={isGroup ? onAIQuery : undefined}
             onTyping={broadcastTyping}
+            mentionCandidates={
+              isGroup
+                ? (group?.members || [])
+                    .filter((m) => m.id !== currentUser.id && m.username)
+                    .map((m) => ({ id: m.id, username: m.username!, name: m.name }))
+                : []
+            }
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
+            groupId={isGroup ? chat.id : undefined}
+            threadId={!isGroup ? chat.id : undefined}
           />
         </div>
       )}
     </>
   );
 
+  const threadPanel = threadRootId && chat ? (
+    <div className="absolute inset-0 z-30 flex justify-end bg-black/30">
+      <div className="w-full max-w-md h-full bg-lantern-surface border-l border-lantern-border flex flex-col shadow-xl">
+        <div className="flex items-center justify-between h-14 px-4 border-b border-lantern-border flex-shrink-0">
+          <div>
+            <p className="text-sm font-semibold text-lantern-text">Thread</p>
+            <p className="text-[11px] text-lantern-text-tertiary">
+              {Math.max(0, threadMessages.length - 1)}{' '}
+              {threadMessages.length - 1 === 1 ? 'reply' : 'replies'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setThreadRootId(null)}
+            className="p-1.5 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
+            aria-label="Close thread"
+          >
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+          {threadLoading ? (
+            <div className="flex justify-center py-10">
+              <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
+            </div>
+          ) : (
+            threadMessages.map((msg) => (
+              <MessageItem
+                key={msg.id}
+                message={msg}
+                isCurrentUserMessage={msg.sender?.id === currentUser.id}
+                currentUserVote={userVotes[msg.id]}
+                onVoteQuestion={onVoteQuestion}
+                onFlagAsSimilar={(messageId) => onFlagAsSimilar(messageId, chat.id)}
+                currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
+                group={group}
+                currentUser={currentUser}
+                isGroupChat={chat.chatType === 'group'}
+                onReply={(m) =>
+                  setThreadReplyTo({
+                    id: m.id,
+                    senderId: m.sender?.id,
+                    senderName: m.sender?.username || m.sender?.name,
+                    type: m.type,
+                    text: m.text,
+                    questionStem: m.questionStem,
+                  })
+                }
+              />
+            ))
+          )}
+        </div>
+        {!isArchived && (
+          <div className="flex-shrink-0 border-t border-lantern-border">
+            <MessageInputBar
+              onSendMessage={handleThreadSend}
+              onAIQuery={chat.chatType === 'group' ? onAIQuery : undefined}
+              mentionCandidates={
+                chat.chatType === 'group'
+                  ? (group?.members || [])
+                      .filter((m) => m.id !== currentUser.id && m.username)
+                      .map((m) => ({ id: m.id, username: m.username!, name: m.name }))
+                  : []
+              }
+              replyTo={threadReplyTo}
+              onClearReply={() => {
+                const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
+                if (root) {
+                  setThreadReplyTo({
+                    id: root.id,
+                    senderId: root.sender?.id,
+                    senderName: root.sender?.username || root.sender?.name,
+                    type: root.type,
+                    text: root.text,
+                    questionStem: root.questionStem,
+                  });
+                }
+              }}
+              groupId={chat.chatType === 'group' ? chat.id : undefined}
+              threadId={chat.chatType === 'dm' ? chat.id : undefined}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
+      {threadPanel}
       {/* Header — fixed at top */}
       <div className="flex-shrink-0 z-20 relative">
         <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-lantern-surface/90 backdrop-blur-md border-b border-lantern-border">
@@ -864,6 +1089,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {/* Quick-action toolbar for groups (visible on md+) */}
             {isGroup && group && !isArchived && (
               <div className="flex items-center gap-1 mr-2">
+                <label className="hidden md:flex items-center" title="Question visibility">
+                  <span className="sr-only">Question visibility</span>
+                  <select
+                    value={questionVisibilityMode}
+                    onChange={(e) =>
+                      setQuestionVisibilityMode(e.target.value as QuestionVisibilityMode)
+                    }
+                    className="max-w-[9.5rem] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary border border-lantern-border rounded-lantern px-2 py-1.5 hover:text-lantern-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                    aria-label="Question visibility filter"
+                  >
+                    {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value} title={opt.helper}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   onClick={onOpenQuestionModal}
                   data-tip-id="chat.question"
@@ -924,6 +1166,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<UserGroupIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
                     Group Info & Members
                   </MenuItem>
+                  <MenuSeparator />
+                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+                    Questions
+                  </div>
+                  {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
+                    <MenuItem
+                      key={opt.value}
+                      onSelect={() =>
+                        handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
+                      }
+                      className={
+                        questionVisibilityMode === opt.value
+                          ? 'text-lantern-primary font-medium'
+                          : undefined
+                      }
+                    >
+                      {opt.label}
+                      {questionVisibilityMode === opt.value ? ' ✓' : ''}
+                    </MenuItem>
+                  ))}
+                  <MenuSeparator />
                   {isArchived ? (
                     <MenuItem
                       onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}

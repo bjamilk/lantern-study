@@ -11,8 +11,8 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 5173,
         host: '0.0.0.0',
-        // Local web → cloud/local API without browser CORS failures.
-        // Set VITE_API_URL=http://localhost:5173/__lantern_api when using cloud API from Vite.
+        // Same-origin proxy so phones on LAN (not localhost) can reach the API.
+        // Prefer VITE_API_URL=/__lantern_api (relative) — never hardcode localhost:5173.
         proxy: {
           '/__lantern_api': {
             target: process.env.LANTERN_API_PROXY_TARGET || 'https://lantern-study-api.onrender.com',

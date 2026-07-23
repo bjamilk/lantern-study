@@ -148,9 +148,14 @@ export const mapMessageFromApi = (data: any): Message => {
     explanation: data.explanation || questionData.explanation,
     questionType: data.question_type || data.questionType || questionData.questionType,
     options: optionsList.map(mapQuestionOptionFromApi),
-    correctAnswerIds: data.correct_answer_ids || data.correctAnswerIds || questionData.correctAnswerIds,
+    correctAnswerIds:
+      data.correct_answer_ids ||
+      data.correctAnswerIds ||
+      questionData.correctAnswerIds ||
+      questionData.correct_answer_ids,
     imageUrl: (() => {
-      const raw = data.image_url || data.imageUrl;
+      const raw =
+        data.image_url || data.imageUrl || questionData.imageUrl || questionData.image_url;
       return raw ? normalizeStorageUrl(raw) : undefined;
     })(),
     tags: data.tags || questionData.tags,
@@ -159,11 +164,45 @@ export const mapMessageFromApi = (data: any): Message => {
     downvotes: data.downvotes || 0,
     flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || data.flaggedAsSimilarUserIds,
     isArchived: data.is_archived || data.isArchived || false,
-    acceptableAnswers: data.acceptable_answers || data.acceptableAnswers,
-    matchingPromptItems: (data.matching_prompt_items || data.matchingPromptItems || []).map(mapMatchingItemFromApi),
-    matchingAnswerItems: (data.matching_answer_items || data.matchingAnswerItems || []).map(mapMatchingItemFromApi),
-    correctMatches: data.correct_matches || data.correctMatches,
-    diagramLabels: (data.diagram_labels || data.diagramLabels || []).map(mapDiagramLabelFromApi),
+    acceptableAnswers:
+      data.acceptable_answers ||
+      data.acceptableAnswers ||
+      questionData.acceptableAnswers ||
+      questionData.acceptable_answers,
+    matchingPromptItems: (
+      data.matching_prompt_items ||
+      data.matchingPromptItems ||
+      questionData.matchingPromptItems ||
+      questionData.matching_prompt_items ||
+      []
+    ).map(mapMatchingItemFromApi),
+    matchingAnswerItems: (
+      data.matching_answer_items ||
+      data.matchingAnswerItems ||
+      questionData.matchingAnswerItems ||
+      questionData.matching_answer_items ||
+      []
+    ).map(mapMatchingItemFromApi),
+    correctMatches:
+      data.correct_matches ||
+      data.correctMatches ||
+      questionData.correctMatches ||
+      questionData.correct_matches,
+    diagramLabels: (
+      data.diagram_labels ||
+      data.diagramLabels ||
+      questionData.diagramLabels ||
+      questionData.diagram_labels ||
+      []
+    ).map(mapDiagramLabelFromApi),
+    replyToMessageId: data.reply_to_message_id || data.replyToMessageId || undefined,
+    mentionedUserIds: data.mentioned_user_ids || data.mentionedUserIds || undefined,
+    replyTo: data.replyTo || data.reply_to || undefined,
+    threadRootId: data.thread_root_id || data.threadRootId || undefined,
+    replyCount: typeof data.replyCount === 'number' ? data.replyCount : data.reply_count,
+    receiptStatus: data.receiptStatus || data.receipt_status || undefined,
+    seenByCount: typeof data.seenByCount === 'number' ? data.seenByCount : data.seen_by_count,
+    seenByTotal: typeof data.seenByTotal === 'number' ? data.seenByTotal : data.seen_by_total,
   };
 };
 
@@ -172,9 +211,17 @@ export const mapMessagesFromApi = (data: any[]): Message[] => {
 };
 
 export const mapQuestionOptionFromApi = (data: any): QuestionOption => {
+  if (typeof data === 'string') {
+    return { id: data, text: data };
+  }
+  if (!data || typeof data !== 'object') {
+    return { id: String(data ?? ''), text: String(data ?? '') };
+  }
+  const id = data.id ?? data.value ?? data.key;
+  const text = data.text ?? data.label ?? data.value ?? String(id ?? '');
   return {
-    id: data.id,
-    text: data.text,
+    id: id != null ? String(id) : text,
+    text: String(text),
   };
 };
 

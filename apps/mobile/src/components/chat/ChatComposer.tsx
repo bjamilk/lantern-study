@@ -1,10 +1,31 @@
-import React, { useState } from 'react';
-import { TextInput, View, Pressable, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { buildChatAudioMarkdown } from '@lantern/shared/utils';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
+import { uploadChatAudio } from '../../services/chatAudioUpload';
+
+export type MentionCandidate = {
+  id: string;
+  username: string;
+  name?: string;
+};
+
+export type ReplyPreview = {
+  id: string;
+  senderName?: string;
+  text?: string;
+};
 
 interface ChatComposerProps {
   value: string;
@@ -13,7 +34,15 @@ interface ChatComposerProps {
   onAttachImage?: (uri: string, mimeType?: string | null) => Promise<void>;
   sending?: boolean;
   placeholder?: string;
+  mentionCandidates?: MentionCandidate[];
+  replyTo?: ReplyPreview | null;
+  onClearReply?: () => void;
+  groupId?: string;
+  threadId?: string;
+  onSendAudioMarkdown?: (markdown: string) => Promise<void>;
 }
+
+const MAX_VOICE_MS = 120_000;
 
 export function ChatComposer({
   value,
@@ -22,9 +51,58 @@ export function ChatComposer({
   onAttachImage,
   sending = false,
   placeholder = 'Message...',
+  mentionCandidates = [],
+  replyTo,
+  onClearReply,
+  groupId,
+  threadId,
+  onSendAudioMarkdown,
 }: ChatComposerProps) {
   const { colors } = useTheme();
   const [attaching, setAttaching] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const recordingRef = useRef<{
+    stopAndUnloadAsync: () => Promise<void>;
+    getURI: () => string | null;
+  } | null>(null);
+  const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startedAtRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+      void recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);
+    };
+  }, []);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery == null || !mentionCandidates.length) return [];
+    const q = mentionQuery.toLowerCase();
+    return mentionCandidates
+      .filter(
+        (m) =>
+          m.username &&
+          (m.username.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
+      )
+      .slice(0, 6);
+  }, [mentionQuery, mentionCandidates]);
+
+  const detectMention = (text: string) => {
+    const match = text.match(/(^|[\s])@([a-zA-Z0-9_]*)$/);
+    if (!match) {
+      setMentionQuery(null);
+      return;
+    }
+    setMentionQuery(match[2] || '');
+  };
+
+  const insertMention = (candidate: MentionCandidate) => {
+    const replaced = value.replace(/(^|[\s])@([a-zA-Z0-9_]*)$/, `$1@${candidate.username} `);
+    onChangeText(replaced);
+    setMentionQuery(null);
+  };
 
   const pickImage = async () => {
     if (!onAttachImage || attaching) return;
@@ -44,41 +122,189 @@ export function ChatComposer({
     }
   };
 
+  const stopRecording = async () => {
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
+    const recording = recordingRef.current;
+    if (!recording) {
+      setIsRecording(false);
+      return;
+    }
+    setIsRecording(false);
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      recordingRef.current = null;
+      const elapsed = Date.now() - startedAtRef.current;
+      if (!uri || elapsed < 400) {
+        Alert.alert('Voice note', 'Recording was too short. Hold a bit longer.');
+        return;
+      }
+      if (!onSendAudioMarkdown) return;
+      setUploadingAudio(true);
+      try {
+        const lower = uri.toLowerCase();
+        const mimeType = lower.endsWith('.webm')
+          ? 'audio/webm'
+          : lower.endsWith('.wav')
+            ? 'audio/wav'
+            : lower.endsWith('.ogg')
+              ? 'audio/ogg'
+              : 'audio/mp4';
+        const { url } = await uploadChatAudio(uri, mimeType, { groupId, threadId });
+        await onSendAudioMarkdown(buildChatAudioMarkdown(url));
+      } catch (err: any) {
+        Alert.alert('Voice note', err?.message || 'Could not upload voice note');
+      } finally {
+        setUploadingAudio(false);
+      }
+    } catch {
+      recordingRef.current = null;
+      Alert.alert('Voice note', 'Could not finish recording.');
+    }
+  };
+
+  const startRecording = async () => {
+    if (!onSendAudioMarkdown || uploadingAudio || sending) return;
+    try {
+      const { Audio } = await import('expo-av');
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Microphone', 'Microphone permission is required for voice notes.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording as {
+        stopAndUnloadAsync: () => Promise<void>;
+        getURI: () => string | null;
+      };
+      startedAtRef.current = Date.now();
+      setIsRecording(true);
+      maxTimerRef.current = setTimeout(() => {
+        void stopRecording();
+      }, MAX_VOICE_MS);
+    } catch {
+      Alert.alert('Voice note', 'Could not start recording.');
+    }
+  };
+
+  const busy = sending || attaching || uploadingAudio;
+  const showMic = !value.trim() && !!onSendAudioMarkdown;
+
   return (
-    <View
-      className="flex-row items-end gap-2 px-3 py-2 border-t border-lantern-border bg-lantern-surface"
-      style={{ borderTopColor: colors.border }}
-    >
-      {onAttachImage ? (
-        <Pressable
-          onPress={() => void pickImage()}
-          disabled={attaching || sending}
-          className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center"
-          accessibilityLabel="Attach image"
+    <View>
+      {replyTo ? (
+        <View
+          className="flex-row items-start gap-2 px-3 pt-2"
+          style={{ backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }}
         >
-          {attaching ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <Ionicons name="image-outline" size={24} color={featureAccents.groups} />
-          )}
-        </Pressable>
+          <View className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5" style={{ backgroundColor: colors.backgroundSecondary }}>
+            <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+              Replying to {replyTo.senderName || 'message'}
+            </Text>
+            <Text className="text-xs" numberOfLines={1} style={{ color: colors.textSecondary }}>
+              {(replyTo.text || 'Message').slice(0, 80)}
+            </Text>
+          </View>
+          <Pressable onPress={onClearReply} accessibilityLabel="Cancel reply" className="p-2">
+            <Ionicons name="close" size={18} color={colors.textTertiary} />
+          </Pressable>
+        </View>
       ) : null}
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.inputPlaceholder}
-        multiline
-        className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
-        style={{
-          borderColor: colors.inputBorder,
-          backgroundColor: colors.inputBackground,
-          color: colors.inputText,
-        }}
-      />
-      <Button size="sm" loading={sending} disabled={!value.trim()} onPress={onSend}>
-        Send
-      </Button>
+
+      {mentionMatches.length > 0 ? (
+        <View className="mx-3 mb-1 rounded-xl border overflow-hidden" style={{ borderColor: colors.border, backgroundColor: colors.surface }}>
+          {mentionMatches.map((m) => (
+            <Pressable
+              key={m.id}
+              onPress={() => insertMention(m)}
+              className="px-3 py-2 border-b"
+              style={{ borderBottomColor: colors.border }}
+            >
+              <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                @{m.username}
+                {m.name ? (
+                  <Text style={{ color: colors.textSecondary }}>  {m.name}</Text>
+                ) : null}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      <View
+        className="flex-row items-end gap-2 px-3 py-2 border-t border-lantern-border bg-lantern-surface"
+        style={{ borderTopColor: colors.border }}
+      >
+        {onAttachImage ? (
+          <Pressable
+            onPress={() => void pickImage()}
+            disabled={busy || isRecording}
+            className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center"
+            accessibilityLabel="Attach image"
+          >
+            {attaching ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="image-outline" size={24} color={featureAccents.groups} />
+            )}
+          </Pressable>
+        ) : null}
+
+        {showMic || isRecording ? (
+          <Pressable
+            onPress={() => {
+              if (isRecording) void stopRecording();
+              else void startRecording();
+            }}
+            disabled={uploadingAudio}
+            className="p-2 mb-0.5 min-w-[44px] min-h-[44px] items-center justify-center rounded-xl"
+            style={{ backgroundColor: isRecording ? '#ef4444' : colors.backgroundSecondary }}
+            accessibilityLabel={isRecording ? 'Stop recording' : 'Record voice note'}
+          >
+            {uploadingAudio ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="mic" size={22} color={isRecording ? '#fff' : colors.primary} />
+            )}
+          </Pressable>
+        ) : null}
+
+        <TextInput
+          value={value}
+          onChangeText={(next) => {
+            onChangeText(next);
+            detectMention(next);
+          }}
+          placeholder={
+            isRecording
+              ? 'Recording… tap mic to stop'
+              : uploadingAudio
+                ? 'Uploading voice note…'
+                : placeholder
+          }
+          placeholderTextColor={colors.inputPlaceholder}
+          multiline
+          editable={!busy && !isRecording}
+          className="flex-1 max-h-28 px-3 py-2.5 rounded-2xl border border-lantern-border bg-lantern-background text-sm text-lantern-text"
+          style={{
+            borderColor: colors.inputBorder,
+            backgroundColor: colors.inputBackground,
+            color: colors.inputText,
+          }}
+        />
+        <Button size="sm" loading={sending} disabled={!value.trim() || busy || isRecording} onPress={onSend}>
+          Send
+        </Button>
+      </View>
     </View>
   );
 }

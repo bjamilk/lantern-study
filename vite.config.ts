@@ -18,6 +18,15 @@ export default defineConfig(({ mode }) => {
         port: 5173,
         host: '0.0.0.0',
         headers: securityHeaders,
+        // Same-origin API proxy for laptop + phone (LAN) access during local Vite.
+        proxy: {
+          '/__lantern_api': {
+            target: env.LANTERN_API_PROXY_TARGET || 'https://lantern-study-api.onrender.com',
+            changeOrigin: true,
+            secure: true,
+            rewrite: (p) => p.replace(/^\/__lantern_api/, ''),
+          },
+        },
       },
       preview: {
         headers: securityHeaders,

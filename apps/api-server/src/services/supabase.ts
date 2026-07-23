@@ -10,12 +10,31 @@ import {
   MARKETPLACE_BUDGET_CATEGORIES,
   MARKETPLACE_BUDGET_TYPES,
 } from '@lantern/shared/utils/server';
-import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
+import {
+  checkAndAwardBadges,
+  initialUserStats,
+  resolveQuestionStatusAfterVote,
+} from '@lantern/shared/utils/testHelpers';
 import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
 import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
+import {
+  resolveThreadRootId,
+  computeDmReceiptStatus,
+  computeGroupReceipt,
+} from '@lantern/shared/utils/chatMedia';
+
+function extractMentionUsernames(text?: string | null): string[] {
+  if (!text) return [];
+  const found = new Set<string>();
+  for (const match of text.matchAll(/@([a-zA-Z0-9_]{2,32})\b/g)) {
+    const username = match[1];
+    if (username) found.add(username.toLowerCase());
+  }
+  return [...found];
+}
 import { assertImageMagicBytes, clampSignedUrlTtl, detectImageMime } from '../utils/fileValidation';
 import { VersionConflictError } from '../utils/versionConflict';
 
@@ -213,8 +232,11 @@ export class SupabaseService {
     }
 
     if (bucket === 'note-files') {
-      // Chat attachments: {ownerId}/chat/{groupId}/...
+      // Chat attachments: {ownerId}/chat/{groupId}/... or {ownerId}/chat/dm/{threadId}/...
       if (userId && parts[1] === 'chat' && parts[2]) {
+        if (parts[2] === 'dm' && parts[3]) {
+          return this.isDmThreadParticipant(parts[3], userId);
+        }
         return this.isGroupMember(parts[2], userId);
       }
       return false;
@@ -388,6 +410,14 @@ export class SupabaseService {
       ...parsed,
       type,
       ...(imageUrl ? { imageUrl: this.normalizeStorageUrl(imageUrl) } : {}),
+      replyToMessageId: msg.reply_to_message_id || msg.replyToMessageId || undefined,
+      mentionedUserIds: msg.mentioned_user_ids || msg.mentionedUserIds || undefined,
+      replyTo: msg.replyTo || undefined,
+      threadRootId: msg.thread_root_id || msg.threadRootId || undefined,
+      replyCount: typeof msg.replyCount === 'number' ? msg.replyCount : undefined,
+      receiptStatus: msg.receiptStatus || undefined,
+      seenByCount: typeof msg.seenByCount === 'number' ? msg.seenByCount : undefined,
+      seenByTotal: typeof msg.seenByTotal === 'number' ? msg.seenByTotal : undefined,
     };
   }
 
@@ -1354,6 +1384,17 @@ export class SupabaseService {
     return !!data && data.pending !== true;
   }
 
+  async isDmThreadParticipant(threadId: string, userId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('dm_threads')
+      .select('participant_ids')
+      .eq('id', threadId)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    const ids = Array.isArray(data?.participant_ids) ? data!.participant_ids : [];
+    return ids.includes(userId);
+  }
+
   /**
    * Authorize mutation of a group message. Returns the message row when the user
    * is an active (non-pending) member of its group; otherwise null (treat as not
@@ -1594,6 +1635,7 @@ export class SupabaseService {
     before?: string;
     after?: string;
     responseProfile?: 'compact' | 'full';
+    viewerUserId?: string;
   } = {}): Promise<Message[]> {
     const {
       page = 1,
@@ -1601,6 +1643,7 @@ export class SupabaseService {
       before,
       after,
       responseProfile = 'full',
+      viewerUserId,
     } = options;
     const profile = this.getResponseProfile(responseProfile);
     const safeLimit = Math.min(SupabaseService.MAX_MESSAGE_PAGE_SIZE, Math.max(1, limit));
@@ -1611,7 +1654,7 @@ export class SupabaseService {
 
     logger.debug('getGroupMessages: Fetching messages', { groupId, page: safePage, limit: safeLimit, cacheKey });
 
-    return cacheService.cached(cacheKey, async () => {
+    const messages = await cacheService.cached(cacheKey, async () => {
       logger.debug('getGroupMessages: Cache miss, querying database');
       const selectClause = profile === 'compact'
         ? `
@@ -1625,6 +1668,9 @@ export class SupabaseService {
           downvotes,
           is_archived,
           image_url,
+          reply_to_message_id,
+          mentioned_user_ids,
+          thread_root_id,
           profiles!sender_id (
             id,
             name,
@@ -1645,6 +1691,9 @@ export class SupabaseService {
           downvotes,
           is_archived,
           image_url,
+          reply_to_message_id,
+          mentioned_user_ids,
+          thread_root_id,
           profiles!sender_id (
             id,
             name,
@@ -1680,10 +1729,14 @@ export class SupabaseService {
         questionCount: (data || []).filter((m: any) => m.type === 'QUESTION').length
       });
 
-      return (data || []).reverse().map((msg: any) => ({
+      const withReplies = await this.attachReplyPreviewsBatch(data || [], 'messages');
+      const withCounts = await this.attachThreadReplyCounts(withReplies, 'messages', 'group_id', groupId);
+
+      return withCounts.reverse().map((msg: any) => ({
         id: msg.id,
         groupId: msg.group_id,
         sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
+        senderId: msg.sender_id,
         timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
         flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
         upvotes: msg.upvotes || 0,
@@ -1692,6 +1745,11 @@ export class SupabaseService {
         ...this.normalizeMessageRecord(msg),
       }));
     }, { ttl: 120 }); // Cache for 2 minutes
+
+    if (viewerUserId) {
+      return this.enrichGroupMessageReceipts(messages, groupId, viewerUserId);
+    }
+    return messages;
   }
 
   async getMessageById(messageId: string, userId?: string): Promise<Message | null> {
@@ -1805,6 +1863,91 @@ export class SupabaseService {
     };
   }
 
+  /**
+   * After votes change, recompute PENDING/VERIFIED/REJECTED from group vote counts
+   * and persist into question_data so every member sees the same testable status.
+   * (Clients previously called PUT /status, which only author/admin could write.)
+   */
+  private async syncQuestionStatusAfterVote(messageId: string): Promise<{
+    upvotes: number;
+    downvotes: number;
+    groupId: string | null;
+    questionStatus?: string;
+  }> {
+    const { data: msg, error } = await this.supabase
+      .from('messages')
+      .select('group_id, upvotes, downvotes, type, question_data')
+      .eq('id', messageId)
+      .single();
+
+    if (error) throw error;
+    if (!msg) {
+      return { upvotes: 0, downvotes: 0, groupId: null };
+    }
+
+    const questionData =
+      msg.question_data && typeof msg.question_data === 'object' ? msg.question_data : {};
+    let questionStatus =
+      typeof questionData.questionStatus === 'string' ? questionData.questionStatus : undefined;
+
+    const isQuestion =
+      String(msg.type || '').toUpperCase() === 'QUESTION' ||
+      !!(questionData.questionStem || questionData.questionType);
+
+    if (isQuestion && msg.group_id) {
+      const { count, error: countError } = await this.supabase
+        .from('group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('group_id', msg.group_id);
+      if (countError) {
+        logger.warn('syncQuestionStatusAfterVote: member count failed', {
+          messageId,
+          groupId: msg.group_id,
+          error: countError,
+        });
+      }
+      const memberCount = count ?? 0;
+      const resolved = resolveQuestionStatusAfterVote({
+        upvotes: msg.upvotes ?? 0,
+        downvotes: msg.downvotes ?? 0,
+        memberCount,
+      });
+      if (resolved !== questionStatus) {
+        const { error: updateError } = await this.supabase
+          .from('messages')
+          .update({
+            question_data: {
+              ...questionData,
+              questionStatus: resolved,
+            },
+          })
+          .eq('id', messageId);
+        if (updateError) {
+          logger.error('syncQuestionStatusAfterVote: failed to persist status', {
+            messageId,
+            resolved,
+            error: updateError,
+          });
+        } else {
+          questionStatus = resolved;
+        }
+      }
+    }
+
+    await cacheService.delete(`message:${messageId}`);
+    if (msg.group_id) {
+      await cacheService.invalidateGroupCache(msg.group_id);
+      await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
+    }
+
+    return {
+      upvotes: msg.upvotes ?? 0,
+      downvotes: msg.downvotes ?? 0,
+      groupId: msg.group_id ?? null,
+      questionStatus,
+    };
+  }
+
   async voteQuestion(messageId: string, userId: string, voteType: 'up' | 'down'): Promise<any> {
     const { data: existingVote, error: checkError } = await this.supabase
       .from('question_votes')
@@ -1816,12 +1959,14 @@ export class SupabaseService {
     if (checkError) throw checkError;
 
     if (existingVote?.vote_type === voteType) {
-      const { data: msg } = await this.supabase
-        .from('messages')
-        .select('group_id, upvotes, downvotes')
-        .eq('id', messageId)
-        .single();
-      return { success: true, voteType, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
+      const synced = await this.syncQuestionStatusAfterVote(messageId);
+      return {
+        success: true,
+        voteType,
+        upvotes: synced.upvotes,
+        downvotes: synced.downvotes,
+        questionStatus: synced.questionStatus,
+      };
     }
 
     const { error } = await this.supabase
@@ -1837,17 +1982,14 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    await cacheService.delete(`message:${messageId}`);
-    const { data: msg } = await this.supabase
-      .from('messages')
-      .select('group_id, upvotes, downvotes')
-      .eq('id', messageId)
-      .single();
-    if (msg) {
-      await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
-    }
-
-    return { success: true, voteType, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
+    const synced = await this.syncQuestionStatusAfterVote(messageId);
+    return {
+      success: true,
+      voteType,
+      upvotes: synced.upvotes,
+      downvotes: synced.downvotes,
+      questionStatus: synced.questionStatus,
+    };
   }
 
   async removeVote(messageId: string, userId: string): Promise<any> {
@@ -1859,17 +2001,13 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    await cacheService.delete(`message:${messageId}`);
-    const { data: msg } = await this.supabase
-      .from('messages')
-      .select('group_id, upvotes, downvotes')
-      .eq('id', messageId)
-      .single();
-    if (msg) {
-      await cacheService.deletePattern(`messages:group:${msg.group_id}:*`);
-    }
-
-    return { success: true, upvotes: msg?.upvotes ?? 0, downvotes: msg?.downvotes ?? 0 };
+    const synced = await this.syncQuestionStatusAfterVote(messageId);
+    return {
+      success: true,
+      upvotes: synced.upvotes,
+      downvotes: synced.downvotes,
+      questionStatus: synced.questionStatus,
+    };
   }
 
   async getUserVotesForGroup(groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> {
@@ -1928,9 +2066,13 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    // Invalidate caches
+    // Invalidate caches (list GET uses messages:group:* keys)
     await cacheService.delete(`message:${messageId}`);
     await cacheService.delete(`group:${currentMessage.group_id}:messages`);
+    if (currentMessage.group_id) {
+      await cacheService.invalidateGroupCache(currentMessage.group_id);
+      await cacheService.deletePattern(`messages:group:${currentMessage.group_id}:*`);
+    }
 
     return data;
   }
@@ -2548,6 +2690,69 @@ export class SupabaseService {
     });
     if (error) {
       logger.error('Error uploading chat image:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    return {
+      url: await this.createSignedStorageUrl(bucket, filePath, 60 * 60 * 24 * 7),
+      path: filePath,
+    };
+  }
+
+  /** Chat voice notes under note-files/{userId}/chat/{groupId|dm/threadId}/... */
+  async uploadChatAudio(params: {
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+    userId: string;
+    groupId?: string;
+    threadId?: string;
+  }): Promise<{ url: string; path: string }> {
+    const bucket = 'note-files';
+    const timestamp = Date.now();
+    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
+    const allowed = [
+      'audio/webm',
+      'audio/mp4',
+      'audio/m4a',
+      'audio/mpeg',
+      'audio/ogg',
+      'audio/wav',
+      'audio/x-m4a',
+    ];
+    const contentType = params.contentType === 'audio/x-m4a' ? 'audio/mp4' : params.contentType;
+    if (!allowed.includes(params.contentType) && !allowed.includes(contentType)) {
+      throw new Error('Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.');
+    }
+    let chatSegment: string;
+    if (params.groupId) {
+      const member = await this.isGroupMember(params.groupId, params.userId);
+      if (!member) throw new Error('Not a member of this group');
+      chatSegment = params.groupId.replace(/[^a-zA-Z0-9_-]/g, '');
+    } else if (params.threadId) {
+      const participant = await this.isDmThreadParticipant(params.threadId, params.userId);
+      if (!participant) throw new Error('Not a participant of this conversation');
+      chatSegment = `dm/${params.threadId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    } else {
+      chatSegment = 'general';
+    }
+    const filePath = `${ownerPrefix}chat/${chatSegment}/${timestamp}-${safeName}`;
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    if (buffer.length > 8 * 1024 * 1024) {
+      throw new Error('Audio exceeds 8 MB limit');
+    }
+    if (buffer.length < 256) {
+      throw new Error('Audio recording is empty or too short');
+    }
+
+    const { error } = await this.supabase.storage.from(bucket).upload(filePath, buffer, {
+      contentType,
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) {
+      logger.error('Error uploading chat audio:', { error, filePath });
       throw new Error(error.message);
     }
 
@@ -3293,6 +3498,8 @@ export class SupabaseService {
           sender_id,
           text,
           timestamp,
+          reply_to_message_id,
+          thread_root_id,
           profiles:sender_id (
             id,
             name,
@@ -3308,7 +3515,15 @@ export class SupabaseService {
         return [];
       }
 
-      return (data || []).reverse().map((msg: any) => ({
+      const withReplies = await this.attachReplyPreviewsBatch(data || [], 'dm_messages');
+      const withCounts = await this.attachThreadReplyCounts(
+        withReplies,
+        'dm_messages',
+        'thread_id',
+        threadId
+      );
+
+      const mapped = withCounts.reverse().map((msg: any) => ({
         id: msg.id,
         threadId: msg.thread_id,
         sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
@@ -3319,7 +3534,13 @@ export class SupabaseService {
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
-      }));
+        replyToMessageId: msg.reply_to_message_id || undefined,
+        replyTo: msg.replyTo || undefined,
+        threadRootId: msg.thread_root_id || undefined,
+        replyCount: typeof msg.replyCount === 'number' ? msg.replyCount : 0,
+      })) as Message[];
+
+      return this.enrichDmMessageReceipts(mapped, threadId, userId, otherUserId);
     } catch (error) {
       logger.error('Exception fetching DM messages', { error, userId, otherUserId });
       return [];
@@ -3330,7 +3551,7 @@ export class SupabaseService {
     senderId: string,
     recipientId: string,
     content: string,
-    options?: { bypassPrivacy?: boolean; clientMessageId?: string }
+    options?: { bypassPrivacy?: boolean; clientMessageId?: string; replyToMessageId?: string }
   ): Promise<Message> {
     if (!options?.bypassPrivacy) {
       const { data: recipientProfile, error: recipientError } = await this.supabase
@@ -3385,48 +3606,65 @@ export class SupabaseService {
       if (options?.clientMessageId) {
         insertPayload.client_message_id = options.clientMessageId;
       }
+      if (options?.replyToMessageId) {
+        insertPayload.reply_to_message_id = options.replyToMessageId;
+        insertPayload.thread_root_id = await this.resolveThreadRootForReply(
+          'dm_messages',
+          options.replyToMessageId,
+          { threadId }
+        );
+      }
 
-      const { data, error } = await this.supabase
-        .from('dm_messages')
-        .insert(insertPayload)
-        .select(`
+      const dmSelect = `
           id,
           thread_id,
           sender_id,
           text,
           timestamp,
           client_message_id,
+          reply_to_message_id,
+          thread_root_id,
           profiles:sender_id (
             id,
             name,
             avatar_url
           )
-        `)
+        `;
+
+      const { data, error } = await this.supabase
+        .from('dm_messages')
+        .insert(insertPayload)
+        .select(dmSelect)
         .single();
 
       if (error) {
         if (error.code === '23505' && options?.clientMessageId) {
           const { data: existing } = await this.supabase
             .from('dm_messages')
-            .select(`
-              id,
-              thread_id,
-              sender_id,
-              text,
-              timestamp,
-              client_message_id,
-              profiles:sender_id (
-                id,
-                name,
-                avatar_url
-              )
-            `)
+            .select(dmSelect)
             .eq('thread_id', threadId)
             .eq('sender_id', senderId)
             .eq('client_message_id', options.clientMessageId)
             .maybeSingle();
           if (existing) {
-            return existing as unknown as Message;
+            const withReply = await this.attachReplyPreview(existing, 'dm_messages');
+            return {
+              id: withReply.id,
+              sender: mapProfileSender(resolveNestedProfile(withReply.profiles), withReply.sender_id),
+              senderId: withReply.sender_id,
+              recipientId,
+              timestamp: new Date(withReply.timestamp),
+              type: 'TEXT' as const,
+              text: withReply.text,
+              upvotes: 0,
+              downvotes: 0,
+              flaggedAsSimilarUserIds: [],
+              replyToMessageId: withReply.reply_to_message_id || undefined,
+              replyTo: withReply.replyTo || undefined,
+              threadRootId: withReply.thread_root_id || undefined,
+              replyCount: 0,
+              receiptStatus: 'sent' as const,
+            } as unknown as Message;
           }
         }
         logger.error('Error inserting DM message', { error });
@@ -3469,17 +3707,23 @@ export class SupabaseService {
         logger.error('Failed to create DM notification', { error: err, recipientId, threadId });
       });
 
+      const withReply = await this.attachReplyPreview(data, 'dm_messages');
       return {
-        id: data.id,
-        sender: mapProfileSender(resolveNestedProfile(data.profiles), data.sender_id),
-        senderId: data.sender_id,
+        id: withReply.id,
+        sender: mapProfileSender(resolveNestedProfile(withReply.profiles), withReply.sender_id),
+        senderId: withReply.sender_id,
         recipientId,
-        timestamp: new Date(data.timestamp),
+        timestamp: new Date(withReply.timestamp),
         type: 'TEXT' as const,
-        text: data.text,
+        text: withReply.text,
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
+        replyToMessageId: withReply.reply_to_message_id || undefined,
+        replyTo: withReply.replyTo || undefined,
+        threadRootId: withReply.thread_root_id || undefined,
+        replyCount: 0,
+        receiptStatus: 'sent' as const,
       };
     } catch (error: any) {
       logger.error('Exception sending DM', { error: error.message, senderId, recipientId });
@@ -5070,6 +5314,7 @@ export class SupabaseService {
           profiles!user_id (
             id,
             name,
+            username,
             avatar_url,
             phone
           )
@@ -5102,14 +5347,465 @@ export class SupabaseService {
     return data;
   }
 
+  private async resolveGroupMentionUserIds(
+    groupId: string,
+    senderId: string,
+    content: string,
+    explicitIds?: string[]
+  ): Promise<string[]> {
+    const usernames = extractMentionUsernames(content);
+    const members = await this.fetchGroupMembers(groupId);
+    const byUsername = new Map<string, string>();
+    for (const m of members || []) {
+      const username = (m as any)?.username;
+      const id = (m as any)?.id;
+      if (username && id) byUsername.set(String(username).toLowerCase(), id);
+    }
+    const fromText = usernames
+      .map((u: string) => byUsername.get(u))
+      .filter((id: string | undefined): id is string => !!id && id !== senderId);
+    const memberIds = new Set(
+      (members || []).map((m: any) => m?.id).filter((id: unknown): id is string => typeof id === 'string')
+    );
+    const fromExplicit = (explicitIds || []).filter(
+      (id) => memberIds.has(id) && id !== senderId
+    );
+    return [...new Set([...fromText, ...fromExplicit])];
+  }
+
+  private buildReplyToFromParent(parent: any, table: 'messages' | 'dm_messages'): Record<string, unknown> {
+    const profile = Array.isArray(parent.profiles) ? parent.profiles[0] : parent.profiles;
+    if (table === 'dm_messages') {
+      return {
+        id: parent.id,
+        senderId: parent.sender_id,
+        senderName: profile?.username || profile?.name || 'Member',
+        type: 'TEXT',
+        text: parent.text,
+      };
+    }
+    const qd = parent.question_data && typeof parent.question_data === 'object' ? parent.question_data : {};
+    return {
+      id: parent.id,
+      senderId: parent.sender_id,
+      senderName: profile?.username || profile?.name || 'Member',
+      type: parent.type,
+      text: parent.text,
+      questionStem: qd.questionStem,
+    };
+  }
+
+  private async attachReplyPreview(
+    message: any,
+    table: 'messages' | 'dm_messages' = 'messages'
+  ): Promise<any> {
+    const replyId = message?.reply_to_message_id || message?.replyToMessageId;
+    if (!replyId) return message;
+    const select =
+      table === 'dm_messages'
+        ? 'id, sender_id, text, profiles:sender_id(id, name, username)'
+        : 'id, sender_id, type, text, question_data, profiles:sender_id(id, name, username)';
+    const { data: parent } = await this.supabase.from(table).select(select).eq('id', replyId).maybeSingle();
+    if (!parent) return { ...message, replyTo: null };
+    return { ...message, replyTo: this.buildReplyToFromParent(parent, table) };
+  }
+
+  private async attachReplyPreviewsBatch(
+    messages: any[],
+    table: 'messages' | 'dm_messages'
+  ): Promise<any[]> {
+    if (!messages.length) return messages;
+    const replyIds = [
+      ...new Set(
+        messages
+          .map((m) => m?.reply_to_message_id || m?.replyToMessageId)
+          .filter((id): id is string => typeof id === 'string' && !!id)
+      ),
+    ];
+    if (!replyIds.length) return messages;
+    const select =
+      table === 'dm_messages'
+        ? 'id, sender_id, text, profiles:sender_id(id, name, username)'
+        : 'id, sender_id, type, text, question_data, profiles:sender_id(id, name, username)';
+    const { data: parents } = await this.supabase.from(table).select(select).in('id', replyIds);
+    const byId = new Map((parents || []).map((p: any) => [p.id, p]));
+    return messages.map((message) => {
+      const replyId = message?.reply_to_message_id || message?.replyToMessageId;
+      if (!replyId) return message;
+      const parent = byId.get(replyId);
+      if (!parent) return { ...message, replyTo: null };
+      return { ...message, replyTo: this.buildReplyToFromParent(parent, table) };
+    });
+  }
+
+  /** Count replies per thread_root_id for messages in a conversation scope. */
+  private async attachThreadReplyCounts(
+    messages: any[],
+    table: 'messages' | 'dm_messages',
+    scopeColumn: 'group_id' | 'thread_id',
+    scopeId: string
+  ): Promise<any[]> {
+    if (!messages.length) return messages;
+    const candidateRootIds = [
+      ...new Set(
+        messages.flatMap((m) => {
+          const id = m?.id;
+          const root = m?.thread_root_id || m?.threadRootId;
+          return [id, root].filter((x): x is string => typeof x === 'string' && !!x);
+        })
+      ),
+    ];
+    if (!candidateRootIds.length) return messages;
+
+    const { data, error } = await this.supabase
+      .from(table)
+      .select('thread_root_id')
+      .eq(scopeColumn, scopeId)
+      .in('thread_root_id', candidateRootIds);
+
+    if (error) {
+      logger.warn('attachThreadReplyCounts failed', { error, table, scopeId });
+      return messages.map((m) => ({ ...m, replyCount: m.replyCount ?? 0 }));
+    }
+
+    const counts = new Map<string, number>();
+    for (const row of data || []) {
+      const rootId = (row as { thread_root_id?: string }).thread_root_id;
+      if (!rootId) continue;
+      counts.set(rootId, (counts.get(rootId) || 0) + 1);
+    }
+
+    return messages.map((m) => {
+      const rootKey = m.thread_root_id || m.threadRootId || m.id;
+      return { ...m, replyCount: counts.get(rootKey) || 0 };
+    });
+  }
+
+  private async enrichGroupMessageReceipts(
+    messages: Message[],
+    groupId: string,
+    viewerUserId: string
+  ): Promise<Message[]> {
+    const hasOwn = messages.some(
+      (m) => (m as any).senderId === viewerUserId || m.sender?.id === viewerUserId
+    );
+    if (!hasOwn) return messages;
+
+    const { data: members, error } = await this.supabase
+      .from('group_members')
+      .select('user_id, last_read_at')
+      .eq('group_id', groupId)
+      .eq('pending', false);
+
+    if (error) {
+      logger.warn('enrichGroupMessageReceipts failed', { error, groupId });
+      return messages;
+    }
+
+    const watermarks = (members || [])
+      .filter((m: { user_id: string }) => m.user_id !== viewerUserId)
+      .map((m: { last_read_at?: string | null }) => m.last_read_at);
+
+    return messages.map((msg) => {
+      const senderId = (msg as any).senderId || msg.sender?.id;
+      if (senderId !== viewerUserId) return msg;
+      const receipt = computeGroupReceipt(msg.timestamp, watermarks);
+      return { ...msg, ...receipt };
+    });
+  }
+
+  private async enrichDmMessageReceipts(
+    messages: Message[],
+    threadId: string,
+    viewerUserId: string,
+    peerUserId: string
+  ): Promise<Message[]> {
+    const hasOwn = messages.some(
+      (m) => (m as any).senderId === viewerUserId || m.sender?.id === viewerUserId
+    );
+    if (!hasOwn) return messages;
+
+    const { data: readStatus, error } = await this.supabase
+      .from('dm_read_status')
+      .select('last_read_at')
+      .eq('thread_id', threadId)
+      .eq('user_id', peerUserId)
+      .maybeSingle();
+
+    if (error) {
+      logger.warn('enrichDmMessageReceipts failed', { error, threadId });
+      return messages;
+    }
+
+    const peerLastReadAt = readStatus?.last_read_at;
+    return messages.map((msg) => {
+      const senderId = (msg as any).senderId || msg.sender?.id;
+      if (senderId !== viewerUserId) return msg;
+      return {
+        ...msg,
+        receiptStatus: computeDmReceiptStatus(msg.timestamp, peerLastReadAt),
+      };
+    });
+  }
+
+  /** Resolve thread_root_id for a reply; validates parent is in the same conversation. */
+  private async resolveThreadRootForReply(
+    table: 'messages' | 'dm_messages',
+    replyToMessageId: string,
+    scope: { groupId?: string; threadId?: string }
+  ): Promise<string> {
+    const select =
+      table === 'messages'
+        ? 'id, group_id, thread_root_id'
+        : 'id, thread_id, thread_root_id';
+    const { data: parent, error } = await this.supabase
+      .from(table)
+      .select(select)
+      .eq('id', replyToMessageId)
+      .maybeSingle();
+
+    if (error || !parent) {
+      throw new Error('Reply target message not found');
+    }
+    if (table === 'messages' && (parent as any).group_id !== scope.groupId) {
+      throw new Error('Reply target is not in this group');
+    }
+    if (table === 'dm_messages' && (parent as any).thread_id !== scope.threadId) {
+      throw new Error('Reply target is not in this conversation');
+    }
+    const rootId = resolveThreadRootId(parent as { id: string; thread_root_id?: string | null });
+    if (!rootId) {
+      throw new Error('Reply target message not found');
+    }
+    return rootId;
+  }
+
+  /** Lightweight realtime broadcast so open senders can refresh blue ticks. */
+  private async broadcastChatRead(
+    chatId: string,
+    payload: { userId: string; lastReadAt: string }
+  ): Promise<void> {
+    try {
+      const channel = this.supabase.channel(`chat-read:${chatId}`);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          void this.supabase.removeChannel(channel);
+          reject(new Error('broadcast timeout'));
+        }, 2500);
+        channel.subscribe(async (status) => {
+          if (status !== 'SUBSCRIBED') return;
+          try {
+            await channel.send({
+              type: 'broadcast',
+              event: 'read',
+              payload,
+            });
+            resolve();
+          } catch (err) {
+            reject(err);
+          } finally {
+            clearTimeout(timer);
+            void this.supabase.removeChannel(channel);
+          }
+        });
+      });
+    } catch (err) {
+      logger.warn('broadcastChatRead failed', { chatId, err });
+    }
+  }
+
+  async getGroupThread(
+    groupId: string,
+    rootId: string,
+    viewerUserId?: string
+  ): Promise<Message[]> {
+    const selectClause = `
+      id,
+      group_id,
+      sender_id,
+      type,
+      text,
+      question_data,
+      flagged_as_similar_user_ids,
+      timestamp,
+      upvotes,
+      downvotes,
+      is_archived,
+      image_url,
+      reply_to_message_id,
+      mentioned_user_ids,
+      thread_root_id,
+      profiles!sender_id (
+        id,
+        name,
+        username,
+        avatar_url
+      )
+    `;
+
+    const [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
+      await Promise.all([
+        this.supabase.from('messages').select(selectClause).eq('id', rootId).eq('group_id', groupId).maybeSingle(),
+        this.supabase
+          .from('messages')
+          .select(selectClause)
+          .eq('group_id', groupId)
+          .eq('thread_root_id', rootId)
+          .order('timestamp', { ascending: true }),
+      ]);
+
+    if (rootError) throw rootError;
+    if (repliesError) throw repliesError;
+    if (!root) return [];
+
+    const combined = [root, ...(replies || [])];
+    const withReplies = await this.attachReplyPreviewsBatch(combined, 'messages');
+    const withCounts = await this.attachThreadReplyCounts(withReplies, 'messages', 'group_id', groupId);
+
+    const mapped = withCounts.map((msg: any) => ({
+      id: msg.id,
+      groupId: msg.group_id,
+      sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
+      senderId: msg.sender_id,
+      timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString(),
+      flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
+      upvotes: msg.upvotes || 0,
+      downvotes: msg.downvotes || 0,
+      isArchived: msg.is_archived || false,
+      ...this.normalizeMessageRecord(msg),
+    })) as Message[];
+
+    if (viewerUserId) {
+      return this.enrichGroupMessageReceipts(mapped, groupId, viewerUserId);
+    }
+    return mapped;
+  }
+
+  async getDmThread(
+    threadId: string,
+    rootId: string,
+    viewerUserId: string
+  ): Promise<Message[]> {
+    const { data: thread, error: threadError } = await this.supabase
+      .from('dm_threads')
+      .select('participant_ids')
+      .eq('id', threadId)
+      .maybeSingle();
+    if (threadError) throw threadError;
+    const participantIds = Array.isArray(thread?.participant_ids) ? thread!.participant_ids : [];
+    if (!participantIds.includes(viewerUserId)) {
+      throw new Error('Access denied');
+    }
+    const peerUserId = participantIds.find((id: string) => id !== viewerUserId);
+    if (!peerUserId) {
+      throw new Error('Invalid DM thread');
+    }
+
+    const selectClause = `
+      id,
+      thread_id,
+      sender_id,
+      text,
+      timestamp,
+      reply_to_message_id,
+      thread_root_id,
+      profiles:sender_id (
+        id,
+        name,
+        avatar_url
+      )
+    `;
+
+    const [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
+      await Promise.all([
+        this.supabase
+          .from('dm_messages')
+          .select(selectClause)
+          .eq('id', rootId)
+          .eq('thread_id', threadId)
+          .maybeSingle(),
+        this.supabase
+          .from('dm_messages')
+          .select(selectClause)
+          .eq('thread_id', threadId)
+          .eq('thread_root_id', rootId)
+          .order('timestamp', { ascending: true }),
+      ]);
+
+    if (rootError) throw rootError;
+    if (repliesError) throw repliesError;
+    if (!root) return [];
+
+    const combined = [root, ...(replies || [])];
+    const withReplies = await this.attachReplyPreviewsBatch(combined, 'dm_messages');
+    const withCounts = await this.attachThreadReplyCounts(
+      withReplies,
+      'dm_messages',
+      'thread_id',
+      threadId
+    );
+
+    const mapped = withCounts.map((msg: any) => ({
+      id: msg.id,
+      threadId: msg.thread_id,
+      sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
+      senderId: msg.sender_id,
+      timestamp: new Date(msg.timestamp),
+      type: 'TEXT' as const,
+      text: msg.text,
+      upvotes: 0,
+      downvotes: 0,
+      flaggedAsSimilarUserIds: [],
+      replyToMessageId: msg.reply_to_message_id || undefined,
+      replyTo: msg.replyTo || undefined,
+      threadRootId: msg.thread_root_id || undefined,
+      replyCount: typeof msg.replyCount === 'number' ? msg.replyCount : 0,
+    })) as Message[];
+
+    return this.enrichDmMessageReceipts(mapped, threadId, viewerUserId, peerUserId);
+  }
+
+  private async notifyMentionedUsers(params: {
+    groupId: string;
+    senderId: string;
+    messageId: string;
+    mentionedUserIds: string[];
+    preview: string;
+  }): Promise<void> {
+    const { groupId, senderId, messageId, mentionedUserIds, preview } = params;
+    if (!mentionedUserIds.length) return;
+    const [groupMeta, sender] = await Promise.all([
+      this.getGroupById(groupId),
+      this.getUserById(senderId),
+    ]);
+    const groupName = (groupMeta as any)?.name || 'a group';
+    const actor = sender?.username || sender?.name || 'Someone';
+    await Promise.all(
+      mentionedUserIds.map((recipientId) =>
+        this.createNotification(recipientId, {
+          message: `${actor} mentioned you in ${groupName}: ${preview.slice(0, 80)}`,
+          link: `/chat/${groupId}?messageId=${messageId}`,
+          type: 'mention',
+        }).catch((err) => {
+          logger.warn('Failed to notify mentioned user', { err, recipientId, messageId });
+        })
+      )
+    );
+  }
+
   async sendMessage(
     groupId: string,
     userId: string,
     content: string,
-    clientMessageId?: string
+    clientMessageId?: string,
+    options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
   ): Promise<any> {
     let messageData: any;
     let isQuestion = false;
+    const replyToMessageId =
+      typeof options?.replyToMessageId === 'string' && options.replyToMessageId
+        ? options.replyToMessageId
+        : undefined;
 
     // First, try to parse as JSON to check if it's a question
     try {
@@ -5126,6 +5822,23 @@ export class SupabaseService {
       isQuestion = false;
     }
 
+    const mentionSource = isQuestion
+      ? String(messageData?.questionStem || content)
+      : content;
+    const mentionedUserIds = await this.resolveGroupMentionUserIds(
+      groupId,
+      userId,
+      mentionSource,
+      options?.mentionedUserIds
+    );
+
+    let threadRootId: string | undefined;
+    if (replyToMessageId) {
+      threadRootId = await this.resolveThreadRootForReply('messages', replyToMessageId, {
+        groupId,
+      });
+    }
+
     if (isQuestion) {
       // Question message
       logger.info('sendMessage: Inserting QUESTION message', { 
@@ -5138,9 +5851,16 @@ export class SupabaseService {
       const insertBase: Record<string, unknown> = {
         group_id: groupId,
         sender_id: userId,
+        mentioned_user_ids: mentionedUserIds,
       };
       if (clientMessageId) {
         insertBase.client_message_id = clientMessageId;
+      }
+      if (replyToMessageId) {
+        insertBase.reply_to_message_id = replyToMessageId;
+      }
+      if (threadRootId) {
+        insertBase.thread_root_id = threadRootId;
       }
 
       const { data, error } = await this.supabase
@@ -5192,8 +5912,23 @@ export class SupabaseService {
       }).catch((err) => {
         logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
       });
+      void this.notifyMentionedUsers({
+        groupId,
+        senderId: userId,
+        messageId: data.id,
+        mentionedUserIds,
+        preview: questionPreview,
+      });
 
-      return data;
+      const withReply = await this.attachReplyPreview(data);
+      return {
+        ...withReply,
+        threadRootId: withReply.thread_root_id || undefined,
+        replyCount: 0,
+        receiptStatus: 'sent' as const,
+        seenByCount: 0,
+        seenByTotal: 0,
+      };
     } else {
       // Text message
       logger.info('sendMessage: Inserting TEXT message', { groupId, userId });
@@ -5201,9 +5936,16 @@ export class SupabaseService {
       const insertBase: Record<string, unknown> = {
         group_id: groupId,
         sender_id: userId,
+        mentioned_user_ids: mentionedUserIds,
       };
       if (clientMessageId) {
         insertBase.client_message_id = clientMessageId;
+      }
+      if (replyToMessageId) {
+        insertBase.reply_to_message_id = replyToMessageId;
+      }
+      if (threadRootId) {
+        insertBase.thread_root_id = threadRootId;
       }
 
       const { data, error } = await this.supabase
@@ -5252,11 +5994,26 @@ export class SupabaseService {
       }).catch((err) => {
         logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
       });
+      void this.notifyMentionedUsers({
+        groupId,
+        senderId: userId,
+        messageId: data.id,
+        mentionedUserIds,
+        preview: content,
+      });
 
       // Invalidate cache
       await cacheService.invalidateGroupCache(groupId);
 
-      return data;
+      const withReply = await this.attachReplyPreview(data);
+      return {
+        ...withReply,
+        threadRootId: withReply.thread_root_id || undefined,
+        replyCount: 0,
+        receiptStatus: 'sent' as const,
+        seenByCount: 0,
+        seenByTotal: 0,
+      };
     }
   }
 
@@ -6394,6 +7151,9 @@ export class SupabaseService {
       cacheService.delete(`group:unread:${groupId}:${userId}`);
       cacheService.delete(`user:unread:${userId}`);
 
+      const lastReadAt = new Date().toISOString();
+      void this.broadcastChatRead(groupId, { userId, lastReadAt });
+
       return { success: true, previousLastReadAt };
     } catch (error) {
       console.error('Error in markGroupAsRead:', error);
@@ -6499,8 +7259,11 @@ export class SupabaseService {
     }
   }
 
-  // Mark DM thread as read for a user
-  async markDMAsRead(threadId: string, userId: string): Promise<boolean> {
+  // Mark DM thread as read for a user; returns previous last_read_at for unread anchoring.
+  async markDMAsRead(
+    threadId: string,
+    userId: string
+  ): Promise<{ success: boolean; previousLastReadAt: string | null }> {
     try {
       // Only participants may write read status for a thread.
       const { data: thread, error: threadError } = await this.supabase
@@ -6512,26 +7275,37 @@ export class SupabaseService {
       const participantIds = Array.isArray(thread?.participant_ids) ? thread.participant_ids : [];
       if (threadError || !participantIds.includes(userId)) {
         console.error('markDMAsRead: user is not a participant of this thread');
-        return false;
+        return { success: false, previousLastReadAt: null };
       }
 
+      const { data: prior } = await this.supabase
+        .from('dm_read_status')
+        .select('last_read_at')
+        .eq('thread_id', threadId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      const previousLastReadAt = prior?.last_read_at || null;
+
+      const lastReadAt = new Date().toISOString();
       const { error } = await this.supabase
         .from('dm_read_status')
         .upsert({
           thread_id: threadId,
           user_id: userId,
-          last_read_at: new Date().toISOString()
+          last_read_at: lastReadAt
         }, { onConflict: 'thread_id,user_id' });
 
       if (error) {
         console.error('Error marking DM as read:', error);
-        return false;
+        return { success: false, previousLastReadAt };
       }
 
-      return true;
+      void this.broadcastChatRead(threadId, { userId, lastReadAt });
+
+      return { success: true, previousLastReadAt };
     } catch (error) {
       console.error('Error in markDMAsRead:', error);
-      return false;
+      return { success: false, previousLastReadAt: null };
     }
   }
 

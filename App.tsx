@@ -252,7 +252,7 @@ export const App: React.FC = () => {
 
     const {
         handleSelectChat, handleInitiateDm, handleSendDm, handleDeleteDmThread,
-        handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage,
+        handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage, onPeerChatRead,
         handleCreateSubGroup, handleCreateGroup, handleEnterCreatedGroup, handleCloseCreateGroupModal,
         handleQuestionSubmit, onVoteQuestion, handleUpvoteDuplicateAndClose,
         onFlagAsSimilar, onOpenCreateSubGroupModal,
@@ -609,6 +609,11 @@ export const App: React.FC = () => {
             return {
                 id: dm.id, groupId: dm.threadId, timestamp: dm.timestamp,
                 sender, type: MessageType.TEXT, text: dm.text, upvotes: 0, downvotes: 0,
+                replyToMessageId: dm.replyToMessageId,
+                replyTo: dm.replyTo,
+                threadRootId: dm.threadRootId,
+                replyCount: dm.replyCount,
+                receiptStatus: dm.receiptStatus,
             };
         });
 
@@ -893,7 +898,8 @@ export const App: React.FC = () => {
                     onArchiveDmThread={handleArchiveDmThread}
                     onUnarchiveDmThread={handleUnarchiveDmThread}
                     onLoadMoreMessages={handleLoadMoreMessages}
-                    unreadAnchorAt={unreadAnchorAt} />
+                    unreadAnchorAt={unreadAnchorAt}
+                    onPeerChatRead={onPeerChatRead} />
                     </div>
                 );
             case AppMode.TEST_ACTIVE:

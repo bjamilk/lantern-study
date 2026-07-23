@@ -13,6 +13,15 @@ import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { AuthenticatedRequest, Message } from '../types';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
+const ALLOWED_AUDIO_TYPES = [
+  'audio/webm',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/x-m4a',
+];
 
 const router = Router();
 const DEFAULT_MESSAGE_PAGE_SIZE = 50;
@@ -69,6 +78,50 @@ router.post(
       res.status(400).json({
         success: false,
         error: clientErrorMessage(error, 'Failed to upload image'),
+      });
+    }
+  })
+);
+
+// POST /api/v1/messages/upload-audio — chat voice notes (group or DM)
+router.post(
+  '/upload-audio',
+  authMiddleware,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { fileName, base64Data, contentType, groupId, threadId } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    if (!contentType || !ALLOWED_AUDIO_TYPES.includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Use webm, mp4/m4a, ogg, or wav.',
+      });
+    }
+    const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
+    if (estimatedBytes > 8 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Audio exceeds 8 MB limit' });
+    }
+
+    try {
+      const result = await supabaseService.uploadChatAudio({
+        fileName,
+        base64Data,
+        contentType,
+        userId,
+        groupId: typeof groupId === 'string' ? groupId : undefined,
+        threadId: typeof threadId === 'string' ? threadId : undefined,
+      });
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      logger.error('Failed to upload chat audio', { error, userId });
+      res.status(400).json({
+        success: false,
+        error: clientErrorMessage(error, 'Failed to upload audio'),
       });
     }
   })
@@ -177,21 +230,15 @@ router.get(
       });
     }
 
-    const cacheKey = `messages:group:${groupId}:${parsedPage}:${parsedLimit}:${before || ''}:${after || ''}:profile:${profile}`;
-    let messages = await cacheService.get(cacheKey) as Message[] | null;
-
-    if (!messages) {
-      messages = await supabaseService.getGroupMessages(groupId, {
-        page: parsedPage,
-        limit: parsedLimit,
-        before: before as string,
-        after: after as string,
-        responseProfile: profile,
-      });
-
-      // Cache for 2 minutes (messages change frequently)
-      await cacheService.set(cacheKey, messages, 120);
-    }
+    // Service-layer cache holds unenriched rows; receipts are viewer-specific.
+    const messages = await supabaseService.getGroupMessages(groupId, {
+      page: parsedPage,
+      limit: parsedLimit,
+      before: before as string,
+      after: after as string,
+      responseProfile: profile,
+      viewerUserId: userId,
+    });
 
     res.json({
       success: true,
@@ -203,6 +250,33 @@ router.get(
         hasMore: messages.length === parsedLimit,
       },
       responseProfile: profile,
+    });
+  })
+);
+
+// GET /api/v1/messages/group/:groupId/thread/:rootId - Nested reply thread
+router.get(
+  '/group/:groupId/thread/:rootId',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId, rootId } = req.params;
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or access denied',
+      });
+    }
+
+    const messages = await supabaseService.getGroupThread(groupId, rootId, userId);
+    res.json({
+      success: true,
+      data: messages,
     });
   })
 );
@@ -249,7 +323,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { content, clientMessageId } = req.body;
+    const { content, clientMessageId, replyToMessageId, mentionedUserIds } = req.body;
 
     logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
 
@@ -261,7 +335,12 @@ router.post(
       });
     }
 
-    const message = await supabaseService.sendMessage(groupId, userId, content, clientMessageId);
+    const message = await supabaseService.sendMessage(groupId, userId, content, clientMessageId, {
+      replyToMessageId: typeof replyToMessageId === 'string' ? replyToMessageId : undefined,
+      mentionedUserIds: Array.isArray(mentionedUserIds)
+        ? mentionedUserIds.filter((id: unknown): id is string => typeof id === 'string')
+        : undefined,
+    });
 
     // Invalidate message caches for this group
     await cacheService.deletePattern(`messages:group:${groupId}:*`);
@@ -402,6 +481,31 @@ router.get(
   })
 );
 
+// GET /api/v1/messages/dm/:threadId/thread/:rootId - Nested reply thread in a DM
+// IMPORTANT: This must be defined BEFORE /:messageId to avoid being caught by that route
+router.get(
+  '/dm/:threadId/thread/:rootId',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { threadId, rootId } = req.params;
+    try {
+      const messages = await supabaseService.getDmThread(threadId, rootId, userId);
+      res.json({
+        success: true,
+        data: messages,
+      });
+    } catch (error: any) {
+      if (error?.message === 'Access denied') {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+      throw error;
+    }
+  })
+);
+
 // POST /api/v1/messages/dm/:threadId/read - Mark DM thread as read
 // IMPORTANT: This must be defined BEFORE /:messageId to avoid being caught by that route
 router.post(
@@ -414,16 +518,19 @@ router.post(
 
       const { threadId } = req.params;
 
-      const success = await supabaseService.markDMAsRead(threadId, userId);
+      const result = await supabaseService.markDMAsRead(threadId, userId);
 
       res.json({
-        success,
-        message: success ? 'DM marked as read' : 'Failed to mark DM as read',
+        success: result.success,
+        previousLastReadAt: result.previousLastReadAt,
+        data: { previousLastReadAt: result.previousLastReadAt },
+        message: result.success ? 'DM marked as read' : 'Failed to mark DM as read',
       });
     } catch (error) {
       console.error('Error marking DM as read:', error);
       res.status(500).json({
         success: false,
+        previousLastReadAt: null,
         error: 'Failed to mark DM as read',
       });
     }
@@ -707,18 +814,15 @@ router.get(
     }
 
     try {
-      const cacheKey = `messages:direct:${authUserId}:${otherUserId}:${page}:${limit}`;
-      let messages = await cacheService.get(cacheKey) as Message[] | null;
-
-      if (!messages) {
-        messages = await supabaseService.getDirectMessages(authUserId, otherUserId as string, {
+      // Receipts are viewer-specific; do not serve a shared cache of enriched DMs.
+      const messages = await supabaseService.getDirectMessages(
+        authUserId,
+        otherUserId as string,
+        {
           page: parseInt(page as string),
           limit: parseInt(limit as string),
-        });
-
-        // Cache for 2 minutes
-        await cacheService.set(cacheKey, messages, 120);
-      }
+        }
+      );
 
       res.json({
         success: true,
@@ -749,7 +853,7 @@ router.post(
     if (!senderId) return;
 
     const { userId } = req.params;
-    const { content, recipientId, clientMessageId } = req.body;
+    const { content, recipientId, clientMessageId, replyToMessageId } = req.body;
 
     if (senderId !== userId) {
       return res.status(403).json({
@@ -781,6 +885,7 @@ router.post(
     try {
       const message = await supabaseService.sendDirectMessage(senderId, recipientId, content, {
         clientMessageId,
+        replyToMessageId: typeof replyToMessageId === 'string' ? replyToMessageId : undefined,
       });
 
       // Invalidate direct message caches

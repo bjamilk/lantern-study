@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createMarketplaceListing, updateMarketplaceListing, uploadMarketplaceImage, deleteMarketplaceImage, fetchCustomCategories, fetchMarketplaceCampuses } from '../services/supabase';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
-import { MARKETPLACE_CREATE_CONFIRMATION, type MarketplaceCampus } from '@lantern/shared';
+import {
+  MARKETPLACE_CREATE_CONFIRMATION,
+  HEIC_IMAGE_UPLOAD_ERROR,
+  isHeicImageUpload,
+  type MarketplaceCampus,
+} from '@lantern/shared';
 import { useToastStore } from '../stores/toastStore';
 import { compressImage } from '../utils/imageCompression';
 import { aiGenerateListingDescription } from '../services/ai';
@@ -236,14 +241,28 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     }
 
     const validFiles = filesToProcess.filter((file: File) => {
+      if (isHeicImageUpload({ contentType: file.type, fileName: file.name })) {
+        useToastStore.getState().showToast(HEIC_IMAGE_UPLOAD_ERROR, 'error');
+        return false;
+      }
       // Check file type
       if (!file.type.startsWith('image/')) {
-        useToastStore.getState().showToast(`${file.name} is not a valid image file.`);
+        useToastStore.getState().showToast(`${file.name} is not a valid image file.`, 'error');
+        return false;
+      }
+      const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowed.includes(file.type.toLowerCase())) {
+        useToastStore
+          .getState()
+          .showToast(
+            `${file.name}: only JPEG, PNG, GIF, and WebP are supported (not HEIC).`,
+            'error'
+          );
         return false;
       }
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        useToastStore.getState().showToast(`${file.name} is too large. Maximum file size is 5MB.`);
+        useToastStore.getState().showToast(`${file.name} is too large. Maximum file size is 5MB.`, 'error');
         return false;
       }
       return true;
@@ -964,14 +983,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                       <span className="font-semibold">Click to upload</span> or drag and drop
                     </p>
                     <p className="text-xs text-lantern-text-secondary">
-                      PNG, JPG, GIF up to 5MB each
+                      JPEG, PNG, GIF, or WebP up to 5MB each (HEIC not supported)
                     </p>
                   </div>
                   <input
                     id="listing-images"
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
                     onChange={handleFileSelect}
                     className="hidden"
                   />
