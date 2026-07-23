@@ -10,25 +10,9 @@ import type {
 } from '../types';
 import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
+import { resolveNotesRequestUrl } from '../utils/notesRequestUrl';
 
 const API_BASE_URL = getApiBaseUrl();
-/** Direct Render origin — used when same-origin CF proxy cannot carry large JSON bodies. */
-const RENDER_API_BASE_URL = 'https://lantern-study-api.onrender.com';
-const CF_PROXY_UNSAFE_BODY_CHARS = 48 * 1024;
-
-function notesApiUrl(path: string, bodyJson: string): string {
-  const relative = `/api/v1/notes${path}`;
-  // Deployed web uses empty API_BASE_URL (same-origin CF Pages proxy). Large POSTs
-  // have arrived upstream with an empty body; send those directly to Render with Bearer.
-  if (
-    typeof window !== 'undefined' &&
-    !API_BASE_URL &&
-    bodyJson.length >= CF_PROXY_UNSAFE_BODY_CHARS
-  ) {
-    return `${RENDER_API_BASE_URL}${relative}`;
-  }
-  return `${API_BASE_URL}${relative}`;
-}
 
 import {
   MAX_NOTE_UPLOAD_BYTES,
@@ -155,7 +139,15 @@ async function notesLongRequest<T>(
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(method, notesApiUrl(path, json));
+    xhr.open(
+      method,
+      resolveNotesRequestUrl({
+        apiBaseUrl: API_BASE_URL,
+        path,
+        bodyJson: json,
+        isBrowser: typeof window !== 'undefined',
+      })
+    );
     xhr.responseType = 'json';
     xhr.timeout = timeoutMs;
 
