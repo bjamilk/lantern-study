@@ -326,7 +326,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             const persisted = result.storageUrl || result.path || result.url;
             uploadedUrls.push(persisted);
             image.uploaded = true;
-            image.url = result.url;
+            image.url = persisted;
             image.path = result.path;
             success = true;
           } catch (error) {
@@ -340,8 +340,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         if (!success) {
           failedNames.push(image.file.name || 'image');
         }
-      } else if (image.url) {
-        uploadedUrls.push(image.url);
+      } else if (image.path || image.url) {
+        // Prefer stable path/storage URL over any leftover signed preview URL.
+        uploadedUrls.push(image.path || image.url);
       }
     }
 

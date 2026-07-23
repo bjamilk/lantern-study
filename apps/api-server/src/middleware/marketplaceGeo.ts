@@ -6,6 +6,14 @@ import {
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * Paths where buyer/seller money motion happens. IP geo is enforced here only.
+ * Listing create/upload must work for Nigerian-campus sellers abroad (and for
+ * staging smoke tests outside NG) — campus + country_code still gate compliance.
+ */
+const IP_GEO_ENFORCED_PATHS =
+  /^\/(listings\/[^/]+\/buy-now|offers(?:\/[^/]+)?|orders(?:\/|$)|transactions(?:\/|$))/i;
+
 function getUserMarketplaceCountry(req: Request): string | null {
   if (!(req as any).user?.id) return null;
   const settings = (req as any).user?.settings;
@@ -15,6 +23,13 @@ function getUserMarketplaceCountry(req: Request): string | null {
       : null;
   if (fromSettings && isMarketplaceCountryEnabled(fromSettings)) return fromSettings;
   return MARKETPLACE_DEFAULT_COUNTRY;
+}
+
+function relativeMarketplacePath(req: Request): string {
+  const full = (req.originalUrl || req.url || '').split('?')[0];
+  const idx = full.indexOf('/marketplace');
+  if (idx === -1) return req.path || '/';
+  return full.slice(idx + '/marketplace'.length) || '/';
 }
 
 /** Enforce Nigeria-first marketplace compliance on writes and default read country filter. */
@@ -44,16 +59,19 @@ export function marketplaceGeoMiddleware(req: Request, res: Response, next: Next
     });
   }
 
-  const cfCountry = req.headers['cf-ipcountry'];
-  if (
-    typeof cfCountry === 'string' &&
-    cfCountry.toUpperCase() !== 'T1' &&
-    !isMarketplaceCountryEnabled(cfCountry)
-  ) {
-    return res.status(403).json({
-      success: false,
-      error: 'Marketplace transactions are not available from your region.',
-    });
+  const path = relativeMarketplacePath(req);
+  if (IP_GEO_ENFORCED_PATHS.test(path)) {
+    const cfCountry = req.headers['cf-ipcountry'];
+    if (
+      typeof cfCountry === 'string' &&
+      cfCountry.toUpperCase() !== 'T1' &&
+      !isMarketplaceCountryEnabled(cfCountry)
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: 'Marketplace transactions are not available from your region.',
+      });
+    }
   }
 
   return next();

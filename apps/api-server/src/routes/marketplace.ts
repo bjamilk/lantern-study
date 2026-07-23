@@ -216,9 +216,17 @@ router.post(
     if (!fileName || !base64Data) {
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
-    const normalizedType = contentType === 'image/jpg' ? 'image/jpeg' : contentType;
-    // contentType is optional when bytes are valid — server detects MIME from magic bytes.
-    if (normalizedType && !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
+    const rawType = typeof contentType === 'string' ? contentType.toLowerCase() : '';
+    const normalizedType = rawType === 'image/jpg' ? 'image/jpeg' : rawType;
+    // Reject HEIC early with a clear message. Other declared types are optional —
+    // uploadMarketplaceImage sniffs magic bytes (camera apps often send octet-stream).
+    if (normalizedType.includes('heic') || normalizedType.includes('heif')) {
+      return res.status(400).json({
+        success: false,
+        error: 'HEIC/HEIF photos are not supported. Export or retake as JPEG/PNG.',
+      });
+    }
+    if (normalizedType && !ALLOWED_IMAGE_TYPES.includes(normalizedType) && !normalizedType.includes('octet-stream')) {
       return res.status(400).json({
         success: false,
         error: 'Only JPEG, PNG, GIF, and WebP are allowed.',

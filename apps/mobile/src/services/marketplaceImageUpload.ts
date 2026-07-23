@@ -26,19 +26,29 @@ export async function uploadMarketplaceImage(
 
   let base64Data = base64Override || null;
   if (!base64Data) {
-    base64Data = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' });
+    base64Data = await FileSystem.readAsStringAsync(localUri, {
+      encoding: (FileSystem as { EncodingType?: { Base64: string } }).EncodingType?.Base64 ?? 'base64',
+    });
   }
   if (!base64Data) {
     throw new Error('Could not read image data');
   }
 
-  const ext = contentType.split('/')[1] || localUri.split('.').pop()?.split('?')[0] || 'jpg';
+  // Omit vague MIME so the API can sniff magic bytes (Android often sends octet-stream).
+  const declaredType =
+    contentType.includes('octet-stream') || contentType === 'image'
+      ? undefined
+      : contentType;
+  const ext =
+    declaredType?.split('/')[1] ||
+    localUri.split('.').pop()?.split('?')[0] ||
+    'jpg';
   const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
   return api.uploadMarketplaceImage({
     fileName,
     base64Data,
-    contentType,
+    contentType: declaredType,
     listingId,
   });
 }
