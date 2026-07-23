@@ -95,13 +95,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const seoPricing = listing ? resolveListingDisplayPrice(listing).effective : null;
   const campusLabel = listing?.campus
     ? formatCampusLabel(listing.campus as { name: string; city: string })
-    : listing?.location || 'Nigeria campus';
+    : listing?.location || 'Nigeria';
 
   usePageSeo(
     listing
       ? {
           title: `${listing.title}${seoPricing ? ` — ₦${seoPricing.toLocaleString()}` : ''} — ${campusLabel} | Lantern Study`,
-          description: (listing.description || `Campus marketplace listing: ${listing.title}`).slice(0, 160),
+          description: (listing.description || `Nigerian marketplace listing: ${listing.title}`).slice(0, 160),
           canonicalUrl: generateListingLink(listing.id),
           ogImage: listing.images?.[0] || 'https://lanternstudy.com/lantern-icon-v2.png',
           ogType: 'product',
@@ -306,7 +306,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
         listing.id,
         couponPreview ? couponCode.trim() : undefined
       );
-      showToast('Order placed. Arrange campus pickup with the seller.');
+      showToast('Order placed. Arrange pickup or delivery with the seller.');
       if (result?.order?.id) {
         onNavigate('MarketplaceOrderDetail', { orderId: result.order.id });
       } else {

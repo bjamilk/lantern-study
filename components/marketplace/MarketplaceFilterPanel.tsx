@@ -74,14 +74,14 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
-          <label htmlFor="marketplace-filter-campus" className={labelClass}>Campus</label>
+          <label htmlFor="marketplace-filter-campus" className={labelClass}>Campus (optional)</label>
           <select
             id="marketplace-filter-campus"
             value={campusIdFilter}
             onChange={e => onCampusChange(e.target.value)}
             className={inputClass}
           >
-            <option value="">All campuses</option>
+            <option value="">All Nigeria</option>
             {campuses.map(campus => (
               <option key={campus.id} value={campus.id}>
                 {formatCampusLabel(campus)}
@@ -91,11 +91,11 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
         </div>
 
         <div>
-          <label htmlFor="marketplace-filter-location" className={labelClass}>Meetup area</label>
+          <label htmlFor="marketplace-filter-location" className={labelClass}>Pickup or delivery area</label>
           <input
             id="marketplace-filter-location"
             type="text"
-            placeholder="Gate, hall, faculty…"
+            placeholder="City, campus, landmark…"
             value={locationFilter}
             onChange={e => onLocationChange(e.target.value)}
             className={inputClass}

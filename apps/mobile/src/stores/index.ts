@@ -19,9 +19,17 @@ export type {
   DashboardStats,
   UserLevel,
 } from '../types/dashboardStats';
-export { useMarketplaceStore, getCategoryInfo, ACADEMIC_CATEGORIES, STUDENT_LIFE_CATEGORIES } from './marketplaceStore';
+export {
+  useMarketplaceStore,
+  getCategoryInfo,
+  mapRemoteListing,
+  ACADEMIC_CATEGORIES,
+  STUDENT_LIFE_CATEGORIES,
+} from './marketplaceStore';
 export type { 
   MarketplaceListing, 
+  MarketplaceListingCampus,
+  RemoteListing,
   MarketplaceReview, 
   MarketplaceInquiry,
   MarketplaceOffer,

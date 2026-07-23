@@ -526,14 +526,14 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               />
               Require payment proof before marking orders paid
             </label>
-            <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Hall dropoff threshold</p>
+            <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Delivery threshold</p>
             <label className="flex items-center gap-2 text-sm mb-2">
               <input
                 type="checkbox"
                 checked={hallDropoffEnabled}
                 onChange={(e) => setHallDropoffEnabled(e.target.checked)}
               />
-              Offer hall dropoff on combined orders
+              Offer delivery on eligible combined orders
             </label>
             <div className="flex gap-2">
               <input

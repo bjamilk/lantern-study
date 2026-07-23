@@ -7,6 +7,7 @@ import {
   parseRetryAfterMs,
   RateLimitError,
 } from './marketplaceCache';
+import { retryUncertainDelivery } from '../utils/deliveryIntegrity';
 
 type ChatMessageMutationPayload = {
   id: string;
@@ -701,7 +702,7 @@ export function createApiEndpoints(client: ApiClient) {
       >(endpoint);
     },
 
-    sendMessage: (
+    sendMessage: async (
       groupId: string,
       userId: string,
       data: {
@@ -718,8 +719,8 @@ export function createApiEndpoints(client: ApiClient) {
         tags?: string[];
         imageUrl?: string;
       }
-    ) =>
-      apiRequest<{
+    ) => {
+      const request = () => apiRequest<{
         id: string;
         group_id: string;
         sender_id: string;
@@ -730,7 +731,9 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/messages/group/${groupId}`, {
         method: 'POST',
         body: JSON.stringify({ ...data, userId }),
-      }),
+      });
+      return retryUncertainDelivery(request);
+    },
 
     fetchGroupThread: (groupId: string, rootId: string) =>
       apiRequest<
@@ -858,14 +861,14 @@ export function createApiEndpoints(client: ApiClient) {
       >(endpoint);
     },
 
-    sendDirectMessage: (
+    sendDirectMessage: async (
       senderId: string,
       recipientId: string,
       content: string,
       clientMessageId?: string,
       options?: { replyToMessageId?: string }
-    ) =>
-      apiRequest<{
+    ) => {
+      const request = () => apiRequest<{
         id: string;
         thread_id: string;
         sender_id: string;
@@ -879,7 +882,9 @@ export function createApiEndpoints(client: ApiClient) {
           clientMessageId,
           replyToMessageId: options?.replyToMessageId,
         }),
-      }),
+      });
+      return retryUncertainDelivery(request);
+    },
 
     editDirectMessage: (messageId: string, content: string) =>
       apiRequest<ChatMessageMutationPayload>(`/messages/dm-message/${messageId}`, {
@@ -1289,6 +1294,18 @@ export function createApiEndpoints(client: ApiClient) {
               description?: string;
               price?: number;
               location?: string;
+              campus_id?: string | null;
+              country_code?: string;
+              currency?: string;
+              campus?: {
+                id: string;
+                name: string;
+                city: string;
+                state: string;
+                slug?: string;
+                country_code?: string;
+                geopolitical_zone?: string | null;
+              };
               images?: string[];
               status: 'active' | 'sold' | 'inactive';
               created_at: string;
@@ -1309,6 +1326,18 @@ export function createApiEndpoints(client: ApiClient) {
             description?: string;
             price?: number;
             location?: string;
+            campus_id?: string | null;
+            country_code?: string;
+            currency?: string;
+            campus?: {
+              id: string;
+              name: string;
+              city: string;
+              state: string;
+              slug?: string;
+              country_code?: string;
+              geopolitical_zone?: string | null;
+            };
             images?: string[];
             status: 'active' | 'sold' | 'inactive';
             created_at: string;
@@ -1346,6 +1375,18 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         price?: number;
         location?: string;
+        campus_id?: string | null;
+        country_code?: string;
+        currency?: string;
+        campus?: {
+          id: string;
+          name: string;
+          city: string;
+          state: string;
+          slug?: string;
+          country_code?: string;
+          geopolitical_zone?: string | null;
+        };
         images?: string[];
         status: 'active' | 'sold' | 'inactive';
         category_specific_fields?: unknown;
@@ -1369,6 +1410,18 @@ export function createApiEndpoints(client: ApiClient) {
           description?: string;
           price?: number;
           location?: string;
+          campus_id?: string | null;
+          country_code?: string;
+          currency?: string;
+          campus?: {
+            id: string;
+            name: string;
+            city: string;
+            state: string;
+            slug?: string;
+            country_code?: string;
+            geopolitical_zone?: string | null;
+          };
           images?: string[];
           status: 'active' | 'sold' | 'inactive';
           created_at: string;
@@ -1387,7 +1440,7 @@ export function createApiEndpoints(client: ApiClient) {
         promo_label?: string;
         quantity?: number;
         location?: string;
-        campus_id?: string;
+        campus_id: string;
         images?: string[];
         categorySpecificFields?: unknown;
       },
@@ -1398,6 +1451,9 @@ export function createApiEndpoints(client: ApiClient) {
         user_id: string;
         category: string;
         title: string;
+        campus_id: string;
+        country_code?: string;
+        currency?: string;
         price?: number;
         status: string;
         created_at: string;
@@ -1418,6 +1474,7 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         price?: number;
         location?: string;
+        campus_id: string;
         images?: string[];
         status: 'active' | 'sold' | 'inactive';
       }>
@@ -1427,6 +1484,9 @@ export function createApiEndpoints(client: ApiClient) {
         user_id: string;
         category: string;
         title: string;
+        campus_id: string;
+        country_code?: string;
+        currency?: string;
         status: string;
         created_at: string;
         updated_at: string;

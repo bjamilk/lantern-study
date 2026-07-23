@@ -11,6 +11,9 @@ import {
   formatChatSenderLabel,
   resolveThreadRootId,
   computeDmReceiptStatus,
+  DeliveryIntentRegistry,
+  isUncertainDeliveryError,
+  reconcileDeliveredItem,
 } from '@lantern/shared/utils';
 import * as api from '../services/api';
 import * as Crypto from 'expo-crypto';
@@ -24,6 +27,8 @@ const MESSAGES_PAGE_SIZE = 50;
 const messagesFetchSeqByGroup: Record<string, number> = {};
 const dmFetchSeqByThread: Record<string, number> = {};
 const sendingGroupIds = new Set<string>();
+const sendingDmThreadIds = new Set<string>();
+const deliveryIntents = new DeliveryIntentRegistry();
 
 // Storage keys
 const GROUPS_STORAGE_KEY = 'lantern_groups';
@@ -801,7 +806,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       !!parsed.question_stem;
     const questionStem = parsed.questionStem || parsed.question_stem;
 
-    const clientMessageId = Crypto.randomUUID();
+    const deliveryScope = `group:${groupId}`;
+    const deliveryFingerprint = JSON.stringify({
+      text,
+      replyToMessageId: options?.replyToMessageId || null,
+      mentionedUserIds: [...(options?.mentionedUserIds || [])].sort(),
+    });
+    const clientMessageId = deliveryIntents.resolve(
+      deliveryScope,
+      deliveryFingerprint,
+      Crypto.randomUUID
+    );
     const existing = get().messagesCache[groupId] || [];
     const parent = options?.replyToMessageId
       ? existing.find((m) => m.id === options.replyToMessageId)
@@ -903,7 +918,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           messagesCache: { ...state.messagesCache, [groupId]: updatedCache },
         };
       });
+      deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
     } catch (error: any) {
+      if (isUncertainDeliveryError(error)) {
+        deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);
+      } else {
+        deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
+      }
       set({
         error: error.message || 'Failed to send message',
         messages: get().activeGroupId === groupId ? previousMessages : get().messages,
@@ -1378,7 +1399,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     threadId: string,
     options?: { replyToMessageId?: string }
   ) => {
-    const clientMessageId = Crypto.randomUUID();
+    if (sendingDmThreadIds.has(threadId)) return;
+    sendingDmThreadIds.add(threadId);
+    const deliveryScope = `dm:${threadId}`;
+    const deliveryFingerprint = JSON.stringify({
+      text,
+      replyToMessageId: options?.replyToMessageId || null,
+    });
+    const clientMessageId = deliveryIntents.resolve(
+      deliveryScope,
+      deliveryFingerprint,
+      Crypto.randomUUID
+    );
     const existing = get().directMessages[threadId] || [];
     const parent = options?.replyToMessageId
       ? existing.find((m) => m.id === options.replyToMessageId)
@@ -1431,12 +1463,20 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set(state => ({
         directMessages: {
           ...state.directMessages,
-          [threadId]: (state.directMessages[threadId] || []).map(m =>
-            m.id === optimistic.id || m.id === confirmed.id ? confirmed : m
+          [threadId]: reconcileDeliveredItem(
+            state.directMessages[threadId] || [],
+            confirmed,
+            [optimistic.id]
           ),
         },
       }));
+      deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
     } catch (error) {
+      if (isUncertainDeliveryError(error)) {
+        deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);
+      } else {
+        deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
+      }
       set(state => ({
         directMessages: {
           ...state.directMessages,
@@ -1444,6 +1484,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         },
       }));
       throw error;
+    } finally {
+      sendingDmThreadIds.delete(threadId);
     }
   },
 

@@ -135,7 +135,13 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         errBody.message && (!errBody.error || genericErrors.has(errBody.error))
           ? errBody.message
           : errBody.error || errBody.message || `HTTP error ${response.status}`;
-      throw new Error(detail);
+      const requestError = new Error(detail) as Error & {
+        status?: number;
+        deliveryUncertain?: boolean;
+      };
+      requestError.status = response.status;
+      requestError.deliveryUncertain = response.status === 408 || response.status >= 500;
+      throw requestError;
     }
 
     return response.json() as Promise<T>;

@@ -263,6 +263,14 @@ export const validateMarketplaceListingWrite = [
     .optional({ values: 'null' })
     .isInt({ min: 0, max: 1000000 })
     .withMessage('Quantity must be between 0 and 1,000,000'),
+  body('campus_id')
+    .optional()
+    .isUUID()
+    .withMessage('campus_id must be a valid campus identifier'),
+  body('campusId')
+    .optional()
+    .isUUID()
+    .withMessage('campusId must be a valid campus identifier'),
   body('description').optional().isString().isLength({ max: 10000 }),
   body('location').optional().isString().isLength({ max: 200 }),
   body('promo_label').optional({ values: 'null' }).isString().isLength({ max: 100 }),
@@ -272,6 +280,15 @@ export const validateMarketplaceListingUpdate = [
   body('title').optional().trim().isLength({ min: 1, max: 200 }),
   body('price').optional({ values: 'null' }).isFloat({ min: 0, max: 10000000 }),
   body('description').optional().isString().isLength({ max: 10000 }),
+  body('location').optional().isString().isLength({ max: 200 }),
+  body('campus_id')
+    .optional()
+    .isUUID()
+    .withMessage('campus_id must be a valid campus identifier'),
+  body('campusId')
+    .optional()
+    .isUUID()
+    .withMessage('campusId must be a valid campus identifier'),
   body('status').optional().isIn(['active', 'sold', 'inactive', 'archived', 'draft']),
 ];
 

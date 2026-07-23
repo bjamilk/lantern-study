@@ -1,6 +1,6 @@
 import React from 'react';
 import { useToastStore } from '../../stores/toastStore';
-import type { MarketplaceOrder } from '../types';
+import type { MarketplaceOrder } from '../../types';
 
 interface OrderReceiptProps {
   order: MarketplaceOrder;
@@ -22,7 +22,11 @@ export function buildOrderReceiptHtml(order: MarketplaceOrder, appName = 'Lanter
   const sellerName = escapeHtml(order.seller?.name || 'Seller');
   const orderId = escapeHtml(order.id);
   const status = escapeHtml(order.status.replace(/_/g, ' '));
-  const fulfillment = escapeHtml(order.fulfillment_mode?.replace(/_/g, ' ') || 'campus meetup');
+  const fulfillment = escapeHtml(
+    order.fulfillment_mode === 'hall_dropoff'
+      ? 'delivery or drop-off'
+      : 'pickup or delivery (as agreed)'
+  );
   const safeAppName = escapeHtml(appName);
   const completedAt = escapeHtml(
     order.completed_at

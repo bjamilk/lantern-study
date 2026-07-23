@@ -464,13 +464,21 @@ const tsRows = unique
   )
   .join('\n');
 
-const ts = `export interface MarketplaceCampus {
+const ts = `import type { NigerianGeopoliticalZone } from './zones';
+export type { NigerianGeopoliticalZone } from './zones';
+export {
+  NIGERIAN_GEOPOLITICAL_ZONES,
+  resolveNigerianGeopoliticalZone,
+} from './zones';
+
+export interface MarketplaceCampus {
   id: string;
   name: string;
   city: string;
   state: string;
   country_code: string;
   slug: string;
+  geopolitical_zone?: NigerianGeopoliticalZone | null;
 }
 
 /** Special campus for free-text city when the user's school/city is not listed. */
@@ -485,7 +493,9 @@ export function formatCampusLabel(campus: Pick<MarketplaceCampus, 'name' | 'city
   return campus.city ? \`\${campus.name} (\${campus.city})\` : campus.name;
 }
 
-export function isOtherCityCampus(campus: Pick<MarketplaceCampus, 'slug' | 'name'> | null | undefined): boolean {
+export function isOtherCityCampus(
+  campus: { slug?: string; name: string } | null | undefined
+): boolean {
   if (!campus) return false;
   return campus.slug === OTHER_CITY_CAMPUS_SLUG || campus.name === 'Other (city in Nigeria)';
 }

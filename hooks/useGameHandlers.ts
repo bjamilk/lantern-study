@@ -28,6 +28,8 @@ interface UseGameHandlersParams {
   handleChallengeUser: (opponent: User) => void;
 }
 
+const sendingChallengeKeys = new Set<string>();
+
 function buildOpponentUser(challenge: GroupChallenge, currentUserId: string): User {
   const isChallenger = challenge.challengerId === currentUserId;
   const other = isChallenger ? challenge.opponent : challenge.challenger;
@@ -151,6 +153,9 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
     config: Omit<TestConfig, 'questionIds' | 'groupId'>,
   ) => {
     if (!currentUser || !challengeOpponent || !selectedChat || selectedChat.chatType !== 'group') return;
+    const deliveryKey = `${selectedChat.id}:${currentUser.id}:${challengeOpponent.id}`;
+    if (sendingChallengeKeys.has(deliveryKey)) return;
+    sendingChallengeKeys.add(deliveryKey);
 
     try {
       await createChallenge({
@@ -167,6 +172,8 @@ export function useGameHandlers({ addNotification, handleChallengeUser }: UseGam
       addNotification(`Challenge sent to ${challengeOpponent.name}! Waiting for them to accept.`);
     } catch (error: any) {
       alert(error.message || 'Failed to send challenge');
+    } finally {
+      sendingChallengeKeys.delete(deliveryKey);
     }
   }, [currentUser, challengeOpponent, selectedChat, closeModal, openModal, addNotification]);
 

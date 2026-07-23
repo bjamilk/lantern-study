@@ -153,7 +153,7 @@ export function OrderDetailScreen({
               Paid {order.created_at ? '✓' : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
-              Ready for pickup {order.seller_confirmed_at ? '✓' : '—'}
+              Ready for pickup or delivery {order.seller_confirmed_at ? '✓' : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
               Completed {order.completed_at ? '✓' : '—'}
@@ -196,7 +196,7 @@ export function OrderDetailScreen({
             {isSeller && ['paid', 'pending_payment'].includes(order.status) && (
               <>
                 <Button loading={acting} onPress={() => runAction('mark_ready')}>
-                  Mark ready for pickup
+                  Mark ready for pickup or delivery
                 </Button>
                 <Button
                   variant="secondary"

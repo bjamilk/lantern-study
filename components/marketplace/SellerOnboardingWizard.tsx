@@ -22,7 +22,7 @@ const SellerOnboardingWizard: React.FC<SellerOnboardingWizardProps> = ({
 
   const tips = status.tips?.length ? status.tips : [
     'Add clear photos — listings with 3+ images get more views.',
-    'Set a campus meetup location buyers recognize.',
+    'Add clear pickup or delivery details buyers recognize.',
     'Enable offers so buyers can negotiate fairly.',
   ];
 
@@ -61,7 +61,7 @@ const SellerOnboardingWizard: React.FC<SellerOnboardingWizardProps> = ({
           <p className="text-sm text-lantern-text-muted mt-1">
             {status.listingCount === 0
               ? 'Welcome! A few tips before your first sale.'
-              : 'Quick tips to grow your campus shop.'}
+              : 'Quick tips to grow your shop across Nigeria.'}
           </p>
         </div>
 

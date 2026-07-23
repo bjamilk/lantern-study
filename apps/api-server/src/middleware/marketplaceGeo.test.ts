@@ -48,10 +48,10 @@ describe('marketplaceGeoMiddleware', () => {
     expect(result.query.country_code).toBe('NG');
   });
 
-  it('blocks unauthenticated mutations', () => {
+  it('leaves mutation authentication to route middleware', () => {
     const result = run({ user: null, path: '/upload-image', cfIpCountry: 'NG' });
-    expect(result.nextCalled).toBe(false);
-    expect(result.statusCode).toBe(403);
+    expect(result.nextCalled).toBe(true);
+    expect(result.statusCode).toBe(200);
   });
 
   it('allows listing photo upload from outside NG', () => {
@@ -65,15 +65,14 @@ describe('marketplaceGeoMiddleware', () => {
     expect(result.nextCalled).toBe(true);
   });
 
-  it('blocks buy-now from outside NG', () => {
+  it('allows buy-now from outside NG', () => {
     const result = run({
       path: '/listings/abc/buy-now',
       originalUrl: '/api/v1/marketplace/listings/abc/buy-now',
       cfIpCountry: 'US',
     });
-    expect(result.nextCalled).toBe(false);
-    expect(result.statusCode).toBe(403);
-    expect(String(result.body?.error || '')).toMatch(/region/i);
+    expect(result.nextCalled).toBe(true);
+    expect(result.statusCode).toBe(200);
   });
 
   it('allows buy-now from NG', () => {
@@ -85,7 +84,7 @@ describe('marketplaceGeoMiddleware', () => {
     expect(result.nextCalled).toBe(true);
   });
 
-  it('allows Tor/VPN marker T1 on transactional routes', () => {
+  it('does not use Tor/VPN markers as a transaction gate', () => {
     const result = run({
       path: '/offers',
       originalUrl: '/api/v1/marketplace/offers',

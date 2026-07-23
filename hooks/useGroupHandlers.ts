@@ -12,6 +12,9 @@ import {
     mapMessageFromApi,
     computeDmReceiptStatus,
     resolveThreadRootId,
+    DeliveryIntentRegistry,
+    isUncertainDeliveryError,
+    reconcileDeliveredItem,
 } from '@lantern/shared/utils';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
@@ -31,7 +34,10 @@ import { navigateForAppMode } from '../utils/appNavigation';
 
 const sendingGroupIds = new Set<string>();
 const sendingThreadIds = new Set<string>();
+const submittingQuestionGroupIds = new Set<string>();
 const votingMessageIds = new Set<string>();
+const groupDeliveryIntents = new DeliveryIntentRegistry();
+const dmDeliveryIntents = new DeliveryIntentRegistry();
 
 interface UseGroupHandlersParams {
     users: User[];
@@ -382,7 +388,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             return;
         }
         
-        const clientMessageId = uuidv4();
+        const deliveryScope = `dm:${threadId}`;
+        const deliveryFingerprint = JSON.stringify({
+            text,
+            replyToMessageId: options?.replyToMessageId || null,
+        });
+        const clientMessageId = dmDeliveryIntents.resolve(
+            deliveryScope,
+            deliveryFingerprint,
+            uuidv4
+        );
         const existing = useGroupStore.getState().directMessages[threadId] || [];
         const parent = options?.replyToMessageId
             ? existing.find((m) => m.id === options.replyToMessageId)
@@ -424,9 +439,37 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         ));
         
         try {
-            await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId, {
+            const sent = await sendDirectMessage(currentUser.id, otherUserId, text, clientMessageId, {
                 replyToMessageId: options?.replyToMessageId,
             });
+            const confirmed: DirectMessage = {
+                ...optimisticMessage,
+                id: sent.id,
+                text: sent.text ?? sent.content ?? text,
+                timestamp: new Date(sent.timestamp || sent.created_at || optimisticMessage.timestamp),
+                editedAt: sent.editedAt || sent.edited_at,
+                removedAt: sent.removedAt || sent.removed_at,
+                isRemoved: !!(sent.isRemoved || sent.removedAt || sent.removed_at),
+                replyToMessageId:
+                    sent.replyToMessageId || sent.reply_to_message_id || optimisticMessage.replyToMessageId,
+                replyTo: sent.replyTo || optimisticMessage.replyTo,
+                threadRootId:
+                    sent.threadRootId || sent.thread_root_id || optimisticMessage.threadRootId,
+                replyCount:
+                    typeof sent.replyCount === 'number'
+                        ? sent.replyCount
+                        : optimisticMessage.replyCount,
+                receiptStatus: sent.receiptStatus || optimisticMessage.receiptStatus,
+            };
+            updateDirectMessages(prev => ({
+                ...prev,
+                [threadId]: reconcileDeliveredItem(
+                    prev[threadId] || [],
+                    confirmed,
+                    [clientMessageId]
+                ),
+            }));
+            dmDeliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
             const [fetchedThreads, dmUnreadCounts] = await Promise.all([
                 fetchDmThreads(currentUser.id),
                 fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
@@ -444,6 +487,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }
         } catch (error) {
             console.error('Failed to send DM:', error);
+            if (isUncertainDeliveryError(error)) {
+                dmDeliveryIntents.markUncertain(
+                    deliveryScope,
+                    deliveryFingerprint,
+                    clientMessageId
+                );
+            } else {
+                dmDeliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
+            }
             updateDirectMessages(prev => ({
                 ...prev,
                 [threadId]: (prev[threadId] || []).filter(m => m.id !== optimisticMessage.id),
@@ -799,44 +851,57 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         diagramLabels?: DiagramLabel[]
     ) => {
         if (!currentUser || !selectedChat || selectedChat.chatType !== 'group') return;
-
-        const existingMessages = messages[selectedChat.id] || [];
-        const trimmedStem = stem.trim().toLowerCase();
-        const existingQuestion = existingMessages.find(
-            msg => msg.type === MessageType.QUESTION && msg.questionStem?.trim().toLowerCase() === trimmedStem
-        );
-
-        const newQuestionData = {
-            groupId: selectedChat.id,
-            type: MessageType.QUESTION,
-            questionStem: stem,
-            explanation,
-            questionType,
-            options,
-            correctAnswerIds,
-            imageUrl,
-            tags,
-            questionStatus: QuestionStatus.PENDING,
-            acceptableAnswers,
-            matchingPromptItems,
-            matchingAnswerItems,
-            correctMatches,
-            diagramLabels,
-        };
-
-        if (existingQuestion) {
-            setDuplicateInfo({ newQuestionData, existingQuestion });
-            openModal('duplicateQuestion');
-            closeModal('question');
-            return;
-        }
-
+        const groupId = selectedChat.id;
+        if (submittingQuestionGroupIds.has(groupId)) return;
+        submittingQuestionGroupIds.add(groupId);
+        let deliveryFingerprint: string | undefined;
+        let clientMessageId: string | undefined;
         try {
+            const existingMessages = messages[groupId] || [];
+            const trimmedStem = stem.trim().toLowerCase();
+            const existingQuestion = existingMessages.find(
+                msg => msg.type === MessageType.QUESTION && msg.questionStem?.trim().toLowerCase() === trimmedStem
+            );
+
+            const newQuestionData = {
+                groupId,
+                type: MessageType.QUESTION,
+                questionStem: stem,
+                explanation,
+                questionType,
+                options,
+                correctAnswerIds,
+                imageUrl,
+                tags,
+                questionStatus: QuestionStatus.PENDING,
+                acceptableAnswers,
+                matchingPromptItems,
+                matchingAnswerItems,
+                correctMatches,
+                diagramLabels,
+            };
+
+            if (existingQuestion) {
+                setDuplicateInfo({ newQuestionData, existingQuestion });
+                openModal('duplicateQuestion');
+                closeModal('question');
+                return;
+            }
+
             const content = JSON.stringify({
                 type: MessageType.QUESTION,
                 ...newQuestionData
             });
-            const sent = await sendMessage(selectedChat.id, currentUser.id, content);
+            deliveryFingerprint = JSON.stringify({
+                ...newQuestionData,
+                imageUrl: imageUrl ? 'attached' : undefined,
+            });
+            clientMessageId = groupDeliveryIntents.resolve(
+                `group:${groupId}`,
+                deliveryFingerprint,
+                uuidv4
+            );
+            const sent = await sendMessage(groupId, currentUser.id, content, clientMessageId);
             if (!sent) {
                 throw new Error('Failed to send message');
             }
@@ -850,8 +915,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             };
             updateMessages(prev => ({
                 ...prev,
-                [selectedChat.id]: [...(prev[selectedChat.id] || []), savedQuestion]
+                [groupId]: reconcileDeliveredItem(prev[groupId] || [], savedQuestion)
             }));
+            groupDeliveryIntents.clear(`group:${groupId}`, deliveryFingerprint, clientMessageId);
             
             if (currentUser) {
                 const updatedStats = {
@@ -879,7 +945,24 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             closeModal('question');
         } catch (error) {
             console.error('Error submitting question:', error);
+            if (deliveryFingerprint && clientMessageId) {
+                if (isUncertainDeliveryError(error)) {
+                    groupDeliveryIntents.markUncertain(
+                        `group:${groupId}`,
+                        deliveryFingerprint,
+                        clientMessageId
+                    );
+                } else {
+                    groupDeliveryIntents.clear(
+                        `group:${groupId}`,
+                        deliveryFingerprint,
+                        clientMessageId
+                    );
+                }
+            }
             alert('Failed to submit question. Please try again.');
+        } finally {
+            submittingQuestionGroupIds.delete(groupId);
         }
     }, [currentUser, selectedChat, messages, updateMessages, setCurrentUser, openModal, closeModal, setDuplicateInfo, addNotification]);
 
@@ -953,7 +1036,17 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             const prevLastMessageTime = groupBefore?.lastMessageTime;
 
             // Optimistic update - show message immediately
-            const optimisticId = uuidv4();
+            const deliveryScope = `group:${selectedChat.id}`;
+            const deliveryFingerprint = JSON.stringify({
+                text,
+                replyToMessageId: options?.replyToMessageId || null,
+                mentionedUserIds: [...(options?.mentionedUserIds || [])].sort(),
+            });
+            const optimisticId = groupDeliveryIntents.resolve(
+                deliveryScope,
+                deliveryFingerprint,
+                uuidv4
+            );
             const existingGroupMsgs = useGroupStore.getState().messages[selectedChat.id] || [];
             const parent = options?.replyToMessageId
                 ? existingGroupMsgs.find((m) => m.id === options.replyToMessageId)
@@ -1008,18 +1101,48 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 }
                 const confirmed = mapMessageFromApi(sentMessage);
                 // Replace optimistic message with server-confirmed one (keep sender if API omits profile)
-                updateMessages(prev => ({
-                    ...prev,
-                    [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
-                        m.id === optimisticId || m.id === confirmed.id
-                            ? { ...m, ...confirmed, id: confirmed.id, sender: confirmed.sender?.id ? confirmed.sender : m.sender }
-                            : m
-                    )
-                }));
+                updateMessages(prev => {
+                    const list = prev[selectedChat.id] || [];
+                    const optimistic = list.find((message) => message.id === optimisticId);
+                    const reconciled = {
+                        ...optimistic,
+                        ...confirmed,
+                        id: confirmed.id,
+                        sender: confirmed.sender?.id
+                            ? confirmed.sender
+                            : optimistic?.sender || currentUser,
+                    };
+                    return {
+                        ...prev,
+                        [selectedChat.id]: reconcileDeliveredItem(
+                            list,
+                            reconciled,
+                            [optimisticId]
+                        ),
+                    };
+                });
+                groupDeliveryIntents.clear(
+                    deliveryScope,
+                    deliveryFingerprint,
+                    optimisticId
+                );
 
                 // Group message notifications are created server-side after the message is persisted.
             } catch (error) {
                 console.error('Error sending message to server:', error);
+                if (isUncertainDeliveryError(error)) {
+                    groupDeliveryIntents.markUncertain(
+                        deliveryScope,
+                        deliveryFingerprint,
+                        optimisticId
+                    );
+                } else {
+                    groupDeliveryIntents.clear(
+                        deliveryScope,
+                        deliveryFingerprint,
+                        optimisticId
+                    );
+                }
                 updateMessages(prev => ({
                     ...prev,
                     [selectedChat.id]: (prev[selectedChat.id] || []).filter(m => m.id !== optimisticId),

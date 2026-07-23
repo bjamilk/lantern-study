@@ -1,0 +1,74 @@
+import {
+  buildMarketplaceGeographyQuery,
+  buildSavedMarketplaceFilters,
+  normalizeSavedMarketplaceFilters,
+} from './marketplaceFilters';
+
+describe('mobile marketplace saved filters', () => {
+  it('saves an explicitly selected campus without inventing one for All Nigeria', () => {
+    const base = {
+      searchQuery: '',
+      selectedCategory: null,
+      activeTab: 'academic' as const,
+      minPrice: '',
+      maxPrice: '',
+      locationFilter: '',
+      campusIdFilter: '',
+      sortBy: 'created_at',
+      sortOrder: 'desc' as const,
+    };
+
+    expect(buildSavedMarketplaceFilters(base)).not.toHaveProperty('campus_id');
+    expect(
+      buildSavedMarketplaceFilters({
+        ...base,
+        campusIdFilter: 'campus-123',
+      })
+    ).toMatchObject({ campus_id: 'campus-123' });
+  });
+
+  it('applies campus and price values from saved searches', () => {
+    expect(
+      normalizeSavedMarketplaceFilters({
+        campus_id: 'campus-123',
+        minPrice: 1000,
+        max_price: '5000',
+        category: 'personal_goods',
+      })
+    ).toMatchObject({
+      campusIdFilter: 'campus-123',
+      minPrice: '1000',
+      maxPrice: '5000',
+      selectedCategory: 'personal_goods',
+      activeTab: 'student-life',
+    });
+  });
+
+  it('resets omitted saved-search fields to nationwide defaults', () => {
+    expect(normalizeSavedMarketplaceFilters({})).toEqual({
+      searchQuery: '',
+      selectedCategory: null,
+      activeTab: 'academic',
+      minPrice: '',
+      maxPrice: '',
+      locationFilter: '',
+      campusIdFilter: '',
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+    });
+  });
+
+  it('accepts legacy camel-case campus filters', () => {
+    expect(
+      normalizeSavedMarketplaceFilters({ campusId: 'legacy-campus' }).campusIdFilter
+    ).toBe('legacy-campus');
+  });
+
+  it('queries all Nigeria unless a campus filter was explicitly selected', () => {
+    expect(buildMarketplaceGeographyQuery('')).toEqual({ country_code: 'NG' });
+    expect(buildMarketplaceGeographyQuery('campus-123')).toEqual({
+      country_code: 'NG',
+      campus_id: 'campus-123',
+    });
+  });
+});

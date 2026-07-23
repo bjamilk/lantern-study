@@ -462,7 +462,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       // Send DM notification for visual history
       let dmContent = '';
       if (action === 'accept') {
-        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup in Orders.`;
+        dmContent = `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup or delivery in Orders.`;
       } else if (action === 'decline') {
         dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;
       } else if (action === 'withdraw') {

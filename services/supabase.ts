@@ -9,7 +9,7 @@ import {
   parseRetryAfterMs,
   RateLimitError,
 } from '@lantern/shared'
-import { normalizeTestResultSession } from '@lantern/shared/utils'
+import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
 import {
   type UserSettings,
   normalizeUserSettings,
@@ -36,6 +36,23 @@ const supabaseUrl = getSupabaseUrl()
 const supabaseAnonKey = getSupabaseAnonKey()
 const getApiRoot = () => (getApiBaseUrl() || "").replace(/\/$/, "")
 const cookieAuthEnabled = typeof window !== 'undefined' && isCookieAuthEnabled()
+
+async function createDeliveryResponseError(
+  response: Response,
+  fallbackMessage: string
+): Promise<Error> {
+  const body = await response.json().catch(() => ({})) as {
+    error?: string;
+    message?: string;
+  };
+  const error = new Error(body.error || body.message || fallbackMessage) as Error & {
+    status?: number;
+    deliveryUncertain?: boolean;
+  };
+  error.status = response.status;
+  error.deliveryUncertain = response.status === 408 || response.status >= 500;
+  return error;
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -855,36 +872,32 @@ export const sendMessage = async (
   clientMessageId?: string,
   options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
 ) => {
-  try {
+  const body = JSON.stringify({
+    content,
+    userId,
+    clientMessageId,
+    replyToMessageId: options?.replyToMessageId,
+    mentionedUserIds: options?.mentionedUserIds,
+  });
+  const request = async () => {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/group/${groupId}`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({
-        content,
-        userId,
-        clientMessageId,
-        replyToMessageId: options?.replyToMessageId,
-        mentionedUserIds: options?.mentionedUserIds,
-      }),
+      body,
     });
 
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
         throw new Error('Authentication required. Please sign in again.');
       }
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to send message');
+      throw await createDeliveryResponseError(response, 'Failed to send message');
     }
 
     const result = await response.json();
     return result.data;
-  } catch (error: any) {
-    if (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
-      console.debug('API server unreachable for sendMessage');
-      return null;
-    }
-    throw error;
-  }
+  };
+
+  return retryUncertainDelivery(request);
 };
 
 export const voteQuestion = async (messageId: string, userId: string, voteType: 'up' | 'down') => {
@@ -3369,6 +3382,8 @@ export const createMarketplaceBundle = async (data: {
   price: number;
   listingIds: string[];
   location?: string;
+  campus_id: string;
+  country_code?: string;
 }) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/bundles`, {
     method: 'POST',
@@ -3859,26 +3874,30 @@ export const sendDirectMessage = async (
   options?: { replyToMessageId?: string }
 ) => {
   console.log('Sending direct message from:', senderId, 'to:', recipientId);
-  try {
+  const body = JSON.stringify({
+    content,
+    recipientId,
+    clientMessageId,
+    replyToMessageId: options?.replyToMessageId,
+  });
+  const request = async () => {
     const response = await fetch(`${getApiRoot()}/api/v1/messages/user/${senderId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
-      body: JSON.stringify({
-        content,
-        recipientId,
-        clientMessageId,
-        replyToMessageId: options?.replyToMessageId,
-      }),
+      body,
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || error.message || 'Failed to send direct message');
+      throw await createDeliveryResponseError(response, 'Failed to send direct message');
     }
 
     const result = await response.json();
     console.log('Direct message sent:', result.data);
     return result.data;
+  };
+
+  try {
+    return await retryUncertainDelivery(request);
   } catch (error) {
     console.error('Error sending direct message:', error);
     throw error;

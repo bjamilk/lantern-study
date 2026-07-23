@@ -9,6 +9,11 @@ import * as api from '../services/api';
 import { syncService } from '../services/syncService';
 import { useBudgetStore } from './budgetStore';
 import { useAuthStore } from './authStore';
+import {
+  buildMarketplaceGeographyQuery,
+  normalizeSavedMarketplaceFilters,
+} from './marketplaceFilters';
+import { mapMarketplaceListingGeography } from './marketplaceListingMapping';
 
 // Demo mode flag
 const DEMO_MODE = false;
@@ -20,7 +25,16 @@ function unwrapListings<T>(raw: T[] | { data: T[] }): T[] {
   return Array.isArray(raw) ? raw : raw.data;
 }
 
-type RemoteListing = {
+export type MarketplaceListingCampus = {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  slug?: string;
+  country_code?: string;
+};
+
+export type RemoteListing = {
   id: string;
   user_id: string;
   category: string;
@@ -36,6 +50,10 @@ type RemoteListing = {
   listing_kind?: 'single' | 'bundle';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
+  campus_id?: string | null;
+  country_code?: string;
+  currency?: string;
+  campus?: MarketplaceListingCampus;
   images?: string[];
   status?: string;
   seller?: { id: string; name: string; avatar_url?: string };
@@ -57,7 +75,7 @@ function mapSellerFromRemote(l: RemoteListing): MarketplaceListing['seller'] {
     : undefined;
 }
 
-function mapRemoteListing(l: RemoteListing): MarketplaceListing {
+export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
   const status = (l.status === 'sold' || l.status === 'inactive' ? l.status : 'active') as MarketplaceListing['status'];
   return {
     id: l.id,
@@ -77,6 +95,7 @@ function mapRemoteListing(l: RemoteListing): MarketplaceListing {
     listing_kind: l.listing_kind,
     bundle_items: l.bundle_items,
     location: l.location,
+    ...mapMarketplaceListingGeography(l),
     images: l.images || [],
     status,
     views_count: l.views_count || 0,
@@ -143,7 +162,10 @@ export interface MarketplaceListing {
   listing_kind?: 'single' | 'bundle';
   bundle_items?: Array<{ listing_id?: string; title: string; price?: number }>;
   location?: string;
-  campus_id?: string;
+  campus_id?: string | null;
+  country_code?: string;
+  currency?: string;
+  campus?: MarketplaceListingCampus;
   images?: string[];
   status: 'active' | 'sold' | 'inactive';
   views_count?: number;
@@ -151,6 +173,13 @@ export interface MarketplaceListing {
   created_at: string;
   updated_at: string;
 }
+
+type MarketplaceListingCreateInput = Omit<
+  MarketplaceListing,
+  'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count' | 'campus_id'
+> & {
+  campus_id: string;
+};
 
 export interface MarketplaceReview {
   id: string;
@@ -433,6 +462,7 @@ interface MarketplaceState {
   minPrice: string;
   maxPrice: string;
   locationFilter: string;
+  campusIdFilter: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
   listingsPage: number;
@@ -476,7 +506,7 @@ interface MarketplaceState {
   deleteSavedSearch: (id: string) => Promise<void>;
   fetchSellerProfile: (sellerId: string) => Promise<void>;
   fetchSellerStats: () => Promise<void>;
-  createListing: (listing: Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
+  createListing: (listing: MarketplaceListingCreateInput, userId: string) => Promise<{ listing: MarketplaceListing; queued: boolean }>;
   updateListing: (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => Promise<void>;
   deleteListing: (listingId: string, userId: string) => Promise<void>;
   toggleFavorite: (listingId: string, userId: string) => Promise<void>;
@@ -486,8 +516,11 @@ interface MarketplaceState {
   setMinPrice: (value: string) => void;
   setMaxPrice: (value: string) => void;
   setLocationFilter: (value: string) => void;
+  setCampusIdFilter: (value: string) => void;
   setSortBy: (value: string) => void;
   setSortOrder: (value: 'asc' | 'desc') => void;
+  applySavedSearch: (filters: Record<string, unknown>) => void;
+  resetFilters: () => void;
   setShowFavoritesOnly: (value: boolean) => void;
   sendInquiry: (listingId: string, message: string) => Promise<{ threadId?: string; sellerId?: string }>;
   clearError: () => void;
@@ -519,6 +552,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   minPrice: '',
   maxPrice: '',
   locationFilter: '',
+  campusIdFilter: '',
   sortBy: 'created_at',
   sortOrder: 'desc',
   listingsPage: 1,
@@ -598,6 +632,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       minPrice: '',
       maxPrice: '',
       locationFilter: '',
+      campusIdFilter: '',
       sortBy: 'created_at',
       sortOrder: 'desc',
       listingsPage: 1,
@@ -622,7 +657,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 500));
         let filtered = [...DEMO_LISTINGS];
-        const { activeTab, selectedCategory, searchQuery } = get();
+        const { activeTab, selectedCategory, searchQuery, campusIdFilter } = get();
         const academicCategories = ACADEMIC_CATEGORIES.map(c => c.id);
         const studentLifeCategories = STUDENT_LIFE_CATEGORIES.map(c => c.id);
         filtered = filtered.filter(listing => {
@@ -643,6 +678,9 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
             l.description?.toLowerCase().includes(lowerQuery)
           );
         }
+        if (campusIdFilter) {
+          filtered = filtered.filter(l => l.campus_id === campusIdFilter);
+        }
         set({ listings: filtered, listingsPage: 1, listingsHasMore: false, isLoading: false });
         return;
       }
@@ -654,6 +692,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         minPrice,
         maxPrice,
         locationFilter,
+        campusIdFilter,
         sortBy,
         sortOrder,
       } = get();
@@ -671,10 +710,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
         location: locationFilter || undefined,
+        ...buildMarketplaceGeographyQuery(campusIdFilter),
         sortBy,
         sortOrder,
         responseProfile: 'compact',
-      });
+      }) as
+        | RemoteListing[]
+        | {
+            data: RemoteListing[];
+            pagination?: { page: number; limit: number; total: number };
+          };
 
       const apiListings = unwrapListings(raw);
       const pagination =
@@ -759,23 +804,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       
       const l = await api.fetchMarketplaceListing(listingId);
       if (requestId !== listingFetchSeq) return;
-      const currentListing: MarketplaceListing = {
-        id: l.id,
-        user_id: l.user_id,
-        seller_id: l.user_id,
-        seller: mapSellerFromRemote(l as RemoteListing),
-        category: l.category,
-        title: l.title,
-        description: l.description,
-        price: l.price,
-        location: l.location,
-        images: l.images || [],
-        status: l.status,
-        views_count: l.views_count || 0,
-        favorites_count: l.favorites_count || 0,
-        created_at: l.created_at,
-        updated_at: l.updated_at,
-      };
+      const currentListing = mapRemoteListing(l as RemoteListing);
       set({ currentListing, isLoading: false });
     } catch (error: any) {
       if (requestId !== listingFetchSeq) return;
@@ -849,10 +878,15 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         promo_label: listingData.promo_label,
       });
       
+      const createdListing = created as unknown as RemoteListing;
       const newListing: MarketplaceListing = mapRemoteListing({
-        ...created,
+        ...listingData,
+        ...createdListing,
+        campus_id: createdListing.campus_id ?? listingData.campus_id,
+        country_code: createdListing.country_code ?? listingData.country_code ?? 'NG',
+        currency: createdListing.currency ?? listingData.currency ?? 'NGN',
         status: created.status,
-      } as RemoteListing);
+      });
       
       // Replace temp with real listing
       set(state => ({
@@ -900,7 +934,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     if (DEMO_MODE) return;
     
     try {
-      await api.updateMarketplaceListing(listingId, updates);
+      await api.updateMarketplaceListing(listingId, {
+        ...updates,
+        campus_id: updates.campus_id ?? undefined,
+      });
       if (updates.status === 'sold') {
         await refreshMarketplaceBudget(userId);
       }
@@ -1144,8 +1181,49 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   setMinPrice: (value: string) => set({ minPrice: value }),
   setMaxPrice: (value: string) => set({ maxPrice: value }),
   setLocationFilter: (value: string) => set({ locationFilter: value }),
+  setCampusIdFilter: (value: string) => {
+    listingsRequestSeq += 1;
+    set({
+      campusIdFilter: value,
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+      error: null,
+    });
+  },
   setSortBy: (value: string) => set({ sortBy: value }),
   setSortOrder: (value: 'asc' | 'desc') => set({ sortOrder: value }),
+  applySavedSearch: (filters: Record<string, unknown>) => {
+    listingsRequestSeq += 1;
+    const normalized = normalizeSavedMarketplaceFilters(filters);
+    set({
+      ...normalized,
+      selectedCategory: normalized.selectedCategory as MarketplaceCategory | null,
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      showFavoritesOnly: false,
+      isLoading: true,
+      error: null,
+    });
+  },
+  resetFilters: () => {
+    listingsRequestSeq += 1;
+    set({
+      minPrice: '',
+      maxPrice: '',
+      locationFilter: '',
+      campusIdFilter: '',
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      listings: [],
+      listingsPage: 1,
+      listingsHasMore: true,
+      isLoading: true,
+      error: null,
+    });
+  },
   setShowFavoritesOnly: (value: boolean) => set({ showFavoritesOnly: value }),
 
   fetchListingOffers: async (listingId: string) => {

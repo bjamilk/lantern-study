@@ -11,8 +11,8 @@ interface MarketplaceOrdersScreenProps {
 
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Awaiting payment',
-  paid: 'Paid — arrange pickup',
-  ready_for_pickup: 'Ready for pickup',
+  paid: 'Paid — arrange fulfillment',
+  ready_for_pickup: 'Ready for pickup or delivery',
   buyer_confirmed: 'Buyer confirmed',
   completed: 'Completed',
   cancelled: 'Cancelled',

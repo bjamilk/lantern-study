@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Question Modal
 // ===========================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -117,6 +117,8 @@ export default function QuestionModal({
   const [diagramDescription, setDiagramDescription] = useState('');
   const [questionImage, setQuestionImage] = useState<QuestionImage | null>(null);
   const [diagramImage, setDiagramImage] = useState<QuestionImage | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const { colors, isDark } = useTheme();
 
   const themed = useMemo(
@@ -508,6 +510,9 @@ export default function QuestionModal({
       diagramImage: diagramImage || undefined,
     };
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
     void (async () => {
       try {
         await onSubmit(question);
@@ -515,6 +520,9 @@ export default function QuestionModal({
         Alert.alert('Success', 'Question submitted successfully!');
       } catch (error: any) {
         Alert.alert('Error', error?.message || 'Failed to submit question.');
+      } finally {
+        submittingRef.current = false;
+        setIsSubmitting(false);
       }
     })();
   };
@@ -852,9 +860,19 @@ export default function QuestionModal({
       </View>
 
       {/* Submit Button */}
-      <TouchableOpacity style={[styles.submitButton, { backgroundColor: colors.success }]} onPress={validateAndSubmit}>
+      <TouchableOpacity
+        style={[
+          styles.submitButton,
+          { backgroundColor: colors.success },
+          isSubmitting && { opacity: 0.6 },
+        ]}
+        onPress={validateAndSubmit}
+        disabled={isSubmitting}
+      >
         <Ionicons name="send" size={20} color="#ffffff" />
-        <Text style={styles.submitButtonText}>Submit Question</Text>
+        <Text style={styles.submitButtonText}>
+          {isSubmitting ? 'Submitting...' : 'Submit Question'}
+        </Text>
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />

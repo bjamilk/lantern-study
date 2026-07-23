@@ -23,7 +23,7 @@ interface QuestionModalProps {
     matchingAnswerItems?: MatchingItem[],
     correctMatches?: { promptItemId: string; answerItemId: string }[],
     diagramLabels?: DiagramLabel[]
-  ) => void;
+  ) => void | Promise<void>;
   groupName: string;
   isSubmitting?: boolean;
 }
@@ -166,6 +166,9 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
   const [state, dispatch] = useReducer(formReducer, initialFormState);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const [draggingLabelId, setDraggingLabelId] = useState<string | null>(null);
+  const [submissionPending, setSubmissionPending] = useState(false);
+  const submissionPendingRef = useRef(false);
+  const submitting = isSubmitting || submissionPending;
 
   useEffect(() => {
     if (isOpen) {
@@ -304,6 +307,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || submissionPendingRef.current) return;
     console.log('QuestionModal handleSubmit called, isFormValid:', isFormValid());
     if (!isFormValid()) {
         console.log('Form is not valid:', { 
@@ -336,73 +340,79 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
         }
         return;
     }
-    
-    let imageUrl: string | undefined = undefined;
-    if (state.selectedImageFile) {
-      try {
+
+    submissionPendingRef.current = true;
+    setSubmissionPending(true);
+    try {
+      let imageUrl: string | undefined = undefined;
+      if (state.selectedImageFile) {
         const { url } = await uploadQuestionImage(state.selectedImageFile);
         imageUrl = url;
-      } catch (error) {
-        console.error('Error uploading image:', error);
-        useToastStore.getState().showToast(
-          error instanceof Error && error.message.includes('signed in')
-            ? 'You must be signed in to upload an image. Please log in and try again.'
-            : 'Failed to upload image. Please try again.',
-          'error'
-        );
-        return;
       }
-    }
 
-    const parsedTags = state.tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag !== '');
-    
-    let submissionData: any = {
-      stem: state.stem,
-      explanation: state.explanation,
-      questionType: state.questionType,
-      imageUrl: imageUrl,
-      tags: parsedTags.length > 0 ? parsedTags : undefined,
-    };
+      const parsedTags = state.tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag !== '');
 
-    switch (state.questionType) {
-      case QuestionType.MULTIPLE_CHOICE_SINGLE:
-      case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
-        submissionData.options = state.options.filter(opt => opt.text.trim());
-        submissionData.correctAnswerIds = state.correctAnswerIdsSelected;
-        break;
-      case QuestionType.TRUE_FALSE:
-        submissionData.options = [{ id: 'true', text: 'True' }, { id: 'false', text: 'False' }];
-        submissionData.correctAnswerIds = state.correctAnswerIdsSelected;
-        break;
-      case QuestionType.FILL_IN_THE_BLANK:
-        submissionData.acceptableAnswers = state.acceptableAnswersInput.split(',').map(a => a.trim()).filter(a => a);
-        break;
-      case QuestionType.MATCHING:
-        submissionData.matchingPromptItems = state.promptItems.filter(p => p.text.trim());
-        submissionData.matchingAnswerItems = state.answerItems.filter(a => a.text.trim());
-        submissionData.correctMatches = Object.entries(state.matchSelections)
+      const submissionData: any = {
+        stem: state.stem,
+        explanation: state.explanation,
+        questionType: state.questionType,
+        imageUrl: imageUrl,
+        tags: parsedTags.length > 0 ? parsedTags : undefined,
+      };
+
+      switch (state.questionType) {
+        case QuestionType.MULTIPLE_CHOICE_SINGLE:
+        case QuestionType.MULTIPLE_CHOICE_MULTIPLE:
+          submissionData.options = state.options.filter(opt => opt.text.trim());
+          submissionData.correctAnswerIds = state.correctAnswerIdsSelected;
+          break;
+        case QuestionType.TRUE_FALSE:
+          submissionData.options = [{ id: 'true', text: 'True' }, { id: 'false', text: 'False' }];
+          submissionData.correctAnswerIds = state.correctAnswerIdsSelected;
+          break;
+        case QuestionType.FILL_IN_THE_BLANK:
+          submissionData.acceptableAnswers = state.acceptableAnswersInput.split(',').map(a => a.trim()).filter(a => a);
+          break;
+        case QuestionType.MATCHING:
+          submissionData.matchingPromptItems = state.promptItems.filter(p => p.text.trim());
+          submissionData.matchingAnswerItems = state.answerItems.filter(a => a.text.trim());
+          submissionData.correctMatches = Object.entries(state.matchSelections)
             .map(([promptItemId, answerItemId]) => ({ promptItemId, answerItemId }))
             .filter(match => state.promptItems.find(p=>p.id === match.promptItemId) && state.answerItems.find(a=>a.id === match.answerItemId));
-        break;
-      case QuestionType.DIAGRAM_LABELING:
-        submissionData.diagramLabels = state.diagramLabels;
-        break;
+          break;
+        case QuestionType.DIAGRAM_LABELING:
+          submissionData.diagramLabels = state.diagramLabels;
+          break;
+      }
+
+      await onSubmit(
+        submissionData.stem,
+        submissionData.explanation,
+        submissionData.questionType,
+        submissionData.options,
+        submissionData.correctAnswerIds,
+        submissionData.imageUrl,
+        submissionData.tags,
+        submissionData.acceptableAnswers,
+        submissionData.matchingPromptItems,
+        submissionData.matchingAnswerItems,
+        submissionData.correctMatches,
+        submissionData.diagramLabels
+      );
+    } catch (error) {
+      console.error('Error submitting question:', error);
+      useToastStore.getState().showToast(
+        error instanceof Error && error.message.includes('signed in')
+          ? 'You must be signed in to upload an image. Please log in and try again.'
+          : state.selectedImageFile
+            ? 'Failed to upload or submit the question. Please try again.'
+            : 'Failed to submit the question. Please try again.',
+        'error'
+      );
+    } finally {
+      submissionPendingRef.current = false;
+      setSubmissionPending(false);
     }
-    
-    onSubmit(
-      submissionData.stem, 
-      submissionData.explanation, 
-      submissionData.questionType, 
-      submissionData.options, 
-      submissionData.correctAnswerIds, 
-      submissionData.imageUrl, 
-      submissionData.tags,
-      submissionData.acceptableAnswers,
-      submissionData.matchingPromptItems,
-      submissionData.matchingAnswerItems,
-      submissionData.correctMatches,
-      submissionData.diagramLabels
-    );
   };
   
   const renderMCQOptions = (isMultipleType: boolean) => (
@@ -464,7 +474,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
       onClose={onClose}
       ariaLabelledBy="question-modal-title"
       maxWidthClass="max-w-2xl"
-      loading={isSubmitting}
+      loading={submitting}
       panelClassName="max-h-[90vh] overflow-y-auto"
     >
         <div className="flex justify-between items-center mb-4">
@@ -726,10 +736,10 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             <button
               type="submit"
               className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary disabled:opacity-50"
-              disabled={!isFormValid() || isSubmitting}
+              disabled={!isFormValid() || submitting}
             >
-              {isSubmitting && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />}
-              {isSubmitting ? 'Submitting...' : 'Submit Question'}
+              {submitting && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Submitting...' : 'Submit Question'}
             </button>
           </div>
         </form>

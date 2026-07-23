@@ -5,6 +5,7 @@ import {
   MARKETPLACE_CREATE_CONFIRMATION,
   HEIC_IMAGE_UPLOAD_ERROR,
   isHeicImageUpload,
+  isOtherCityCampus,
   type MarketplaceCampus,
 } from '@lantern/shared';
 import { useToastStore } from '../stores/toastStore';
@@ -108,6 +109,8 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
   const [customCategory, setCustomCategory] = useState('');
   const [existingCustomCategories, setExistingCustomCategories] = useState<{id: string; name: string; usage_count: number}[]>([]);
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
+  const selectedCampus = campuses.find((campus) => campus.id === formData.campusId);
+  const usesOtherCity = isOtherCityCampus(selectedCampus);
 
   useEffect(() => {
     if (isOpen) {
@@ -390,12 +393,17 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
     }
 
     if (!formData.campusId) {
-      useToastStore.getState().showToast('Please select a campus');
+      useToastStore.getState().showToast('Please select a campus or Other city');
+      return;
+    }
+
+    if (usesOtherCity && !formData.location.trim()) {
+      useToastStore.getState().showToast('Please enter the Nigerian city for this listing');
       return;
     }
 
     if (!formData.complianceConfirmed) {
-      useToastStore.getState().showToast('Please confirm on-campus pickup compliance');
+      useToastStore.getState().showToast('Please confirm the marketplace fulfillment terms');
       return;
     }
     
@@ -416,6 +424,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       if (fields.includes('bedrooms') && formData.bedrooms) categorySpecificFields.bedrooms = parseInt(formData.bedrooms);
       if (fields.includes('furnished') && formData.furnished) categorySpecificFields.furnished = formData.furnished === 'yes';
       if (fields.includes('distanceToCampus') && formData.distanceToCampus) categorySpecificFields.distanceToCampus = formData.distanceToCampus;
+      if (usesOtherCity) categorySpecificFields.otherCity = formData.location.trim();
 
       const parsedPrice = formData.price.trim() ? parseFloat(formData.price) : undefined;
       const parsedSalePrice = formData.salePrice.trim()
@@ -890,30 +899,46 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             <div>
               <label htmlFor="listing-campus" className="block text-sm font-semibold text-lantern-text mb-2">
                 <MapPinIcon className="w-4 h-4 inline mr-1" />
-                Campus <span className="text-red-500">*</span>
+                Campus or city <span className="text-red-500">*</span>
               </label>
               <CampusSearchSelect
                 id="listing-campus"
                 campuses={campuses}
                 value={formData.campusId}
-                emptyLabel="Select campus"
-                onChange={(campusId) => setFormData((prev) => ({ ...prev, campusId: campusId || '' }))}
+                otherCity={usesOtherCity ? formData.location : ''}
+                otherCityRequired
+                emptyLabel="Select campus or Other city"
+                onChange={(campusId) => {
+                  const nextCampus = campuses.find((campus) => campus.id === campusId);
+                  const locationModeChanged =
+                    isOtherCityCampus(selectedCampus) !== isOtherCityCampus(nextCampus);
+                  setFormData((prev) => ({
+                    ...prev,
+                    campusId: campusId || '',
+                    location: locationModeChanged ? '' : prev.location,
+                  }));
+                }}
+                onOtherCityChange={(city) =>
+                  setFormData((prev) => ({ ...prev, location: city }))
+                }
               />
             </div>
 
-            <div>
-              <label htmlFor="listing-location" className="block text-sm font-semibold text-lantern-text mb-2">
-                Meetup detail (optional)
-              </label>
-              <input
-                id="listing-location"
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                placeholder="Faculty gate, hall, landmark…"
-                className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
-              />
-            </div>
+            {!usesOtherCity && (
+              <div>
+                <label htmlFor="listing-location" className="block text-sm font-semibold text-lantern-text mb-2">
+                  Pickup or delivery details (optional)
+                </label>
+                <input
+                  id="listing-location"
+                  type="text"
+                  value={formData.location}
+                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
+                  placeholder="Meetup point, delivery area, landmark…"
+                  className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
+                />
+              </div>
+            )}
 
             <label className="flex items-start gap-2 text-sm text-lantern-text-secondary">
               <input

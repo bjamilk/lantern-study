@@ -15,6 +15,11 @@ import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
+import {
+  buildMarketplaceSavedSearchFilters,
+  restoreMarketplaceSavedSearchFilters,
+  type MarketplaceSavedSearchFilters,
+} from './marketplace/marketplaceSearchFilters';
 import { FeatureHero, Tabs, TabList, Tab, TabPanel } from './ui';
 import { featureAccents } from '@lantern/shared/design';
 import {
@@ -68,7 +73,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [locationFilter, setLocationFilter] = useState<string>('');
   const [campusIdFilter, setCampusIdFilter] = useState<string>('');
   const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
-  const [campusFilterInitialized, setCampusFilterInitialized] = useState(false);
   const ITEMS_PER_PAGE = 20;
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const listingsRequestId = useRef(0);
@@ -109,9 +113,9 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   }, [currentUser?.settings]);
 
   usePageSeo({
-    title: 'Explore Marketplace — Campus deals | Lantern Study',
+    title: 'Explore Marketplace — Buy and sell across Nigeria | Lantern Study',
     description:
-      'Browse Nigerian campus marketplace listings for textbooks, notes, accommodation, and student essentials. On-campus pickup; sign in to buy or sell.',
+      'Browse marketplace listings across Nigeria for textbooks, notes, accommodation, and student essentials. Arrange pickup or delivery directly with sellers.',
     canonicalUrl: 'https://lanternstudy.com/marketplace',
     ogType: 'website',
   });
@@ -121,14 +125,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       .then((rows) => setCampuses(rows))
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (guestMode || campusFilterInitialized) return;
-    if (userCampusId) {
-      setCampusIdFilter(userCampusId);
-    }
-    setCampusFilterInitialized(true);
-  }, [guestMode, userCampusId, campusFilterInitialized]);
 
   useEffect(() => {
     const requestId = ++listingsRequestId.current;
@@ -208,14 +204,16 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const handleSaveCurrentSearch = async () => {
-    const filters: Record<string, any> = {};
-    if (searchTerm) filters.search = searchTerm;
-    if (selectedCategory) filters.category = selectedCategory;
-    if (minPrice) filters.minPrice = parseFloat(minPrice);
-    if (maxPrice) filters.maxPrice = parseFloat(maxPrice);
-    if (locationFilter) filters.location = locationFilter;
-    if (sortBy !== 'created_at') filters.sortBy = sortBy;
-    if (sortOrder !== 'desc') filters.sortOrder = sortOrder;
+    const filters = buildMarketplaceSavedSearchFilters({
+      searchTerm,
+      selectedCategory,
+      minPrice,
+      maxPrice,
+      locationFilter,
+      campusIdFilter,
+      sortBy,
+      sortOrder,
+    });
 
     if (Object.keys(filters).length === 0) {
       useToastStore.getState().showToast('Set some search criteria or filters first.', 'info');
@@ -245,21 +243,17 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const handleApplySavedSearch = (search: SavedSearch) => {
-    const f = search.filters;
-    if (f.search) setSearchTerm(f.search);
-    else setSearchTerm('');
-    if (f.category) setSelectedCategory(f.category);
-    else setSelectedCategory('');
-    if (f.minPrice) setMinPrice(f.minPrice.toString());
-    else setMinPrice('');
-    if (f.maxPrice) setMaxPrice(f.maxPrice.toString());
-    else setMaxPrice('');
-    if (f.location) setLocationFilter(f.location);
-    else setLocationFilter('');
-    if (f.sortBy) setSortBy(f.sortBy);
-    else setSortBy('created_at');
-    if (f.sortOrder) setSortOrder(f.sortOrder);
-    else setSortOrder('desc');
+    const restored = restoreMarketplaceSavedSearchFilters(
+      search.filters as MarketplaceSavedSearchFilters
+    );
+    setSearchTerm(restored.searchTerm);
+    setSelectedCategory(restored.selectedCategory);
+    setMinPrice(restored.minPrice);
+    setMaxPrice(restored.maxPrice);
+    setLocationFilter(restored.locationFilter);
+    setCampusIdFilter(restored.campusIdFilter);
+    setSortBy(restored.sortBy);
+    setSortOrder(restored.sortOrder);
     setShowSavedSearches(false);
   };
 
@@ -326,7 +320,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             query: searchTerm,
             resultCount: pagination?.total ?? filteredData.length,
             category: selectedCategory || undefined,
-            campus: campusIdFilter || undefined,
+            // Saved campus is analytics context only; the explicit filter alone affects visibility.
+            campus: userCampusId || undefined,
           });
         });
       }
@@ -378,6 +373,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     setMinPrice('');
     setMaxPrice('');
     setLocationFilter('');
+    setCampusIdFilter('');
     setSortBy('created_at');
     setSortOrder('desc');
     setShowFilters(false);
@@ -547,7 +543,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
         </div>
       )}
 
-      {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !minPrice && !maxPrice && !locationFilter && (
+      {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !minPrice && !maxPrice && !locationFilter && !campusIdFilter && (
         <div className="mb-4">
           <h3 className="text-xs sm:text-sm font-semibold text-lantern-text mb-2 flex items-center gap-1.5">
             <ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -682,7 +678,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 pb-2">
         <FeatureHero
           title="Explore"
-          subtitle="Discover academic resources and student essentials on campus"
+          subtitle="Discover academic resources and student essentials across Nigeria"
           accentColor={featureAccents.marketplace}
           icon={<ShoppingBagIcon className="w-6 h-6" style={{ color: featureAccents.marketplace }} />}
           actions={
@@ -734,7 +730,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
               <input
                 type="text"
-                aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search campus essentials'}
+                aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
                 placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
                 defaultValue={searchTerm}
                 onChange={e => handleSearchChange(e.target.value)}

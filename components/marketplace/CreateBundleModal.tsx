@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
-import { createMarketplaceBundle } from '../../services/supabase';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createMarketplaceBundle, fetchMarketplaceCampuses } from '../../services/supabase';
+import { isOtherCityCampus, type MarketplaceCampus } from '@lantern/shared';
 import type { MarketplaceListing } from '../../types';
 import Button from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
 import Modal from '../ui/Modal';
+import { CampusSearchSelect } from './CampusSearchSelect';
 
 interface CreateBundleModalProps {
   listings: MarketplaceListing[];
@@ -25,8 +27,19 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [campusId, setCampusId] = useState('');
+  const [location, setLocation] = useState('');
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const selectedCampus = campuses.find((campus) => campus.id === campusId);
+  const usesOtherCity = isOtherCityCampus(selectedCampus);
+
+  useEffect(() => {
+    void fetchMarketplaceCampuses('NG')
+      .then(setCampuses)
+      .catch(() => setCampuses([]));
+  }, []);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -53,6 +66,14 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
       setError('Enter a title, pick at least 2 listings, and set a bundle price.');
       return;
     }
+    if (!campusId) {
+      setError('Select a campus or Other city for the bundle.');
+      return;
+    }
+    if (usesOtherCity && !location.trim()) {
+      setError('Enter the Nigerian city for the bundle.');
+      return;
+    }
     setSaving(true);
     try {
       await createMarketplaceBundle({
@@ -60,6 +81,9 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
         description: description.trim() || undefined,
         price: bundlePrice,
         listingIds: Array.from(selected),
+        campus_id: campusId,
+        country_code: 'NG',
+        location: location.trim() || undefined,
       });
       onCreated();
       onClose();
@@ -95,6 +119,35 @@ const CreateBundleModal: React.FC<CreateBundleModalProps> = ({
             placeholder="Optional description"
             aria-label="Bundle description"
           />
+          <div>
+            <label htmlFor="bundle-campus" className="block text-xs font-semibold text-lantern-text-secondary mb-1">
+              Campus or city
+            </label>
+            <CampusSearchSelect
+              id="bundle-campus"
+              campuses={campuses}
+              value={campusId}
+              otherCity={usesOtherCity ? location : ''}
+              otherCityRequired
+              emptyLabel="Select campus or Other city"
+              onChange={(nextCampusId) => {
+                const nextCampus = campuses.find((campus) => campus.id === nextCampusId);
+                const locationModeChanged =
+                  isOtherCityCampus(selectedCampus) !== isOtherCityCampus(nextCampus);
+                setCampusId(nextCampusId || '');
+                if (locationModeChanged) setLocation('');
+              }}
+              onOtherCityChange={setLocation}
+            />
+          </div>
+          {!usesOtherCity && (
+            <Input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Pickup or delivery details (optional)"
+              aria-label="Pickup or delivery details"
+            />
+          )}
           <div className="flex gap-2 items-end">
             <Input
               type="number"

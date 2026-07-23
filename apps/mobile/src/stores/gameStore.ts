@@ -17,6 +17,8 @@ import { useGroupStore } from './groupStore';
 import { selectGroupQuestions, webQuestionTypesToMobile } from '../utils/questionHelpers';
 import { useAuthStore } from './authStore';
 
+const pendingChallengeSends = new Map<string, Promise<GroupChallenge>>();
+
 export interface GameUser {
   id: string;
   name: string;
@@ -119,10 +121,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setRecentChallenges: (items) => set({ recentChallenges: items }),
 
   sendChallenge: async (config, currentUser, opponent) => {
+    if (!config.groupId) throw new Error('Group is required');
+    const deliveryKey = `${config.groupId}:${currentUser.id}:${opponent.id}`;
+    const existingRequest = pendingChallengeSends.get(deliveryKey);
+    if (existingRequest) return existingRequest;
+
     set({ isLoading: true, error: null });
-    try {
-      if (!config.groupId) throw new Error('Group is required');
-      const challenge = await createChallenge({
+    const request = createChallenge({
         groupId: config.groupId,
         opponentId: opponent.id,
         config: {
@@ -130,12 +135,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
           allowedQuestionTypes: config.allowedQuestionTypes,
           selectedTags: config.selectedTags,
         },
+      })
+      .then((challenge) => {
+        set({ isLoading: false });
+        return challenge;
+      })
+      .catch((error: any) => {
+        set({ error: error.message || 'Failed to send challenge', isLoading: false });
+        throw error;
       });
-      set({ isLoading: false });
-      return challenge;
-    } catch (e: any) {
-      set({ error: e.message || 'Failed to send challenge', isLoading: false });
-      throw e;
+    pendingChallengeSends.set(deliveryKey, request);
+    try {
+      return await request;
+    } finally {
+      pendingChallengeSends.delete(deliveryKey);
     }
   },
 

@@ -155,6 +155,9 @@ export interface AdminAnalytics {
     disputedCount: number;
     gmvByCategory: Array<{ category: string; gmv: number; orders: number }>;
     gmvByCampus: Array<{ campus: string; gmv: number; orders: number }>;
+    gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
+    listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
+    listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
   };
   retentionCohorts?: {
     signups: number;
@@ -169,6 +172,7 @@ export interface AdminAnalytics {
     topQueries: Array<{ query: string; count: number }>;
     zeroResultQueries: Array<{ query: string; count: number }>;
     searchesByCampus: Array<{ campus: string; count: number }>;
+    searchesByZone?: Array<{ zone: string; count: number }>;
     totalSearches: number;
   };
   acquisitionFunnel?: {

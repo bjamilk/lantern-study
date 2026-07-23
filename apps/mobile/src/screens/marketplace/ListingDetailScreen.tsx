@@ -216,7 +216,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               } else {
                 await load();
               }
-              Alert.alert('Order placed', 'Arrange campus pickup with the seller.');
+              Alert.alert(
+                'Order placed',
+                'Arrange pickup or delivery with the seller.'
+              );
             } catch (e: unknown) {
               Alert.alert('Error', e instanceof Error ? e.message : 'Purchase failed');
             } finally {

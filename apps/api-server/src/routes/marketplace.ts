@@ -14,6 +14,11 @@ import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
 import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
+import {
+  MARKETPLACE_DEFAULT_COUNTRY,
+  MARKETPLACE_DEFAULT_CURRENCY,
+  OTHER_CITY_CAMPUS_SLUG,
+} from '@lantern/shared/marketplace';
 
 const router = Router();
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
@@ -28,6 +33,39 @@ export const initializeMarketplaceRoutes = (supabase: SupabaseService, cache: Ca
   supabaseService = supabase;
   cacheService = cache;
 };
+
+class MarketplaceCampusMetadataError extends Error {}
+
+async function resolveRequiredMarketplaceCampus(
+  rawCampusId: unknown,
+  rawLocation: unknown
+): Promise<{ campusId: string; countryCode: string }> {
+  const campusId = typeof rawCampusId === 'string' ? rawCampusId.trim() : '';
+  if (!campusId) {
+    throw new MarketplaceCampusMetadataError(
+      'Campus or city metadata is required for marketplace listings'
+    );
+  }
+
+  const campus = await supabaseService.getMarketplaceCampusById(campusId);
+  if (!campus || !campus.active || campus.country_code !== MARKETPLACE_DEFAULT_COUNTRY) {
+    throw new MarketplaceCampusMetadataError('Invalid or inactive Nigerian campus or city');
+  }
+
+  if (
+    campus.slug === OTHER_CITY_CAMPUS_SLUG &&
+    (typeof rawLocation !== 'string' || !rawLocation.trim())
+  ) {
+    throw new MarketplaceCampusMetadataError(
+      'Enter the Nigerian city or pickup/delivery area for the Other city option'
+    );
+  }
+
+  return {
+    campusId,
+    countryCode: MARKETPLACE_DEFAULT_COUNTRY,
+  };
+}
 
 // GET /api/v1/marketplace/campuses - List campuses for location pickers
 router.get(
@@ -288,25 +326,23 @@ router.post(
       });
     }
 
-    const campusId = listingData.campus_id ?? listingData.campusId;
-    if (!campusId) {
+    let campusMetadata: { campusId: string; countryCode: string };
+    try {
+      campusMetadata = await resolveRequiredMarketplaceCampus(
+        listingData.campus_id ?? listingData.campusId,
+        listingData.location
+      );
+    } catch (error) {
+      if (!(error instanceof MarketplaceCampusMetadataError)) throw error;
       return res.status(400).json({
         success: false,
-        error: 'Campus is required for marketplace listings',
+        error: error.message,
       });
     }
 
-    const campus = await supabaseService.getMarketplaceCampusById(campusId);
-    if (!campus || !campus.active) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid or inactive campus',
-      });
-    }
-
-    listingData.campus_id = campusId;
-    listingData.country_code = campus.country_code || 'NG';
-    listingData.currency = listingData.currency || 'NGN';
+    listingData.campus_id = campusMetadata.campusId;
+    listingData.country_code = campusMetadata.countryCode;
+    listingData.currency = MARKETPLACE_DEFAULT_CURRENCY;
 
     logger.debug('Creating marketplace listing', { userId, category: listingData.category, title: listingData.title });
 
@@ -374,7 +410,7 @@ router.put(
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = req.body || {};
     const userId = req.user?.id;
 
     logger.debug('Updating marketplace listing', { id, userId });
@@ -393,6 +429,33 @@ router.put(
         success: false,
         error: 'Access denied',
       });
+    }
+
+    const campusWasProvided =
+      Object.prototype.hasOwnProperty.call(updates, 'campus_id') ||
+      Object.prototype.hasOwnProperty.call(updates, 'campusId');
+    const locationWasProvided = Object.prototype.hasOwnProperty.call(updates, 'location');
+    if (campusWasProvided || locationWasProvided) {
+      try {
+        const campusMetadata = await resolveRequiredMarketplaceCampus(
+          campusWasProvided
+            ? updates.campus_id ?? updates.campusId
+            : listing.campus_id ?? listing.campus?.id,
+          locationWasProvided ? updates.location : listing.location
+        );
+        updates.campus_id = campusMetadata.campusId;
+        updates.country_code = campusMetadata.countryCode;
+        updates.currency = MARKETPLACE_DEFAULT_CURRENCY;
+      } catch (error) {
+        if (!(error instanceof MarketplaceCampusMetadataError)) throw error;
+        return res.status(400).json({ success: false, error: error.message });
+      }
+    } else {
+      // Country and currency are fixed catalog properties, not user-controlled
+      // transaction-access settings.
+      delete updates.country_code;
+      delete updates.countryCode;
+      delete updates.currency;
     }
 
     const updatedListing = await supabaseService.updateMarketplaceListing(id, updates);
@@ -1990,7 +2053,27 @@ router.post(
   '/bundles',
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const { title, description, price, listingIds, images, location, category } = req.body || {};
+    const {
+      title,
+      description,
+      price,
+      listingIds,
+      images,
+      location,
+      category,
+      campus_id: campusIdSnake,
+      campusId: campusIdCamel,
+    } = req.body || {};
+    let campusMetadata: { campusId: string; countryCode: string };
+    try {
+      campusMetadata = await resolveRequiredMarketplaceCampus(
+        campusIdSnake ?? campusIdCamel,
+        location
+      );
+    } catch (error) {
+      if (!(error instanceof MarketplaceCampusMetadataError)) throw error;
+      return res.status(400).json({ success: false, error: error.message });
+    }
     const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
     const bundle = await getMarketplaceSellerToolsService(supabaseService).createBundle(
       req.user.id,
@@ -2002,6 +2085,9 @@ router.post(
         images,
         location,
         category,
+        campusId: campusMetadata.campusId,
+        countryCode: campusMetadata.countryCode,
+        currency: MARKETPLACE_DEFAULT_CURRENCY,
       }
     );
     await cacheService.deletePattern('marketplace:listings:*');

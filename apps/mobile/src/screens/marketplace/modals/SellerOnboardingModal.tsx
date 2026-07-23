@@ -17,7 +17,7 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
   const [saving, setSaving] = useState(false);
   const tips = status.tips?.length ? status.tips : [
     'Add clear photos — listings with 3+ images get more views.',
-    'Set a campus meetup location buyers recognize.',
+    'Set a campus, city, pickup point, or delivery area buyers recognize.',
     'Enable offers so buyers can negotiate fairly.',
   ];
   const isLast = step >= tips.length;

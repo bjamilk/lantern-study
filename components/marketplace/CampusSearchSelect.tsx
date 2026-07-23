@@ -15,6 +15,7 @@ interface CampusSearchSelectProps {
   onChange: (campusId: string | null) => void;
   otherCity?: string;
   onOtherCityChange?: (city: string) => void;
+  otherCityRequired?: boolean;
   emptyLabel?: string;
   id?: string;
   className?: string;
@@ -32,7 +33,8 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
   onChange,
   otherCity = '',
   onOtherCityChange,
-  emptyLabel = 'All campuses (no default filter)',
+  otherCityRequired = false,
+  emptyLabel = 'No saved campus (browse All Nigeria)',
   id = 'campus-search-select',
   className = '',
   collapsible = true,
@@ -160,6 +162,8 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
             type="text"
             value={otherCity}
             onChange={(e) => onOtherCityChange(e.target.value)}
+            required={otherCityRequired}
+            aria-required={otherCityRequired}
             placeholder="e.g. Abeokuta, Nsukka, Warri"
             className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text"
           />

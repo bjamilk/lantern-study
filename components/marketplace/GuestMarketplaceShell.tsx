@@ -105,7 +105,7 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
         </div>
         <div className="max-w-6xl mx-auto px-4 pb-2">
           <p className="text-xs text-lantern-text-secondary">
-            Browse campus listings publicly. Sign in to buy, contact sellers, or list items.
+            Browse listings across Nigeria. Sign in to buy, contact sellers, or list items.
           </p>
         </div>
       </header>

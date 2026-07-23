@@ -336,7 +336,7 @@ class SyncService {
                 price?: number;
                 quantity?: number;
                 location?: string;
-                campus_id?: string;
+                campus_id: string;
                 images?: string[];
               }
             );

@@ -19,6 +19,7 @@ import { MessageType, QuestionType, QuestionStatus } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { sendMessage } from '../services/supabase';
 import { trackAIToolUsed } from '../services/productAnalytics';
+import { reconcileDeliveredItem } from '@lantern/shared/utils';
 
 export function useAIHandlers() {
   const { currentUser } = useAuthStore();
@@ -115,13 +116,13 @@ export function useAIHandlers() {
 
           try {
             const content = JSON.stringify({ type: MessageType.QUESTION, ...questionData });
-            const saved = await sendMessage(groupId, currentUser.id, content);
+            const saved = await sendMessage(groupId, currentUser.id, content, uuidv4());
             if (saved) {
               posted += 1;
               updateMessages((prev) => ({
                 ...prev,
-                [groupId]: [
-                  ...(prev[groupId] || []),
+                [groupId]: reconcileDeliveredItem(
+                  prev[groupId] || [],
                   {
                     id: saved.id,
                     sender: currentUser,
@@ -130,7 +131,7 @@ export function useAIHandlers() {
                     downvotes: 0,
                     ...questionData,
                   },
-                ],
+                ),
               }));
             } else {
               failed += 1;

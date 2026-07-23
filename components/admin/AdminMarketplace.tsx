@@ -44,7 +44,7 @@ interface AdminMarketplaceProps {
 const ORDER_STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Pending payment',
   paid: 'Paid',
-  ready_for_pickup: 'Ready for pickup',
+  ready_for_pickup: 'Ready for pickup or delivery',
   buyer_confirmed: 'Buyer confirmed',
   completed: 'Completed',
   cancelled: 'Cancelled',
@@ -188,7 +188,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
               <option value="all">All orders</option>
               <option value="pending_payment">Pending payment</option>
               <option value="paid">Paid</option>
-              <option value="ready_for_pickup">Ready for pickup</option>
+              <option value="ready_for_pickup">Ready for pickup or delivery</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </Select>
@@ -218,7 +218,7 @@ export const AdminMarketplace: React.FC<AdminMarketplaceProps> = ({
 
           {orderStatusFilter === 'disputed' ? (
             <p className="text-sm text-lantern-text-muted">
-              Resolve campus deal disputes by releasing escrow to the seller (complete sale) or refunding the buyer
+              Resolve marketplace order disputes by releasing escrow to the seller (complete sale) or refunding the buyer
               (cancel order and re-list the item).
             </p>
           ) : null}

@@ -867,7 +867,6 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             )}
             <button
                 type="submit"
-                onClick={handleSubmit}
                 className={`flex-1 sm:flex-none px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg ${mode === 'test' ? 'bg-lantern-primary hover:bg-lantern-primary-dark' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                 disabled={isSubmitDisabled()}
             >

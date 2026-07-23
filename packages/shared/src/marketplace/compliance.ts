@@ -4,10 +4,10 @@ export const MARKETPLACE_DEFAULT_COUNTRY: MarketplaceCountryCode = 'NG';
 export const MARKETPLACE_DEFAULT_CURRENCY = 'NGN';
 
 export const MARKETPLACE_COMPLIANCE_BANNER =
-  'Lantern Study Marketplace is for Nigerian campus communities. Meet on campus; payments are arranged directly between students.';
+  'Lantern Study Marketplace is available across Nigeria. Campus or city details help with local discovery and logistics; pickup, delivery, and payment are arranged directly between users.';
 
 export const MARKETPLACE_CREATE_CONFIRMATION =
-  'I confirm this listing is for on-campus pickup in Nigeria and complies with campus marketplace rules.';
+  'I confirm this listing is in Nigeria, its campus or city details are accurate, and the pickup or delivery terms are clear.';
 
 export function isMarketplaceCountryEnabled(countryCode?: string | null): boolean {
   if (!countryCode) return false;

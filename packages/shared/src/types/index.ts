@@ -668,7 +668,14 @@ export interface MarketplaceListing {
   campus_id?: string | null;
   country_code?: string;
   currency?: string;
-  campus?: { id: string; name: string; city: string; state: string; slug?: string };
+  campus?: {
+    id: string;
+    name: string;
+    city: string;
+    state: string;
+    slug?: string;
+    geopolitical_zone?: string | null;
+  };
   images?: string[];
   status: 'active' | 'sold' | 'inactive' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;

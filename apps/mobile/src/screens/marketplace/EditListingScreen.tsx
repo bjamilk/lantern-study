@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -22,7 +22,13 @@ import {
 } from '../../stores';
 import { Button } from '../../components/ui';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
+import {
+  isOtherCityCampus,
+  type MarketplaceCampus,
+} from '@lantern/shared/marketplace';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
+import { fetchMarketplaceCampuses } from '../../services/api';
+import { CampusPicker } from './CampusPicker';
 
 type NavigationProp = {
   goBack: () => void;
@@ -54,10 +60,18 @@ export function EditListingScreen({
   const [quantity, setQuantity] = useState('');
   const [uploading, setUploading] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
+  const [campusId, setCampusId] = useState('');
 
   useEffect(() => {
     if (listingId) void fetchListing(listingId);
   }, [listingId, fetchListing]);
+
+  useEffect(() => {
+    void fetchMarketplaceCampuses('NG')
+      .then(rows => setCampuses(rows))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!currentListing || currentListing.id !== listingId) return;
@@ -71,9 +85,24 @@ export function EditListingScreen({
     setLocation(currentListing.location || '');
     setImages(currentListing.images || []);
     setQuantity(currentListing.quantity != null ? String(currentListing.quantity) : '');
+    setCampusId(currentListing.campus_id || currentListing.campus?.id || '');
   }, [currentListing, listingId]);
 
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
+  const listingCampus = currentListing?.campus;
+  const campusOptions =
+    listingCampus && !campuses.some(campus => campus.id === listingCampus.id)
+      ? [
+          ...campuses,
+          {
+            ...listingCampus,
+            slug: listingCampus.slug || '',
+            country_code: listingCampus.country_code || 'NG',
+          },
+        ]
+      : campuses;
+  const selectedCampus = campusOptions.find(campus => campus.id === campusId);
+  const isOtherCity = isOtherCityCampus(selectedCampus);
 
   const pickImages = async () => {
     if (images.length >= MAX_IMAGES) {
@@ -132,6 +161,17 @@ export function EditListingScreen({
       Alert.alert('Missing title', 'Please enter a title.');
       return;
     }
+    if (!campusId) {
+      Alert.alert(
+        'Missing area',
+        'Choose a campus, or select Other (city in Nigeria).'
+      );
+      return;
+    }
+    if (isOtherCity && !location.trim()) {
+      Alert.alert('Missing city', 'Enter the Nigerian city for this listing.');
+      return;
+    }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
     const parsedSalePrice = salePrice.trim() ? parseFloat(salePrice.replace(/,/g, '')) : undefined;
     const saleEndsAt =
@@ -153,6 +193,7 @@ export function EditListingScreen({
           sale_ends_at: saleEndsAt,
           promo_label: promoLabel.trim() || undefined,
           location: location.trim() || undefined,
+          campus_id: campusId,
           quantity: parsedQuantity,
           images,
         },
@@ -241,6 +282,19 @@ export function EditListingScreen({
             <View className="mb-4" />
           )}
 
+          <Text className="text-sm font-semibold text-lantern-text mb-2">
+            Campus or city *
+          </Text>
+          <CampusPicker
+            campuses={campusOptions}
+            value={campusId}
+            onChange={setCampusId}
+            emptyLabel="Choose a campus or Other city"
+          />
+          <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+            Listings stay visible across Nigeria; this only identifies where yours is based.
+          </Text>
+
           <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
           <TextInput
             value={price}
@@ -296,10 +350,20 @@ export function EditListingScreen({
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
           />
 
-          <Text className="text-sm font-semibold text-lantern-text mb-2">Location</Text>
+          <Text className="text-sm font-semibold text-lantern-text mb-2">
+            {isOtherCity
+              ? 'City / pickup or delivery area *'
+              : 'Pickup or delivery detail (optional)'}
+          </Text>
           <TextInput
             value={location}
             onChangeText={setLocation}
+            placeholder={
+              isOtherCity
+                ? 'Enter the city and a useful area'
+                : 'Pickup point, delivery area, or landmark…'
+            }
+            placeholderTextColor="#94a3b8"
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
           />
 

@@ -17,17 +17,26 @@ import { featureAccents } from '@lantern/shared/design';
 import {
   useMarketplaceStore,
   useAuthStore,
+  useSettingsStore,
   ACADEMIC_CATEGORIES,
   STUDENT_LIFE_CATEGORIES,
   getCategoryInfo,
+  mapRemoteListing,
   type MarketplaceListing,
   type MarketplaceCategory,
+  type RemoteListing,
 } from '../../stores';
-import { fetchMarketplaceListing, checkSavedSearchMatches } from '../../services/api';
+import {
+  fetchMarketplaceCampuses,
+  fetchMarketplaceListing,
+  checkSavedSearchMatches,
+} from '../../services/api';
 import { Button } from '../../components/ui';
 import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
+import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -36,6 +45,9 @@ type NavigationProp = {
 export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }) {
   const tabBarClearance = useTabBarClearance(16);
   const { user } = useAuthStore();
+  const savedCampusId = useSettingsStore(
+    state => state.settings.marketplace?.campus_id || undefined
+  );
   const {
     listings,
     favorites,
@@ -48,6 +60,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     minPrice,
     maxPrice,
     locationFilter,
+    campusIdFilter,
     sortBy,
     sortOrder,
     listingsHasMore,
@@ -64,8 +77,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     setMinPrice,
     setMaxPrice,
     setLocationFilter,
+    setCampusIdFilter,
     setSortBy,
     setSortOrder,
+    applySavedSearch,
+    resetFilters,
     setShowFavoritesOnly,
     toggleFavorite,
     loadFromStorage,
@@ -77,11 +93,19 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
   const [refreshing, setRefreshing] = useState(false);
   const [recentListings, setRecentListings] = useState<MarketplaceListing[]>([]);
   const [savedSearchNewMatches, setSavedSearchNewMatches] = useState(0);
+  const [campuses, setCampuses] = useState<MarketplaceCampusOption[]>([]);
 
   const categories = activeTab === 'academic' ? ACADEMIC_CATEGORIES : STUDENT_LIFE_CATEGORIES;
   const activeCategoryLabel = selectedCategory
     ? getCategoryInfo(selectedCategory).name
     : 'All categories';
+  const selectedCampus = campuses.find(campus => campus.id === campusIdFilter);
+  const activeFilterCount = [
+    minPrice,
+    maxPrice,
+    locationFilter,
+    campusIdFilter,
+  ].filter(Boolean).length + (sortBy !== 'created_at' || sortOrder !== 'desc' ? 1 : 0);
 
   const academicCategoryIds = useMemo(() => ACADEMIC_CATEGORIES.map(c => c.id), []);
   const studentLifeCategoryIds = useMemo(() => STUDENT_LIFE_CATEGORIES.map(c => c.id), []);
@@ -92,27 +116,18 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     for (const id of ids.slice(0, 6)) {
       try {
         const l = await fetchMarketplaceListing(id);
-        loaded.push({
-          id: l.id,
-          user_id: l.user_id,
-          seller_id: l.user_id,
-          category: l.category,
-          title: l.title,
-          description: l.description,
-          price: l.price,
-          location: l.location,
-          images: l.images || [],
-          status: l.status,
-          views_count: l.views_count,
-          favorites_count: l.favorites_count,
-          created_at: l.created_at,
-          updated_at: l.updated_at,
-        });
+        loaded.push(mapRemoteListing(l as RemoteListing));
       } catch {
         // skip missing
       }
     }
     setRecentListings(loaded);
+  }, []);
+
+  useEffect(() => {
+    void fetchMarketplaceCampuses('NG')
+      .then(rows => setCampuses(rows))
+      .catch(() => {});
   }, []);
 
   const loadSavedSearchMatches = useCallback(async () => {
@@ -150,7 +165,16 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       void fetchListings({ page: 1 });
     }, 350);
     return () => clearTimeout(timer);
-  }, [searchQuery, minPrice, maxPrice, locationFilter, sortBy, sortOrder, fetchListings]);
+  }, [
+    searchQuery,
+    minPrice,
+    maxPrice,
+    locationFilter,
+    campusIdFilter,
+    sortBy,
+    sortOrder,
+    fetchListings,
+  ]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -178,9 +202,21 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             listing.category.startsWith('custom:');
       if (!tabMatch) return false;
       if (selectedCategory && listing.category !== selectedCategory) return false;
+      if (
+        campusIdFilter &&
+        (listing.campus_id ?? listing.campus?.id) !== campusIdFilter
+      ) {
+        return false;
+      }
       return true;
     },
-    [activeTab, selectedCategory, academicCategoryIds, studentLifeCategoryIds]
+    [
+      activeTab,
+      selectedCategory,
+      campusIdFilter,
+      academicCategoryIds,
+      studentLifeCategoryIds,
+    ]
   );
 
   const displayListings = useMemo(() => {
@@ -215,44 +251,36 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           query: searchQuery,
           resultCount: displayListings.length,
           category: selectedCategory || undefined,
+          campus: savedCampusId,
         });
       });
     }, 500);
     return () => clearTimeout(timer);
-  }, [searchQuery, displayListings.length, selectedCategory]);
+  }, [searchQuery, displayListings.length, selectedCategory, savedCampusId]);
 
   const handleSaveSearch = async () => {
     try {
       await createSavedSearch(
-        {
-          search: searchQuery,
-          category: selectedCategory,
+        buildSavedMarketplaceFilters({
+          searchQuery,
+          selectedCategory,
+          activeTab,
           minPrice,
           maxPrice,
-          location: locationFilter,
+          locationFilter,
+          campusIdFilter,
           sortBy,
           sortOrder,
-          activeTab,
-        },
-        searchQuery.trim() || activeCategoryLabel
+        }),
+        searchQuery.trim() ||
+          (selectedCategory
+            ? activeCategoryLabel
+            : selectedCampus?.name || 'Marketplace search')
       );
       Alert.alert('Saved', 'Search saved.');
     } catch {
       Alert.alert('Error', 'Could not save search.');
     }
-  };
-
-  const applySavedSearch = (filters: Record<string, unknown>) => {
-    if (typeof filters.search === 'string') setSearchQuery(filters.search);
-    if (typeof filters.category === 'string') setSelectedCategory(filters.category as MarketplaceCategory);
-    if (typeof filters.minPrice === 'string') setMinPrice(filters.minPrice);
-    if (typeof filters.maxPrice === 'string') setMaxPrice(filters.maxPrice);
-    if (typeof filters.location === 'string') setLocationFilter(filters.location);
-    if (typeof filters.sortBy === 'string') setSortBy(filters.sortBy);
-    if (filters.sortOrder === 'asc' || filters.sortOrder === 'desc') setSortOrder(filters.sortOrder);
-    if (filters.activeTab === 'academic' || filters.activeTab === 'student-life') setActiveTab(filters.activeTab);
-    setShowSavedSearches(false);
-    void fetchListings({ page: 1 });
   };
 
   const renderListing = ({ item }: { item: MarketplaceListing }) => {
@@ -337,7 +365,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       <View className="px-4 pt-2">
         <FeatureHero
           title="Explore"
-          subtitle="Buy & sell on campus"
+          subtitle="Buy and sell across Nigeria"
           accentColor={featureAccents.marketplace}
           right={
             <View className="flex-row flex-wrap gap-2 justify-end max-w-[160px]">
@@ -362,8 +390,17 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               placeholderTextColor="#94a3b8"
               className="flex-1 ml-2 text-sm text-lantern-text"
             />
-            <Pressable onPress={() => setShowFilters(v => !v)} className="p-2 min-w-[44px] min-h-[44px] items-center justify-center">
-              <Ionicons name="options-outline" size={18} color="#64748b" />
+            <Pressable
+              onPress={() => setShowFilters(v => !v)}
+              className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
+              accessibilityRole="button"
+              accessibilityLabel="Marketplace filters"
+            >
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
+              />
             </Pressable>
           </View>
         </FeatureHero>
@@ -404,6 +441,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <Ionicons name={showCategories ? 'chevron-up' : 'chevron-down'} size={14} color="#64748b" />
           </Pressable>
           <Pressable
+            onPress={() => setShowFilters(true)}
+            className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
+          >
+            <Ionicons name="location-outline" size={13} color="#64748b" />
+            <Text numberOfLines={1} className="max-w-[120px] text-[11px] font-medium text-lantern-text-secondary">
+              {selectedCampus?.name || 'All Nigeria'}
+            </Text>
+          </Pressable>
+          <Pressable
             onPress={() => setShowSavedSearches(v => !v)}
             className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary"
           >
@@ -422,6 +468,21 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
         {showFilters ? (
           <View className="px-3 pb-3 gap-2">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-xs font-semibold text-lantern-text">Browse area</Text>
+              {activeFilterCount > 0 ? (
+                <Pressable onPress={resetFilters} className="min-h-[32px] px-2 justify-center">
+                  <Text className="text-xs font-semibold text-lantern-primary">Reset filters</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <CampusPicker
+              campuses={campuses}
+              value={campusIdFilter}
+              onChange={setCampusIdFilter}
+              emptyLabel="All Nigeria"
+              allowEmpty
+            />
             <View className="flex-row gap-2">
               <TextInput
                 value={minPrice}
@@ -441,7 +502,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <TextInput
               value={locationFilter}
               onChangeText={setLocationFilter}
-              placeholder="Location filter"
+              placeholder="Pickup or delivery area"
+              placeholderTextColor="#94a3b8"
               className="p-2 rounded-lg border border-lantern-border text-sm text-lantern-text"
             />
             <View className="flex-row gap-2">
@@ -496,7 +558,13 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           <View className="px-3 pb-3">
             {savedSearches.map(s => (
               <View key={s.id} className="flex-row items-center justify-between py-2 border-b border-lantern-border">
-                <Pressable className="flex-1" onPress={() => applySavedSearch(s.filters)}>
+                <Pressable
+                  className="flex-1"
+                  onPress={() => {
+                    applySavedSearch(s.filters);
+                    setShowSavedSearches(false);
+                  }}
+                >
                   <Text className="text-sm text-lantern-text">{s.name}</Text>
                 </Pressable>
                 <Pressable onPress={() => void deleteSavedSearch(s.id)}>

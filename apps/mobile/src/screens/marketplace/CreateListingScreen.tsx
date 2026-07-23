@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,16 +24,19 @@ import {
 import { fetchMarketplaceCampuses } from '../../services/api';
 import { aiGenerateListingDescription } from '../../services/ai';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
+import {
+  isOtherCityCampus,
+  type MarketplaceCampus,
+} from '@lantern/shared/marketplace';
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import { Button } from '../../components/ui';
+import { CampusPicker } from './CampusPicker';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
 const MAX_IMAGES = 5;
-
-type Campus = { id: string; name: string; city: string; state: string };
 
 interface ListingDraft {
   title: string;
@@ -75,10 +78,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const [showCategories, setShowCategories] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
 
-  const [campuses, setCampuses] = useState<Campus[]>([]);
+  const [campuses, setCampuses] = useState<MarketplaceCampus[]>([]);
   const [campusId, setCampusId] = useState('');
-  const [campusQuery, setCampusQuery] = useState('');
-  const [showCampuses, setShowCampuses] = useState(false);
 
   // Draft persistence: survive app switches / process death mid-creation.
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -89,6 +90,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const ALL_CATEGORIES = [...ACADEMIC_CATEGORIES, ...STUDENT_LIFE_CATEGORIES];
   const selectedCategory = ALL_CATEGORIES.find(c => c.id === category);
   const selectedCampus = campuses.find(c => c.id === campusId);
+  const isOtherCity = isOtherCityCampus(selectedCampus);
 
   useEffect(() => {
     fetchMarketplaceCampuses('NG')
@@ -197,19 +199,6 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     void clearDraft();
   };
 
-  const filteredCampuses = useMemo(() => {
-    const q = campusQuery.trim().toLowerCase();
-    const rows = q
-      ? campuses.filter(
-          c =>
-            c.name.toLowerCase().includes(q) ||
-            c.city?.toLowerCase().includes(q) ||
-            c.state?.toLowerCase().includes(q)
-        )
-      : campuses;
-    return rows.slice(0, 25);
-  }, [campuses, campusQuery]);
-
   const pickImages = async () => {
     if (pendingImages.length >= MAX_IMAGES) {
       Alert.alert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
@@ -284,7 +273,17 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       return;
     }
     if (!campusId) {
-      Alert.alert('Missing campus', 'Please select your campus so buyers know where to meet.');
+      Alert.alert(
+        'Missing area',
+        'Choose a campus, or select Other (city in Nigeria).'
+      );
+      return;
+    }
+    if (isOtherCity && !location.trim()) {
+      Alert.alert(
+        'Missing city',
+        'Enter the Nigerian city for this listing.'
+      );
       return;
     }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
@@ -327,6 +326,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           promo_label: promoLabel.trim() || undefined,
           location: location.trim() || undefined,
           campus_id: campusId,
+          country_code: 'NG',
+          currency: 'NGN',
           quantity: parsedQuantity,
           images: [],
           status: 'active',
@@ -492,51 +493,18 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           <View className="mb-4" />
         )}
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Campus *</Text>
-        <Pressable
-          onPress={() => setShowCampuses(v => !v)}
-          className="p-3 rounded-xl border border-lantern-border bg-lantern-surface mb-2 flex-row items-center justify-between"
-        >
-          <Text className={selectedCampus ? 'text-lantern-text' : 'text-lantern-text-secondary'}>
-            {selectedCampus ? selectedCampus.name : 'Select your campus'}
-          </Text>
-          <Ionicons name={showCampuses ? 'chevron-up' : 'chevron-down'} size={18} color="#64748b" />
-        </Pressable>
-        {showCampuses ? (
-          <View className="mb-4 border border-lantern-border rounded-xl bg-lantern-surface overflow-hidden">
-            <TextInput
-              value={campusQuery}
-              onChangeText={setCampusQuery}
-              placeholder="Search campuses…"
-              placeholderTextColor="#94a3b8"
-              className="p-3 border-b border-lantern-border text-lantern-text"
-            />
-            {campuses.length === 0 ? (
-              <Text className="p-3 text-sm text-lantern-text-secondary">Loading campuses…</Text>
-            ) : filteredCampuses.length === 0 ? (
-              <Text className="p-3 text-sm text-lantern-text-secondary">No campuses match your search.</Text>
-            ) : (
-              filteredCampuses.map(c => (
-                <Pressable
-                  key={c.id}
-                  onPress={() => {
-                    setCampusId(c.id);
-                    setShowCampuses(false);
-                    setCampusQuery('');
-                  }}
-                  className={`p-3 border-b border-lantern-border/50 ${campusId === c.id ? 'bg-lantern-primary-background' : ''}`}
-                >
-                  <Text className="text-sm text-lantern-text">{c.name}</Text>
-                  <Text className="text-xs text-lantern-text-secondary">
-                    {[c.city, c.state].filter(Boolean).join(', ')}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-          </View>
-        ) : (
-          <View className="mb-2" />
-        )}
+        <Text className="text-sm font-semibold text-lantern-text mb-2">
+          Campus or city *
+        </Text>
+        <CampusPicker
+          campuses={campuses}
+          value={campusId}
+          onChange={setCampusId}
+          emptyLabel="Choose a campus or Other city"
+        />
+        <Text className="text-xs text-lantern-text-secondary mt-1 mb-4">
+          Listings are visible across Nigeria; this tells buyers where the item is based.
+        </Text>
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
         <TextInput
@@ -596,11 +564,19 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Meetup detail (optional)</Text>
+        <Text className="text-sm font-semibold text-lantern-text mb-2">
+          {isOtherCity
+            ? 'City / pickup or delivery area *'
+            : 'Pickup or delivery detail (optional)'}
+        </Text>
         <TextInput
           value={location}
           onChangeText={setLocation}
-          placeholder="Faculty gate, hall, landmark…"
+          placeholder={
+            isOtherCity
+              ? 'Enter the city and a useful area'
+              : 'Pickup point, delivery area, or landmark…'
+          }
           placeholderTextColor="#94a3b8"
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />

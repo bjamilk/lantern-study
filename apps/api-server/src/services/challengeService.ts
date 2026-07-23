@@ -221,6 +221,54 @@ export class ChallengeService {
     };
   }
 
+  private async findPendingChallenge(
+    groupId: string,
+    challengerId: string,
+    opponentId: string
+  ): Promise<any | null> {
+    const { data, error } = await this.db
+      .from('group_challenges')
+      .select('*')
+      .eq('group_id', groupId)
+      .eq('challenger_id', challengerId)
+      .eq('opponent_id', opponentId)
+      .eq('status', 'pending')
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+
+  private async ensureChallengeInviteNotification(challenge: any): Promise<void> {
+    const { data: existing, error } = await this.db
+      .from('notifications')
+      .select('id')
+      .eq('user_id', challenge.opponent_id)
+      .eq('type', 'challenge_invite')
+      .contains('data', { challengeId: challenge.id })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (existing) return;
+
+    const challengerProfile = await this.fetchProfileBasics(challenge.challenger_id);
+    try {
+      await this.supabaseService.createNotification(challenge.opponent_id, {
+        type: 'challenge_invite',
+        message: `${challengerProfile.name} challenged you to a duel!`,
+        link: `challenge:${challenge.id}`,
+        data: {
+          challengeId: challenge.id,
+          groupId: challenge.group_id,
+          challengerId: challenge.challenger_id,
+        },
+      });
+    } catch (notificationError: any) {
+      // The database uniqueness boundary makes concurrent notification creation
+      // an idempotent replay rather than a second visible invite.
+      if (notificationError?.code !== '23505') throw notificationError;
+    }
+  }
+
   async createChallenge(
     challengerId: string,
     payload: { groupId: string; opponentId: string; config: ChallengeConfig }
@@ -238,6 +286,12 @@ export class ChallengeService {
     ]);
     if (!challengerMember || !opponentMember) {
       throw Object.assign(new Error('Both users must be group members'), { statusCode: 403 });
+    }
+
+    const existingPending = await this.findPendingChallenge(groupId, challengerId, opponentId);
+    if (existingPending) {
+      await this.ensureChallengeInviteNotification(existingPending);
+      return this.mapChallenge(existingPending, challengerId);
     }
 
     const messages = await this.supabaseService.getGroupMessages(groupId, { limit: 500, page: 1 });
@@ -258,7 +312,7 @@ export class ChallengeService {
     const questionIds = selected.map((q: any) => q.id);
     const expiresAt = new Date(Date.now() + CHALLENGE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
 
-    const { data: challenge, error } = await this.db
+    const { data: insertedChallenge, error } = await this.db
       .from('group_challenges')
       .insert({
         group_id: groupId,
@@ -272,15 +326,15 @@ export class ChallengeService {
       .select()
       .single();
 
-    if (error) throw error;
+    let challenge = insertedChallenge;
+    if (error) {
+      if (error.code === '23505') {
+        challenge = await this.findPendingChallenge(groupId, challengerId, opponentId);
+      }
+      if (!challenge) throw error;
+    }
 
-    const challengerProfile = await this.fetchProfileBasics(challengerId);
-    await this.supabaseService.createNotification(opponentId, {
-      type: 'challenge_invite',
-      message: `${challengerProfile.name} challenged you to a duel!`,
-      link: `challenge:${challenge.id}`,
-      data: { challengeId: challenge.id, groupId, challengerId },
-    });
+    await this.ensureChallengeInviteNotification(challenge);
 
     await cacheService.deletePattern(`challenges:${challengerId}:*`);
     await cacheService.deletePattern(`challenges:${opponentId}:*`);

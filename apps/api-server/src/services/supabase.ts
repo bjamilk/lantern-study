@@ -19,6 +19,10 @@ import { mapUserStatsFromApi } from '@lantern/shared/utils/apiMappers';
 import { computeStudyStreak } from '@lantern/shared/utils/activity';
 import { calculateFsrsData } from '@lantern/shared/utils/fsrs';
 import { getSrsMaxInterval, normalizeUserSettings } from '@lantern/shared/settings';
+import {
+  MARKETPLACE_DEFAULT_COUNTRY,
+  MARKETPLACE_DEFAULT_CURRENCY,
+} from '@lantern/shared/marketplace';
 import { isPrivateStorageBucket, parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
 import {
   resolveThreadRootId,
@@ -6486,7 +6490,7 @@ export class SupabaseService {
   async getMarketplaceCampuses(countryCode = 'NG'): Promise<any[]> {
     const { data, error } = await this.supabase
       .from('marketplace_campuses')
-      .select('id, name, city, state, country_code, slug')
+      .select('id, name, city, state, country_code, slug, geopolitical_zone')
       .eq('active', true)
       .eq('country_code', countryCode)
       .order('name', { ascending: true });
@@ -6497,7 +6501,7 @@ export class SupabaseService {
   async getMarketplaceCampusById(campusId: string): Promise<any | null> {
     const { data, error } = await this.supabase
       .from('marketplace_campuses')
-      .select('id, name, city, state, country_code, slug, active')
+      .select('id, name, city, state, country_code, slug, active, geopolitical_zone')
       .eq('id', campusId)
       .maybeSingle();
     if (error) throw error;
@@ -6850,7 +6854,8 @@ export class SupabaseService {
           city,
           state,
           slug,
-          country_code
+          country_code,
+          geopolitical_zone
         )
       `)
       .eq('id', listingId);
@@ -6891,6 +6896,10 @@ export class SupabaseService {
 
   async createMarketplaceListing(listingData: any, userId: string): Promise<any> {
     const { normalizeMarketplacePricing } = await import('../utils/marketplacePricing');
+    const campusId = listingData.campus_id ?? listingData.campusId;
+    if (!campusId) {
+      throw new Error('Campus or city metadata is required');
+    }
     const pricing = normalizeMarketplacePricing({
       price: listingData.price,
       sale_price: listingData.sale_price,
@@ -6910,9 +6919,9 @@ export class SupabaseService {
           : null,
       promo_label: listingData.promo_label ?? listingData.promoLabel,
       location: listingData.location,
-      campus_id: listingData.campus_id ?? listingData.campusId,
-      country_code: listingData.country_code ?? listingData.countryCode ?? 'NG',
-      currency: listingData.currency ?? 'NGN',
+      campus_id: campusId,
+      country_code: MARKETPLACE_DEFAULT_COUNTRY,
+      currency: MARKETPLACE_DEFAULT_CURRENCY,
       images: listingData.images || [],
       category_specific_fields: listingData.categorySpecificFields || listingData.category_specific_fields || {},
       listing_kind: listingData.listing_kind || listingData.listingKind || 'single',
@@ -6950,9 +6959,19 @@ export class SupabaseService {
     assign('description', 'description');
     assign('promo_label', 'promo_label', 'promoLabel');
     assign('location', 'location');
+    if (
+      (updates?.campus_id !== undefined || updates?.campusId !== undefined) &&
+      !(updates.campus_id ?? updates.campusId)
+    ) {
+      throw new Error('Campus or city metadata cannot be removed');
+    }
     assign('campus_id', 'campus_id', 'campusId');
-    assign('country_code', 'country_code', 'countryCode');
-    assign('currency', 'currency');
+    if (updates?.country_code !== undefined || updates?.countryCode !== undefined) {
+      dbUpdates.country_code = MARKETPLACE_DEFAULT_COUNTRY;
+    }
+    if (updates?.currency !== undefined) {
+      dbUpdates.currency = MARKETPLACE_DEFAULT_CURRENCY;
+    }
     if (updates?.images !== undefined) dbUpdates.images = updates.images;
     assign('category_specific_fields', 'categorySpecificFields', 'category_specific_fields');
     assign('listing_kind', 'listing_kind', 'listingKind');
@@ -8821,9 +8840,44 @@ export class SupabaseService {
   }
 
   async getAdminAnalytics(days: number): Promise<AdminAnalyticsPayload> {
-    const { data, error } = await this.supabase.rpc('admin_analytics', { p_days: days });
+    const [{ data, error }, { data: zoneData, error: zoneError }] = await Promise.all([
+      this.supabase.rpc('admin_analytics', { p_days: days }),
+      this.supabase.rpc('marketplace_zone_analytics', { p_days: days }),
+    ]);
     if (error) throw error;
-    return data as AdminAnalyticsPayload;
+
+    const analytics = data as AdminAnalyticsPayload;
+    if (zoneError || !zoneData || typeof zoneData !== 'object') {
+      if (zoneError) {
+        logger.warn('marketplace_zone_analytics RPC failed', { error: zoneError.message });
+      }
+      return analytics;
+    }
+
+    const zones = zoneData as {
+      gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
+      listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
+      searchesByZone?: Array<{ zone: string; count: number }>;
+      searchesByCampus?: Array<{ campus: string; count: number }>;
+    };
+    return {
+      ...analytics,
+      marketplaceKpis: analytics.marketplaceKpis
+        ? {
+            ...analytics.marketplaceKpis,
+            gmvByZone: zones.gmvByZone || [],
+            listingsByZone: zones.listingsByZone || [],
+          }
+        : analytics.marketplaceKpis,
+      searchAnalytics: analytics.searchAnalytics
+        ? {
+            ...analytics.searchAnalytics,
+            searchesByCampus:
+              zones.searchesByCampus || analytics.searchAnalytics.searchesByCampus,
+            searchesByZone: zones.searchesByZone || [],
+          }
+        : analytics.searchAnalytics,
+    };
   }
 }
 
@@ -8846,6 +8900,8 @@ export interface AdminAnalyticsPayload {
     disputedCount: number;
     gmvByCategory: Array<{ category: string; gmv: number; orders: number }>;
     gmvByCampus: Array<{ campus: string; gmv: number; orders: number }>;
+    gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
+    listingsByZone?: Array<{ zone: string; total: number; active: number; sold: number }>;
   };
   retentionCohorts?: {
     signups: number;
@@ -8860,6 +8916,7 @@ export interface AdminAnalyticsPayload {
     topQueries: Array<{ query: string; count: number }>;
     zeroResultQueries: Array<{ query: string; count: number }>;
     searchesByCampus: Array<{ campus: string; count: number }>;
+    searchesByZone?: Array<{ zone: string; count: number }>;
     totalSearches: number;
   };
   acquisitionFunnel?: {

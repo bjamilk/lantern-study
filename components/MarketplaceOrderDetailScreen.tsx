@@ -22,6 +22,15 @@ interface MarketplaceOrderDetailScreenProps {
 }
 
 const STEPS = ['paid', 'ready_for_pickup', 'completed'];
+const STATUS_LABELS: Record<string, string> = {
+  pending_payment: 'Awaiting payment',
+  paid: 'Paid — arrange fulfillment',
+  ready_for_pickup: 'Ready for pickup or delivery',
+  buyer_confirmed: 'Buyer confirmed',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  disputed: 'Disputed',
+};
 
 const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> = ({
   orderId,
@@ -134,7 +143,9 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <p className="text-2xl font-bold text-lantern-primary">
             ₦{Number(order.amount).toLocaleString()}
           </p>
-          <p className="text-sm text-lantern-text-secondary mt-1 capitalize">{order.status.replace(/_/g, ' ')}</p>
+          <p className="text-sm text-lantern-text-secondary mt-1">
+            {STATUS_LABELS[order.status] || order.status.replace(/_/g, ' ')}
+          </p>
           {order.status === 'completed' && order.completed_at && (
             <p className="text-xs text-lantern-text-tertiary mt-2">
               Completed {new Date(order.completed_at).toLocaleString()}
@@ -156,7 +167,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           </div>
           <ul className="mt-3 space-y-1 text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">
             <li>Paid {order.created_at ? '✓' : ''}</li>
-            <li>Ready for pickup {order.seller_confirmed_at ? '✓' : '—'}</li>
+            <li>Ready for pickup or delivery {order.seller_confirmed_at ? '✓' : '—'}</li>
             <li>Completed {order.completed_at ? '✓' : '—'}</li>
           </ul>
         </div>
@@ -165,7 +176,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
             <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Payment required</h2>
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              Pay the seller via bank transfer or campus payment app, then upload your receipt screenshot.
+              Pay the seller using the agreed method, then upload your receipt screenshot.
             </p>
             {order.payment_proof_url && (
               <div className="space-y-2">
@@ -226,7 +237,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                   disabled={acting}
                   onClick={() => runAction('mark_ready')}
                 >
-                  Mark ready for pickup
+                  Mark ready for pickup or delivery
                 </Button>
                 <Button
                   size="sm"

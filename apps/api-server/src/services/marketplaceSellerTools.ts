@@ -142,10 +142,14 @@ export class MarketplaceSellerToolsService {
       images?: string[];
       location?: string;
       category?: string;
+      campusId: string;
+      countryCode: string;
+      currency: string;
     }
   ): Promise<Record<string, unknown>> {
     if (!input.title?.trim()) throw new Error('Bundle title is required');
     if (!input.price || input.price <= 0) throw new Error('Bundle price must be positive');
+    if (!input.campusId) throw new Error('Campus or city metadata is required');
     if (!input.listingIds?.length || input.listingIds.length < 2) {
       throw new Error('Select at least 2 listings for a bundle');
     }
@@ -182,6 +186,9 @@ export class MarketplaceSellerToolsService {
         description: input.description || null,
         price: input.price,
         location: input.location || null,
+        campus_id: input.campusId,
+        country_code: input.countryCode,
+        currency: input.currency,
         images,
         status: 'active',
         listing_kind: 'bundle',

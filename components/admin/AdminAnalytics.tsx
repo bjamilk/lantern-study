@@ -312,7 +312,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
             <StatPill label="AOV" value={`₦${Number(mk.aov).toLocaleString()}`} accent="neutral" />
             <StatPill label="Dispute rate" value={`${mk.disputedRate}%`} accent="accent" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <div>
               <p className="text-xs font-semibold text-lantern-text-muted mb-2">GMV by category</p>
               {(mk.gmvByCategory?.length ?? 0) === 0 ? (
@@ -343,6 +343,38 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
                 </div>
               )}
             </div>
+            {(mk.gmvByZone?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
+                  GMV by geopolitical zone
+                </p>
+                <div className="space-y-1">
+                  {mk.gmvByZone?.map((row) => (
+                    <div key={row.zone} className="flex justify-between text-sm">
+                      <span className="text-lantern-text-muted">{row.zone}</span>
+                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(mk.listingsByZone?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
+                  Listings by geopolitical zone
+                </p>
+                <div className="space-y-1">
+                  {mk.listingsByZone?.map((row) => (
+                    <div key={row.zone} className="flex justify-between gap-3 text-sm">
+                      <span className="text-lantern-text-muted">{row.zone}</span>
+                      <span className="font-medium text-right">
+                        {row.total} total · {row.active} active · {row.sold} sold
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}
@@ -391,7 +423,7 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
         <Card variant="elevated">
           <h3 className="text-sm font-semibold text-lantern-text mb-1">Search analytics</h3>
           <p className="text-xs text-lantern-text-muted mb-3">{search.totalSearches} searches in period (consent-gated events)</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${search.searchesByZone?.length ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
             <div>
               <p className="text-xs font-semibold text-lantern-text-muted mb-2">Top queries</p>
               {(search.topQueries?.length ?? 0) === 0 ? (
@@ -419,9 +451,9 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
               )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Searches by campus</p>
+              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Searches by saved-campus context</p>
               {(search.searchesByCampus?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No campus tags yet.</p>
+                <p className="text-sm text-lantern-text-muted">No saved-campus context yet.</p>
               ) : (
                 search.searchesByCampus.map((row) => (
                   <div key={row.campus} className="flex justify-between text-sm mb-1">
@@ -431,6 +463,19 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
                 ))
               )}
             </div>
+            {(search.searchesByZone?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
+                  Searches by geopolitical zone
+                </p>
+                {search.searchesByZone?.map((row) => (
+                  <div key={row.zone} className="flex justify-between text-sm mb-1">
+                    <span className="text-lantern-text-muted">{row.zone}</span>
+                    <span className="font-medium">{row.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
       )}

@@ -544,7 +544,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="space-y-6">
                     <div>
                         <h3 className="text-lg font-semibold text-lantern-text">Marketplace</h3>
-                        <p className="text-sm text-lantern-text-secondary">Set your campus to personalize Explore listings.</p>
+                        <p className="text-sm text-lantern-text-secondary">
+                            Save a campus for local context. Explore still opens to listings across Nigeria.
+                        </p>
                     </div>
                     <p className="text-sm text-lantern-text-secondary rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-amber-900 dark:text-amber-100">
                         {MARKETPLACE_COMPLIANCE_BANNER}
