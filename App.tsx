@@ -117,6 +117,17 @@ import { CompanionAction } from './types';
 import { buildFlashcardSourceContent } from './utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from './utils/flashcardGeneration';
 
+const AppContentLoadingFallback: React.FC = () => (
+    <div
+        className="flex-1 min-h-0 flex items-center justify-center bg-lantern-background"
+        role="status"
+        aria-label="Loading page"
+    >
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-lantern-primary/30 border-t-lantern-primary" />
+        <span className="sr-only">Loading page</span>
+    </div>
+);
+
 export const App: React.FC = () => {
     const { navigateTo, navigateToPath } = useAppNavigation();
     const { routeHydrating } = useRouteSync();
@@ -686,7 +697,7 @@ export const App: React.FC = () => {
         }
     }, [modals.notification, currentUser, setNotifications]);
 
-    if (isAuthLoading || (currentUser && routeHydrating)) return (
+    if (isAuthLoading) return (
         <div className="min-h-screen bg-lantern-background flex flex-col items-center justify-center gap-8">
             <img src="/lantern-icon-v2.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lantern-primary" />
@@ -1332,11 +1343,6 @@ export const App: React.FC = () => {
     };
     return (
         <ErrorBoundary>
-        <Suspense fallback={
-            <div className="flex-1 flex items-center justify-center bg-lantern-background">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-lantern-primary/30 border-t-lantern-primary" />
-            </div>
-        }>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={getTotalActiveUnreadChatCount(groups, dmThreads)}
             hideMobileAiUsageBadge={
@@ -1346,6 +1352,11 @@ export const App: React.FC = () => {
                 || appMode === AppMode.STUDY_ACTIVE
             }
             onNavigate={handleShellNavigate}>
+            <Suspense fallback={<AppContentLoadingFallback />}>
+            {routeHydrating ? (
+                <AppContentLoadingFallback />
+            ) : (
+            <>
             <div className={`shrink-0 ${
                 appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
@@ -1367,6 +1378,9 @@ export const App: React.FC = () => {
             )}
             {mainContent()}
             </div>
+            </>
+            )}
+            </Suspense>
             <CreateGroupModal isOpen={modals.createGroup} onClose={handleCloseCreateGroupModal}
                 onSubmit={handleCreateSubGroup} parentId={subgroupParentId} allGroups={groups} />
             <QuestionModal isOpen={modals.question} onClose={() => closeModal('question')}
@@ -1600,8 +1614,7 @@ export const App: React.FC = () => {
                 userSettings={getUserSettings()}
             />
         </AppShell>
-        </Suspense>
-        {/* Outside Suspense so lazy screen loads don't remount Settings and reset the active tab */}
+        {/* Outside the content Suspense so lazy screen loads don't remount Settings and reset the active tab */}
         <SettingsModal isOpen={modals.settings} onClose={() => closeModal('settings')}
             currentUser={currentUser} userSettings={getUserSettings()}
             onUpdateSettingsCategory={handleUpdateSettingsCategory}

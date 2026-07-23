@@ -92,6 +92,28 @@ test.describe('Responsive smoke — auth + shell (credentials)', () => {
       await page.waitForTimeout(250);
     }
 
+    // Route hydration and lazy screen loading must not remount the persistent desktop sidebar.
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await page.goto(`${BASE}/dashboard`);
+    const sidebarScroller = page.getByTestId('desktop-sidebar-scroll');
+    await expect(sidebarScroller).toBeVisible();
+    const maxSidebarScroll = await sidebarScroller.evaluate(
+      (el) => el.scrollHeight - el.clientHeight
+    );
+    expect(maxSidebarScroll).toBeGreaterThan(20);
+    await sidebarScroller.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    const sidebarScrollBeforeNavigation = await sidebarScroller.evaluate((el) => el.scrollTop);
+    await page.getByRole('button', { name: /^Explore$/ }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+    });
+    await page.waitForURL(/\/marketplace$/);
+    await expect(sidebarScroller).toBeVisible();
+    await page.waitForTimeout(500);
+    const sidebarScrollAfterNavigation = await sidebarScroller.evaluate((el) => el.scrollTop);
+    expect(sidebarScrollAfterNavigation).toBeGreaterThanOrEqual(sidebarScrollBeforeNavigation - 2);
+
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
       for (const route of ['/dashboard', '/marketplace', '/budget', '/library']) {

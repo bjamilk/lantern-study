@@ -286,7 +286,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
       
-      <div className="flex-grow overflow-y-auto">
+      <div className="flex-grow overflow-y-auto" data-testid="desktop-sidebar-scroll">
         {isSessionPaused && (
             <div className="p-2 space-y-1">
                 <button onClick={() => onResumeSession(sessionAppMode)} className={`w-full flex items-center p-3 rounded-md text-white bg-yellow-500 hover:bg-yellow-600 animate-pulse ${!showText && 'justify-center'}`} title={`Resume ${pausedSessionLabel}`}>
