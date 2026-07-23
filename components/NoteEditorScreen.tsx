@@ -50,6 +50,8 @@ interface NoteEditorScreenProps {
 }
 
 const MIN_RECORD_MS = 1500;
+const RECORDER_CHUNK_WAIT_MS = 1000;
+const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -62,11 +64,90 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-function waitForRecorderChunks(): Promise<void> {
-  // stop() queues a final dataavailable; give it a turn before reading chunks.
+function chunksTotalSize(chunks: Blob[]): number {
+  return chunks.reduce((sum, chunk) => sum + (chunk?.size || 0), 0);
+}
+
+/** Wait until MediaRecorder has flushed at least one chunk, or timeout. */
+function waitForRecorderChunks(
+  getChunks: () => Blob[],
+  timeoutMs = RECORDER_CHUNK_WAIT_MS
+): Promise<void> {
   return new Promise((resolve) => {
-    window.setTimeout(resolve, 80);
+    const started = Date.now();
+    const tick = () => {
+      if (chunksTotalSize(getChunks()) > 0 || Date.now() - started >= timeoutMs) {
+        resolve();
+        return;
+      }
+      window.setTimeout(tick, 40);
+    };
+    // Let stop()'s final dataavailable land before the first poll.
+    window.setTimeout(tick, 0);
   });
+}
+
+async function encodeBlobAsWav(blob: Blob): Promise<Blob> {
+  const AudioContextCtor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error('WAV re-encode is not supported in this browser.');
+  }
+  const ctx = new AudioContextCtor();
+  try {
+    const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const sampleRate = decoded.sampleRate;
+    const length = decoded.length;
+    const mono = new Float32Array(length);
+    const ch0 = decoded.getChannelData(0);
+    if (decoded.numberOfChannels > 1) {
+      const ch1 = decoded.getChannelData(1);
+      for (let i = 0; i < length; i++) mono[i] = (ch0[i] + ch1[i]) / 2;
+    } else {
+      mono.set(ch0);
+    }
+    const dataSize = length * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+    const writeStr = (offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      const sample = Math.max(-1, Math.min(1, mono[i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+    return new Blob([buffer], { type: 'audio/wav' });
+  } finally {
+    await ctx.close().catch(() => undefined);
+  }
+}
+
+function formatTranscribeDiag(meta: {
+  blobSize?: number;
+  mimeType?: string;
+  durationMs?: number;
+}): string {
+  const parts: string[] = [];
+  if (typeof meta.durationMs === 'number') parts.push(`${Math.round(meta.durationMs / 1000)}s`);
+  if (typeof meta.blobSize === 'number') parts.push(`${meta.blobSize}B`);
+  if (meta.mimeType) parts.push(meta.mimeType);
+  return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
 const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
@@ -104,6 +185,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
+  const [transcribeStage, setTranscribeStage] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -452,53 +534,96 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         chunksRef.current = [];
       };
       recorder.onstop = async () => {
-        stopMediaStream();
         if (discardRecordingRef.current) {
           discardRecordingRef.current = false;
           chunksRef.current = [];
+          stopMediaStream();
           return;
         }
 
-        // Final dataavailable from stop() can land after onstop in some browsers.
-        await waitForRecorderChunks();
-        const blob = new Blob(chunksRef.current, { type: recordingMime });
+        // Keep tracks alive until the final dataavailable flush lands.
+        await waitForRecorderChunks(() => chunksRef.current);
+        const durationMs = Date.now() - recordingStartedAtRef.current;
+        let blob = new Blob(chunksRef.current, { type: recordingMime });
         chunksRef.current = [];
+        stopMediaStream();
+
         if (blob.size < 512) {
-          useToastStore
-            .getState()
-            .showToast('Recording was empty or too short. Hold for at least 2 seconds, then stop.', 'error');
+          useToastStore.getState().showToast(
+            `Recording was empty or too short. Hold for at least 2 seconds, then stop.${formatTranscribeDiag({
+              blobSize: blob.size,
+              mimeType: recordingMime,
+              durationMs,
+            })}`,
+            'error'
+          );
           return;
         }
 
         const abortController = new AbortController();
         transcribeAbortRef.current = abortController;
         setTranscribing(true);
+        setTranscribeStage('uploading');
         onCancelPendingSave?.();
+        saveEnabledRef.current = false;
         try {
-          const base64 = await blobToBase64(blob);
-          if (!base64 || base64.length < 64) {
-            throw new Error('Recording was empty or too short. Hold for at least 2 seconds, then stop.');
-          }
-          const mimeType = recordingMime.split(';')[0] || 'audio/webm';
-          const ext = mimeType.includes('mp4')
+          const runTranscribe = async (audioBlob: Blob, mime: string, fileExt: string) => {
+            const base64 = await blobToBase64(audioBlob);
+            if (!base64 || base64.length < 64) {
+              throw new Error(
+                `Recording was empty or too short. Hold for at least 2 seconds, then stop.${formatTranscribeDiag({
+                  blobSize: audioBlob.size,
+                  mimeType: mime,
+                  durationMs,
+                })}`
+              );
+            }
+            return notesApi.transcribeAudioForNote(base64, {
+              mimeType: mime,
+              noteId: note.id,
+              fileName: `lecture-${Date.now()}.${fileExt}`,
+              signal: abortController.signal,
+              currentBody: bodyRef.current,
+              durationMs,
+              clientByteLength: audioBlob.size,
+              useStoragePath: true,
+              onProgress: (progress) => {
+                if (progress.stage === 'uploading') setTranscribeStage('uploading');
+                if (progress.stage === 'processing') setTranscribeStage('transcribing');
+              },
+            });
+          };
+
+          let mimeType = recordingMime.split(';')[0] || 'audio/webm';
+          let ext = mimeType.includes('mp4')
             ? 'm4a'
             : mimeType.includes('ogg')
               ? 'ogg'
               : 'webm';
-          const result = await notesApi.transcribeAudioForNote(base64, {
-            mimeType,
-            noteId: note.id,
-            fileName: `lecture-${Date.now()}.${ext}`,
-            signal: abortController.signal,
-            currentBody: bodyRef.current,
-          });
+          let result: Awaited<ReturnType<typeof notesApi.transcribeAudioForNote>>;
+          try {
+            result = await runTranscribe(blob, mimeType, ext);
+          } catch (firstErr: unknown) {
+            const firstMessage = firstErr instanceof Error ? firstErr.message : '';
+            const shouldRetryAsWav =
+              /could not read that recording|unsupported|invalid.*media/i.test(firstMessage) &&
+              !mimeType.includes('wav');
+            if (!shouldRetryAsWav) throw firstErr;
+            blob = await encodeBlobAsWav(blob);
+            mimeType = 'audio/wav';
+            ext = 'wav';
+            result = await runTranscribe(blob, mimeType, ext);
+          }
+
           if (result.transcript) {
             setBody((prev) =>
               prev.includes(result.transcript)
                 ? prev
                 : [prev, result.transcript].filter(Boolean).join('\n\n')
             );
+            // Keep autosave paused briefly so a racing save cannot wipe the transcript merge.
             userEditedRef.current = false;
+            useToastStore.getState().showToast('Transcript ready', 'success');
           }
           if (result.persistWarning) {
             useToastStore.getState().showToast(result.persistWarning, 'info');
@@ -507,10 +632,21 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         } catch (err: unknown) {
           if (err instanceof DOMException && err.name === 'AbortError') return;
           const message = err instanceof Error ? err.message : 'Transcription failed';
-          useToastStore.getState().showToast(message, 'error');
+          const diag = formatTranscribeDiag({
+            blobSize: blob.size,
+            mimeType: recordingMime,
+            durationMs,
+          });
+          useToastStore
+            .getState()
+            .showToast(message.includes('(') ? message : `${message}${diag}`, 'error');
         } finally {
           transcribeAbortRef.current = null;
           setTranscribing(false);
+          setTranscribeStage('idle');
+          window.setTimeout(() => {
+            saveEnabledRef.current = true;
+          }, AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS);
         }
       };
       mediaRecorderRef.current = recorder;
@@ -574,6 +710,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     transcribeAbortRef.current?.abort();
     transcribeAbortRef.current = null;
     setTranscribing(false);
+    setTranscribeStage('idle');
   };
 
   return (
@@ -624,10 +761,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               </Button>
             ) : (
               <>
-                <Button size="sm" variant="danger" onClick={stopRecording}>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={stopRecording}
+                  disabled={recordingSeconds < 2}
+                  title={recordingSeconds < 2 ? 'Keep recording for at least 2 seconds' : undefined}
+                >
                   <StopIcon className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Stop & transcribe</span>
-                  <span className="sm:hidden">Stop</span>
+                  <span className="hidden sm:inline">
+                    {recordingSeconds < 2 ? `Wait ${2 - recordingSeconds}s` : 'Stop & transcribe'}
+                  </span>
+                  <span className="sm:hidden">{recordingSeconds < 2 ? `${2 - recordingSeconds}s` : 'Stop'}</span>
                 </Button>
                 <Button size="sm" variant="ghost" onClick={discardRecording}>
                   Cancel
@@ -645,7 +790,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             )}
             {transcribing && (
               <>
-                <span className="text-xs sm:text-sm text-lantern-text-tertiary self-center">Transcribing...</span>
+                <span className="text-xs sm:text-sm text-lantern-text-tertiary self-center">
+                  {transcribeStage === 'uploading' ? 'Uploading…' : 'Transcribing…'}
+                </span>
                 <Button size="sm" variant="ghost" onClick={cancelTranscription}>
                   Cancel
                 </Button>

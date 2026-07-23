@@ -16,6 +16,7 @@ import {
   buildCompanionClarifyReply,
 } from './companionMessageClarity';
 import { aiInflightGate } from '../utils/concurrencyGate';
+import { logger } from '../utils/logger';
 
 const AI_FETCH_TIMEOUT_MS = parseInt(process.env.AI_FETCH_TIMEOUT_MS || '120000', 10);
 
@@ -986,7 +987,7 @@ Return ONLY valid JSON: {"questions":[{"text":"What is photosynthesis?","type":"
   };
 }
 
-function resolveAudioUploadMeta(
+export function resolveAudioUploadMeta(
   buffer: Buffer,
   mimeType: string
 ): { mimeType: string; extension: string } {
@@ -1022,20 +1023,40 @@ function resolveAudioUploadMeta(
   return { mimeType: declared || 'audio/webm', extension: 'webm' };
 }
 
-export async function transcribeAudioBase64(
-  audioBase64: string,
-  mimeType: string = 'audio/webm'
-): Promise<{ transcript: string; provider: string }> {
+export function isTranscriptionConfigured(): boolean {
+  return Boolean(process.env.GROQ_API_KEY && String(process.env.GROQ_API_KEY).trim());
+}
+
+export type TranscribeAudioLogContext = {
+  requestId?: string;
+  noteId?: string | null;
+  storagePath?: string | null;
+  clientDurationMs?: number | null;
+  clientByteLength?: number | null;
+  clientMimeType?: string | null;
+};
+
+export async function transcribeAudioBuffer(
+  buffer: Buffer,
+  mimeType: string = 'audio/webm',
+  logContext?: TranscribeAudioLogContext
+): Promise<{ transcript: string; provider: string; sniffedMimeType: string; byteLength: number }> {
   return withAiInflight(async () => {
-    if (!process.env.GROQ_API_KEY) {
+    if (!isTranscriptionConfigured()) {
       throw new ApiError(
         'Audio transcription is not configured. Add GROQ_API_KEY to apps/api-server/.env (free key at https://console.groq.com).',
         503
       );
     }
 
-    const buffer = Buffer.from(audioBase64, 'base64');
     if (buffer.length < 64) {
+      logger.warn('transcribe-audio rejected empty buffer', {
+        requestId: logContext?.requestId,
+        noteId: logContext?.noteId,
+        byteLength: buffer.length,
+        clientDurationMs: logContext?.clientDurationMs,
+        clientByteLength: logContext?.clientByteLength,
+      });
       throw new ApiError(
         'Recording was empty or too short to transcribe. Hold for a couple of seconds, then stop.',
         400
@@ -1043,6 +1064,19 @@ export async function transcribeAudioBase64(
     }
 
     const meta = resolveAudioUploadMeta(buffer, mimeType);
+    logger.info('transcribe-audio starting Groq Whisper', {
+      requestId: logContext?.requestId,
+      noteId: logContext?.noteId,
+      storagePath: logContext?.storagePath,
+      byteLength: buffer.length,
+      sniffedMimeType: meta.mimeType,
+      sniffedExtension: meta.extension,
+      declaredMimeType: mimeType,
+      clientDurationMs: logContext?.clientDurationMs,
+      clientByteLength: logContext?.clientByteLength,
+      clientMimeType: logContext?.clientMimeType,
+    });
+
     const form = new FormData();
     const bytes = new Uint8Array(buffer);
     const filename = `lecture.${meta.extension}`;
@@ -1066,6 +1100,13 @@ export async function transcribeAudioBase64(
       const timedOut =
         err instanceof Error &&
         (err.name === 'TimeoutError' || /aborted|timeout/i.test(err.message));
+      logger.warn('transcribe-audio Groq fetch failed', {
+        requestId: logContext?.requestId,
+        timedOut,
+        message: err instanceof Error ? err.message : String(err),
+        byteLength: buffer.length,
+        sniffedMimeType: meta.mimeType,
+      });
       throw new ApiError(
         timedOut
           ? 'Transcription timed out. Try a shorter recording.'
@@ -1078,6 +1119,13 @@ export async function transcribeAudioBase64(
     if (!response.ok) {
       const err = await response.text();
       const detail = err.slice(0, 300);
+      logger.warn('transcribe-audio Groq rejected file', {
+        requestId: logContext?.requestId,
+        groqStatus: response.status,
+        detail,
+        byteLength: buffer.length,
+        sniffedMimeType: meta.mimeType,
+      });
       if (/could not process file|invalid.*media|unsupported/i.test(detail)) {
         throw new ApiError(
           'Could not read that recording. Try again, or use a different browser/mic.',
@@ -1089,7 +1137,37 @@ export async function transcribeAudioBase64(
     }
 
     const transcript = (await response.text()).trim();
-    if (!transcript) throw new ApiError('Empty transcription result.', 502);
-    return { transcript, provider: 'groq-whisper-turbo' };
+    if (!transcript) {
+      logger.warn('transcribe-audio empty Whisper result', {
+        requestId: logContext?.requestId,
+        groqStatus: response.status,
+        byteLength: buffer.length,
+        sniffedMimeType: meta.mimeType,
+      });
+      throw new ApiError('Empty transcription result.', 502);
+    }
+    logger.info('transcribe-audio Whisper ok', {
+      requestId: logContext?.requestId,
+      noteId: logContext?.noteId,
+      groqStatus: response.status,
+      byteLength: buffer.length,
+      sniffedMimeType: meta.mimeType,
+      transcriptChars: transcript.length,
+    });
+    return {
+      transcript,
+      provider: 'groq-whisper-turbo',
+      sniffedMimeType: meta.mimeType,
+      byteLength: buffer.length,
+    };
   });
+}
+
+export async function transcribeAudioBase64(
+  audioBase64: string,
+  mimeType: string = 'audio/webm',
+  logContext?: TranscribeAudioLogContext
+): Promise<{ transcript: string; provider: string; sniffedMimeType: string; byteLength: number }> {
+  const buffer = Buffer.from(audioBase64, 'base64');
+  return transcribeAudioBuffer(buffer, mimeType, logContext);
 }

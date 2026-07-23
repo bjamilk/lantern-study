@@ -106,17 +106,12 @@ export const updateNote = (noteId: string, updates: Partial<StudyNote>) => {
 };
 export const deleteNote = (noteId: string) =>
   notesRequest<void>(`/${noteId}`, { method: 'DELETE' });
-export const transcribeAudioForNote = (
-  audioBase64: string,
-  options?: {
-    mimeType?: string;
-    noteId?: string;
-    fileName?: string;
-    signal?: AbortSignal;
-    currentBody?: string;
-  }
-) => {
-  const timeoutMs = 120_000;
+async function notesLongTimedRequest<T>(
+  path: string,
+  body: Record<string, unknown>,
+  options?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? 120_000;
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   if (options?.signal) {
@@ -124,23 +119,98 @@ export const transcribeAudioForNote = (
     else options.signal.addEventListener('abort', onAbort, { once: true });
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return notesRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>(
-    '/transcribe-audio',
-    {
+  try {
+    return await notesRequest<T>(path, {
       method: 'POST',
-      body: JSON.stringify({
-        audioBase64,
-        mimeType: options?.mimeType,
-        noteId: options?.noteId,
-        fileName: options?.fileName,
-        currentBody: options?.currentBody,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
-    }
-  ).finally(() => {
+    });
+  } finally {
     clearTimeout(timer);
     options?.signal?.removeEventListener('abort', onAbort);
-  });
+  }
+}
+
+export const uploadLectureAudioForNote = (
+  audioBase64: string,
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+  }
+) =>
+  notesLongTimedRequest<{
+    storagePath: string;
+    mimeType: string;
+    byteLength: number;
+    fileName: string;
+  }>(
+    '/upload-lecture-audio',
+    {
+      audioBase64,
+      mimeType: options?.mimeType,
+      noteId: options?.noteId,
+      fileName: options?.fileName,
+    },
+    { signal: options?.signal, timeoutMs: 180_000 }
+  );
+
+export const transcribeAudioForNote = async (
+  audioBase64: string,
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    currentBody?: string;
+    durationMs?: number;
+    clientByteLength?: number;
+    useStoragePath?: boolean;
+  }
+) => {
+  const useStoragePath = options?.useStoragePath ?? Boolean(options?.noteId);
+  let storagePath: string | undefined;
+  let mimeType = options?.mimeType;
+  let fileName = options?.fileName;
+  let clientByteLength = options?.clientByteLength;
+
+  if (useStoragePath) {
+    const uploaded = await uploadLectureAudioForNote(audioBase64, {
+      mimeType,
+      noteId: options?.noteId,
+      fileName,
+      signal: options?.signal,
+    });
+    storagePath = uploaded.storagePath;
+    mimeType = uploaded.mimeType || mimeType;
+    fileName = uploaded.fileName || fileName;
+    clientByteLength = uploaded.byteLength;
+  }
+
+  return notesLongTimedRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>(
+    '/transcribe-audio',
+    storagePath
+      ? {
+          storagePath,
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          currentBody: options?.currentBody,
+          durationMs: options?.durationMs,
+          clientByteLength,
+        }
+      : {
+          audioBase64,
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          currentBody: options?.currentBody,
+          durationMs: options?.durationMs,
+          clientByteLength,
+        },
+    { signal: options?.signal, timeoutMs: 120_000 }
+  );
 };
 
 export const summarizeNote = (noteId: string) =>

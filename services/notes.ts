@@ -558,6 +558,35 @@ export async function updateNoteQuiz(
   });
 }
 
+export async function uploadLectureAudioForNote(
+  audioBase64: string,
+  options?: {
+    mimeType?: string;
+    noteId?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+    onProgress?: NoteImportProgressCallback;
+  }
+): Promise<{ storagePath: string; mimeType: string; byteLength: number; fileName: string }> {
+  return notesLongRequest<{
+    storagePath: string;
+    mimeType: string;
+    byteLength: number;
+    fileName: string;
+  }>('/upload-lecture-audio', {
+    body: {
+      audioBase64,
+      mimeType: options?.mimeType,
+      noteId: options?.noteId,
+      fileName: options?.fileName,
+    },
+    processingLabel: 'Uploading recording…',
+    timeoutMs: 180_000,
+    signal: options?.signal,
+    onProgress: options?.onProgress,
+  });
+}
+
 export async function transcribeAudioForNote(
   audioBase64: string,
   options?: {
@@ -566,19 +595,70 @@ export async function transcribeAudioForNote(
     fileName?: string;
     signal?: AbortSignal;
     currentBody?: string;
+    durationMs?: number;
+    clientByteLength?: number;
+    /** Prefer storage upload then path-based Whisper (default true when noteId is set). */
+    useStoragePath?: boolean;
+    onProgress?: NoteImportProgressCallback;
   }
 ): Promise<{ transcript: string; note?: StudyNote; persistWarning?: string }> {
-  return notesLongRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>('/transcribe-audio', {
-    body: {
-      audioBase64,
-      mimeType: options?.mimeType,
+  const useStoragePath = options?.useStoragePath ?? Boolean(options?.noteId);
+  let storagePath: string | undefined;
+  let mimeType = options?.mimeType;
+  let fileName = options?.fileName;
+  let clientByteLength = options?.clientByteLength;
+
+  if (useStoragePath) {
+    options?.onProgress?.({
+      stage: 'uploading',
+      percent: null,
+      label: 'Uploading recording…',
+      fileName,
+    });
+    const uploaded = await uploadLectureAudioForNote(audioBase64, {
+      mimeType,
       noteId: options?.noteId,
-      fileName: options?.fileName,
-      currentBody: options?.currentBody,
-    },
+      fileName,
+      signal: options?.signal,
+      onProgress: options?.onProgress,
+    });
+    storagePath = uploaded.storagePath;
+    mimeType = uploaded.mimeType || mimeType;
+    fileName = uploaded.fileName || fileName;
+    clientByteLength = uploaded.byteLength;
+  }
+
+  options?.onProgress?.({
+    stage: 'processing',
+    percent: null,
+    label: 'Transcribing audio…',
+    fileName,
+  });
+
+  return notesLongRequest<{ transcript: string; note?: StudyNote; persistWarning?: string }>('/transcribe-audio', {
+    body: storagePath
+      ? {
+          storagePath,
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          currentBody: options?.currentBody,
+          durationMs: options?.durationMs,
+          clientByteLength,
+        }
+      : {
+          audioBase64,
+          mimeType,
+          noteId: options?.noteId,
+          fileName,
+          currentBody: options?.currentBody,
+          durationMs: options?.durationMs,
+          clientByteLength,
+        },
     processingLabel: 'Transcribing audio…',
     timeoutMs: 120_000,
     signal: options?.signal,
+    onProgress: options?.onProgress,
   });
 }
 

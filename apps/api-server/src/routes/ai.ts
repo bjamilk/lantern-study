@@ -54,6 +54,8 @@ router.get('/health', authMiddleware, (_req: Request, res: Response) => {
   res.json({
     status: totalRemaining > 0 ? 'operational' : 'exhausted',
     totalRemainingToday: totalRemaining,
+    // Boolean only — never leak key material.
+    transcriptionConfigured: Boolean(process.env.GROQ_API_KEY && String(process.env.GROQ_API_KEY).trim()),
     providers: status,
   });
 });

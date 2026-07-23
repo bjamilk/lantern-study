@@ -77,9 +77,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const [transcribing, setTranscribing] = useState(false);
+  const [transcribeStage, setTranscribeStage] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
   const discardRecordingRef = useRef(false);
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef(0);
+  const pauseAutosaveUntilRef = useRef(0);
+  const MIN_RECORD_MS = 1500;
+  const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
 
   const [summarizing, setSummarizing] = useState(false);
 
@@ -288,8 +293,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const scheduleSave = useCallback(
     (updates: { title?: string; body?: string; summary?: string }) => {
+      if (Date.now() < pauseAutosaveUntilRef.current) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
+        if (Date.now() < pauseAutosaveUntilRef.current) return;
         saveNote(noteId, updates).catch(() => {});
       }, 800);
     },
@@ -331,10 +338,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       const { recording: rec } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      recordingStartedAtRef.current = Date.now();
       setRecording(rec as { stopAndUnloadAsync: () => Promise<void>; getURI: () => string | null });
       setIsRecording(true);
     } catch {
-      Alert.alert('Error', 'Could not start recording.');
+      Alert.alert('Error', 'Could not start recording. Check microphone permission and try again.');
     }
   };
 
@@ -357,6 +365,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const stopRecording = async () => {
     if (!recording) return;
 
+    const elapsed = Date.now() - recordingStartedAtRef.current;
+    if (!discardRecordingRef.current && elapsed < MIN_RECORD_MS) {
+      Alert.alert('Keep recording', 'Keep recording for at least 2 seconds so we can capture audio.');
+      return;
+    }
+
     setIsRecording(false);
     if (discardRecordingRef.current) {
       discardRecordingRef.current = false;
@@ -370,9 +384,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     }
 
     setTranscribing(true);
+    let stage: 'uploading' | 'transcribing' = 'uploading';
+    setTranscribeStage(stage);
     const abortController = new AbortController();
     transcribeAbortRef.current = abortController;
     cancelPendingSave();
+    pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
 
     try {
       await recording.stopAndUnloadAsync();
@@ -380,11 +397,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       setRecording(null);
       if (!uri) throw new Error('No recording file');
 
+      const info = await FileSystem.getInfoAsync(uri);
+      const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
       });
-      if (!base64 || base64.length < 64) {
-        throw new Error('Recording was empty. Hold a bit longer, then stop again.');
+      if (!base64 || base64.length < 64 || (byteLength > 0 && byteLength < 256)) {
+        throw new Error(
+          `Recording was empty. Hold a bit longer, then stop again. (${Math.round(elapsed / 1000)}s, ${byteLength || base64.length}B)`
+        );
       }
 
       const lowerUri = uri.toLowerCase();
@@ -403,12 +424,17 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             ? 'ogg'
             : 'm4a';
 
+      stage = 'transcribing';
+      setTranscribeStage(stage);
       const result = await transcribeAudioForNote(base64, {
         mimeType,
         noteId,
         fileName: `lecture-${Date.now()}.${ext}`,
         signal: abortController.signal,
         currentBody: body,
+        durationMs: elapsed,
+        clientByteLength: byteLength || undefined,
+        useStoragePath: true,
       });
 
       if (result.transcript) {
@@ -417,9 +443,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             ? prev
             : [prev, result.transcript].filter(Boolean).join('\n\n')
         );
+        pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
       }
       if (result.persistWarning) {
         Alert.alert('Transcript ready', result.persistWarning);
+      } else if (result.transcript) {
+        Alert.alert('Transcript ready', 'Your lecture was transcribed into this note.');
       }
       // Refresh attachments/metadata without re-hydrating the draft (see lastHydratedNoteIdRef).
       await loadNote(noteId);
@@ -432,10 +461,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           : e instanceof Error
             ? e.message
             : 'Could not transcribe audio';
-      Alert.alert('Transcription failed', message);
+      const stageHint =
+        stage === 'uploading'
+          ? ' (failed while uploading)'
+          : ' (failed while transcribing)';
+      Alert.alert('Transcription failed', `${message}${stageHint}`);
     } finally {
       transcribeAbortRef.current = null;
       setTranscribing(false);
+      setTranscribeStage('idle');
     }
   };
 
@@ -445,6 +479,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     transcribeAbortRef.current?.abort();
     transcribeAbortRef.current = null;
     setTranscribing(false);
+    setTranscribeStage('idle');
   };
 
 
@@ -667,11 +702,21 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
               onPress={handleRecordPress}
 
-              disabled={transcribing}
+              disabled={
+                transcribing || (isRecording && recordingSeconds < 2)
+              }
 
             >
 
-              {transcribing ? 'Transcribing...' : isRecording ? 'Stop & transcribe' : 'Record lecture'}
+              {transcribing
+                ? transcribeStage === 'uploading'
+                  ? 'Uploading...'
+                  : 'Transcribing...'
+                : isRecording
+                  ? recordingSeconds < 2
+                    ? `Wait ${2 - recordingSeconds}s`
+                    : 'Stop & transcribe'
+                  : 'Record lecture'}
 
             </Button>
 

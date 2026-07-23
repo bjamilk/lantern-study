@@ -252,6 +252,7 @@ function isLargeNotesPath(pathname: string): boolean {
   // endsWith so trailing-slash normalization / proxy prefixes cannot fall through to 1mb.
   return (
     pathname.endsWith('/notes/transcribe-audio') ||
+    pathname.endsWith('/notes/upload-lecture-audio') ||
     pathname.endsWith('/notes/upload-pdf') ||
     pathname.endsWith('/notes/upload-presentation') ||
     pathname.endsWith('/notes/upload-images') ||

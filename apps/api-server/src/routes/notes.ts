@@ -23,7 +23,9 @@ import {
   summarizeNoteContent,
   generateDailyQuiz,
   generateFlashcardsFromNotes,
+  resolveAudioUploadMeta,
   transcribeAudioBase64,
+  transcribeAudioBuffer,
 } from '../services/aiService';
 import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
@@ -705,12 +707,97 @@ router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRate
   res.json({ success: true, data: result });
 }));
 
+const MAX_LECTURE_AUDIO_BYTES = 25 * 1024 * 1024;
+
+router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const { audioBase64, mimeType, fileName, noteId } = req.body;
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
+    res.status(400).json({ error: 'audioBase64 is required.' });
+    return;
+  }
+
+  if (noteId) {
+    const canEdit = await supabaseService.canEditNote(userId, noteId);
+    if (!canEdit) {
+      res.status(403).json({
+        success: false,
+        error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+      });
+      return;
+    }
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(audioBase64, 'base64');
+  } catch {
+    res.status(400).json({ error: 'Could not decode recording payload.' });
+    return;
+  }
+  if (buffer.length < 64) {
+    res.status(400).json({
+      error: 'Recording was empty or too short. Hold for at least 2 seconds, then stop.',
+    });
+    return;
+  }
+  if (buffer.length > MAX_LECTURE_AUDIO_BYTES) {
+    res.status(413).json({
+      error: 'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
+    });
+    return;
+  }
+
+  const meta = resolveAudioUploadMeta(buffer, typeof mimeType === 'string' ? mimeType : 'audio/webm');
+  const safeName =
+    typeof fileName === 'string' && fileName.trim()
+      ? fileName
+      : `lecture-${Date.now()}.${meta.extension}`;
+  const storagePath = buildNoteStoragePath(userId, safeName);
+  await supabaseService.uploadNoteFile({
+    storagePath,
+    buffer,
+    contentType: meta.mimeType,
+  });
+
+  logger.info('upload-lecture-audio stored', {
+    requestId: (req as { requestId?: string }).requestId,
+    userId,
+    noteId: noteId || null,
+    storagePath,
+    byteLength: buffer.length,
+    sniffedMimeType: meta.mimeType,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      storagePath,
+      mimeType: meta.mimeType,
+      byteLength: buffer.length,
+      fileName: safeName,
+    },
+  });
+}));
+
 router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { audioBase64, mimeType, noteId, fileName, currentBody } = req.body;
-  if (!audioBase64 || typeof audioBase64 !== 'string') {
-    res.status(400).json({ error: 'audioBase64 is required.' });
+  const {
+    audioBase64,
+    storagePath,
+    mimeType,
+    noteId,
+    fileName,
+    currentBody,
+    durationMs,
+    clientByteLength,
+  } = req.body;
+  const hasBase64 = typeof audioBase64 === 'string' && audioBase64.length > 0;
+  const hasStoragePath = typeof storagePath === 'string' && storagePath.length > 0;
+  if (!hasBase64 && !hasStoragePath) {
+    res.status(400).json({ error: 'audioBase64 or storagePath is required.' });
     return;
   }
 
@@ -727,16 +814,35 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     }
   }
 
-  const result = await runNoteAiSync(() =>
-    transcribeAudioBase64(audioBase64, mimeType || 'audio/webm')
-  );
+  const requestId = (req as { requestId?: string }).requestId;
+  const logContext = {
+    requestId,
+    noteId: typeof noteId === 'string' ? noteId : null,
+    storagePath: hasStoragePath ? String(storagePath) : null,
+    clientDurationMs: typeof durationMs === 'number' ? durationMs : null,
+    clientByteLength: typeof clientByteLength === 'number' ? clientByteLength : null,
+    clientMimeType: typeof mimeType === 'string' ? mimeType : null,
+  };
+
+  const result = await runNoteAiSync(async () => {
+    if (hasStoragePath) {
+      assertUserOwnedNoteStoragePath(String(storagePath), userId);
+      const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+      return transcribeAudioBuffer(
+        downloaded.buffer,
+        typeof mimeType === 'string' ? mimeType : downloaded.contentType || 'audio/webm',
+        logContext
+      );
+    }
+    return transcribeAudioBase64(String(audioBase64), mimeType || 'audio/webm', logContext);
+  });
 
   const { logAIInference } = await import('../services/aiInferenceLog');
   await logAIInference(supabaseService.getClient(), {
     userId,
     feature: 'transcribe-audio',
     provider: result.provider,
-    requestId: (req as any).requestId,
+    requestId,
   });
 
   if (!noteId) {
@@ -747,6 +853,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   // Persist transcript with CAS-safe retries. Always return the Whisper text so the
   // client can still show it if note write races with autosave.
   let updatedNote: Awaited<ReturnType<typeof supabaseService.updateNote>> | undefined;
+  let attachmentFileUrl: string | undefined;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const note = await supabaseService.getNote(noteId, userId);
@@ -770,16 +877,31 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
       }
     }
 
+    if (hasStoragePath) {
+      try {
+        attachmentFileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+      } catch {
+        attachmentFileUrl = undefined;
+      }
+    }
+
     await supabaseService.addNoteAttachment(noteId, {
       type: 'audio',
       fileName: fileName || 'lecture-recording.webm',
+      fileUrl: attachmentFileUrl,
       extractedText: result.transcript,
-      metadata: { provider: result.provider, mimeType: mimeType || null },
+      metadata: {
+        provider: result.provider,
+        mimeType: result.sniffedMimeType || mimeType || null,
+        storagePath: hasStoragePath ? String(storagePath) : null,
+        byteLength: result.byteLength,
+      },
     });
   } catch (error) {
     logger.warn('Transcript persist failed after successful Whisper', {
       noteId,
       userId,
+      requestId,
       message: error instanceof Error ? error.message : String(error),
     });
     res.json({
