@@ -1805,7 +1805,7 @@ export function createApiEndpoints(client: ApiClient) {
     uploadMarketplaceImage: (payload: {
       fileName: string;
       base64Data: string;
-      contentType: string;
+      contentType?: string;
       listingId?: string;
     }) =>
       apiRequest<{ url: string; path: string; storageUrl?: string }>('/marketplace/upload-image', {
