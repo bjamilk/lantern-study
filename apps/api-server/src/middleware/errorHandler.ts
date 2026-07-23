@@ -84,10 +84,10 @@ export const errorHandler = (
   // (e.g. 413 entity too large) so lecture uploads do not surface as opaque 500s.
   if (!(error instanceof ApiError)) {
     const statusFromErr =
-      typeof (err as { status?: unknown }).status === 'number'
-        ? Number((err as { status: number }).status)
-        : typeof (err as { statusCode?: unknown }).statusCode === 'number'
-          ? Number((err as { statusCode: number }).statusCode)
+      typeof (err as unknown as { status?: unknown }).status === 'number'
+        ? Number((err as unknown as { status: number }).status)
+        : typeof (err as unknown as { statusCode?: unknown }).statusCode === 'number'
+          ? Number((err as unknown as { statusCode: number }).statusCode)
           : undefined;
     if (statusFromErr === 413 || /entity too large|payload.*large/i.test(err.message || '')) {
       error = new ApiError(
