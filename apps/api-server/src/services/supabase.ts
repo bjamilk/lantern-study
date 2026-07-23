@@ -7040,6 +7040,7 @@ export class SupabaseService {
   }
 
   async addMarketplaceReview(listingId: string, reviewerId: string, review: { rating: number; comment?: string }): Promise<any> {
+    const { MARKETPLACE_REVIEW_SELECT, mapMarketplaceReviewRow } = await import('./marketplaceReviewMapping');
     const { data, error } = await this.supabase
       .from('marketplace_reviews')
       .upsert(
@@ -7051,49 +7052,24 @@ export class SupabaseService {
         },
         { onConflict: 'listing_id,reviewer_id' }
       )
-      .select()
+      .select(MARKETPLACE_REVIEW_SELECT)
       .single();
 
     if (error) throw error;
-    return data;
+    return mapMarketplaceReviewRow(data as any);
   }
 
   async getMarketplaceReviews(listingId: string): Promise<any[]> {
+    const { MARKETPLACE_REVIEW_SELECT, mapMarketplaceReviewRow } = await import('./marketplaceReviewMapping');
     const { data, error } = await this.supabase
       .from('marketplace_reviews')
-      .select(`
-        id,
-        listing_id,
-        reviewer_id,
-        rating,
-        comment,
-        created_at,
-        profiles!reviewer_id (
-          id,
-          name,
-          avatar_url
-        )
-      `)
+      .select(MARKETPLACE_REVIEW_SELECT)
       .eq('listing_id', listingId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      listing_id: row.listing_id,
-      reviewer_id: row.reviewer_id,
-      rating: row.rating,
-      comment: row.comment,
-      created_at: row.created_at,
-      reviewer: row.profiles
-        ? {
-            id: row.profiles.id,
-            name: row.profiles.name,
-            avatar_url: row.profiles.avatar_url,
-          }
-        : undefined,
-    }));
+    return (data || []).map((row: any) => mapMarketplaceReviewRow(row));
   }
 
   async buyMarketplaceListingNow(

@@ -900,7 +900,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       </div>
                       <div>
                         <p className="font-semibold text-sm text-lantern-text">
-                          {review.reviewer?.name || 'Anonymous'}
+                          {review.reviewer?.name || review.reviewer?.username || 'User'}
                         </p>
                         <div className="flex items-center gap-0.5">
                           {[...Array(5)].map((_, i) => (

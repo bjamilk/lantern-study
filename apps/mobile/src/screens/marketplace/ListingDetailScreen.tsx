@@ -517,7 +517,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                 >
                   <View className="flex-row items-center justify-between mb-1">
                     <Text className="text-sm font-medium text-lantern-text">
-                      {review.reviewer?.name || 'User'}
+                      {review.reviewer?.name || review.reviewer?.username || 'User'}
                     </Text>
                     <StarRow rating={review.rating} />
                   </View>

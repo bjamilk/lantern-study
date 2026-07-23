@@ -697,7 +697,13 @@ export interface MarketplaceReview {
   id: string;
   listing_id: string;
   reviewer_id: string;
-  reviewer?: { id: string; name: string; avatarUrl?: string };
+  reviewer?: {
+    id: string;
+    name: string;
+    username?: string;
+    avatarUrl?: string;
+    avatar_url?: string;
+  };
   rating: number;
   comment?: string;
   created_at: string;

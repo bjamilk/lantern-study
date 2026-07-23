@@ -188,7 +188,9 @@ export interface MarketplaceReview {
   reviewer?: {
     id: string;
     name: string;
+    username?: string;
     avatarUrl?: string;
+    avatar_url?: string;
   };
   rating: number;
   comment?: string;

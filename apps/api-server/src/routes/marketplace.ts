@@ -1636,6 +1636,10 @@ router.get(
       isFavorited = await supabaseService.isListingFavorited(viewerId, id);
     }
 
+    // --- 4. Reviews with reviewer display names ---
+    const reviews = await supabaseService.getMarketplaceReviews(id);
+    listing = { ...listing, reviews };
+
     res.json({
       success: true,
       data: { listing, isFavorited, similarListings },
