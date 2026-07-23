@@ -420,9 +420,23 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         }
 
         const blob = new Blob(chunksRef.current, { type: recordingMime });
+        chunksRef.current = [];
+        if (blob.size < 256) {
+          useToastStore
+            .getState()
+            .showToast('Recording was empty or too short. Hold for a couple of seconds, then stop.', 'error');
+          return;
+        }
         const reader = new FileReader();
         reader.onloadend = async () => {
-          const base64 = (reader.result as string).split(',')[1];
+          const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+          const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+          if (!base64 || base64.length < 64) {
+            useToastStore
+              .getState()
+              .showToast('Recording was empty or too short. Hold for a couple of seconds, then stop.', 'error');
+            return;
+          }
           const abortController = new AbortController();
           transcribeAbortRef.current = abortController;
           setTranscribing(true);
@@ -476,18 +490,37 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   };
 
   const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
+    const recorder = mediaRecorderRef.current;
     mediaRecorderRef.current = null;
     setRecording(false);
+    if (!recorder) return;
+    try {
+      // Flush the final timeslice before stop — otherwise some browsers send an empty blob.
+      if (recorder.state === 'recording') {
+        recorder.requestData();
+        recorder.stop();
+      }
+    } catch {
+      try {
+        recorder.stop();
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const discardRecording = () => {
     discardRecordingRef.current = true;
-    mediaRecorderRef.current?.stop();
+    const recorder = mediaRecorderRef.current;
     mediaRecorderRef.current = null;
     stopMediaStream();
     chunksRef.current = [];
     setRecording(false);
+    try {
+      if (recorder && recorder.state === 'recording') recorder.stop();
+    } catch {
+      // ignore
+    }
   };
 
   const cancelTranscription = () => {

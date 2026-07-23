@@ -238,31 +238,43 @@ const json35mb = express.json({ limit: '35mb' });
 const json4mb = express.json({ limit: '4mb' });
 const json1mb = express.json({ limit: '1mb' });
 
+function normalizePathname(raw: string): string {
+  const path = (raw || '').split('?')[0] || '';
+  if (path.length > 1 && path.endsWith('/')) return path.slice(0, -1);
+  return path;
+}
+
 function isLargeUploadPath(pathname: string): boolean {
-  return /^\/api\/v1\/(flashcards|marketplace|messages)\/.*upload/.test(pathname);
+  return /\/api\/v1\/(flashcards|marketplace|messages)\/.*upload/.test(pathname);
 }
 
 function isLargeNotesPath(pathname: string): boolean {
+  // endsWith so trailing-slash normalization / proxy prefixes cannot fall through to 1mb.
   return (
-    pathname === '/api/v1/notes/transcribe-audio' ||
-    pathname === '/api/v1/notes/upload-pdf' ||
-    pathname === '/api/v1/notes/upload-presentation' ||
-    pathname === '/api/v1/notes/upload-images' ||
-    /^\/api\/v1\/notes\/[^/]+\/regenerate-preview$/.test(pathname) ||
-    /^\/api\/v1\/notes\/[^/]+\/attachments\/upload-images$/.test(pathname)
+    pathname.endsWith('/notes/transcribe-audio') ||
+    pathname.endsWith('/notes/upload-pdf') ||
+    pathname.endsWith('/notes/upload-presentation') ||
+    pathname.endsWith('/notes/upload-images') ||
+    /\/notes\/[^/]+\/regenerate-preview$/.test(pathname) ||
+    /\/notes\/[^/]+\/attachments\/upload-images$/.test(pathname)
   );
 }
 
 function isOfflineBundlePath(pathname: string): boolean {
-  return pathname === '/api/v1/offline-bundles' || pathname.startsWith('/api/v1/offline-bundles/');
+  return (
+    pathname === '/api/v1/offline-bundles' ||
+    pathname.startsWith('/api/v1/offline-bundles/') ||
+    pathname.endsWith('/offline-bundles') ||
+    pathname.includes('/offline-bundles/')
+  );
 }
 
 function isAvatarUploadPath(pathname: string): boolean {
-  return /^\/api\/v1\/(users|groups)\/[^/]+\/avatar$/.test(pathname);
+  return /\/api\/v1\/(users|groups)\/[^/]+\/avatar$/.test(pathname);
 }
 
 app.use((req, res, next) => {
-  const pathname = (req.originalUrl || req.url || '').split('?')[0];
+  const pathname = normalizePathname(req.originalUrl || req.url || '');
   if (isLargeUploadPath(pathname)) return json50mb(req, res, next);
   if (isLargeNotesPath(pathname)) return json35mb(req, res, next);
   if (isOfflineBundlePath(pathname)) return json50mb(req, res, next);

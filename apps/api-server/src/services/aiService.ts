@@ -1036,28 +1036,56 @@ export async function transcribeAudioBase64(
 
     const buffer = Buffer.from(audioBase64, 'base64');
     if (buffer.length < 64) {
-      throw new ApiError('Audio payload is empty or too short to transcribe.', 400);
+      throw new ApiError(
+        'Recording was empty or too short to transcribe. Hold for a couple of seconds, then stop.',
+        400
+      );
     }
 
     const meta = resolveAudioUploadMeta(buffer, mimeType);
     const form = new FormData();
-    // File (not bare Blob) keeps filename/MIME for Groq's multipart parser.
-    const file = new File([new Uint8Array(buffer)], `lecture.${meta.extension}`, {
-      type: meta.mimeType,
-    });
-    form.append('file', file);
+    const bytes = new Uint8Array(buffer);
+    const filename = `lecture.${meta.extension}`;
+    // Prefer File when available; fall back to Blob+filename for older runtimes.
+    if (typeof File !== 'undefined') {
+      form.append('file', new File([bytes], filename, { type: meta.mimeType }));
+    } else {
+      form.append('file', new Blob([bytes], { type: meta.mimeType }), filename);
+    }
     form.append('model', 'whisper-large-v3-turbo');
     form.append('response_format', 'text');
 
-    const response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-      body: form,
-    });
+    let response: Response;
+    try {
+      response = await aiFetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: form,
+      });
+    } catch (err) {
+      const timedOut =
+        err instanceof Error &&
+        (err.name === 'TimeoutError' || /aborted|timeout/i.test(err.message));
+      throw new ApiError(
+        timedOut
+          ? 'Transcription timed out. Try a shorter recording.'
+          : 'Could not reach the transcription service. Please try again.',
+        timedOut ? 504 : 502,
+        true
+      );
+    }
 
     if (!response.ok) {
       const err = await response.text();
-      throw new ApiError(`Transcription failed: ${err.slice(0, 300)}`, 502);
+      const detail = err.slice(0, 300);
+      if (/could not process file|invalid.*media|unsupported/i.test(detail)) {
+        throw new ApiError(
+          'Could not read that recording. Try again, or use a different browser/mic.',
+          422,
+          true
+        );
+      }
+      throw new ApiError(`Transcription failed: ${detail}`, 502);
     }
 
     const transcript = (await response.text()).trim();

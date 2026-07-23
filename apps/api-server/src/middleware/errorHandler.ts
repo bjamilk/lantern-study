@@ -80,12 +80,29 @@ export const errorHandler = (
     error = apiError;
   }
 
-  // Default to ApiError if not already one
+  // Default to ApiError if not already one. Preserve body-parser / HTTP status codes
+  // (e.g. 413 entity too large) so lecture uploads do not surface as opaque 500s.
   if (!(error instanceof ApiError)) {
-    const publicMessage = isProductionEnv()
-      ? 'Something went wrong'
-      : (err.message || 'Something went wrong');
-    error = new ApiError(publicMessage, 500, false);
+    const statusFromErr =
+      typeof (err as { status?: unknown }).status === 'number'
+        ? Number((err as { status: number }).status)
+        : typeof (err as { statusCode?: unknown }).statusCode === 'number'
+          ? Number((err as { statusCode: number }).statusCode)
+          : undefined;
+    if (statusFromErr === 413 || /entity too large|payload.*large/i.test(err.message || '')) {
+      error = new ApiError(
+        'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
+        413,
+        true
+      );
+    } else if (statusFromErr && statusFromErr >= 400 && statusFromErr < 500) {
+      error = new ApiError(err.message || 'Bad request', statusFromErr, true);
+    } else {
+      const publicMessage = isProductionEnv()
+        ? 'Something went wrong'
+        : (err.message || 'Something went wrong');
+      error = new ApiError(publicMessage, statusFromErr && statusFromErr >= 500 ? statusFromErr : 500, false);
+    }
   }
 
   const apiError = error as ApiError;
