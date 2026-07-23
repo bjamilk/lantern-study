@@ -587,6 +587,14 @@ export async function uploadLectureAudioForNote(
   });
 }
 
+/** Skip storage hop for short lectures; keeps typical clips on the proven base64 path. */
+const LECTURE_STORAGE_PATH_MIN_BYTES = 2 * 1024 * 1024;
+
+function estimateLectureByteLength(audioBase64: string, clientByteLength?: number): number {
+  if (typeof clientByteLength === 'number' && clientByteLength > 0) return clientByteLength;
+  return Math.ceil((audioBase64.length * 3) / 4);
+}
+
 export async function transcribeAudioForNote(
   audioBase64: string,
   options?: {
@@ -602,11 +610,13 @@ export async function transcribeAudioForNote(
     onProgress?: NoteImportProgressCallback;
   }
 ): Promise<{ transcript: string; note?: StudyNote; persistWarning?: string }> {
-  const useStoragePath = options?.useStoragePath ?? Boolean(options?.noteId);
+  const preferStorage = options?.useStoragePath ?? Boolean(options?.noteId);
+  const estimatedBytes = estimateLectureByteLength(audioBase64, options?.clientByteLength);
+  const useStoragePath = preferStorage && estimatedBytes >= LECTURE_STORAGE_PATH_MIN_BYTES;
   let storagePath: string | undefined;
   let mimeType = options?.mimeType;
   let fileName = options?.fileName;
-  let clientByteLength = options?.clientByteLength;
+  let clientByteLength = options?.clientByteLength ?? estimatedBytes;
 
   if (useStoragePath) {
     options?.onProgress?.({
@@ -615,17 +625,30 @@ export async function transcribeAudioForNote(
       label: 'Uploading recording…',
       fileName,
     });
-    const uploaded = await uploadLectureAudioForNote(audioBase64, {
-      mimeType,
-      noteId: options?.noteId,
-      fileName,
-      signal: options?.signal,
-      onProgress: options?.onProgress,
-    });
-    storagePath = uploaded.storagePath;
-    mimeType = uploaded.mimeType || mimeType;
-    fileName = uploaded.fileName || fileName;
-    clientByteLength = uploaded.byteLength;
+    try {
+      const uploaded = await uploadLectureAudioForNote(audioBase64, {
+        mimeType,
+        noteId: options?.noteId,
+        fileName,
+        signal: options?.signal,
+        onProgress: options?.onProgress,
+      });
+      storagePath = uploaded.storagePath;
+      mimeType = uploaded.mimeType || mimeType;
+      fileName = uploaded.fileName || fileName;
+      clientByteLength = uploaded.byteLength;
+    } catch (err) {
+      // Unblock transcription: storage hop is best-effort; Whisper still accepts base64.
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      console.warn('[transcribeAudioForNote] storage upload failed; falling back to base64', err);
+      options?.onProgress?.({
+        stage: 'processing',
+        percent: null,
+        label: 'Upload failed — transcribing directly…',
+        fileName,
+      });
+      storagePath = undefined;
+    }
   }
 
   options?.onProgress?.({

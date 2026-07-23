@@ -9,6 +9,7 @@ import {
 } from '../middleware/rateLimit';
 import { asyncHandler } from '../middleware/errorHandler';
 import { requireAuthUserId } from '../utils/requestAuth';
+import { clientErrorMessage } from '../utils/safeError';
 import {
   handleValidationErrors,
   validateNoteId,
@@ -708,22 +709,48 @@ router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRate
 }));
 
 const MAX_LECTURE_AUDIO_BYTES = 25 * 1024 * 1024;
+const ALLOWED_LECTURE_AUDIO_TYPES = new Set([
+  'audio/webm',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/x-m4a',
+]);
 
 router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
+  const requestId = (req as { requestId?: string }).requestId;
   const { audioBase64, mimeType, fileName, noteId } = req.body;
   if (!audioBase64 || typeof audioBase64 !== 'string') {
-    res.status(400).json({ error: 'audioBase64 is required.' });
+    res.status(400).json({ success: false, error: 'audioBase64 is required.', message: 'audioBase64 is required.' });
     return;
   }
 
   if (noteId) {
-    const canEdit = await supabaseService.canEditNote(userId, noteId);
-    if (!canEdit) {
-      res.status(403).json({
+    try {
+      const canEdit = await supabaseService.canEditNote(userId, noteId);
+      if (!canEdit) {
+        res.status(403).json({
+          success: false,
+          error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+          message: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+        });
+        return;
+      }
+    } catch (error) {
+      logger.warn('upload-lecture-audio canEditNote failed', {
+        requestId,
+        userId,
+        noteId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      res.status(400).json({
         success: false,
-        error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+        error: 'Could not verify note edit access. Check the note id and try again.',
+        message: 'Could not verify note edit access. Check the note id and try again.',
       });
       return;
     }
@@ -733,48 +760,86 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
   try {
     buffer = Buffer.from(audioBase64, 'base64');
   } catch {
-    res.status(400).json({ error: 'Could not decode recording payload.' });
+    res.status(400).json({
+      success: false,
+      error: 'Could not decode recording payload.',
+      message: 'Could not decode recording payload.',
+    });
     return;
   }
   if (buffer.length < 64) {
     res.status(400).json({
+      success: false,
       error: 'Recording was empty or too short. Hold for at least 2 seconds, then stop.',
+      message: 'Recording was empty or too short. Hold for at least 2 seconds, then stop.',
     });
     return;
   }
   if (buffer.length > MAX_LECTURE_AUDIO_BYTES) {
     res.status(413).json({
+      success: false,
       error: 'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
+      message: 'Recording is too large to upload. Try a shorter clip (under ~20 minutes).',
     });
     return;
   }
 
   const meta = resolveAudioUploadMeta(buffer, typeof mimeType === 'string' ? mimeType : 'audio/webm');
+  const normalizedMime = meta.mimeType === 'audio/x-m4a' ? 'audio/mp4' : meta.mimeType;
+  if (!ALLOWED_LECTURE_AUDIO_TYPES.has(meta.mimeType) && !ALLOWED_LECTURE_AUDIO_TYPES.has(normalizedMime)) {
+    res.status(400).json({
+      success: false,
+      error: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+      message: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+    });
+    return;
+  }
+
   const safeName =
     typeof fileName === 'string' && fileName.trim()
       ? fileName
       : `lecture-${Date.now()}.${meta.extension}`;
   const storagePath = buildNoteStoragePath(userId, safeName);
-  await supabaseService.uploadNoteFile({
-    storagePath,
-    buffer,
-    contentType: meta.mimeType,
-  });
+
+  try {
+    await supabaseService.uploadNoteFile({
+      storagePath,
+      buffer,
+      contentType: normalizedMime,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.error('upload-lecture-audio storage failed', {
+      requestId,
+      userId,
+      noteId: noteId || null,
+      storagePath,
+      byteLength: buffer.length,
+      sniffedMimeType: normalizedMime,
+      message: detail,
+    });
+    res.status(502).json({
+      success: false,
+      error: 'Could not store the recording. Please try again.',
+      message: clientErrorMessage(error, 'Could not store the recording. Please try again.'),
+    });
+    return;
+  }
 
   logger.info('upload-lecture-audio stored', {
-    requestId: (req as { requestId?: string }).requestId,
+    requestId,
     userId,
     noteId: noteId || null,
     storagePath,
     byteLength: buffer.length,
-    sniffedMimeType: meta.mimeType,
+    sniffedMimeType: normalizedMime,
   });
 
   res.json({
     success: true,
     data: {
       storagePath,
-      mimeType: meta.mimeType,
+      mimeType: normalizedMime,
       byteLength: buffer.length,
       fileName: safeName,
     },
