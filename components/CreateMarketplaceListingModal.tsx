@@ -398,15 +398,42 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
       if (fields.includes('furnished') && formData.furnished) categorySpecificFields.furnished = formData.furnished === 'yes';
       if (fields.includes('distanceToCampus') && formData.distanceToCampus) categorySpecificFields.distanceToCampus = formData.distanceToCampus;
 
+      const parsedPrice = formData.price.trim() ? parseFloat(formData.price) : undefined;
+      const parsedSalePrice = formData.salePrice.trim()
+        ? parseFloat(formData.salePrice)
+        : undefined;
+      if (parsedPrice != null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+        useToastStore.getState().showToast('Please enter a valid price');
+        setLoading(false);
+        return;
+      }
+      if (parsedSalePrice != null) {
+        if (!Number.isFinite(parsedSalePrice) || parsedSalePrice < 0) {
+          useToastStore.getState().showToast('Please enter a valid sale price');
+          setLoading(false);
+          return;
+        }
+        if (parsedPrice == null || parsedSalePrice >= parsedPrice) {
+          useToastStore
+            .getState()
+            .showToast('Sale price must be lower than the regular price');
+          setLoading(false);
+          return;
+        }
+      }
+
       // First create the listing - use subcategory as the database category
       const resolvedCategory = formData.subcategory === 'other' ? `custom:${customCategory.trim()}` : formData.subcategory;
       const listingData = {
         category: resolvedCategory,
         title: formData.title,
         description: formData.description || undefined,
-        price: formData.price ? parseFloat(formData.price) : undefined,
-        sale_price: formData.salePrice ? parseFloat(formData.salePrice) : undefined,
-        sale_ends_at: formData.saleEndsAt ? new Date(formData.saleEndsAt).toISOString() : undefined,
+        price: parsedPrice,
+        sale_price: parsedSalePrice,
+        sale_ends_at:
+          parsedSalePrice != null && formData.saleEndsAt
+            ? new Date(formData.saleEndsAt).toISOString()
+            : undefined,
         promo_label: formData.promoLabel || undefined,
         quantity: formData.quantity ? parseInt(formData.quantity, 10) : undefined,
         location: formData.location || undefined,

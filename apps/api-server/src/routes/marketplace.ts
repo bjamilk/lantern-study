@@ -335,6 +335,20 @@ router.post(
         data: listing.listing,
       });
     } catch (error: any) {
+      const { isMarketplacePricingError } = await import('../utils/marketplacePricing');
+      if (isMarketplacePricingError(error)) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      const constraint = String(error?.message || error?.details || '');
+      if (
+        error?.code === '23514' ||
+        /marketplace_listings_sale_price_check/i.test(constraint)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'Sale price must be lower than the regular price (or leave sale price blank).',
+        });
+      }
       logger.error('Failed to create marketplace listing:', error);
       res.status(500).json({
         success: false,

@@ -286,6 +286,19 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
               Date.now() + (saleEndsPreset === '24h' ? 24 : 168) * 60 * 60 * 1000
             ).toISOString();
       const parsedSalePrice = salePrice.trim() ? parseFloat(salePrice.replace(/,/g, '')) : undefined;
+      if (
+        parsedSalePrice != null &&
+        (!Number.isFinite(parsedSalePrice) ||
+          parsedSalePrice < 0 ||
+          parsedPrice == null ||
+          parsedSalePrice >= parsedPrice)
+      ) {
+        Alert.alert(
+          'Invalid sale price',
+          'Sale price must be lower than the regular price, or leave it blank.'
+        );
+        return;
+      }
       const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
       setUploading(true);
       const { listing, queued } = await createListing(

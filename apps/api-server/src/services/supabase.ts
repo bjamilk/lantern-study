@@ -5860,15 +5860,24 @@ export class SupabaseService {
   }
 
   async createMarketplaceListing(listingData: any, userId: string): Promise<any> {
+    const { normalizeMarketplacePricing } = await import('../utils/marketplacePricing');
+    const pricing = normalizeMarketplacePricing({
+      price: listingData.price,
+      sale_price: listingData.sale_price,
+      salePrice: listingData.salePrice,
+    });
     // Transform camelCase to snake_case for database columns
     const dbData = {
       user_id: userId,
       category: listingData.category,
       title: listingData.title,
       description: listingData.description,
-      price: listingData.price,
-      sale_price: listingData.sale_price ?? listingData.salePrice,
-      sale_ends_at: listingData.sale_ends_at ?? listingData.saleEndsAt,
+      price: pricing.price,
+      sale_price: pricing.sale_price,
+      sale_ends_at:
+        pricing.sale_price != null
+          ? (listingData.sale_ends_at ?? listingData.saleEndsAt ?? null)
+          : null,
       promo_label: listingData.promo_label ?? listingData.promoLabel,
       location: listingData.location,
       campus_id: listingData.campus_id ?? listingData.campusId,
@@ -5909,9 +5918,6 @@ export class SupabaseService {
     assign('category', 'category');
     assign('title', 'title');
     assign('description', 'description');
-    assign('price', 'price');
-    assign('sale_price', 'sale_price', 'salePrice');
-    assign('sale_ends_at', 'sale_ends_at', 'saleEndsAt');
     assign('promo_label', 'promo_label', 'promoLabel');
     assign('location', 'location');
     assign('campus_id', 'campus_id', 'campusId');
@@ -5925,6 +5931,31 @@ export class SupabaseService {
     }
     if (updates?.quantity !== undefined) dbUpdates.quantity = updates.quantity;
     assign('status', 'status');
+
+    const touchesPricing =
+      updates?.price !== undefined ||
+      updates?.sale_price !== undefined ||
+      updates?.salePrice !== undefined ||
+      updates?.sale_ends_at !== undefined ||
+      updates?.saleEndsAt !== undefined;
+    if (touchesPricing) {
+      const { normalizeMarketplacePricing } = await import('../utils/marketplacePricing');
+      const current = await this.getMarketplaceListingById(listingId);
+      const pricing = normalizeMarketplacePricing({
+        price: updates?.price !== undefined ? updates.price : current?.price,
+        sale_price:
+          updates?.sale_price !== undefined || updates?.salePrice !== undefined
+            ? (updates.sale_price ?? updates.salePrice)
+            : current?.sale_price,
+      });
+      dbUpdates.price = pricing.price;
+      dbUpdates.sale_price = pricing.sale_price;
+      if (pricing.sale_price == null) {
+        dbUpdates.sale_ends_at = null;
+      } else if (updates?.sale_ends_at !== undefined || updates?.saleEndsAt !== undefined) {
+        dbUpdates.sale_ends_at = updates.sale_ends_at ?? updates.saleEndsAt;
+      }
+    }
 
     if (Object.keys(dbUpdates).length === 0) {
       return this.getMarketplaceListingById(listingId);
