@@ -2,9 +2,9 @@ import React, { useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import type { Message } from '../../stores/groupStore';
-import { Avatar } from '../ui';
 import { useTheme } from '../../theme';
 import { normalizeStorageUrl, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
+import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
@@ -162,7 +162,11 @@ export function MessageBubble({
       className={`flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'} ${isGroupedWithPrevious ? 'mb-1' : 'mb-3'}`}
     >
       {!isOwn ? (
-        isGroupedWithPrevious ? <View style={{ width: 28 }} /> : <Avatar name={message.senderName} size={28} />
+        isGroupedWithPrevious ? (
+          <View style={{ width: 28 }} />
+        ) : (
+          <ResolvedAvatar name={message.senderName} uri={message.senderAvatar} size={28} />
+        )
       ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>

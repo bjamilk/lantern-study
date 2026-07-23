@@ -1113,11 +1113,18 @@ export function useAppEffects({
                 .getState()
                 .groups.find((g) => g.id === groupId)
                 ?.members?.find((m) => m.id === raw.sender_id);
-            if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member')) {
+            if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member' || !mapped.sender?.avatarUrl)) {
                 mapped.sender = {
                     ...mapped.sender,
                     ...rosterMember,
-                    id: rosterMember.id || mapped.sender?.id || raw.sender_id || 'unknown',
+                    // Keep auth user id — never replace with a membership-row id from roster.
+                    id: raw.sender_id || mapped.sender?.id || rosterMember.id || 'unknown',
+                    avatarUrl: mapped.sender?.avatarUrl || rosterMember.avatarUrl,
+                    username: mapped.sender?.username || rosterMember.username,
+                    name:
+                      mapped.sender?.name && mapped.sender.name !== 'Member' && mapped.sender.name !== 'Unknown'
+                        ? mapped.sender.name
+                        : rosterMember.name || mapped.sender?.name || 'Member',
                 };
             }
 

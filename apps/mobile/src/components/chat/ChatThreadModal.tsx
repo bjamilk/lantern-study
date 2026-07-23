@@ -42,6 +42,7 @@ interface ChatThreadModalProps {
   userFlagged?: (message: Message) => boolean;
   /** DM thread rendering */
   otherDisplayName?: string;
+  otherAvatarUrl?: string | null;
   groupId?: string;
   threadId?: string;
 }
@@ -63,6 +64,7 @@ export function ChatThreadModal({
   canFlag,
   userFlagged,
   otherDisplayName,
+  otherAvatarUrl,
   groupId,
   threadId,
 }: ChatThreadModalProps) {
@@ -225,6 +227,7 @@ export function ChatThreadModal({
                     }}
                     isOwn={isOwn}
                     senderName={isOwn ? undefined : otherDisplayName}
+                    senderAvatar={isOwn ? undefined : otherAvatarUrl}
                     onReply={() =>
                       setThreadReplyTo({
                         id: dm.id,

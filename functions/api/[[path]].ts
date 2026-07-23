@@ -85,9 +85,16 @@ export async function onRequest(context: {
   };
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = request.body;
-    // Required by undici/Workers when streaming a request body.
-    (init as RequestInit & { duplex?: string }).duplex = 'half';
+    // Buffer the body before the upstream fetch. Streaming `request.body` with
+    // duplex: 'half' has dropped bodies in production (Express then sees
+    // req.body === undefined → opaque 500 on routes that destructure it).
+    const buf = await request.arrayBuffer();
+    init.body = buf.byteLength > 0 ? buf : undefined;
+    if (buf.byteLength > 0) {
+      headers.set('Content-Length', String(buf.byteLength));
+    } else {
+      headers.delete('Content-Length');
+    }
   }
 
   let upstream: Response;

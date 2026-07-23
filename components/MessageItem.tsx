@@ -21,6 +21,19 @@ function formatSenderLabel(
   return resolveGroupChatSenderLabel(sender ?? {}, members);
 }
 
+function resolveSenderAvatarUrl(
+  sender: { id?: string; avatarUrl?: string | null } | undefined,
+  members: Group['members'] | undefined,
+  fallbackUrl?: string | null
+): string | null | undefined {
+  if (sender?.avatarUrl) return sender.avatarUrl;
+  if (sender?.id && members?.length) {
+    const member = members.find((m) => m.id === sender.id);
+    if (member?.avatarUrl) return member.avatarUrl;
+  }
+  return fallbackUrl;
+}
+
 interface MessageItemProps {
   message: Message;
   isCurrentUserMessage: boolean;
@@ -240,7 +253,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
         ) : (
           <Avatar
             name={formatSenderLabel(message.sender, group?.members)}
-            src={resolveAvatarSrc(message.sender?.avatarUrl, lowDataMode)}
+            src={resolveAvatarSrc(
+              resolveSenderAvatarUrl(message.sender, group?.members),
+              lowDataMode
+            )}
             size="sm"
             localOnly={lowDataMode}
             className="self-end ring-1 ring-white dark:ring-lantern-border"
@@ -489,7 +505,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
         ) : (
           <Avatar
             name={formatSenderLabel(message.sender, group?.members)}
-            src={resolveAvatarSrc(message.sender?.avatarUrl, lowDataMode)}
+            src={resolveAvatarSrc(
+              resolveSenderAvatarUrl(message.sender, group?.members, currentUser.avatarUrl),
+              lowDataMode
+            )}
             size="sm"
             localOnly={lowDataMode}
             className="self-end ring-1 ring-white dark:ring-lantern-border"

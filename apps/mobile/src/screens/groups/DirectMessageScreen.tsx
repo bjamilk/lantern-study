@@ -55,6 +55,7 @@ function DmBubbleWrapper({
   message,
   isOwn,
   senderName,
+  senderAvatar,
   onReply,
   onScrollToMessage,
   onOpenThread,
@@ -62,6 +63,7 @@ function DmBubbleWrapper({
   message: DirectMessage;
   isOwn: boolean;
   senderName?: string;
+  senderAvatar?: string | null;
   onReply?: () => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
@@ -85,6 +87,7 @@ function DmBubbleWrapper({
       }}
       isOwn={isOwn}
       senderName={isOwn ? undefined : senderName}
+      senderAvatar={isOwn ? undefined : senderAvatar}
       onReply={onReply}
       onScrollToMessage={onScrollToMessage}
       onOpenThread={onOpenThread}
@@ -97,7 +100,7 @@ function DmBubbleWrapper({
 export function DirectMessageScreen({ navigation, route }: Props) {
   const { threadId, recipientId, recipientName } = route.params;
   const user = useAuthStore(s => s.user);
-  const { directMessages, fetchDirectMessagesForThread, sendDirectMessageTo, markDMAsRead, fetchThread, applyPeerChatRead } =
+  const { directMessages, dmThreads, fetchDirectMessagesForThread, sendDirectMessageTo, markDMAsRead, fetchThread, applyPeerChatRead } =
     useGroupStore();
   const { colors } = useTheme();
 
@@ -123,7 +126,14 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const prevMessageCountRef = useRef(0);
 
   const messages = directMessages[threadId] || [];
-  const displayName = recipientName || 'Direct message';
+  const thread = dmThreads.find((t) => t.id === threadId);
+  const peerAvatarUrl =
+    (recipientId && thread?.participants?.[recipientId]?.avatarUrl) ||
+    Object.entries(thread?.participants || {}).find(([id]) => id !== user?.id)?.[1]?.avatarUrl;
+  const displayName =
+    recipientName ||
+    (recipientId && thread?.participants?.[recipientId]?.name) ||
+    'Direct message';
   const { typingUserIds, broadcastTyping } = useTypingIndicator(threadId, user?.id);
   const otherIsTyping = typingUserIds.length > 0;
 
@@ -391,6 +401,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     message={item}
                     isOwn={item.senderId === user?.id}
                     senderName={displayName}
+                    senderAvatar={peerAvatarUrl}
                     onReply={() =>
                       setReplyTo({
                         id: item.id,
@@ -467,6 +478,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         }}
         currentUserId={user?.id}
         otherDisplayName={displayName}
+        otherAvatarUrl={peerAvatarUrl}
         threadId={threadId}
       />
     </SafeAreaView>

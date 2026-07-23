@@ -588,7 +588,8 @@ export async function uploadLectureAudioForNote(
 }
 
 /** Skip storage hop for short lectures; keeps typical clips on the proven base64 path. */
-const LECTURE_STORAGE_PATH_MIN_BYTES = 2 * 1024 * 1024;
+/** Prefer signed-URL storage for anything above a tiny clip — avoids large JSON via CF proxy. */
+const LECTURE_STORAGE_PATH_MIN_BYTES = 64 * 1024;
 
 function estimateLectureByteLength(audioBase64: string, clientByteLength?: number): number {
   if (typeof clientByteLength === 'number' && clientByteLength > 0) return clientByteLength;

@@ -968,16 +968,16 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
 router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const {
-    audioBase64,
-    storagePath,
-    mimeType,
-    noteId,
-    fileName,
-    currentBody,
-    durationMs,
-    clientByteLength,
-  } = req.body;
+  // CF Pages proxy / empty Content-Type can leave body unset — never destructure undefined.
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const audioBase64 = body.audioBase64;
+  const storagePath = body.storagePath;
+  const mimeType = typeof body.mimeType === 'string' ? body.mimeType : undefined;
+  const noteId = typeof body.noteId === 'string' ? body.noteId : undefined;
+  const fileName = typeof body.fileName === 'string' ? body.fileName : undefined;
+  const currentBody = body.currentBody;
+  const durationMs = body.durationMs;
+  const clientByteLength = body.clientByteLength;
   const hasBase64 = typeof audioBase64 === 'string' && audioBase64.length > 0;
   const hasStoragePath = typeof storagePath === 'string' && storagePath.length > 0;
   if (!hasBase64 && !hasStoragePath) {
@@ -1001,11 +1001,11 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   const requestId = (req as { requestId?: string }).requestId;
   const logContext = {
     requestId,
-    noteId: typeof noteId === 'string' ? noteId : null,
+    noteId: noteId || null,
     storagePath: hasStoragePath ? String(storagePath) : null,
     clientDurationMs: typeof durationMs === 'number' ? durationMs : null,
     clientByteLength: typeof clientByteLength === 'number' ? clientByteLength : null,
-    clientMimeType: typeof mimeType === 'string' ? mimeType : null,
+    clientMimeType: mimeType || null,
   };
 
   const result = await runNoteAiSync(async () => {
@@ -1014,7 +1014,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
       const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
       return transcribeAudioBuffer(
         downloaded.buffer,
-        typeof mimeType === 'string' ? mimeType : downloaded.contentType || 'audio/webm',
+        mimeType || downloaded.contentType || 'audio/webm',
         logContext
       );
     }

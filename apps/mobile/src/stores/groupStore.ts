@@ -137,7 +137,8 @@ function mapApiMember(m: any, adminIds: string[]): GroupMember {
   const isAdmin = adminIds.includes(userId);
 
   return {
-    id: m.id || userId,
+    // Use auth user id as the stable member key so chat roster lookups match sender_id.
+    id: userId,
     userId,
     name: m.name || 'Unknown',
     username: m.username,
@@ -713,7 +714,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     sendingGroupIds.add(groupId);
 
     const group = get().groups.find((g) => g.id === groupId);
-    const member = group?.members?.find((m) => m.id === senderId);
+    // Prefer userId — member.id may be the membership row id, not the auth user id.
+    const member = group?.members?.find((m) => m.userId === senderId || m.id === senderId);
     const senderName = formatChatSenderLabel({ username: member?.username });
     let parsed: any = {};
     if (text.trim().startsWith('{')) {
@@ -748,6 +750,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       groupId,
       senderId,
       senderName,
+      senderAvatar: member?.avatarUrl,
       text: isQuestion ? questionStem || text : text,
       type: isQuestion ? 'question' : 'text',
       createdAt: new Date().toISOString(),

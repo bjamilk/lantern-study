@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
-import { Avatar } from '../../components/ui';
+import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { ReceiptTicks } from './ReceiptTicks';
 
@@ -20,6 +20,7 @@ interface DmBubbleProps {
   };
   isOwn: boolean;
   senderName?: string;
+  senderAvatar?: string | null;
   onReply?: () => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
@@ -31,6 +32,7 @@ export function DmBubble({
   message,
   isOwn,
   senderName,
+  senderAvatar,
   onReply,
   onScrollToMessage,
   onOpenThread,
@@ -76,7 +78,9 @@ export function DmBubble({
       delayLongPress={350}
       className={`mb-3 flex-row gap-2 max-w-[92%] ${isOwn ? 'self-end' : 'self-start'}`}
     >
-      {!isOwn ? <Avatar name={senderName || 'User'} size={28} /> : null}
+      {!isOwn ? (
+        <ResolvedAvatar name={senderName || 'User'} uri={senderAvatar} size={28} />
+      ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn && senderName ? (
