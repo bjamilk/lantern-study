@@ -246,6 +246,30 @@ export function MessageBubble({
     minute: '2-digit',
   });
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
+  const isRemoved = !!message.isRemoved || !!message.removedAt;
+
+  if (isRemoved) {
+    return (
+      <View className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}>
+        <View
+          className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
+          style={{ borderColor: colors.border, borderWidth: 1, borderStyle: 'dashed' }}
+        >
+          <Text className="text-sm italic text-lantern-text-secondary">Message removed</Text>
+        </View>
+        {(message.replyCount ?? 0) > 0 && onOpenThread ? (
+          <Pressable
+            onPress={() => onOpenThread(message.threadRootId || message.id)}
+            className="mt-1.5"
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+              {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
 
   const optionItems =
     message.optionItems?.length
@@ -348,7 +372,9 @@ export function MessageBubble({
                 numberOfLines={1}
                 style={{ color: isOwn && !isQuestion ? '#c7d2fe' : colors.textSecondary }}
               >
-                {(message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+                {message.replyTo.isRemoved
+                  ? 'Message removed'
+                  : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
               </Text>
             </Pressable>
           ) : null}
@@ -471,6 +497,14 @@ export function MessageBubble({
             >
               {timeLabel}
             </Text>
+            {message.editedAt ? (
+              <Text
+                className="text-[10px] ml-1"
+                style={{ color: isOwn && !isQuestion ? '#c7d2fe' : colors.textTertiary }}
+              >
+                edited
+              </Text>
+            ) : null}
             {isOwn ? (
               <ReceiptTicks
                 status={message.receiptStatus || 'sent'}

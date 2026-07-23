@@ -10,12 +10,16 @@ interface DmBubbleProps {
   message: {
     text: string;
     timestamp: string;
+    editedAt?: string;
+    removedAt?: string;
+    isRemoved?: boolean;
     replyCount?: number;
     receiptStatus?: 'sent' | 'read';
     replyTo?: {
       id: string;
       senderName?: string;
       text?: string;
+      isRemoved?: boolean;
     } | null;
   };
   isOwn: boolean;
@@ -71,6 +75,30 @@ export function DmBubble({
   };
 
   const segments = !audioUrl ? segmentMentions(message.text) : [];
+  const isRemoved = !!message.isRemoved || !!message.removedAt;
+
+  if (isRemoved) {
+    return (
+      <View className={`max-w-[82%] mb-3 ${isOwn ? 'self-end' : 'self-start'}`}>
+        <View
+          className="px-3 py-2 rounded-xl bg-lantern-background-secondary"
+          style={{ borderColor: colors.border, borderWidth: 1, borderStyle: 'dashed' }}
+        >
+          <Text className="text-sm italic text-lantern-text-secondary">Message removed</Text>
+        </View>
+        {(message.replyCount ?? 0) > 0 && onOpenThread ? (
+          <Pressable
+            onPress={() => onOpenThread(threadRootId || messageId || '')}
+            className="mt-1.5"
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.primary }}>
+              {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <Pressable
@@ -116,7 +144,9 @@ export function DmBubble({
                 numberOfLines={1}
                 style={{ color: isOwn ? '#c7d2fe' : colors.textSecondary }}
               >
-                {(message.replyTo.text || 'Original message').slice(0, 100)}
+                {message.replyTo.isRemoved
+                  ? 'Message removed'
+                  : (message.replyTo.text || 'Original message').slice(0, 100)}
               </Text>
             </Pressable>
           ) : null}
@@ -157,6 +187,14 @@ export function DmBubble({
             >
               {timeLabel}
             </Text>
+            {message.editedAt ? (
+              <Text
+                className="text-[10px]"
+                style={{ color: isOwn ? '#c7d2fe' : colors.textTertiary }}
+              >
+                edited
+              </Text>
+            ) : null}
             {isOwn ? (
               <ReceiptTicks status={message.receiptStatus || 'sent'} onPrimary />
             ) : null}

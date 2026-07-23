@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -16,6 +17,11 @@ import { MessageBubble } from './MessageBubble';
 import { DmBubble } from './DmBubble';
 import type { DirectMessage, Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
+import {
+  canEditChatMessage,
+  canRemoveChatMessage,
+  shouldRenderRemovedMessage,
+} from '@lantern/shared/utils';
 
 type ThreadMessage = Message | DirectMessage;
 
@@ -31,6 +37,8 @@ interface ChatThreadModalProps {
   messages: ThreadMessage[];
   onReload: () => Promise<void>;
   onSend: (text: string, replyToMessageId?: string) => Promise<void>;
+  onEdit?: (messageId: string, content: string) => Promise<void>;
+  onRemove?: (messageId: string) => Promise<void>;
   currentUserId?: string;
   /** Group thread rendering */
   isGroup?: boolean;
@@ -55,6 +63,8 @@ export function ChatThreadModal({
   messages,
   onReload,
   onSend,
+  onEdit,
+  onRemove,
   currentUserId,
   isGroup = false,
   memberCount = 0,
@@ -72,7 +82,13 @@ export function ChatThreadModal({
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [threadReplyTo, setThreadReplyTo] = useState<ReplyPreview | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ThreadMessage | null>(null);
   const listRef = useRef<FlatList<ThreadMessage>>(null);
+  const visibleMessages = messages.filter((message) =>
+    shouldRenderRemovedMessage(message, messages)
+  );
+  const rootMessage = messages.find(message => message.id === rootId) || messages[0];
+  const isRootRemoved = !!rootMessage?.isRemoved || !!rootMessage?.removedAt;
 
   const resetReplyToRoot = useCallback(() => {
     if (!rootId) {
@@ -80,7 +96,7 @@ export function ChatThreadModal({
       return;
     }
     const root = messages.find(m => m.id === rootId) || messages[0];
-    if (!root) {
+    if (!root || root.isRemoved || root.removedAt) {
       setThreadReplyTo(null);
       return;
     }
@@ -103,26 +119,126 @@ export function ChatThreadModal({
     if (!visible) {
       setText('');
       setThreadReplyTo(null);
+      setEditingMessage(null);
       return;
     }
     resetReplyToRoot();
   }, [visible, resetReplyToRoot]);
 
-  const replyCount = Math.max(0, messages.length - 1);
+  const replyCount = Math.max(0, visibleMessages.length - 1);
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     setSending(true);
-    setText('');
-    const replyId = threadReplyTo?.id || rootId || undefined;
     try {
+      if (editingMessage && onEdit) {
+        await onEdit(editingMessage.id, trimmed);
+        setEditingMessage(null);
+        setText('');
+        await onReload();
+        return;
+      }
+
+      setText('');
+      const replyId = threadReplyTo?.id || rootId || undefined;
       await onSend(trimmed, replyId);
       await onReload();
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (error) {
+      Alert.alert(
+        editingMessage ? 'Edit failed' : 'Send failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+      if (!editingMessage) setText(trimmed);
     } finally {
       setSending(false);
     }
+  };
+
+  const beginReply = (message: ThreadMessage) => {
+    setEditingMessage(null);
+    if (isGroupMessage(message)) {
+      setThreadReplyTo({
+        id: message.id,
+        senderName: message.senderName,
+        text: message.questionStem || message.text,
+      });
+      return;
+    }
+    setThreadReplyTo({
+      id: message.id,
+      senderName: message.senderId === currentUserId ? 'You' : otherDisplayName,
+      text: message.text,
+    });
+  };
+
+  const beginEdit = (message: ThreadMessage) => {
+    setThreadReplyTo(null);
+    setEditingMessage(message);
+    setText(message.text);
+  };
+
+  const confirmRemove = (message: ThreadMessage) => {
+    if (!onRemove) return;
+    Alert.alert(
+      'Remove message?',
+      'This removes the message for everyone. An audit record will be retained.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void onRemove(message.id)
+              .then(async () => {
+                if (editingMessage?.id === message.id) {
+                  setEditingMessage(null);
+                  setText('');
+                }
+                await onReload();
+              })
+              .catch((error) => {
+                Alert.alert(
+                  'Remove failed',
+                  error instanceof Error ? error.message : 'Please try again.'
+                );
+              });
+          },
+        },
+      ]
+    );
+  };
+
+  const showMessageActions = (message: ThreadMessage) => {
+    const canEdit =
+      !!onEdit && canEditChatMessage(message, currentUserId);
+    const canRemove =
+      !!onRemove && canRemoveChatMessage(message, currentUserId);
+    if (!canEdit && !canRemove) {
+      beginReply(message);
+      return;
+    }
+
+    Alert.alert('Message options', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reply', onPress: () => beginReply(message) },
+      {
+        text: canEdit ? 'Edit or remove' : 'Remove',
+        onPress: () =>
+          Alert.alert('Manage message', undefined, [
+            { text: 'Cancel', style: 'cancel' },
+            ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
+            ...(canRemove
+              ? [{
+                  text: 'Remove',
+                  style: 'destructive' as const,
+                  onPress: () => confirmRemove(message),
+                }]
+              : []),
+          ]),
+      },
+    ]);
   };
 
   return (
@@ -157,20 +273,20 @@ export function ChatThreadModal({
           ) : (
             <FlatList
               ref={listRef}
-              data={messages}
+              data={visibleMessages}
               keyExtractor={item => item.id}
               className="flex-1"
               contentContainerClassName="px-4 py-4 flex-grow"
               onContentSizeChange={() => {
-                if (messages.length > 0) {
+                if (visibleMessages.length > 0) {
                   listRef.current?.scrollToEnd({ animated: false });
                 }
               }}
               renderItem={({ item, index }) => {
                 const isOwn = item.senderId === currentUserId;
                 if (isGroup && isGroupMessage(item)) {
-                  const previous = index > 0 && isGroupMessage(messages[index - 1])
-                    ? (messages[index - 1] as Message)
+                  const previous = index > 0 && isGroupMessage(visibleMessages[index - 1])
+                    ? (visibleMessages[index - 1] as Message)
                     : undefined;
                   const isGroupedWithPrevious =
                     !!previous &&
@@ -194,13 +310,7 @@ export function ChatThreadModal({
                       userFlagged={userFlagged?.(item) ?? false}
                       onFlag={onFlag ? () => onFlag(item.id) : undefined}
                       canFlag={canFlag?.(item) ?? false}
-                      onReply={m =>
-                        setThreadReplyTo({
-                          id: m.id,
-                          senderName: m.senderName,
-                          text: m.questionStem || m.text,
-                        })
-                      }
+                      onReply={showMessageActions}
                     />
                   );
                 }
@@ -215,11 +325,15 @@ export function ChatThreadModal({
                     message={{
                       text: dm.text,
                       timestamp,
+                      editedAt: dm.editedAt,
+                      removedAt: dm.removedAt,
+                      isRemoved: dm.isRemoved,
                       replyTo: dm.replyTo
                         ? {
                             id: dm.replyTo.id,
                             senderName: dm.replyTo.senderName,
                             text: dm.replyTo.text,
+                            isRemoved: dm.replyTo.isRemoved,
                           }
                         : null,
                       replyCount: dm.replyCount,
@@ -228,39 +342,49 @@ export function ChatThreadModal({
                     isOwn={isOwn}
                     senderName={isOwn ? undefined : otherDisplayName}
                     senderAvatar={isOwn ? undefined : otherAvatarUrl}
-                    onReply={() =>
-                      setThreadReplyTo({
-                        id: dm.id,
-                        senderName: isOwn ? 'You' : otherDisplayName,
-                        text: dm.text,
-                      })
-                    }
+                    onReply={() => showMessageActions(dm)}
                   />
                 );
               }}
             />
           )}
 
-          <ChatComposer
-            value={text}
-            onChangeText={setText}
-            onSend={() => void handleSend()}
-            sending={sending}
-            replyTo={threadReplyTo}
-            onClearReply={resetReplyToRoot}
-            groupId={groupId}
-            threadId={threadId}
-            onSendAudioMarkdown={async markdown => {
-              setSending(true);
-              try {
-                const replyId = threadReplyTo?.id || rootId || undefined;
-                await onSend(markdown, replyId);
-                await onReload();
-              } finally {
-                setSending(false);
+          {!isRootRemoved ? (
+            <ChatComposer
+              value={text}
+              onChangeText={setText}
+              onSend={() => void handleSend()}
+              sending={sending}
+              replyTo={threadReplyTo}
+              onClearReply={resetReplyToRoot}
+              editingMessage={
+                editingMessage ? { id: editingMessage.id, text: editingMessage.text } : null
               }
-            }}
-          />
+              onCancelEdit={() => {
+                setEditingMessage(null);
+                setText('');
+                resetReplyToRoot();
+              }}
+              groupId={groupId}
+              threadId={threadId}
+              onSendAudioMarkdown={async markdown => {
+                setSending(true);
+                try {
+                  const replyId = threadReplyTo?.id || rootId || undefined;
+                  await onSend(markdown, replyId);
+                  await onReload();
+                } finally {
+                  setSending(false);
+                }
+              }}
+            />
+          ) : (
+            <View className="px-4 py-3 border-t border-lantern-border bg-lantern-surface">
+              <Text className="text-xs text-center text-lantern-text-secondary">
+                This thread is closed because its original message was removed.
+              </Text>
+            </View>
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>

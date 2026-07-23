@@ -3,7 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePagination } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import { ChatMessageMutationResult, SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
@@ -28,6 +28,42 @@ const DEFAULT_MESSAGE_PAGE_SIZE = 50;
 const MAX_MESSAGE_PAGE_SIZE = 100;
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
+
+const sendChatMutationResult = (
+  res: any,
+  result: ChatMessageMutationResult,
+  action: 'edited' | 'removed'
+) => {
+  if (result.status === 'ok') {
+    return res.json({
+      success: true,
+      data: result.message,
+      message: `Message ${action}`,
+    });
+  }
+
+  const errors: Record<
+    Exclude<ChatMessageMutationResult['status'], 'ok'>,
+    { status: number; message: string }
+  > = {
+    invalid_content: { status: 400, message: 'Message content must be 1-50000 characters' },
+    invalid_kind: { status: 400, message: 'Invalid message type' },
+    not_found: { status: 404, message: 'Message not found' },
+    forbidden: { status: 403, message: 'Only the sender can change this message' },
+    not_editable: { status: 422, message: 'This message cannot be edited' },
+    not_removable: { status: 422, message: 'This message cannot be removed' },
+    removed: { status: 409, message: 'This message has already been removed' },
+    expired: {
+      status: 409,
+      message: 'Messages can only be edited or removed within 30 minutes of sending',
+    },
+  };
+  const resolved = errors[result.status] || {
+    status: 500,
+    message: `Failed to ${action === 'edited' ? 'edit' : 'remove'} message`,
+  };
+  return res.status(resolved.status).json({ success: false, error: resolved.message });
+};
 
 // Initialize services (will be injected in main server)
 let supabaseService: SupabaseService;
@@ -625,6 +661,49 @@ router.delete(
   })
 );
 
+// PUT /api/v1/messages/dm-message/:messageId - Edit an owned DM message
+router.put(
+  '/dm-message/:messageId',
+  authMiddleware,
+  validateMessageId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { messageId } = req.params;
+    const { content } = req.body || {};
+    if (typeof content !== 'string' || !content.trim() || content.length > 50000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Message content must be 1-50000 characters',
+      });
+    }
+
+    const result = await supabaseService.editChatMessage('dm', messageId, userId, content);
+    return sendChatMutationResult(res, result, 'edited');
+  })
+);
+
+// DELETE /api/v1/messages/dm-message/:messageId - Soft-remove an owned DM message
+router.delete(
+  '/dm-message/:messageId',
+  authMiddleware,
+  validateMessageId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const result = await supabaseService.removeChatMessage(
+      'dm',
+      req.params.messageId,
+      userId
+    );
+    return sendChatMutationResult(res, result, 'removed');
+  })
+);
+
 // GET /api/v1/messages/:messageId - Get message by ID
 router.get(
   '/:messageId',
@@ -677,7 +756,7 @@ router.get(
   })
 );
 
-// PUT /api/v1/messages/:messageId - Update message
+// PUT /api/v1/messages/:messageId - Edit an owned group text message
 router.put(
   '/:messageId',
   authMiddleware,
@@ -688,48 +767,20 @@ router.put(
     if (!userId) return;
 
     const { messageId } = req.params;
-    const { content } = req.body;
-
-    logger.debug('Updating message', { messageId, content: content?.substring(0, 100), userId });
-
-    if (!content || content.trim().length === 0) {
+    const { content } = req.body || {};
+    if (typeof content !== 'string' || !content.trim() || content.length > 50000) {
       return res.status(400).json({
         success: false,
-        error: 'Message content is required',
+        error: 'Message content must be 1-50000 characters',
       });
     }
 
-    // Get the message first to check ownership
-    const existingMessage = await supabaseService.getMessageById(messageId, userId);
-    if (!existingMessage) {
-      return res.status(404).json({
-        success: false,
-        error: 'Message not found or access denied',
-      });
-    }
-
-    // Check if user owns this message
-    if (existingMessage.senderId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
-
-    const updatedMessage = await supabaseService.updateMessage(messageId, content);
-
-    // Invalidate message caches
-    await cacheService.delete(`message:${messageId}`);
-    await cacheService.deletePattern(`messages:group:${existingMessage.groupId}:*`);
-
-    res.json({
-      success: true,
-      data: updatedMessage,
-    });
+    const result = await supabaseService.editChatMessage('group', messageId, userId, content);
+    return sendChatMutationResult(res, result, 'edited');
   })
 );
 
-// DELETE /api/v1/messages/:messageId - Delete message
+// DELETE /api/v1/messages/:messageId - Soft-remove an owned group text/voice message
 router.delete(
   '/:messageId',
   authMiddleware,
@@ -739,54 +790,12 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { messageId } = req.params;
-
-    logger.debug('Deleting message', { messageId, userId });
-
-    // Get the message first to check ownership and get group ID
-    const message = await supabaseService.getMessageById(messageId, userId);
-    if (!message) {
-      return res.status(404).json({
-        success: false,
-        error: 'Message not found or access denied',
-      });
-    }
-
-    // Check if user owns this message or is group admin (for group messages)
-    let canDelete = message.senderId === userId;
-    
-    if (message.groupId) {
-      const group = await supabaseService.getGroupById(message.groupId, userId);
-      canDelete = canDelete || group?.permissions[userId]?.admin || group?.adminIds?.includes(userId);
-    }
-
-    if (!canDelete) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-      });
-    }
-
-    const deleted = await supabaseService.deleteMessage(messageId);
-
-    if (!deleted) {
-      return res.status(404).json({
-        success: false,
-        error: 'Message not found',
-      });
-    }
-
-    // Invalidate caches
-    await cacheService.delete(`message:${messageId}`);
-    if (message.groupId) {
-      await cacheService.deletePattern(`messages:group:${message.groupId}:*`);
-      await cacheService.delete(`group:stats:${message.groupId}`);
-    }
-
-    res.json({
-      success: true,
-      message: 'Message deleted successfully',
-    });
+    const result = await supabaseService.removeChatMessage(
+      'group',
+      req.params.messageId,
+      userId
+    );
+    return sendChatMutationResult(res, result, 'removed');
   })
 );
 

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -11,7 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { findFirstUnreadMessageId, normalizeStorageUrl } from '@lantern/shared/utils';
+import {
+  canEditChatMessage,
+  canRemoveChatMessage,
+  findFirstUnreadMessageId,
+  normalizeStorageUrl,
+  shouldRenderRemovedMessage,
+} from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
 import { ChatComposer } from '../../components/chat/ChatComposer';
@@ -75,6 +82,9 @@ function DmBubbleWrapper({
       message={{
         text: message.text,
         timestamp,
+        editedAt: message.editedAt,
+        removedAt: message.removedAt,
+        isRemoved: message.isRemoved,
         replyCount: message.replyCount,
         receiptStatus: message.receiptStatus,
         replyTo: message.replyTo
@@ -82,6 +92,7 @@ function DmBubbleWrapper({
               id: message.replyTo.id,
               senderName: message.replyTo.senderName,
               text: message.replyTo.text,
+              isRemoved: message.replyTo.isRemoved,
             }
           : null,
       }}
@@ -100,13 +111,24 @@ function DmBubbleWrapper({
 export function DirectMessageScreen({ navigation, route }: Props) {
   const { threadId, recipientId, recipientName } = route.params;
   const user = useAuthStore(s => s.user);
-  const { directMessages, dmThreads, fetchDirectMessagesForThread, sendDirectMessageTo, markDMAsRead, fetchThread, applyPeerChatRead } =
+  const {
+    directMessages,
+    dmThreads,
+    fetchDirectMessagesForThread,
+    sendDirectMessageTo,
+    editDirectMessage,
+    removeDirectMessage,
+    markDMAsRead,
+    fetchThread,
+    applyPeerChatRead,
+  } =
     useGroupStore();
   const { colors } = useTheme();
 
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
@@ -125,7 +147,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const lastMessageIdRef = useRef<string | null>(null);
   const prevMessageCountRef = useRef(0);
 
-  const messages = directMessages[threadId] || [];
+  const rawMessages = directMessages[threadId] || [];
+  const messages = useMemo(
+    () => rawMessages.filter((message) => shouldRenderRemovedMessage(message, rawMessages)),
+    [rawMessages]
+  );
   const thread = dmThreads.find((t) => t.id === threadId);
   const peerAvatarUrl =
     (recipientId && thread?.participants?.[recipientId]?.avatarUrl) ||
@@ -277,20 +303,108 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     const trimmed = (overrideText ?? text).trim();
     if (!trimmed || !user?.id || sending) return;
     setSending(true);
-    if (!overrideText) setText('');
-    const replyId = replyTo?.id;
-    setReplyTo(null);
-    isNearBottomRef.current = true;
     try {
+      if (editingMessage) {
+        await editDirectMessage(threadId, editingMessage.id, trimmed);
+        setEditingMessage(null);
+        setText('');
+        if (threadRootId) await reloadThread();
+        return;
+      }
+
+      if (!overrideText) setText('');
+      const replyId = replyTo?.id;
+      setReplyTo(null);
+      isNearBottomRef.current = true;
       await sendDirectMessageTo(user.id, recipientId, trimmed, threadId, {
         replyToMessageId: replyId,
       });
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
+    } catch (error) {
+      if (!overrideText && !editingMessage) setText(trimmed);
+      Alert.alert(
+        editingMessage ? 'Edit failed' : 'Send failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
     } finally {
       setSending(false);
     }
   };
+
+  const beginReply = useCallback((message: DirectMessage) => {
+    setEditingMessage(null);
+    setReplyTo({
+      id: message.id,
+      senderName: message.senderId === user?.id ? 'You' : displayName,
+      text: message.text,
+    });
+  }, [displayName, user?.id]);
+
+  const beginEdit = useCallback((message: DirectMessage) => {
+    setReplyTo(null);
+    setEditingMessage(message);
+    setText(message.text);
+  }, []);
+
+  const confirmRemoveMessage = useCallback((message: DirectMessage) => {
+    Alert.alert(
+      'Remove message?',
+      'This removes the message for everyone. An audit record will be retained.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void removeDirectMessage(threadId, message.id)
+              .then(async () => {
+                if (editingMessage?.id === message.id) {
+                  setEditingMessage(null);
+                  setText('');
+                }
+                if (threadRootId) await reloadThread();
+              })
+              .catch((error) => {
+                Alert.alert(
+                  'Remove failed',
+                  error instanceof Error ? error.message : 'Please try again.'
+                );
+              });
+          },
+        },
+      ]
+    );
+  }, [editingMessage?.id, reloadThread, removeDirectMessage, threadId, threadRootId]);
+
+  const showMessageActions = useCallback((message: DirectMessage) => {
+    const canEdit = canEditChatMessage(message, user?.id);
+    const canRemove = canRemoveChatMessage(message, user?.id);
+    if (!canEdit && !canRemove) {
+      beginReply(message);
+      return;
+    }
+
+    Alert.alert('Message options', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reply', onPress: () => beginReply(message) },
+      {
+        text: canEdit ? 'Edit or remove' : 'Remove',
+        onPress: () =>
+          Alert.alert('Manage message', undefined, [
+            { text: 'Cancel', style: 'cancel' },
+            ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
+            ...(canRemove
+              ? [{
+                  text: 'Remove',
+                  style: 'destructive' as const,
+                  onPress: () => confirmRemoveMessage(message),
+                }]
+              : []),
+          ]),
+      },
+    ]);
+  }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
 
   const handleBack = useCallback(() => {
     if (navigation.canGoBack?.()) {
@@ -402,13 +516,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     isOwn={item.senderId === user?.id}
                     senderName={displayName}
                     senderAvatar={peerAvatarUrl}
-                    onReply={() =>
-                      setReplyTo({
-                        id: item.id,
-                        senderName: item.senderId === user?.id ? 'You' : displayName,
-                        text: item.text,
-                      })
-                    }
+                    onReply={() => showMessageActions(item)}
                     onScrollToMessage={(messageId) => {
                       const index = messages.findIndex((m) => m.id === messageId);
                       if (index >= 0) {
@@ -456,6 +564,13 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           threadId={threadId}
           replyTo={replyTo}
           onClearReply={() => setReplyTo(null)}
+          editingMessage={
+            editingMessage ? { id: editingMessage.id, text: editingMessage.text } : null
+          }
+          onCancelEdit={() => {
+            setEditingMessage(null);
+            setText('');
+          }}
           onSendAudioMarkdown={async (markdown) => {
             await handleSend(markdown);
           }}
@@ -476,6 +591,10 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           if (!user?.id) return;
           await sendDirectMessageTo(user.id, recipientId, text, threadId, { replyToMessageId });
         }}
+        onEdit={(messageId, content) =>
+          editDirectMessage(threadId, messageId, content)
+        }
+        onRemove={(messageId) => removeDirectMessage(threadId, messageId)}
         currentUserId={user?.id}
         otherDisplayName={displayName}
         otherAvatarUrl={peerAvatarUrl}

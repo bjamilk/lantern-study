@@ -24,6 +24,8 @@ interface MessageInputBarProps {
   mentionCandidates?: MentionCandidate[];
   replyTo?: MessageReplyPreview | null;
   onClearReply?: () => void;
+  editingMessage?: { id: string; text: string } | null;
+  onClearEdit?: () => void;
   groupId?: string;
   threadId?: string;
 }
@@ -38,6 +40,8 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   mentionCandidates = [],
   replyTo,
   onClearReply,
+  editingMessage,
+  onClearEdit,
   groupId,
   threadId,
 }) => {
@@ -64,6 +68,17 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
   }, [inputText]);
+
+  useEffect(() => {
+    if (!editingMessage) return;
+    setInputText(editingMessage.text);
+    setMentionQuery(null);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const end = editingMessage.text.length;
+      textareaRef.current?.setSelectionRange(end, end);
+    });
+  }, [editingMessage?.id]);
 
   useEffect(() => {
     return () => {
@@ -117,7 +132,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     const trimmed = (overrideText ?? inputText).trim();
     if (!trimmed) return;
 
-    const aiMatch = trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
+    const aiMatch = editingMessage ? null : trimmed.match(/^(?:@AI\s+|\/ask\s+)(.+)/is);
     if (aiMatch && onAIQuery) {
       const question = aiMatch[1].trim();
       setInputText('');
@@ -142,10 +157,20 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
 
     setIsSending(true);
-    if (!overrideText) setInputText('');
+    setRecordError(null);
+    if (!overrideText && !editingMessage) setInputText('');
     try {
-      await onSendMessage(trimmed, { replyToMessageId: replyTo?.id });
+      await onSendMessage(trimmed, {
+        replyToMessageId: editingMessage ? undefined : replyTo?.id,
+      });
+      if (editingMessage) {
+        setInputText('');
+        onClearEdit?.();
+      }
       onClearReply?.();
+    } catch (error) {
+      if (!overrideText && !editingMessage) setInputText(trimmed);
+      setRecordError(error instanceof Error ? error.message : 'Could not send message');
     } finally {
       setIsSending(false);
     }
@@ -284,7 +309,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   };
 
   const busy = isAIThinking || isSending || isUploadingAudio;
-  const showMic = !inputText.trim() && !busy;
+  const showMic = !editingMessage && !inputText.trim() && !busy;
 
   return (
     <div className="px-4 md:px-6 py-3 bg-lantern-surface border-t border-lantern-border">
@@ -301,6 +326,28 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             onClick={onClearReply}
             className="p-1 text-lantern-text-tertiary hover:text-lantern-text"
             aria-label="Cancel reply"
+          >
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {editingMessage && (
+        <div className="mb-2 flex items-start gap-2 rounded-xl border border-lantern-primary/30 bg-lantern-primary-background px-3 py-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold text-lantern-primary">Editing message</p>
+            <p className="text-xs text-lantern-text-secondary truncate">
+              Changes do not extend the original 30-minute window.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setInputText('');
+              onClearEdit?.();
+            }}
+            className="p-1 text-lantern-text-tertiary hover:text-lantern-text"
+            aria-label="Cancel edit"
           >
             <XMarkIcon className="w-4 h-4" />
           </button>
@@ -332,7 +379,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       )}
 
       <div className="flex items-end gap-2">
-        {onOpenQuestionModal && (
+        {onOpenQuestionModal && !editingMessage && (
           <button
             type="button"
             onClick={onOpenQuestionModal}
@@ -398,7 +445,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             onClick={() => void handleSend()}
             disabled={!inputText.trim() || busy}
             className="flex-shrink-0 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-background-secondary text-white disabled:text-lantern-text-tertiary rounded-lantern-xl transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:cursor-not-allowed"
-            aria-label="Send message"
+            aria-label={editingMessage ? 'Save message changes' : 'Send message'}
           >
             <PaperAirplaneIcon className="w-5 h-5" />
           </button>

@@ -11,8 +11,18 @@ import {
   getQuestionVerificationThreshold,
   parseChatAudioUrl,
   segmentMentions,
+  canEditChatMessage,
+  canRemoveChatMessage,
 } from '@lantern/shared/utils';
-import { HandThumbUpIcon, HandThumbDownIcon, TagIcon, FlagIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import {
+  HandThumbUpIcon,
+  HandThumbDownIcon,
+  TagIcon,
+  FlagIcon,
+  ArrowUturnLeftIcon,
+  PencilIcon,
+  TrashIcon,
+} from '@heroicons/react/24/outline';
 import {
   HandThumbUpIcon as HandThumbUpSolidIcon,
   HandThumbDownIcon as HandThumbDownSolidIcon,
@@ -48,6 +58,8 @@ interface MessageItemProps {
   onReply?: (message: Message) => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
+  onEditMessage?: (message: Message) => void;
+  onRemoveMessage?: (message: Message) => void;
   /** When true, show group-style seen-by tooltip on ticks. */
   isGroupChat?: boolean;
 }
@@ -204,10 +216,32 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   );
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onScrollToMessage, onOpenThread, isGroupChat = false }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, isGroupChat = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
+  const isRemoved = !!message.isRemoved || !!message.removedAt;
+  const canEdit = !!onEditMessage && canEditChatMessage(message, currentUser.id);
+  const canRemove = !!onRemoveMessage && canRemoveChatMessage(message, currentUser.id);
+
+  if (isRemoved) {
+    return (
+      <div className={`flex ${isCurrentUserMessage ? 'justify-end' : 'justify-start'} mt-2 px-10`}>
+        <div className="max-w-xs rounded-xl border border-dashed border-lantern-border bg-lantern-background-secondary/70 px-3 py-2 text-lantern-text-tertiary">
+          <p className="text-sm italic">Message removed</p>
+          {(message.replyCount ?? 0) > 0 && onOpenThread && (
+            <button
+              type="button"
+              onClick={() => onOpenThread(message.threadRootId || message.id)}
+              className="mt-1 text-xs font-semibold text-lantern-primary hover:underline"
+            >
+              {message.replyCount} {message.replyCount === 1 ? 'reply' : 'replies'}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (isOfferNotice) {
     const cleanText = message.text.replace(/^\[Offer\]\s*/, '');
@@ -310,16 +344,44 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
       {/* Bubble */}
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 relative ${bubbleClasses}`}>
-        {onReply && (
-          <button
-            type="button"
-            onClick={() => onReply(message)}
-            className={`absolute -top-2 ${isCurrentUserMessage ? 'left-2' : 'right-2'} opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-md bg-lantern-surface border border-lantern-border shadow-sm text-lantern-text-secondary hover:text-lantern-primary transition-opacity`}
-            aria-label="Reply to message"
-            title="Reply"
+        {(onReply || canEdit || canRemove) && (
+          <div
+            className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2 opacity-100 md:opacity-0 md:group-hover:opacity-100' : 'right-2 opacity-0 group-hover:opacity-100'} focus-within:opacity-100 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm transition-opacity overflow-hidden`}
           >
-            <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
-          </button>
+            {onReply && (
+              <button
+                type="button"
+                onClick={() => onReply(message)}
+                className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background"
+                aria-label="Reply to message"
+                title="Reply"
+              >
+                <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onEditMessage?.(message)}
+                className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background"
+                aria-label="Edit message"
+                title="Edit message"
+              >
+                <PencilIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {canRemove && (
+              <button
+                type="button"
+                onClick={() => onRemoveMessage?.(message)}
+                className="p-1.5 text-lantern-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                aria-label="Remove message"
+                title="Remove message"
+              >
+                <TrashIcon className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         )}
         {/* Sender name for other users */}
         {!isCurrentUserMessage && !isGroupedWithPrevious && (
@@ -340,7 +402,9 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
               {message.replyTo.senderName || 'Message'}
             </p>
             <p className="text-xs truncate">
-              {(message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
+              {message.replyTo.isRemoved
+                ? 'Message removed'
+                : (message.replyTo.questionStem || message.replyTo.text || 'Original message').slice(0, 100)}
             </p>
           </button>
         )}
@@ -530,6 +594,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
           <span>
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
+          {message.editedAt && <span className="ml-1">(edited)</span>}
           {isCurrentUserMessage && (
             <ReceiptTicks
               status={message.receiptStatus || 'sent'}

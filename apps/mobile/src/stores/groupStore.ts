@@ -97,6 +97,9 @@ export interface Message {
   type: 'text' | 'question' | 'system';
   createdAt: string;
   isArchived?: boolean;
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
   upvotes?: number;
   downvotes?: number;
   flaggedAsSimilarUserIds?: string[];
@@ -123,6 +126,7 @@ export interface Message {
     type?: string;
     text?: string;
     questionStem?: string;
+    isRemoved?: boolean;
   } | null;
   threadRootId?: string;
   replyCount?: number;
@@ -226,6 +230,8 @@ interface GroupState {
     senderName?: string,
     options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
   ) => Promise<void>;
+  editGroupMessage: (groupId: string, messageId: string, content: string) => Promise<void>;
+  removeGroupMessage: (groupId: string, messageId: string) => Promise<void>;
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
   leaveGroup: (groupId: string, userId: string) => Promise<void>;
 
@@ -239,12 +245,15 @@ interface GroupState {
     threadId: string,
     options?: { replyToMessageId?: string }
   ) => Promise<void>;
+  editDirectMessage: (threadId: string, messageId: string, content: string) => Promise<void>;
+  removeDirectMessage: (threadId: string, messageId: string) => Promise<void>;
   markDMAsRead: (threadId: string, userId: string) => Promise<string | null>;
   archiveDmThread: (threadId: string, userId: string) => Promise<void>;
   unarchiveDmThread: (threadId: string, userId: string) => Promise<void>;
   deleteDmThread: (threadId: string, userId: string) => Promise<void>;
   removeDmThread: (threadId: string) => void;
   addDirectMessage: (threadId: string, message: DirectMessage) => void;
+  mergeDirectMessage: (threadId: string, rawMessage: unknown) => void;
   appendGroupMessage: (groupId: string, rawMessage: unknown) => void;
   mergeGroupMessage: (groupId: string, rawMessage: unknown) => void;
   fetchThread: (
@@ -375,6 +384,9 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     parsed.correctAnswerIds ||
     parsed.correct_answer_ids;
 
+  const removedAt = m.removed_at || m.removedAt;
+  const isRemoved = m.isRemoved || !!removedAt;
+
   return {
     id: m.id,
     groupId: m.group_id || m.groupId || groupId,
@@ -384,10 +396,13 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     }),
     senderAvatar:
       sender.avatar_url || sender.avatarUrl || rosterMember?.avatarUrl,
-    text: isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
+    text: isRemoved ? '' : isQuestion ? (questionStem || rawContent) : (m.text || rawContent),
     type: isQuestion ? 'question' : 'text',
     createdAt: typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString(),
     isArchived: m.is_archived || m.isArchived,
+    editedAt: m.edited_at || m.editedAt,
+    removedAt,
+    isRemoved,
     upvotes: m.upvotes ?? 0,
     downvotes: m.downvotes ?? 0,
     flaggedAsSimilarUserIds:
@@ -476,18 +491,72 @@ function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
 }
 
 function mapDirectMessage(m: any, threadId: string): DirectMessage {
+  const removedAt = m.removed_at || m.removedAt;
+  const isRemoved = m.isRemoved || !!removedAt;
   return {
     id: m.id,
     threadId: m.thread_id || threadId,
     senderId: m.sender_id || m.senderId,
-    text: m.content || m.text || '',
+    text: isRemoved ? '' : m.content || m.text || '',
     timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+    editedAt: m.edited_at || m.editedAt,
+    removedAt,
+    isRemoved,
     replyToMessageId: m.reply_to_message_id || m.replyToMessageId,
     replyTo: m.replyTo || m.reply_to || null,
     threadRootId: m.threadRootId || m.thread_root_id || undefined,
     replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
     receiptStatus: m.receiptStatus || m.receipt_status || undefined,
   };
+}
+
+function applyGroupMessageMutation(messages: Message[], payload: any): Message[] {
+  const removedAt = payload.removedAt || payload.removed_at;
+  const isRemoved = payload.isRemoved || !!removedAt;
+  return messages.map((message) => {
+    let replyTo = message.replyTo;
+    if (replyTo?.id === payload.id) {
+      replyTo = {
+        ...replyTo,
+        id: String(payload.id),
+        text: isRemoved ? undefined : payload.text,
+        isRemoved,
+      };
+    }
+    if (message.id !== payload.id) return { ...message, replyTo };
+    return {
+      ...message,
+      text: isRemoved ? '' : payload.text ?? message.text,
+      editedAt: payload.editedAt || payload.edited_at,
+      removedAt,
+      isRemoved,
+      replyTo,
+    };
+  });
+}
+
+function applyDirectMessageMutation(
+  messages: DirectMessage[],
+  incoming: DirectMessage
+): DirectMessage[] {
+  return messages.map((message) => {
+    let replyTo = message.replyTo;
+    if (replyTo?.id === incoming.id) {
+      replyTo = {
+        ...replyTo,
+        id: incoming.id,
+        text: incoming.isRemoved ? undefined : incoming.text,
+        isRemoved: !!incoming.isRemoved,
+      };
+    }
+    if (message.id !== incoming.id) return { ...message, replyTo };
+    return {
+      ...message,
+      ...incoming,
+      replyCount: incoming.replyCount ?? message.replyCount,
+      replyTo,
+    };
+  });
 }
 
 export const useGroupStore = create<GroupState>((set, get) => ({
@@ -845,6 +914,44 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     } finally {
       sendingGroupIds.delete(groupId);
     }
+  },
+
+  editGroupMessage: async (groupId: string, messageId: string, content: string) => {
+    const payload = await api.editGroupMessage(messageId, content);
+    set((state) => {
+      const updated = applyGroupMessageMutation(state.messagesCache[groupId] || [], payload);
+      const latest = [...updated].reverse().find(
+        (message) => !message.isRemoved && !message.removedAt && !message.isArchived
+      );
+      return {
+        messagesCache: { ...state.messagesCache, [groupId]: updated },
+        messages: state.activeGroupId === groupId ? updated : state.messages,
+        groups: state.groups.map((group) =>
+          group.id === groupId
+            ? { ...group, lastMessage: latest, updatedAt: latest?.createdAt || group.updatedAt }
+            : group
+        ),
+      };
+    });
+  },
+
+  removeGroupMessage: async (groupId: string, messageId: string) => {
+    const payload = await api.removeGroupMessage(messageId);
+    set((state) => {
+      const updated = applyGroupMessageMutation(state.messagesCache[groupId] || [], payload);
+      const latest = [...updated].reverse().find(
+        (message) => !message.isRemoved && !message.removedAt && !message.isArchived
+      );
+      return {
+        messagesCache: { ...state.messagesCache, [groupId]: updated },
+        messages: state.activeGroupId === groupId ? updated : state.messages,
+        groups: state.groups.map((group) =>
+          group.id === groupId
+            ? { ...group, lastMessage: latest, updatedAt: latest?.createdAt || group.updatedAt }
+            : group
+        ),
+      };
+    });
   },
 
   createGroup: async (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => {
@@ -1340,6 +1447,58 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  editDirectMessage: async (threadId: string, messageId: string, content: string) => {
+    const payload = await api.editDirectMessage(messageId, content);
+    const incoming = mapDirectMessage(payload, threadId);
+    set((state) => {
+      const updated = applyDirectMessageMutation(
+        state.directMessages[threadId] || [],
+        incoming
+      );
+      const latest = [...updated].reverse().find(
+        (message) => !message.isRemoved && !message.removedAt
+      );
+      return {
+        directMessages: { ...state.directMessages, [threadId]: updated },
+        dmThreads: state.dmThreads.map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                lastMessage: latest?.text,
+                lastMessageTimestamp: latest?.timestamp,
+              }
+            : thread
+        ),
+      };
+    });
+  },
+
+  removeDirectMessage: async (threadId: string, messageId: string) => {
+    const payload = await api.removeDirectMessage(messageId);
+    const incoming = mapDirectMessage(payload, threadId);
+    set((state) => {
+      const updated = applyDirectMessageMutation(
+        state.directMessages[threadId] || [],
+        incoming
+      );
+      const latest = [...updated].reverse().find(
+        (message) => !message.isRemoved && !message.removedAt
+      );
+      return {
+        directMessages: { ...state.directMessages, [threadId]: updated },
+        dmThreads: state.dmThreads.map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                lastMessage: latest?.text,
+                lastMessageTimestamp: latest?.timestamp,
+              }
+            : thread
+        ),
+      };
+    });
+  },
+
   markDMAsRead: async (threadId: string, userId: string) => {
     try {
       const result = await api.markDMAsRead(threadId, userId);
@@ -1417,6 +1576,30 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
   },
 
+  mergeDirectMessage: (threadId: string, rawMessage: unknown) => {
+    const incoming = mapDirectMessage(rawMessage, threadId);
+    set((state) => {
+      const existing = state.directMessages[threadId] || [];
+      if (!existing.some((message) => message.id === incoming.id)) return state;
+      const updated = applyDirectMessageMutation(existing, incoming);
+      const latest = [...updated].reverse().find(
+        (message) => !message.isRemoved && !message.removedAt
+      );
+      return {
+        directMessages: { ...state.directMessages, [threadId]: updated },
+        dmThreads: state.dmThreads.map((thread) =>
+          thread.id === threadId
+            ? {
+                ...thread,
+                lastMessage: latest?.text,
+                lastMessageTimestamp: latest?.timestamp,
+              }
+            : thread
+        ),
+      };
+    });
+  },
+
   appendGroupMessage: (groupId: string, rawMessage: unknown) => {
     const roster = get().groups.find(g => g.id === groupId)?.members;
     const message = mapApiMessage(rawMessage, groupId, roster);
@@ -1466,9 +1649,28 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         merged.optionItems = prev.optionItems;
       }
       updated[idx] = merged;
+      const withUpdatedPreviews = updated.map((item) =>
+        item.replyTo?.id === message.id
+          ? {
+              ...item,
+              replyTo: {
+                ...item.replyTo,
+                text: message.isRemoved ? undefined : message.text,
+                questionStem: message.isRemoved ? undefined : message.questionStem,
+                isRemoved: !!message.isRemoved,
+              },
+            }
+          : item
+      );
+      const latest = [...withUpdatedPreviews].reverse().find(
+        (item) => !item.isRemoved && !item.removedAt && !item.isArchived
+      );
       return {
-        messagesCache: { ...state.messagesCache, [groupId]: updated },
-        messages: state.activeGroupId === groupId ? updated : state.messages,
+        messagesCache: { ...state.messagesCache, [groupId]: withUpdatedPreviews },
+        messages: state.activeGroupId === groupId ? withUpdatedPreviews : state.messages,
+        groups: state.groups.map((group) =>
+          group.id === groupId ? { ...group, lastMessage: latest } : group
+        ),
       };
     });
   },

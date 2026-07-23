@@ -8,6 +8,19 @@ import {
   RateLimitError,
 } from './marketplaceCache';
 
+type ChatMessageMutationPayload = {
+  id: string;
+  groupId?: string;
+  threadId?: string;
+  senderId: string;
+  timestamp: string;
+  type: 'TEXT';
+  text?: string;
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
+};
+
 export function createApiEndpoints(client: ApiClient) {
   const apiRequest = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
     client.request<T>(endpoint, options, timeoutMs);
@@ -757,6 +770,17 @@ export function createApiEndpoints(client: ApiClient) {
         }),
       }),
 
+    editGroupMessage: (messageId: string, content: string) =>
+      apiRequest<ChatMessageMutationPayload>(`/messages/${messageId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content }),
+      }),
+
+    removeGroupMessage: (messageId: string) =>
+      apiRequest<ChatMessageMutationPayload>(`/messages/${messageId}`, {
+        method: 'DELETE',
+      }),
+
     updateQuestionStatus: (messageId: string, questionStatus: string) =>
       apiRequest<{
         id: string;
@@ -855,6 +879,17 @@ export function createApiEndpoints(client: ApiClient) {
           clientMessageId,
           replyToMessageId: options?.replyToMessageId,
         }),
+      }),
+
+    editDirectMessage: (messageId: string, content: string) =>
+      apiRequest<ChatMessageMutationPayload>(`/messages/dm-message/${messageId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content }),
+      }),
+
+    removeDirectMessage: (messageId: string) =>
+      apiRequest<ChatMessageMutationPayload>(`/messages/dm-message/${messageId}`, {
+        method: 'DELETE',
       }),
 
     markDMAsRead: (threadId: string, userId: string) =>

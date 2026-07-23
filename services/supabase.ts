@@ -994,6 +994,51 @@ export const fetchDmThread = async (threadId: string, rootId: string) => {
   return Array.isArray(result?.data) ? result.data : [];
 };
 
+export type ChatMessageMutationPayload = {
+  id: string;
+  groupId?: string;
+  threadId?: string;
+  senderId: string;
+  timestamp: string;
+  type: 'TEXT';
+  text?: string;
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
+};
+
+const mutateChatMessage = async (
+  path: string,
+  method: 'PUT' | 'DELETE',
+  content?: string
+): Promise<ChatMessageMutationPayload> => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/messages/${path}`,
+    withApiCredentials({
+      method,
+      headers: await getAuthHeaders(),
+      ...(method === 'PUT' ? { body: JSON.stringify({ content }) } : {}),
+    })
+  );
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || result.message || 'Failed to update message');
+  }
+  return result.data as ChatMessageMutationPayload;
+};
+
+export const editGroupMessage = (messageId: string, content: string) =>
+  mutateChatMessage(encodeURIComponent(messageId), 'PUT', content);
+
+export const removeGroupMessage = (messageId: string) =>
+  mutateChatMessage(encodeURIComponent(messageId), 'DELETE');
+
+export const editDirectMessage = (messageId: string, content: string) =>
+  mutateChatMessage(`dm-message/${encodeURIComponent(messageId)}`, 'PUT', content);
+
+export const removeDirectMessage = (messageId: string) =>
+  mutateChatMessage(`dm-message/${encodeURIComponent(messageId)}`, 'DELETE');
+
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {
   console.log('Fetching user votes for group:', groupId, 'userId:', userId);
   try {

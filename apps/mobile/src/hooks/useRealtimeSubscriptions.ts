@@ -33,6 +33,10 @@ interface RawDmMessage {
   sender_id: string;
   text: string;
   timestamp: string;
+  edited_at?: string;
+  removed_at?: string;
+  reply_to_message_id?: string;
+  thread_root_id?: string;
 }
 
 export interface Notification {
@@ -273,7 +277,10 @@ class RealtimeSubscriptionManager {
         },
         (payload: RealtimePostgresChangesPayload<Message>) => {
           console.log('[Realtime] Message updated in group:', groupId);
-          const message = payload.new as Message;
+          const message = {
+            ...(payload.new as Message),
+            __realtimeEvent: 'UPDATE',
+          } as Message;
           this.messageCallbacks.forEach(cb => cb(message));
         }
       )
@@ -291,6 +298,27 @@ class RealtimeSubscriptionManager {
       return;
     }
 
+    const emitDmMessage = (
+      payload: RealtimePostgresChangesPayload<RawDmMessage>,
+      isUpdate: boolean
+    ) => {
+      const raw = payload.new as RawDmMessage;
+      const message: DirectMessage = {
+        id: raw.id,
+        threadId: raw.thread_id,
+        senderId: raw.sender_id,
+        text: raw.removed_at ? '' : raw.text,
+        timestamp: raw.timestamp,
+        editedAt: raw.edited_at,
+        removedAt: raw.removed_at,
+        isRemoved: !!raw.removed_at,
+        replyToMessageId: raw.reply_to_message_id,
+        threadRootId: raw.thread_root_id,
+        ...(isUpdate ? { __realtimeEvent: 'UPDATE' } : {}),
+      };
+      this.dmMessageCallbacks.forEach(cb => cb(message));
+    };
+
     const channel = supabase
       .channel(channelName)
       .on(
@@ -301,17 +329,25 @@ class RealtimeSubscriptionManager {
           table: 'dm_messages',
           filter: `thread_id=eq.${threadId}`,
         },
-        (payload: RealtimePostgresChangesPayload<RawDmMessage>) => {
-          const raw = payload.new as RawDmMessage;
-          const message: DirectMessage = {
-            id: raw.id,
-            threadId: raw.thread_id,
-            senderId: raw.sender_id,
-            text: raw.text,
-            timestamp: raw.timestamp,
-          };
-          this.dmMessageCallbacks.forEach(cb => cb(message));
-        }
+        (payload) =>
+          emitDmMessage(
+            payload as RealtimePostgresChangesPayload<RawDmMessage>,
+            false
+          )
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'dm_messages',
+          filter: `thread_id=eq.${threadId}`,
+        },
+        (payload) =>
+          emitDmMessage(
+            payload as RealtimePostgresChangesPayload<RawDmMessage>,
+            true
+          )
       )
       .subscribe((status) => {
         console.log(`[Realtime] DM channel (${threadId}) status: ${status}`);
@@ -438,7 +474,14 @@ export function useRealtimeSubscriptions(
   } = options;
 
   const { user } = useAuthStore();
-  const { groups, dmThreads, addDirectMessage, appendGroupMessage, mergeGroupMessage } = useGroupStore();
+  const {
+    groups,
+    dmThreads,
+    addDirectMessage,
+    mergeDirectMessage,
+    appendGroupMessage,
+    mergeGroupMessage,
+  } = useGroupStore();
   const { loadSettings } = useSettingsStore();
   
   const isSubscribedRef = useRef(false);
@@ -472,8 +515,14 @@ export function useRealtimeSubscriptions(
     const clientMessageId =
       (raw as { client_message_id?: string; clientMessageId?: string }).client_message_id
       || (raw as { clientMessageId?: string }).clientMessageId;
+    const isUpdate =
+      (raw as Message & { __realtimeEvent?: string }).__realtimeEvent === 'UPDATE';
 
     const cached = useGroupStore.getState().messagesCache[groupId] || [];
+    if (isUpdate) {
+      mergeGroupMessage(groupId, raw);
+      return;
+    }
     if (cached.some(m => m.id === raw.id)) {
       mergeGroupMessage(groupId, raw);
       return;
@@ -505,11 +554,23 @@ export function useRealtimeSubscriptions(
 
   const handleDirectMessage = useCallback((message: DirectMessage) => {
     console.log('[useRealtimeSubscriptions] DM received in thread:', message.threadId);
+    const isUpdate =
+      (message as DirectMessage & { __realtimeEvent?: string }).__realtimeEvent === 'UPDATE';
+    const existing = useGroupStore.getState().directMessages[message.threadId] || [];
+    if (isUpdate) {
+      mergeDirectMessage(message.threadId, message);
+      return;
+    }
+    if (existing.some((candidate) => candidate.id === message.id)) {
+      mergeDirectMessage(message.threadId, message);
+      onDirectMessage?.(message);
+      return;
+    }
     if (message.senderId !== user?.id) {
       addDirectMessage(message.threadId, message);
     }
     onDirectMessage?.(message);
-  }, [onDirectMessage, addDirectMessage, user?.id]);
+  }, [onDirectMessage, addDirectMessage, mergeDirectMessage, user?.id]);
 
   // Handle settings update
   const handleSettingsUpdate = useCallback(async (settings: Record<string, unknown>) => {

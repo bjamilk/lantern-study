@@ -263,7 +263,8 @@ export const App: React.FC = () => {
 
     const {
         handleSelectChat, handleInitiateDm, handleSendDm, handleDeleteDmThread,
-        handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage, onPeerChatRead,
+        handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage,
+        handleEditChatMessage, handleRemoveChatMessage, onPeerChatRead,
         handleCreateSubGroup, handleCreateGroup, handleEnterCreatedGroup, handleCloseCreateGroupModal,
         handleQuestionSubmit, onVoteQuestion, handleUpvoteDuplicateAndClose,
         onFlagAsSimilar, onOpenCreateSubGroupModal,
@@ -620,6 +621,9 @@ export const App: React.FC = () => {
             return {
                 id: dm.id, groupId: dm.threadId, timestamp: dm.timestamp,
                 sender, type: MessageType.TEXT, text: dm.text, upvotes: 0, downvotes: 0,
+                editedAt: dm.editedAt,
+                removedAt: dm.removedAt,
+                isRemoved: dm.isRemoved,
                 replyToMessageId: dm.replyToMessageId,
                 replyTo: dm.replyTo,
                 threadRootId: dm.threadRootId,
@@ -893,6 +897,7 @@ export const App: React.FC = () => {
                     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                     <ChatWindow chat={selectedChat} messages={messagesForChat} currentUser={currentUser} userVotes={userVotes}
                     onSendMessage={onSendMessage} onOpenQuestionModal={onOpenQuestionModal}
+                    onEditMessage={handleEditChatMessage} onRemoveMessage={handleRemoveChatMessage}
                     onOpenGroupInfoModal={() => selectedChat && selectedChat.chatType === 'group' && onOpenGroupInfoModal()}
                     onOpenTestConfigModal={onOpenTestConfigModal} onOpenStudyConfigModal={onOpenStudyConfigModal}
                     onVoteQuestion={onVoteQuestion} onFlagAsSimilar={onFlagAsSimilar}

@@ -54,6 +54,22 @@ type ProfileSenderRow = {
   avatar_url?: string;
 };
 
+export type ChatMessageMutationStatus =
+  | 'ok'
+  | 'invalid_content'
+  | 'invalid_kind'
+  | 'not_found'
+  | 'forbidden'
+  | 'not_editable'
+  | 'not_removable'
+  | 'removed'
+  | 'expired';
+
+export type ChatMessageMutationResult = {
+  status: ChatMessageMutationStatus;
+  message?: Record<string, unknown>;
+};
+
 function mapProfileSender(profile: ProfileSenderRow | null | undefined, senderId: string) {
   return {
     id: profile?.id || senderId,
@@ -403,13 +419,21 @@ export class SupabaseService {
   }
 
   private normalizeMessageRecord(msg: any): Partial<Message> & { type: 'TEXT' | 'QUESTION' } {
-    const parsed = this.parseMessageContent(msg);
-    const imageUrl = msg.image_url || parsed.imageUrl;
+    const removedAt = msg.removed_at || msg.removedAt || null;
+    const isRemoved = !!removedAt;
+    const presentationRecord = isRemoved
+      ? { ...msg, text: null, question_data: null, image_url: null }
+      : msg;
+    const parsed = this.parseMessageContent(presentationRecord);
+    const imageUrl = presentationRecord.image_url || parsed.imageUrl;
     const type = (parsed.type || msg.type || 'TEXT') as 'TEXT' | 'QUESTION';
     return {
       ...parsed,
       type,
       ...(imageUrl ? { imageUrl: this.normalizeStorageUrl(imageUrl) } : {}),
+      editedAt: msg.edited_at || msg.editedAt || undefined,
+      removedAt: removedAt || undefined,
+      isRemoved,
       replyToMessageId: msg.reply_to_message_id || msg.replyToMessageId || undefined,
       mentionedUserIds: msg.mentioned_user_ids || msg.mentionedUserIds || undefined,
       replyTo: msg.replyTo || undefined,
@@ -1645,6 +1669,8 @@ export class SupabaseService {
         .from('messages')
         .select('timestamp')
         .eq('group_id', groupId)
+        .is('removed_at', null)
+        .eq('is_archived', false)
         .order('timestamp', { ascending: false })
         .limit(10);
 
@@ -1702,6 +1728,8 @@ export class SupabaseService {
           type,
           text,
           timestamp,
+          edited_at,
+          removed_at,
           upvotes,
           downvotes,
           is_archived,
@@ -1725,6 +1753,8 @@ export class SupabaseService {
           question_data,
           flagged_as_similar_user_ids,
           timestamp,
+          edited_at,
+          removed_at,
           upvotes,
           downvotes,
           is_archived,
@@ -1740,7 +1770,10 @@ export class SupabaseService {
           )
         `;
       
-      let query = this.supabase
+      // Supabase's generated select type becomes intractable for the two
+      // profile-dependent projection strings above. The response is normalized
+      // immediately below, so keep this dynamic query explicitly untyped.
+      let query = (this.supabase as any)
         .from('messages')
         .select(selectClause)
         .eq('group_id', groupId);
@@ -1805,6 +1838,8 @@ export class SupabaseService {
           question_data,
           flagged_as_similar_user_ids,
           timestamp,
+          edited_at,
+          removed_at,
           upvotes,
           downvotes,
           profiles!sender_id (
@@ -1851,53 +1886,247 @@ export class SupabaseService {
     };
   }
 
-  async updateMessage(messageId: string, content: string): Promise<Message | null> {
-    const { data, error } = await this.supabase
-      .from('messages')
-      .update({
-        text: content,
-        type: 'TEXT',
-      })
-      .eq('id', messageId)
-      .select(`
-        id,
-        group_id,
-        sender_id,
-        type,
-        text,
-        question_data,
-        flagged_as_similar_user_ids,
-        timestamp,
-        profiles!sender_id (
-          id,
-          name,
-          username,
-          avatar_url
-        )
-      `)
-      .single();
+  private mapChatMutationRow(
+    kind: 'group' | 'dm',
+    row: Record<string, any>
+  ): Record<string, unknown> {
+    const removedAt = row.removed_at || null;
+    return {
+      id: row.id,
+      ...(kind === 'group'
+        ? { groupId: row.group_id, type: row.type || 'TEXT' }
+        : { threadId: row.thread_id, type: 'TEXT' }),
+      senderId: row.sender_id,
+      timestamp: row.timestamp,
+      editedAt: row.edited_at || undefined,
+      removedAt: removedAt || undefined,
+      isRemoved: !!removedAt,
+      ...(!removedAt ? { text: row.text } : {}),
+    };
+  }
 
-    if (error) {
-      if (error.code === 'PGRST116') return null; // Not found
-      throw error;
+  private async refreshChatPreview(
+    kind: 'group' | 'dm',
+    row: Record<string, any>
+  ): Promise<void> {
+    if (kind === 'group') {
+      const groupId = row.group_id as string;
+      const { data: latest, error: latestError } = await this.supabase
+        .from('messages')
+        .select('text, type, question_data, timestamp')
+        .eq('group_id', groupId)
+        .is('removed_at', null)
+        .eq('is_archived', false)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestError) throw latestError;
+      const questionData =
+        latest?.question_data && typeof latest.question_data === 'object'
+          ? latest.question_data
+          : {};
+      const preview =
+        String(latest?.type || '').toUpperCase() === 'QUESTION'
+          ? `New question: ${String(questionData.questionStem || '').substring(0, 50)}`
+          : latest?.text || null;
+
+      const previewCutoff = latest?.timestamp || row.timestamp;
+      let updateQuery = this.supabase
+        .from('groups')
+        .update({
+          last_message: preview,
+          last_message_time: latest?.timestamp || null,
+        })
+        .eq('id', groupId);
+      if (previewCutoff) {
+        updateQuery = updateQuery.or(
+          `last_message_time.is.null,last_message_time.lte.${previewCutoff}`
+        );
+      }
+      const { error: updateError } = await updateQuery;
+      if (updateError) throw updateError;
+      return;
     }
 
-    // Invalidate caches
-    await cacheService.invalidateGroupCache(data.group_id);
-    await cacheService.delete(`message:${messageId}`);
-    await cacheService.deletePattern(`messages:group:${data.group_id}:*`);
+    const threadId = row.thread_id as string;
+    const { data: latest, error: latestError } = await this.supabase
+      .from('dm_messages')
+      .select('text, timestamp')
+      .eq('thread_id', threadId)
+      .is('removed_at', null)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestError) throw latestError;
+    const previewCutoff = latest?.timestamp || row.timestamp;
+    let updateQuery = this.supabase
+      .from('dm_threads')
+      .update({
+        last_message: latest?.text || null,
+        last_message_time: latest?.timestamp || null,
+      })
+      .eq('id', threadId);
+    if (previewCutoff) {
+      updateQuery = updateQuery.or(
+        `last_message_time.is.null,last_message_time.lte.${previewCutoff}`
+      );
+    }
+    const { error: updateError } = await updateQuery;
+    if (updateError) throw updateError;
+  }
+
+  private async invalidateChatMessageMutation(
+    kind: 'group' | 'dm',
+    row: Record<string, any>
+  ): Promise<void> {
+    await cacheService.delete(`message:raw:${row.id}`);
+    await cacheService.deletePattern(`message:*:${row.id}`);
+
+    if (kind === 'group') {
+      await cacheService.invalidateGroupCache(row.group_id);
+      await cacheService.deletePattern(`messages:group:${row.group_id}:*`);
+      await cacheService.delete(`group:stats:${row.group_id}`);
+      return;
+    }
+
+    await cacheService.deletePattern('messages:direct:*');
+  }
+
+  private async refreshChatMessageNotifications(
+    kind: 'group' | 'dm',
+    messageId: string,
+    action: 'edited' | 'removed',
+    preview?: string
+  ): Promise<void> {
+    const { data: notifications, error } = await this.supabase
+      .from('notifications')
+      .select('id, data')
+      .contains('data', { messageId });
+    if (error) throw error;
+    if (!notifications?.length) return;
+
+    await Promise.all(
+      notifications.map(async (notification) => {
+        const notificationData =
+          notification.data && typeof notification.data === 'object'
+            ? notification.data
+            : {};
+        const { error: updateError } = await this.supabase
+          .from('notifications')
+          .update({
+            message:
+              kind === 'group'
+                ? `A message in a group was ${action}`
+                : `A direct message was ${action}`,
+            data: {
+              ...notificationData,
+              preview: action === 'removed' ? 'Message removed' : String(preview || '').slice(0, 80),
+              edited: action === 'edited',
+              removed: action === 'removed',
+            },
+          })
+          .eq('id', notification.id);
+        if (updateError) throw updateError;
+      })
+    );
+    await cacheService.deletePattern('notifications:*');
+  }
+
+  async editChatMessage(
+    kind: 'group' | 'dm',
+    messageId: string,
+    actorId: string,
+    content: string
+  ): Promise<ChatMessageMutationResult> {
+    const { data, error } = await this.supabase.rpc('edit_chat_message', {
+      p_message_kind: kind,
+      p_message_id: messageId,
+      p_actor_id: actorId,
+      p_new_text: content,
+    });
+    if (error) throw error;
+
+    const result = (data || { status: 'not_found' }) as ChatMessageMutationResult & {
+      message?: Record<string, any>;
+    };
+    if (result.status !== 'ok' || !result.message) return result;
+
+    await this.invalidateChatMessageMutation(kind, result.message);
+    try {
+      await this.refreshChatPreview(kind, result.message);
+    } catch (previewError) {
+      logger.warn('Failed to refresh chat preview after message edit', {
+        kind,
+        messageId,
+        previewError,
+      });
+    }
+    try {
+      await this.refreshChatMessageNotifications(
+        kind,
+        String(result.message.id),
+        'edited',
+        content
+      );
+    } catch (notificationError) {
+      logger.warn('Failed to refresh notifications after message edit', {
+        kind,
+        messageId,
+        notificationError,
+      });
+    }
+    return {
+      status: 'ok',
+      message: this.mapChatMutationRow(kind, result.message),
+    };
+  }
+
+  async removeChatMessage(
+    kind: 'group' | 'dm',
+    messageId: string,
+    actorId: string
+  ): Promise<ChatMessageMutationResult> {
+    const { data, error } = await this.supabase.rpc('remove_chat_message', {
+      p_message_kind: kind,
+      p_message_id: messageId,
+      p_actor_id: actorId,
+    });
+    if (error) throw error;
+
+    const result = (data || { status: 'not_found' }) as ChatMessageMutationResult & {
+      message?: Record<string, any>;
+    };
+    if (result.status !== 'ok' || !result.message) return result;
+
+    await this.invalidateChatMessageMutation(kind, result.message);
+    try {
+      await this.refreshChatPreview(kind, result.message);
+    } catch (previewError) {
+      logger.warn('Failed to refresh chat preview after message removal', {
+        kind,
+        messageId,
+        previewError,
+      });
+    }
+    try {
+      await this.refreshChatMessageNotifications(
+        kind,
+        String(result.message.id),
+        'removed'
+      );
+    } catch (notificationError) {
+      logger.warn('Failed to scrub notifications after message removal', {
+        kind,
+        messageId,
+        notificationError,
+      });
+    }
 
     return {
-      id: data.id,
-      groupId: data.group_id,
-      sender: mapProfileSender(resolveNestedProfile(data.profiles), data.sender_id),
-      senderId: data.sender_id,
-      timestamp: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString(),
-      flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || [],
-      upvotes: 0,
-      downvotes: 0,
-      type: data.type || 'TEXT',
-      text: data.text,
+      status: 'ok',
+      message: this.mapChatMutationRow(kind, result.message),
     };
   }
 
@@ -2131,6 +2360,8 @@ export class SupabaseService {
         question_data,
         flagged_as_similar_user_ids,
         timestamp,
+        edited_at,
+        removed_at,
         profiles!sender_id (
           id,
           name,
@@ -3488,34 +3719,6 @@ export class SupabaseService {
     return { success: true };
   }
 
-  async deleteMessage(messageId: string): Promise<boolean> {
-    // Get message first to know which group to invalidate
-    const { data: message, error: fetchError } = await this.supabase
-      .from('messages')
-      .select('group_id')
-      .eq('id', messageId)
-      .single();
-
-    if (fetchError) {
-      if (fetchError.code === 'PGRST116') return false; // Not found
-      throw fetchError;
-    }
-
-    const { error } = await this.supabase
-      .from('messages')
-      .delete()
-      .eq('id', messageId);
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.invalidateGroupCache(message.group_id);
-    await cacheService.delete(`message:${messageId}`);
-    await cacheService.deletePattern(`messages:group:${message.group_id}:*`);
-
-    return true;
-  }
-
   async getDirectMessages(userId: string, otherUserId: string, options: {
     page?: number;
     limit?: number;
@@ -3536,6 +3739,8 @@ export class SupabaseService {
           sender_id,
           text,
           timestamp,
+          edited_at,
+          removed_at,
           reply_to_message_id,
           thread_root_id,
           profiles:sender_id (
@@ -3568,7 +3773,10 @@ export class SupabaseService {
         senderId: msg.sender_id,
         timestamp: new Date(msg.timestamp),
         type: 'TEXT' as const,
-        text: msg.text,
+        ...(!msg.removed_at ? { text: msg.text } : {}),
+        editedAt: msg.edited_at || undefined,
+        removedAt: msg.removed_at || undefined,
+        isRemoved: !!msg.removed_at,
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
@@ -3659,6 +3867,8 @@ export class SupabaseService {
           sender_id,
           text,
           timestamp,
+          edited_at,
+          removed_at,
           client_message_id,
           reply_to_message_id,
           thread_root_id,
@@ -3693,7 +3903,10 @@ export class SupabaseService {
               recipientId,
               timestamp: new Date(withReply.timestamp),
               type: 'TEXT' as const,
-              text: withReply.text,
+              ...(!withReply.removed_at ? { text: withReply.text } : {}),
+              editedAt: withReply.edited_at || undefined,
+              removedAt: withReply.removed_at || undefined,
+              isRemoved: !!withReply.removed_at,
               upvotes: 0,
               downvotes: 0,
               flaggedAsSimilarUserIds: [],
@@ -3740,7 +3953,7 @@ export class SupabaseService {
         message: `${senderName} sent you a message`,
         link: `dm:${threadId}:${senderId}`,
         type: 'dm_message',
-        data: { threadId, senderId, preview },
+        data: { threadId, senderId, messageId: data.id, preview },
       }).catch((err) => {
         logger.error('Failed to create DM notification', { error: err, recipientId, threadId });
       });
@@ -3754,6 +3967,9 @@ export class SupabaseService {
         timestamp: new Date(withReply.timestamp),
         type: 'TEXT' as const,
         text: withReply.text,
+        editedAt: withReply.edited_at || undefined,
+        removedAt: withReply.removed_at || undefined,
+        isRemoved: !!withReply.removed_at,
         upvotes: 0,
         downvotes: 0,
         flaggedAsSimilarUserIds: [],
@@ -3797,6 +4013,8 @@ export class SupabaseService {
         )
       `)
       .ilike('text', `%${query}%`)
+      .is('removed_at', null)
+      .eq('is_archived', false)
       .limit(limit);
 
     if (groupId) {
@@ -5413,13 +5631,15 @@ export class SupabaseService {
 
   private buildReplyToFromParent(parent: any, table: 'messages' | 'dm_messages'): Record<string, unknown> {
     const profile = Array.isArray(parent.profiles) ? parent.profiles[0] : parent.profiles;
+    const isRemoved = !!parent.removed_at;
     if (table === 'dm_messages') {
       return {
         id: parent.id,
         senderId: parent.sender_id,
         senderName: profile?.username || profile?.name || 'Member',
         type: 'TEXT',
-        text: parent.text,
+        text: isRemoved ? undefined : parent.text,
+        isRemoved,
       };
     }
     const qd = parent.question_data && typeof parent.question_data === 'object' ? parent.question_data : {};
@@ -5428,8 +5648,9 @@ export class SupabaseService {
       senderId: parent.sender_id,
       senderName: profile?.username || profile?.name || 'Member',
       type: parent.type,
-      text: parent.text,
-      questionStem: qd.questionStem,
+      text: isRemoved ? undefined : parent.text,
+      questionStem: isRemoved ? undefined : qd.questionStem,
+      isRemoved,
     };
   }
 
@@ -5441,8 +5662,8 @@ export class SupabaseService {
     if (!replyId) return message;
     const select =
       table === 'dm_messages'
-        ? 'id, sender_id, text, profiles:sender_id(id, name, username)'
-        : 'id, sender_id, type, text, question_data, profiles:sender_id(id, name, username)';
+        ? 'id, sender_id, text, removed_at, profiles:sender_id(id, name, username)'
+        : 'id, sender_id, type, text, question_data, removed_at, profiles:sender_id(id, name, username)';
     const { data: parent } = await this.supabase.from(table).select(select).eq('id', replyId).maybeSingle();
     if (!parent) return { ...message, replyTo: null };
     return { ...message, replyTo: this.buildReplyToFromParent(parent, table) };
@@ -5463,8 +5684,8 @@ export class SupabaseService {
     if (!replyIds.length) return messages;
     const select =
       table === 'dm_messages'
-        ? 'id, sender_id, text, profiles:sender_id(id, name, username)'
-        : 'id, sender_id, type, text, question_data, profiles:sender_id(id, name, username)';
+        ? 'id, sender_id, text, removed_at, profiles:sender_id(id, name, username)'
+        : 'id, sender_id, type, text, question_data, removed_at, profiles:sender_id(id, name, username)';
     const { data: parents } = await this.supabase.from(table).select(select).in('id', replyIds);
     const byId = new Map((parents || []).map((p: any) => [p.id, p]));
     return messages.map((message) => {
@@ -5499,6 +5720,7 @@ export class SupabaseService {
       .from(table)
       .select('thread_root_id')
       .eq(scopeColumn, scopeId)
+      .is('removed_at', null)
       .in('thread_root_id', candidateRootIds);
 
     if (error) {
@@ -5594,8 +5816,8 @@ export class SupabaseService {
   ): Promise<string> {
     const select =
       table === 'messages'
-        ? 'id, group_id, thread_root_id'
-        : 'id, thread_id, thread_root_id';
+        ? 'id, group_id, thread_root_id, removed_at'
+        : 'id, thread_id, thread_root_id, removed_at';
     const { data: parent, error } = await this.supabase
       .from(table)
       .select(select)
@@ -5604,6 +5826,9 @@ export class SupabaseService {
 
     if (error || !parent) {
       throw new Error('Reply target message not found');
+    }
+    if ((parent as any).removed_at) {
+      throw new Error('Cannot reply to a removed message');
     }
     if (table === 'messages' && (parent as any).group_id !== scope.groupId) {
       throw new Error('Reply target is not in this group');
@@ -5666,6 +5891,8 @@ export class SupabaseService {
       question_data,
       flagged_as_similar_user_ids,
       timestamp,
+      edited_at,
+      removed_at,
       upvotes,
       downvotes,
       is_archived,
@@ -5745,6 +5972,8 @@ export class SupabaseService {
       sender_id,
       text,
       timestamp,
+      edited_at,
+      removed_at,
       reply_to_message_id,
       thread_root_id,
       profiles:sender_id (
@@ -5790,7 +6019,10 @@ export class SupabaseService {
       senderId: msg.sender_id,
       timestamp: new Date(msg.timestamp),
       type: 'TEXT' as const,
-      text: msg.text,
+      ...(!msg.removed_at ? { text: msg.text } : {}),
+      editedAt: msg.edited_at || undefined,
+      removedAt: msg.removed_at || undefined,
+      isRemoved: !!msg.removed_at,
       upvotes: 0,
       downvotes: 0,
       flaggedAsSimilarUserIds: [],
@@ -5824,6 +6056,7 @@ export class SupabaseService {
           message: `${actor} mentioned you in ${groupName}: ${preview.slice(0, 80)}`,
           link: `/chat/${groupId}?messageId=${messageId}`,
           type: 'mention',
+          data: { groupId, messageId, senderId, preview: preview.slice(0, 80) },
         }).catch((err) => {
           logger.warn('Failed to notify mentioned user', { err, recipientId, messageId });
         })
@@ -6120,6 +6353,8 @@ export class SupabaseService {
           question_data,
           flagged_as_similar_user_ids,
           timestamp,
+          edited_at,
+          removed_at,
           upvotes,
           downvotes,
           is_archived,
@@ -7069,6 +7304,8 @@ export class SupabaseService {
         .select('id', { count: 'exact', head: true })
         .eq('group_id', groupId)
         .neq('sender_id', userId)
+        .is('removed_at', null)
+        .eq('is_archived', false)
         .gt('timestamp', lastReadAt);
 
       if (countError) {
@@ -7138,6 +7375,8 @@ export class SupabaseService {
           .select('id', { count: 'exact', head: true })
           .eq('group_id', membership.group_id)
           .neq('sender_id', userId)
+          .is('removed_at', null)
+          .eq('is_archived', false)
           .gt('timestamp', lastReadAt);
 
         if (!countError) {
@@ -7219,6 +7458,7 @@ export class SupabaseService {
         .select('id', { count: 'exact', head: true })
         .eq('thread_id', threadId)
         .neq('sender_id', userId)
+        .is('removed_at', null)
         .gt('timestamp', lastReadAt);
 
       if (countError) {

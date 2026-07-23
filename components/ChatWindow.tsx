@@ -11,7 +11,10 @@ import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator, Tabs, 
 import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
-import { resolveGroupChatSenderLabel } from '@lantern/shared/utils';
+import {
+  resolveGroupChatSenderLabel,
+  shouldRenderRemovedMessage,
+} from '@lantern/shared/utils';
 import {
   EllipsisVerticalIcon,
   UserGroupIcon,
@@ -61,7 +64,9 @@ interface ChatWindowProps {
   messages: Message[];
   currentUser: User;
   userVotes: Record<string, 'up' | 'down' | undefined>;
-  onSendMessage: (text: string, options?: SendMessageOptions) => void;
+  onSendMessage: (text: string, options?: SendMessageOptions) => void | Promise<void>;
+  onEditMessage: (messageId: string, content: string) => Promise<unknown>;
+  onRemoveMessage: (messageId: string) => Promise<unknown>;
   /** Apply peer read watermark updates to local own-message receipts. */
   onPeerChatRead?: (payload: { userId: string; lastReadAt: string }) => void;
   onOpenQuestionModal: () => void;
@@ -98,7 +103,7 @@ const NEAR_BOTTOM_PX = 120;
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
   chat, messages: messagesProp, currentUser, userVotes,
-  onSendMessage, onOpenQuestionModal, onOpenGroupInfoModal,
+  onSendMessage, onEditMessage, onRemoveMessage, onOpenQuestionModal, onOpenGroupInfoModal,
   onOpenTestConfigModal, onOpenStudyConfigModal, onVoteQuestion,
   onFlagAsSimilar,
   onOpenCreateSubGroupModal, groups, onToggleArchiveGroup,
@@ -138,10 +143,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<MessageReplyPreview | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
+  const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Reset loading/hasMore/scroll state when the chat changes
@@ -151,9 +158,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setNewMessagesBelow(0);
     setFirstUnreadId(null);
     setReplyTo(null);
+    setEditingMessage(null);
     setThreadRootId(null);
     setThreadMessages([]);
     setThreadReplyTo(null);
+    setThreadEditingMessage(null);
     messageNodeRefs.current = {};
     isNearBottomRef.current = true;
     initialAnchorDoneRef.current = null;
@@ -238,7 +247,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       const mapped = mapMessagesFromApi(raw);
       setThreadMessages(mapped);
       const root = mapped.find((m) => m.id === rootId) || mapped[0];
-      if (root) {
+      if (root && !root.isRemoved && !root.removedAt) {
         setThreadReplyTo({
           id: root.id,
           senderId: root.sender?.id,
@@ -247,6 +256,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           text: root.text,
           questionStem: root.questionStem,
         });
+      } else {
+        setThreadReplyTo(null);
       }
     } catch (err) {
       console.error('Failed to load thread', err);
@@ -261,6 +272,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     if (!threadRootId) {
       setThreadMessages([]);
       setThreadReplyTo(null);
+      setThreadEditingMessage(null);
       return;
     }
     void loadThread(threadRootId);
@@ -271,12 +283,63 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadRootId(rootId);
   };
 
+  const handleComposerSend = async (text: string, options?: SendMessageOptions) => {
+    if (!editingMessage) {
+      await onSendMessage(text, options);
+      return;
+    }
+    await onEditMessage(editingMessage.id, text);
+    useToastStore.getState().showToast('Message updated', 'success');
+    if (threadRootId) void loadThread(threadRootId);
+  };
+
   const handleThreadSend = async (text: string, options?: SendMessageOptions) => {
+    if (threadEditingMessage) {
+      await onEditMessage(threadEditingMessage.id, text);
+      useToastStore.getState().showToast('Message updated', 'success');
+      if (threadRootId) await loadThread(threadRootId);
+      return;
+    }
     const replyId = options?.replyToMessageId || threadReplyTo?.id || threadRootId || undefined;
     await onSendMessage(text, { ...options, replyToMessageId: replyId });
     if (threadRootId) {
       // Brief delay so the new message is queryable, then refresh panel + bump feed counts
       window.setTimeout(() => void loadThread(threadRootId), 350);
+    }
+  };
+
+  const beginEditingMessage = (message: Message, inThread = false) => {
+    if (!message.text) return;
+    if (inThread) {
+      setThreadReplyTo(null);
+      setThreadEditingMessage({ id: message.id, text: message.text });
+      return;
+    }
+    setReplyTo(null);
+    setEditingMessage({ id: message.id, text: message.text });
+  };
+
+  const handleRemoveMessage = async (message: Message, inThread = false) => {
+    const confirmed = await confirmDialog({
+      title: 'Remove message?',
+      message:
+        'This will remove the message for everyone. It cannot be restored in chat, but an audit record will be retained.',
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!confirmed) return;
+
+    try {
+      await onRemoveMessage(message.id);
+      if (editingMessage?.id === message.id) setEditingMessage(null);
+      if (threadEditingMessage?.id === message.id) setThreadEditingMessage(null);
+      if (inThread && threadRootId) await loadThread(threadRootId);
+      useToastStore.getState().showToast('Message removed', 'success');
+    } catch (error) {
+      useToastStore.getState().showToast(
+        error instanceof Error ? error.message : 'Could not remove message',
+        'error'
+      );
     }
   };
 
@@ -542,6 +605,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     () =>
       messages.filter((msg) => {
         if (isGroupChat && msg.isArchived) return false;
+        if (!shouldRenderRemovedMessage(msg, messages)) return false;
         if (isGroupChat && !messagePassesQuestionVisibility(msg, questionVisibilityMode)) {
           return false;
         }
@@ -549,6 +613,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }),
     [messages, isGroupChat, questionVisibilityMode]
   );
+  const visibleThreadMessages = useMemo(
+    () =>
+      threadMessages.filter(
+        (message) =>
+          !(isGroupChat && message.isArchived) &&
+          shouldRenderRemovedMessage(message, threadMessages)
+      ),
+    [isGroupChat, threadMessages]
+  );
+  const threadRootMessage =
+    threadMessages.find((message) => message.id === threadRootId) || threadMessages[0];
+  const isThreadRootRemoved =
+    !!threadRootMessage?.isRemoved || !!threadRootMessage?.removedAt;
 
   // Compute first unread once the prior marker and messages are available (group + DM).
   useEffect(() => {
@@ -863,7 +940,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
                   isGroupChat={isGroup}
                   onOpenThread={handleOpenThread}
-                  onReply={(m) =>
+                  onEditMessage={(m) => beginEditingMessage(m)}
+                  onRemoveMessage={(m) => void handleRemoveMessage(m)}
+                  onReply={(m) => {
+                    setEditingMessage(null);
                     setReplyTo({
                       id: m.id,
                       senderId: m.sender?.id,
@@ -871,8 +951,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       type: m.type,
                       text: m.text,
                       questionStem: m.questionStem,
-                    })
-                  }
+                    });
+                  }}
                   onScrollToMessage={(messageId) => {
                     messageNodeRefs.current[messageId]?.scrollIntoView({
                       behavior: 'smooth',
@@ -944,7 +1024,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             </p>
           )}
           <MessageInputBar
-            onSendMessage={onSendMessage}
+            onSendMessage={handleComposerSend}
             onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
             onAIQuery={isGroup ? onAIQuery : undefined}
             onTyping={broadcastTyping}
@@ -957,6 +1037,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             }
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
+            editingMessage={editingMessage}
+            onClearEdit={() => setEditingMessage(null)}
             groupId={isGroup ? chat.id : undefined}
             threadId={!isGroup ? chat.id : undefined}
           />
@@ -972,8 +1054,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           <div>
             <p className="text-sm font-semibold text-lantern-text">Thread</p>
             <p className="text-[11px] text-lantern-text-tertiary">
-              {Math.max(0, threadMessages.length - 1)}{' '}
-              {threadMessages.length - 1 === 1 ? 'reply' : 'replies'}
+              {Math.max(0, visibleThreadMessages.length - 1)}{' '}
+              {visibleThreadMessages.length - 1 === 1 ? 'reply' : 'replies'}
             </p>
           </div>
           <button
@@ -991,7 +1073,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
             </div>
           ) : (
-            threadMessages.map((msg) => (
+            visibleThreadMessages.map((msg) => (
               <MessageItem
                 key={msg.id}
                 message={msg}
@@ -1003,7 +1085,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 group={group}
                 currentUser={currentUser}
                 isGroupChat={chat.chatType === 'group'}
-                onReply={(m) =>
+                onEditMessage={(m) => beginEditingMessage(m, true)}
+                onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
+                onReply={(m) => {
+                  setThreadEditingMessage(null);
                   setThreadReplyTo({
                     id: m.id,
                     senderId: m.sender?.id,
@@ -1011,13 +1096,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     type: m.type,
                     text: m.text,
                     questionStem: m.questionStem,
-                  })
-                }
+                  });
+                }}
               />
             ))
           )}
         </div>
-        {!isArchived && (
+        {!isArchived && !isThreadRootRemoved && (
           <div className="flex-shrink-0 border-t border-lantern-border">
             <MessageInputBar
               onSendMessage={handleThreadSend}
@@ -1043,9 +1128,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   });
                 }
               }}
+              editingMessage={threadEditingMessage}
+              onClearEdit={() => setThreadEditingMessage(null)}
               groupId={chat.chatType === 'group' ? chat.id : undefined}
               threadId={chat.chatType === 'dm' ? chat.id : undefined}
             />
+          </div>
+        )}
+        {!isArchived && isThreadRootRemoved && (
+          <div className="border-t border-lantern-border px-4 py-3 text-center text-xs text-lantern-text-secondary">
+            This thread is closed because its original message was removed.
           </div>
         )}
       </div>

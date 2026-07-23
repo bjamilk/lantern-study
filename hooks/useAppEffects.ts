@@ -1024,6 +1024,86 @@ export function useAppEffects({
         if (!currentUser || lowDataMode) return;
 
         const channels = dmThreads.map((thread) => {
+            const applyDmChange = (
+                payload: { new: Record<string, unknown> },
+                isUpdate: boolean
+            ) => {
+                const raw = payload.new as {
+                    id: string;
+                    thread_id: string;
+                    sender_id: string;
+                    text: string;
+                    timestamp: string;
+                    edited_at?: string;
+                    removed_at?: string;
+                    client_message_id?: string;
+                    reply_to_message_id?: string;
+                    thread_root_id?: string;
+                };
+                if (!isUpdate && raw.sender_id === currentUser.id) return;
+                const message: DirectMessage = {
+                    id: raw.id,
+                    threadId: raw.thread_id,
+                    senderId: raw.sender_id,
+                    text: raw.removed_at ? '' : raw.text,
+                    timestamp: new Date(raw.timestamp),
+                    editedAt: raw.edited_at,
+                    removedAt: raw.removed_at,
+                    isRemoved: !!raw.removed_at,
+                    replyToMessageId: raw.reply_to_message_id,
+                    threadRootId: raw.thread_root_id,
+                    replyCount: 0,
+                };
+                updateDirectMessages(prev => {
+                    const existing = prev[thread.id] || [];
+                    if (isUpdate) {
+                        return {
+                            ...prev,
+                            [thread.id]: existing.map((item) => {
+                                const replyTo = item.replyTo?.id === message.id
+                                    ? {
+                                        ...item.replyTo,
+                                        text: message.isRemoved ? undefined : message.text,
+                                        isRemoved: !!message.isRemoved,
+                                    }
+                                    : item.replyTo;
+                                return item.id === message.id
+                                    ? { ...item, ...message, replyCount: item.replyCount, replyTo }
+                                    : { ...item, replyTo };
+                            }),
+                        };
+                    }
+                    if (existing.some(m => m.id === message.id)) return prev;
+                    if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
+                        return {
+                            ...prev,
+                            [thread.id]: existing.map(m =>
+                                m.id === raw.client_message_id
+                                    ? { ...m, ...message, id: message.id }
+                                    : m
+                            ),
+                        };
+                    }
+                    return { ...prev, [thread.id]: [...existing, message] };
+                });
+
+                if (isUpdate) {
+                    void refreshDmThreadsForUser();
+                    return;
+                }
+                updateDmThreads(prev => prev.map(t => {
+                    if (t.id !== thread.id) return t;
+                    const isIncoming = raw.sender_id !== currentUser.id;
+                    return {
+                        ...t,
+                        lastMessage: raw.text,
+                        lastMessageTimestamp: new Date(raw.timestamp),
+                        unreadCount: isIncoming ? (t.unreadCount || 0) + 1 : t.unreadCount,
+                        isArchived: isIncoming ? false : t.isArchived,
+                    };
+                }));
+            };
+
             return supabase
                 .channel(`dm:${thread.id}`)
                 .on(
@@ -1034,55 +1114,17 @@ export function useAppEffects({
                         table: 'dm_messages',
                         filter: `thread_id=eq.${thread.id}`,
                     },
-                    (payload) => {
-                        const raw = payload.new as {
-                            id: string;
-                            thread_id: string;
-                            sender_id: string;
-                            text: string;
-                            timestamp: string;
-                            client_message_id?: string;
-                            reply_to_message_id?: string;
-                            thread_root_id?: string;
-                        };
-                        if (raw.sender_id === currentUser.id) return;
-                        const message: DirectMessage = {
-                            id: raw.id,
-                            threadId: raw.thread_id,
-                            senderId: raw.sender_id,
-                            text: raw.text,
-                            timestamp: new Date(raw.timestamp),
-                            replyToMessageId: raw.reply_to_message_id,
-                            threadRootId: raw.thread_root_id,
-                            replyCount: 0,
-                        };
-                        updateDirectMessages(prev => {
-                            const existing = prev[thread.id] || [];
-                            if (existing.some(m => m.id === message.id)) return prev;
-                            if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
-                                return {
-                                    ...prev,
-                                    [thread.id]: existing.map(m =>
-                                        m.id === raw.client_message_id
-                                            ? { ...m, ...message, id: message.id }
-                                            : m
-                                    ),
-                                };
-                            }
-                            return { ...prev, [thread.id]: [...existing, message] };
-                        });
-                        updateDmThreads(prev => prev.map(t => {
-                            if (t.id !== thread.id) return t;
-                            const isIncoming = raw.sender_id !== currentUser.id;
-                            return {
-                                ...t,
-                                lastMessage: raw.text,
-                                lastMessageTimestamp: new Date(raw.timestamp),
-                                unreadCount: isIncoming ? (t.unreadCount || 0) + 1 : t.unreadCount,
-                                isArchived: isIncoming ? false : t.isArchived,
-                            };
-                        }));
-                    }
+                    (payload) => applyDmChange(payload as { new: Record<string, unknown> }, false)
+                )
+                .on(
+                    'postgres_changes',
+                    {
+                        event: 'UPDATE',
+                        schema: 'public',
+                        table: 'dm_messages',
+                        filter: `thread_id=eq.${thread.id}`,
+                    },
+                    (payload) => applyDmChange(payload as { new: Record<string, unknown> }, true)
                 )
                 .subscribe();
         });
@@ -1090,7 +1132,14 @@ export function useAppEffects({
         return () => {
             channels.forEach(ch => ch.unsubscribe());
         };
-    }, [currentUser?.id, dmThreads, lowDataMode, updateDirectMessages, updateDmThreads]);
+    }, [
+        currentUser?.id,
+        dmThreads,
+        lowDataMode,
+        refreshDmThreadsForUser,
+        updateDirectMessages,
+        updateDmThreads,
+    ]);
 
     // --- Real-time group messages for all joined groups (so chat updates before/with notifications) ---
     useEffect(() => {
@@ -1159,7 +1208,22 @@ export function useAppEffects({
                     if (idx === -1) return prev;
                     const updated = [...existing];
                     updated[idx] = mergeQuestionMessage(updated[idx], mapped);
-                    return { ...prev, [groupId]: updated };
+                    const withUpdatedPreviews = updated.map((message) =>
+                        message.replyTo?.id === mapped.id
+                            ? {
+                                ...message,
+                                replyTo: {
+                                    ...message.replyTo,
+                                    text: mapped.isRemoved ? undefined : mapped.text,
+                                    questionStem: mapped.isRemoved
+                                        ? undefined
+                                        : mapped.questionStem,
+                                    isRemoved: !!mapped.isRemoved,
+                                },
+                            }
+                            : message
+                    );
+                    return { ...prev, [groupId]: withUpdatedPreviews };
                 }
                 if (existing.some((m) => m.id === mapped.id)) {
                     return {
@@ -1198,16 +1262,28 @@ export function useAppEffects({
                 return { ...prev, [groupId]: [...existing, mapped] };
             });
 
+            const latestVisible = isUpdate
+                ? [...(useGroupStore.getState().messages[groupId] || [])]
+                    .reverse()
+                    .find((message) =>
+                        !message.isRemoved && !message.removedAt && !message.isArchived
+                    )
+                : mapped;
             useGroupStore.getState().updateGroups((prev) =>
                 prev.map((g) =>
                     g.id === groupId
                         ? {
                             ...g,
-                            lastMessage: mapped.text || g.lastMessage,
+                            lastMessage:
+                                latestVisible?.text ||
+                                latestVisible?.questionStem ||
+                                undefined,
                             lastMessageTime:
-                                mapped.timestamp instanceof Date
-                                    ? mapped.timestamp.toISOString()
-                                    : g.lastMessageTime,
+                                latestVisible?.timestamp instanceof Date
+                                    ? latestVisible.timestamp.toISOString()
+                                    : latestVisible
+                                      ? g.lastMessageTime
+                                      : undefined,
                           }
                         : g
                 )

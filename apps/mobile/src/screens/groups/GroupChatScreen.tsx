@@ -39,7 +39,10 @@ import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
 import {
   QUESTION_VISIBILITY_MODE_OPTIONS,
+  canEditChatMessage,
+  canRemoveChatMessage,
   messagePassesQuestionVisibility,
+  shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 
 type NavigationProp = {
@@ -193,6 +196,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
     fetchMessages,
     loadMoreMessages,
     sendMessage,
+    editGroupMessage,
+    removeGroupMessage,
     markGroupAsRead,
     updateGroupDetails,
     promoteToAdmin,
@@ -212,6 +217,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [showTestConfig, setShowTestConfig] = useState(false);
   const [testMode, setTestMode] = useState<TestMode>('test');
   const [showGroupInfo, setShowGroupInfo] = useState(false);
@@ -305,7 +311,11 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const displayMessages = useMemo(() => {
     // Per-group cache is the source of truth — global `messages` can lag or hold another chat.
     const raw = messagesCache[groupId] || [];
-    return raw.filter((msg) => messagePassesQuestionVisibility(msg, questionVisibilityMode));
+    return raw.filter(
+      (msg) =>
+        shouldRenderRemovedMessage(msg, raw) &&
+        messagePassesQuestionVisibility(msg, questionVisibilityMode)
+    );
   }, [messagesCache, groupId, questionVisibilityMode]);
 
   const allGroupMessages = useMemo(() => {
@@ -317,8 +327,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
         combined.push(msg);
       }
     }
-    return combined.filter((msg) =>
-      messagePassesQuestionVisibility(msg, questionVisibilityMode)
+    return combined.filter(
+      (msg) =>
+        shouldRenderRemovedMessage(msg, combined) &&
+        messagePassesQuestionVisibility(msg, questionVisibilityMode)
     );
   }, [messagesCache, groupId, cachedGroupMessages, questionVisibilityMode]);
 
@@ -544,20 +556,108 @@ export function GroupChatScreen({ navigation, route }: Props) {
     const trimmed = (overrideText ?? text).trim();
     if (!trimmed || !user?.id || sending) return;
     setSending(true);
-    if (!overrideText) setText('');
-    isNearBottomRef.current = true;
-    const replyId = replyTo?.id;
-    setReplyTo(null);
     try {
+      if (editingMessage) {
+        await editGroupMessage(groupId, editingMessage.id, trimmed);
+        setEditingMessage(null);
+        setText('');
+        if (threadRootId) await reloadThread();
+        return;
+      }
+
+      if (!overrideText) setText('');
+      isNearBottomRef.current = true;
+      const replyId = replyTo?.id;
+      setReplyTo(null);
       await sendMessage(groupId, trimmed, user.id, undefined, {
         replyToMessageId: replyId,
       });
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
+    } catch (error) {
+      if (!overrideText && !editingMessage) setText(trimmed);
+      Alert.alert(
+        editingMessage ? 'Edit failed' : 'Send failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
     } finally {
       setSending(false);
     }
   };
+
+  const beginReply = useCallback((message: Message) => {
+    setEditingMessage(null);
+    setReplyTo({
+      id: message.id,
+      senderName: message.senderName,
+      text: message.questionStem || message.text,
+    });
+  }, []);
+
+  const beginEdit = useCallback((message: Message) => {
+    setReplyTo(null);
+    setEditingMessage(message);
+    setText(message.text);
+  }, []);
+
+  const confirmRemoveMessage = useCallback((message: Message) => {
+    Alert.alert(
+      'Remove message?',
+      'This removes the message for everyone. An audit record will be retained.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            void removeGroupMessage(groupId, message.id)
+              .then(async () => {
+                if (editingMessage?.id === message.id) {
+                  setEditingMessage(null);
+                  setText('');
+                }
+                if (threadRootId) await reloadThread();
+              })
+              .catch((error) => {
+                Alert.alert(
+                  'Remove failed',
+                  error instanceof Error ? error.message : 'Please try again.'
+                );
+              });
+          },
+        },
+      ]
+    );
+  }, [editingMessage?.id, groupId, reloadThread, removeGroupMessage, threadRootId]);
+
+  const showMessageActions = useCallback((message: Message) => {
+    const canEdit = canEditChatMessage(message, user?.id);
+    const canRemove = canRemoveChatMessage(message, user?.id);
+    if (!canEdit && !canRemove) {
+      beginReply(message);
+      return;
+    }
+
+    const showManageActions = () => {
+      Alert.alert('Manage message', undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
+        ...(canRemove
+          ? [{
+              text: 'Remove',
+              style: 'destructive' as const,
+              onPress: () => confirmRemoveMessage(message),
+            }]
+          : []),
+      ]);
+    };
+
+    Alert.alert('Message options', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reply', onPress: () => beginReply(message) },
+      { text: canEdit ? 'Edit or remove' : 'Remove', onPress: showManageActions },
+    ]);
+  }, [beginEdit, beginReply, confirmRemoveMessage, user?.id]);
 
   const handleSummarize = async () => {
     if (!user?.id || summarizing) return;
@@ -818,13 +918,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                         : undefined
                     }
                     canFlag={item.senderId !== user?.id}
-                    onReply={(m) =>
-                      setReplyTo({
-                        id: m.id,
-                        senderName: m.senderName,
-                        text: m.questionStem || m.text,
-                      })
-                    }
+                    onReply={showMessageActions}
                     onScrollToMessage={(messageId) => {
                       const index = displayMessages.findIndex((m) => m.id === messageId);
                       if (index >= 0) {
@@ -870,6 +964,13 @@ export function GroupChatScreen({ navigation, route }: Props) {
           groupId={groupId}
           replyTo={replyTo}
           onClearReply={() => setReplyTo(null)}
+          editingMessage={
+            editingMessage ? { id: editingMessage.id, text: editingMessage.text } : null
+          }
+          onCancelEdit={() => {
+            setEditingMessage(null);
+            setText('');
+          }}
           mentionCandidates={(currentGroup?.members || [])
             .filter((m) => m.userId !== user?.id && m.username)
             .map((m) => ({ id: m.userId, username: m.username!, name: m.name }))}
@@ -1055,6 +1156,10 @@ export function GroupChatScreen({ navigation, route }: Props) {
           if (!user?.id) return;
           await sendMessage(groupId, text, user.id, undefined, { replyToMessageId });
         }}
+        onEdit={(messageId, content) =>
+          editGroupMessage(groupId, messageId, content)
+        }
+        onRemove={(messageId) => removeGroupMessage(groupId, messageId)}
         currentUserId={user?.id}
         isGroup
         memberCount={memberCount}

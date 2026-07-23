@@ -23,6 +23,8 @@ import {
     sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads, fetchDMUnreadCounts,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
+    editGroupMessage, removeGroupMessage, editDirectMessage, removeDirectMessage,
+    type ChatMessageMutationPayload,
 } from '../services/supabase';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
@@ -60,6 +62,24 @@ function normalizeFetchedMessages(raw: unknown): Message[] {
             }
         })
         .filter((message): message is Message => message != null);
+}
+
+function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
+    return {
+        id: raw.id,
+        threadId: raw.threadId || raw.thread_id || threadId,
+        senderId: raw.senderId || raw.sender_id,
+        text: raw.isRemoved || raw.removed_at ? '' : raw.text || '',
+        timestamp: new Date(raw.timestamp),
+        editedAt: raw.editedAt || raw.edited_at,
+        removedAt: raw.removedAt || raw.removed_at,
+        isRemoved: raw.isRemoved || !!raw.removed_at,
+        replyToMessageId: raw.replyToMessageId || raw.reply_to_message_id,
+        replyTo: raw.replyTo || raw.reply_to,
+        threadRootId: raw.threadRootId || raw.thread_root_id,
+        replyCount: typeof raw.replyCount === 'number' ? raw.replyCount : raw.reply_count,
+        receiptStatus: raw.receiptStatus || raw.receipt_status,
+    };
 }
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
@@ -148,18 +168,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 fetchDirectMessages(currentUser.id, otherUserId).then(fetchedMessages => {
                     if (requestId !== dmFetchSeqRef.current) return;
                     if (useUIStore.getState().selectedChat?.id !== threadId) return;
-                    const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) => ({
-                        id: m.id,
-                        threadId: m.threadId || chat.id,
-                        senderId: m.senderId || m.sender_id,
-                        text: m.text,
-                        timestamp: new Date(m.timestamp),
-                        replyToMessageId: m.replyToMessageId || m.reply_to_message_id,
-                        replyTo: m.replyTo || m.reply_to,
-                        threadRootId: m.threadRootId || m.thread_root_id,
-                        replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
-                        receiptStatus: m.receiptStatus || m.receipt_status,
-                    }));
+                    const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) =>
+                        mapDirectMessageFromApi(m, chat.id)
+                    );
                     updateDirectMessages(prev => ({ ...prev, [chat.id]: mappedMessages }));
                 }).catch(error => {
                     console.error('Error fetching DM messages:', error);
@@ -281,18 +292,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                             if (requestId !== dmFetchSeqRef.current) return;
                             if (useUIStore.getState().selectedChat?.id !== threadId) return;
                             const raw = Array.isArray(fetchedMessages) ? fetchedMessages : [];
-                            const mappedMessages: DirectMessage[] = raw.map((m: any) => ({
-                                id: m.id,
-                                threadId: m.threadId || threadId,
-                                senderId: m.senderId || m.sender_id,
-                                text: m.text,
-                                timestamp: new Date(m.timestamp),
-                                replyToMessageId: m.replyToMessageId || m.reply_to_message_id,
-                                replyTo: m.replyTo || m.reply_to,
-                                threadRootId: m.threadRootId || m.thread_root_id,
-                                replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
-                                receiptStatus: m.receiptStatus || m.receipt_status,
-                            }));
+                            const mappedMessages: DirectMessage[] = raw.map((m: any) =>
+                                mapDirectMessageFromApi(m, threadId)
+                            );
                             updateDirectMessages((prev) => ({ ...prev, [threadId]: mappedMessages }));
                         })
                         .catch((error) => {
@@ -452,6 +454,109 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             sendingThreadIds.delete(threadId);
         }
     }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads]);
+
+    const applyChatMutation = useCallback((
+        chat: ChatItem,
+        payload: ChatMessageMutationPayload
+    ) => {
+        if (chat.chatType === 'group') {
+            let nextMessages: Message[] = [];
+            updateMessages((prev) => {
+                nextMessages = (prev[chat.id] || []).map((message) => {
+                    const replyTo = message.replyTo?.id === payload.id
+                        ? {
+                            ...message.replyTo,
+                            text: payload.isRemoved ? undefined : payload.text,
+                            isRemoved: !!payload.isRemoved,
+                        }
+                        : message.replyTo;
+                    if (message.id !== payload.id) return { ...message, replyTo };
+                    return {
+                        ...message,
+                        ...(!payload.isRemoved ? { text: payload.text } : { text: undefined }),
+                        editedAt: payload.editedAt,
+                        removedAt: payload.removedAt,
+                        isRemoved: !!payload.isRemoved,
+                        replyTo,
+                    };
+                });
+                return { ...prev, [chat.id]: nextMessages };
+            });
+
+            const latest = [...nextMessages].reverse().find(
+                (message) => !message.isRemoved && !message.removedAt && !message.isArchived
+            );
+            updateGroups((prev) => prev.map((group) =>
+                group.id === chat.id
+                    ? {
+                        ...group,
+                        lastMessage: latest?.text || latest?.questionStem,
+                        lastMessageTime: latest?.timestamp,
+                    }
+                    : group
+            ));
+            return;
+        }
+
+        let nextMessages: DirectMessage[] = [];
+        updateDirectMessages((prev) => {
+            nextMessages = (prev[chat.id] || []).map((message) => {
+                const replyTo = message.replyTo?.id === payload.id
+                    ? {
+                        ...message.replyTo,
+                        text: payload.isRemoved ? undefined : payload.text,
+                        isRemoved: !!payload.isRemoved,
+                    }
+                    : message.replyTo;
+                if (message.id !== payload.id) return { ...message, replyTo };
+                return {
+                    ...message,
+                    text: payload.isRemoved ? '' : payload.text || '',
+                    editedAt: payload.editedAt,
+                    removedAt: payload.removedAt,
+                    isRemoved: !!payload.isRemoved,
+                    replyTo,
+                };
+            });
+            return { ...prev, [chat.id]: nextMessages };
+        });
+
+        const latest = [...nextMessages].reverse().find(
+            (message) => !message.isRemoved && !message.removedAt
+        );
+        updateDmThreads((prev) => prev.map((thread) =>
+            thread.id === chat.id
+                ? {
+                    ...thread,
+                    lastMessage: latest?.text,
+                    lastMessageTimestamp: latest?.timestamp,
+                }
+                : thread
+        ));
+    }, [updateDirectMessages, updateDmThreads, updateGroups, updateMessages]);
+
+    const handleEditChatMessage = useCallback(async (
+        messageId: string,
+        content: string
+    ) => {
+        const chat = useUIStore.getState().selectedChat;
+        if (!chat) throw new Error('No conversation selected');
+        const payload = chat.chatType === 'group'
+            ? await editGroupMessage(messageId, content)
+            : await editDirectMessage(messageId, content);
+        applyChatMutation(chat, payload);
+        return payload;
+    }, [applyChatMutation]);
+
+    const handleRemoveChatMessage = useCallback(async (messageId: string) => {
+        const chat = useUIStore.getState().selectedChat;
+        if (!chat) throw new Error('No conversation selected');
+        const payload = chat.chatType === 'group'
+            ? await removeGroupMessage(messageId)
+            : await removeDirectMessage(messageId);
+        applyChatMutation(chat, payload);
+        return payload;
+    }, [applyChatMutation]);
 
     const handleDeleteDmThread = useCallback(async (threadId: string) => {
         if (!currentUser) return;
@@ -1576,6 +1681,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleEnterCreatedGroup,
         handleQuestionSubmit,
         onSendMessage,
+        handleEditChatMessage,
+        handleRemoveChatMessage,
         onPeerChatRead,
         onVoteQuestion,
         handleUpvoteDuplicateAndClose,

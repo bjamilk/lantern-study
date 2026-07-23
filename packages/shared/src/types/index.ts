@@ -218,6 +218,7 @@ export interface MessageReplyPreview {
   type?: MessageType | string;
   text?: string;
   questionStem?: string;
+  isRemoved?: boolean;
 }
 
 export interface Message {
@@ -239,6 +240,9 @@ export interface Message {
   downvotes: number;
   flaggedAsSimilarUserIds?: string[];
   isArchived?: boolean;
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
   acceptableAnswers?: string[];
   matchingPromptItems?: MatchingItem[];
   matchingAnswerItems?: MatchingItem[];
@@ -534,6 +538,9 @@ export interface DirectMessage {
   senderId: string;
   text: string;
   timestamp: Date | string;
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
   replyToMessageId?: string;
   replyTo?: MessageReplyPreview | null;
   threadRootId?: string;

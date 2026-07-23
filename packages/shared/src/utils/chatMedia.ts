@@ -3,6 +3,22 @@ import { MessageType } from '../types';
 
 const AUDIO_MARKDOWN_RE = /\[audio\]\((https?:\/\/[^)\s]+)\)/i;
 const MENTION_RE = /@([a-zA-Z0-9_]{2,32})\b/g;
+export const CHAT_MESSAGE_MUTATION_WINDOW_MS = 30 * 60 * 1000;
+
+export type ChatMessageMutationCandidate = {
+  id: string;
+  senderId?: string;
+  sender?: { id?: string };
+  timestamp?: Date | string;
+  createdAt?: Date | string;
+  type?: string;
+  text?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
+  replyToMessageId?: string;
+  threadRootId?: string;
+  replyCount?: number;
+};
 
 export function parseChatAudioUrl(text?: string | null): string | null {
   if (!text) return null;
@@ -16,6 +32,64 @@ export function isChatAudioMessage(text?: string | null): boolean {
 
 export function buildChatAudioMarkdown(url: string): string {
   return `[audio](${url})`;
+}
+
+export function isChatMessageMutationWindowOpen(
+  timestamp: Date | string,
+  nowMs = Date.now()
+): boolean {
+  const sentAtMs = new Date(timestamp).getTime();
+  if (!Number.isFinite(sentAtMs)) return false;
+  const ageMs = nowMs - sentAtMs;
+  return ageMs >= 0 && ageMs <= CHAT_MESSAGE_MUTATION_WINDOW_MS;
+}
+
+export function canRemoveChatMessage(
+  message: ChatMessageMutationCandidate,
+  currentUserId?: string | null,
+  nowMs = Date.now()
+): boolean {
+  const senderId = message.senderId || message.sender?.id;
+  const type = String(message.type || 'TEXT').toUpperCase();
+  return (
+    !!currentUserId &&
+    senderId === currentUserId &&
+    type === 'TEXT' &&
+    !message.isRemoved &&
+    !message.removedAt &&
+    !!(message.timestamp || message.createdAt) &&
+    isChatMessageMutationWindowOpen(message.timestamp || message.createdAt!, nowMs)
+  );
+}
+
+export function canEditChatMessage(
+  message: ChatMessageMutationCandidate,
+  currentUserId?: string | null,
+  nowMs = Date.now()
+): boolean {
+  return (
+    canRemoveChatMessage(message, currentUserId, nowMs) &&
+    !isChatAudioMessage(message.text)
+  );
+}
+
+/**
+ * Removed rows normally disappear. Keep a redacted placeholder only when
+ * hiding the row would orphan an existing reply or make a thread unreachable.
+ */
+export function shouldRenderRemovedMessage(
+  message: ChatMessageMutationCandidate,
+  conversationMessages: ChatMessageMutationCandidate[]
+): boolean {
+  if (!message.isRemoved && !message.removedAt) return true;
+  if ((message.replyCount || 0) > 0) return true;
+  return conversationMessages.some(
+    (candidate) =>
+      candidate.id !== message.id &&
+      !candidate.isRemoved &&
+      !candidate.removedAt &&
+      (candidate.replyToMessageId === message.id || candidate.threadRootId === message.id)
+  );
 }
 
 export function extractMentionUsernames(text?: string | null): string[] {
@@ -58,11 +132,12 @@ export function segmentMentions(text: string): MentionSegment[] {
 
 export function buildReplyPreview(
   parent:
-    | Pick<Message, 'id' | 'sender' | 'type' | 'text' | 'questionStem'>
+    | Pick<Message, 'id' | 'sender' | 'type' | 'text' | 'questionStem' | 'isRemoved'>
     | (Pick<DirectMessage, 'id' | 'senderId' | 'text'> & {
         senderName?: string;
         type?: string;
         questionStem?: string;
+        isRemoved?: boolean;
       })
     | null
     | undefined
@@ -77,8 +152,10 @@ export function buildReplyPreview(
       sender?.name ||
       ('senderName' in parent ? parent.senderName : undefined),
     type: ('type' in parent ? parent.type : MessageType.TEXT) as MessageType | string,
-    text: parent.text,
-    questionStem: 'questionStem' in parent ? parent.questionStem : undefined,
+    text: parent.isRemoved ? undefined : parent.text,
+    questionStem:
+      parent.isRemoved || !('questionStem' in parent) ? undefined : parent.questionStem,
+    isRemoved: !!parent.isRemoved,
   };
 }
 

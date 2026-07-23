@@ -37,6 +37,8 @@ interface ChatComposerProps {
   mentionCandidates?: MentionCandidate[];
   replyTo?: ReplyPreview | null;
   onClearReply?: () => void;
+  editingMessage?: { id: string; text: string } | null;
+  onCancelEdit?: () => void;
   groupId?: string;
   threadId?: string;
   onSendAudioMarkdown?: (markdown: string) => Promise<void>;
@@ -54,6 +56,8 @@ export function ChatComposer({
   mentionCandidates = [],
   replyTo,
   onClearReply,
+  editingMessage,
+  onCancelEdit,
   groupId,
   threadId,
   onSendAudioMarkdown,
@@ -64,7 +68,7 @@ export function ChatComposer({
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const recordingRef = useRef<{
-    stopAndUnloadAsync: () => Promise<void>;
+    stopAndUnloadAsync: () => Promise<unknown>;
     getURI: () => string | null;
   } | null>(null);
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,10 +186,7 @@ export function ChatComposer({
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
-      recordingRef.current = recording as {
-        stopAndUnloadAsync: () => Promise<void>;
-        getURI: () => string | null;
-      };
+      recordingRef.current = recording;
       startedAtRef.current = Date.now();
       setIsRecording(true);
       maxTimerRef.current = setTimeout(() => {
@@ -197,7 +198,7 @@ export function ChatComposer({
   };
 
   const busy = sending || attaching || uploadingAudio;
-  const showMic = !value.trim() && !!onSendAudioMarkdown;
+  const showMic = !editingMessage && !value.trim() && !!onSendAudioMarkdown;
 
   return (
     <View>
@@ -215,6 +216,25 @@ export function ChatComposer({
             </Text>
           </View>
           <Pressable onPress={onClearReply} accessibilityLabel="Cancel reply" className="p-2">
+            <Ionicons name="close" size={18} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      {editingMessage ? (
+        <View
+          className="flex-row items-start gap-2 px-3 pt-2"
+          style={{ backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }}
+        >
+          <View className="flex-1 rounded-lg px-2.5 py-1.5" style={{ backgroundColor: colors.primaryBackground }}>
+            <Text className="text-[11px] font-semibold" style={{ color: colors.primary }}>
+              Editing message
+            </Text>
+            <Text className="text-xs" style={{ color: colors.textSecondary }}>
+              Original 30-minute window applies
+            </Text>
+          </View>
+          <Pressable onPress={onCancelEdit} accessibilityLabel="Cancel edit" className="p-2">
             <Ionicons name="close" size={18} color={colors.textTertiary} />
           </Pressable>
         </View>
@@ -244,7 +264,7 @@ export function ChatComposer({
         className="flex-row items-end gap-2 px-3 py-2 border-t border-lantern-border bg-lantern-surface"
         style={{ borderTopColor: colors.border }}
       >
-        {onAttachImage ? (
+        {onAttachImage && !editingMessage ? (
           <Pressable
             onPress={() => void pickImage()}
             disabled={busy || isRecording}
@@ -289,7 +309,9 @@ export function ChatComposer({
               ? 'Recording… tap mic to stop'
               : uploadingAudio
                 ? 'Uploading voice note…'
-                : placeholder
+                : editingMessage
+                  ? 'Edit message...'
+                  : placeholder
           }
           placeholderTextColor={colors.inputPlaceholder}
           multiline

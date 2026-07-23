@@ -136,6 +136,8 @@ export const mapMessageFromApi = (data: any): Message => {
 
   const rawOptions = data.options ?? questionData.options;
   const optionsList = Array.isArray(rawOptions) ? rawOptions : [];
+  const removedAt = data.removed_at || data.removedAt;
+  const isRemoved = data.isRemoved || !!removedAt;
 
   return {
     id: data.id,
@@ -143,8 +145,10 @@ export const mapMessageFromApi = (data: any): Message => {
     sender,
     timestamp: new Date(data.timestamp || data.created_at),
     type: data.type,
-    text: data.text || data.content,
-    questionStem: data.question_stem || data.questionStem || questionData.questionStem,
+    text: isRemoved ? undefined : data.text || data.content,
+    questionStem: isRemoved
+      ? undefined
+      : data.question_stem || data.questionStem || questionData.questionStem,
     explanation: data.explanation || questionData.explanation,
     questionType: data.question_type || data.questionType || questionData.questionType,
     options: optionsList.map(mapQuestionOptionFromApi),
@@ -164,6 +168,9 @@ export const mapMessageFromApi = (data: any): Message => {
     downvotes: data.downvotes || 0,
     flaggedAsSimilarUserIds: data.flagged_as_similar_user_ids || data.flaggedAsSimilarUserIds,
     isArchived: data.is_archived || data.isArchived || false,
+    editedAt: data.edited_at || data.editedAt,
+    removedAt,
+    isRemoved,
     acceptableAnswers:
       data.acceptable_answers ||
       data.acceptableAnswers ||

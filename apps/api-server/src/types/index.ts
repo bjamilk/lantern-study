@@ -101,6 +101,9 @@ export interface Message {
   upvotes: number;
   downvotes: number;
   flaggedAsSimilarUserIds?: string[];
+  editedAt?: string;
+  removedAt?: string;
+  isRemoved?: boolean;
   replyToMessageId?: string;
   mentionedUserIds?: string[];
   replyTo?: {
@@ -110,6 +113,7 @@ export interface Message {
     type?: string;
     text?: string;
     questionStem?: string;
+    isRemoved?: boolean;
   } | null;
   threadRootId?: string;
   replyCount?: number;
