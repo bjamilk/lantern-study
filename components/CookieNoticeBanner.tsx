@@ -60,14 +60,6 @@ export function openCookiePreferenceCenter() {
   window.dispatchEvent(new CustomEvent(OPEN_COOKIE_PREFERENCES_EVENT));
 }
 
-function CookieGlyph({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M12 2a9.9 9.9 0 0 0-7.07 2.93A10 10 0 1 0 19.5 8.1 3.5 3.5 0 0 1 16 11.5a3.5 3.5 0 0 1-3.45-2.9A3.5 3.5 0 0 1 9.2 5.7 9.95 9.95 0 0 0 12 2Zm-3.25 8.75a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm4.5 1.5a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2ZM9.5 15.25a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm5.25.75a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" />
-    </svg>
-  );
-}
-
 export function CookieNoticeBanner() {
   const [bannerVisible, setBannerVisible] = useState(false);
   const [centerOpen, setCenterOpen] = useState(false);
@@ -133,23 +125,10 @@ export function CookieNoticeBanner() {
     });
   };
 
-  const showLauncher = hasChoice && !bannerVisible && !centerOpen;
   const centerPanelRef = useModalFocusTrap(centerOpen, closeCenterWithoutSaving);
 
   return (
     <>
-      {showLauncher && (
-        <button
-          type="button"
-          onClick={openCenter}
-          className="fixed z-[80] left-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-auto md:right-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border bg-lantern-surface/95 text-lantern-text shadow-lg backdrop-blur hover:bg-lantern-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-          aria-label="Manage cookie preferences"
-          title="Manage cookie preferences"
-        >
-          <CookieGlyph className="h-5 w-5" />
-        </button>
-      )}
-
       {bannerVisible && !centerOpen && (
         <div
           role="region"

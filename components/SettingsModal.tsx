@@ -28,6 +28,7 @@ import { ACCOUNT_EXPORT_COPY } from '@lantern/shared';
 import { AccountDeletionModal } from './AccountDeletionModal';
 import { AccountImportModal } from './AccountImportModal';
 import { ContactForm } from './ContactForm';
+import { openCookiePreferenceCenter } from './CookieNoticeBanner';
 import Modal from './ui/Modal';
 import { useFeatureTipStore } from '../stores/featureTipStore';
 
@@ -514,6 +515,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <ToggleSwitch enabled={privacy.discoverableForInvites !== false} onChange={(val) => onUpdateSettingsCategory('privacy', { discoverableForInvites: val })} label="Allow search for invites" description="Let others find you by name or @username when adding group or deck members. Profile visibility still controls who can view your full profile." />
                     <ToggleSwitch enabled={privacy.showOnlineStatus} onChange={(val) => onUpdateSettingsCategory('privacy', { showOnlineStatus: val })} label="Show online status" description="Let others see when you are active." />
                     <ToggleSwitch enabled={privacy.showStudyActivity} onChange={(val) => onUpdateSettingsCategory('privacy', { showStudyActivity: val })} label="Show study activity" description="Share study streaks and activity." />
+                    <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary p-3 space-y-2">
+                      <div>
+                        <p className="text-sm font-medium text-lantern-text">Cookie preferences</p>
+                        <p className="text-xs text-lantern-text-secondary mt-0.5">
+                          Manage optional analytics, functional, and advertising cookie categories. Strictly necessary cookies always stay on.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openCookiePreferenceCenter()}
+                        className="w-full min-h-[44px] rounded-lg border border-lantern-border bg-lantern-surface px-4 py-2 text-sm font-medium text-lantern-text hover:bg-lantern-background"
+                      >
+                        Manage cookie preferences
+                      </button>
+                      <a
+                        href={LEGAL_PATHS.cookies}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-xs text-lantern-primary underline"
+                      >
+                        Cookie Policy
+                      </a>
+                    </div>
                  </div>
             );
             case 'marketplace': return (

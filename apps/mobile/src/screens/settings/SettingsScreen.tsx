@@ -46,6 +46,7 @@ import { ContactSupportModal } from '../../components/ContactSupportModal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
 
 const ACCENT_PRESETS = ['#6569EE', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
 const THEME_OPTIONS = [
@@ -1140,6 +1141,14 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="cookie-outline"
+              iconColor="#a16207"
+              title="Manage cookie preferences"
+              subtitle="Optional analytics and cookie categories"
+              onPress={() => openCookiePreferenceCenter()}
+            />
+            <SettingItem
+              colors={colors}
+              icon="document-outline"
               iconColor="#8b5cf6"
               title="Cookie Policy"
               onPress={() => navigation.navigate('LegalDocument' as never, { document: 'cookies' } as never)}
