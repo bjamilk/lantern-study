@@ -10,7 +10,7 @@ import type {
 } from '../types';
 import { getAuthHeaders, supabase } from './supabase';
 import { pollApiJob } from './jobPoll';
-import { resolveNotesRequestUrl } from '../utils/notesRequestUrl';
+import { applyJsonXhrHeaders } from '../utils/xhrHeaders';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -58,10 +58,7 @@ async function notesUploadRequest<T>(
     xhr.responseType = 'json';
     xhr.timeout = 180_000;
 
-    for (const [key, value] of Object.entries(headers)) {
-      if (value) xhr.setRequestHeader(key, String(value));
-    }
-    xhr.setRequestHeader('Content-Type', 'application/json');
+    applyJsonXhrHeaders(xhr, headers);
 
     xhr.upload.onprogress = (event) => {
       if (!options?.onProgress) return;
@@ -139,15 +136,7 @@ async function notesLongRequest<T>(
 
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(
-      method,
-      resolveNotesRequestUrl({
-        apiBaseUrl: API_BASE_URL,
-        path,
-        bodyJson: json,
-        isBrowser: typeof window !== 'undefined',
-      })
-    );
+    xhr.open(method, `${API_BASE_URL}/api/v1/notes${path}`);
     xhr.responseType = 'json';
     xhr.timeout = timeoutMs;
 
@@ -163,10 +152,7 @@ async function notesLongRequest<T>(
       signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    for (const [key, value] of Object.entries(headers)) {
-      if (value) xhr.setRequestHeader(key, String(value));
-    }
-    xhr.setRequestHeader('Content-Type', 'application/json');
+    applyJsonXhrHeaders(xhr, headers);
 
     xhr.upload.onload = () => {
       options?.onProgress?.({
