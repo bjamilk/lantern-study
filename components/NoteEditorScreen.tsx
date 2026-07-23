@@ -49,6 +49,26 @@ interface NoteEditorScreenProps {
   onCancelPendingSave?: () => void;
 }
 
+const MIN_RECORD_MS = 1500;
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x2000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function waitForRecorderChunks(): Promise<void> {
+  // stop() queues a final dataavailable; give it a turn before reading chunks.
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 80);
+  });
+}
+
 const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   theme,
   note,
@@ -90,6 +110,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const discardRecordingRef = useRef(false);
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef(0);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
@@ -391,7 +412,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const startRecording = async () => {
     try {
       discardRecordingRef.current = false;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        useToastStore
+          .getState()
+          .showToast('Audio recording is not supported in this browser. Try Chrome or Edge.', 'error');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+        },
+      });
       mediaStreamRef.current = stream;
       const mimeCandidates = [
         'audio/webm;codecs=opus',
@@ -400,7 +433,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         'audio/ogg;codecs=opus',
       ];
       const supportedMime =
-        typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function'
+        typeof MediaRecorder.isTypeSupported === 'function'
           ? mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
           : '';
       const recorder = supportedMime
@@ -408,8 +441,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         : new MediaRecorder(stream);
       const recordingMime = recorder.mimeType || supportedMime || 'audio/webm';
       chunksRef.current = [];
-      recorder.ondataavailable = e => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onerror = () => {
+        useToastStore.getState().showToast('Recording failed. Please try again.', 'error');
+        stopMediaStream();
+        setRecording(false);
+        mediaRecorderRef.current = null;
+        chunksRef.current = [];
       };
       recorder.onstop = async () => {
         stopMediaStream();
@@ -419,93 +459,96 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           return;
         }
 
+        // Final dataavailable from stop() can land after onstop in some browsers.
+        await waitForRecorderChunks();
         const blob = new Blob(chunksRef.current, { type: recordingMime });
         chunksRef.current = [];
-        if (blob.size < 256) {
+        if (blob.size < 512) {
           useToastStore
             .getState()
-            .showToast('Recording was empty or too short. Hold for a couple of seconds, then stop.', 'error');
+            .showToast('Recording was empty or too short. Hold for at least 2 seconds, then stop.', 'error');
           return;
         }
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-          const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+
+        const abortController = new AbortController();
+        transcribeAbortRef.current = abortController;
+        setTranscribing(true);
+        onCancelPendingSave?.();
+        try {
+          const base64 = await blobToBase64(blob);
           if (!base64 || base64.length < 64) {
-            useToastStore
-              .getState()
-              .showToast('Recording was empty or too short. Hold for a couple of seconds, then stop.', 'error');
-            return;
+            throw new Error('Recording was empty or too short. Hold for at least 2 seconds, then stop.');
           }
-          const abortController = new AbortController();
-          transcribeAbortRef.current = abortController;
-          setTranscribing(true);
-          onCancelPendingSave?.();
-          try {
-            const mimeType = recordingMime.split(';')[0] || 'audio/webm';
-            const ext = mimeType.includes('mp4')
-              ? 'm4a'
-              : mimeType.includes('ogg')
-                ? 'ogg'
-                : 'webm';
-            const result = await notesApi.transcribeAudioForNote(base64, {
-              mimeType,
-              noteId: note.id,
-              fileName: `lecture-${Date.now()}.${ext}`,
-              signal: abortController.signal,
-              currentBody: bodyRef.current,
-            });
-            if (result.transcript) {
-              // Apply locally so we do not rely on store re-hydration (which no longer
-              // overwrites the draft on every save).
-              setBody((prev) =>
-                prev.includes(result.transcript)
-                  ? prev
-                  : [prev, result.transcript].filter(Boolean).join('\n\n')
-              );
-              userEditedRef.current = false;
-            }
-            if (result.persistWarning) {
-              useToastStore.getState().showToast(result.persistWarning, 'info');
-            }
-            onTranscriptReady(result.transcript || '');
-          } catch (err: unknown) {
-            if (err instanceof DOMException && err.name === 'AbortError') return;
-            const message = err instanceof Error ? err.message : 'Transcription failed';
-            useToastStore.getState().showToast(message, 'error');
-          } finally {
-            transcribeAbortRef.current = null;
-            setTranscribing(false);
+          const mimeType = recordingMime.split(';')[0] || 'audio/webm';
+          const ext = mimeType.includes('mp4')
+            ? 'm4a'
+            : mimeType.includes('ogg')
+              ? 'ogg'
+              : 'webm';
+          const result = await notesApi.transcribeAudioForNote(base64, {
+            mimeType,
+            noteId: note.id,
+            fileName: `lecture-${Date.now()}.${ext}`,
+            signal: abortController.signal,
+            currentBody: bodyRef.current,
+          });
+          if (result.transcript) {
+            setBody((prev) =>
+              prev.includes(result.transcript)
+                ? prev
+                : [prev, result.transcript].filter(Boolean).join('\n\n')
+            );
+            userEditedRef.current = false;
           }
-        };
-        reader.readAsDataURL(blob);
+          if (result.persistWarning) {
+            useToastStore.getState().showToast(result.persistWarning, 'info');
+          }
+          onTranscriptReady(result.transcript || '');
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          const message = err instanceof Error ? err.message : 'Transcription failed';
+          useToastStore.getState().showToast(message, 'error');
+        } finally {
+          transcribeAbortRef.current = null;
+          setTranscribing(false);
+        }
       };
       mediaRecorderRef.current = recorder;
-      // Timeslice ensures browsers (esp. Safari) emit chunks before stop.
-      recorder.start(1000);
+      // Smaller timeslice so short lectures still produce chunks before stop.
+      recorder.start(250);
+      recordingStartedAtRef.current = Date.now();
       setRecording(true);
-    } catch {
-      useToastStore.getState().showToast('Microphone access is required to record lectures.', 'error');
+    } catch (err: unknown) {
+      const name = err instanceof DOMException ? err.name : '';
+      const message =
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
+          ? 'Microphone permission is blocked. Allow mic access for lanternstudy.com, then retry.'
+          : name === 'NotFoundError'
+            ? 'No microphone found. Plug in a mic and try again.'
+            : 'Microphone access is required to record lectures.';
+      useToastStore.getState().showToast(message, 'error');
     }
   };
 
   const stopRecording = () => {
     const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    const elapsed = Date.now() - recordingStartedAtRef.current;
+    if (elapsed < MIN_RECORD_MS) {
+      useToastStore
+        .getState()
+        .showToast('Keep recording for at least 2 seconds so we can capture audio.', 'info');
+      return;
+    }
     mediaRecorderRef.current = null;
     setRecording(false);
-    if (!recorder) return;
     try {
-      // Flush the final timeslice before stop — otherwise some browsers send an empty blob.
-      if (recorder.state === 'recording') {
-        recorder.requestData();
+      // stop() alone emits the final dataavailable; do not requestData()+stop (race → empty blob).
+      if (recorder.state === 'recording' || recorder.state === 'paused') {
         recorder.stop();
       }
     } catch {
-      try {
-        recorder.stop();
-      } catch {
-        // ignore
-      }
+      // ignore
     }
   };
 
@@ -513,13 +556,17 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     discardRecordingRef.current = true;
     const recorder = mediaRecorderRef.current;
     mediaRecorderRef.current = null;
-    stopMediaStream();
     chunksRef.current = [];
     setRecording(false);
     try {
-      if (recorder && recorder.state === 'recording') recorder.stop();
+      if (recorder && (recorder.state === 'recording' || recorder.state === 'paused')) {
+        // Let onstop stop the stream — killing tracks before stop() can abort the flush.
+        recorder.stop();
+      } else {
+        stopMediaStream();
+      }
     } catch {
-      // ignore
+      stopMediaStream();
     }
   };
 
