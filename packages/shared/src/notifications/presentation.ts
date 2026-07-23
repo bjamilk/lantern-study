@@ -6,6 +6,8 @@ export type NotificationLinkType =
   | 'inquiry'
   | 'listing'
   | 'dm'
+  | 'group'
+  | 'group_invite'
   | 'generic';
 
 export interface ParsedNotificationLink {
@@ -85,6 +87,27 @@ export function parseNotificationLink(
       id: n.data.senderId as string,
     };
   }
+  if (link?.startsWith('/invites/groups/')) {
+    const groupId = link.replace('/invites/groups/', '').split(/[?#]/)[0];
+    if (groupId) return { type: 'group_invite', id: groupId };
+  }
+  if (n?.type === 'group_invite') {
+    const groupId =
+      (n.data?.groupId as string) ||
+      link?.replace('/invites/groups/', '').split(/[?#]/)[0] ||
+      link?.replace('/chat/', '').split(/[?#]/)[0];
+    if (groupId) return { type: 'group_invite', id: groupId };
+  }
+  if (link?.startsWith('/chat/')) {
+    const groupId = link.replace('/chat/', '').split(/[?#]/)[0];
+    if (groupId) return { type: 'group', id: groupId };
+  }
+  if (n?.type === 'group_message' && (n.data?.groupId || link)) {
+    const groupId =
+      (n.data?.groupId as string) ||
+      link?.replace('/chat/', '').split(/[?#]/)[0];
+    if (groupId) return { type: 'group', id: groupId };
+  }
   if (!link) return null;
   const parts = link.split(':');
   if (parts[0] !== 'marketplace' || parts.length < 3) return null;
@@ -146,6 +169,22 @@ export function getNotificationMeta(
       return {
         iconKey: 'chat',
         label: 'Message',
+        webColorClass: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
+        mobileIconColor: '#0ea5e9',
+        mobileBgClass: 'bg-sky-50 dark:bg-sky-950/30',
+      };
+    case 'group_invite':
+      return {
+        iconKey: 'envelope',
+        label: 'Group invite',
+        webColorClass: 'text-lantern-primary bg-lantern-primary-background',
+        mobileIconColor: '#4f46e5',
+        mobileBgClass: 'bg-lantern-primary-background',
+      };
+    case 'group':
+      return {
+        iconKey: 'chat',
+        label: 'Group',
         webColorClass: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
         mobileIconColor: '#0ea5e9',
         mobileBgClass: 'bg-sky-50 dark:bg-sky-950/30',

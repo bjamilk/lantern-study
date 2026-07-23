@@ -563,9 +563,44 @@ export function createApiEndpoints(client: ApiClient) {
     fetchGroupMembers: (groupId: string) => apiRequest<unknown[]>(`/groups/${groupId}/members`),
 
     addGroupMember: (groupId: string, userId: string) =>
-      apiRequest<void>(`/groups/${groupId}/members`, {
+      apiRequest<{ invited?: boolean; groupId?: string; userId?: string }>(`/groups/${groupId}/members`, {
         method: 'POST',
         body: JSON.stringify({ userId }),
+      }),
+
+    addGroupMembersBatch: (groupId: string, userIds: string[]) =>
+      apiRequest<{
+        invited: string[];
+        added: string[];
+        alreadyMembers: string[];
+        alreadyPending: string[];
+        failed: string[];
+      }>(`/groups/${groupId}/members/batch`, {
+        method: 'POST',
+        body: JSON.stringify({ userIds }),
+      }),
+
+    fetchPendingGroupInvites: () =>
+      apiRequest<Array<{
+        groupId: string;
+        groupName: string;
+        avatarUrl?: string;
+        invitedAt?: string;
+      }>>('/groups/invites/pending'),
+
+    acceptGroupInvite: (groupId: string) =>
+      apiRequest<unknown>(`/groups/${groupId}/invites/accept`, { method: 'POST' }),
+
+    declineGroupInvite: (groupId: string) =>
+      apiRequest<void>(`/groups/${groupId}/invites/decline`, { method: 'POST' }),
+
+    uploadGroupAvatar: (
+      groupId: string,
+      data: { fileName: string; base64Data: string; contentType: string }
+    ) =>
+      apiRequest<{ url: string; path: string; avatarUrl: string }>(`/groups/${groupId}/avatar`, {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
 
     removeGroupMember: (groupId: string, userId: string) =>
@@ -1773,7 +1808,7 @@ export function createApiEndpoints(client: ApiClient) {
       contentType: string;
       listingId?: string;
     }) =>
-      apiRequest<{ url: string; path: string }>('/marketplace/upload-image', {
+      apiRequest<{ url: string; path: string; storageUrl?: string }>('/marketplace/upload-image', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),

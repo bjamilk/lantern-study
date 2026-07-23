@@ -214,11 +214,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         }) as string;
         const base64Data = base64.includes(',') ? base64.split(',')[1]! : base64;
         const { uploadProfileAvatar } = await import('../services/supabase');
+        const mimeMatch = base64.match(/^data:([^;]+);/);
+        const contentType = mimeMatch?.[1] || 'image/webp';
         const uploaded = await uploadProfileAvatar(
           currentUser.id,
-          file.name || 'avatar.jpg',
+          contentType === 'image/png' ? 'avatar.png' : 'avatar.webp',
           base64Data,
-          file.type || 'image/jpeg'
+          contentType
         );
         // Canonical storage URL persists; Avatar component re-signs for display.
         onUpdateCurrentUserAvatar(uploaded.avatarUrl);

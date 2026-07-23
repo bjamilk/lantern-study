@@ -35,7 +35,14 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
     if (!n.read && onMarkAsRead) {
       onMarkAsRead(n.id);
     }
-    if (onNavigate && (n.link || n.type?.startsWith('challenge') || n.type === 'dm_message')) {
+    if (
+      onNavigate &&
+      (n.link ||
+        n.type?.startsWith('challenge') ||
+        n.type === 'dm_message' ||
+        n.type === 'group_invite' ||
+        n.type === 'group_message')
+    ) {
       const parsed = parseNotificationLink(n.link, n);
       if (parsed) {
         if (parsed.type === 'offer' || parsed.type === 'inquiry') {
@@ -47,6 +54,10 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
           onNavigate('PlayChallenge', { challengeId: parsed.id });
         } else if (parsed.type === 'dm' && parsed.id) {
           onNavigate('DirectMessages', { userId: parsed.id, threadId: parsed.threadId });
+        } else if (parsed.type === 'group_invite' && parsed.id) {
+          onNavigate('GroupInvite', { groupId: parsed.id });
+        } else if (parsed.type === 'group' && parsed.id) {
+          onNavigate('GroupChat', { groupId: parsed.id });
         }
         onClose();
       }

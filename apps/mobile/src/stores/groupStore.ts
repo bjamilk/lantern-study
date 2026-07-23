@@ -795,25 +795,56 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     };
     
     try {
+      const pendingAvatarDataUrl =
+        groupInput.avatarUrl && groupInput.avatarUrl.startsWith('data:')
+          ? groupInput.avatarUrl
+          : null;
+      const createAvatarUrl =
+        groupInput.avatarUrl && !groupInput.avatarUrl.startsWith('data:')
+          ? groupInput.avatarUrl
+          : undefined;
+
       const apiGroup = await api.createGroup({
         name: groupInput.name,
         description: groupInput.description,
-        avatar_url: groupInput.avatarUrl,
+        avatar_url: createAvatarUrl,
         permissions: groupInput.permissions,
         invite_id: `invite-${Date.now()}`,
         parent_id: groupInput.parentId,
         userId: groupInput.ownerId,
         memberIds: selectedMemberIds,
       });
+
+      let persistedAvatarUrl = apiGroup.avatar_url || (apiGroup as any).avatarUrl || createAvatarUrl;
+      if (pendingAvatarDataUrl) {
+        try {
+          const base64Data = pendingAvatarDataUrl.includes(',')
+            ? pendingAvatarDataUrl.split(',')[1]!
+            : pendingAvatarDataUrl;
+          const mimeMatch = pendingAvatarDataUrl.match(/^data:([^;]+);/);
+          const contentType = mimeMatch?.[1] || 'image/jpeg';
+          const uploaded = await api.uploadGroupAvatar(apiGroup.id, {
+            fileName: contentType === 'image/png' ? 'avatar.png' : 'avatar.jpg',
+            base64Data,
+            contentType,
+          });
+          persistedAvatarUrl = uploaded.avatarUrl;
+        } catch (avatarError) {
+          console.warn('[GroupStore] Group created but avatar upload failed:', avatarError);
+        }
+      }
+
+      // Creator is active immediately; invited members stay pending until they accept.
+      const activeMembers = allMembers.filter((m) => m.userId === groupInput.ownerId);
       
       const createdGroup: Group = {
         ...mapApiGroup(apiGroup, {}),
-        avatarUrl: apiGroup.avatar_url || (apiGroup as any).avatarUrl || newGroup.avatarUrl,
+        avatarUrl: persistedAvatarUrl || newGroup.avatarUrl,
         ownerId: groupInput.ownerId,
         parentId: (apiGroup as any).parent_id || (apiGroup as any).parentId || groupInput.parentId,
         permissions: ((apiGroup as any).permissions as GroupPermissions | undefined) || groupInput.permissions,
-        members: allMembers,
-        memberCount: allMembers.length,
+        members: activeMembers,
+        memberCount: activeMembers.length,
       };
       
       const groups = [...get().groups, createdGroup];
@@ -1271,12 +1302,18 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   mergeGroupMessage: (groupId: string, rawMessage: unknown) => {
     const roster = get().groups.find(g => g.id === groupId)?.members;
     const message = mapApiMessage(rawMessage, groupId, roster);
+    const clientMessageId =
+      (rawMessage as { client_message_id?: string; clientMessageId?: string }).client_message_id
+      || (rawMessage as { clientMessageId?: string }).clientMessageId;
     set(state => {
       const cached = state.messagesCache[groupId] || [];
-      const idx = cached.findIndex(m => m.id === message.id);
+      let idx = cached.findIndex(m => m.id === message.id);
+      if (idx === -1 && clientMessageId) {
+        idx = cached.findIndex(m => m.id === clientMessageId);
+      }
       if (idx === -1) return state;
       const updated = [...cached];
-      updated[idx] = { ...updated[idx], ...message };
+      updated[idx] = { ...updated[idx], ...message, id: message.id };
       return {
         messagesCache: { ...state.messagesCache, [groupId]: updated },
         messages: state.activeGroupId === groupId ? updated : state.messages,

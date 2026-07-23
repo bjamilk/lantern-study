@@ -225,6 +225,14 @@ export class SupabaseService {
       return this.isProfileVisibleToViewer(userId, ownerId);
     }
 
+    if (bucket === 'group-avatars') {
+      if (!userId) return false;
+      // Paths are {groupId}/avatar-...
+      const groupId = parts[0];
+      if (!groupId) return false;
+      return this.isGroupMember(groupId, userId);
+    }
+
     return false;
   }
 
@@ -476,6 +484,7 @@ export class SupabaseService {
       'marketplace_review_prompt',
       'saved_search_match',
       'group_invite',
+      'group_message',
       'badge_unlock',
       'test_result',
       'srs_reminder',
@@ -911,11 +920,12 @@ export class SupabaseService {
       }
 
       if (userId) {
-        // Only return groups the user is a member of
+        // Only return groups where the user is an active (non-pending) member
         const { data: memberGroups, error: memberError } = await this.supabase
           .from('group_members')
           .select('group_id')
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .eq('pending', false);
 
         if (memberError) throw memberError;
 
@@ -1075,10 +1085,12 @@ export class SupabaseService {
       }
     }
 
-    // Add all members
-    const membersToInsert = allMemberIds.map(id => ({
+    // Creator + inherited parent members join immediately; explicitly invited users stay pending until they accept.
+    const explicitInviteSet = new Set(memberIds.filter((id) => id !== userId));
+    const membersToInsert = allMemberIds.map((id) => ({
       group_id: data.id,
       user_id: id,
+      pending: explicitInviteSet.has(id),
     }));
 
     const { error: memberError } = await this.supabase
@@ -1112,7 +1124,8 @@ export class SupabaseService {
       isArchived: data.is_archived,
       inviteId: data.invite_id,
       createdAt: data.created_at,
-    } as Group;
+      pendingInviteUserIds: Array.from(explicitInviteSet),
+    } as Group & { pendingInviteUserIds?: string[] };
   }
 
   async updateGroup(groupId: string, updates: Partial<Group>): Promise<Group | null> {
@@ -1186,17 +1199,35 @@ export class SupabaseService {
     } as Group;
   }
 
-  async addGroupMember(groupId: string, userId: string): Promise<Group | null> {
+  /**
+   * Invite a user into a group. By default creates a pending membership that the
+   * invitee must accept. Pass `pending: false` only for invitee-initiated joins
+   * (e.g. invite-link Accept) or the group creator.
+   */
+  async addGroupMember(
+    groupId: string,
+    userId: string,
+    options: { pending?: boolean } = {}
+  ): Promise<Group | null> {
+    const pending = options.pending !== false;
+
     const { error: memberError } = await this.supabase
       .from('group_members')
       .insert({
         group_id: groupId,
         user_id: userId,
+        pending,
       });
 
     if (memberError) {
       if (memberError.code === '23505') {
-        return await this.getGroupById(groupId, userId);
+        // Already a row — invite again leaves pending as-is; self-join accepts a pending invite.
+        if (!pending) {
+          const accepted = await this.acceptGroupInvite(groupId, userId);
+          if (accepted) return await this.getGroupById(groupId, userId);
+          return await this.getGroupById(groupId, userId);
+        }
+        return null;
       }
       throw memberError;
     }
@@ -1205,46 +1236,110 @@ export class SupabaseService {
     await cacheService.invalidateUserCache(userId);
     await cacheService.deletePattern('groups:list:*');
 
-    return await this.getGroupById(groupId, userId);
+    return pending ? null : await this.getGroupById(groupId, userId);
   }
 
-  /** Bulk add members with a single insert (avoids N sequential round-trips). */
+  /** Bulk invite members as pending (invitee must accept). */
   async addGroupMembersBatch(
     groupId: string,
     userIds: string[]
-  ): Promise<{ added: string[]; alreadyMembers: string[] }> {
+  ): Promise<{ invited: string[]; alreadyMembers: string[]; alreadyPending: string[] }> {
     const uniqueIds = [...new Set(userIds.filter(Boolean))];
     if (!uniqueIds.length) {
-      return { added: [], alreadyMembers: [] };
+      return { invited: [], alreadyMembers: [], alreadyPending: [] };
     }
 
     const { data: existing, error: checkError } = await this.supabase
       .from('group_members')
-      .select('user_id')
+      .select('user_id, pending')
       .eq('group_id', groupId)
       .in('user_id', uniqueIds);
 
     if (checkError) throw checkError;
 
-    const existingSet = new Set((existing || []).map((m: { user_id: string }) => m.user_id));
-    const alreadyMembers = uniqueIds.filter((id) => existingSet.has(id));
-    const toAdd = uniqueIds.filter((id) => !existingSet.has(id));
+    const alreadyMembers: string[] = [];
+    const alreadyPending: string[] = [];
+    const existingSet = new Set<string>();
+    for (const row of existing || []) {
+      existingSet.add(row.user_id);
+      if (row.pending === true) alreadyPending.push(row.user_id);
+      else alreadyMembers.push(row.user_id);
+    }
+    const toInvite = uniqueIds.filter((id) => !existingSet.has(id));
 
-    if (toAdd.length) {
+    if (toInvite.length) {
       const { error: insertError } = await this.supabase.from('group_members').upsert(
-        toAdd.map((user_id) => ({ group_id: groupId, user_id, pending: false })),
+        toInvite.map((user_id) => ({ group_id: groupId, user_id, pending: true })),
         { onConflict: 'group_id,user_id', ignoreDuplicates: true }
       );
       if (insertError) throw insertError;
 
       await cacheService.invalidateGroupCache(groupId);
       await cacheService.invalidateGlobalCache('groups:list:*');
-      for (const memberId of toAdd) {
+      for (const memberId of toInvite) {
         await cacheService.invalidateUserCache(memberId);
       }
     }
 
-    return { added: toAdd, alreadyMembers };
+    return { invited: toInvite, alreadyMembers, alreadyPending };
+  }
+
+  async acceptGroupInvite(groupId: string, userId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('group_members')
+      .update({ pending: false, joined_at: new Date().toISOString() })
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .eq('pending', true)
+      .select('user_id');
+
+    if (error) throw error;
+    if (!data?.length) return false;
+
+    await cacheService.invalidateGroupCache(groupId);
+    await cacheService.invalidateUserCache(userId);
+    await cacheService.deletePattern('groups:list:*');
+    return true;
+  }
+
+  async declineGroupInvite(groupId: string, userId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .eq('pending', true)
+      .select('user_id');
+
+    if (error) throw error;
+    if (!data?.length) return false;
+
+    await cacheService.invalidateGroupCache(groupId);
+    await cacheService.invalidateUserCache(userId);
+    await cacheService.deletePattern('groups:list:*');
+    return true;
+  }
+
+  async getPendingGroupInvitesForUser(userId: string): Promise<Array<{
+    groupId: string;
+    groupName: string;
+    avatarUrl?: string;
+    invitedAt?: string;
+  }>> {
+    const { data, error } = await this.supabase
+      .from('group_members')
+      .select('group_id, joined_at, groups(id, name, avatar_url)')
+      .eq('user_id', userId)
+      .eq('pending', true);
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      groupId: row.group_id,
+      groupName: row.groups?.name || 'Group',
+      avatarUrl: row.groups?.avatar_url,
+      invitedAt: row.joined_at,
+    }));
   }
 
   async isGroupMember(groupId: string, userId: string): Promise<boolean> {
@@ -1390,6 +1485,7 @@ export class SupabaseService {
         .from('group_members')
         .select('user_id')
         .eq('group_id', groupId)
+        .eq('pending', false)
         .range(offset, offset + limit - 1);
 
       if (memberError) {
@@ -2342,23 +2438,38 @@ export class SupabaseService {
     contentType: string;
     userId: string;
     listingId?: string;
-  }): Promise<{ url: string; path: string }> {
+  }): Promise<{ url: string; path: string; storageUrl: string }> {
     const bucket = 'marketplace-images';
     const timestamp = Date.now();
-    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image exceeds 10 MB limit');
+    }
+    // Prefer magic bytes — clients often send the wrong MIME after compression / camera export.
+    const detected = detectImageMime(buffer);
+    if (!detected) {
+      throw new Error(
+        'File content is not a supported image (JPEG, PNG, GIF, or WebP). HEIC/HEIF photos must be converted first.'
+      );
+    }
+    const contentType = detected;
+    const ext = contentType === 'image/png'
+      ? 'png'
+      : contentType === 'image/webp'
+        ? 'webp'
+        : contentType === 'image/gif'
+          ? 'gif'
+          : 'jpg';
+    const baseName = params.fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_.-]/g, '_') || 'photo';
+    const safeName = `${baseName}.${ext}`;
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, '')}/`;
     const listingSegment = params.listingId
       ? `listings/${params.listingId.replace(/[^a-zA-Z0-9_-]/g, '')}/`
       : 'temp/';
     const filePath = `${ownerPrefix}${listingSegment}${timestamp}-${safeName}`;
-    const buffer = Buffer.from(params.base64Data, 'base64');
-    if (buffer.length > 10 * 1024 * 1024) {
-      throw new Error('Image exceeds 10 MB limit');
-    }
-    assertImageMagicBytes(buffer, params.contentType);
 
     const { error } = await this.supabase.storage.from(bucket).upload(filePath, buffer, {
-      contentType: params.contentType,
+      contentType,
       cacheControl: '3600',
       upsert: false,
     });
@@ -2391,9 +2502,13 @@ export class SupabaseService {
       logger.warn('Marketplace thumbnail generation failed', { filePath, error: thumbErr?.message });
     }
 
+    const base = process.env.SUPABASE_URL?.replace(/\/$/, '') || '';
+    const storageUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
+
     return {
       url: await this.createSignedStorageUrl(bucket, filePath),
       path: filePath,
+      storageUrl,
     };
   }
 
@@ -2484,23 +2599,28 @@ export class SupabaseService {
   }): Promise<{ url: string; path: string; avatarUrl: string }> {
     const bucket = 'profile-avatars';
     const safeUserId = params.userId.replace(/[^a-zA-Z0-9_-]/g, '');
-    const ext = params.contentType === 'image/png'
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    // Prefer magic-byte detection — web clients compress to WebP but often send the original file MIME.
+    const detected = detectImageMime(buffer);
+    if (!detected) {
+      throw new Error('File content is not a supported image (JPEG, PNG, GIF, or WebP).');
+    }
+    const contentType = detected;
+    const ext = contentType === 'image/png'
       ? 'png'
-      : params.contentType === 'image/webp'
+      : contentType === 'image/webp'
         ? 'webp'
-        : params.contentType === 'image/gif'
+        : contentType === 'image/gif'
           ? 'gif'
           : 'jpg';
     // Versioned path so clients and CDNs do not keep serving a stale avatar after replace.
     const version = Date.now();
     const filePath = `${safeUserId}/avatar-${version}.${ext}`;
-    const buffer = Buffer.from(params.base64Data, 'base64');
-    assertImageMagicBytes(buffer, params.contentType);
 
     const { error } = await this.supabase.storage
       .from(bucket)
       .upload(filePath, buffer, {
-        contentType: params.contentType,
+        contentType,
         cacheControl: '60',
         upsert: true,
       });
@@ -2522,6 +2642,63 @@ export class SupabaseService {
       }
     } catch (cleanupError) {
       logger.warn('Failed to clean up old profile avatars', { cleanupError, userId: safeUserId });
+    }
+
+    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
+    const base = process.env.SUPABASE_URL?.replace(/\/$/, '') || '';
+    const avatarUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
+
+    return { url: signedUrl, path: filePath, avatarUrl };
+  }
+
+  async uploadGroupAvatar(params: {
+    groupId: string;
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+  }): Promise<{ url: string; path: string; avatarUrl: string }> {
+    const bucket = 'group-avatars';
+    const safeGroupId = params.groupId.replace(/[^a-zA-Z0-9_-]/g, '');
+    const buffer = Buffer.from(params.base64Data, 'base64');
+    const detected = detectImageMime(buffer);
+    if (!detected) {
+      throw new Error('File content is not a supported image (JPEG, PNG, GIF, or WebP).');
+    }
+    const contentType = detected;
+    const ext = contentType === 'image/png'
+      ? 'png'
+      : contentType === 'image/webp'
+        ? 'webp'
+        : contentType === 'image/gif'
+          ? 'gif'
+          : 'jpg';
+    const version = Date.now();
+    const filePath = `${safeGroupId}/avatar-${version}.${ext}`;
+
+    const { error } = await this.supabase.storage
+      .from(bucket)
+      .upload(filePath, buffer, {
+        contentType,
+        cacheControl: '60',
+        upsert: true,
+      });
+
+    if (error) {
+      logger.error('Error uploading group avatar:', { error, filePath });
+      throw new Error(error.message);
+    }
+
+    try {
+      const { data: existing } = await this.supabase.storage.from(bucket).list(safeGroupId, { limit: 50 });
+      const stale = (existing || [])
+        .map((obj) => obj.name)
+        .filter((name) => name.startsWith('avatar') && name !== `avatar-${version}.${ext}`)
+        .map((name) => `${safeGroupId}/${name}`);
+      if (stale.length > 0) {
+        await this.supabase.storage.from(bucket).remove(stale);
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to clean up old group avatars', { cleanupError, groupId: safeGroupId });
     }
 
     const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
@@ -4997,6 +5174,25 @@ export class SupabaseService {
         logger.warn('Failed to increment questionsCreated gamification', { userId, err });
       });
 
+      const questionPreview = messageData.questionStem
+        ? `New question: ${String(messageData.questionStem).substring(0, 50)}`
+        : 'posted a new question';
+      void this.supabase
+        .from('groups')
+        .update({
+          last_message: questionPreview,
+          last_message_time: data.timestamp || new Date().toISOString(),
+        })
+        .eq('id', groupId);
+      void this.notifyGroupMessageRecipients({
+        groupId,
+        senderId: userId,
+        content: questionPreview,
+        messageId: data.id,
+      }).catch((err) => {
+        logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
+      });
+
       return data;
     } else {
       // Text message
@@ -5031,11 +5227,87 @@ export class SupabaseService {
 
       logger.info('sendMessage: TEXT message inserted successfully', { messageId: data.id });
 
+      // Keep group list preview in sync for recipients who have not opened the chat yet.
+      void this.supabase
+        .from('groups')
+        .update({
+          last_message: content,
+          last_message_time: data.timestamp || new Date().toISOString(),
+        })
+        .eq('id', groupId)
+        .then(({ error: groupUpdateError }) => {
+          if (groupUpdateError) {
+            logger.warn('Failed to update group last_message after send', {
+              groupId,
+              error: groupUpdateError,
+            });
+          }
+        });
+
+      void this.notifyGroupMessageRecipients({
+        groupId,
+        senderId: userId,
+        content,
+        messageId: data.id,
+      }).catch((err) => {
+        logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
+      });
+
       // Invalidate cache
       await cacheService.invalidateGroupCache(groupId);
 
       return data;
     }
+  }
+
+  /** Notify active members after a group message is persisted (message-before-notification ordering). */
+  private async notifyGroupMessageRecipients(params: {
+    groupId: string;
+    senderId: string;
+    content: string;
+    messageId: string;
+  }): Promise<void> {
+    const { groupId, senderId, content, messageId } = params;
+    const [{ data: members, error: membersError }, groupMeta, sender] = await Promise.all([
+      this.supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId)
+        .eq('pending', false),
+      this.getGroupById(groupId),
+      this.getUserById(senderId),
+    ]);
+
+    if (membersError) throw membersError;
+
+    const recipientIds = (members || [])
+      .map((m) => m.user_id)
+      .filter((id) => id && id !== senderId);
+    if (!recipientIds.length) return;
+
+    const groupName = groupMeta?.name || 'a group';
+    const actorLabel = sender?.username
+      ? `@${sender.username}`
+      : sender?.name || 'Someone';
+    const preview = content.length > 50 ? `${content.substring(0, 50)}…` : content;
+
+    await Promise.all(
+      recipientIds.map((recipientId) =>
+        this.createNotification(recipientId, {
+          message: `New message in ${groupName} from ${actorLabel}: "${preview}"`,
+          link: `/chat/${groupId}`,
+          type: 'group_message',
+          data: { groupId, messageId, senderId, preview },
+        }).catch((err) => {
+          logger.error('Failed to create group message notification', {
+            err,
+            groupId,
+            recipientId,
+            messageId,
+          });
+        })
+      )
+    );
   }
 
   async fetchMessages(groupId: string): Promise<Message[]> {

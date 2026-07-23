@@ -1087,114 +1087,115 @@ export function useAppEffects({
         };
     }, [currentUser?.id, dmThreads, lowDataMode, updateDirectMessages, updateDmThreads]);
 
-    // --- Real-time group message subscription (selected chat only) ---
+    // --- Real-time group messages for all joined groups (so chat updates before/with notifications) ---
     useEffect(() => {
-        if (!currentUser || lowDataMode || selectedChat?.chatType !== 'group') return;
+        if (!currentUser || lowDataMode) return;
+        const groupIds = new Set(groups.map((g) => g.id));
+        if (groupIds.size === 0) return;
 
-        const groupId = selectedChat.id;
-        const channel = supabase
-            .channel(`group-messages:${groupId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'messages',
-                    filter: `group_id=eq.${groupId}`,
-                },
-                (payload) => {
-                    const mapped = mapMessageFromApi(payload.new);
-                    const raw = payload.new as {
-                        sender_id?: string;
-                        client_message_id?: string;
-                        content?: string;
-                        text?: string;
+        const applyIncoming = (payloadNew: Record<string, unknown>, isUpdate: boolean) => {
+            const groupId = String(payloadNew.group_id || '');
+            if (!groupId || !groupIds.has(groupId)) return;
+
+            const mapped = mapMessageFromApi(payloadNew);
+            const raw = payloadNew as {
+                sender_id?: string;
+                client_message_id?: string;
+                content?: string;
+                text?: string;
+            };
+            const rosterMember = useGroupStore
+                .getState()
+                .groups.find((g) => g.id === groupId)
+                ?.members?.find((m) => m.id === raw.sender_id);
+            if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member')) {
+                mapped.sender = {
+                    ...mapped.sender,
+                    ...rosterMember,
+                    id: rosterMember.id || mapped.sender?.id || raw.sender_id || 'unknown',
+                };
+            }
+
+            updateMessages((prev) => {
+                const existing = prev[groupId] || [];
+                if (isUpdate) {
+                    const idx = existing.findIndex((m) => m.id === mapped.id);
+                    if (idx === -1) return prev;
+                    const updated = [...existing];
+                    updated[idx] = { ...updated[idx], ...mapped };
+                    return { ...prev, [groupId]: updated };
+                }
+                if (existing.some((m) => m.id === mapped.id)) {
+                    return {
+                        ...prev,
+                        [groupId]: existing.map((m) =>
+                            m.id === mapped.id ? { ...m, ...mapped } : m
+                        ),
                     };
-                    // Realtime rows lack joined profiles — fill from group roster when possible.
-                    const rosterMember = useGroupStore
-                        .getState()
-                        .groups.find((g) => g.id === groupId)
-                        ?.members?.find((m) => m.id === raw.sender_id);
-                    if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member')) {
-                        mapped.sender = {
-                            ...mapped.sender,
-                            ...rosterMember,
-                            id: rosterMember.id || mapped.sender?.id || raw.sender_id || 'unknown',
+                }
+                if (raw.sender_id === currentUser.id) {
+                    const clientMessageId = raw.client_message_id;
+                    if (clientMessageId && existing.some((m) => m.id === clientMessageId)) {
+                        return {
+                            ...prev,
+                            [groupId]: existing.map((m) =>
+                                m.id === clientMessageId
+                                    ? {
+                                        ...m,
+                                        ...mapped,
+                                        id: mapped.id,
+                                        sender: mapped.sender?.id ? mapped.sender : m.sender,
+                                      }
+                                    : m
+                            ),
                         };
                     }
-                    updateMessages(prev => {
-                        const existing = prev[groupId] || [];
-                        if (existing.some(m => m.id === mapped.id)) {
-                            return {
-                                ...prev,
-                                [groupId]: existing.map(m =>
-                                    m.id === mapped.id ? { ...m, ...mapped } : m
-                                ),
-                            };
-                        }
-                        if (raw.sender_id === currentUser.id) {
-                            const clientMessageId = raw.client_message_id;
-                            if (clientMessageId && existing.some(m => m.id === clientMessageId)) {
-                                return {
-                                    ...prev,
-                                    [groupId]: existing.map(m =>
-                                        m.id === clientMessageId
-                                            ? { ...m, ...mapped, id: mapped.id, sender: mapped.sender?.id ? mapped.sender : m.sender }
-                                            : m
-                                    ),
-                                };
-                            }
-                            const rawContent = raw.content || raw.text || mapped.text || '';
-                            const hasOptimistic = existing.some(
-                                m => m.sender?.id === currentUser.id && m.text === rawContent && m.id !== mapped.id
-                            );
-                            if (hasOptimistic) return prev;
-                        }
-                        return { ...prev, [groupId]: [...existing, mapped] };
-                    });
-                    // Keep sidebar preview fresh without a full refresh.
-                    useGroupStore.getState().updateGroups((prev) =>
-                        prev.map((g) =>
-                            g.id === groupId
-                                ? {
-                                    ...g,
-                                    lastMessage: mapped.text || g.lastMessage,
-                                    lastMessageTime:
-                                        mapped.timestamp instanceof Date
-                                            ? mapped.timestamp.toISOString()
-                                            : g.lastMessageTime,
-                                  }
-                                : g
-                        )
+                    const rawContent = raw.content || raw.text || mapped.text || '';
+                    const hasOptimistic = existing.some(
+                        (m) =>
+                            m.sender?.id === currentUser.id &&
+                            m.text === rawContent &&
+                            m.id !== mapped.id
                     );
+                    if (hasOptimistic) return prev;
                 }
+                return { ...prev, [groupId]: [...existing, mapped] };
+            });
+
+            useGroupStore.getState().updateGroups((prev) =>
+                prev.map((g) =>
+                    g.id === groupId
+                        ? {
+                            ...g,
+                            lastMessage: mapped.text || g.lastMessage,
+                            lastMessageTime:
+                                mapped.timestamp instanceof Date
+                                    ? mapped.timestamp.toISOString()
+                                    : g.lastMessageTime,
+                          }
+                        : g
+                )
+            );
+        };
+
+        const channel = supabase
+            .channel(`group-messages-all:${currentUser.id}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages' },
+                (payload) => applyIncoming(payload.new as Record<string, unknown>, false)
             )
             .on(
                 'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'messages',
-                    filter: `group_id=eq.${groupId}`,
-                },
-                (payload) => {
-                    const mapped = mapMessageFromApi(payload.new);
-                    updateMessages(prev => {
-                        const existing = prev[groupId] || [];
-                        const idx = existing.findIndex(m => m.id === mapped.id);
-                        if (idx === -1) return prev;
-                        const updated = [...existing];
-                        updated[idx] = { ...updated[idx], ...mapped };
-                        return { ...prev, [groupId]: updated };
-                    });
-                }
+                { event: 'UPDATE', schema: 'public', table: 'messages' },
+                (payload) => applyIncoming(payload.new as Record<string, unknown>, true)
             )
             .subscribe();
 
         return () => {
             channel.unsubscribe();
         };
-    }, [currentUser?.id, selectedChat?.id, selectedChat?.chatType, lowDataMode, updateMessages]);
+    }, [currentUser?.id, groups.map((g) => g.id).join(','), lowDataMode, updateMessages]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {

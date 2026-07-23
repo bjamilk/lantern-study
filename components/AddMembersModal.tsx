@@ -86,14 +86,16 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
         setSelectedUserIds([]);
         setSearchTerm('');
         setSearchResults([]);
-        setSuccessMessage(`${count} member${count !== 1 ? 's' : ''} added successfully!`);
+        setSuccessMessage(
+          `${count} invite${count !== 1 ? 's' : ''} sent. They must accept before joining.`
+        );
         setTimeout(() => {
           setSuccessMessage('');
           onClose();
         }, 1800);
       } catch (error) {
-        console.error('Failed to add members:', error);
-        setSearchError('Failed to add members. Please try again.');
+        console.error('Failed to invite members:', error);
+        setSearchError(error instanceof Error ? error.message : 'Failed to send invites. Please try again.');
       } finally {
         setIsSubmitting(false);
       }

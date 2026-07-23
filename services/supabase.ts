@@ -707,7 +707,7 @@ export const addGroupMember = async (groupId: string, userId: string) => {
 };
 
 export const addGroupMembersBatch = async (groupId: string, userIds: string[]) => {
-  console.log('Batch adding members to group:', groupId, 'count:', userIds.length);
+  console.log('Batch inviting members to group:', groupId, 'count:', userIds.length);
   
   // Ensure we have a valid session before making the call
   if (!(await hasValidSession())) {
@@ -727,12 +727,86 @@ export const addGroupMembersBatch = async (groupId: string, userIds: string[]) =
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.message || 'Failed to add members to group');
+    throw new Error(error.message || 'Failed to invite members to group');
   }
 
   const result = await response.json();
-  console.log('Batch add result:', result.data);
-  return result.data as { added: string[]; alreadyMembers: string[]; failed: string[] };
+  console.log('Batch invite result:', result.data);
+  return result.data as {
+    invited: string[];
+    added: string[];
+    alreadyMembers: string[];
+    alreadyPending: string[];
+    failed: string[];
+  };
+};
+
+export const fetchPendingGroupInvites = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/invites/pending`, {
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to load pending invites');
+  }
+  const result = await response.json();
+  return (result.data || []) as Array<{
+    groupId: string;
+    groupName: string;
+    avatarUrl?: string;
+    invitedAt?: string;
+  }>;
+};
+
+export const acceptGroupInvite = async (groupId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/invites/accept`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to accept invite');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const declineGroupInvite = async (groupId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/invites/decline`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to decline invite');
+  }
+  return true;
+};
+
+export const uploadGroupAvatar = async (
+  groupId: string,
+  fileName: string,
+  base64Data: string,
+  contentType: string
+): Promise<{ url: string; path: string; avatarUrl: string }> => {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/groups/${groupId}/avatar`,
+    withApiCredentials({
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, base64Data, contentType }),
+    }),
+    15000
+  );
+  const body = await response.json().catch(() => ({} as { error?: string; message?: string; data?: { url: string; path: string; avatarUrl: string } }));
+  if (!response.ok) {
+    throw new Error(body.error || body.message || 'Failed to upload group avatar');
+  }
+  if (!body.data?.avatarUrl) {
+    throw new Error('Group avatar upload response missing avatarUrl');
+  }
+  return body.data;
 };
 
 export const fetchGroupInvitePreview = async (inviteId: string) => {
@@ -3593,7 +3667,7 @@ export const uploadMarketplaceImage = async (file: File, listingId?: string) => 
   if (!response.ok || !json?.success) {
     throw new Error(json?.error || 'Failed to upload marketplace image');
   }
-  return json.data as { url: string; path: string };
+  return json.data as { url: string; path: string; storageUrl?: string };
 };
 
 export const deleteMarketplaceImage = async (filePath: string) => {

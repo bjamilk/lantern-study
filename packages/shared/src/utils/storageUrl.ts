@@ -6,6 +6,7 @@ export const PRIVATE_STORAGE_BUCKETS = [
   'question-images',
   'note-files',
   'profile-avatars',
+  'group-avatars',
 ] as const;
 
 export type PrivateStorageBucket = (typeof PRIVATE_STORAGE_BUCKETS)[number];

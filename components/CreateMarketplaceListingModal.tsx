@@ -322,7 +322,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         for (let attempt = 1; attempt <= 2 && !success; attempt++) {
           try {
             const result = await uploadMarketplaceImage(image.file, listingId);
-            uploadedUrls.push(result.url);
+            // Persist stable object URLs (not short-lived signed URLs) on the listing.
+            const persisted = result.storageUrl || result.path || result.url;
+            uploadedUrls.push(persisted);
             image.uploaded = true;
             image.url = result.url;
             image.path = result.path;

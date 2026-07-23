@@ -13,6 +13,7 @@ import { clientErrorMessage } from '../utils/safeError';
 const router = Router();
 const DEFAULT_GROUP_PAGE_SIZE = 20;
 const MAX_GROUP_PAGE_SIZE = 50;
+const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
 
@@ -120,6 +121,84 @@ router.get(
   })
 );
 
+// GET /api/v1/groups/invites/pending - Pending group invites for the current user
+// NOTE: Must be before /:groupId
+router.get(
+  '/invites/pending',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const invites = await supabaseService.getPendingGroupInvitesForUser(userId);
+    res.json({ success: true, data: invites });
+  })
+);
+
+// POST /api/v1/groups/:groupId/invites/accept - Accept a pending group invite
+router.post(
+  '/:groupId/invites/accept',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    const accepted = await supabaseService.acceptGroupInvite(groupId, userId);
+    if (!accepted) {
+      return res.status(404).json({
+        success: false,
+        error: 'No pending invite found for this group',
+      });
+    }
+
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
+    await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern(`user:groups:${userId}:*`);
+
+    const group = await supabaseService.getGroupById(groupId, userId);
+    res.json({
+      success: true,
+      data: group,
+      message: 'Invite accepted',
+    });
+  })
+);
+
+// POST /api/v1/groups/:groupId/invites/decline - Decline a pending group invite
+router.post(
+  '/:groupId/invites/decline',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    const declined = await supabaseService.declineGroupInvite(groupId, userId);
+    if (!declined) {
+      return res.status(404).json({
+        success: false,
+        error: 'No pending invite found for this group',
+      });
+    }
+
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
+    await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern(`user:groups:${userId}:*`);
+
+    res.json({
+      success: true,
+      message: 'Invite declined',
+    });
+  })
+);
+
 // GET /api/v1/groups/:groupId - Get group by ID
 router.get(
   '/:groupId',
@@ -166,6 +245,21 @@ router.post(
     logger.debug('Creating group', { groupData, userId, memberIds });
 
     const newGroup = await supabaseService.createGroup(groupData, userId, memberIds);
+
+    const pendingInviteUserIds = (newGroup as { pendingInviteUserIds?: string[] }).pendingInviteUserIds || [];
+    if (pendingInviteUserIds.length > 0) {
+      const actor = await supabaseService.getUserById(userId);
+      const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'Someone';
+      for (const inviteeId of pendingInviteUserIds) {
+        void supabaseService.createNotification(inviteeId, {
+          message: `${actorLabel} invited you to join "${newGroup.name}". Open the invite to accept or decline.`,
+          link: `/invites/groups/${newGroup.id}`,
+          type: 'group_invite',
+        }).catch((err) =>
+          logger.error('Failed to notify invited group member on create', { err, groupId: newGroup.id, inviteeId })
+        );
+      }
+    }
 
     // Invalidate groups list cache
     await cacheService.deletePattern('groups:list:*');
@@ -219,6 +313,62 @@ router.put(
     res.json({
       success: true,
       data: updatedGroup,
+    });
+  })
+);
+
+// POST /api/v1/groups/:groupId/avatar - Upload group avatar to private storage
+router.post(
+  '/:groupId/avatar',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({ success: false, error: 'Group not found or access denied' });
+    }
+    if (!(group.permissions && group.permissions[userId]?.admin) && !(group.adminIds && group.adminIds.includes(userId))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    const { fileName, base64Data, contentType } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    if (contentType && !ALLOWED_AVATAR_TYPES.includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType must be JPEG, PNG, GIF, or WebP when provided.',
+      });
+    }
+
+    const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
+    if (estimatedBytes > 2 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Avatar exceeds 2 MB limit' });
+    }
+
+    const uploaded = await supabaseService.uploadGroupAvatar({
+      groupId,
+      fileName,
+      base64Data,
+      contentType: contentType || 'image/jpeg',
+    });
+
+    const updatedGroup = await supabaseService.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern('groups:list:*');
+
+    res.json({
+      success: true,
+      data: {
+        ...uploaded,
+        group: updatedGroup,
+      },
     });
   })
 );
@@ -307,17 +457,18 @@ router.post(
       });
     }
 
-    const updatedGroup = await supabaseService.addGroupMember(groupId, memberId);
+    // Admin invites create a pending membership — invitee must accept.
+    await supabaseService.addGroupMember(groupId, memberId, { pending: true });
 
     const groupMeta = await supabaseService.getGroupById(groupId);
     const actor = await supabaseService.getUserById(userId);
     const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
     if (groupMeta) {
       void supabaseService.createNotification(memberId, {
-        message: `You've been added to the group "${groupMeta.name}" by ${actorLabel}`,
-        link: `/chat/${groupId}`,
+        message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
+        link: `/invites/groups/${groupId}`,
         type: 'group_invite',
-      }).catch((err) => logger.error('Failed to notify added group member', { err, groupId, memberId }));
+      }).catch((err) => logger.error('Failed to notify invited group member', { err, groupId, memberId }));
     }
 
     // Invalidate caches
@@ -328,7 +479,8 @@ router.post(
 
     res.json({
       success: true,
-      data: updatedGroup,
+      data: { invited: true, groupId, userId: memberId },
+      message: 'Invite sent. The user must accept before joining the group.',
     });
   })
 );
@@ -378,36 +530,45 @@ router.post(
       });
     }
 
-    const results = { added: [] as string[], alreadyMembers: [] as string[], failed: [] as string[] };
+    const results = {
+      invited: [] as string[],
+      alreadyMembers: [] as string[],
+      alreadyPending: [] as string[],
+      failed: [] as string[],
+      // Back-compat for older clients that still read `added`
+      added: [] as string[],
+    };
 
     try {
       const batchResult = await supabaseService.addGroupMembersBatch(groupId, userIds);
-      results.added = batchResult.added;
+      results.invited = batchResult.invited;
+      results.added = batchResult.invited;
       results.alreadyMembers = batchResult.alreadyMembers;
+      results.alreadyPending = batchResult.alreadyPending;
 
-      if (results.added.length > 0) {
+      if (results.invited.length > 0) {
         const groupMeta = await supabaseService.getGroupById(groupId);
         const actor = await supabaseService.getUserById(userId);
         const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
         if (groupMeta) {
-          for (const memberId of results.added) {
+          for (const memberId of results.invited) {
             void supabaseService.createNotification(memberId, {
-              message: `You've been added to the group "${groupMeta.name}" by ${actorLabel}`,
-              link: `/chat/${groupId}`,
+              message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
+              link: `/invites/groups/${groupId}`,
               type: 'group_invite',
             }).catch((err) =>
-              logger.error('Failed to notify added group member', { err, groupId, memberId })
+              logger.error('Failed to notify invited group member', { err, groupId, memberId })
             );
           }
         }
       }
     } catch (error) {
-      logger.error('Batch add members failed', { groupId, error });
+      logger.error('Batch invite members failed', { groupId, error });
       results.failed = userIds;
     }
 
     // Invalidate caches (batch method already invalidates on success)
-    if (results.added.length === 0 && results.alreadyMembers.length > 0) {
+    if (results.invited.length === 0 && results.alreadyMembers.length > 0) {
       await cacheService.delete(`group:${groupId}`);
       await cacheService.deletePattern(`group:members:${groupId}:*`);
     }
@@ -415,7 +576,7 @@ router.post(
     res.json({
       success: true,
       data: results,
-      message: `${results.added.length} member(s) added successfully`,
+      message: `${results.invited.length} invite(s) sent. Invitees must accept before joining.`,
     });
   })
 );
@@ -444,7 +605,8 @@ router.get(
     const { count } = await supabaseService.getClient()
       .from('group_members')
       .select('user_id', { count: 'exact', head: true })
-      .eq('group_id', group.id);
+      .eq('group_id', group.id)
+      .eq('pending', false);
 
     const { data: membership } = await supabaseService.getClient()
       .from('group_members')
@@ -505,8 +667,8 @@ router.post(
       });
     }
 
-    // Add user to group (addGroupMember handles duplicate check)
-    const updatedGroup = await supabaseService.addGroupMember(group.id, userId);
+    // Invite-link join is user-initiated consent — join as active member immediately.
+    const updatedGroup = await supabaseService.addGroupMember(group.id, userId, { pending: false });
 
     // Invalidate caches
     await cacheService.delete(`group:${group.id}`);

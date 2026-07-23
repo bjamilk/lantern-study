@@ -208,7 +208,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
         for (let attempt = 1; attempt <= 2 && !success; attempt++) {
           try {
             const result = await uploadMarketplaceImage(image.file, listing.id);
-            uploadedUrls.push(result.url);
+            uploadedUrls.push(result.storageUrl || result.path || result.url);
             image.uploaded = true;
             image.url = result.url;
             image.path = result.path;

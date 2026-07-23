@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CommonActions, useNavigation } from '@react-navigation/native';
@@ -15,7 +15,13 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { buildCurrentGameUser } from '../../utils/currentGameUser';
 import { useGameStore } from '../../stores/gameStore';
-import { fetchNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../../services/api';
+import {
+  fetchNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  acceptGroupInvite,
+  declineGroupInvite,
+} from '../../services/api';
 import { useTheme } from '../../theme';
 import type { MainTabParamList, RootStackParamList } from '../../navigation/types';
 import { navigateToChallengesInbox, navigateToGameResult } from '../../navigation/navigationRef';
@@ -131,6 +137,63 @@ export default function NotificationsScreen() {
               params: {
                 screen: 'DirectMessage',
                 params: { userId: parsed.id, threadId: parsed.threadId },
+              },
+            },
+          })
+        );
+        return;
+      }
+      if (parsed.type === 'group_invite' && parsed.id) {
+        Alert.alert(
+          'Group invite',
+          'Accept this invite to join the group chat?',
+          [
+            { text: 'Not now', style: 'cancel' },
+            {
+              text: 'Decline',
+              style: 'destructive',
+              onPress: () => {
+                void declineGroupInvite(parsed.id!).catch(() => {
+                  Alert.alert('Error', 'Could not decline invite');
+                });
+              },
+            },
+            {
+              text: 'Accept',
+              onPress: () => {
+                void acceptGroupInvite(parsed.id!)
+                  .then(() => {
+                    navigation.dispatch(
+                      CommonActions.navigate({
+                        name: 'Main',
+                        params: {
+                          screen: 'ChatTab',
+                          params: {
+                            screen: 'GroupChat',
+                            params: { groupId: parsed.id },
+                          },
+                        },
+                      })
+                    );
+                  })
+                  .catch(() => {
+                    Alert.alert('Error', 'Could not accept invite');
+                  });
+              },
+            },
+          ]
+        );
+        return;
+      }
+      if (parsed.type === 'group' && parsed.id) {
+        navigation.dispatch(
+          CommonActions.navigate({
+            name: 'Main',
+            params: {
+              screen: 'ChatTab',
+              params: {
+                screen: 'GroupChat',
+                params: { groupId: parsed.id },
               },
             },
           })

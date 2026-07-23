@@ -9,6 +9,7 @@ import { resolveQuestionStatusAfterVote, formatActorLabel, mapMessagesFromApi, m
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
+    uploadGroupAvatar, acceptGroupInvite, declineGroupInvite,
     sendMessage, fetchMessages, fetchUserVotesForGroup, voteQuestion,
     removeVote, updateMessage, updateQuestionStatus, createNotification,
     updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
@@ -487,25 +488,36 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; }) => {
         if (!currentUser) return;
 
-        let avatarUrl: string | undefined = undefined;
-        if (details.avatarFile) {
-            avatarUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(details.avatarFile);
-            });
-        }
-
         try {
             const groupData = {
                 name: details.name,
                 description: details.description,
-                avatar_url: avatarUrl,
+                avatar_url: undefined as string | undefined,
                 permissions: details.permissions,
                 invite_id: uuidv4().substring(0, 8),
                 parent_id: undefined
             };
             const newGroup = await createGroup(groupData, currentUser.id, details.memberIds);
+
+            if (details.avatarFile) {
+                try {
+                    const { compressImage } = await import('../utils/imageCompression');
+                    const base64Avatar = await compressImage(details.avatarFile, {
+                        maxWidth: 150,
+                        maxHeight: 150,
+                        quality: 0.7,
+                        outputType: 'base64',
+                    }) as string;
+                    await uploadGroupAvatar(
+                        newGroup.id,
+                        'avatar.webp',
+                        base64Avatar.includes(',') ? base64Avatar.split(',')[1]! : base64Avatar,
+                        'image/webp'
+                    );
+                } catch (avatarError) {
+                    console.warn('Group created but avatar upload failed:', avatarError);
+                }
+            }
             
             // Fetch groups and members for the new group in parallel
             const [fetchedGroups, fetchedMembers] = await Promise.all([
@@ -757,21 +769,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     )
                 }));
 
-                const group = groups.find(g => g.id === selectedChat.id);
-                if (group) {
-                    const otherMembers = group.members.filter(m => m.id !== currentUser.id);
-                    otherMembers.forEach(async (member) => {
-                        try {
-                            await createNotification({
-                                user_id: member.id,
-                                message: `New message in ${group.name} from ${formatActorLabel(currentUser)}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
-                                link: `/chat/${selectedChat.id}`
-                            });
-                        } catch (error) {
-                            console.error('Failed to create message notification:', error);
-                        }
-                    });
-                }
+                // Group message notifications are created server-side after the message is persisted.
             } catch (error) {
                 console.error('Error sending message to server:', error);
                 updateMessages(prev => ({
@@ -973,19 +971,36 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         alert("Group details updated successfully.");
     }, [selectedChat, updateGroups, setSelectedChat]);
 
-    const handleUpdateGroupAvatar = useCallback((groupId: string, avatarUrl: string) => {
-        updateGroups(prevGroups => 
-            prevGroups.map(group => 
-                group.id === groupId ? { ...group, avatarUrl } : group
-            )
-        );
-        if (selectedChat?.id === groupId) {
-            setSelectedChat(prev => {
-                if (prev?.chatType === 'group') {
-                    return { ...prev, avatarUrl };
-                }
-                return prev;
-            });
+    const handleUpdateGroupAvatar = useCallback(async (groupId: string, avatarDataUrl: string) => {
+        try {
+            const base64Data = avatarDataUrl.includes(',')
+                ? avatarDataUrl.split(',')[1]!
+                : avatarDataUrl;
+            const mimeMatch = avatarDataUrl.match(/^data:([^;]+);/);
+            const contentType = mimeMatch?.[1] || 'image/webp';
+            const uploaded = await uploadGroupAvatar(
+                groupId,
+                contentType === 'image/png' ? 'avatar.png' : 'avatar.webp',
+                base64Data,
+                contentType
+            );
+            const avatarUrl = uploaded.avatarUrl;
+            updateGroups(prevGroups =>
+                prevGroups.map(group =>
+                    group.id === groupId ? { ...group, avatarUrl } : group
+                )
+            );
+            if (selectedChat?.id === groupId) {
+                setSelectedChat(prev => {
+                    if (prev?.chatType === 'group') {
+                        return { ...prev, avatarUrl };
+                    }
+                    return prev;
+                });
+            }
+        } catch (error) {
+            console.error('Failed to upload group avatar:', error);
+            throw error;
         }
     }, [selectedChat, updateGroups, setSelectedChat]);
 
@@ -1013,43 +1028,62 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             closeModal('addMembers');
             return;
         }
-        
-        const group = groups.find(g => g.id === groupId);
-        const priorCount = group?.members?.length ?? 0;
 
         try {
             const result = await addGroupMembersBatch(groupId, userIdsToAdd);
+            const invited = result?.invited?.length ? result.invited : (result?.added || []);
+            const alreadyPending = result?.alreadyPending || [];
 
-            if (!result?.added?.length) {
+            if (!invited.length && !alreadyPending.length) {
                 throw new Error(
                     result?.failed?.length
-                        ? 'Failed to add members. Please try again.'
-                        : 'No new members were added (they may already be in the group).'
+                        ? 'Failed to send invites. Please try again.'
+                        : 'No new invites were sent (they may already be in the group).'
                 );
             }
 
-            let mappedMembers = mapApiGroupMembers(
+            // Invites are pending until accepted — refresh active members only (do not force-add).
+            const mappedMembers = mapApiGroupMembers(
                 await fetchGroupMembers(groupId, { bustCache: true })
             );
-
-            if (mappedMembers.length <= priorCount) {
-                const existingIds = new Set(mappedMembers.map(m => m.id));
-                for (const userId of result.added) {
-                    if (existingIds.has(userId)) continue;
-                    const user = users.find(u => u.id === userId);
-                    if (user) {
-                        mappedMembers = [...mappedMembers, user];
-                        existingIds.add(userId);
-                    }
-                }
-            }
-
             applyGroupMembersToState(groupId, mappedMembers);
         } catch (error) {
-            console.error('Error adding members to group:', error);
+            console.error('Error inviting members to group:', error);
             throw error;
         }
-    }, [groups, users, currentUser, applyGroupMembersToState, closeModal]);
+    }, [applyGroupMembersToState, closeModal]);
+
+    const handleAcceptGroupInvite = useCallback(async (groupId: string) => {
+        if (!currentUser) throw new Error('Not signed in');
+        const group = await acceptGroupInvite(groupId);
+        const [fetchedGroups, fetchedMembers] = await Promise.all([
+            fetchGroups(currentUser.id),
+            fetchGroupMembers(groupId, { bustCache: true }),
+        ]);
+        const mappedMembers = mapApiGroupMembers(fetchedMembers);
+        setGroups(fetchedGroups.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            avatarUrl: g.avatar_url || g.avatarUrl,
+            description: g.description,
+            lastMessage: g.last_message || g.lastMessage,
+            lastMessageTime: g.last_message_time || g.lastMessageTime,
+            adminIds: g.admin_ids || g.adminIds || [],
+            permissions: g.permissions || {},
+            parentId: g.parent_id || g.parentId,
+            isArchived: g.is_archived ?? g.isArchived ?? false,
+            inviteId: g.invite_id || g.inviteId,
+            unreadCount: 0,
+            pendingMembers: [],
+            invitedPhoneNumbers: [],
+            members: g.id === groupId ? mappedMembers : (groups.find((x) => x.id === g.id)?.members || []),
+        })));
+        return group;
+    }, [currentUser, groups, setGroups]);
+
+    const handleDeclineGroupInvite = useCallback(async (groupId: string) => {
+        await declineGroupInvite(groupId);
+    }, []);
 
     const handleRevokeInvitation = useCallback((groupId: string, email: string) => {
         if (window.confirm(`Are you sure you want to revoke the invitation for ${email}?`)) {
@@ -1394,6 +1428,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleUpdateGroupDetails,
         handleUpdateGroupAvatar,
         handleInviteMembers,
+        handleAcceptGroupInvite,
+        handleDeclineGroupInvite,
         handleRevokeInvitation,
         handleRevokePhoneInvitation,
         handlePromoteToAdmin,

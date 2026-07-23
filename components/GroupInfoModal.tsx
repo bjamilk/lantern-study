@@ -16,7 +16,7 @@ interface GroupInfoModalProps {
   group: Group;
   currentUser: User; 
   onUpdateDetails: (groupId: string, name: string, description: string) => void;
-  onUpdateGroupAvatar: (groupId: string, avatarUrl: string) => void;
+  onUpdateGroupAvatar: (groupId: string, avatarUrl: string) => void | Promise<void>;
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
   onDeleteGroup: (groupId: string) => void;
@@ -135,14 +135,18 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
           quality: 0.7,
           outputType: 'base64'
         }) as string;
-        onUpdateGroupAvatar(group.id, base64Avatar);
+        await onUpdateGroupAvatar(group.id, base64Avatar);
         setSelectedAvatarFile(null); 
         if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
         setAvatarPreviewUrl(null);
         if (avatarFileRef.current) avatarFileRef.current.value = "";
+        useToastStore.getState().showToast('Group avatar updated.', 'success');
       } catch (error) {
         console.error("Error saving group avatar:", error);
-        useToastStore.getState().showToast("Error saving avatar. Please try again.", 'error');
+        useToastStore.getState().showToast(
+          error instanceof Error ? error.message : 'Error saving avatar. Please try again.',
+          'error'
+        );
       }
     }
   };

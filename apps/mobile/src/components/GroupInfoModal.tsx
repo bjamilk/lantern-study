@@ -13,9 +13,13 @@ import {
   Image,
   Alert,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { Group, GroupMember } from '../stores/groupStore';
+import { uploadGroupAvatar } from '../services/api';
 import { useTheme } from '../theme';
 
 type TabType = 'details' | 'members' | 'danger';
@@ -35,6 +39,7 @@ interface GroupInfoModalProps {
   onChallenge: (member: GroupMember) => void;
   onCreateSubgroup?: () => void;
   onMessageMember?: (member: GroupMember) => void;
+  onAvatarUpdated?: (groupId: string, avatarUrl: string) => void;
 }
 
 export default function GroupInfoModal({
@@ -52,16 +57,62 @@ export default function GroupInfoModal({
   onChallenge,
   onCreateSubgroup,
   onMessageMember,
+  onAvatarUpdated,
 }: GroupInfoModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('details');
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description || '');
   const [hasChanges, setHasChanges] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { colors } = useTheme();
 
   const currentUserMember = group.members.find(m => m.userId === currentUserId);
   const isAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin';
   const isOwner = currentUserMember?.role === 'owner';
+
+  const handleChangeAvatar = async () => {
+    if (!isAdmin || uploadingAvatar) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Allow photo library access to set a group avatar.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploadingAvatar(true);
+    try {
+      const asset = result.assets[0];
+      let base64Data = asset.base64 || null;
+      if (!base64Data && asset.uri) {
+        base64Data = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+      }
+      if (!base64Data) throw new Error('Could not read image');
+      const contentType = asset.mimeType || 'image/jpeg';
+      const uploaded = await uploadGroupAvatar(group.id, {
+        fileName: asset.fileName || 'group-avatar.jpg',
+        base64Data,
+        contentType,
+      });
+      setAvatarPreview(uploaded.url || uploaded.avatarUrl);
+      onAvatarUpdated?.(group.id, uploaded.avatarUrl);
+      Alert.alert('Success', 'Group avatar updated');
+    } catch (error) {
+      Alert.alert(
+        'Upload failed',
+        error instanceof Error ? error.message : 'Could not update group avatar'
+      );
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSaveDetails = () => {
     onUpdateDetails(group.id, name, description);
@@ -160,13 +211,23 @@ export default function GroupInfoModal({
       {/* Group Avatar */}
       <View style={styles.avatarSection}>
         <Image
-          source={{ uri: group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100` }}
+          source={{ uri: avatarPreview || group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100` }}
           style={styles.groupAvatar}
         />
         {isAdmin && (
-          <TouchableOpacity style={styles.changeAvatarButton}>
-            <Ionicons name="camera" size={16} color="#ffffff" />
-            <Text style={styles.changeAvatarText}>Change</Text>
+          <TouchableOpacity
+            style={styles.changeAvatarButton}
+            onPress={() => void handleChangeAvatar()}
+            disabled={uploadingAvatar}
+          >
+            {uploadingAvatar ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="camera" size={16} color="#ffffff" />
+                <Text style={styles.changeAvatarText}>Change</Text>
+              </>
+            )}
           </TouchableOpacity>
         )}
       </View>

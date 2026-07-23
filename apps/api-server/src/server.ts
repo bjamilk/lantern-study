@@ -246,6 +246,12 @@ app.use(
   express.json({ limit: '50mb' })
 );
 
+// Avatar uploads are base64 JSON payloads (~1.3x file size); allow headroom under the 2 MB decoded cap.
+app.use(
+  /^\/api\/v1\/(users|groups)\/[^/]+\/avatar$/,
+  express.json({ limit: '4mb' })
+);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());

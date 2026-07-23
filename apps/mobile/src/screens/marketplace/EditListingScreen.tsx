@@ -87,7 +87,9 @@ export function EditListingScreen({
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
-      quality: 0.8,
+      quality: 0.7,
+      base64: true,
+      exif: false,
       selectionLimit: MAX_IMAGES - images.length,
     });
     if (result.canceled) return;
@@ -95,8 +97,13 @@ export function EditListingScreen({
     try {
       const uploaded: string[] = [];
       for (const asset of result.assets) {
-        const { url } = await uploadMarketplaceImage(asset.uri, asset.mimeType, listingId);
-        uploaded.push(url);
+        const resultUpload = await uploadMarketplaceImage(
+          asset.uri,
+          asset.mimeType || 'image/jpeg',
+          listingId,
+          asset.base64
+        );
+        uploaded.push(resultUpload.storageUrl || resultUpload.path || resultUpload.url);
       }
       setImages(prev => [...prev, ...uploaded].slice(0, MAX_IMAGES));
     } catch (e: unknown) {

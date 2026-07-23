@@ -66,7 +66,10 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [images, setImages] = useState<string[]>([]);
+  /** Local previews before publish; uploaded to storage on submit. */
+  const [pendingImages, setPendingImages] = useState<
+    Array<{ uri: string; mimeType?: string; base64?: string | null }>
+  >([]);
   const [uploading, setUploading] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
@@ -112,7 +115,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         setLocation(draft.location || '');
         setQuantity(draft.quantity || '');
         setCampusId(draft.campusId || '');
-        setImages(Array.isArray(draft.images) ? draft.images : []);
+        // Draft image URIs are best-effort (local paths may expire after process death).
+        setPendingImages(
+          Array.isArray(draft.images)
+            ? draft.images.filter(Boolean).map((uri) => ({ uri }))
+            : []
+        );
         setDraftRestored(true);
       })
       .catch(() => {})
@@ -130,7 +138,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     if (!draftLoaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      const hasContent = title || description || price || images.length > 0;
+      const hasContent = title || description || price || pendingImages.length > 0;
       if (!hasContent) {
         AsyncStorage.removeItem(draftKey).catch(() => {});
         return;
@@ -146,7 +154,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         location,
         quantity,
         campusId,
-        images,
+        images: pendingImages.map((img) => img.uri),
         savedAt: Date.now(),
       };
       AsyncStorage.setItem(draftKey, JSON.stringify(draft)).catch(() => {});
@@ -167,7 +175,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     location,
     quantity,
     campusId,
-    images,
+    pendingImages,
   ]);
 
   const clearDraft = () => AsyncStorage.removeItem(draftKey).catch(() => {});
@@ -183,7 +191,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     setLocation('');
     setQuantity('');
     setCampusId('');
-    setImages([]);
+    setPendingImages([]);
     setDraftRestored(false);
     void clearDraft();
   };
@@ -202,7 +210,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   }, [campuses, campusQuery]);
 
   const pickImages = async () => {
-    if (images.length >= MAX_IMAGES) {
+    if (pendingImages.length >= MAX_IMAGES) {
       Alert.alert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
       return;
     }
@@ -214,23 +222,18 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
-      quality: 0.8,
-      selectionLimit: MAX_IMAGES - images.length,
+      quality: 0.7,
+      base64: true,
+      exif: false,
+      selectionLimit: MAX_IMAGES - pendingImages.length,
     });
     if (result.canceled) return;
-    setUploading(true);
-    try {
-      const uploaded: string[] = [];
-      for (const asset of result.assets) {
-        const { url } = await uploadMarketplaceImage(asset.uri, asset.mimeType);
-        uploaded.push(url);
-      }
-      setImages(prev => [...prev, ...uploaded].slice(0, MAX_IMAGES));
-    } catch (e: unknown) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload images');
-    } finally {
-      setUploading(false);
-    }
+    const next = result.assets.map((asset) => ({
+      uri: asset.uri,
+      mimeType: asset.mimeType || 'image/jpeg',
+      base64: asset.base64,
+    }));
+    setPendingImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
   };
 
   const handleGenerateDescription = async () => {
@@ -284,6 +287,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
             ).toISOString();
       const parsedSalePrice = salePrice.trim() ? parseFloat(salePrice.replace(/,/g, '')) : undefined;
       const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
+      setUploading(true);
       const { listing, queued } = await createListing(
         {
           user_id: user.id,
@@ -297,11 +301,38 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           location: location.trim() || undefined,
           campus_id: campusId,
           quantity: parsedQuantity,
-          images,
+          images: [],
           status: 'active',
         } as Omit<MarketplaceListing, 'id' | 'created_at' | 'updated_at' | 'views_count' | 'favorites_count'>,
         user.id
       );
+
+      let uploadedUrls: string[] = [];
+      let failedUploads = 0;
+      if (!queued && pendingImages.length > 0) {
+        for (const img of pendingImages) {
+          try {
+            const result = await uploadMarketplaceImage(
+              img.uri,
+              img.mimeType,
+              listing.id,
+              img.base64
+            );
+            uploadedUrls.push(result.storageUrl || result.path || result.url);
+          } catch {
+            failedUploads += 1;
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          await useMarketplaceStore.getState().updateListing(
+            listing.id,
+            { images: uploadedUrls },
+            user.id
+          );
+        }
+      }
+
+      setUploading(false);
       await clearDraft();
       if (queued) {
         Alert.alert(
@@ -309,11 +340,24 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           'You appear to be offline. Your listing will publish automatically when you reconnect.'
         );
         navigation.goBack();
+      } else if (failedUploads > 0 && uploadedUrls.length === 0) {
+        Alert.alert(
+          'Listing created, photos failed',
+          'Your textbook listing is live, but photos failed to upload. Edit the listing to add photos.'
+        );
+        navigation.navigate('ListingDetail', { listingId: listing.id });
+      } else if (failedUploads > 0) {
+        Alert.alert(
+          'Listing published',
+          `${failedUploads} photo(s) failed to upload. You can add them from Edit listing.`
+        );
+        navigation.navigate('ListingDetail', { listingId: listing.id });
       } else {
         Alert.alert('Listing published', 'Your listing is now live.');
         navigation.navigate('ListingDetail', { listingId: listing.id });
       }
     } catch (e: unknown) {
+      setUploading(false);
       Alert.alert(
         'Could not publish listing',
         e instanceof Error && e.message ? e.message : 'Failed to create listing. Please try again.'
@@ -347,18 +391,18 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Photos</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-          {images.map((uri, i) => (
-            <View key={`${uri}-${i}`} className="mr-2 relative">
-              <Image source={{ uri }} className="w-20 h-20 rounded-xl" />
+          {pendingImages.map((img, i) => (
+            <View key={`${img.uri}-${i}`} className="mr-2 relative">
+              <Image source={{ uri: img.uri }} className="w-20 h-20 rounded-xl" />
               <Pressable
-                onPress={() => setImages(prev => prev.filter((_, idx) => idx !== i))}
+                onPress={() => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
                 className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5"
               >
                 <Ionicons name="close" size={14} color="#fff" />
               </Pressable>
             </View>
           ))}
-          {images.length < MAX_IMAGES ? (
+          {pendingImages.length < MAX_IMAGES ? (
             <Pressable
               onPress={pickImages}
               className="w-20 h-20 rounded-xl border border-dashed border-lantern-border items-center justify-center"

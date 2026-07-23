@@ -217,10 +217,11 @@ router.post(
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
     const normalizedType = contentType === 'image/jpg' ? 'image/jpeg' : contentType;
-    if (!normalizedType || !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
+    // contentType is optional when bytes are valid — server detects MIME from magic bytes.
+    if (normalizedType && !ALLOWED_IMAGE_TYPES.includes(normalizedType)) {
       return res.status(400).json({
         success: false,
-        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+        error: 'Only JPEG, PNG, GIF, and WebP are allowed.',
       });
     }
     const estimatedBytes = Math.ceil((String(base64Data).length * 3) / 4);
@@ -232,7 +233,7 @@ router.post(
       const result = await supabaseService.uploadMarketplaceImage({
         fileName,
         base64Data,
-        contentType: normalizedType,
+        contentType: normalizedType || 'image/jpeg',
         userId,
         listingId: typeof listingId === 'string' ? listingId : undefined,
       });

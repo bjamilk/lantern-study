@@ -504,15 +504,25 @@ export function GroupChatScreen({ navigation, route }: Props) {
   };
 
   const handleAddMembers = async (userIds: string[]) => {
-    for (const uid of userIds) {
-      try {
-        await api.addGroupMember(groupId, uid);
-      } catch {
-        /* continue */
+    try {
+      const result = await api.addGroupMembersBatch(groupId, userIds);
+      const invited = result?.invited?.length ? result.invited : (result?.added || []);
+      const pending = result?.alreadyPending || [];
+      if (invited.length || pending.length) {
+        Alert.alert(
+          'Invites sent',
+          'People must accept the invite before they appear in this group.'
+        );
+      } else {
+        Alert.alert('No new invites', 'Those users may already be members or already invited.');
       }
+    } catch (error) {
+      Alert.alert(
+        'Invite failed',
+        error instanceof Error ? error.message : 'Could not send invites.'
+      );
     }
     setShowAddMembers(false);
-    if (user?.id) await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
   };
 
   const inviteLink = currentGroup?.id
@@ -826,6 +836,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onChallenge={member => {
             setShowGroupInfo(false);
             setChallengeMember(member);
+          }}
+          onAvatarUpdated={(gid, avatarUrl) => {
+            useGroupStore.setState((state) => ({
+              groups: state.groups.map((g) =>
+                g.id === gid ? { ...g, avatarUrl } : g
+              ),
+              currentGroup:
+                state.currentGroup?.id === gid
+                  ? { ...state.currentGroup, avatarUrl }
+                  : state.currentGroup,
+            }));
           }}
         />
       ) : null}

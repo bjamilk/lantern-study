@@ -257,7 +257,8 @@ export const App: React.FC = () => {
         handleQuestionSubmit, onVoteQuestion, handleUpvoteDuplicateAndClose,
         onFlagAsSimilar, onOpenCreateSubGroupModal,
         handleUpdateGroupDetails, handleUpdateGroupAvatar,
-        handleInviteMembers, handleRevokeInvitation, handleRevokePhoneInvitation,
+        handleInviteMembers, handleAcceptGroupInvite, handleDeclineGroupInvite,
+        handleRevokeInvitation, handleRevokePhoneInvitation,
         handlePromoteToAdmin, handleDemoteAdmin, handleDeleteGroup,
         handleToggleArchiveGroup, handleApproveMember, handleRejectMember,
         onOpenQuestionModal, onOpenGroupInfoModal,
@@ -1412,6 +1413,29 @@ export const App: React.FC = () => {
                         void handleStartChallengePlay(params.challengeId);
                     } else if (screen === 'DirectMessages' && params?.userId) {
                         handleInitiateDm(params.userId);
+                    } else if (screen === 'GroupInvite' && params?.groupId) {
+                        const groupId = params.groupId as string;
+                        if (window.confirm('Accept this group invite and join the chat?')) {
+                            void handleAcceptGroupInvite(groupId)
+                                .then(() => {
+                                    const g = useGroupStore.getState().groups.find((x) => x.id === groupId);
+                                    if (g) handleSelectChat({ ...g, chatType: 'group' });
+                                    setAppMode(AppMode.CHAT);
+                                })
+                                .catch((err) => {
+                                    alert(err instanceof Error ? err.message : 'Failed to accept invite');
+                                });
+                        } else if (window.confirm('Decline this group invite?')) {
+                            void handleDeclineGroupInvite(groupId).catch((err) => {
+                                alert(err instanceof Error ? err.message : 'Failed to decline invite');
+                            });
+                        }
+                    } else if (screen === 'GroupChat' && params?.groupId) {
+                        const g = groups.find((x) => x.id === params.groupId);
+                        if (g) {
+                            handleSelectChat({ ...g, chatType: 'group' });
+                            setAppMode(AppMode.CHAT);
+                        }
                     }
                 }} />
             <ChallengesInboxModal
