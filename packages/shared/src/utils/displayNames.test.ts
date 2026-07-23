@@ -1,4 +1,4 @@
-import { getDashboardFirstName } from './displayNames';
+import { getDashboardFirstName, resolveGroupChatAvatarUrl } from './displayNames';
 
 describe('getDashboardFirstName', () => {
   it('prefers firstName over display name', () => {
@@ -44,5 +44,43 @@ describe('getDashboardFirstName', () => {
         name: 'responsive.audit.1784645242',
       })
     ).toBe('Student');
+  });
+});
+
+describe('resolveGroupChatAvatarUrl', () => {
+  it('prefers the current roster avatar over a stale message snapshot', () => {
+    expect(
+      resolveGroupChatAvatarUrl(
+        { id: 'user-1', avatarUrl: 'https://cdn.example/old-avatar.webp' },
+        [{ id: 'user-1', avatarUrl: 'https://cdn.example/new-avatar.webp' }]
+      )
+    ).toBe('https://cdn.example/new-avatar.webp');
+  });
+
+  it('supports mobile rosters keyed by userId', () => {
+    expect(
+      resolveGroupChatAvatarUrl(
+        { id: 'user-1', avatarUrl: 'https://cdn.example/old-avatar.webp' },
+        [{ id: 'membership-1', userId: 'user-1', avatarUrl: 'https://cdn.example/new-avatar.webp' }]
+      )
+    ).toBe('https://cdn.example/new-avatar.webp');
+  });
+
+  it('does not resurrect a stale message avatar after the roster avatar is removed', () => {
+    expect(
+      resolveGroupChatAvatarUrl(
+        { id: 'user-1', avatarUrl: 'https://cdn.example/old-avatar.webp' },
+        [{ id: 'user-1', avatarUrl: undefined }]
+      )
+    ).toBeUndefined();
+  });
+
+  it('falls back to the message avatar when the roster is unavailable', () => {
+    expect(
+      resolveGroupChatAvatarUrl(
+        { id: 'user-1', avatarUrl: 'https://cdn.example/message-avatar.webp' },
+        []
+      )
+    ).toBe('https://cdn.example/message-avatar.webp');
   });
 });

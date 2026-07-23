@@ -6,6 +6,7 @@ import { useUIStore } from '../stores/uiStore';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { featureAccents } from '@lantern/shared/design';
 import {
+  resolveGroupChatAvatarUrl,
   resolveGroupChatSenderLabel,
   getQuestionVerificationThreshold,
   parseChatAudioUrl,
@@ -32,19 +33,6 @@ function formatSenderLabel(
   members?: Group['members']
 ): string {
   return resolveGroupChatSenderLabel(sender ?? {}, members);
-}
-
-function resolveSenderAvatarUrl(
-  sender: { id?: string; avatarUrl?: string | null } | undefined,
-  members: Group['members'] | undefined,
-  fallbackUrl?: string | null
-): string | null | undefined {
-  if (sender?.avatarUrl) return sender.avatarUrl;
-  if (sender?.id && members?.length) {
-    const member = members.find((m) => m.id === sender.id);
-    if (member?.avatarUrl) return member.avatarUrl;
-  }
-  return fallbackUrl;
 }
 
 interface MessageItemProps {
@@ -310,7 +298,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
           <Avatar
             name={formatSenderLabel(message.sender, group?.members)}
             src={resolveAvatarSrc(
-              resolveSenderAvatarUrl(message.sender, group?.members),
+              resolveGroupChatAvatarUrl(message.sender ?? {}, group?.members),
               lowDataMode
             )}
             size="sm"
@@ -562,7 +550,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
           <Avatar
             name={formatSenderLabel(message.sender, group?.members)}
             src={resolveAvatarSrc(
-              resolveSenderAvatarUrl(message.sender, group?.members, currentUser.avatarUrl),
+              currentUser.avatarUrl,
               lowDataMode
             )}
             size="sm"

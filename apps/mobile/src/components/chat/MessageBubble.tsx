@@ -2,9 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import type { Message } from '../../stores/groupStore';
+import { useGroupStore, type Message } from '../../stores/groupStore';
 import { useTheme } from '../../theme';
-import { normalizeStorageUrl, parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
+import {
+  normalizeStorageUrl,
+  parseChatAudioUrl,
+  resolveGroupChatAvatarUrl,
+  segmentMentions,
+} from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
@@ -229,6 +234,11 @@ export function MessageBubble({
   onOpenThread,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
+  const messageGroup = useGroupStore((state) =>
+    state.currentGroup?.id === message.groupId
+      ? state.currentGroup
+      : state.groups.find((group) => group.id === message.groupId)
+  );
   const [imageFailed, setImageFailed] = useState(false);
   const isQuestion = message.type === 'question';
   const timeLabel = new Date(message.createdAt).toLocaleTimeString([], {
@@ -275,7 +285,14 @@ export function MessageBubble({
         isGroupedWithPrevious ? (
           <View style={{ width: 28 }} />
         ) : (
-          <ResolvedAvatar name={message.senderName} uri={message.senderAvatar} size={28} />
+          <ResolvedAvatar
+            name={message.senderName}
+            uri={resolveGroupChatAvatarUrl(
+              { id: message.senderId, avatarUrl: message.senderAvatar },
+              messageGroup?.members
+            )}
+            size={28}
+          />
         )
       ) : null}
 

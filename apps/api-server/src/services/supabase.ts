@@ -722,6 +722,36 @@ export class SupabaseService {
     return data;
   }
 
+  private async invalidateProfilePresentationCaches(userId: string): Promise<void> {
+    const { data: memberships, error } = await this.supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', userId)
+      .eq('pending', false);
+
+    if (error) {
+      logger.warn('Could not resolve profile group caches; invalidating globally', {
+        userId,
+        error,
+      });
+      await Promise.all([
+        cacheService.deletePattern('group:members:*'),
+        cacheService.deletePattern('messages:group:*'),
+        cacheService.deletePattern('group:*:messages'),
+      ]);
+      return;
+    }
+
+    const groupIds = [
+      ...new Set(
+        (memberships || [])
+          .map((membership: { group_id?: string | null }) => membership.group_id)
+          .filter((groupId): groupId is string => Boolean(groupId))
+      ),
+    ];
+    await Promise.all(groupIds.map((groupId) => cacheService.invalidateGroupCache(groupId)));
+  }
+
   async updateUser(
     userId: string,
     updates: Partial<User> & {
@@ -790,6 +820,14 @@ export class SupabaseService {
 
     // Invalidate cache (exact user key + pattern)
     await cacheService.invalidateUserCache(userId);
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, 'avatar_url') ||
+      Object.prototype.hasOwnProperty.call(updateData, 'name') ||
+      Object.prototype.hasOwnProperty.call(updateData, 'username')
+    ) {
+      // Group member lists and message responses embed profile presentation fields.
+      await this.invalidateProfilePresentationCaches(userId);
+    }
 
     return mapProfileRowToUser(data as Record<string, unknown>);
   }

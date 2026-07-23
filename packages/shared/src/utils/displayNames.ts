@@ -46,6 +46,12 @@ export function getDashboardFirstName(
 
 type ChatMemberRef = { id: string; username?: string | null };
 
+type ChatAvatarMemberRef = {
+  id?: string;
+  userId?: string;
+  avatarUrl?: string | null;
+};
+
 /** Resolve @username for group chat from sender profile and/or loaded group members. */
 export function resolveGroupChatSenderLabel(
   sender: { id?: string; username?: string | null },
@@ -61,6 +67,24 @@ export function resolveGroupChatSenderLabel(
     }
   }
   return '@member';
+}
+
+/**
+ * Resolve a group-message avatar from the live roster before the message
+ * snapshot. Profile avatar uploads use versioned paths, so an older message
+ * can otherwise keep pointing at an avatar object that has been replaced.
+ */
+export function resolveGroupChatAvatarUrl(
+  sender: { id?: string; avatarUrl?: string | null },
+  members?: ChatAvatarMemberRef[] | null
+): string | null | undefined {
+  if (sender.id && members?.length) {
+    const member = members.find(
+      (candidate) => candidate.id === sender.id || candidate.userId === sender.id
+    );
+    if (member) return member.avatarUrl;
+  }
+  return sender.avatarUrl;
 }
 
 /** Short actor label for notifications (prefers @username). */
