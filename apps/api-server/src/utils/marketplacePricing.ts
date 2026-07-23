@@ -30,18 +30,20 @@ export function normalizeMarketplacePricing(input: {
     throw new MarketplacePricingError('Price cannot be negative.');
   }
   if (salePrice !== null && salePrice < 0) {
-    throw new MarketplacePricingError('Sale price cannot be negative.');
+    throw new MarketplacePricingError('Discounted price cannot be negative.');
   }
   // Empty / invalid sale fields → no sale (avoids NaN / "" leaking into Postgres).
   if (salePrice === null) {
     return { price, sale_price: null };
   }
-  // Constraint is strict: sale must be lower than the regular price.
+  // Constraint is strict: discounted price must be lower than asking price.
   if (price === null) {
-    throw new MarketplacePricingError('Set a regular price before adding a sale price.');
+    throw new MarketplacePricingError('Set an asking price before adding a discounted price.');
   }
   if (salePrice >= price) {
-    throw new MarketplacePricingError('Sale price must be lower than the regular price.');
+    throw new MarketplacePricingError(
+      'Discounted price must be lower than the asking price (optional promo markdown, not cost).'
+    );
   }
   return { price, sale_price: salePrice };
 }

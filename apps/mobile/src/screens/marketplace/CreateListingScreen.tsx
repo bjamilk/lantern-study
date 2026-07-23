@@ -294,8 +294,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           parsedSalePrice >= parsedPrice)
       ) {
         Alert.alert(
-          'Invalid sale price',
-          'Sale price must be lower than the regular price, or leave it blank.'
+          'Invalid discounted price',
+          'Discounted price must be lower than the asking price, or leave it blank. This is for a promo — not your cost/profit.'
         );
         return;
       }
@@ -515,15 +515,18 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           <View className="mb-2" />
         )}
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Price (₦)</Text>
+        <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
         <TextInput
           value={price}
           onChangeText={setPrice}
-          placeholder="Leave empty for free"
+          placeholder="What buyers normally pay (empty = free)"
           placeholderTextColor="#94a3b8"
           keyboardType="numeric"
-          className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
+          className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-1"
         />
+        <Text className="text-xs text-lantern-text-secondary mb-4">
+          Your selling price. Leave empty for free items.
+        </Text>
 
         <Text className="text-sm font-semibold text-lantern-text mb-2">Quantity in stock (optional)</Text>
         <TextInput
@@ -535,11 +538,14 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
         />
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Promotion (optional)</Text>
+        <Text className="text-sm font-semibold text-lantern-text mb-1">Promotion (optional)</Text>
+        <Text className="text-xs text-lantern-text-secondary mb-2">
+          Discounted price is a temporary markdown for a sale badge — not your cost or profit.
+        </Text>
         <TextInput
           value={salePrice}
           onChangeText={setSalePrice}
-          placeholder="Sale price (₦)"
+          placeholder="Discounted price (₦) — must be lower than asking"
           placeholderTextColor="#94a3b8"
           keyboardType="numeric"
           className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-2"

@@ -228,10 +228,12 @@ export function EditListingScreen({
             <View className="mb-4" />
           )}
 
-          <Text className="text-sm font-semibold text-lantern-text mb-2">Price (₦)</Text>
+          <Text className="text-sm font-semibold text-lantern-text mb-2">Asking price (₦)</Text>
           <TextInput
             value={price}
             onChangeText={setPrice}
+            placeholder="What buyers normally pay"
+            placeholderTextColor="#94a3b8"
             keyboardType="numeric"
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
           />
@@ -246,11 +248,14 @@ export function EditListingScreen({
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-4"
           />
 
-          <Text className="text-sm font-semibold text-lantern-text mb-2">Promotion (optional)</Text>
+          <Text className="text-sm font-semibold text-lantern-text mb-1">Promotion (optional)</Text>
+          <Text className="text-xs text-lantern-text-secondary mb-2">
+            Discounted price is a temporary markdown for a sale badge — not your cost or profit.
+          </Text>
           <TextInput
             value={salePrice}
             onChangeText={setSalePrice}
-            placeholder="Sale price (₦)"
+            placeholder="Discounted price (₦) — must be lower than asking"
             placeholderTextColor="#94a3b8"
             keyboardType="numeric"
             className="p-3 rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text mb-2"

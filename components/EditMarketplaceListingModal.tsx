@@ -412,7 +412,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-2" />
-                Price (₦)
+                Asking price (₦)
               </label>
               <input
                 type="number"
@@ -423,6 +423,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
                 step="0.01"
                 className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text"
               />
+              <p className="text-xs text-lantern-text-secondary mt-1">What buyers normally pay</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
@@ -467,20 +468,23 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
-                Sale price (₦)
+                Discounted price (₦, optional)
               </label>
               <input
                 type="number"
                 value={formData.salePrice}
                 onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
-                placeholder="Promo price"
+                placeholder="Only if on promo"
                 min="0"
                 className="w-full px-4 py-3 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary"
               />
+              <p className="text-xs text-lantern-text-secondary mt-1">
+                Optional markdown for a sale badge. Must be lower than asking price — not your cost.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
-                Sale ends
+                Promo ends
               </label>
               <input
                 type="datetime-local"

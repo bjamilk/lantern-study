@@ -1171,7 +1171,9 @@ export const App: React.FC = () => {
                     onOpenExpenseSplit={() => openModal('expenseSplit')}
                     onOpenFinancialToolkit={() => openModal('financialToolkit')} />;
             case AppMode.MARKETPLACE:
-                return <MarketplaceScreen onNavigate={(screen, params) => {
+                return <MarketplaceScreen
+                    refreshKey={myListingsRefreshKey}
+                    onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
                         openModal('createMarketplaceListing');
@@ -1276,7 +1278,9 @@ export const App: React.FC = () => {
                     }} />;
             case AppMode.CREATE_MARKETPLACE_LISTING:
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
-                return <MarketplaceScreen onNavigate={(screen, params) => {
+                return <MarketplaceScreen
+                    refreshKey={myListingsRefreshKey}
+                    onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
                         openModal('createMarketplaceListing');
@@ -1467,12 +1471,19 @@ export const App: React.FC = () => {
                 duplicateInfo={duplicateInfo} onUpvoteAndClose={handleUpvoteDuplicateAndClose} />}
             <CreateMarketplaceListingModal isOpen={modals.createMarketplaceListing}
                 onClose={() => closeModal('createMarketplaceListing')} category={marketplaceListingCategory}
-                onSuccess={() => closeModal('createMarketplaceListing')} />
+                onSuccess={() => {
+                    closeModal('createMarketplaceListing');
+                    setMyListingsRefreshKey((k) => k + 1);
+                }} />
             {editingMarketplaceListing && <EditMarketplaceListingModal
                 isOpen={modals.editMarketplaceListing}
                 onClose={() => { closeModal('editMarketplaceListing'); setEditingMarketplaceListing(null); }}
                 listing={editingMarketplaceListing}
-                onSuccess={() => { closeModal('editMarketplaceListing'); setEditingMarketplaceListing(null); }} />}
+                onSuccess={() => {
+                    closeModal('editMarketplaceListing');
+                    setEditingMarketplaceListing(null);
+                    setMyListingsRefreshKey((k) => k + 1);
+                }} />}
             <AIGenerateQuestionsModal isOpen={modals.aiGenerateQuestions}
                 onClose={() => {
                     setAiError(null);

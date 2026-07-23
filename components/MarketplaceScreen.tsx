@@ -40,12 +40,15 @@ interface MarketplaceScreenProps {
   onNavigate: (screen: string, params?: any) => void;
   guestMode?: boolean;
   onSignInRequired?: () => void;
+  /** Bump after create/edit so the browse grid reloads without a manual refresh. */
+  refreshKey?: number;
 }
 
 const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   onNavigate,
   guestMode = false,
   onSignInRequired,
+  refreshKey = 0,
 }) => {
   const { currentUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'academic' | 'student-life'>('academic');
@@ -138,7 +141,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
     if (!guestMode) {
       loadFavorites();
     }
-  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, guestMode]);
+  }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, guestMode, refreshKey]);
 
   useEffect(() => {
     if (!guestMode) {

@@ -416,7 +416,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         if (parsedPrice == null || parsedSalePrice >= parsedPrice) {
           useToastStore
             .getState()
-            .showToast('Sale price must be lower than the regular price');
+            .showToast('Discounted price must be lower than the asking price, or leave it blank');
           setLoading(false);
           return;
         }
@@ -835,7 +835,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             <div>
               <label htmlFor="listing-price" className="block text-sm font-semibold text-lantern-text mb-2">
                 <CurrencyDollarIcon className="w-4 h-4 inline mr-1" />
-                Price (₦)
+                Asking price (₦)
               </label>
               <input
                 id="listing-price"
@@ -847,7 +847,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 min="0"
                 className="w-full px-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text placeholder:text-lantern-text-tertiary"
               />
-              <p className="text-xs text-lantern-text-secondary mt-1">Leave empty for free items</p>
+              <p className="text-xs text-lantern-text-secondary mt-1">
+                What buyers normally pay. Leave empty for free items.
+              </p>
             </div>
 
             <div>
@@ -907,17 +909,25 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="listing-sale-price" className="block text-sm font-semibold text-lantern-text mb-2">Sale price (₦)</label>
+              <label htmlFor="listing-sale-price" className="block text-sm font-semibold text-lantern-text mb-2">
+                Discounted price (₦, optional)
+              </label>
               <input
                 id="listing-sale-price"
                 type="number"
                 value={formData.salePrice}
                 onChange={(e) => setFormData(prev => ({ ...prev, salePrice: e.target.value }))}
+                placeholder="Only if on promo"
+                min="0"
+                step="0.01"
                 className="w-full px-4 py-3 border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary"
               />
+              <p className="text-xs text-lantern-text-secondary mt-1">
+                Optional markdown for a sale badge. Must be lower than asking price — not your cost/profit.
+              </p>
             </div>
             <div>
-              <label htmlFor="listing-sale-ends" className="block text-sm font-semibold text-lantern-text mb-2">Sale ends</label>
+              <label htmlFor="listing-sale-ends" className="block text-sm font-semibold text-lantern-text mb-2">Promo ends</label>
               <input
                 id="listing-sale-ends"
                 type="datetime-local"

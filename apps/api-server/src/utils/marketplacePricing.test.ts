@@ -30,7 +30,7 @@ describe('normalizeMarketplacePricing', () => {
 
   it('rejects sale price above price', () => {
     expect(() => normalizeMarketplacePricing({ price: 1000, sale_price: 1200 })).toThrow(
-      /lower than the regular price/i
+      /lower than the asking price/i
     );
   });
 });
