@@ -273,7 +273,7 @@ export const App: React.FC = () => {
         handleUpdateGroupDetails, handleUpdateGroupAvatar,
         handleInviteMembers, handleAcceptGroupInvite, handleDeclineGroupInvite,
         handleRevokeInvitation, handleRevokePhoneInvitation,
-        handlePromoteToAdmin, handleDemoteAdmin, handleDeleteGroup,
+        handlePromoteToAdmin, handleDemoteAdmin, handleRemoveGroupMember, handleDeleteGroup,
         handleToggleArchiveGroup, handleApproveMember, handleRejectMember,
         onOpenQuestionModal, onOpenGroupInfoModal,
         onOpenTestConfigModal, onOpenStudyConfigModal,
@@ -1431,6 +1431,7 @@ export const App: React.FC = () => {
                 group={selectedChat} currentUser={currentUser}
                 onUpdateDetails={handleUpdateGroupDetails} onUpdateGroupAvatar={handleUpdateGroupAvatar}
                 onPromoteToAdmin={handlePromoteToAdmin} onDemoteAdmin={handleDemoteAdmin}
+                onRemoveMember={handleRemoveGroupMember}
                 onDeleteGroup={handleDeleteGroup} onToggleArchiveGroup={handleToggleArchiveGroup}
                 onChallengeUser={handleChallengeUser} onApproveMember={handleApproveMember}
                 onRejectMember={handleRejectMember} onOpenAddMembersModal={() => openModal('addMembers')}

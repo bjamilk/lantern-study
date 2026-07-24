@@ -3845,6 +3845,14 @@ export class SupabaseService {
   ): Promise<Message> {
     let asMessageRequest = false;
 
+    const { usersAreBlocked, resolveDirectMessageAccess } = await import(
+      '../utils/userSettingsPolicy'
+    );
+    // Blocks always apply — even marketplace / bypassPrivacy paths.
+    if (await usersAreBlocked(this.supabase, senderId, recipientId)) {
+      throw new Error('You cannot message this user');
+    }
+
     if (!options?.bypassPrivacy) {
       const { data: recipientProfile, error: recipientError } = await this.supabase
         .from('profiles')
@@ -3856,7 +3864,6 @@ export class SupabaseService {
         throw new Error('Recipient not found');
       }
 
-      const { resolveDirectMessageAccess } = await import('../utils/userSettingsPolicy');
       const access = await resolveDirectMessageAccess(
         this.supabase,
         senderId,
@@ -4071,6 +4078,55 @@ export class SupabaseService {
     }
   }
 
+  async blockUser(blockerId: string, blockedId: string): Promise<void> {
+    if (!blockerId || !blockedId || blockerId === blockedId) {
+      throw new Error('Invalid block request');
+    }
+    const { error } = await this.supabase.from('user_blocks').upsert(
+      { blocker_id: blockerId, blocked_id: blockedId },
+      { onConflict: 'blocker_id,blocked_id' }
+    );
+    if (error) throw error;
+  }
+
+  async unblockUser(blockerId: string, blockedId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('user_blocks')
+      .delete()
+      .eq('blocker_id', blockerId)
+      .eq('blocked_id', blockedId);
+    if (error) throw error;
+  }
+
+  async listBlockedUserIds(blockerId: string): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from('user_blocks')
+      .select('blocked_id')
+      .eq('blocker_id', blockerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || [])
+      .map((row: { blocked_id?: string }) => row.blocked_id)
+      .filter((id: string | undefined): id is string => typeof id === 'string');
+  }
+
+  async isDmBlockedBetween(userIdA: string, userIdB: string): Promise<boolean> {
+    const { usersAreBlocked } = await import('../utils/userSettingsPolicy');
+    return usersAreBlocked(this.supabase, userIdA, userIdB);
+  }
+
+  async didUserBlock(blockerId: string, blockedId: string): Promise<boolean> {
+    if (!blockerId || !blockedId || blockerId === blockedId) return false;
+    const { data, error } = await this.supabase
+      .from('user_blocks')
+      .select('blocker_id')
+      .eq('blocker_id', blockerId)
+      .eq('blocked_id', blockedId)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    return !!data?.blocker_id;
+  }
+
   async acceptDmMessageRequest(threadId: string, userId: string): Promise<{
     id: string;
     status: 'open';
@@ -4094,6 +4150,11 @@ export class SupabaseService {
     }
     if (thread.requested_by === userId) {
       throw new Error('Only the recipient can accept this message request');
+    }
+
+    const otherId = pids.find((id: string) => id !== userId);
+    if (otherId && (await this.isDmBlockedBetween(userId, otherId))) {
+      throw new Error('You cannot message this user');
     }
 
     const { error: updateError } = await this.supabase

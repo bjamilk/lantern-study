@@ -27,8 +27,11 @@ import {
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
     editGroupMessage, removeGroupMessage, editDirectMessage, removeDirectMessage,
+    removeGroupMember,
     type ChatMessageMutationPayload,
 } from '../services/supabase';
+import { confirmDialog } from '../stores/confirmStore';
+import { useToastStore } from '../stores/toastStore';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
 
@@ -1637,6 +1640,62 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, users, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
+    const handleRemoveGroupMember = useCallback(async (groupId: string, userId: string) => {
+        if (!currentUser || userId === currentUser.id) return;
+        const group = groups.find((g) => g.id === groupId) ||
+          (selectedChat?.chatType === 'group' && selectedChat.id === groupId ? selectedChat : null);
+        if (!group) return;
+
+        const member =
+          (group.members || []).find((m) => m.id === userId) ||
+          users.find((u) => u.id === userId);
+        const memberName = member?.name || 'this member';
+
+        if (
+          Array.isArray(group.adminIds) &&
+          group.adminIds.includes(userId) &&
+          group.adminIds.length <= 1
+        ) {
+          useToastStore.getState().showToast('Cannot remove the only admin of the group.', 'error');
+          return;
+        }
+
+        const confirmed = await confirmDialog({
+          title: 'Remove member',
+          message: `Remove ${memberName} from "${group.name}"?`,
+          confirmLabel: 'Remove',
+          danger: true,
+        });
+        if (!confirmed) return;
+
+        try {
+          await removeGroupMember(groupId, userId);
+          const nextMembers = (group.members || []).filter((m) => m.id !== userId);
+          const nextAdminIds = (group.adminIds || []).filter((id) => id !== userId);
+          updateGroups((prev) =>
+            prev.map((g) =>
+              g.id === groupId ? { ...g, members: nextMembers, adminIds: nextAdminIds } : g
+            )
+          );
+          if (selectedChat?.chatType === 'group' && selectedChat.id === groupId) {
+            setSelectedChat((prev) =>
+              prev?.chatType === 'group'
+                ? { ...prev, members: nextMembers, adminIds: nextAdminIds }
+                : prev
+            );
+          }
+          useToastStore.getState().showToast(`${memberName} was removed from the group.`, 'success');
+        } catch (error) {
+          console.error('Failed to remove group member:', error);
+          useToastStore
+            .getState()
+            .showToast(
+              error instanceof Error ? error.message : 'Failed to remove member.',
+              'error'
+            );
+        }
+    }, [currentUser, groups, users, selectedChat, updateGroups, setSelectedChat]);
+
     const getAllSubgroupIDs = useCallback((parentId: string, allGroups: Group[]): string[] => {
         const subgroupIDs: string[] = [];
         const directSubgroups = allGroups.filter(g => g.parentId === parentId);
@@ -1911,6 +1970,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleRevokePhoneInvitation,
         handlePromoteToAdmin,
         handleDemoteAdmin,
+        handleRemoveGroupMember,
         getAllSubgroupIDs,
         handleDeleteGroup,
         handleToggleArchiveGroup,

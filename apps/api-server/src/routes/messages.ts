@@ -961,14 +961,17 @@ router.post(
       const blocked =
         error.message?.includes('does not accept direct messages') ||
         error.message?.includes('only accepts direct messages') ||
-        error.message?.includes('message request was declined');
+        error.message?.includes('message request was declined') ||
+        error.message?.includes('You cannot message this user');
       logger.error('Error sending direct message:', { error: error.message, senderId, recipientId });
       res.status(blocked ? 403 : 500).json({
         success: false,
         error: blocked
           ? error.message?.includes('declined')
             ? 'This message request was declined'
-            : 'This user does not accept direct messages from you'
+            : error.message?.includes('cannot message')
+              ? 'You cannot message this user'
+              : 'This user does not accept direct messages from you'
           : clientErrorMessage(error, 'Failed to send direct message'),
       });
     }

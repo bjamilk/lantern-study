@@ -173,9 +173,39 @@ export async function usersHaveExistingDmThread(
   return state?.status === 'open';
 }
 
+/** True when either user has blocked the other (full mutual DM block). */
+export async function usersAreBlocked(
+  supabase: { from: (table: string) => any },
+  userIdA: string,
+  userIdB: string
+): Promise<boolean> {
+  if (!userIdA || !userIdB || userIdA === userIdB) return false;
+
+  const forward = supabase
+    .from('user_blocks')
+    .select('blocker_id')
+    .eq('blocker_id', userIdA)
+    .eq('blocked_id', userIdB)
+    .maybeSingle();
+  const reverse = supabase
+    .from('user_blocks')
+    .select('blocker_id')
+    .eq('blocker_id', userIdB)
+    .eq('blocked_id', userIdA)
+    .maybeSingle();
+
+  const [a, b] = await Promise.all([forward, reverse]);
+  if (a.error || b.error) {
+    // Prefer availability over hard-failing every DM on a transient query error.
+    return false;
+  }
+  return !!(a.data?.blocker_id || b.data?.blocker_id);
+}
+
 /**
  * Resolve whether a DM may be sent as a normal message, as a message request,
- * or must be denied. Marketplace / admin paths use bypassPrivacy instead.
+ * or must be denied. Marketplace / admin paths use bypassPrivacy instead —
+ * except blocks, which always deny.
  */
 export async function resolveDirectMessageAccess(
   supabase: { from: (table: string) => any },
@@ -185,6 +215,10 @@ export async function resolveDirectMessageAccess(
 ): Promise<DirectMessageAccess> {
   if (senderId === recipientId) {
     return { mode: 'deny', reason: 'Cannot message yourself' };
+  }
+
+  if (await usersAreBlocked(supabase, senderId, recipientId)) {
+    return { mode: 'deny', reason: 'You cannot message this user' };
   }
 
   const thread = await getDmThreadAccessState(supabase, senderId, recipientId);

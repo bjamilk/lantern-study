@@ -67,12 +67,26 @@ describe('resolveDirectMessageAccess', () => {
     return chain;
   }
 
+  /** user_blocks is queried twice (forward + reverse). */
+  function mockBlockLookup(blocked: boolean) {
+    const chain: Record<string, jest.Mock> = {};
+    chain.select = jest.fn().mockReturnValue(chain);
+    chain.eq = jest.fn().mockReturnValue(chain);
+    chain.maybeSingle = jest.fn().mockResolvedValue(
+      blocked
+        ? { data: { blocker_id: 'blocker' }, error: null }
+        : { data: null, error: null }
+    );
+    return chain;
+  }
+
   beforeEach(() => {
     supabase.from.mockReset();
   });
 
   it('denies when recipient policy is none and no open thread exists', async () => {
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
       throw new Error(`unexpected table ${table}`);
     });
@@ -91,6 +105,7 @@ describe('resolveDirectMessageAccess', () => {
 
   it('allows everyone policy without group lookup', async () => {
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
       throw new Error(`unexpected table ${table}`);
     });
@@ -106,6 +121,7 @@ describe('resolveDirectMessageAccess', () => {
 
   it('allows open marketplace / established threads despite groups-only policy', async () => {
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') {
         return mockThreadState({ status: 'open', requested_by: null });
       }
@@ -125,6 +141,7 @@ describe('resolveDirectMessageAccess', () => {
   it('creates a message request for cold DMs under groups policy', async () => {
     let groupMembersCalls = 0;
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
 
       groupMembersCalls += 1;
@@ -154,6 +171,7 @@ describe('resolveDirectMessageAccess', () => {
     const sharedGroupId = 'group-abc';
     let groupMembersCalls = 0;
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
 
       groupMembersCalls += 1;
@@ -182,6 +200,7 @@ describe('resolveDirectMessageAccess', () => {
   it('lets the requester keep messaging a pending request one-way', async () => {
     const sellerId = 'requester';
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') {
         return mockThreadState({ status: 'pending', requested_by: sellerId });
       }
@@ -199,6 +218,7 @@ describe('resolveDirectMessageAccess', () => {
 
   it('treats recipient reply on a pending request as allow (opens two-way)', async () => {
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') {
         return mockThreadState({ status: 'pending', requested_by: 'requester' });
       }
@@ -214,9 +234,74 @@ describe('resolveDirectMessageAccess', () => {
     expect(result).toEqual({ mode: 'allow' });
   });
 
+  it('denies cold DMs when either user has blocked the other', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(true);
+      if (table === 'dm_threads') return mockThreadState(null);
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'sender',
+      'recipient',
+      parseUserSettings({ privacy: { allowDirectMessages: 'everyone' } })
+    );
+    expect(result).toEqual({
+      mode: 'deny',
+      reason: 'You cannot message this user',
+    });
+    expect(supabase.from).not.toHaveBeenCalledWith('dm_threads');
+  });
+
+  it('denies open-thread continuation when users are blocked', async () => {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(true);
+      if (table === 'dm_threads') {
+        return mockThreadState({ status: 'open', requested_by: null });
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'seller-id',
+      'buyer-id',
+      parseUserSettings({ privacy: { allowDirectMessages: 'groups' } })
+    );
+    expect(result).toEqual({
+      mode: 'deny',
+      reason: 'You cannot message this user',
+    });
+  });
+
+  it('denies blocked pairs before marketplace-style open-thread allow', async () => {
+    // Same fixture as open marketplace threads, but block wins first.
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(true);
+      if (table === 'dm_threads') {
+        return mockThreadState({ status: 'open', requested_by: null });
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+
+    const result = await resolveDirectMessageAccess(
+      supabase as any,
+      'buyer-id',
+      'seller-id',
+      parseUserSettings({ privacy: { allowDirectMessages: 'everyone' } })
+    );
+    expect(result).toEqual({
+      mode: 'deny',
+      reason: 'You cannot message this user',
+    });
+    expect(supabase.from).not.toHaveBeenCalledWith('dm_threads');
+  });
+
   it('compat wrapper reports asRequest for cold groups DMs', async () => {
     let groupMembersCalls = 0;
     supabase.from.mockImplementation((table: string) => {
+      if (table === 'user_blocks') return mockBlockLookup(false);
       if (table === 'dm_threads') return mockThreadState(null);
       groupMembersCalls += 1;
       const isSenderLookup = groupMembersCalls === 1;

@@ -33,6 +33,7 @@ import {
   UserCircleIcon,
   ShoppingBagIcon,
   CurrencyDollarIcon,
+  NoSymbolIcon,
 } from '@heroicons/react/24/outline';
 import {
   getInquiryByThread,
@@ -48,6 +49,9 @@ import {
   fetchDmThread,
   acceptDmMessageRequest,
   declineDmMessageRequest,
+  getDmBlockStatus,
+  blockUser,
+  unblockUser,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -889,10 +893,42 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     dmThread?.status || 'open'
   );
   const [dmRequestBusy, setDmRequestBusy] = useState(false);
+  const [dmBlocked, setDmBlocked] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [dmBlockBusy, setDmBlockBusy] = useState(false);
+
+  const dmPeerId = !isGroup
+    ? (Array.isArray((chat as DMThread)?.participantIds)
+        ? (chat as DMThread).participantIds.find((id) => id !== currentUser.id)
+        : undefined)
+    : undefined;
 
   useEffect(() => {
     setDmRequestStatus(dmThread?.status || 'open');
   }, [dmThread?.id, dmThread?.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!dmPeerId || isGroup) {
+      setDmBlocked(false);
+      setIBlockedThem(false);
+      return;
+    }
+    void getDmBlockStatus(currentUser.id, dmPeerId)
+      .then((status) => {
+        if (cancelled) return;
+        setDmBlocked(!!status.blocked);
+        setIBlockedThem(!!status.iBlockedThem);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDmBlocked(false);
+        setIBlockedThem(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
 
   const description = isGroup
     ? group.description || memberCountText
@@ -947,6 +983,38 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       useToastStore.getState().showToast(err?.message || 'Could not decline request', 'error');
     } finally {
       setDmRequestBusy(false);
+    }
+  };
+
+  const handleToggleDmBlock = async () => {
+    if (!dmPeerId || dmBlockBusy) return;
+    if (!iBlockedThem) {
+      const ok = await confirmDialog({
+        title: 'Block user',
+        message: `Block ${name}? They won’t be able to message you, and you won’t be able to message them until you unblock.`,
+        confirmLabel: 'Block',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setDmBlockBusy(true);
+    try {
+      if (iBlockedThem) {
+        await unblockUser(currentUser.id, dmPeerId);
+        setIBlockedThem(false);
+        const status = await getDmBlockStatus(currentUser.id, dmPeerId);
+        setDmBlocked(!!status.blocked);
+        useToastStore.getState().showToast('User unblocked', 'success');
+      } else {
+        await blockUser(currentUser.id, dmPeerId);
+        setIBlockedThem(true);
+        setDmBlocked(true);
+        useToastStore.getState().showToast('User blocked', 'success');
+      }
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not update block', 'error');
+    } finally {
+      setDmBlockBusy(false);
     }
   };
 
@@ -1107,6 +1175,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           >
             Unarchive
           </button>
+        </div>
+      ) : dmBlocked ? (
+        <div className="flex flex-col items-center justify-center gap-2 p-4 pb-20 md:pb-4 bg-lantern-background-secondary border-t border-lantern-border flex-shrink-0">
+          <p className="text-sm text-lantern-text-secondary text-center">
+            {iBlockedThem
+              ? 'You blocked this user. Messaging is disabled until you unblock them.'
+              : 'You can’t message this user.'}
+          </p>
+          {iBlockedThem && (
+            <button
+              type="button"
+              disabled={dmBlockBusy}
+              onClick={() => void handleToggleDmBlock()}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-lantern-border text-lantern-text hover:bg-lantern-surface disabled:opacity-60"
+            >
+              Unblock
+            </button>
+          )}
         </div>
       ) : isDmRequestDeclinedForRecipient ? (
         <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-lantern-background-secondary border-t border-lantern-border flex-shrink-0">
@@ -1481,6 +1567,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       className="text-amber-600 dark:text-amber-400"
                     >
                       Archive Conversation
+                    </MenuItem>
+                  )}
+                  {dmPeerId && (
+                    <MenuItem
+                      onSelect={() => {
+                        setIsDropdownOpen(false);
+                        void handleToggleDmBlock();
+                      }}
+                      icon={<NoSymbolIcon className="w-4 h-4" />}
+                      className="text-red-600 dark:text-red-400"
+                    >
+                      {iBlockedThem ? 'Unblock User' : 'Block User'}
                     </MenuItem>
                   )}
                   <MenuSeparator />

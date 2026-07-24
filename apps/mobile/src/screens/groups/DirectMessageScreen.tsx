@@ -29,7 +29,10 @@ import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
 import {
   acceptDmMessageRequest,
   declineDmMessageRequest,
+  blockUser,
   fetchInquiryByThread,
+  getDmBlockStatus,
+  unblockUser,
 } from '../../services/api';
 import { useTheme } from '../../theme';
 
@@ -134,6 +137,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [dmRequestBusy, setDmRequestBusy] = useState(false);
+  const [dmBlocked, setDmBlocked] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [dmBlockBusy, setDmBlockBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -176,6 +182,69 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     [applyPeerChatRead, threadId]
   );
   useChatReadReceipts(threadId, user?.id, onPeerRead);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id || !recipientId) {
+      setDmBlocked(false);
+      setIBlockedThem(false);
+      return;
+    }
+    void getDmBlockStatus(user.id, recipientId)
+      .then((status) => {
+        if (cancelled) return;
+        setDmBlocked(!!status.blocked);
+        setIBlockedThem(!!status.iBlockedThem);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDmBlocked(false);
+        setIBlockedThem(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, recipientId, threadId]);
+
+  const handleToggleDmBlock = useCallback(() => {
+    if (!user?.id || !recipientId || dmBlockBusy) return;
+    const run = async () => {
+      setDmBlockBusy(true);
+      try {
+        if (iBlockedThem) {
+          await unblockUser(user.id, recipientId);
+          setIBlockedThem(false);
+          const status = await getDmBlockStatus(user.id, recipientId);
+          setDmBlocked(!!status.blocked);
+        } else {
+          await blockUser(user.id, recipientId);
+          setIBlockedThem(true);
+          setDmBlocked(true);
+        }
+      } catch (err) {
+        Alert.alert(
+          iBlockedThem ? 'Could not unblock' : 'Could not block',
+          err instanceof Error ? err.message : 'Please try again.'
+        );
+      } finally {
+        setDmBlockBusy(false);
+      }
+    };
+
+    if (iBlockedThem) {
+      void run();
+      return;
+    }
+
+    Alert.alert(
+      'Block user',
+      `Block ${displayName}? They won’t be able to message you, and you won’t be able to message them until you unblock.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Block', style: 'destructive', onPress: () => void run() },
+      ]
+    );
+  }, [user?.id, recipientId, dmBlockBusy, iBlockedThem, displayName]);
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
@@ -435,6 +504,18 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={1}>
           {displayName}
         </Text>
+        <Pressable
+          onPress={handleToggleDmBlock}
+          disabled={dmBlockBusy}
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+          accessibilityLabel={iBlockedThem ? 'Unblock user' : 'Block user'}
+        >
+          <Ionicons
+            name={iBlockedThem ? 'checkmark-circle-outline' : 'ban-outline'}
+            size={22}
+            color={iBlockedThem ? '#16a34a' : '#dc2626'}
+          />
+        </Pressable>
       </View>
 
       {inquiry?.listing ? (
@@ -634,9 +715,32 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             reply.
           </Text>
         ) : null}
-        {thread?.status === 'declined' &&
-        thread.requestedBy &&
-        thread.requestedBy !== user?.id ? (
+        {dmBlocked ? (
+          <View
+            className="px-4 py-3 border-t items-center gap-2"
+            style={{ borderTopColor: colors.border, backgroundColor: colors.surface }}
+          >
+            <Text className="text-sm text-center" style={{ color: colors.textSecondary }}>
+              {iBlockedThem
+                ? 'You blocked this user. Messaging is disabled until you unblock them.'
+                : 'You can’t message this user.'}
+            </Text>
+            {iBlockedThem ? (
+              <Pressable
+                disabled={dmBlockBusy}
+                onPress={handleToggleDmBlock}
+                className="px-3 py-2 rounded-lg border"
+                style={{ borderColor: colors.border, opacity: dmBlockBusy ? 0.6 : 1 }}
+              >
+                <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                  Unblock
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : thread?.status === 'declined' &&
+          thread.requestedBy &&
+          thread.requestedBy !== user?.id ? (
           <Text
             className="px-4 py-3 text-sm border-t"
             style={{ color: colors.textSecondary, borderTopColor: colors.border }}

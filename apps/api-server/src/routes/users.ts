@@ -1304,4 +1304,104 @@ router.post(
   })
 );
 
+// GET /api/v1/users/:userId/blocks - List users blocked by the caller
+router.get(
+  '/:userId/blocks',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const authUserId = requireAuthUserId(req, res);
+    if (!authUserId) return;
+    const { userId } = req.params;
+    if (authUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    const blockedUserIds = await supabaseService.listBlockedUserIds(userId);
+    res.json({ success: true, data: { blockedUserIds } });
+  })
+);
+
+// GET /api/v1/users/:userId/blocks/status/:otherUserId - Whether a DM pair is blocked either way
+router.get(
+  '/:userId/blocks/status/:otherUserId',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const authUserId = requireAuthUserId(req, res);
+    if (!authUserId) return;
+    const { userId, otherUserId } = req.params;
+    if (authUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    if (!otherUserId) {
+      return res.status(400).json({ success: false, error: 'otherUserId is required' });
+    }
+    const [blocked, iBlockedThem] = await Promise.all([
+      supabaseService.isDmBlockedBetween(userId, otherUserId),
+      supabaseService.didUserBlock(userId, otherUserId),
+    ]);
+    res.json({
+      success: true,
+      data: { blocked, iBlockedThem },
+    });
+  })
+);
+
+// POST /api/v1/users/:userId/blocks - Block a user for DMs
+router.post(
+  '/:userId/blocks',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const authUserId = requireAuthUserId(req, res);
+    if (!authUserId) return;
+    const { userId } = req.params;
+    if (authUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    const blockedUserId =
+      typeof req.body?.blockedUserId === 'string' ? req.body.blockedUserId.trim() : '';
+    if (!blockedUserId) {
+      return res.status(400).json({ success: false, error: 'blockedUserId is required' });
+    }
+    if (blockedUserId === userId) {
+      return res.status(400).json({ success: false, error: 'Cannot block yourself' });
+    }
+    try {
+      await supabaseService.blockUser(userId, blockedUserId);
+      res.status(201).json({ success: true, data: { blockedUserId } });
+    } catch (error: any) {
+      logger.error('Failed to block user', { error: error?.message, userId, blockedUserId });
+      res.status(400).json({
+        success: false,
+        error: error?.message || 'Failed to block user',
+      });
+    }
+  })
+);
+
+// DELETE /api/v1/users/:userId/blocks/:blockedUserId - Unblock a user
+router.delete(
+  '/:userId/blocks/:blockedUserId',
+  authMiddleware,
+  validateUserId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const authUserId = requireAuthUserId(req, res);
+    if (!authUserId) return;
+    const { userId, blockedUserId } = req.params;
+    if (authUserId !== userId) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    if (!blockedUserId) {
+      return res.status(400).json({ success: false, error: 'blockedUserId is required' });
+    }
+    await supabaseService.unblockUser(userId, blockedUserId);
+    res.json({ success: true, data: { blockedUserId } });
+  })
+);
+
 export default router;

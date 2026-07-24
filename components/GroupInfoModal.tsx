@@ -19,6 +19,7 @@ interface GroupInfoModalProps {
   onUpdateGroupAvatar: (groupId: string, avatarUrl: string) => void | Promise<void>;
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
+  onRemoveMember: (groupId: string, userId: string) => void;
   onDeleteGroup: (groupId: string) => void;
   onToggleArchiveGroup: (groupId: string) => void;
   onChallengeUser: (user: User) => void;
@@ -39,6 +40,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
     onUpdateGroupAvatar,
     onPromoteToAdmin,
     onDemoteAdmin,
+    onRemoveMember,
     onDeleteGroup,
     onToggleArchiveGroup,
     onChallengeUser,
@@ -275,6 +277,14 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                                 ) : (
                                                     <button onClick={() => onPromoteToAdmin(group.id, member.id)} className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-full" title="Promote to Admin"><ArrowUpTrayIcon className="w-5 h-5"/></button>
                                                 )}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => onRemoveMember(group.id, member.id)}
+                                                  className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-full"
+                                                  title="Remove from group"
+                                                >
+                                                  <UserMinusIcon className="w-5 h-5" />
+                                                </button>
                                             </>
                                         )}
                                         {member.id !== currentUser.id && (

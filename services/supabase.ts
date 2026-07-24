@@ -2539,6 +2539,22 @@ export const demoteGroupAdmin = async (groupId: string, memberId: string) => {
   return result.data;
 };
 
+export const removeGroupMember = async (groupId: string, memberId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/groups/${groupId}/members/${memberId}`,
+    {
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to remove member');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
 // --- Marketplace Functions ---
 
 export const createMarketplaceListing = async (listingData: {
@@ -3902,6 +3918,44 @@ export const sendDirectMessage = async (
     console.error('Error sending direct message:', error);
     throw error;
   }
+};
+
+export const getDmBlockStatus = async (userId: string, otherUserId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/users/${userId}/blocks/status/${encodeURIComponent(otherUserId)}`,
+    { method: 'GET', headers: await getAuthHeaders() }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to check block status');
+  }
+  const result = await response.json();
+  return result.data as { blocked: boolean; iBlockedThem: boolean };
+};
+
+export const blockUser = async (userId: string, blockedUserId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/users/${userId}/blocks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
+    body: JSON.stringify({ blockedUserId }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to block user');
+  }
+  return (await response.json()).data;
+};
+
+export const unblockUser = async (userId: string, blockedUserId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/users/${userId}/blocks/${encodeURIComponent(blockedUserId)}`,
+    { method: 'DELETE', headers: await getAuthHeaders() }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to unblock user');
+  }
+  return (await response.json()).data;
 };
 
 export const acceptDmMessageRequest = async (threadId: string) => {

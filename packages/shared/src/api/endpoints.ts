@@ -420,6 +420,26 @@ export function createApiEndpoints(client: ApiClient) {
 
     fetchUserSettings: (userId: string) => apiRequest<unknown>(`/users/${userId}/settings`),
 
+    listBlockedUsers: (userId: string) =>
+      apiRequest<{ blockedUserIds: string[] }>(`/users/${userId}/blocks`),
+
+    getDmBlockStatus: (userId: string, otherUserId: string) =>
+      apiRequest<{ blocked: boolean; iBlockedThem: boolean }>(
+        `/users/${userId}/blocks/status/${encodeURIComponent(otherUserId)}`
+      ),
+
+    blockUser: (userId: string, blockedUserId: string) =>
+      apiRequest<{ blockedUserId: string }>(`/users/${userId}/blocks`, {
+        method: 'POST',
+        body: JSON.stringify({ blockedUserId }),
+      }),
+
+    unblockUser: (userId: string, blockedUserId: string) =>
+      apiRequest<{ blockedUserId: string }>(
+        `/users/${userId}/blocks/${encodeURIComponent(blockedUserId)}`,
+        { method: 'DELETE' }
+      ),
+
     updateUserSettings: (
       userId: string,
       settings: unknown,
