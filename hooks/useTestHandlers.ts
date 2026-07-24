@@ -57,8 +57,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                     const newEndTime = new Date(Date.now() + activeTestSession.remainingTime * 1000);
                     setActiveTestSession({ ...activeTestSession, endTime: newEndTime, remainingTime: undefined });
                 }
+                return;
             }
-            return;
+            // User declined resume — clear paused session and continue starting a new one.
+            setActiveTestSession(null);
+            setActiveStudySession(null);
         }
 
         if (!selectedChat || selectedChat.chatType !== 'group') return;

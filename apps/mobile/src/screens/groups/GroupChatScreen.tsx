@@ -37,6 +37,7 @@ import { useTheme } from '../../theme';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import { summarizeGroupChat } from '../../services/ai';
 import * as api from '../../services/api';
+import { navigateToTestTaking } from '../../navigation/navigationRef';
 import {
   QUESTION_VISIBILITY_MODE_OPTIONS,
   canEditChatMessage,
@@ -515,42 +516,70 @@ export function GroupChatScreen({ navigation, route }: Props) {
   }, [openAddMembers, navigation]);
 
   const launchSession = async (config: TestConfigOptions, mode: TestMode) => {
-    const subgroupIds = config.selectedSubgroupIds || [];
-    const sourceGroupIds = [groupId, ...subgroupIds.filter(id => id !== groupId)];
-    const sessionMessages = await getMessagesForGroups(sourceGroupIds);
-    const combinedMessages = sessionMessages.length ? sessionMessages : displayMessages;
+    try {
+      const subgroupIds = config.selectedSubgroupIds || [];
+      const sourceGroupIds = [groupId, ...subgroupIds.filter(id => id !== groupId)];
+      // Use raw group messages for the pool — chat visibility filters must not strip bank candidates.
+      const sessionMessages = await getMessagesForGroups(sourceGroupIds);
+      const combinedMessages = sessionMessages.length
+        ? sessionMessages
+        : (messagesCache[groupId] || []);
+      const visibilityMode = config.visibilityMode ?? questionVisibilityMode;
 
-    const questions = selectGroupQuestions(
-      combinedMessages,
-      {
-        numberOfQuestions: config.numberOfQuestions,
-        selectedQuestionTypes: config.selectedQuestionTypes,
-        selectedTags: config.selectedTags,
-        useSpacedRepetition: config.useSpacedRepetition,
-        focusOnNew: config.focusOnNew,
-        visibilityMode: questionVisibilityMode,
-        sessionMode: mode === 'study' ? 'study' : 'test',
-      },
-      userQuestionStats
-    );
+      const questions = selectGroupQuestions(
+        combinedMessages,
+        {
+          numberOfQuestions: config.numberOfQuestions,
+          selectedQuestionTypes: config.selectedQuestionTypes,
+          selectedTags: config.selectedTags,
+          useSpacedRepetition: config.useSpacedRepetition,
+          focusOnNew: config.focusOnNew,
+          visibilityMode,
+          sessionMode: mode === 'study' ? 'study' : 'test',
+        },
+        userQuestionStats
+      );
 
-    if (!questions.length) {
-      Alert.alert('No questions', 'No testable questions match your filters.');
-      return;
+      if (!questions.length) {
+        Alert.alert('No questions', 'No testable questions match your filters.');
+        return;
+      }
+
+      const sessionName = `${displayName} ${mode === 'study' ? 'Study' : 'Test'}`;
+      const timeLimitMinutes =
+        config.timerDuration > 0
+          ? Math.ceil(config.timerDuration / 60)
+          : mode === 'test'
+            ? Math.max(config.numberOfQuestions * 2, 5)
+            : 0;
+      await startQuestionSet(sessionName, questions, mode, { timeLimitMinutes });
+      const parent = navigation.getParent?.();
+      if (parent?.navigate) {
+        parent.navigate('StudyTab', {
+          screen: 'TestTaking',
+          params: {
+            testId: 'custom',
+            testName: displayName,
+            mode,
+            groupName: displayName,
+            groupId,
+          },
+        });
+      } else {
+        navigateToTestTaking({
+          testId: 'custom',
+          testName: displayName,
+          mode,
+          groupName: displayName,
+          groupId,
+        });
+      }
+    } catch (err) {
+      Alert.alert(
+        'Could not start session',
+        err instanceof Error ? err.message : 'Please try again.'
+      );
     }
-
-    const sessionName = `${displayName} ${mode === 'study' ? 'Study' : 'Test'}`;
-    const timeLimitMinutes =
-      config.timerDuration > 0
-        ? Math.ceil(config.timerDuration / 60)
-        : mode === 'test'
-          ? Math.max(config.numberOfQuestions * 2, 5)
-          : 0;
-    await startQuestionSet(sessionName, questions, mode, { timeLimitMinutes });
-    navigation.getParent()?.navigate('StudyTab', {
-      screen: 'TestTaking',
-      params: { testId: 'custom', testName: displayName, mode, groupName: displayName, groupId },
-    });
   };
 
   const mentionRoster = useMemo(() => {

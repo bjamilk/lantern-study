@@ -50,3 +50,25 @@ export function navigateToGameScreen() {
     })
   );
 }
+
+export function navigateToTestTaking(params: {
+  testId: string;
+  testName: string;
+  mode?: 'test' | 'study';
+  groupName?: string;
+  groupId?: string;
+}) {
+  if (!navigationRef.isReady()) return;
+  navigationRef.dispatch(
+    CommonActions.navigate({
+      name: 'Main',
+      params: {
+        screen: 'StudyTab',
+        params: {
+          screen: 'TestTaking',
+          params,
+        },
+      },
+    })
+  );
+}

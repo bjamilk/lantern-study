@@ -297,8 +297,8 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     timerDuration: mode === 'test' ? selectedTimerSeconds : undefined,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault();
     if (isSubmitDisabled()) {
         useToastStore.getState().showToast(`Please ensure you have selected question types, set a timer (for tests), there are available questions for the selected criteria, and the number of questions is valid (1-${maxQuestions}).`, 'error');
         return;
@@ -866,7 +866,8 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               </button>
             )}
             <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 className={`flex-1 sm:flex-none px-6 py-2 text-sm font-semibold text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shadow-lg ${mode === 'test' ? 'bg-lantern-primary hover:bg-lantern-primary-dark' : mode === 'game' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
                 disabled={isSubmitDisabled()}
             >

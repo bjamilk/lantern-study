@@ -54,6 +54,7 @@ export interface TestConfigOptions {
   useSpacedRepetition: boolean;
   focusOnNew: boolean;
   selectedSubgroupIds: string[];
+  visibilityMode?: QuestionVisibilityMode;
 }
 
 export interface TestConfigAvailableFilter {
@@ -311,6 +312,7 @@ export default function TestConfigModal({
         useSpacedRepetition,
         focusOnNew,
         selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
+        visibilityMode: questionVisibilityMode,
       },
       effectiveSessionMode
     );
