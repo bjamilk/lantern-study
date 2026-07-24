@@ -933,6 +933,7 @@ router.post(
       });
     }
 
+    // createInquiry ensures the dm_threads row exists (FK), then inserts the inquiry.
     const inquiry = await supabaseService.createInquiry(
       finalListingId,
       buyerId,
@@ -941,6 +942,7 @@ router.post(
       message
     );
 
+    // Deliver the buyer message into the DM thread (thread already ensured above).
     await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
       bypassPrivacy: true,
     });
@@ -948,13 +950,20 @@ router.post(
     // Get buyer name for notification
     const buyerProfile = await supabaseService.fetchUserProfile(buyerId);
 
-    // Create notification for seller
-    await supabaseService.createInquiryNotification(
-      listing.user_id,
-      buyerProfile?.name || 'Someone',
-      listing.title,
-      inquiry.id
-    );
+    // Create notification for seller (best-effort — inquiry + DM already succeeded)
+    try {
+      await supabaseService.createInquiryNotification(
+        listing.user_id,
+        buyerProfile?.name || 'Someone',
+        listing.title,
+        inquiry.id
+      );
+    } catch (notifyErr) {
+      logger.warn('Inquiry created but seller notification failed', {
+        inquiryId: inquiry.id,
+        error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+      });
+    }
 
     res.status(201).json({
       success: true,

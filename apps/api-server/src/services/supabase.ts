@@ -7910,6 +7910,24 @@ export class SupabaseService {
     dmThreadId: string,
     initialMessage: string
   ): Promise<any> {
+    // marketplace_inquiries.dm_thread_id FK requires dm_threads(id) first.
+    // Contact-seller used to insert the inquiry before sendDirectMessage upserted the thread → 500.
+    const sortedIds = [buyerId, sellerId].sort();
+    const { error: threadError } = await this.supabase.from('dm_threads').upsert(
+      {
+        id: dmThreadId,
+        participant_ids: sortedIds,
+        participants: {},
+        last_message: initialMessage,
+        last_message_time: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+    if (threadError) {
+      logger.error('Error ensuring DM thread for marketplace inquiry', { error: threadError, dmThreadId });
+      throw new Error(`Failed to create DM thread: ${threadError.message}`);
+    }
+
     const { data, error } = await this.supabase
       .from('marketplace_inquiries')
       .insert({
@@ -7950,9 +7968,9 @@ export class SupabaseService {
       `)
       .eq('listing_id', listingId)
       .eq('buyer_id', buyerId)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') throw error;
+    if (error) throw error;
     return data;
   }
 
