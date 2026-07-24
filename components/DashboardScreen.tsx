@@ -22,7 +22,82 @@ import { DashboardQuickLinks } from './dashboard/DashboardQuickLinks';
 import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
 import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
+import {
+  GroupPerformanceMultiSelect,
+  type GroupPerformanceOption,
+} from './dashboard/GroupPerformanceMultiSelect';
 import Modal from './ui/Modal';
+
+const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
+
+function loadSelectedGroupChartIds(): string[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(SELECTED_GROUP_CHART_IDS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSelectedGroupChartIds(ids: string[]): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(SELECTED_GROUP_CHART_IDS_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function buildHierarchicalGroupOptions(
+  activeGroups: Group[],
+  dataIds: Set<string>
+): GroupPerformanceOption[] {
+  const byParent = new Map<string | null, Group[]>();
+  for (const group of activeGroups) {
+    const parentKey = group.parentId || null;
+    const list = byParent.get(parentKey) || [];
+    list.push(group);
+    byParent.set(parentKey, list);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const options: GroupPerformanceOption[] = [];
+  const walk = (parentId: string | null, level: number) => {
+    const children = byParent.get(parentId) || [];
+    for (const child of children) {
+      if (dataIds.has(child.id)) {
+        options.push({ id: child.id, name: child.name, level });
+      }
+      walk(child.id, level + 1);
+    }
+  };
+
+  // Roots: no parent, or parent not in the active set (orphaned nesting still shows).
+  const activeIds = new Set(activeGroups.map((g) => g.id));
+  const roots = activeGroups
+    .filter((g) => !g.parentId || !activeIds.has(g.parentId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const root of roots) {
+    if (dataIds.has(root.id)) {
+      options.push({ id: root.id, name: root.name, level: 0 });
+    }
+    walk(root.id, 1);
+  }
+
+  // Deduplicate in case a node was both a "root" and reached via walk.
+  const seen = new Set<string>();
+  return options.filter((opt) => {
+    if (seen.has(opt.id)) return false;
+    seen.add(opt.id);
+    return true;
+  });
+}
 
 interface DashboardScreenProps {
   testResults: TestResult[];
@@ -268,7 +343,9 @@ export default function DashboardScreen({
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [chartDisplayMode, setChartDisplayMode] = useState<'bar' | 'line'>('line');
-  const [selectedComparisonGroupIds, setSelectedComparisonGroupIds] = useState<string[]>([]);
+  const [selectedGroupChartIds, setSelectedGroupChartIds] = useState<string[]>(() =>
+    loadSelectedGroupChartIds()
+  );
   const [aiCoachData, setAiCoachData] = useState<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>(null);
   const [isCoachLoading, setIsCoachLoading] = useState(false);
 
@@ -381,7 +458,6 @@ export default function DashboardScreen({
   };
 
   const [allGroupPerformanceData, setAllGroupPerformanceData] = useState<GroupPerformanceData[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isRecentTestsExpanded, setIsRecentTestsExpanded] = useState(true);
 
   useEffect(() => {
@@ -472,14 +548,40 @@ export default function DashboardScreen({
     }
     const performanceDataArray = Array.from(groupPerformanceMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     setAllGroupPerformanceData(performanceDataArray);
-
-    const initialExpandedState: Record<string, boolean> = {};
-    performanceDataArray.forEach(groupData => {
-      initialExpandedState[groupData.id] = true; 
-    });
-    setExpandedGroups(initialExpandedState);
-
   }, [filteredTestResults, groups, totalTestsTakenOverall]);
+
+  const activeGroupChartOptions = useMemo(() => {
+    const activeGroups = groups.filter((g) => !g.isArchived);
+    const dataIds = new Set(
+      allGroupPerformanceData
+        .filter((row) => activeGroups.some((g) => g.id === row.id))
+        .map((row) => row.id)
+    );
+    return buildHierarchicalGroupOptions(activeGroups, dataIds);
+  }, [groups, allGroupPerformanceData]);
+
+  // Prune archived/deleted ids and seed a sensible default selection.
+  useEffect(() => {
+    const validIds = new Set(activeGroupChartOptions.map((opt) => opt.id));
+    setSelectedGroupChartIds((prev) => {
+      const pruned = prev.filter((id) => validIds.has(id));
+      if (pruned.length === 0 && activeGroupChartOptions.length > 0) {
+        const next = [activeGroupChartOptions[0].id];
+        saveSelectedGroupChartIds(next);
+        return next;
+      }
+      if (pruned.length !== prev.length) {
+        saveSelectedGroupChartIds(pruned);
+        return pruned;
+      }
+      return prev;
+    });
+  }, [activeGroupChartOptions]);
+
+  const handleSelectedGroupChartIdsChange = useCallback((ids: string[]) => {
+    setSelectedGroupChartIds(ids);
+    saveSelectedGroupChartIds(ids);
+  }, []);
 
 
   const analysisData = useMemo(() => {
@@ -561,10 +663,6 @@ export default function DashboardScreen({
     return map;
   }, [studyActivityDays, filteredTestResults]);
 
-  const toggleGroupExpansion = (groupId: string) => {
-    setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
-
   const toggleRecentTestsExpansion = () => {
     setIsRecentTestsExpanded(prev => !prev);
   };
@@ -629,47 +727,60 @@ export default function DashboardScreen({
     return labels[type] || "Unknown Type";
   };
   
-  const handleComparisonGroupToggle = (groupId: string) => {
-    setSelectedComparisonGroupIds(prev =>
-      prev.includes(groupId)
-        ? prev.filter(id => id !== groupId)
-        : [...prev, groupId]
-    );
-  };
+  const selectedGroupPerformance = useMemo(
+    () =>
+      allGroupPerformanceData.filter(
+        (row) =>
+          selectedGroupChartIds.includes(row.id) &&
+          activeGroupChartOptions.some((opt) => opt.id === row.id)
+      ),
+    [allGroupPerformanceData, selectedGroupChartIds, activeGroupChartOptions]
+  );
 
-  const comparisonChartDatasets = useMemo(() => {
-    if (selectedComparisonGroupIds.length < 2) {
-      return null;
+  const isMultiGroupChart = selectedGroupPerformance.length >= 2;
+  // Multi-select uses weekly series (aligned dates); single group keeps Timeline/Weekly toggle.
+  const effectiveChartMode: 'bar' | 'line' = isMultiGroupChart ? 'line' : chartDisplayMode;
+  const useWeeklySeries = isMultiGroupChart || chartDisplayMode === 'bar';
+
+  const unifiedChartDatasets = useMemo(() => {
+    if (selectedGroupPerformance.length === 0) return null;
+
+    if (!isMultiGroupChart) {
+      const group = selectedGroupPerformance[0];
+      const data = useWeeklySeries ? group.weeklyChartData : group.chartData;
+      return [{ label: group.name, data }];
     }
 
-    const selectedGroupsData = allGroupPerformanceData.filter(g =>
-      selectedComparisonGroupIds.includes(g.id)
-    );
-
     const allXLabels = new Set<string>();
-    selectedGroupsData.forEach(group => {
-      group.weeklyChartData.forEach(point => {
-        allXLabels.add(point.x);
-      });
+    selectedGroupPerformance.forEach((group) => {
+      group.weeklyChartData.forEach((point) => allXLabels.add(point.x));
     });
-
     const sortedLabels = Array.from(allXLabels).sort();
 
-    const datasets = selectedGroupsData.map(group => {
-      const dataMap = new Map(group.weeklyChartData.map(p => [p.x, p.y]));
-      const alignedData: ChartDataPoint[] = sortedLabels.map(label => ({
+    return selectedGroupPerformance.map((group) => {
+      const dataMap = new Map(group.weeklyChartData.map((p) => [p.x, p.y]));
+      const alignedData: ChartDataPoint[] = sortedLabels.map((label) => ({
         x: label,
-        // FIX: Removed the unnecessary and problematic cast. The nullish coalescing operator is sufficient to handle undefined values.
         y: dataMap.get(label) ?? null,
       }));
-      return {
-        label: group.name,
-        data: alignedData,
-      };
+      return { label: group.name, data: alignedData };
     });
-    
-    return datasets;
-  }, [selectedComparisonGroupIds, allGroupPerformanceData]);
+  }, [selectedGroupPerformance, isMultiGroupChart, useWeeklySeries]);
+
+  const selectedGroupsSummary = useMemo(() => {
+    if (selectedGroupPerformance.length === 0) {
+      return { testCount: 0, averageScore: 0, accuracy: 0 };
+    }
+    const testCount = selectedGroupPerformance.reduce((sum, g) => sum + g.testCount, 0);
+    const totalScore = selectedGroupPerformance.reduce((sum, g) => sum + g.totalScore, 0);
+    const correctAnswers = selectedGroupPerformance.reduce((sum, g) => sum + g.correctAnswers, 0);
+    const totalQuestions = selectedGroupPerformance.reduce((sum, g) => sum + g.totalQuestions, 0);
+    return {
+      testCount,
+      averageScore: testCount > 0 ? totalScore / testCount : 0,
+      accuracy: totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0,
+    };
+  }, [selectedGroupPerformance]);
 
 
   // --- Study streak calculation ---
@@ -1168,73 +1279,144 @@ export default function DashboardScreen({
           </details>
         )}
 
-        {/* ─── Performance by Group ─── */}
-        {allGroupPerformanceData.length > 0 && (
-          <details open className="group/perf">
-            <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-              <h2 className="text-lg font-semibold text-lantern-text flex items-center">
-                <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
-                Performance by Group
-              </h2>
-              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open/perf:rotate-180" />
-            </summary>
-            <div className="space-y-4 mt-3">
-            {allGroupPerformanceData.map(groupData => (
-              <div key={groupData.id} className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
-                <button onClick={() => toggleGroupExpansion(groupData.id)} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={!!expandedGroups[groupData.id]}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-lantern-primary-background flex items-center justify-center">
-                      <UsersIcon className="w-4 h-4 text-lantern-primary" />
-                    </div>
-                    <h3 className="font-semibold text-lantern-text">{groupData.name}</h3>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="hidden sm:inline text-sm text-lantern-text-secondary">{groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</span>
-                    <span className="text-sm font-bold text-lantern-primary">{groupData.averageScore.toFixed(1)}%</span>
-                    {expandedGroups[groupData.id] ? <ChevronUpIcon className="w-5 h-5 text-lantern-text-tertiary" /> : <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary" />}
-                  </div>
-                </button>
-                {expandedGroups[groupData.id] && (
-                  <div className="border-t border-lantern-border">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-lantern-border">
-                      <div className="bg-lantern-surface p-3 text-center">
-                        <p className="text-xs text-lantern-text-secondary">Tests</p>
-                        <p className="text-lg font-bold text-lantern-text">{groupData.testCount}</p>
-                      </div>
-                      <div className="bg-lantern-surface p-3 text-center">
-                        <p className="text-xs text-lantern-text-secondary">Avg Score</p>
-                        <p className="text-lg font-bold text-lantern-text">{groupData.averageScore.toFixed(1)}%</p>
-                      </div>
-                      <div className="bg-lantern-surface p-3 text-center">
-                        <p className="text-xs text-lantern-text-secondary">Accuracy</p>
-                        <p className="text-lg font-bold text-lantern-text">{groupData.accuracy.toFixed(1)}%</p>
-                      </div>
-                      <div className="bg-lantern-surface p-3 text-center">
-                        <p className="text-xs text-lantern-text-secondary">Avg Time/Q</p>
-                        <p className="text-lg font-bold text-lantern-text">{groupData.averageTimePerQuestion > 0 ? `${groupData.averageTimePerQuestion.toFixed(1)}s` : '—'}</p>
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      {lowDataMode ? (
-                        <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern">
-                          <p className="font-medium">Chart hidden in Low-Data Mode</p>
-                          <p className="text-xs mt-1">Avg Score: {groupData.averageScore.toFixed(1)}% across {groupData.testCount} test{groupData.testCount !== 1 ? 's' : ''}</p>
-                        </div>
-                      ) : (
-                        <GroupPerformanceChart datasets={[{ label: 'Score', data: chartDisplayMode === 'bar' ? groupData.weeklyChartData : groupData.chartData }]} theme={theme} type={chartDisplayMode} />
-                      )}
-                      <div className="flex justify-end gap-1 mt-3">
-                        <button onClick={() => setChartDisplayMode('line')} className={`px-3 py-1 text-xs rounded-l-lg border transition-colors ${chartDisplayMode === 'line' ? 'bg-lantern-primary text-white border-lantern-primary' : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'}`}>Timeline</button>
-                        <button onClick={() => setChartDisplayMode('bar')} className={`px-3 py-1 text-xs rounded-r-lg border transition-colors ${chartDisplayMode === 'bar' ? 'bg-lantern-primary text-white border-lantern-primary' : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'}`}>Weekly</button>
-                      </div>
-                    </div>
+        {/* ─── Group performance (unified multi-select chart) ─── */}
+        <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
+          <div className="p-4 md:p-5 border-b border-lantern-border">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-lantern-text flex items-center">
+                  <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary" />
+                  Group performance
+                </h2>
+                <p className="text-xs text-lantern-text-secondary mt-1">
+                  Select one or more active groups or subgroups. Archived and deleted groups are removed automatically.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-shrink-0">
+                <GroupPerformanceMultiSelect
+                  options={activeGroupChartOptions}
+                  selectedIds={selectedGroupChartIds}
+                  onChange={handleSelectedGroupChartIdsChange}
+                  disabled={activeGroupChartOptions.length === 0}
+                />
+                {!isMultiGroupChart && selectedGroupPerformance.length === 1 && (
+                  <div className="flex justify-end gap-0">
+                    <button
+                      type="button"
+                      onClick={() => setChartDisplayMode('line')}
+                      className={`px-3 py-2 text-xs rounded-l-lg border transition-colors ${
+                        chartDisplayMode === 'line'
+                          ? 'bg-lantern-primary text-white border-lantern-primary'
+                          : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'
+                      }`}
+                    >
+                      Timeline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartDisplayMode('bar')}
+                      className={`px-3 py-2 text-xs rounded-r-lg border transition-colors ${
+                        chartDisplayMode === 'bar'
+                          ? 'bg-lantern-primary text-white border-lantern-primary'
+                          : 'bg-lantern-surface border-lantern-border text-lantern-text-secondary'
+                      }`}
+                    >
+                      Weekly
+                    </button>
                   </div>
                 )}
               </div>
-            ))}
             </div>
-          </details>
-        )}
+            {isMultiGroupChart && (
+              <p className="text-[11px] text-lantern-text-tertiary mt-2">
+                Comparing multiple groups uses weekly averages so different test dates line up.
+              </p>
+            )}
+          </div>
+
+          {activeGroupChartOptions.length === 0 ? (
+            <div className="p-8 text-center">
+              <UsersIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+              <p className="text-sm text-lantern-text-tertiary">
+                Take a test in an active group to see performance here.
+              </p>
+            </div>
+          ) : selectedGroupPerformance.length === 0 ? (
+            <div className="p-8 text-center">
+              <p className="text-sm text-lantern-text-tertiary">
+                Select one or more groups from the dropdown to view the chart.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-px bg-lantern-border">
+                <div className="bg-lantern-surface p-3 text-center">
+                  <p className="text-xs text-lantern-text-secondary">Tests</p>
+                  <p className="text-lg font-bold text-lantern-text">{selectedGroupsSummary.testCount}</p>
+                </div>
+                <div className="bg-lantern-surface p-3 text-center">
+                  <p className="text-xs text-lantern-text-secondary">Avg Score</p>
+                  <p className="text-lg font-bold text-lantern-text">
+                    {selectedGroupsSummary.averageScore.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="bg-lantern-surface p-3 text-center">
+                  <p className="text-xs text-lantern-text-secondary">Accuracy</p>
+                  <p className="text-lg font-bold text-lantern-text">
+                    {selectedGroupsSummary.accuracy.toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+              <div className="p-4">
+                {lowDataMode ? (
+                  <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern space-y-1">
+                    <p className="font-medium">Chart hidden in Low-Data Mode</p>
+                    {selectedGroupPerformance.map((group) => (
+                      <p key={group.id} className="text-xs">
+                        {group.name}: {group.averageScore.toFixed(1)}% avg across {group.testCount}{' '}
+                        test{group.testCount !== 1 ? 's' : ''}
+                      </p>
+                    ))}
+                  </div>
+                ) : unifiedChartDatasets ? (
+                  <GroupPerformanceChart
+                    datasets={unifiedChartDatasets}
+                    theme={theme}
+                    type={effectiveChartMode}
+                  />
+                ) : null}
+                {selectedGroupPerformance.length > 1 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="text-lantern-text-secondary border-b border-lantern-border">
+                          <th className="py-1.5 pr-3 font-medium">Group</th>
+                          <th className="py-1.5 pr-3 font-medium">Tests</th>
+                          <th className="py-1.5 pr-3 font-medium">Avg</th>
+                          <th className="py-1.5 font-medium">Accuracy</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedGroupPerformance.map((group) => (
+                          <tr key={group.id} className="border-b border-lantern-border/60 last:border-0">
+                            <td className="py-1.5 pr-3 text-lantern-text font-medium">{group.name}</td>
+                            <td className="py-1.5 pr-3 text-lantern-text-secondary">{group.testCount}</td>
+                            <td className="py-1.5 pr-3 text-lantern-primary font-semibold">
+                              {group.averageScore.toFixed(1)}%
+                            </td>
+                            <td className="py-1.5 text-lantern-text-secondary">
+                              {group.accuracy.toFixed(1)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* ─── Recent Tests ─── */}
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
@@ -1293,46 +1475,6 @@ export default function DashboardScreen({
           )}
         </div>
 
-        {/* ─── Group Comparison ─── */}
-        {allGroupPerformanceData.length >= 2 && (
-          <details className="group/comp">
-            <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
-              <div>
-                <h2 className="text-lg font-semibold text-lantern-text flex items-center">
-                  <PresentationChartBarIcon className="w-5 h-5 mr-2 text-teal-500" />
-                  Group Comparison
-                </h2>
-                <p className="text-xs text-lantern-text-secondary mt-1">Select two or more groups to compare their weekly performance.</p>
-              </div>
-              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open/comp:rotate-180 flex-shrink-0" />
-            </summary>
-            <div className="p-4 mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
-              <div className="flex flex-wrap gap-2 mb-4">
-                {allGroupPerformanceData.map(groupData => (
-                  <button 
-                    key={groupData.id}
-                    onClick={() => handleComparisonGroupToggle(groupData.id)}
-                    className={`px-3 py-1.5 text-xs rounded-full border transition-all ${selectedComparisonGroupIds.includes(groupData.id) ? 'bg-lantern-primary text-white border-lantern-primary shadow-sm' : 'bg-lantern-background-secondary hover:bg-lantern-background border-lantern-border text-lantern-text-secondary'}`}
-                  >
-                    {groupData.name}
-                  </button>
-                ))}
-              </div>
-              {comparisonChartDatasets ? (
-                lowDataMode ? (
-                  <div className="py-4 text-center text-sm text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern">
-                    <p className="font-medium">Chart hidden in Low-Data Mode</p>
-                    <p className="text-xs mt-1">{comparisonChartDatasets.length} group{comparisonChartDatasets.length !== 1 ? 's' : ''} selected for comparison</p>
-                  </div>
-                ) : (
-                  <GroupPerformanceChart datasets={comparisonChartDatasets} theme={theme} type="line" />
-                )
-              ) : (
-                <p className="text-center text-sm text-lantern-text-tertiary py-6">Select at least two groups to compare.</p>
-              )}
-            </div>
-          </details>
-        )}
       </div>
 
       {/* ═══════════════ GROUP PICKER MODAL ═══════════════ */}
