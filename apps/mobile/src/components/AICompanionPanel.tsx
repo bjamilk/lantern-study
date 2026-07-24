@@ -9,15 +9,20 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { CompanionUserContext } from '@lantern/shared';
 import { useCompanionStore } from '../stores/companionStore';
+import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import { useAuthStore } from '../stores/authStore';
 import { useAppTheme } from '../theme';
 import { Button } from './ui';
+import { transcribeAudioForNote } from '../services/notes';
+import { trackAIAnalyticsEvent } from '../services/ai';
 
 const QUICK_PROMPTS = [
   'What should I study today?',
@@ -27,6 +32,14 @@ const QUICK_PROMPTS = [
   'Explain spaced repetition',
 ];
 
+const MIN_DICTATION_MS = 800;
+const MAX_DICTATION_MS = 60_000;
+
+type RecordingHandle = {
+  stopAndUnloadAsync: () => Promise<void>;
+  getURI: () => string | null;
+};
+
 interface Props {
   context?: CompanionUserContext;
 }
@@ -34,6 +47,7 @@ interface Props {
 export function AICompanionPanel({ context }: Props) {
   const theme = useAppTheme();
   const user = useAuthStore(s => s.user);
+  const showToast = useToastStore(s => s.showToast);
   const {
     isOpen,
     close,
@@ -52,8 +66,18 @@ export function AICompanionPanel({ context }: Props) {
   } = useCompanionStore();
 
   const [input, setInput] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const hasLoaded = useRef(false);
   const listRef = useRef<FlatList>(null);
+  const inputValueRef = useRef('');
+  const recordingRef = useRef<RecordingHandle | null>(null);
+  const recordingStartedAtRef = useRef(0);
+  const discardRecordingRef = useRef(false);
+  const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transcribeAbortRef = useRef<AbortController | null>(null);
 
   const userName =
     user?.user_metadata?.name ||
@@ -68,6 +92,10 @@ export function AICompanionPanel({ context }: Props) {
     }),
     [userName, context]
   );
+
+  useEffect(() => {
+    inputValueRef.current = input;
+  }, [input]);
 
   useEffect(() => {
     if (isOpen && !hasLoaded.current && user?.id) {
@@ -101,18 +129,196 @@ export function AICompanionPanel({ context }: Props) {
     enrichedContext,
   ]);
 
+  const clearRecordingTimers = useCallback(() => {
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
+    if (secondsTimerRef.current) {
+      clearInterval(secondsTimerRef.current);
+      secondsTimerRef.current = null;
+    }
+  }, []);
+
+  const finishDictation = useCallback(async () => {
+    const recording = recordingRef.current;
+    if (!recording) return;
+
+    clearRecordingTimers();
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    recordingRef.current = null;
+
+    if (discardRecordingRef.current) {
+      discardRecordingRef.current = false;
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {
+        // ignore unload errors when discarding
+      }
+      return;
+    }
+
+    const elapsed = Date.now() - recordingStartedAtRef.current;
+    if (elapsed < MIN_DICTATION_MS) {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {
+        // ignore
+      }
+      showToast('Recording was too short. Hold the mic a bit longer.', 'error');
+      return;
+    }
+
+    setIsTranscribing(true);
+    const abortController = new AbortController();
+    transcribeAbortRef.current = abortController;
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (!uri) throw new Error('No recording file');
+
+      const info = await FileSystem.getInfoAsync(uri);
+      const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
+      });
+      if (!base64 || base64.length < 64 || (byteLength > 0 && byteLength < 256)) {
+        throw new Error('Recording was empty. Hold a bit longer, then stop again.');
+      }
+
+      const lowerUri = uri.toLowerCase();
+      const mimeType = lowerUri.endsWith('.webm')
+        ? 'audio/webm'
+        : lowerUri.endsWith('.wav')
+          ? 'audio/wav'
+          : lowerUri.endsWith('.ogg')
+            ? 'audio/ogg'
+            : 'audio/mp4';
+      const ext = lowerUri.endsWith('.webm')
+        ? 'webm'
+        : lowerUri.endsWith('.wav')
+          ? 'wav'
+          : lowerUri.endsWith('.ogg')
+            ? 'ogg'
+            : 'm4a';
+
+      const result = await transcribeAudioForNote(base64, {
+        mimeType,
+        fileName: `companion-dictation-${Date.now()}.${ext}`,
+        signal: abortController.signal,
+        durationMs: elapsed,
+        clientByteLength: byteLength || undefined,
+        localFileUri: uri,
+        // Prefer signed-URL storage so longer clips avoid proxy empty-body failures.
+        useStoragePath: true,
+      });
+
+      const transcript = (result.transcript || '').trim();
+      if (!transcript) {
+        showToast('Could not hear that clearly. Try again.', 'info');
+        return;
+      }
+
+      const next = [inputValueRef.current.trim(), transcript].filter(Boolean).join(' ');
+      setInput(next);
+      inputValueRef.current = next;
+      trackAIAnalyticsEvent('companion_voice_dictation', {
+        screen: context?.currentScreen,
+        duration_ms: elapsed,
+      });
+    } catch (e: unknown) {
+      if (!transcribeAbortRef.current && e instanceof Error && e.name === 'AbortError') return;
+      const message =
+        e instanceof Error && e.name === 'AbortError'
+          ? 'Transcription cancelled.'
+          : e instanceof Error
+            ? e.message
+            : 'Could not transcribe audio';
+      showToast(message, 'error');
+    } finally {
+      transcribeAbortRef.current = null;
+      setIsTranscribing(false);
+    }
+  }, [clearRecordingTimers, context?.currentScreen, showToast]);
+
+  const startDictation = useCallback(async () => {
+    if (isRecording || isTranscribing) return;
+    discardRecordingRef.current = false;
+    try {
+      const { Audio } = await import('expo-av');
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Microphone access is required for voice dictation.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        playThroughEarpieceAndroid: false,
+      });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = rec as unknown as RecordingHandle;
+      recordingStartedAtRef.current = Date.now();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      secondsTimerRef.current = setInterval(() => {
+        setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000));
+      }, 250);
+      maxTimerRef.current = setTimeout(() => {
+        void finishDictation();
+      }, MAX_DICTATION_MS);
+      trackAIAnalyticsEvent('companion_voice_dictation_start', {
+        screen: context?.currentScreen,
+      });
+    } catch {
+      Alert.alert('Error', 'Could not start recording. Check microphone permission and try again.');
+    }
+  }, [context?.currentScreen, finishDictation, isRecording, isTranscribing]);
+
+  const discardDictation = useCallback(() => {
+    discardRecordingRef.current = true;
+    transcribeAbortRef.current?.abort();
+    transcribeAbortRef.current = null;
+    clearRecordingTimers();
+    setIsTranscribing(false);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    if (recording) {
+      void recording.stopAndUnloadAsync().catch(() => undefined);
+    }
+  }, [clearRecordingTimers]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    discardDictation();
+  }, [isOpen, discardDictation]);
+
+  useEffect(() => {
+    return () => {
+      discardDictation();
+    };
+  }, [discardDictation]);
+
   const handleSend = useCallback(
     async (text?: string) => {
       const msg = (text ?? input).trim();
-      if (!msg || isLoading || isStreaming) return;
+      if (!msg || isLoading || isStreaming || isRecording || isTranscribing) return;
       setInput('');
+      inputValueRef.current = '';
       await sendMessageStreaming(msg, enrichedContext);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     },
-    [input, isLoading, isStreaming, sendMessageStreaming, enrichedContext]
+    [input, isLoading, isStreaming, isRecording, isTranscribing, sendMessageStreaming, enrichedContext]
   );
 
   const isBusy = isLoading || isStreaming || isLoadingHistory;
+  const dictationBusy = isRecording || isTranscribing;
 
   if (!isOpen) {
     return null;
@@ -191,7 +397,7 @@ export function AICompanionPanel({ context }: Props) {
             );
           }}
           ListFooterComponent={
-            isBusy ? (
+            isBusy || isTranscribing ? (
               <View className="py-2 items-start">
                 <ActivityIndicator color="#6366f1" />
               </View>
@@ -206,18 +412,53 @@ export function AICompanionPanel({ context }: Props) {
         ) : null}
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View className="flex-row items-end gap-2 px-4 py-3 border-t border-lantern-border">
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask Lantern AI..."
-              placeholderTextColor="#94a3b8"
-              multiline
-              className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
-            />
-            <Button size="sm" disabled={!input.trim() || isBusy} onPress={() => void handleSend()}>
-              Send
-            </Button>
+          <View className="px-4 py-3 border-t border-lantern-border">
+            <View className="flex-row items-end gap-2">
+              <Pressable
+                onPress={() => {
+                  if (isRecording) void finishDictation();
+                  else void startDictation();
+                }}
+                disabled={isBusy || isTranscribing}
+                accessibilityRole="button"
+                accessibilityLabel={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
+                accessibilityState={{ disabled: isBusy || isTranscribing, selected: isRecording }}
+                className={`h-11 w-11 items-center justify-center rounded-full ${
+                  isRecording ? 'bg-red-500' : 'bg-lantern-background-secondary'
+                } ${(isBusy || isTranscribing) ? 'opacity-40' : ''}`}
+              >
+                <Ionicons
+                  name={isRecording ? 'stop' : 'mic'}
+                  size={20}
+                  color={isRecording ? '#fff' : '#6366f1'}
+                />
+              </Pressable>
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder={
+                  isRecording ? 'Listening…' : isTranscribing ? 'Transcribing…' : 'Ask Lantern AI...'
+                }
+                placeholderTextColor="#94a3b8"
+                multiline
+                editable={!dictationBusy}
+                className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
+              />
+              <Button
+                size="sm"
+                disabled={!input.trim() || isBusy || dictationBusy}
+                onPress={() => void handleSend()}
+              >
+                Send
+              </Button>
+            </View>
+            {(isRecording || isTranscribing) && (
+              <Text className="mt-2 text-xs text-center text-lantern-text-secondary">
+                {isRecording
+                  ? `Listening… ${recordingSeconds}s — tap stop when done`
+                  : 'Converting speech to text…'}
+              </Text>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
