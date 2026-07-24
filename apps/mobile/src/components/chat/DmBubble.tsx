@@ -5,6 +5,7 @@ import { parseChatAudioUrl, segmentMentions } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { ReceiptTicks } from './ReceiptTicks';
+import { SwipeToReply } from './SwipeToReply';
 
 interface DmBubbleProps {
   message: {
@@ -26,6 +27,8 @@ interface DmBubbleProps {
   senderName?: string;
   senderAvatar?: string | null;
   onReply?: () => void;
+  /** Direct reply (no action sheet) — used by swipe-to-reply. */
+  onSwipeReply?: () => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
   threadRootId?: string;
@@ -38,6 +41,7 @@ export function DmBubble({
   senderName,
   senderAvatar,
   onReply,
+  onSwipeReply,
   onScrollToMessage,
   onOpenThread,
   threadRootId,
@@ -115,6 +119,7 @@ export function DmBubble({
   }
 
   return (
+    <SwipeToReply enabled={!!onSwipeReply} onReply={() => onSwipeReply?.()}>
     <Pressable
       onLongPress={onReply}
       delayLongPress={350}
@@ -230,5 +235,6 @@ export function DmBubble({
 
       {isOwn ? <View className="w-7" /> : null}
     </Pressable>
+    </SwipeToReply>
   );
 }

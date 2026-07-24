@@ -71,6 +71,7 @@ function DmBubbleWrapper({
   senderName,
   senderAvatar,
   onReply,
+  onSwipeReply,
   onScrollToMessage,
   onOpenThread,
 }: {
@@ -79,6 +80,7 @@ function DmBubbleWrapper({
   senderName?: string;
   senderAvatar?: string | null;
   onReply?: () => void;
+  onSwipeReply?: () => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
 }) {
@@ -107,6 +109,7 @@ function DmBubbleWrapper({
       senderName={isOwn ? undefined : senderName}
       senderAvatar={isOwn ? undefined : senderAvatar}
       onReply={onReply}
+      onSwipeReply={onSwipeReply}
       onScrollToMessage={onScrollToMessage}
       onOpenThread={onOpenThread}
       threadRootId={message.threadRootId}
@@ -608,6 +611,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                         : peerAvatarUrl || item.senderAvatar || undefined
                     }
                     onReply={() => showMessageActions(item)}
+                    onSwipeReply={() => beginReply(item)}
                     onScrollToMessage={(messageId) => {
                       const index = messages.findIndex((m) => m.id === messageId);
                       if (index >= 0) {

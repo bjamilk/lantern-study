@@ -384,7 +384,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 relative ${bubbleClasses}`}>
         {(onReply || canEdit || canRemove) && (
           <div
-            className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2 opacity-100 md:opacity-0 md:group-hover:opacity-100' : 'right-2 opacity-0 group-hover:opacity-100'} focus-within:opacity-100 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm transition-opacity overflow-hidden`}
+            className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2' : 'right-2'} opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm transition-opacity overflow-hidden`}
           >
             {onReply && (
               <button

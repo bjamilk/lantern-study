@@ -311,6 +311,7 @@ export function ChatThreadModal({
                       onFlag={onFlag ? () => onFlag(item.id) : undefined}
                       canFlag={canFlag?.(item) ?? false}
                       onReply={showMessageActions}
+                      onSwipeReply={beginReply}
                     />
                   );
                 }
@@ -343,6 +344,7 @@ export function ChatThreadModal({
                     senderName={isOwn ? undefined : otherDisplayName}
                     senderAvatar={isOwn ? undefined : otherAvatarUrl}
                     onReply={() => showMessageActions(dm)}
+                    onSwipeReply={() => beginReply(dm)}
                   />
                 );
               }}

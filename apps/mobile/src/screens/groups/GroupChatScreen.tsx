@@ -988,6 +988,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                     }
                     canFlag={item.senderId !== user?.id}
                     onReply={showMessageActions}
+                    onSwipeReply={beginReply}
                     onMentionUser={(username) => setSeedMentionUsername(username)}
                     onScrollToMessage={(messageId) => {
                       const index = displayMessages.findIndex((m) => m.id === messageId);

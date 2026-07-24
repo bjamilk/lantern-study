@@ -16,6 +16,7 @@ import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
+import { SwipeToReply } from './SwipeToReply';
 import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
 
 function formatChatAudioTime(seconds: number): string {
@@ -38,6 +39,8 @@ interface MessageBubbleProps {
   canFlag?: boolean;
   isGroupedWithPrevious?: boolean;
   onReply?: (message: Message) => void;
+  /** Direct reply (no action sheet) — used by swipe-to-reply. */
+  onSwipeReply?: (message: Message) => void;
   onMentionUser?: (username: string) => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
@@ -276,6 +279,7 @@ export function MessageBubble({
   canFlag,
   isGroupedWithPrevious = false,
   onReply,
+  onSwipeReply,
   onMentionUser,
   onScrollToMessage,
   onOpenThread,
@@ -364,6 +368,10 @@ export function MessageBubble({
   );
 
   return (
+    <SwipeToReply
+      enabled={!!onSwipeReply}
+      onReply={() => onSwipeReply?.(message)}
+    >
     <Pressable
       onLongPress={onReply ? () => onReply(message) : undefined}
       delayLongPress={350}
@@ -616,5 +624,6 @@ export function MessageBubble({
 
       {isOwn ? <View className="w-7" /> : null}
     </Pressable>
+    </SwipeToReply>
   );
 }
