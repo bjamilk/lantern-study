@@ -723,6 +723,77 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     prevMessageCountRef.current = visibleMessages.length;
   }, [visibleMessages, currentUser.id, chat?.id]);
 
+  // All hooks below must stay above the `if (!chat)` return — opening a chat
+  // from the empty state must not change hook count (React #310).
+  const isGroup = isGroupChat;
+  const groupMemberListForMentions = useMemo(() => {
+    if (!chat || chat.chatType !== 'group') return [];
+    const fromChat = Array.isArray(chat.members) ? chat.members : [];
+    if (fromChat.length > 0) return fromChat;
+    const fromGroups = groups.find((g) => g.id === chat.id)?.members;
+    return Array.isArray(fromGroups) && fromGroups.length > 0 ? fromGroups : [];
+  }, [chat, groups]);
+
+  const isGroupAdminForMentions = Boolean(
+    isGroup &&
+      chat &&
+      chat.chatType === 'group' &&
+      ((chat as Group).ownerId === currentUser.id ||
+        (Array.isArray((chat as Group).adminIds) &&
+          (chat as Group).adminIds.includes(currentUser.id)))
+  );
+
+  const mentionCandidates = useMemo(() => {
+    if (!isGroup) return [];
+    const members = groupMemberListForMentions
+      .filter((m) => m.id !== currentUser.id && m.username)
+      .map((m) => ({ id: m.id, username: m.username!, name: m.name }));
+    if (isGroupAdminForMentions) {
+      return [{ id: '__all__', username: 'all', name: 'Everyone in this group' }, ...members];
+    }
+    return members;
+  }, [isGroup, isGroupAdminForMentions, groupMemberListForMentions, currentUser.id]);
+
+  const dmThreadForHooks =
+    chat && chat.chatType !== 'group' ? (chat as DMThread & { chatType?: 'dm' }) : null;
+  const [dmRequestStatus, setDmRequestStatus] = useState<'open' | 'pending' | 'declined'>('open');
+  const [dmRequestBusy, setDmRequestBusy] = useState(false);
+  const [dmBlocked, setDmBlocked] = useState(false);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [dmBlockBusy, setDmBlockBusy] = useState(false);
+
+  const dmPeerId =
+    dmThreadForHooks && Array.isArray(dmThreadForHooks.participantIds)
+      ? dmThreadForHooks.participantIds.find((id) => id !== currentUser.id)
+      : undefined;
+
+  useEffect(() => {
+    setDmRequestStatus(dmThreadForHooks?.status || 'open');
+  }, [dmThreadForHooks?.id, dmThreadForHooks?.status]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!dmPeerId || isGroup || !chat) {
+      setDmBlocked(false);
+      setIBlockedThem(false);
+      return;
+    }
+    void getDmBlockStatus(currentUser.id, dmPeerId)
+      .then((status) => {
+        if (cancelled) return;
+        setDmBlocked(!!status.blocked);
+        setIBlockedThem(!!status.iBlockedThem);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDmBlocked(false);
+        setIBlockedThem(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
+
   if (!chat) {
     // Desktop: show placeholder
     // Mobile: show inline group/DM list for navigation
@@ -830,40 +901,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     );
   }
 
-  const isGroup = isGroupChat;
   // Prefer the selected chat roster; group-list refreshes often reset groups[].members to [].
   // Empty arrays are truthy for ?? so we must not treat them as "missing".
-  const groupMemberList = isGroup
-    ? (() => {
-        const fromChat = Array.isArray(chat.members) ? chat.members : [];
-        if (fromChat.length > 0) return fromChat;
-        const fromGroups = groups.find((g) => g.id === chat.id)?.members;
-        return Array.isArray(fromGroups) && fromGroups.length > 0 ? fromGroups : [];
-      })()
-    : [];
+  const groupMemberList = groupMemberListForMentions;
   const group = isGroup ? { ...chat, members: groupMemberList } : null;
-  const isGroupAdmin = Boolean(
-    isGroup &&
-      group &&
-      ((group as Group).ownerId === currentUser.id ||
-        (Array.isArray((group as Group).adminIds) &&
-          (group as Group).adminIds.includes(currentUser.id)))
-  );
+  const isGroupAdmin = isGroupAdminForMentions;
 
   const typingLabels = typingUserIds.map((userId) =>
     resolveGroupChatSenderLabel({ id: userId }, groupMemberList)
   );
-
-  const mentionCandidates = useMemo(() => {
-    if (!isGroup) return [];
-    const members = (group?.members || [])
-      .filter((m) => m.id !== currentUser.id && m.username)
-      .map((m) => ({ id: m.id, username: m.username!, name: m.name }));
-    if (isGroupAdmin) {
-      return [{ id: '__all__', username: 'all', name: 'Everyone in this group' }, ...members];
-    }
-    return members;
-  }, [isGroup, isGroupAdmin, group?.members, currentUser.id]);
 
   const otherParticipant = !isGroup
     ? (() => {
@@ -888,47 +934,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     : '';
 
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;
-  const dmThread = !isGroup ? (chat as DMThread & { chatType?: 'dm' }) : null;
-  const [dmRequestStatus, setDmRequestStatus] = useState<'open' | 'pending' | 'declined'>(
-    dmThread?.status || 'open'
-  );
-  const [dmRequestBusy, setDmRequestBusy] = useState(false);
-  const [dmBlocked, setDmBlocked] = useState(false);
-  const [iBlockedThem, setIBlockedThem] = useState(false);
-  const [dmBlockBusy, setDmBlockBusy] = useState(false);
-
-  const dmPeerId = !isGroup
-    ? (Array.isArray((chat as DMThread)?.participantIds)
-        ? (chat as DMThread).participantIds.find((id) => id !== currentUser.id)
-        : undefined)
-    : undefined;
-
-  useEffect(() => {
-    setDmRequestStatus(dmThread?.status || 'open');
-  }, [dmThread?.id, dmThread?.status]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!dmPeerId || isGroup) {
-      setDmBlocked(false);
-      setIBlockedThem(false);
-      return;
-    }
-    void getDmBlockStatus(currentUser.id, dmPeerId)
-      .then((status) => {
-        if (cancelled) return;
-        setDmBlocked(!!status.blocked);
-        setIBlockedThem(!!status.iBlockedThem);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDmBlocked(false);
-        setIBlockedThem(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
+  const dmThread = dmThreadForHooks;
 
   const description = isGroup
     ? group.description || memberCountText

@@ -294,6 +294,8 @@ export function MessageBubble({
   });
   const audioUrl = !isQuestion ? parseChatAudioUrl(message.text) : null;
   const isRemoved = !!message.isRemoved || !!message.removedAt;
+  // Must run before any early return — removed vs normal messages must not change hook count.
+  const questionImageUri = useResolvedStorageUrl(message.imageUrl);
 
   if (isRemoved) {
     return (
@@ -344,7 +346,6 @@ export function MessageBubble({
     borderColor: colors.border,
     borderWidth: 1,
   };
-  const questionImageUri = useResolvedStorageUrl(message.imageUrl);
   const storedLabel = message.senderName?.trim() || '';
   const authorLabel = resolveGroupChatSenderLabel(
     {
