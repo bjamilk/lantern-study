@@ -164,8 +164,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       setShowContact(false);
       setContactMessage('');
       Alert.alert('Message sent', 'Opening chat with the seller.');
-      if (result.threadId && result.sellerId) {
-        openDm(result.threadId, result.sellerId, listing.seller?.name);
+      const sellerId = result.sellerId || listing.seller_id || listing.user_id;
+      const threadId =
+        result.threadId ||
+        (sellerId && user?.id ? [user.id, sellerId].sort().join('-') : undefined);
+      if (threadId && sellerId) {
+        openDm(threadId, sellerId, listing.seller?.name);
       }
     } catch (e: unknown) {
       Alert.alert(

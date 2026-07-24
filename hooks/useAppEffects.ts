@@ -970,7 +970,12 @@ export function useAppEffects({
                         } else {
                             openModal('challenges');
                         }
-                    } else if (notifType === 'dm_message' || (payload.new.link as string | undefined)?.startsWith('dm:')) {
+                    } else if (
+                        notifType === 'dm_message' ||
+                        notifType === 'marketplace_inquiry' ||
+                        (payload.new.link as string | undefined)?.startsWith('dm:')
+                    ) {
+                        // New DMs and marketplace contact-seller both need the chat list refreshed.
                         void refreshDmThreadsForUser(currentUser.id);
                     }
                 }
@@ -1019,11 +1024,63 @@ export function useAppEffects({
         };
     }, [currentUser?.id, updateNotifications, openModal, onChallengeNotification, refreshDmThreadsForUser]);
 
-    // --- Real-time DM message subscription ---
+    // Manual refresh hook (e.g. after contact-seller creates a DM thread)
+    useEffect(() => {
+        if (!currentUser?.id) return;
+        const onRefresh = () => {
+            void refreshDmThreadsForUser(currentUser.id);
+        };
+        window.addEventListener('lantern:refresh-dm-threads', onRefresh);
+        return () => window.removeEventListener('lantern:refresh-dm-threads', onRefresh);
+    }, [currentUser?.id, refreshDmThreadsForUser]);
+
+    // New / updated DM threads (contact-seller, first message) — keep chat list in sync without full reload.
     useEffect(() => {
         if (!currentUser || lowDataMode) return;
 
-        const channels = dmThreads.map((thread) => {
+        const channel = supabase
+            .channel(`dm-threads:${currentUser.id}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'dm_threads' },
+                (payload) => {
+                    const row = payload.new as { participant_ids?: unknown };
+                    const participants = Array.isArray(row.participant_ids)
+                        ? row.participant_ids.map(String)
+                        : [];
+                    if (!participants.includes(currentUser.id)) return;
+                    void refreshDmThreadsForUser(currentUser.id);
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'dm_threads' },
+                (payload) => {
+                    const row = payload.new as { participant_ids?: unknown };
+                    const participants = Array.isArray(row.participant_ids)
+                        ? row.participant_ids.map(String)
+                        : [];
+                    if (!participants.includes(currentUser.id)) return;
+                    void refreshDmThreadsForUser(currentUser.id);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [currentUser?.id, lowDataMode, refreshDmThreadsForUser]);
+
+    // Stable key so lastMessage/unread bumps do not tear down every DM channel.
+    const dmThreadIdsKey = dmThreads.map((t) => t.id).sort().join(',');
+
+    // --- Real-time DM message subscription ---
+    useEffect(() => {
+        if (!currentUser || lowDataMode) return;
+        const threadIds = dmThreadIdsKey ? dmThreadIdsKey.split(',') : [];
+        if (threadIds.length === 0) return;
+
+        const channels = threadIds.map((threadId) => {
             const applyDmChange = (
                 payload: { new: Record<string, unknown> },
                 isUpdate: boolean
@@ -1041,6 +1098,9 @@ export function useAppEffects({
                     thread_root_id?: string;
                 };
                 if (!isUpdate && raw.sender_id === currentUser.id) return;
+                const viewingThisThread =
+                    useUIStore.getState().selectedChat?.chatType === 'dm' &&
+                    useUIStore.getState().selectedChat?.id === threadId;
                 const message: DirectMessage = {
                     id: raw.id,
                     threadId: raw.thread_id,
@@ -1055,11 +1115,11 @@ export function useAppEffects({
                     replyCount: 0,
                 };
                 updateDirectMessages(prev => {
-                    const existing = prev[thread.id] || [];
+                    const existing = prev[threadId] || [];
                     if (isUpdate) {
                         return {
                             ...prev,
-                            [thread.id]: existing.map((item) => {
+                            [threadId]: existing.map((item) => {
                                 const replyTo = item.replyTo?.id === message.id
                                     ? {
                                         ...item.replyTo,
@@ -1077,42 +1137,45 @@ export function useAppEffects({
                     if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
                         return {
                             ...prev,
-                            [thread.id]: existing.map(m =>
+                            [threadId]: existing.map(m =>
                                 m.id === raw.client_message_id
                                     ? { ...m, ...message, id: message.id }
                                     : m
                             ),
                         };
                     }
-                    return { ...prev, [thread.id]: [...existing, message] };
+                    return { ...prev, [threadId]: [...existing, message] };
                 });
 
                 if (isUpdate) {
-                    void refreshDmThreadsForUser();
+                    void refreshDmThreadsForUser(currentUser.id);
                     return;
                 }
                 updateDmThreads(prev => prev.map(t => {
-                    if (t.id !== thread.id) return t;
+                    if (t.id !== threadId) return t;
                     const isIncoming = raw.sender_id !== currentUser.id;
                     return {
                         ...t,
-                        lastMessage: raw.text,
+                        lastMessage: raw.removed_at ? t.lastMessage : raw.text,
                         lastMessageTimestamp: new Date(raw.timestamp),
-                        unreadCount: isIncoming ? (t.unreadCount || 0) + 1 : t.unreadCount,
+                        unreadCount:
+                            isIncoming && !viewingThisThread
+                                ? (t.unreadCount || 0) + 1
+                                : t.unreadCount,
                         isArchived: isIncoming ? false : t.isArchived,
                     };
                 }));
             };
 
             return supabase
-                .channel(`dm:${thread.id}`)
+                .channel(`dm:${threadId}`)
                 .on(
                     'postgres_changes',
                     {
                         event: 'INSERT',
                         schema: 'public',
                         table: 'dm_messages',
-                        filter: `thread_id=eq.${thread.id}`,
+                        filter: `thread_id=eq.${threadId}`,
                     },
                     (payload) => applyDmChange(payload as { new: Record<string, unknown> }, false)
                 )
@@ -1122,7 +1185,7 @@ export function useAppEffects({
                         event: 'UPDATE',
                         schema: 'public',
                         table: 'dm_messages',
-                        filter: `thread_id=eq.${thread.id}`,
+                        filter: `thread_id=eq.${threadId}`,
                     },
                     (payload) => applyDmChange(payload as { new: Record<string, unknown> }, true)
                 )
@@ -1134,7 +1197,7 @@ export function useAppEffects({
         };
     }, [
         currentUser?.id,
-        dmThreads,
+        dmThreadIdsKey,
         lowDataMode,
         refreshDmThreadsForUser,
         updateDirectMessages,
@@ -1269,6 +1332,11 @@ export function useAppEffects({
                         !message.isRemoved && !message.removedAt && !message.isArchived
                     )
                 : mapped;
+            const isIncoming =
+                !isUpdate && !!raw.sender_id && raw.sender_id !== currentUser.id;
+            const viewingThisGroup =
+                useUIStore.getState().selectedChat?.chatType === 'group' &&
+                useUIStore.getState().selectedChat?.id === groupId;
             useGroupStore.getState().updateGroups((prev) =>
                 prev.map((g) =>
                     g.id === groupId
@@ -1284,6 +1352,12 @@ export function useAppEffects({
                                     : latestVisible
                                       ? g.lastMessageTime
                                       : undefined,
+                            // Realtime previously only refreshed the preview — badges stayed stale until reload.
+                            unreadCount:
+                                isIncoming && !viewingThisGroup
+                                    ? (g.unreadCount || 0) + 1
+                                    : g.unreadCount,
+                            isArchived: isIncoming ? false : g.isArchived,
                           }
                         : g
                 )
@@ -1369,7 +1443,12 @@ export function useAppEffects({
                     // Membership changed — re-fetch the full groups list so the sidebar
                     // reflects the join / leave immediately.
                     try {
-                        const freshGroups = await fetchGroups(currentUser.id);
+                        const [freshGroups, unreadCounts] = await Promise.all([
+                            fetchGroups(currentUser.id),
+                            fetchGroupUnreadCounts(currentUser.id).catch(
+                                () => ({} as Record<string, number>)
+                            ),
+                        ]);
                         setGroups(freshGroups.map((g: any) => ({
                             id: g.id,
                             name: g.name,
@@ -1382,7 +1461,7 @@ export function useAppEffects({
                             parentId: g.parent_id || g.parentId,
                             isArchived: g.is_archived ?? g.isArchived ?? false,
                             inviteId: g.invite_id || g.inviteId,
-                            unreadCount: 0,
+                            unreadCount: unreadCounts[g.id] || 0,
                             pendingMembers: [],
                             invitedPhoneNumbers: [],
                             members: [],

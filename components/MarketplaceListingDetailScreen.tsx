@@ -248,6 +248,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     if (!listing || !contactMessage.trim()) return;
     if (requireAuth()) return;
 
+    const sellerId = listing.user_id || listing.seller_id;
+    if (!sellerId) {
+      showToast('Could not find this seller. Please try again.', 'error');
+      return;
+    }
+
     setContactLoading(true);
     try {
       // Create inquiry to link the conversation to the listing
@@ -255,9 +261,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       void import('../services/productAnalytics').then(({ trackInquiryStarted }) => {
         trackInquiryStarted(listing.id);
       });
+      // Signal chat shell to refetch DM threads so the new conversation appears without a full reload.
+      window.dispatchEvent(new CustomEvent('lantern:refresh-dm-threads'));
       
-      // Navigate to direct messages with seller
-      onNavigate('DirectMessages', { userId: listing.seller_id });
+      // Navigate to direct messages with seller (API listings use user_id, not seller_id)
+      onNavigate('DirectMessages', { userId: sellerId });
       
       setShowContactForm(false);
       setContactMessage('');

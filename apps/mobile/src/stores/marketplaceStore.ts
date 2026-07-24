@@ -1044,11 +1044,18 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return {};
       }
 
-      const result = await api.createInquiry(listingId, message);
+      // API shape: { inquiry, threadId } (existing inquiries may flatten to the inquiry row).
+      const result = (await api.createInquiry(listingId, message)) as {
+        inquiry?: { dm_thread_id?: string; seller_id?: string };
+        threadId?: string;
+        dm_thread_id?: string;
+        seller_id?: string;
+      };
+      const inquiry = result.inquiry ?? result;
       set({ isLoading: false });
       return {
-        threadId: result.dm_thread_id,
-        sellerId: result.seller_id,
+        threadId: result.threadId || inquiry.dm_thread_id,
+        sellerId: inquiry.seller_id,
       };
     } catch (error: any) {
       console.error('Failed to send inquiry:', error);

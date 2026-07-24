@@ -318,7 +318,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, [selectedChat?.id, selectedChat?.chatType, currentUser?.id, lowDataMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
 
     const handleInitiateDm = useCallback(async (otherUserId: string) => {
-        if (!currentUser || otherUserId === currentUser.id) return;
+        if (!currentUser || !otherUserId || otherUserId === currentUser.id) return;
 
         const sortedIds: [string, string] = [currentUser.id, otherUserId].sort() as [string, string];
         const threadId = sortedIds.join('-');
@@ -360,10 +360,33 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     [otherUserId]: { name: otherUser.name, avatarUrl: otherUser.avatarUrl },
                 }
             };
-            updateDmThreads(prev => [...prev, newThread]);
+            updateDmThreads(prev => (prev.some((t) => t.id === threadId) ? prev : [...prev, newThread]));
             handleSelectChat({ ...newThread, chatType: 'dm' });
         } else {
             handleSelectChat({ ...thread, chatType: 'dm' });
+        }
+
+        // Sync from server so inquiry / first-message threads show lastMessage without a full page reload.
+        try {
+            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
+                fetchDmThreads(currentUser.id),
+                fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
+            ]);
+            if (Array.isArray(fetchedThreads)) {
+                updateDmThreads(() =>
+                    fetchedThreads.map((t: any) => ({
+                        id: t.id,
+                        participantIds: t.participantIds || t.participant_ids || [],
+                        participants: t.participants || {},
+                        lastMessage: t.lastMessage || t.last_message,
+                        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+                        unreadCount: dmUnreadCounts[t.id] || 0,
+                        isArchived: t.isArchived || false,
+                    }))
+                );
+            }
+        } catch (err) {
+            console.warn('[DM] Failed to refresh threads after initiate:', err);
         }
     }, [currentUser, dmThreads, users, groups, updateDmThreads, handleSelectChat]);
 
