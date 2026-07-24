@@ -18,7 +18,7 @@ export const QUESTION_VISIBILITY_MODE_OPTIONS: ReadonlyArray<{
   {
     value: 'verified',
     label: 'Verified only',
-    helper: 'Group-approved questions',
+    helper: 'Approved questions in chat; pending still shown so members can vote',
   },
   {
     value: 'unverified',
@@ -80,8 +80,17 @@ export function isVerifiedQuestion(
   return String(status || '').toUpperCase() === QuestionStatus.VERIFIED;
 }
 
+export function isPendingQuestion(
+  status?: QuestionStatus | string | null
+): boolean {
+  if (status == null || status === '') return true;
+  return String(status).toUpperCase() === QuestionStatus.PENDING;
+}
+
 /**
  * Chat filter: non-questions always pass. Questions filtered by mode.
+ * PENDING questions always remain visible (except `none`) so every member can vote.
+ * Study/test pools use `questionStatusPassesVisibilityMode` instead.
  * When a question flips to VERIFIED under `unverified`, it fails the filter (auto-hide).
  */
 export function messagePassesQuestionVisibility(
@@ -89,11 +98,12 @@ export function messagePassesQuestionVisibility(
   mode: QuestionVisibilityMode
 ): boolean {
   if (!isQuestionMessage(msg)) return true;
+  if (mode === 'none') return false;
+  // Voting loop: newly posted questions must stay visible to all members.
+  if (isPendingQuestion(msg.questionStatus)) return true;
   switch (mode) {
     case 'all':
       return true;
-    case 'none':
-      return false;
     case 'verified':
       return isVerifiedQuestion(msg.questionStatus);
     case 'unverified':

@@ -31,4 +31,14 @@ describe('questionVisibility', () => {
     expect(messagePassesQuestionVisibility(verified, 'unverified')).toBe(false);
     expect(messagePassesQuestionVisibility(verified, 'verified')).toBe(true);
   });
+
+  it('keeps pending questions visible in chat under verified mode so members can vote', () => {
+    const pending = { type: MessageType.QUESTION, questionStatus: QuestionStatus.PENDING };
+    const rejected = { type: MessageType.QUESTION, questionStatus: QuestionStatus.REJECTED };
+    const missingStatus = { type: MessageType.QUESTION };
+    expect(messagePassesQuestionVisibility(pending, 'verified')).toBe(true);
+    expect(messagePassesQuestionVisibility(missingStatus, 'verified')).toBe(true);
+    expect(messagePassesQuestionVisibility(rejected, 'verified')).toBe(false);
+    expect(messagePassesQuestionVisibility(pending, 'none')).toBe(false);
+  });
 });
