@@ -5623,19 +5623,22 @@ export class SupabaseService {
         .eq('pending', false);
 
       if (error) throw error;
-      return (data || [])
-        .map((item: any) => {
-          const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
-          if (!profile) return null;
-          return {
-            id: profile.id || item.user_id,
-            name: profile.name,
-            username: profile.username,
-            avatarUrl: profile.avatar_url,
-            phoneNumber: profile.phone,
-          };
-        })
-        .filter((member: User | null): member is User => !!member);
+      const members: User[] = [];
+      for (const item of data || []) {
+        const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
+        if (!profile) continue;
+        members.push({
+          id: profile.id || item.user_id,
+          name: profile.name,
+          username: profile.username,
+          avatarUrl: profile.avatar_url,
+          phoneNumber: profile.phone,
+          points: 0,
+          badges: [],
+          stats: {},
+        } as User);
+      }
+      return members;
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 
