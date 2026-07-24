@@ -485,6 +485,10 @@ function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
     };
   }
 
+  const status =
+    t.status === 'pending' || t.status === 'declined' || t.status === 'open'
+      ? t.status
+      : 'open';
   return {
     id: t.id,
     participantIds: t.participant_ids || t.participantIds || [],
@@ -493,6 +497,8 @@ function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
     lastMessageTimestamp: t.last_message_timestamp || t.lastMessageTimestamp,
     unreadCount: unreadCounts[t.id] ?? t.unread_count ?? 0,
     isArchived: t.is_archived ?? t.isArchived ?? false,
+    status,
+    requestedBy: t.requested_by ?? t.requestedBy ?? null,
   };
 }
 
@@ -1500,6 +1506,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         },
       }));
       deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
+      // Refresh thread status (e.g. pending message request → still pending / opened by reply).
+      await get().fetchDmThreads(senderId).catch(() => undefined);
     } catch (error) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);

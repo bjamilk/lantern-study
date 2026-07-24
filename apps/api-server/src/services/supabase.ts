@@ -3843,6 +3843,8 @@ export class SupabaseService {
     content: string,
     options?: { bypassPrivacy?: boolean; clientMessageId?: string; replyToMessageId?: string }
   ): Promise<Message> {
+    let asMessageRequest = false;
+
     if (!options?.bypassPrivacy) {
       const { data: recipientProfile, error: recipientError } = await this.supabase
         .from('profiles')
@@ -3854,16 +3856,17 @@ export class SupabaseService {
         throw new Error('Recipient not found');
       }
 
-      const { canRecipientReceiveDirectMessage } = await import('../utils/userSettingsPolicy');
-      const dmPolicy = await canRecipientReceiveDirectMessage(
+      const { resolveDirectMessageAccess } = await import('../utils/userSettingsPolicy');
+      const access = await resolveDirectMessageAccess(
         this.supabase,
         senderId,
         recipientId,
         recipientProfile.settings
       );
-      if (!dmPolicy.allowed) {
-        throw new Error(dmPolicy.reason || 'Direct messages are not allowed');
+      if (access.mode === 'deny') {
+        throw new Error(access.reason || 'Direct messages are not allowed');
       }
+      asMessageRequest = access.mode === 'request';
     }
 
     // Create thread ID from sorted user IDs
@@ -3871,7 +3874,35 @@ export class SupabaseService {
     const threadId = sortedIds.join('-');
 
     try {
-      // Ensure thread exists (upsert)
+      const { data: existingThread } = await this.supabase
+        .from('dm_threads')
+        .select('id, status, requested_by, archived_by')
+        .eq('id', threadId)
+        .maybeSingle();
+
+      // Marketplace / bypass and recipient replies open the thread; cold outreach stays pending.
+      let nextStatus: 'open' | 'pending' | 'declined' = 'open';
+      let nextRequestedBy: string | null = null;
+      if (options?.bypassPrivacy) {
+        nextStatus = 'open';
+        nextRequestedBy = null;
+      } else if (asMessageRequest) {
+        nextStatus = 'pending';
+        nextRequestedBy =
+          (typeof existingThread?.requested_by === 'string' && existingThread.requested_by) ||
+          senderId;
+      } else if (existingThread?.status === 'pending' && existingThread.requested_by !== senderId) {
+        // Recipient replied → accept.
+        nextStatus = 'open';
+        nextRequestedBy = null;
+      } else if (existingThread?.status === 'open') {
+        nextStatus = 'open';
+        nextRequestedBy = null;
+      } else {
+        nextStatus = 'open';
+        nextRequestedBy = null;
+      }
+
       const { error: threadError } = await this.supabase
         .from('dm_threads')
         .upsert({
@@ -3880,6 +3911,8 @@ export class SupabaseService {
           participants: {},
           last_message: content,
           last_message_time: new Date().toISOString(),
+          status: nextStatus,
+          requested_by: nextRequestedBy,
         }, { onConflict: 'id' });
 
       if (threadError) {
@@ -3968,13 +4001,9 @@ export class SupabaseService {
 
       // Un-archive for recipient, un-hide for everyone, and update the
       // thread's last message. A new message resurrects a "deleted" thread.
-      const { data: threadRow } = await this.supabase
-        .from('dm_threads')
-        .select('archived_by')
-        .eq('id', threadId)
-        .single();
-
-      const archivedBy: string[] = Array.isArray(threadRow?.archived_by) ? threadRow.archived_by : [];
+      const archivedBy: string[] = Array.isArray(existingThread?.archived_by)
+        ? existingThread.archived_by
+        : [];
       const updatedArchivedBy = archivedBy.filter((id: string) => id !== recipientId);
 
       await this.supabase
@@ -3984,6 +4013,8 @@ export class SupabaseService {
           last_message_time: new Date().toISOString(),
           archived_by: updatedArchivedBy,
           hidden_by: [],
+          status: nextStatus,
+          requested_by: nextRequestedBy,
         })
         .eq('id', threadId);
 
@@ -3992,12 +4023,21 @@ export class SupabaseService {
         : (data.profiles as unknown as any);
       const senderName = senderProfile?.name || 'Someone';
       const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+      const isRequestNotify = nextStatus === 'pending';
 
       void this.createNotification(recipientId, {
-        message: `${senderName} sent you a message`,
+        message: isRequestNotify
+          ? `${senderName} sent a message request: "${preview}"`
+          : `${senderName} sent you a message`,
         link: `dm:${threadId}:${senderId}`,
-        type: 'dm_message',
-        data: { threadId, senderId, messageId: data.id, preview },
+        type: isRequestNotify ? 'dm_message_request' : 'dm_message',
+        data: {
+          threadId,
+          senderId,
+          messageId: data.id,
+          preview,
+          status: nextStatus,
+        },
       }).catch((err) => {
         logger.error('Failed to create DM notification', { error: err, recipientId, threadId });
       });
@@ -4022,11 +4062,100 @@ export class SupabaseService {
         threadRootId: withReply.thread_root_id || undefined,
         replyCount: 0,
         receiptStatus: 'sent' as const,
-      };
+        threadStatus: nextStatus,
+        isMessageRequest: nextStatus === 'pending',
+      } as unknown as Message;
     } catch (error: any) {
       logger.error('Exception sending DM', { error: error.message, senderId, recipientId });
       throw error;
     }
+  }
+
+  async acceptDmMessageRequest(threadId: string, userId: string): Promise<{
+    id: string;
+    status: 'open';
+    requestedBy: null;
+  }> {
+    const { data: thread, error } = await this.supabase
+      .from('dm_threads')
+      .select('id, participant_ids, status, requested_by')
+      .eq('id', threadId)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!thread) throw new Error('Thread not found');
+
+    const pids = Array.isArray(thread.participant_ids) ? thread.participant_ids : [];
+    if (!pids.includes(userId)) throw new Error('Access denied');
+    if (thread.status === 'open') {
+      return { id: thread.id, status: 'open', requestedBy: null };
+    }
+    if (thread.status !== 'pending') {
+      throw new Error('This message request cannot be accepted');
+    }
+    if (thread.requested_by === userId) {
+      throw new Error('Only the recipient can accept this message request');
+    }
+
+    const { error: updateError } = await this.supabase
+      .from('dm_threads')
+      .update({ status: 'open', requested_by: null })
+      .eq('id', threadId);
+    if (updateError) throw updateError;
+
+    if (typeof thread.requested_by === 'string') {
+      void this.createNotification(thread.requested_by, {
+        message: 'Your message request was accepted',
+        link: `dm:${threadId}:${userId}`,
+        type: 'dm_message',
+        data: { threadId, senderId: userId, status: 'open' },
+      }).catch((err) => {
+        logger.warn('Failed to notify requester of accepted DM request', { err, threadId });
+      });
+    }
+
+    return { id: threadId, status: 'open', requestedBy: null };
+  }
+
+  async declineDmMessageRequest(threadId: string, userId: string): Promise<{
+    id: string;
+    status: 'declined';
+    requestedBy: string | null;
+  }> {
+    const { data: thread, error } = await this.supabase
+      .from('dm_threads')
+      .select('id, participant_ids, status, requested_by')
+      .eq('id', threadId)
+      .maybeSingle();
+    if (error && error.code !== 'PGRST116') throw error;
+    if (!thread) throw new Error('Thread not found');
+
+    const pids = Array.isArray(thread.participant_ids) ? thread.participant_ids : [];
+    if (!pids.includes(userId)) throw new Error('Access denied');
+    if (thread.status === 'declined') {
+      return {
+        id: thread.id,
+        status: 'declined',
+        requestedBy: typeof thread.requested_by === 'string' ? thread.requested_by : null,
+      };
+    }
+    if (thread.status !== 'pending') {
+      throw new Error('This message request cannot be declined');
+    }
+    if (thread.requested_by === userId) {
+      throw new Error('Only the recipient can decline this message request');
+    }
+
+    const { error: updateError } = await this.supabase
+      .from('dm_threads')
+      .update({ status: 'declined' })
+      .eq('id', threadId);
+    if (updateError) throw updateError;
+
+    return {
+      id: threadId,
+      status: 'declined',
+      requestedBy: typeof thread.requested_by === 'string' ? thread.requested_by : null,
+    };
   }
 
   async searchMessages(query: string, options: {
@@ -8070,6 +8199,8 @@ export class SupabaseService {
         participants: {},
         last_message: initialMessage,
         last_message_time: new Date().toISOString(),
+        status: 'open',
+        requested_by: null,
       },
       { onConflict: 'id' }
     );

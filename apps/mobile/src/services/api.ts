@@ -95,6 +95,8 @@ export const {
   fetchDMUnreadCounts,
   archiveDmThread,
   unarchiveDmThread,
+  acceptDmMessageRequest,
+  declineDmMessageRequest,
   deleteDmThread,
   fetchTests,
   createTestSession,

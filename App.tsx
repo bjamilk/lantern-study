@@ -265,7 +265,7 @@ export const App: React.FC = () => {
 
     const {
         handleSelectChat, handleInitiateDm, handleSendDm, handleDeleteDmThread,
-        handleArchiveDmThread, handleUnarchiveDmThread, onSendMessage,
+        handleArchiveDmThread, handleUnarchiveDmThread, handleDmThreadStatusChange, onSendMessage,
         handleEditChatMessage, handleRemoveChatMessage, onPeerChatRead,
         handleCreateSubGroup, handleCreateGroup, handleEnterCreatedGroup, handleCloseCreateGroupModal,
         handleQuestionSubmit, onVoteQuestion, handleUpvoteDuplicateAndClose,
@@ -943,6 +943,7 @@ export const App: React.FC = () => {
                     onDeleteDmThread={handleDeleteDmThread}
                     onArchiveDmThread={handleArchiveDmThread}
                     onUnarchiveDmThread={handleUnarchiveDmThread}
+                    onDmThreadStatusChange={handleDmThreadStatusChange}
                     onLoadMoreMessages={handleLoadMoreMessages}
                     unreadAnchorAt={unreadAnchorAt}
                     onPeerChatRead={onPeerChatRead} />

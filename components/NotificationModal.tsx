@@ -40,6 +40,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
       (n.link ||
         n.type?.startsWith('challenge') ||
         n.type === 'dm_message' ||
+        n.type === 'dm_message_request' ||
         n.type === 'group_invite' ||
         n.type === 'group_message' ||
         n.type === 'mention' ||

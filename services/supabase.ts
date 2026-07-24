@@ -3904,6 +3904,38 @@ export const sendDirectMessage = async (
   }
 };
 
+export const acceptDmMessageRequest = async (threadId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/accept`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to accept message request');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const declineDmMessageRequest = async (threadId: string) => {
+  const response = await fetch(
+    `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/decline`,
+    {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+    }
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to decline message request');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
 // Fetch unread counts for all groups
 export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<string, number>> => {
   try {

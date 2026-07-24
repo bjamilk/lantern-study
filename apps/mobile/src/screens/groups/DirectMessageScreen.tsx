@@ -26,7 +26,11 @@ import { ChatThreadModal } from '../../components/chat/ChatThreadModal';
 import { DmBubble } from '../../components/chat/DmBubble';
 import { useTypingIndicator } from '../../hooks/useTypingIndicator';
 import { useChatReadReceipts } from '../../hooks/useChatReadReceipts';
-import { fetchInquiryByThread } from '../../services/api';
+import {
+  acceptDmMessageRequest,
+  declineDmMessageRequest,
+  fetchInquiryByThread,
+} from '../../services/api';
 import { useTheme } from '../../theme';
 
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
@@ -120,6 +124,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     removeDirectMessage,
     markDMAsRead,
     fetchThread,
+    fetchDmThreads,
     applyPeerChatRead,
   } =
     useGroupStore();
@@ -128,6 +133,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [dmRequestBusy, setDmRequestBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -557,28 +563,110 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             {displayName} is typing…
           </Text>
         ) : null}
-        <ChatComposer
-          value={text}
-          onChangeText={value => {
-            setText(value);
-            broadcastTyping();
-          }}
-          onSend={() => void handleSend()}
-          sending={sending}
-          threadId={threadId}
-          replyTo={replyTo}
-          onClearReply={() => setReplyTo(null)}
-          editingMessage={
-            editingMessage ? { id: editingMessage.id, text: editingMessage.text } : null
-          }
-          onCancelEdit={() => {
-            setEditingMessage(null);
-            setText('');
-          }}
-          onSendAudioMarkdown={async (markdown) => {
-            await handleSend(markdown);
-          }}
-        />
+        {thread?.status === 'pending' &&
+        thread.requestedBy &&
+        thread.requestedBy !== user?.id ? (
+          <View
+            className="px-4 py-3 border-t"
+            style={{ backgroundColor: colors.primaryBackground, borderTopColor: colors.border }}
+          >
+            <Text className="text-sm mb-2" style={{ color: colors.text }}>
+              Message request — reply or accept to open a two-way chat. Decline to keep it one-way.
+            </Text>
+            <View className="flex-row gap-2">
+              <Pressable
+                disabled={dmRequestBusy}
+                onPress={() => {
+                  void (async () => {
+                    setDmRequestBusy(true);
+                    try {
+                      await acceptDmMessageRequest(threadId);
+                      if (user?.id) await fetchDmThreads(user.id);
+                    } catch (err) {
+                      Alert.alert(
+                        'Could not accept',
+                        err instanceof Error ? err.message : 'Please try again.'
+                      );
+                    } finally {
+                      setDmRequestBusy(false);
+                    }
+                  })();
+                }}
+                className="px-3 py-2 rounded-lg"
+                style={{ backgroundColor: colors.primary, opacity: dmRequestBusy ? 0.6 : 1 }}
+              >
+                <Text className="text-sm font-semibold text-white">Accept</Text>
+              </Pressable>
+              <Pressable
+                disabled={dmRequestBusy}
+                onPress={() => {
+                  void (async () => {
+                    setDmRequestBusy(true);
+                    try {
+                      await declineDmMessageRequest(threadId);
+                      if (user?.id) await fetchDmThreads(user.id);
+                    } catch (err) {
+                      Alert.alert(
+                        'Could not decline',
+                        err instanceof Error ? err.message : 'Please try again.'
+                      );
+                    } finally {
+                      setDmRequestBusy(false);
+                    }
+                  })();
+                }}
+                className="px-3 py-2 rounded-lg border"
+                style={{ borderColor: colors.border, opacity: dmRequestBusy ? 0.6 : 1 }}
+              >
+                <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+                  Decline
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+        {thread?.status === 'pending' && thread.requestedBy === user?.id ? (
+          <Text
+            className="px-4 py-2 text-xs border-t"
+            style={{ color: colors.textSecondary, borderTopColor: colors.border }}
+          >
+            Message request sent — they can see your messages. Two-way chat opens when they accept or
+            reply.
+          </Text>
+        ) : null}
+        {thread?.status === 'declined' &&
+        thread.requestedBy &&
+        thread.requestedBy !== user?.id ? (
+          <Text
+            className="px-4 py-3 text-sm border-t"
+            style={{ color: colors.textSecondary, borderTopColor: colors.border }}
+          >
+            You declined this message request. It stays one-way unless they send again.
+          </Text>
+        ) : (
+          <ChatComposer
+            value={text}
+            onChangeText={value => {
+              setText(value);
+              broadcastTyping();
+            }}
+            onSend={() => void handleSend()}
+            sending={sending}
+            threadId={threadId}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
+            editingMessage={
+              editingMessage ? { id: editingMessage.id, text: editingMessage.text } : null
+            }
+            onCancelEdit={() => {
+              setEditingMessage(null);
+              setText('');
+            }}
+            onSendAudioMarkdown={async (markdown) => {
+              await handleSend(markdown);
+            }}
+          />
+        )}
       </KeyboardAvoidingView>
 
       <ChatThreadModal

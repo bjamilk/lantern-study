@@ -566,6 +566,8 @@ export interface OfflineSessionBundle {
   displayName?: string;
 }
 
+export type DmThreadStatus = 'open' | 'pending' | 'declined';
+
 export interface DMThread {
   id: string;
   participantIds: [string, string] | string[];
@@ -574,6 +576,10 @@ export interface DMThread {
   lastMessageTimestamp?: Date | string;
   unreadCount?: number;
   isArchived?: boolean;
+  /** open = two-way; pending = message request; declined = rejected request */
+  status?: DmThreadStatus;
+  /** User who initiated a pending/declined message request */
+  requestedBy?: string | null;
 }
 
 export interface DirectMessage {

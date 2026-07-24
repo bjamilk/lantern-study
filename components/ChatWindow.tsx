@@ -46,6 +46,8 @@ import {
   supabase,
   fetchGroupThread,
   fetchDmThread,
+  acceptDmMessageRequest,
+  declineDmMessageRequest,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -89,6 +91,10 @@ interface ChatWindowProps {
   onDeleteDmThread?: (threadId: string) => void;
   onArchiveDmThread?: (threadId: string) => void;
   onUnarchiveDmThread?: (threadId: string) => void;
+  onDmThreadStatusChange?: (
+    threadId: string,
+    patch: { status: 'open' | 'pending' | 'declined'; requestedBy?: string | null }
+  ) => void;
   onLoadMoreMessages?: (groupId: string) => Promise<number>;
   /**
    * Prior last_read_at for the open group or DM chat.
@@ -118,6 +124,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onDeleteDmThread,
   onArchiveDmThread,
   onUnarchiveDmThread,
+  onDmThreadStatusChange,
   onLoadMoreMessages,
   onPeerChatRead,
 }) => {
@@ -876,8 +883,72 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         : '')
     : '';
 
-  const description = isGroup ? group.description || memberCountText : 'Direct Message';
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;
+  const dmThread = !isGroup ? (chat as DMThread & { chatType?: 'dm' }) : null;
+  const [dmRequestStatus, setDmRequestStatus] = useState<'open' | 'pending' | 'declined'>(
+    dmThread?.status || 'open'
+  );
+  const [dmRequestBusy, setDmRequestBusy] = useState(false);
+
+  useEffect(() => {
+    setDmRequestStatus(dmThread?.status || 'open');
+  }, [dmThread?.id, dmThread?.status]);
+
+  const description = isGroup
+    ? group.description || memberCountText
+    : dmRequestStatus === 'pending'
+      ? 'Message request'
+      : dmRequestStatus === 'declined'
+        ? 'Declined request'
+        : 'Direct Message';
+
+  const isDmRequestRecipient =
+    !!dmThread &&
+    dmRequestStatus === 'pending' &&
+    dmThread.requestedBy &&
+    dmThread.requestedBy !== currentUser.id;
+  const isDmRequestSender =
+    !!dmThread &&
+    dmRequestStatus === 'pending' &&
+    dmThread.requestedBy === currentUser.id;
+  const isDmRequestDeclinedForRecipient =
+    !!dmThread &&
+    dmRequestStatus === 'declined' &&
+    dmThread.requestedBy &&
+    dmThread.requestedBy !== currentUser.id;
+
+  const handleAcceptDmRequest = async () => {
+    if (!dmThread?.id || dmRequestBusy) return;
+    setDmRequestBusy(true);
+    try {
+      await acceptDmMessageRequest(dmThread.id);
+      setDmRequestStatus('open');
+      onDmThreadStatusChange?.(dmThread.id, { status: 'open', requestedBy: null });
+      useToastStore.getState().showToast('Message request accepted', 'success');
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not accept request', 'error');
+    } finally {
+      setDmRequestBusy(false);
+    }
+  };
+
+  const handleDeclineDmRequest = async () => {
+    if (!dmThread?.id || dmRequestBusy) return;
+    setDmRequestBusy(true);
+    try {
+      await declineDmMessageRequest(dmThread.id);
+      setDmRequestStatus('declined');
+      onDmThreadStatusChange?.(dmThread.id, {
+        status: 'declined',
+        requestedBy: dmThread.requestedBy ?? null,
+      });
+      useToastStore.getState().showToast('Message request declined', 'success');
+    } catch (err: any) {
+      useToastStore.getState().showToast(err?.message || 'Could not decline request', 'error');
+    } finally {
+      setDmRequestBusy(false);
+    }
+  };
 
   const handleDropdownAction = (action: () => void) => {
     action();
@@ -1037,8 +1108,44 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             Unarchive
           </button>
         </div>
+      ) : isDmRequestDeclinedForRecipient ? (
+        <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-lantern-background-secondary border-t border-lantern-border flex-shrink-0">
+          <p className="text-sm text-lantern-text-secondary">
+            You declined this message request. It stays one-way unless they send again.
+          </p>
+        </div>
       ) : (
         <div className="flex-shrink-0 pb-16 md:pb-0 bg-lantern-surface relative z-20 border-t border-lantern-border">
+          {isDmRequestRecipient && (
+            <div className="px-4 py-3 border-b border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/30">
+              <p className="text-sm text-amber-900 dark:text-amber-200 mb-2">
+                Message request — reply or accept to open a two-way chat. Decline to keep it one-way.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={dmRequestBusy}
+                  onClick={() => void handleAcceptDmRequest()}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-lantern-primary text-white hover:bg-lantern-primary-dark disabled:opacity-60"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  disabled={dmRequestBusy}
+                  onClick={() => void handleDeclineDmRequest()}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          )}
+          {isDmRequestSender && (
+            <p className="px-4 py-2 text-xs text-lantern-text-secondary border-b border-lantern-border bg-lantern-background-secondary">
+              Message request sent — they can see your messages. Two-way chat opens when they accept or reply.
+            </p>
+          )}
           {typingLabels.length > 0 && (
             <p className="px-4 py-1 text-xs text-lantern-text-tertiary" aria-live="polite">
               {typingLabels.length === 1

@@ -936,6 +936,18 @@ export function createApiEndpoints(client: ApiClient) {
     unarchiveDmThread: (threadId: string, _userId: string) =>
       apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: 'PUT' }),
 
+    acceptDmMessageRequest: (threadId: string) =>
+      apiRequest<{ id: string; status: 'open'; requestedBy: null }>(
+        `/messages/dm/${encodeURIComponent(threadId)}/accept`,
+        { method: 'POST' }
+      ),
+
+    declineDmMessageRequest: (threadId: string) =>
+      apiRequest<{ id: string; status: 'declined'; requestedBy: string | null }>(
+        `/messages/dm/${encodeURIComponent(threadId)}/decline`,
+        { method: 'POST' }
+      ),
+
     deleteDmThread: (threadId: string, _userId: string) =>
       apiRequest<void>(`/messages/dm/${threadId}`, { method: 'DELETE' }),
 

@@ -69,15 +69,23 @@ function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
 }
 
 function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
-    return fetched.map((t: any) => ({
-        id: t.id,
-        participantIds: t.participantIds || t.participant_ids || [],
-        participants: t.participants || {},
-        lastMessage: t.lastMessage || t.last_message,
-        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-        unreadCount: dmUnreadCounts[t.id] || 0,
-        isArchived: t.isArchived || false,
-    }));
+    return fetched.map((t: any) => {
+        const status =
+            t.status === 'pending' || t.status === 'declined' || t.status === 'open'
+                ? t.status
+                : 'open';
+        return {
+            id: t.id,
+            participantIds: t.participantIds || t.participant_ids || [],
+            participants: t.participants || {},
+            lastMessage: t.lastMessage || t.last_message,
+            lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+            unreadCount: dmUnreadCounts[t.id] || 0,
+            isArchived: t.isArchived || false,
+            status,
+            requestedBy: t.requestedBy ?? t.requested_by ?? null,
+        };
+    });
 }
 
 interface UseAppEffectsParams {

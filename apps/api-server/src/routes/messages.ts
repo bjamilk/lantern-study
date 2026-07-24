@@ -410,7 +410,7 @@ router.get(
       // (a JS array becomes Postgres {uuid} and fails with 22P02 invalid json).
       const { data: threads, error } = await supabaseService.getClient()
         .from('dm_threads')
-        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by')
+        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, status, requested_by')
         .contains('participant_ids', JSON.stringify([userId]))
         .order('last_message_time', { ascending: false, nullsFirst: false });
 
@@ -461,6 +461,10 @@ router.get(
         const otherUserId = pids.find((id: string) => id !== userId);
         const otherProfile = otherUserId ? profilesMap[otherUserId] : null;
 
+        const status =
+          t.status === 'pending' || t.status === 'declined' || t.status === 'open'
+            ? t.status
+            : 'open';
         return {
           id: t.id,
           participantIds: pids,
@@ -479,6 +483,8 @@ router.get(
           lastMessage: t.last_message,
           lastMessageTimestamp: t.last_message_time,
           isArchived: Array.isArray(t.archived_by) && t.archived_by.includes(userId),
+          status,
+          requestedBy: typeof t.requested_by === 'string' ? t.requested_by : null,
         };
       });
 
@@ -486,6 +492,46 @@ router.get(
     } catch (error: any) {
       logger.error('Error in DM threads endpoint', { error: error.message, userId });
       res.status(500).json({ success: false, error: 'Failed to fetch DM threads' });
+    }
+  })
+);
+
+// POST /api/v1/messages/dm/:threadId/accept - Accept a pending message request
+router.post(
+  '/dm/:threadId/accept',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    try {
+      const data = await supabaseService.acceptDmMessageRequest(threadId, userId);
+      res.json({ success: true, data });
+    } catch (error: any) {
+      const msg = error?.message || 'Failed to accept message request';
+      const status =
+        msg === 'Thread not found' ? 404 : msg === 'Access denied' ? 403 : 400;
+      res.status(status).json({ success: false, error: msg });
+    }
+  })
+);
+
+// POST /api/v1/messages/dm/:threadId/decline - Decline a pending message request
+router.post(
+  '/dm/:threadId/decline',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    try {
+      const data = await supabaseService.declineDmMessageRequest(threadId, userId);
+      res.json({ success: true, data });
+    } catch (error: any) {
+      const msg = error?.message || 'Failed to decline message request';
+      const status =
+        msg === 'Thread not found' ? 404 : msg === 'Access denied' ? 403 : 400;
+      res.status(status).json({ success: false, error: msg });
     }
   })
 );
@@ -914,12 +960,15 @@ router.post(
     } catch (error: any) {
       const blocked =
         error.message?.includes('does not accept direct messages') ||
-        error.message?.includes('only accepts direct messages');
+        error.message?.includes('only accepts direct messages') ||
+        error.message?.includes('message request was declined');
       logger.error('Error sending direct message:', { error: error.message, senderId, recipientId });
       res.status(blocked ? 403 : 500).json({
         success: false,
         error: blocked
-          ? 'This user does not accept direct messages from you'
+          ? error.message?.includes('declined')
+            ? 'This message request was declined'
+            : 'This user does not accept direct messages from you'
           : clientErrorMessage(error, 'Failed to send direct message'),
       });
     }

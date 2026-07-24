@@ -46,6 +46,7 @@ const NOTIFICATION_PREF_BY_TYPE: Record<string, keyof NotificationSettings | nul
   challenge_result: 'testResults',
   challenge_opponent_finished: 'testResults',
   dm_message: 'groupActivity',
+  dm_message_request: 'groupActivity',
 };
 
 export function parseUserSettings(raw: unknown): UserSettings {
@@ -82,6 +83,13 @@ export function shouldSendExpoPush(
 }
 
 export type DirectMessagePolicy = 'everyone' | 'groups' | 'none';
+
+export type DmThreadStatus = 'open' | 'pending' | 'declined';
+
+export type DirectMessageAccess =
+  | { mode: 'allow' }
+  | { mode: 'request' }
+  | { mode: 'deny'; reason: string };
 
 export function getDirectMessagePolicy(rawSettings: unknown): DirectMessagePolicy {
   const settings = parseUserSettings(rawSettings);
@@ -123,65 +131,125 @@ export function buildDmThreadId(userIdA: string, userIdB: string): string {
   return [userIdA, userIdB].sort().join('-');
 }
 
+export async function getDmThreadAccessState(
+  supabase: { from: (table: string) => any },
+  userIdA: string,
+  userIdB: string
+): Promise<{ status: DmThreadStatus; requestedBy: string | null } | null> {
+  if (!userIdA || !userIdB || userIdA === userIdB) return null;
+  const threadId = buildDmThreadId(userIdA, userIdB);
+  const { data, error } = await supabase
+    .from('dm_threads')
+    .select('id, status, requested_by')
+    .eq('id', threadId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    return null;
+  }
+  if (!data?.id) return null;
+
+  const status =
+    data.status === 'pending' || data.status === 'declined' || data.status === 'open'
+      ? (data.status as DmThreadStatus)
+      : 'open';
+
+  return {
+    status,
+    requestedBy: typeof data.requested_by === 'string' ? data.requested_by : null,
+  };
+}
+
 /**
- * True when a DM thread already exists between the two users.
- * Used so privacy settings gate cold outreach, not replies in an open thread
- * (e.g. marketplace contact-seller → seller reply).
+ * True when an open (two-way) DM thread already exists between the two users.
+ * Pending/declined requests do not count as established conversations.
  */
 export async function usersHaveExistingDmThread(
   supabase: { from: (table: string) => any },
   userIdA: string,
   userIdB: string
 ): Promise<boolean> {
-  if (!userIdA || !userIdB || userIdA === userIdB) return false;
-  const threadId = buildDmThreadId(userIdA, userIdB);
-  const { data, error } = await supabase
-    .from('dm_threads')
-    .select('id')
-    .eq('id', threadId)
-    .maybeSingle();
-
-  if (error && error.code !== 'PGRST116') {
-    return false;
-  }
-  return !!data?.id;
+  const state = await getDmThreadAccessState(supabase, userIdA, userIdB);
+  return state?.status === 'open';
 }
 
-export async function canRecipientReceiveDirectMessage(
+/**
+ * Resolve whether a DM may be sent as a normal message, as a message request,
+ * or must be denied. Marketplace / admin paths use bypassPrivacy instead.
+ */
+export async function resolveDirectMessageAccess(
   supabase: { from: (table: string) => any },
   senderId: string,
   recipientId: string,
   recipientSettingsRaw: unknown
-): Promise<{ allowed: boolean; reason?: string }> {
+): Promise<DirectMessageAccess> {
   if (senderId === recipientId) {
-    return { allowed: false, reason: 'Cannot message yourself' };
+    return { mode: 'deny', reason: 'Cannot message yourself' };
+  }
+
+  const thread = await getDmThreadAccessState(supabase, senderId, recipientId);
+
+  if (thread?.status === 'open') {
+    return { mode: 'allow' };
+  }
+
+  if (thread?.status === 'pending') {
+    // Requester may keep messaging one-way; recipient reply opens the thread.
+    if (thread.requestedBy === senderId) {
+      return { mode: 'request' };
+    }
+    // Recipient messaging back accepts the request.
+    return { mode: 'allow' };
+  }
+
+  if (thread?.status === 'declined') {
+    // Only the original requester may send again (re-opens as a request).
+    if (thread.requestedBy === senderId) {
+      return { mode: 'request' };
+    }
+    return {
+      mode: 'deny',
+      reason: 'This message request was declined',
+    };
   }
 
   const policy = getDirectMessagePolicy(recipientSettingsRaw);
 
   if (policy === 'everyone') {
-    return { allowed: true };
-  }
-
-  // Established conversations (marketplace inquiries, prior DMs) stay open even when
-  // the recipient's policy would block a brand-new cold message.
-  if (await usersHaveExistingDmThread(supabase, senderId, recipientId)) {
-    return { allowed: true };
+    return { mode: 'allow' };
   }
 
   if (policy === 'none') {
-    return { allowed: false, reason: 'This user does not accept direct messages' };
+    return { mode: 'deny', reason: 'This user does not accept direct messages' };
   }
 
+  // policy === 'groups'
   const shareGroup = await usersShareConfirmedGroup(supabase, senderId, recipientId);
-  if (!shareGroup) {
-    return {
-      allowed: false,
-      reason: 'This user only accepts direct messages from shared group members',
-    };
+  if (shareGroup) {
+    return { mode: 'allow' };
   }
 
-  return { allowed: true };
+  // Cold DM to someone outside shared groups → message request (one-way until accepted).
+  return { mode: 'request' };
+}
+
+/** @deprecated Prefer resolveDirectMessageAccess — kept for callers that only need allow/deny. */
+export async function canRecipientReceiveDirectMessage(
+  supabase: { from: (table: string) => any },
+  senderId: string,
+  recipientId: string,
+  recipientSettingsRaw: unknown
+): Promise<{ allowed: boolean; reason?: string; asRequest?: boolean }> {
+  const access = await resolveDirectMessageAccess(
+    supabase,
+    senderId,
+    recipientId,
+    recipientSettingsRaw
+  );
+  if (access.mode === 'deny') {
+    return { allowed: false, reason: access.reason };
+  }
+  return { allowed: true, asRequest: access.mode === 'request' };
 }
 
 export { canViewStudyActivity, resolvePublicOnlineStatus, shouldSendEmailNotifications, shouldSendWeeklyDigest };

@@ -92,6 +92,24 @@ function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
     };
 }
 
+function mapDmThreadFromApi(t: any, unreadCounts: Record<string, number> = {}): DMThread {
+    const status =
+        t.status === 'pending' || t.status === 'declined' || t.status === 'open'
+            ? t.status
+            : 'open';
+    return {
+        id: t.id,
+        participantIds: t.participantIds || t.participant_ids || [],
+        participants: t.participants || {},
+        lastMessage: t.lastMessage || t.last_message,
+        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
+        unreadCount: unreadCounts[t.id] || t.unreadCount || 0,
+        isArchived: t.isArchived || t.is_archived || false,
+        status,
+        requestedBy: t.requestedBy ?? t.requested_by ?? null,
+    };
+}
+
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const pendingCreatedGroupRef = useRef<any>(null);
     const groupMessagesFetchSeqRef = useRef(0);
@@ -378,15 +396,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             ]);
             if (Array.isArray(fetchedThreads)) {
                 updateDmThreads(() =>
-                    fetchedThreads.map((t: any) => ({
-                        id: t.id,
-                        participantIds: t.participantIds || t.participant_ids || [],
-                        participants: t.participants || {},
-                        lastMessage: t.lastMessage || t.last_message,
-                        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-                        unreadCount: dmUnreadCounts[t.id] || 0,
-                        isArchived: t.isArchived || false,
-                    }))
+                    fetchedThreads.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts))
                 );
             }
         } catch (err) {
@@ -502,15 +512,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
             ]);
             if (Array.isArray(fetchedThreads)) {
-                updateDmThreads(() => fetchedThreads.map((t: any) => ({
-                    id: t.id,
-                    participantIds: t.participantIds || t.participant_ids || [],
-                    participants: t.participants || {},
-                    lastMessage: t.lastMessage || t.last_message,
-                    lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-                    unreadCount: dmUnreadCounts[t.id] || 0,
-                    isArchived: t.isArchived || false,
-                })));
+                updateDmThreads(() =>
+                    fetchedThreads.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts))
+                );
+                const refreshed = fetchedThreads.find((t: any) => t.id === threadId);
+                if (refreshed && useUIStore.getState().selectedChat?.id === threadId) {
+                    handleSelectChat({
+                        ...mapDmThreadFromApi(refreshed, dmUnreadCounts),
+                        chatType: 'dm',
+                    });
+                }
             }
         } catch (error) {
             console.error('Failed to send DM:', error);
@@ -532,7 +543,37 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         } finally {
             sendingThreadIds.delete(threadId);
         }
-    }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads]);
+    }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads, handleSelectChat]);
+
+    const handleDmThreadStatusChange = useCallback(
+        (
+            threadId: string,
+            patch: { status: 'open' | 'pending' | 'declined'; requestedBy?: string | null }
+        ) => {
+            updateDmThreads((prev) =>
+                prev.map((t) =>
+                    t.id === threadId
+                        ? {
+                            ...t,
+                            status: patch.status,
+                            requestedBy:
+                              patch.requestedBy !== undefined ? patch.requestedBy : t.requestedBy,
+                          }
+                        : t
+                )
+            );
+            const selected = useUIStore.getState().selectedChat;
+            if (selected?.chatType === 'dm' && selected.id === threadId) {
+                setSelectedChat({
+                    ...selected,
+                    status: patch.status,
+                    requestedBy:
+                      patch.requestedBy !== undefined ? patch.requestedBy : selected.requestedBy,
+                });
+            }
+        },
+        [updateDmThreads, setSelectedChat]
+    );
 
     const applyChatMutation = useCallback((
         chat: ChatItem,
@@ -1847,6 +1888,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handleDeleteDmThread,
         handleArchiveDmThread,
         handleUnarchiveDmThread,
+        handleDmThreadStatusChange,
         handleCloseCreateGroupModal,
         handleCreateSubGroup,
         handleCreateGroup,

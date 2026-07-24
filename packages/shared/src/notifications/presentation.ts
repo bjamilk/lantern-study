@@ -82,7 +82,10 @@ export function parseNotificationLink(
       };
     }
   }
-  if (n?.type === 'dm_message' && n.data?.senderId) {
+  if (
+    (n?.type === 'dm_message' || n?.type === 'dm_message_request') &&
+    n.data?.senderId
+  ) {
     return {
       type: 'dm',
       threadId: n.data.threadId as string | undefined,
@@ -185,6 +188,15 @@ export function getNotificationMeta(
         mobileBgClass: 'bg-lantern-primary-background dark:bg-lantern-primary-background',
       };
     case 'dm':
+      if (n?.type === 'dm_message_request') {
+        return {
+          iconKey: 'chat',
+          label: 'Message request',
+          webColorClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30',
+          mobileIconColor: '#b45309',
+          mobileBgClass: 'bg-amber-50 dark:bg-amber-950/30',
+        };
+      }
       return {
         iconKey: 'chat',
         label: 'Message',
