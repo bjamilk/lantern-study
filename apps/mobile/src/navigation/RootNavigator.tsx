@@ -96,7 +96,7 @@ import {
 
 } from '../screens/flashcards';
 
-import { NotesScreen, NoteEditorScreen } from '../screens/notes';
+import { NotesScreen, NoteEditorScreen, NoteShareAcceptScreen } from '../screens/notes';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { StudyHubScreen } from '../screens/study/StudyHubScreen';
 
@@ -263,6 +263,8 @@ function StudyNavigator() {
       <StudyStack.Screen name="NotesList" component={NotesScreen} />
 
       <StudyStack.Screen name="NoteEditor" component={NoteEditorScreen} />
+
+      <StudyStack.Screen name="NoteShareAccept" component={NoteShareAcceptScreen} />
 
       <StudyStack.Screen name="TestsList" component={TestScreen} />
 

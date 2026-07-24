@@ -311,6 +311,16 @@ export interface NoteFolder {
   updatedAt: string;
 }
 
+export type NoteAccessRole = 'owner' | 'editor' | 'viewer' | 'group_member';
+export type NoteShareGrantRole = 'viewer' | 'editor';
+
+export interface NoteOwnerPresentation {
+  id: string;
+  name?: string;
+  username?: string;
+  avatarUrl?: string;
+}
+
 export interface StudyNote {
   id: string;
   userId: string;
@@ -323,9 +333,16 @@ export interface StudyNote {
   youtubeUrl?: string;
   youtubeVideoId?: string;
   isShared?: boolean;
+  /** @deprecated Dormant legacy field — do not use for secure share links. */
   shareToken?: string;
+  /** Source note when created via Make a copy. */
+  copiedFromNoteId?: string;
   /** Optimistic concurrency token from API (CAS). */
   version?: number;
+  /** Caller's access on this note (list/detail). */
+  accessRole?: NoteAccessRole;
+  /** Present for shared (non-owned) notes. */
+  owner?: NoteOwnerPresentation;
   createdAt: string;
   updatedAt: string;
 }
@@ -355,6 +372,32 @@ export interface NoteCollaborator {
   userId: string;
   role: 'viewer' | 'editor' | 'owner';
   addedAt: string;
+  user?: NoteOwnerPresentation;
+}
+
+export interface NoteShareLink {
+  id: string;
+  noteId: string;
+  role: NoteShareGrantRole;
+  expiresAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+  lastRedeemedAt?: string;
+  isActive?: boolean;
+  /** Plaintext token — only returned once at create time. */
+  token?: string;
+  url?: string;
+}
+
+export interface NoteSharePreview {
+  shareLinkId: string;
+  noteId: string;
+  title: string;
+  role: NoteShareGrantRole;
+  owner: NoteOwnerPresentation;
+  alreadyHasAccess: boolean;
+  currentAccessRole?: NoteAccessRole;
+  isOwner: boolean;
 }
 
 export interface DailyQuizQuestion {

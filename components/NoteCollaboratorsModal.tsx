@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
-import { XCircleIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { XCircleIcon, UserIcon, TrashIcon, LinkIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 import { User } from '../types';
 import { searchUsers } from '../services/supabase';
 import * as notesApi from '../services/notes';
 import Modal from './ui/Modal';
+import { buildNoteSharePath } from '../utils/appRoutes';
 
 interface NoteCollaborator {
   noteId: string;
@@ -13,6 +14,15 @@ interface NoteCollaborator {
   role: string;
   addedAt: string;
   user?: { id: string; name?: string; avatarUrl?: string };
+}
+
+interface NoteShareLink {
+  id: string;
+  token?: string;
+  role: 'viewer' | 'editor';
+  expiresAt?: string | null;
+  createdAt?: string;
+  isActive?: boolean;
 }
 
 interface NoteCollaboratorsModalProps {
@@ -36,6 +46,9 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
   const [userQuery, setUserQuery] = useState('');
   const [userSuggestions, setUserSuggestions] = useState<User[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [inviteRole, setInviteRole] = useState<'viewer' | 'editor'>('editor');
+  const [shareLinks, setShareLinks] = useState<NoteShareLink[]>([]);
+  const [linkRole, setLinkRole] = useState<'viewer' | 'editor'>('viewer');
 
   const loadCollaborators = async () => {
     if (!noteId) return;
@@ -50,9 +63,20 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
     }
   };
 
+  const loadShareLinks = async () => {
+    try {
+      const data = await notesApi.fetchNoteShareLinks(noteId);
+      setShareLinks(Array.isArray(data) ? data.filter((link: NoteShareLink) => link.isActive !== false) : []);
+    } catch (err) {
+      console.error('Failed to load note share links', err);
+      setShareLinks([]);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       void loadCollaborators();
+      void loadShareLinks();
       setInviteValue('');
       setSelectedUserId('');
       setUserQuery('');
@@ -89,7 +113,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
     if (!target) return;
     setIsSaving(true);
     try {
-      await notesApi.addNoteCollaborator(noteId, target, 'editor');
+      await notesApi.addNoteCollaborator(noteId, target, inviteRole);
       await loadCollaborators();
       setInviteValue('');
       setSelectedUserId('');
@@ -100,6 +124,54 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
       useToastStore.getState().showToast(message, 'info');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, role: 'viewer' | 'editor') => {
+    setIsSaving(true);
+    try {
+      await notesApi.updateNoteCollaboratorRole(noteId, userId, role);
+      setCollaborators((items) => items.map((item) => item.userId === userId ? { ...item, role } : item));
+    } catch (err: unknown) {
+      useToastStore.getState().showToast(err instanceof Error ? err.message : 'Failed to update collaborator role.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const copyShareUrl = async (urlOrToken: string) => {
+    const url = urlOrToken.startsWith('http')
+      ? urlOrToken
+      : `https://lanternstudy.com${buildNoteSharePath(urlOrToken)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      useToastStore.getState().showToast('Share link copied.', 'success');
+    } catch {
+      useToastStore.getState().showToast('Could not copy the share link.', 'error');
+    }
+  };
+
+  const handleCreateLink = async () => {
+    setIsSaving(true);
+    try {
+      const link = await notesApi.createNoteShareLink(noteId, linkRole) as NoteShareLink;
+      await loadShareLinks();
+      if (link.url || link.token) await copyShareUrl(link.url || link.token!);
+      else useToastStore.getState().showToast('Share link created.', 'success');
+    } catch (err: unknown) {
+      useToastStore.getState().showToast(err instanceof Error ? err.message : 'Failed to create share link.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRevokeLink = async (linkId: string) => {
+    if (!(await confirmDialog({ title: 'Revoke share link?', message: 'This stops new people from accepting the link. Existing collaborators keep access until you remove them.', danger: true }))) return;
+    try {
+      await notesApi.revokeNoteShareLink(noteId, linkId);
+      setShareLinks((links) => links.filter((link) => link.id !== linkId));
+    } catch (err: unknown) {
+      useToastStore.getState().showToast(err instanceof Error ? err.message : 'Failed to revoke share link.', 'error');
     }
   };
 
@@ -127,7 +199,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
         <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
           <h2 id="note-collaborators-title" className="text-lg font-semibold text-lantern-text flex items-center gap-2">
             <UserIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
-            Note Collaborators
+            Share note
           </h2>
           <button
             type="button"
@@ -141,7 +213,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
 
         <div className="p-5">
           <p className="text-sm text-lantern-text-secondary mb-4">
-            Invite someone by searching their name, or enter their @username or email.
+            Invite people directly or create a share link. Group sharing remains available from the editor.
           </p>
 
           <div className="relative mb-4">
@@ -186,18 +258,44 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
             )}
           </div>
 
-          <div className="flex justify-end mb-4">
+          <div className="flex gap-2 justify-end mb-5">
+            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'editor')} className="min-h-[44px] rounded-lg border border-lantern-border bg-lantern-surface px-2 text-sm text-lantern-text" aria-label="Collaborator permission">
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+            </select>
             <button
               type="button"
               onClick={() => void handleAdd()}
               disabled={!(selectedUserId || inviteValue).trim() || isSaving}
               className="min-h-[44px] px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:opacity-50 text-white rounded-lg text-sm font-semibold"
             >
-              {isSaving ? 'Adding…' : 'Add Collaborator'}
+              {isSaving ? 'Adding…' : 'Invite'}
             </button>
           </div>
 
-          <div className="space-y-3 max-h-60 overflow-y-auto">
+          <div className="border-t border-lantern-border pt-4">
+            <h3 className="mb-2 text-sm font-semibold text-lantern-text flex items-center gap-2"><LinkIcon className="h-4 w-4" />Share link</h3>
+            <div className="flex gap-2">
+              <select value={linkRole} onChange={(e) => setLinkRole(e.target.value as 'viewer' | 'editor')} className="min-h-[44px] flex-1 rounded-lg border border-lantern-border bg-lantern-surface px-2 text-sm text-lantern-text" aria-label="Share link permission">
+                <option value="viewer">Viewer link</option>
+                <option value="editor">Editor link</option>
+              </select>
+              <button type="button" onClick={() => void handleCreateLink()} disabled={isSaving} className="min-h-[44px] rounded-lg bg-lantern-primary px-3 text-sm font-semibold text-white disabled:opacity-50">
+                Create link
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {shareLinks.length === 0 ? <p className="text-xs text-lantern-text-muted">No active share links.</p> : shareLinks.map((link) => (
+                <div key={link.id} className="flex items-center gap-2 rounded-lg bg-lantern-background-secondary p-2">
+                  <span className="flex-1 text-xs capitalize text-lantern-text">{link.role} link{link.expiresAt ? ` · expires ${new Date(link.expiresAt).toLocaleDateString()}` : ''}</span>
+                  {link.token && <button type="button" onClick={() => void copyShareUrl(link.token!)} className="min-h-[36px] min-w-[36px] text-lantern-primary" aria-label="Copy share link"><ClipboardDocumentIcon className="mx-auto h-4 w-4" /></button>}
+                  <button type="button" onClick={() => void handleRevokeLink(link.id)} className="min-h-[36px] min-w-[36px] text-lantern-error" aria-label="Revoke share link"><TrashIcon className="mx-auto h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3 max-h-60 overflow-y-auto">
             {isLoading ? (
               <div className="text-sm text-lantern-text-muted">Loading collaborators…</div>
             ) : collaborators.length === 0 ? (
@@ -209,18 +307,18 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
                     <div className="text-sm font-semibold text-lantern-text">
                       {collab.user?.name || collab.userId}
                     </div>
-                    <div className="text-xs text-lantern-text-muted">{collab.role}</div>
+                    <div className="text-xs text-lantern-text-muted capitalize">{collab.role}</div>
                   </div>
                   {collab.userId !== currentUserId && (
-                    <button
-                      type="button"
-                      onClick={() => void handleRemove(collab.userId)}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-error hover:opacity-80 rounded-lg"
-                      title="Remove collaborator"
-                      aria-label="Remove collaborator"
-                    >
-                      <TrashIcon className="w-5 h-5" aria-hidden />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <select value={collab.role} onChange={(e) => void handleRoleChange(collab.userId, e.target.value as 'viewer' | 'editor')} disabled={isSaving} className="min-h-[36px] rounded border border-lantern-border bg-lantern-surface px-1 text-xs text-lantern-text" aria-label={`Change ${collab.user?.name || 'collaborator'} role`}>
+                        <option value="viewer">Viewer</option>
+                        <option value="editor">Editor</option>
+                      </select>
+                      <button type="button" onClick={() => void handleRemove(collab.userId)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-error hover:opacity-80 rounded-lg" title="Remove collaborator" aria-label="Remove collaborator">
+                        <TrashIcon className="w-5 h-5" aria-hidden />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))

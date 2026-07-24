@@ -49,7 +49,7 @@ export function useRouteSync() {
       return;
     }
 
-    if (parsed.inviteId) {
+    if (parsed.inviteId || parsed.shareToken) {
       return;
     }
 

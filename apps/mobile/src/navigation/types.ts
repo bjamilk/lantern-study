@@ -33,6 +33,7 @@ export type StudyStackParamList = {
   LearnStudy: { deckId: string; deckName?: string };
   NotesList: undefined;
   NoteEditor: { noteId: string };
+  NoteShareAccept: { token: string };
   TestsList: undefined;
   TestTaking: { testId: string; testName: string; mode?: 'test' | 'study'; isOffline?: boolean; offlineTestId?: string; groupName?: string; groupId?: string };
   TestResults: { attemptId: string };

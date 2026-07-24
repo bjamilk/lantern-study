@@ -8,6 +8,7 @@ const prefixes = [
   'lanternstudy://',
   'lanternstudy:/',
   'https://lanternstudy.app',
+  'https://lanternstudy.com',
 ];
 
 export const linkingConfig: LinkingOptions<RootStackParamList> = {
@@ -32,6 +33,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               DeckDetail: 'deck/:deckId',
               NotesList: 'notes',
               NoteEditor: 'note/:noteId',
+              NoteShareAccept: 'notes/share/:token',
               TestsList: 'tests',
             },
           },

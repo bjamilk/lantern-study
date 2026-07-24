@@ -5,6 +5,7 @@ import {
   TrashIcon,
   UserPlusIcon,
   ShareIcon,
+  DocumentDuplicateIcon,
   MicrophoneIcon,
   StopIcon,
 } from '@heroicons/react/24/outline';
@@ -20,6 +21,7 @@ import { Button } from './ui';
 import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
+import { navigateToPath } from '../utils/appNavigation';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -207,6 +209,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const showToast = useToastStore((s) => s.showToast);
   const isDark = theme === 'dark';
+  const isOwner = note.accessRole === 'owner' || (!note.accessRole && note.userId === currentUserId);
+  const canEdit = isOwner || note.accessRole === 'editor';
+  const isViewer = !canEdit;
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
   const isPhotoNote = note.sourceType === 'photos';
@@ -251,26 +256,28 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }, [note.id]);
 
   useEffect(() => {
-    saveEnabledRef.current = true;
+    saveEnabledRef.current = canEdit;
     return () => {
       saveEnabledRef.current = false;
     };
-  }, [note.id]);
+  }, [note.id, canEdit]);
 
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
   useEffect(() => {
-    if (!note.id || !saveEnabledRef.current || !userEditedRef.current) return;
+    if (!canEdit || !note.id || !saveEnabledRef.current || !userEditedRef.current) return;
     onSaveRef.current({ title, body });
-  }, [note.id, title, body]);
+  }, [note.id, title, body, canEdit]);
 
   const handleTitleChange = (value: string) => {
+    if (!canEdit) return;
     userEditedRef.current = true;
     setTitle(value);
   };
 
   const handleBodyChange = (value: string) => {
+    if (!canEdit) return;
     userEditedRef.current = true;
     setBody(value);
   };
@@ -281,6 +288,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   };
 
   const handleAddPhotosSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEdit) return;
     const files = Array.from(event.target.files || []);
     event.target.value = '';
     if (files.length === 0) return;
@@ -492,6 +500,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   };
 
   const startRecording = async () => {
+    if (!canEdit) return;
     try {
       discardRecordingRef.current = false;
       if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -714,6 +723,30 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setTranscribeStage('idle');
   };
 
+  const handleMakeCopy = async () => {
+    try {
+      const copied = await notesApi.copyNote(note.id);
+      const store = useNotesStore.getState();
+      store.setNotes([copied, ...store.notes]);
+      store.setSelectedNote(copied);
+      navigateToPath(`/notes/${encodeURIComponent(copied.id)}`);
+      showToast('Copy created in your notes.', 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not copy this note.', 'error');
+    }
+  };
+
+  const handleLeave = async () => {
+    try {
+      await notesApi.leaveNoteCollaboration(note.id);
+      useNotesStore.getState().setSelectedNote(null);
+      navigateToPath('/notes');
+      showToast('You no longer have access to this note.', 'success');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not leave this note.', 'error');
+    }
+  };
+
   return (
     <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
       <div className={`shrink-0 flex items-center gap-1.5 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 border-b min-w-0 ${isDark ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-surface'}`}>
@@ -728,23 +761,28 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         <input
           value={title}
           onChange={e => handleTitleChange(e.target.value)}
+          readOnly={isViewer}
           className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}
         />
         {isSaving && <span className="hidden sm:inline text-xs text-lantern-text-tertiary shrink-0">Saving...</span>}
-        <Button variant="secondary" size="sm" onClick={handleShareGroup} aria-label="Share with group" className="shrink-0 px-2 sm:px-3">
-          <ShareIcon className="w-4 h-4" />
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => setShowCollabModal(true)} aria-label="Add collaborator" className="shrink-0 px-2 sm:px-3">
-          <UserPlusIcon className="w-4 h-4" />
-        </Button>
-        <button
+        {isOwner && <>
+          <Button variant="secondary" size="sm" onClick={handleShareGroup} aria-label="Share with group" className="shrink-0 px-2 sm:px-3">
+            <ShareIcon className="w-4 h-4" />
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowCollabModal(true)} aria-label="Manage sharing" className="shrink-0 px-2 sm:px-3">
+            <UserPlusIcon className="w-4 h-4" />
+          </Button>
+        </>}
+        {!isOwner && <Button variant="secondary" size="sm" onClick={() => void handleMakeCopy()} aria-label="Make a copy" className="shrink-0 px-2 sm:px-3"><DocumentDuplicateIcon className="w-4 h-4" /></Button>}
+        {!isOwner && <Button variant="ghost" size="sm" onClick={() => void handleLeave()} className="hidden sm:inline-flex">Leave</Button>}
+        {isOwner && <button
           type="button"
           onClick={onDelete}
           aria-label="Delete note"
           className="shrink-0 p-1.5 sm:p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
         >
           <TrashIcon className="w-5 h-5" />
-        </button>
+        </button>}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col-reverse lg:flex-row">
@@ -754,13 +792,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               isDark ? 'bg-lantern-background' : 'bg-lantern-background'
             }`}
           >
-            {!recording ? (
+            {canEdit && !recording ? (
               <Button size="sm" variant="secondary" onClick={startRecording} disabled={transcribing}>
                 <MicrophoneIcon className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Record lecture</span>
                 <span className="sm:hidden">Record</span>
               </Button>
-            ) : (
+            ) : canEdit ? (
               <>
                 <Button
                   size="sm"
@@ -788,7 +826,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                   </span>
                 </div>
               </>
-            )}
+            ) : null}
             {transcribing && (
               <>
                 <span className="text-xs sm:text-sm text-lantern-text-tertiary self-center">
@@ -824,10 +862,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 noteId={note.id}
                 attachments={imageAttachments}
                 theme={theme}
-                editable={isPhotoNote}
+                editable={isPhotoNote && canEdit}
                 onAttachmentsChange={handleImageAttachmentsChange}
                 onAddPhotos={
-                  isPhotoNote
+                  isPhotoNote && canEdit
                     ? () => {
                         if (!addingPhotos) addPhotosInputRef.current?.click();
                       }
@@ -902,6 +940,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <textarea
                 value={body}
                 onChange={e => handleBodyChange(e.target.value)}
+                readOnly={isViewer}
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
@@ -916,6 +955,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           <textarea
             value={body}
             onChange={e => handleBodyChange(e.target.value)}
+            readOnly={isViewer}
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
               isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
@@ -939,6 +979,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <input
                 value={commentText}
                 onChange={e => setCommentText(e.target.value)}
+                disabled={isViewer}
                 placeholder="Add a comment for collaborators..."
                 className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border'}`}
               />
@@ -950,6 +991,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                   onPostComment(commentText.trim());
                   setCommentText('');
                 }}
+                disabled={isViewer}
               >
                 Post
               </Button>
@@ -958,7 +1000,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </div>
 
         <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-[max(1.5rem,calc(1rem+env(safe-area-inset-bottom,0px)))] lg:pb-6 ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
-          <NoteLearnPanel
+          {canEdit && <NoteLearnPanel
             note={{ ...note, title, body }}
             studyContentLength={studyContentLength}
             theme={theme}
@@ -981,8 +1023,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               }
             }}
             isBusy={transcribing || generatingCards || generatingQuiz}
-          />
-          {dailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && (
+          />}
+          {canEdit && dailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && (
             <DailyQuizWidget
               theme={theme}
               studyGoal={studyGoal}

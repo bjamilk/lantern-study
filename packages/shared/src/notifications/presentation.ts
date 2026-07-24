@@ -8,6 +8,8 @@ export type NotificationLinkType =
   | 'dm'
   | 'group'
   | 'group_invite'
+  | 'note'
+  | 'note_share'
   | 'generic';
 
 export interface ParsedNotificationLink {
@@ -97,6 +99,20 @@ export function parseNotificationLink(
       link?.replace('/invites/groups/', '').split(/[?#]/)[0] ||
       link?.replace('/chat/', '').split(/[?#]/)[0];
     if (groupId) return { type: 'group_invite', id: groupId };
+  }
+  if (link?.startsWith('/notes/share/')) {
+    const token = link.replace('/notes/share/', '').split(/[?#]/)[0];
+    if (token) return { type: 'note_share', id: decodeURIComponent(token) };
+  }
+  if (n?.type === 'note_share_invite' || n?.type === 'note_share_accepted') {
+    const noteId =
+      (n.data?.noteId as string) ||
+      link?.replace('/notes/', '').split(/[?#]/)[0];
+    if (noteId) return { type: 'note', id: noteId };
+  }
+  if (link?.startsWith('/notes/') && !link.startsWith('/notes/share/')) {
+    const noteId = link.replace('/notes/', '').split(/[?#]/)[0];
+    if (noteId) return { type: 'note', id: noteId };
   }
   if (link?.startsWith('/chat/')) {
     const groupId = link.replace('/chat/', '').split(/[?#]/)[0];
@@ -188,6 +204,15 @@ export function getNotificationMeta(
         webColorClass: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
         mobileIconColor: '#0ea5e9',
         mobileBgClass: 'bg-sky-50 dark:bg-sky-950/30',
+      };
+    case 'note':
+    case 'note_share':
+      return {
+        iconKey: 'envelope',
+        label: 'Note share',
+        webColorClass: 'text-lantern-primary bg-lantern-primary-background',
+        mobileIconColor: '#4f46e5',
+        mobileBgClass: 'bg-lantern-primary-background',
       };
     default:
       return {

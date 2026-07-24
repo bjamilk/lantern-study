@@ -56,6 +56,7 @@ export interface NoteFolder {
 
 export interface StudyNote {
   id: string;
+  userId?: string;
   title: string;
   body: string;
   folderId?: string;
@@ -66,6 +67,8 @@ export interface StudyNote {
   version?: number;
   updatedAt?: string;
   createdAt?: string;
+  accessRole?: 'owner' | 'editor' | 'viewer' | 'group_member';
+  owner?: { id: string; name?: string; username?: string; avatarUrl?: string };
 }
 
 export interface NoteAttachment {
@@ -426,6 +429,53 @@ export const addNoteCollaborator = (
 
 export const removeNoteCollaborator = (noteId: string, collaboratorUserId: string) =>
   notesRequest(`/${noteId}/collaborators/${collaboratorUserId}`, { method: 'DELETE' });
+
+export const updateNoteCollaboratorRole = (
+  noteId: string,
+  collaboratorUserId: string,
+  role: 'viewer' | 'editor'
+) =>
+  notesRequest(`/${noteId}/collaborators/${collaboratorUserId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+
+export const leaveNoteCollaboration = (noteId: string) =>
+  notesRequest(`/${noteId}/collaborators/me`, { method: 'DELETE' });
+
+export const fetchNoteShareLinks = (noteId: string) => notesRequest(`/${noteId}/share-links`);
+
+export const createNoteShareLink = (
+  noteId: string,
+  role: 'viewer' | 'editor' = 'viewer',
+  expiresAt?: string | null
+) =>
+  notesRequest(`/${noteId}/share-links`, {
+    method: 'POST',
+    body: JSON.stringify({ role, expiresAt: expiresAt || null }),
+  });
+
+export const revokeNoteShareLink = (noteId: string, linkId: string) =>
+  notesRequest(`/${noteId}/share-links/${linkId}`, { method: 'DELETE' });
+
+export const previewNoteShareLink = (token: string) =>
+  notesRequest(`/share/${encodeURIComponent(token)}/preview`);
+
+export const acceptNoteShareLink = (token: string) =>
+  notesRequest(`/share/${encodeURIComponent(token)}/accept`, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': `note-share-accept-${token}`,
+    },
+  });
+
+export const copyNote = (noteId: string) =>
+  notesRequest<StudyNote>(`/${noteId}/copy`, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': `note-copy-${noteId}`,
+    },
+  });
 
 export const shareNoteWithGroup = (noteId: string, groupId: string) =>
   notesRequest<StudyNote>(`/${noteId}/share-group`, {

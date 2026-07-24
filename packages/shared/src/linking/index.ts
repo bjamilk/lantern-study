@@ -14,7 +14,8 @@ export type DeepLinkType =
     | 'profile'
     | 'marketplace'
     | 'budget'
-    | 'listing';
+    | 'listing'
+    | 'note_share';
 
 export interface DeepLinkParams {
     type: DeepLinkType;
@@ -79,6 +80,10 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
             if (listingMatch?.[1]) {
                 return { type: 'listing', id: listingMatch[1] };
             }
+            const noteShareMatch = path.match(/^notes\/share\/([^/]+)$/);
+            if (noteShareMatch?.[1]) {
+                return { type: 'note_share', id: decodeURIComponent(noteShareMatch[1]) };
+            }
         } else if (url.startsWith('/')) {
             // Relative path: /flashcard/123
             const [pathPart = '', queryPart = ''] = url.slice(1).split('?');
@@ -89,6 +94,12 @@ export const parseDeepLink = (url: string): DeepLinkParams | null => {
         }
 
         const segments = path.split('/').filter(Boolean);
+        if (segments[0] === 'notes' && segments[1] === 'share' && segments[2]) {
+            return {
+                type: 'note_share',
+                id: decodeURIComponent(segments[2]),
+            };
+        }
         if (segments.length === 1) {
             const route = segments[0];
             if (route === 'budget' || route === 'marketplace') {
@@ -155,6 +166,20 @@ export const generateGroupLink = (groupId: string, inviteId?: string): string =>
  */
 export const generateListingLink = (listingId: string): string => {
     return `${WEB_BASE_URL}/marketplace/listing/${encodeURIComponent(listingId)}`;
+};
+
+/**
+ * Canonical web URL for a secure note share token (preview + accept).
+ */
+export const generateNoteShareLink = (token: string): string => {
+    return `${WEB_BASE_URL}/notes/share/${encodeURIComponent(token)}`;
+};
+
+/**
+ * App-scheme deep link for note share tokens (browser .com URL remains the share surface).
+ */
+export const generateNoteShareAppLink = (token: string): string => {
+    return `${DEEP_LINK_SCHEME}://notes/share/${encodeURIComponent(token)}`;
 };
 
 /**

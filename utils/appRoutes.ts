@@ -9,6 +9,7 @@ export interface AppRouteParams {
   sellerId?: string;
   noteId?: string;
   inviteId?: string;
+  shareToken?: string;
 }
 
 export interface ParsedAppRoute {
@@ -17,6 +18,7 @@ export interface ParsedAppRoute {
   /** Server-side redirect target (e.g. `/` → `/dashboard` when authed) */
   redirect?: string;
   inviteId?: string;
+  shareToken?: string;
   clearChat?: boolean;
   clearDeck?: boolean;
 }
@@ -24,6 +26,10 @@ export interface ParsedAppRoute {
 function normalizePath(pathname: string): string {
   const trimmed = pathname.replace(/\/$/, '');
   return trimmed || '/';
+}
+
+export function buildNoteSharePath(token: string): string {
+  return `/notes/share/${encodeURIComponent(token)}`;
 }
 
 export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string | null {
@@ -113,6 +119,11 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   const inviteMatch = path.match(/^\/invite\/([^/]+)$/);
   if (inviteMatch) {
     return { mode: null, params: {}, inviteId: decodeURIComponent(inviteMatch[1]) };
+  }
+
+  const noteShareMatch = path.match(/^\/notes\/share\/([^/]+)$/);
+  if (noteShareMatch) {
+    return { mode: null, params: {}, shareToken: decodeURIComponent(noteShareMatch[1]) };
   }
 
   const chatGroup = path.match(/^\/chat\/group\/([^/]+)$/);
@@ -206,7 +217,7 @@ export function isPublicMarketplacePath(pathname: string): boolean {
 export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (PUBLIC_PATH_PREFIXES.includes(path)) return true;
-  if (path === '/' || path.startsWith('/invite/')) return true;
+  if (path === '/' || path.startsWith('/invite/') || path.startsWith('/notes/share/')) return true;
   if (isPublicMarketplacePath(path)) return true;
   return false;
 }

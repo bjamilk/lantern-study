@@ -1,4 +1,9 @@
-const ALLOWED_DEEP_LINK_HOSTS = new Set(['lanternstudy.app', 'www.lanternstudy.app']);
+const ALLOWED_DEEP_LINK_HOSTS = new Set([
+  'lanternstudy.app',
+  'www.lanternstudy.app',
+  'lanternstudy.com',
+  'www.lanternstudy.com',
+]);
 const ALLOWED_DEEP_LINK_SCHEMES = new Set(['lanternstudy']);
 
 export function isAllowedMobileDeepLink(url: string): boolean {

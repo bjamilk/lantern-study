@@ -22,7 +22,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
-import { transcribeAudioForNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
+import { copyNote, transcribeAudioForNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
@@ -38,6 +38,7 @@ import type { NoteAttachment } from '../../services/notes';
 type NavigationProp = {
 
   goBack: () => void;
+  navigate: (screen: string, params?: Record<string, unknown>) => void;
 
 };
 
@@ -115,6 +116,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   );
   const showImageGallery = isPhotoNote || imageAttachments.length > 0;
   const [addingPhotos, setAddingPhotos] = useState(false);
+  const accessRole = selectedNote?.accessRole || 'owner';
+  const canEdit = accessRole === 'owner' || accessRole === 'editor';
+  const isOwner = accessRole === 'owner';
 
   const documentAttachment = useMemo(
     () =>
@@ -293,6 +297,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const scheduleSave = useCallback(
     (updates: { title?: string; body?: string; summary?: string }) => {
+      if (!canEdit) return;
       if (Date.now() < pauseAutosaveUntilRef.current) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
@@ -300,7 +305,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         saveNote(noteId, updates).catch(() => {});
       }, 800);
     },
-    [noteId, saveNote]
+    [canEdit, noteId, saveNote]
   );
 
   const cancelPendingSave = useCallback(() => {
@@ -592,6 +597,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   };
 
+  const handleCopy = async () => {
+    try {
+      const copy = await copyNote(noteId);
+      navigation.navigate('NoteEditor', { noteId: copy.id });
+    } catch (error) {
+      Alert.alert('Could not make a copy', error instanceof Error ? error.message : 'Try again.');
+    }
+  };
+
 
 
   if (isLoading && !selectedNote) {
@@ -635,6 +649,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           value={title}
 
           onChangeText={setTitle}
+          editable={canEdit}
 
           placeholder="Note title"
 
@@ -644,12 +659,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
         />
 
-        {isSaving ? (
+        {isSaving && canEdit ? (
 
           <Text className="text-xs text-lantern-text-tertiary shrink-0">Saving...</Text>
 
         ) : null}
 
+        {isOwner ? (
         <Pressable
           onPress={() => setShowCollaborators(true)}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
@@ -657,7 +673,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         >
           <Ionicons name="people-outline" size={20} color="#6366f1" />
         </Pressable>
+        ) : null}
 
+        {isOwner ? (
         <Pressable
 
           onPress={handleDelete}
@@ -671,6 +689,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           <Ionicons name="trash-outline" size={20} color="#ef4444" />
 
         </Pressable>
+        ) : null}
 
       </View>
 
@@ -693,7 +712,20 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           directionalLockEnabled
         >
 
-          <View className="flex-row flex-wrap gap-2 py-2 mb-2">
+          {!isOwner ? (
+            <Card className="mb-4 border-lantern-primary/30">
+              <Text className="text-sm font-medium text-lantern-text">
+                {canEdit
+                  ? 'You are editing a shared note.'
+                  : 'You have view-only access to this note.'}
+              </Text>
+              <Button size="sm" className="mt-3 self-start" variant="secondary" onPress={() => void handleCopy()}>
+                Make a copy
+              </Button>
+            </Card>
+          ) : null}
+
+          {canEdit ? <View className="flex-row flex-wrap gap-2 py-2 mb-2">
 
             <Button
 
@@ -741,7 +773,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               </Button>
             ) : null}
 
-          </View>
+          </View> : null}
 
 
 
@@ -760,9 +792,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <NoteImageGallery
                 noteId={noteId}
                 attachments={imageAttachments}
-                editable={isPhotoNote}
+                editable={isPhotoNote && canEdit}
                 onAttachmentsChange={handleImageAttachmentsChange}
-                onAddPhotos={isPhotoNote ? handleAddPhotos : undefined}
+                onAddPhotos={isPhotoNote && canEdit ? handleAddPhotos : undefined}
               />
             </ErrorBoundary>
           ) : null}
@@ -806,6 +838,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <TextInput
                 value={body}
                 onChangeText={setBody}
+                editable={canEdit}
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
@@ -823,6 +856,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             value={body}
 
             onChangeText={setBody}
+            editable={canEdit}
 
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
 
@@ -853,7 +887,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
-          <Card className="border-lantern-border">
+          {canEdit ? <Card className="border-lantern-border">
 
             <Text className="text-sm font-semibold text-lantern-text mb-1">
 
@@ -899,7 +933,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             </View>
 
-          </Card>
+          </Card> : null}
 
         </ScrollView>
 
@@ -908,6 +942,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       <NoteCollaboratorsModal
         visible={showCollaborators}
         noteId={noteId}
+        noteTitle={selectedNote?.title}
         currentUserId={user?.id}
         onClose={() => setShowCollaborators(false)}
       />

@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
-import { requireNoteAccess } from '../middleware/authorizeResource';
+import {
+  requireNoteAccess,
+  requireNoteEdit,
+  requireNoteOwner,
+} from '../middleware/authorizeResource';
+import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { aiRateLimit, aiRateLimitForFeature } from '../middleware/aiRateLimit';
 import {
   aiPostBurstRateLimit,
@@ -1175,6 +1180,68 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
   });
 }));
 
+// Secure share-link preview/accept (token path — before UUID noteId middleware)
+router.get(
+  '/share/:token/preview',
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const preview = await supabaseService.previewNoteShareLink(String(req.params.token || ''), userId);
+      res.json({ success: true, data: preview });
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      const status =
+        code === 'share_link_not_found' || code === 'share_link_invalid'
+          ? 404
+          : code === 'share_link_revoked' || code === 'share_link_expired'
+            ? 410
+            : 400;
+      res.status(status).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Invalid share link',
+        code,
+      });
+    }
+  })
+);
+
+router.post(
+  '/share/:token/accept',
+  idempotencyMiddleware({
+    operation: 'note_share_accept',
+    fallbackKey: (req) =>
+      `note_share_accept:${(req as IdempotentRequest).user?.id}:${req.params.token}`,
+  }),
+  asyncHandler(async (req: IdempotentRequest, res: Response) => {
+    const userId = requireAuthUserId(req as any, res);
+    if (!userId) return;
+    try {
+      const result = await req.runIdempotent!(async () => {
+        const accepted = await supabaseService.acceptNoteShareLink(
+          String(req.params.token || ''),
+          userId
+        );
+        return { accepted: accepted as unknown as Record<string, unknown> };
+      });
+      res.json({ success: true, data: result.accepted });
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      const status =
+        code === 'share_link_not_found' || code === 'share_link_invalid'
+          ? 404
+          : code === 'share_link_revoked' || code === 'share_link_expired'
+            ? 410
+            : 400;
+      res.status(status).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to accept share link',
+        code,
+      });
+    }
+  })
+);
+
 // Note-scoped ownership checks (must be after static paths like /folders, /upload-pdf)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 router.use('/:noteId', (req, res, next) => {
@@ -1186,7 +1253,7 @@ router.use('/:noteId', (req, res, next) => {
 });
 
 // Attachment routes (before /:noteId CRUD) — static paths before :attachmentId
-router.patch('/:noteId/attachments/reorder', asyncHandler(async (req: Request, res: Response) => {
+router.patch('/:noteId/attachments/reorder', requireNoteEdit('noteId'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   await supabaseService.getNote(req.params.noteId, userId);
@@ -1228,7 +1295,7 @@ router.patch('/:noteId/attachments/reorder', asyncHandler(async (req: Request, r
   res.json({ success: true, data: { attachments: updated } });
 }));
 
-router.post('/:noteId/attachments/finalize-image', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -1273,7 +1340,7 @@ router.post('/:noteId/attachments/finalize-image', uploadBurstRateLimit, asyncHa
   res.json({ success: true, data: { attachments } });
 }));
 
-router.post('/:noteId/attachments/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -1356,7 +1423,7 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
   res.send(buffer);
 }));
 
-router.post('/:noteId/regenerate-preview', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/regenerate-preview', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -1492,7 +1559,7 @@ router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async 
   res.json({ success: true, data: note });
 }));
 
-router.patch('/:noteId', validateNoteId, validateNoteUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNoteUpdate, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   try {
@@ -1519,14 +1586,14 @@ router.patch('/:noteId', validateNoteId, validateNoteUpdate, handleValidationErr
   }
 }));
 
-router.delete('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.delete('/:noteId', requireNoteOwner('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   await supabaseService.deleteNote(userId, req.params.noteId);
   res.json({ success: true });
 }));
 
-router.post('/:noteId/attachments', asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/attachments', requireNoteEdit('noteId'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   await supabaseService.getNote(req.params.noteId, userId);
@@ -1534,8 +1601,26 @@ router.post('/:noteId/attachments', asyncHandler(async (req: Request, res: Respo
   res.json({ success: true, data: attachment });
 }));
 
+router.post(
+  '/:noteId/copy',
+  idempotencyMiddleware({
+    operation: 'note_copy',
+    fallbackKey: (req) =>
+      `note_copy:${(req as IdempotentRequest).user?.id}:${req.params.noteId}`,
+  }),
+  asyncHandler(async (req: IdempotentRequest, res: Response) => {
+    const userId = requireAuthUserId(req as any, res);
+    if (!userId) return;
+    const result = await req.runIdempotent!(async () => {
+      const note = await supabaseService.copyNoteForUser(req.params.noteId, userId);
+      return { note: note as unknown as Record<string, unknown> };
+    });
+    res.status(201).json({ success: true, data: result.note });
+  })
+);
+
 // AI-powered learn actions
-router.post('/:noteId/summarize', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -1657,7 +1742,7 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
   res.json({ success: true, data: outcome.result });
 }));
 
-router.post('/:noteId/reextract-text', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
@@ -1705,7 +1790,7 @@ router.post('/:noteId/reextract-text', validateNoteId, handleValidationErrors, a
   });
 }));
 
-// Collaboration
+// Collaboration + secure share links (owner-managed)
 router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
@@ -1716,6 +1801,7 @@ router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Resp
 
 router.post(
   '/:noteId/collaborators',
+  requireNoteOwner('noteId'),
   collaboratorInviteRateLimit,
   asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -1751,14 +1837,117 @@ router.post(
   }
 }));
 
+router.patch(
+  '/:noteId/collaborators/:collaboratorUserId',
+  requireNoteOwner('noteId'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const role = req.body?.role === 'viewer' ? 'viewer' : req.body?.role === 'editor' ? 'editor' : null;
+    if (!role) {
+      res.status(400).json({ success: false, error: 'role must be viewer or editor' });
+      return;
+    }
+    try {
+      const collab = await supabaseService.updateNoteCollaboratorRole(
+        req.params.noteId,
+        userId,
+        req.params.collaboratorUserId,
+        role
+      );
+      res.json({ success: true, data: collab });
+    } catch (error: unknown) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update role',
+      });
+    }
+  })
+);
+
 router.delete('/:noteId/collaborators/:collaboratorUserId', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.removeNoteCollaborator(req.params.noteId, userId, req.params.collaboratorUserId);
-  res.json({ success: true });
+  // Self-leave OR owner remove
+  if (req.params.collaboratorUserId === userId || req.params.collaboratorUserId === 'me') {
+    try {
+      await supabaseService.leaveNoteCollaboration(req.params.noteId, userId);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to leave note',
+      });
+    }
+    return;
+  }
+  try {
+    await supabaseService.removeNoteCollaborator(req.params.noteId, userId, req.params.collaboratorUserId);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    res.status(403).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to remove collaborator',
+    });
+  }
 }));
 
-router.post('/:noteId/share-group', asyncHandler(async (req: Request, res: Response) => {
+router.get(
+  '/:noteId/share-links',
+  requireNoteOwner('noteId'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const links = await supabaseService.listNoteShareLinks(req.params.noteId, userId);
+    res.json({ success: true, data: links });
+  })
+);
+
+router.post(
+  '/:noteId/share-links',
+  requireNoteOwner('noteId'),
+  collaboratorInviteRateLimit,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const role = req.body?.role === 'viewer' ? 'viewer' : 'editor';
+    const expiresAt =
+      typeof req.body?.expiresAt === 'string' && req.body.expiresAt.trim()
+        ? req.body.expiresAt.trim()
+        : null;
+    try {
+      const link = await supabaseService.createNoteShareLink(req.params.noteId, userId, role, {
+        expiresAt,
+      });
+      res.status(201).json({ success: true, data: link });
+    } catch (error: unknown) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create share link',
+      });
+    }
+  })
+);
+
+router.delete(
+  '/:noteId/share-links/:linkId',
+  requireNoteOwner('noteId'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      await supabaseService.revokeNoteShareLink(req.params.noteId, userId, req.params.linkId);
+      res.json({ success: true });
+    } catch (error: unknown) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to revoke share link',
+      });
+    }
+  })
+);
+
+router.post('/:noteId/share-group', requireNoteOwner('noteId'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { groupId } = req.body;

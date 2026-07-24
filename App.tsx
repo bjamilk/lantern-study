@@ -47,6 +47,7 @@ import NotificationModal from './components/NotificationModal';
 import ChallengesInboxModal from './components/ChallengesInboxModal';
 import CreateGroupScreen from './components/CreateGroupScreen';
 import InviteJoinScreen from './components/InviteJoinScreen';
+import NoteShareAcceptScreen from './components/NoteShareAcceptScreen';
 import AddExpenseModal from './components/AddExpenseModal';
 import AddIncomeModal from './components/AddIncomeModal';
 import AddInvestmentModal from './components/AddInvestmentModal';
@@ -101,6 +102,7 @@ import { useOfflineHandlers } from './hooks/useOfflineHandlers';
 import { useAppEffects } from './hooks/useAppEffects';
 import { useFontMode } from './hooks/useFontMode';
 import { useInviteLink } from './hooks/useInviteLink';
+import { useNoteShareLink } from './hooks/useNoteShareLink';
 import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
 import { isPublicMarketplacePath } from './utils/appRoutes';
@@ -424,6 +426,7 @@ export const App: React.FC = () => {
 
     useFontMode();
     useInviteLink(currentUser?.id);
+    useNoteShareLink(currentUser?.id);
     const { isAILoading, aiError, setAiError, handleAIGenerateQuestions, handleAIExplainAnswer, handleAIStudyRecommendations, handleAIAskTutor, handleAIEnhanceFlashcard } = useAIHandlers();
     const noteHandlers = useNoteHandlers(currentUser?.id);
 
@@ -802,6 +805,11 @@ export const App: React.FC = () => {
                 userId={currentUser.id}
             />
         );
+    }
+
+    const noteSharePathMatch = location.pathname.match(/^\/notes\/share\/([^/]+)$/);
+    if (noteSharePathMatch) {
+        return <NoteShareAcceptScreen token={decodeURIComponent(noteSharePathMatch[1])} />;
     }
 
     const renderNotesScreen = (embedded = false) => (

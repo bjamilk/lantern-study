@@ -105,6 +105,7 @@ function FolderChip({
 }
 
 function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
+  const isShared = note.accessRole && note.accessRole !== 'owner';
   return (
     <Pressable onPress={onPress} className="mb-3 active:opacity-90">
       <Card className="border-lantern-border">
@@ -118,6 +119,16 @@ function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
             </Text>
           </View>
         </View>
+        {isShared ? (
+          <View className="flex-row items-center gap-1 mb-2">
+            <Ionicons name="people-outline" size={13} color="#6366f1" />
+            <Text className="text-xs text-lantern-text-secondary">
+              Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
+            </Text>
+          </View>
+        ) : (
+          <Text className="text-xs text-lantern-text-tertiary mb-2">Mine</Text>
+        )}
         <Text className="text-sm text-lantern-text-secondary" numberOfLines={3}>
           {note.summary || note.body || 'Empty note'}
         </Text>
@@ -154,6 +165,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [ownershipFilter, setOwnershipFilter] = useState<'mine' | 'shared'>('mine');
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   const loadData = useCallback(async () => {
@@ -170,6 +182,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
 
   const filteredNotes = useMemo(() => {
     let list = notes;
+    list = list.filter((note) =>
+      ownershipFilter === 'mine' ? !note.accessRole || note.accessRole === 'owner' : note.accessRole !== 'owner'
+    );
     if (selectedFolderId) {
       list = list.filter(n => n.folderId === selectedFolderId);
     }
@@ -180,7 +195,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
       );
     }
     return list;
-  }, [notes, selectedFolderId, search]);
+  }, [notes, selectedFolderId, search, ownershipFilter]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -433,6 +448,20 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         ) : null}
       </View>
 
+      <View className="mx-4 mb-2 flex-row rounded-lg border border-lantern-border overflow-hidden">
+        {(['mine', 'shared'] as const).map((filter) => (
+          <Pressable
+            key={filter}
+            onPress={() => setOwnershipFilter(filter)}
+            className={`flex-1 py-2 ${ownershipFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'}`}
+          >
+            <Text className={`text-center text-sm font-semibold ${ownershipFilter === filter ? 'text-white' : 'text-lantern-text'}`}>
+              {filter === 'mine' ? 'Mine' : 'Shared'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface">
         <Ionicons name="search" size={16} color="#64748b" />
         <TextInput
@@ -569,14 +598,20 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             <Card className="items-center py-10 border-lantern-border">
               <Ionicons name="document-text-outline" size={40} color="#818cf8" />
               <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
-                No notes yet. Create one to get started.
+                {ownershipFilter === 'shared'
+                  ? 'No shared notes yet.'
+                  : 'No notes yet. Create one to get started.'}
               </Text>
-              <Button className="mt-4" size="sm" onPress={handleCreateNote}>
-                New note
-              </Button>
-              <Button className="mt-2" size="sm" variant="secondary" onPress={() => void handlePickFile('pdf')}>
-                Import PDF
-              </Button>
+              {ownershipFilter === 'mine' ? (
+                <>
+                  <Button className="mt-4" size="sm" onPress={handleCreateNote}>
+                    New note
+                  </Button>
+                  <Button className="mt-2" size="sm" variant="secondary" onPress={() => void handlePickFile('pdf')}>
+                    Import PDF
+                  </Button>
+                </>
+              ) : null}
             </Card>
           }
           renderItem={({ item }) => (

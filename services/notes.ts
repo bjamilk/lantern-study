@@ -875,6 +875,62 @@ export async function removeNoteCollaborator(noteId: string, collaboratorUserId:
   });
 }
 
+export async function updateNoteCollaboratorRole(
+  noteId: string,
+  collaboratorUserId: string,
+  role: 'viewer' | 'editor'
+) {
+  return notesRequest(`/${noteId}/collaborators/${collaboratorUserId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function leaveNoteCollaboration(noteId: string) {
+  return notesRequest(`/${noteId}/collaborators/me`, { method: 'DELETE' });
+}
+
+export async function fetchNoteShareLinks(noteId: string) {
+  return notesRequest(`/${noteId}/share-links`);
+}
+
+export async function createNoteShareLink(
+  noteId: string,
+  role: 'viewer' | 'editor' = 'viewer',
+  expiresAt?: string | null
+) {
+  return notesRequest(`/${noteId}/share-links`, {
+    method: 'POST',
+    body: JSON.stringify({ role, expiresAt: expiresAt || null }),
+  });
+}
+
+export async function revokeNoteShareLink(noteId: string, linkId: string) {
+  return notesRequest(`/${noteId}/share-links/${linkId}`, { method: 'DELETE' });
+}
+
+export async function previewNoteShareLink(token: string) {
+  return notesRequest(`/share/${encodeURIComponent(token)}/preview`);
+}
+
+export async function acceptNoteShareLink(token: string) {
+  return notesRequest(`/share/${encodeURIComponent(token)}/accept`, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': `note-share-accept-${token}`,
+    },
+  });
+}
+
+export async function copyNote(noteId: string): Promise<StudyNote> {
+  return notesRequest<StudyNote>(`/${noteId}/copy`, {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': `note-copy-${noteId}`,
+    },
+  });
+}
+
 export async function shareNoteWithGroup(noteId: string, groupId: string): Promise<StudyNote> {
   return notesRequest<StudyNote>(`/${noteId}/share-group`, {
     method: 'POST',

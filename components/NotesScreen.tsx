@@ -66,6 +66,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
   const importProgress = useUIStore((s) => s.importProgress);
   const uploadJobList = useNoteUploadStore((s) => s.jobs);
@@ -75,6 +76,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
 
   const filteredNotes = useMemo(() => {
     let list = notes;
+    list = list.filter((note) =>
+      accessFilter === 'mine' ? (note.accessRole === 'owner' || !note.accessRole) : note.accessRole === 'viewer' || note.accessRole === 'editor'
+    );
     if (selectedFolderId) list = list.filter(n => n.folderId === selectedFolderId);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -83,7 +87,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       );
     }
     return list;
-  }, [notes, selectedFolderId, search]);
+  }, [notes, selectedFolderId, search, accessFilter]);
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -238,6 +242,13 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           </div>
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
+            <div className="inline-flex w-full sm:w-auto rounded-lg border border-lantern-border bg-lantern-surface p-1">
+              {(['mine', 'shared'] as const).map((filter) => (
+                <button key={filter} type="button" onClick={() => setAccessFilter(filter)} className={`flex-1 sm:flex-none rounded-md px-3 py-1.5 text-sm font-medium ${accessFilter === filter ? 'bg-lantern-primary text-white' : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'}`}>
+                  {filter === 'mine' ? 'Mine' : 'Shared'}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-lantern-border min-w-0 w-full sm:flex-1 sm:min-w-[200px] bg-lantern-surface">
               <MagnifyingGlassIcon className="w-5 h-5 text-lantern-text-secondary shrink-0" />
               <input
@@ -387,6 +398,12 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   <p className="text-sm line-clamp-3 text-lantern-text-secondary">
                     {note.summary || note.body || 'Empty note'}
                   </p>
+                  {note.accessRole === 'viewer' || note.accessRole === 'editor' ? (
+                    <div className="mt-3 flex items-center gap-2 text-xs">
+                      <span className="text-lantern-text-secondary">Owner: {note.owner?.name || note.owner?.username || 'Unknown'}</span>
+                      <span className="rounded-full bg-lantern-primary-background px-2 py-0.5 font-semibold capitalize text-lantern-primary">{note.accessRole}</span>
+                    </div>
+                  ) : null}
                   <p className="text-xs mt-3 text-lantern-text-secondary">
                     Updated {new Date(note.updatedAt).toLocaleDateString()}
                   </p>

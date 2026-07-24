@@ -41,6 +41,7 @@ function extractMentionUsernames(text?: string | null): string[] {
 }
 import { assertImageMagicBytes, clampSignedUrlTtl, detectImageMime } from '../utils/fileValidation';
 import { VersionConflictError } from '../utils/versionConflict';
+import { buildNoteStoragePath } from './noteFiles';
 
 type UserStats = typeof initialUserStats;
 
@@ -8152,7 +8153,13 @@ export class SupabaseService {
 
   // ─── Notes ───────────────────────────────────────────────────
 
-  private mapNote(row: any) {
+  private mapNote(
+    row: any,
+    extras?: {
+      accessRole?: 'owner' | 'editor' | 'viewer' | 'group_member';
+      owner?: { id: string; name?: string; username?: string; avatarUrl?: string };
+    }
+  ) {
     return {
       id: row.id,
       userId: row.user_id,
@@ -8165,10 +8172,122 @@ export class SupabaseService {
       youtubeUrl: row.youtube_url || undefined,
       youtubeVideoId: row.youtube_video_id || undefined,
       isShared: row.is_shared || false,
-      shareToken: row.share_token || undefined,
+      // Intentionally omit dormant plaintext share_token (secure links use note_share_links).
+      copiedFromNoteId: row.copied_from_note_id || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       version: typeof row.version === 'number' ? row.version : Number(row.version) || 1,
+      accessRole: extras?.accessRole,
+      owner: extras?.owner,
+    };
+  }
+
+  /**
+   * Canonical note access resolver for read/list/mutation gates.
+   * Roles: owner > editor > viewer > group_member.
+   */
+  async resolveNoteAccess(
+    noteId: string,
+    userId: string
+  ): Promise<{
+    noteId: string;
+    ownerId: string;
+    accessRole: 'owner' | 'editor' | 'viewer' | 'group_member';
+    canEdit: boolean;
+    isOwner: boolean;
+    groupId?: string;
+  } | null> {
+    const { data, error } = await this.supabase
+      .from('notes')
+      .select('id, user_id, group_id')
+      .eq('id', noteId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    if (data.user_id === userId) {
+      return {
+        noteId: data.id,
+        ownerId: data.user_id,
+        accessRole: 'owner',
+        canEdit: true,
+        isOwner: true,
+        groupId: data.group_id || undefined,
+      };
+    }
+
+    const { data: collab } = await this.supabase
+      .from('note_collaborators')
+      .select('role')
+      .eq('note_id', noteId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (collab?.role === 'editor' || collab?.role === 'owner') {
+      return {
+        noteId: data.id,
+        ownerId: data.user_id,
+        accessRole: 'editor',
+        canEdit: true,
+        isOwner: false,
+        groupId: data.group_id || undefined,
+      };
+    }
+    if (collab?.role === 'viewer') {
+      return {
+        noteId: data.id,
+        ownerId: data.user_id,
+        accessRole: 'viewer',
+        canEdit: false,
+        isOwner: false,
+        groupId: data.group_id || undefined,
+      };
+    }
+
+    if (data.group_id) {
+      const { data: member } = await this.supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', data.group_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (member) {
+        return {
+          noteId: data.id,
+          ownerId: data.user_id,
+          accessRole: 'group_member',
+          canEdit: false,
+          isOwner: false,
+          groupId: data.group_id,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async isNoteOwner(userId: string, noteId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('notes')
+      .select('user_id')
+      .eq('id', noteId)
+      .maybeSingle();
+    if (error) throw error;
+    return Boolean(data && data.user_id === userId);
+  }
+
+  private async getNoteOwnerPresentation(ownerId: string) {
+    const { data } = await this.supabase
+      .from('profiles')
+      .select('id, name, username, avatar_url')
+      .eq('id', ownerId)
+      .maybeSingle();
+    if (!data) return { id: ownerId };
+    return {
+      id: data.id,
+      name: data.name || undefined,
+      username: data.username || undefined,
+      avatarUrl: data.avatar_url || undefined,
     };
   }
 
@@ -8234,47 +8353,89 @@ export class SupabaseService {
   }
 
   async getNotes(userId: string, options?: { folderId?: string; groupId?: string }) {
-    let query = this.supabase
+    let ownedQuery = this.supabase
       .from('notes')
       .select('*')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
-    if (options?.folderId) query = query.eq('folder_id', options.folderId);
-    if (options?.groupId) query = query.eq('group_id', options.groupId);
+    if (options?.folderId) ownedQuery = ownedQuery.eq('folder_id', options.folderId);
+    if (options?.groupId) ownedQuery = ownedQuery.eq('group_id', options.groupId);
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []).map((row: any) => this.mapNote(row));
+    const { data: ownedRows, error: ownedError } = await ownedQuery;
+    if (ownedError) throw ownedError;
+
+    const owned = (ownedRows || []).map((row: any) =>
+      this.mapNote(row, { accessRole: 'owner' })
+    );
+
+    // Folder/group filtered lists stay owned-only (shared notes keep owner's folder).
+    if (options?.folderId || options?.groupId) {
+      return owned;
+    }
+
+    const { data: collabRows, error: collabError } = await this.supabase
+      .from('note_collaborators')
+      .select('note_id, role, notes(*)')
+      .eq('user_id', userId);
+    if (collabError) throw collabError;
+
+    const ownedIds = new Set(owned.map((n) => n.id));
+    const ownerIds = Array.from(
+      new Set(
+        (collabRows || [])
+          .map((row: any) => row.notes?.user_id)
+          .filter((id: unknown): id is string => typeof id === 'string' && id !== userId)
+      )
+    );
+    const ownerMap = new Map<
+      string,
+      { id: string; name?: string; username?: string; avatarUrl?: string }
+    >();
+    await Promise.all(
+      ownerIds.map(async (ownerId) => {
+        ownerMap.set(ownerId, await this.getNoteOwnerPresentation(ownerId));
+      })
+    );
+
+    const shared = (collabRows || [])
+      .filter((row: any) => row.notes && !ownedIds.has(row.notes.id))
+      .map((row: any) => {
+        const role =
+          row.role === 'editor' || row.role === 'owner'
+            ? ('editor' as const)
+            : ('viewer' as const);
+        return this.mapNote(row.notes, {
+          accessRole: role,
+          owner: ownerMap.get(row.notes.user_id) || { id: row.notes.user_id },
+        });
+      });
+
+    return [...owned, ...shared].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
   }
 
   async getNote(noteId: string, userId: string) {
+    const access = await this.resolveNoteAccess(noteId, userId);
+    if (!access) throw new Error('Note not found or access denied');
+
     const { data, error } = await this.supabase
       .from('notes')
       .select('*')
       .eq('id', noteId)
       .single();
     if (error) throw error;
-    if (data.user_id !== userId) {
-      const { data: collab } = await this.supabase
-        .from('note_collaborators')
-        .select('role')
-        .eq('note_id', noteId)
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (!collab && data.group_id) {
-        const { data: member } = await this.supabase
-          .from('group_members')
-          .select('user_id')
-          .eq('group_id', data.group_id)
-          .eq('user_id', userId)
-          .maybeSingle();
-        if (!member) throw new Error('Note not found or access denied');
-      } else if (!collab) {
-        throw new Error('Note not found or access denied');
-      }
-    }
-    return this.mapNote(data);
+
+    const owner =
+      access.isOwner
+        ? undefined
+        : await this.getNoteOwnerPresentation(access.ownerId);
+
+    return this.mapNote(data, {
+      accessRole: access.accessRole,
+      owner,
+    });
   }
 
   async createNote(userId: string, payload: {
@@ -8286,6 +8447,7 @@ export class SupabaseService {
     youtubeUrl?: string;
     youtubeVideoId?: string;
     summary?: string;
+    copiedFromNoteId?: string;
   }) {
     const { data, error } = await this.supabase
       .from('notes')
@@ -8299,31 +8461,17 @@ export class SupabaseService {
         youtube_url: payload.youtubeUrl || null,
         youtube_video_id: payload.youtubeVideoId || null,
         summary: payload.summary || null,
+        copied_from_note_id: payload.copiedFromNoteId || null,
       })
       .select()
       .single();
     if (error) throw error;
-    return this.mapNote(data);
+    return this.mapNote(data, { accessRole: 'owner' });
   }
 
   async canEditNote(userId: string, noteId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from('notes')
-      .select('user_id')
-      .eq('id', noteId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return false;
-    if (data.user_id === userId) return true;
-
-    const { data: collab } = await this.supabase
-      .from('note_collaborators')
-      .select('role')
-      .eq('note_id', noteId)
-      .eq('user_id', userId)
-      .in('role', ['editor', 'owner'])
-      .maybeSingle();
-    return Boolean(collab);
+    const access = await this.resolveNoteAccess(noteId, userId);
+    return Boolean(access?.canEdit);
   }
 
   async updateNote(
@@ -8668,25 +8816,50 @@ export class SupabaseService {
     }));
   }
 
-  async addNoteCollaborator(noteId: string, ownerId: string, collaboratorUserId: string, role: string = 'editor') {
+  async addNoteCollaborator(
+    noteId: string,
+    ownerId: string,
+    collaboratorUserId: string,
+    role: string = 'editor'
+  ) {
     const note = await this.getNote(noteId, ownerId);
     if (note.userId !== ownerId) throw new Error('Only the note owner can add collaborators');
 
+    const normalizedRole = role === 'viewer' ? 'viewer' : 'editor';
     const resolvedUserId = await this.resolveCollaboratorUserId(collaboratorUserId);
     if (resolvedUserId === ownerId) {
       throw new Error('You cannot add yourself as a collaborator.');
     }
+
+    const { data: existing } = await this.supabase
+      .from('note_collaborators')
+      .select('role')
+      .eq('note_id', noteId)
+      .eq('user_id', resolvedUserId)
+      .maybeSingle();
+
+    const grantRole =
+      existing?.role === 'editor' && normalizedRole === 'viewer' ? 'editor' : normalizedRole;
 
     const { data, error } = await this.supabase
       .from('note_collaborators')
       .upsert({
         note_id: noteId,
         user_id: resolvedUserId,
-        role,
+        role: grantRole,
       })
       .select()
       .single();
     if (error) throw error;
+
+    const actor = await this.getNoteOwnerPresentation(ownerId);
+    void this.createNotification(resolvedUserId, {
+      type: 'note_share_invite',
+      message: `${actor.name || actor.username || 'Someone'} shared "${note.title}" with you`,
+      link: `/notes/${noteId}`,
+      data: { noteId, role: grantRole, fromUserId: ownerId },
+    }).catch(() => {});
+
     return { noteId: data.note_id, userId: data.user_id, role: data.role, addedAt: data.added_at };
   }
 
@@ -8701,6 +8874,310 @@ export class SupabaseService {
       .eq('user_id', collaboratorUserId);
     if (error) throw error;
     return true;
+  }
+
+  async updateNoteCollaboratorRole(
+    noteId: string,
+    ownerId: string,
+    collaboratorUserId: string,
+    role: 'viewer' | 'editor'
+  ) {
+    if (!(await this.isNoteOwner(ownerId, noteId))) {
+      throw new Error('Only the note owner can change collaborator roles');
+    }
+    if (collaboratorUserId === ownerId) {
+      throw new Error('Cannot change the owner role via collaborator update');
+    }
+    const { data, error } = await this.supabase
+      .from('note_collaborators')
+      .update({ role })
+      .eq('note_id', noteId)
+      .eq('user_id', collaboratorUserId)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Collaborator not found');
+    return { noteId: data.note_id, userId: data.user_id, role: data.role, addedAt: data.added_at };
+  }
+
+  /** Collaborator leaves a shared note (self-remove). Owners cannot leave. */
+  async leaveNoteCollaboration(noteId: string, userId: string) {
+    if (await this.isNoteOwner(userId, noteId)) {
+      throw new Error('Note owners cannot leave their own note');
+    }
+    const access = await this.resolveNoteAccess(noteId, userId);
+    if (!access || (access.accessRole !== 'viewer' && access.accessRole !== 'editor')) {
+      throw new Error('You are not a collaborator on this note');
+    }
+    const { error } = await this.supabase
+      .from('note_collaborators')
+      .delete()
+      .eq('note_id', noteId)
+      .eq('user_id', userId);
+    if (error) throw error;
+    return true;
+  }
+
+  async createNoteShareLink(
+    noteId: string,
+    ownerId: string,
+    role: 'viewer' | 'editor',
+    options?: { expiresAt?: string | null }
+  ) {
+    const { generateNoteShareToken, hashNoteShareToken, buildNoteShareWebUrl } = await import(
+      './noteShareTokens'
+    );
+    if (!(await this.isNoteOwner(ownerId, noteId))) {
+      throw new Error('Only the note owner can create share links');
+    }
+    if (role !== 'viewer' && role !== 'editor') {
+      throw new Error('role must be viewer or editor');
+    }
+
+    const token = generateNoteShareToken();
+    const tokenHash = hashNoteShareToken(token);
+    const { data, error } = await this.supabase
+      .from('note_share_links')
+      .insert({
+        note_id: noteId,
+        created_by: ownerId,
+        token_hash: tokenHash,
+        role,
+        expires_at: options?.expiresAt || null,
+      })
+      .select('id, note_id, role, expires_at, revoked_at, created_at, last_redeemed_at')
+      .single();
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      noteId: data.note_id,
+      role: data.role as 'viewer' | 'editor',
+      expiresAt: data.expires_at || undefined,
+      revokedAt: data.revoked_at || undefined,
+      createdAt: data.created_at,
+      lastRedeemedAt: data.last_redeemed_at || undefined,
+      // Plaintext returned once for the owner to copy; never stored.
+      token,
+      url: buildNoteShareWebUrl(token),
+    };
+  }
+
+  async listNoteShareLinks(noteId: string, ownerId: string) {
+    if (!(await this.isNoteOwner(ownerId, noteId))) {
+      throw new Error('Only the note owner can list share links');
+    }
+    const { data, error } = await this.supabase
+      .from('note_share_links')
+      .select('id, note_id, role, expires_at, revoked_at, created_at, last_redeemed_at')
+      .eq('note_id', noteId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      noteId: row.note_id,
+      role: row.role as 'viewer' | 'editor',
+      expiresAt: row.expires_at || undefined,
+      revokedAt: row.revoked_at || undefined,
+      createdAt: row.created_at,
+      lastRedeemedAt: row.last_redeemed_at || undefined,
+      isActive: !row.revoked_at && (!row.expires_at || new Date(row.expires_at) > new Date()),
+    }));
+  }
+
+  async revokeNoteShareLink(noteId: string, ownerId: string, linkId: string) {
+    if (!(await this.isNoteOwner(ownerId, noteId))) {
+      throw new Error('Only the note owner can revoke share links');
+    }
+    const { data, error } = await this.supabase
+      .from('note_share_links')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', linkId)
+      .eq('note_id', noteId)
+      .is('revoked_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Share link not found or already revoked');
+    return true;
+  }
+
+  async previewNoteShareLink(token: string, userId: string) {
+    const { hashNoteShareToken, isValidNoteShareTokenFormat } = await import('./noteShareTokens');
+    if (!isValidNoteShareTokenFormat(token)) {
+      const err = new Error('Invalid share link') as Error & { code?: string };
+      err.code = 'share_link_invalid';
+      throw err;
+    }
+    const tokenHash = hashNoteShareToken(token);
+    const { data: link, error } = await this.supabase
+      .from('note_share_links')
+      .select('id, note_id, role, expires_at, revoked_at, created_by')
+      .eq('token_hash', tokenHash)
+      .maybeSingle();
+    if (error) throw error;
+    if (!link) {
+      const err = new Error('Share link not found') as Error & { code?: string };
+      err.code = 'share_link_not_found';
+      throw err;
+    }
+    if (link.revoked_at) {
+      const err = new Error('This share link has been revoked') as Error & { code?: string };
+      err.code = 'share_link_revoked';
+      throw err;
+    }
+    if (link.expires_at && new Date(link.expires_at) <= new Date()) {
+      const err = new Error('This share link has expired') as Error & { code?: string };
+      err.code = 'share_link_expired';
+      throw err;
+    }
+
+    const { data: note, error: noteError } = await this.supabase
+      .from('notes')
+      .select('id, title, user_id')
+      .eq('id', link.note_id)
+      .single();
+    if (noteError) throw noteError;
+
+    const owner = await this.getNoteOwnerPresentation(note.user_id);
+    const existing = await this.resolveNoteAccess(note.id, userId);
+
+    return {
+      shareLinkId: link.id,
+      noteId: note.id,
+      title: note.title,
+      role: link.role as 'viewer' | 'editor',
+      owner,
+      alreadyHasAccess: Boolean(existing),
+      currentAccessRole: existing?.accessRole,
+      isOwner: note.user_id === userId,
+    };
+  }
+
+  async acceptNoteShareLink(token: string, userId: string) {
+    const { hashNoteShareToken, isValidNoteShareTokenFormat } = await import('./noteShareTokens');
+    if (!isValidNoteShareTokenFormat(token)) {
+      const err = new Error('Invalid share link') as Error & { code?: string };
+      err.code = 'share_link_invalid';
+      throw err;
+    }
+    const tokenHash = hashNoteShareToken(token);
+    const { data, error } = await this.supabase.rpc('accept_note_share_link', {
+      p_token_hash: tokenHash,
+      p_user_id: userId,
+    });
+    if (error) {
+      const message = error.message || 'Failed to accept share link';
+      const err = new Error(
+        message.includes('share_link_revoked')
+          ? 'This share link has been revoked'
+          : message.includes('share_link_expired')
+            ? 'This share link has expired'
+            : message.includes('share_link_not_found')
+              ? 'Share link not found'
+              : 'Failed to accept share link'
+      ) as Error & { code?: string };
+      if (message.includes('share_link_revoked')) err.code = 'share_link_revoked';
+      else if (message.includes('share_link_expired')) err.code = 'share_link_expired';
+      else if (message.includes('share_link_not_found')) err.code = 'share_link_not_found';
+      throw err;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.note_id) {
+      throw new Error('Failed to accept share link');
+    }
+
+    const note = await this.getNote(row.note_id, userId);
+
+    // Notify owner (best-effort) when a new collaborator accepts
+    if (!row.already_accepted && note.userId !== userId) {
+      const { data: profile } = await this.supabase
+        .from('profiles')
+        .select('name, username')
+        .eq('id', userId)
+        .maybeSingle();
+      const actor = profile?.name || profile?.username || 'Someone';
+      void this.createNotification(note.userId, {
+        type: 'note_share_accepted',
+        message: `${actor} accepted your invite to "${note.title}"`,
+        link: `/notes/${note.id}`,
+        data: { noteId: note.id, redeemerUserId: userId, role: row.granted_role },
+      }).catch(() => {});
+    }
+
+    return {
+      note,
+      grantedRole: row.granted_role as string,
+      alreadyAccepted: Boolean(row.already_accepted),
+      shareLinkId: row.share_link_id as string,
+    };
+  }
+
+  /**
+   * Detached personal copy: note body + storage-backed attachments.
+   * Excludes collaborators, comments, group membership, and quiz history.
+   */
+  async copyNoteForUser(sourceNoteId: string, userId: string) {
+    const source = await this.getNote(sourceNoteId, userId);
+    const attachments = await this.getNoteAttachments(sourceNoteId);
+
+    const copyTitle = source.title?.startsWith('Copy of ')
+      ? source.title
+      : `Copy of ${source.title || 'Untitled Note'}`;
+
+    const created = await this.createNote(userId, {
+      title: copyTitle,
+      body: source.body || '',
+      summary: source.summary,
+      sourceType: source.sourceType,
+      youtubeUrl: source.youtubeUrl,
+      youtubeVideoId: source.youtubeVideoId,
+      // Personal copy is never group-shared by default
+      folderId: undefined,
+      groupId: undefined,
+      copiedFromNoteId: source.id,
+    });
+
+    for (const attachment of attachments) {
+      let fileUrl = attachment.fileUrl as string | undefined;
+      const storagePath = this.resolveNoteAttachmentStoragePath(attachment);
+      if (storagePath) {
+        try {
+          const downloaded = await this.downloadNoteFile(storagePath);
+          const newPath = buildNoteStoragePath(userId, attachment.fileName || 'file');
+          await this.uploadNoteFile({
+            storagePath: newPath,
+            buffer: downloaded.buffer,
+            contentType: downloaded.contentType,
+          });
+          fileUrl = newPath;
+        } catch (err) {
+          logger.warn('Failed to copy note attachment file; keeping metadata only', {
+            err,
+            sourceNoteId,
+            attachmentId: attachment.id,
+          });
+          // External URLs (youtube) or failed downloads: preserve original fileUrl if external
+          if (storagePath && fileUrl === storagePath) {
+            fileUrl = undefined;
+          }
+        }
+      }
+
+      await this.addNoteAttachment(created.id, {
+        type: attachment.type,
+        fileUrl,
+        fileName: attachment.fileName,
+        extractedText: attachment.extractedText,
+        metadata: {
+          ...(attachment.metadata || {}),
+          copiedFromAttachmentId: attachment.id,
+        },
+      });
+    }
+
+    return this.getNote(created.id, userId);
   }
 
   async getNoteComments(noteId: string) {

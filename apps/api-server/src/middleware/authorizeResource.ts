@@ -97,14 +97,65 @@ export function requireNoteAccess(noteIdParam = 'noteId') {
       return;
     }
     try {
-      const note = await requireService().getNote(noteId, userId);
+      const access = await requireService().resolveNoteAccess(noteId, userId);
       const liveAdmin = await isLivePlatformAdmin(userId);
-      if (!note && !liveAdmin) {
+      if (!access && !liveAdmin) {
         denyAccess(res, 'Note not found or access denied');
         return;
       }
+      if (access) {
+        (req as AuthenticatedRequest & { noteAccess?: typeof access }).noteAccess = access;
+      }
     } catch {
       res.status(404).json({ success: false, error: 'Note not found or access denied' });
+      return;
+    }
+    next();
+  });
+}
+
+/** Owner or collaborator with editor/owner role (not viewer). */
+export function requireNoteEdit(noteIdParam = 'noteId') {
+  return asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const noteId = req.params[noteIdParam];
+    if (!noteId) {
+      denyAccess(res);
+      return;
+    }
+    const liveAdmin = await isLivePlatformAdmin(userId);
+    if (liveAdmin) {
+      next();
+      return;
+    }
+    const canEdit = await requireService().canEditNote(userId, noteId);
+    if (!canEdit) {
+      denyAccess(res, 'You do not have permission to edit this note');
+      return;
+    }
+    next();
+  });
+}
+
+/** Note owner only (not editors/viewers). */
+export function requireNoteOwner(noteIdParam = 'noteId') {
+  return asyncHandler(async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const noteId = req.params[noteIdParam];
+    if (!noteId) {
+      denyAccess(res);
+      return;
+    }
+    const liveAdmin = await isLivePlatformAdmin(userId);
+    if (liveAdmin) {
+      next();
+      return;
+    }
+    const isOwner = await requireService().isNoteOwner(userId, noteId);
+    if (!isOwner) {
+      denyAccess(res, 'Only the note owner can perform this action');
       return;
     }
     next();
