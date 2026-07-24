@@ -552,6 +552,20 @@ export function GroupChatScreen({ navigation, route }: Props) {
     });
   };
 
+  const mentionRoster = useMemo(() => {
+    const fromCurrent = currentGroup?.members || [];
+    if (fromCurrent.length > 0) return fromCurrent;
+    return groups.find((g) => g.id === groupId)?.members || [];
+  }, [currentGroup?.members, groups, groupId]);
+
+  const mentionCandidates = useMemo(
+    () =>
+      mentionRoster
+        .filter((m) => m.userId !== user?.id && m.username)
+        .map((m) => ({ id: m.userId, username: m.username!, name: m.name })),
+    [mentionRoster, user?.id]
+  );
+
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? text).trim();
     if (!trimmed || !user?.id || sending) return;
@@ -569,8 +583,15 @@ export function GroupChatScreen({ navigation, route }: Props) {
       isNearBottomRef.current = true;
       const replyId = replyTo?.id;
       setReplyTo(null);
+      const mentionedUsernames = new Set(
+        [...trimmed.matchAll(/@([a-zA-Z0-9_]{2,32})\b/g)].map((m) => m[1]!.toLowerCase())
+      );
+      const mentionedUserIds = mentionCandidates
+        .filter((c) => mentionedUsernames.has(c.username.toLowerCase()))
+        .map((c) => c.id);
       await sendMessage(groupId, trimmed, user.id, undefined, {
         replyToMessageId: replyId,
+        mentionedUserIds,
       });
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
@@ -971,9 +992,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
             setEditingMessage(null);
             setText('');
           }}
-          mentionCandidates={(currentGroup?.members || [])
-            .filter((m) => m.userId !== user?.id && m.username)
-            .map((m) => ({ id: m.userId, username: m.username!, name: m.name }))}
+          mentionCandidates={mentionCandidates}
           onSendAudioMarkdown={async (markdown) => {
             await handleSend(markdown);
           }}

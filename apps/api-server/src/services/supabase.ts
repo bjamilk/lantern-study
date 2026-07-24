@@ -5619,10 +5619,23 @@ export class SupabaseService {
             phone
           )
         `)
-        .eq('group_id', groupId);
+        .eq('group_id', groupId)
+        .eq('pending', false);
 
       if (error) throw error;
-      return data.map((item: any) => item.profiles);
+      return (data || [])
+        .map((item: any) => {
+          const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
+          if (!profile) return null;
+          return {
+            id: profile.id || item.user_id,
+            name: profile.name,
+            username: profile.username,
+            avatarUrl: profile.avatar_url,
+            phoneNumber: profile.phone,
+          };
+        })
+        .filter((member: User | null): member is User => !!member);
     }, { ttl: 300 }); // Cache for 5 minutes
   }
 

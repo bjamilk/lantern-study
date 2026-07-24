@@ -766,23 +766,31 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             const mappedMembers = mapApiGroupMembers(fetchedMembers);
 
-            setGroups(fetchedGroups.map((g: any) => ({
-                id: g.id,
-                name: g.name,
-                avatarUrl: g.avatar_url || g.avatarUrl,
-                description: g.description,
-                lastMessage: g.last_message || g.lastMessage,
-                lastMessageTime: g.last_message_time || g.lastMessageTime,
-                adminIds: g.admin_ids || g.adminIds || [],
-                permissions: g.permissions || {},
-                parentId: g.parent_id || g.parentId,
-                isArchived: g.is_archived ?? g.isArchived ?? false,
-                inviteId: g.invite_id || g.inviteId,
-                unreadCount: 0,
-                pendingMembers: [],
-                invitedPhoneNumbers: [],
-                members: g.id === newGroup.id ? mappedMembers : []
-            })));
+            updateGroups((prev) => {
+                const prevById = new Map(prev.map((g) => [g.id, g]));
+                return fetchedGroups.map((g: any) => {
+                    const existing = prevById.get(g.id);
+                    return {
+                        id: g.id,
+                        name: g.name,
+                        avatarUrl: g.avatar_url || g.avatarUrl,
+                        description: g.description,
+                        lastMessage: g.last_message || g.lastMessage,
+                        lastMessageTime: g.last_message_time || g.lastMessageTime,
+                        adminIds: g.admin_ids || g.adminIds || [],
+                        permissions: g.permissions || {},
+                        parentId: g.parent_id || g.parentId,
+                        isArchived: g.is_archived ?? g.isArchived ?? false,
+                        inviteId: g.invite_id || g.inviteId,
+                        unreadCount: existing?.unreadCount || 0,
+                        pendingMembers: existing?.pendingMembers || [],
+                        invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
+                        members: g.id === newGroup.id
+                            ? mappedMembers
+                            : (existing?.members?.length ? existing.members : []),
+                    };
+                });
+            });
             
             const mappedNewGroup = {
                 id: newGroup.id,
@@ -840,7 +848,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             alert('Failed to create group. Please try again.');
             throw error;
         }
-    }, [currentUser, setCurrentUser, setGroups, updateMessages, addNotification]);
+    }, [currentUser, setCurrentUser, updateGroups, updateMessages, addNotification]);
 
     const handleEnterCreatedGroup = useCallback((summary: { id: string; name: string; inviteId: string }) => {
         const pending = pendingCreatedGroupRef.current;

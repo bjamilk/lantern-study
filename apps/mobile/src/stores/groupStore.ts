@@ -629,9 +629,27 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         api.fetchGroupUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
       ]);
 
-      const groups: Group[] = apiGroups.map((g: any) => mapApiGroup(g, unreadCounts));
+      const prevById = new Map(get().groups.map((g) => [g.id, g]));
+      const groups: Group[] = apiGroups.map((g: any) => {
+        const mapped = mapApiGroup(g, unreadCounts);
+        const existing = prevById.get(mapped.id);
+        // API group list omits members — keep any roster already loaded for @mentions.
+        if (existing?.members?.length && !mapped.members.length) {
+          return { ...mapped, members: existing.members, memberCount: existing.members.length };
+        }
+        return mapped;
+      });
 
-      set({ groups, groupUnreadCounts: unreadCounts, isLoading: false });
+      const currentGroup = get().currentGroup;
+      set({
+        groups,
+        groupUnreadCounts: unreadCounts,
+        isLoading: false,
+        currentGroup:
+          currentGroup && currentGroup.members.length === 0
+            ? groups.find((g) => g.id === currentGroup.id) || currentGroup
+            : currentGroup,
+      });
       await get().saveToStorage();
     } catch (error: any) {
       console.warn('[GroupStore] API fetch failed, using cached data:', error);

@@ -688,23 +688,29 @@ export function useAppEffects({
                 if (groupsResult.status === 'fulfilled') {
                     const fetchedGroups = groupsResult.value;
                     const unreadCounts = unreadResult.status === 'fulfilled' ? unreadResult.value : {};
-                    setGroups(fetchedGroups.map((g: any) => ({
-                        id: g.id,
-                        name: g.name,
-                        avatarUrl: g.avatar_url || g.avatarUrl,
-                        description: g.description,
-                        lastMessage: g.last_message || g.lastMessage,
-                        lastMessageTime: g.last_message_time || g.lastMessageTime,
-                        adminIds: g.admin_ids || g.adminIds || [],
-                        permissions: g.permissions || {},
-                        parentId: g.parent_id || g.parentId,
-                        isArchived: g.is_archived ?? g.isArchived ?? false,
-                        inviteId: g.invite_id || g.inviteId,
-                        unreadCount: unreadCounts[g.id] || 0,
-                        pendingMembers: [],
-                        invitedPhoneNumbers: [],
-                        members: []
-                    })));
+                    updateGroups((prev) => {
+                        const prevById = new Map(prev.map((g) => [g.id, g]));
+                        return fetchedGroups.map((g: any) => {
+                            const existing = prevById.get(g.id);
+                            return {
+                                id: g.id,
+                                name: g.name,
+                                avatarUrl: g.avatar_url || g.avatarUrl,
+                                description: g.description,
+                                lastMessage: g.last_message || g.lastMessage,
+                                lastMessageTime: g.last_message_time || g.lastMessageTime,
+                                adminIds: g.admin_ids || g.adminIds || [],
+                                permissions: g.permissions || {},
+                                parentId: g.parent_id || g.parentId,
+                                isArchived: g.is_archived ?? g.isArchived ?? false,
+                                inviteId: g.invite_id || g.inviteId,
+                                unreadCount: unreadCounts[g.id] || 0,
+                                pendingMembers: existing?.pendingMembers || [],
+                                invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
+                                members: existing?.members?.length ? existing.members : [],
+                            };
+                        });
+                    });
                 } else {
                     console.error('[Data Loading] Groups fetch failed:', groupsResult.reason);
                 }
@@ -1449,23 +1455,30 @@ export function useAppEffects({
                                 () => ({} as Record<string, number>)
                             ),
                         ]);
-                        setGroups(freshGroups.map((g: any) => ({
-                            id: g.id,
-                            name: g.name,
-                            avatarUrl: g.avatar_url || g.avatarUrl,
-                            description: g.description,
-                            lastMessage: g.last_message || g.lastMessage,
-                            lastMessageTime: g.last_message_time || g.lastMessageTime,
-                            adminIds: g.admin_ids || g.adminIds || [],
-                            permissions: g.permissions || {},
-                            parentId: g.parent_id || g.parentId,
-                            isArchived: g.is_archived ?? g.isArchived ?? false,
-                            inviteId: g.invite_id || g.inviteId,
-                            unreadCount: unreadCounts[g.id] || 0,
-                            pendingMembers: [],
-                            invitedPhoneNumbers: [],
-                            members: [],
-                        })));
+                        updateGroups((prev) => {
+                            const prevById = new Map(prev.map((g) => [g.id, g]));
+                            return freshGroups.map((g: any) => {
+                                const existing = prevById.get(g.id);
+                                return {
+                                    id: g.id,
+                                    name: g.name,
+                                    avatarUrl: g.avatar_url || g.avatarUrl,
+                                    description: g.description,
+                                    lastMessage: g.last_message || g.lastMessage,
+                                    lastMessageTime: g.last_message_time || g.lastMessageTime,
+                                    adminIds: g.admin_ids || g.adminIds || [],
+                                    permissions: g.permissions || {},
+                                    parentId: g.parent_id || g.parentId,
+                                    isArchived: g.is_archived ?? g.isArchived ?? false,
+                                    inviteId: g.invite_id || g.inviteId,
+                                    unreadCount: unreadCounts[g.id] || 0,
+                                    pendingMembers: existing?.pendingMembers || [],
+                                    invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
+                                    // Keep loaded member rosters so @mentions keep working.
+                                    members: existing?.members?.length ? existing.members : [],
+                                };
+                            });
+                        });
                     } catch (err) {
                         console.error('[Group membership] Real-time refresh failed:', err);
                     }
@@ -1476,7 +1489,7 @@ export function useAppEffects({
         return () => {
             groupMembershipSubscription.unsubscribe();
         };
-    }, [currentUser?.id, lowDataMode]);
+    }, [currentUser?.id, lowDataMode, updateGroups]);
 
     // --- Persist offline data ---
     useEffect(() => {

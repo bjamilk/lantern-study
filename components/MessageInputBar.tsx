@@ -149,6 +149,19 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     ? (replyTo.questionStem || replyTo.text || 'Message').slice(0, 80)
     : '';
 
+  const resolveMentionedUserIds = (text: string): string[] => {
+    if (!mentionCandidates.length) return [];
+    const mentioned = new Set<string>();
+    for (const match of text.matchAll(/@([a-zA-Z0-9_]{2,32})\b/g)) {
+      const username = match[1]?.toLowerCase();
+      if (username) mentioned.add(username);
+    }
+    if (!mentioned.size) return [];
+    return mentionCandidates
+      .filter((c) => mentioned.has(c.username.toLowerCase()))
+      .map((c) => c.id);
+  };
+
   const handleSend = async (overrideText?: string) => {
     if (isSending || isAIThinking || isUploadingAudio) return;
     const trimmed = (overrideText ?? inputText).trim();
@@ -182,8 +195,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     setRecordError(null);
     if (!overrideText && !editingMessage) setInputText('');
     try {
+      const mentionedUserIds = editingMessage ? undefined : resolveMentionedUserIds(trimmed);
       await onSendMessage(trimmed, {
         replyToMessageId: editingMessage ? undefined : replyTo?.id,
+        mentionedUserIds,
       });
       if (editingMessage) {
         setInputText('');

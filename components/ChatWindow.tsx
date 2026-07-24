@@ -819,8 +819,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }
 
   const isGroup = isGroupChat;
+  // Prefer the selected chat roster; group-list refreshes often reset groups[].members to [].
+  // Empty arrays are truthy for ?? so we must not treat them as "missing".
   const groupMemberList = isGroup
-    ? (groups.find((g) => g.id === chat.id)?.members ?? chat.members ?? [])
+    ? (() => {
+        const fromChat = Array.isArray(chat.members) ? chat.members : [];
+        if (fromChat.length > 0) return fromChat;
+        const fromGroups = groups.find((g) => g.id === chat.id)?.members;
+        return Array.isArray(fromGroups) && fromGroups.length > 0 ? fromGroups : [];
+      })()
     : [];
   const group = isGroup ? { ...chat, members: groupMemberList } : null;
   const isGroupAdmin = Boolean(
