@@ -49,40 +49,53 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
-      const { page = 1, limit = 20, status, subject } = req.query;
+      const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+      const limit = Math.min(1000, Math.max(1, parseInt(String(req.query.limit || '20'), 10) || 20));
+      const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+      const subject = typeof req.query.subject === 'string' ? req.query.subject : undefined;
+      const lean =
+        req.query.lean === '1' ||
+        req.query.lean === 'true' ||
+        req.query.lean === true;
+      const sortRaw = typeof req.query.sort === 'string' ? req.query.sort : 'newest';
+      const sort =
+        sortRaw === 'oldest' || sortRaw === 'highestScore' ? sortRaw : 'newest';
+      const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
+      const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
 
-      logger.debug('Fetching tests', { page, limit, status, subject, userId });
+      logger.debug('Fetching tests', { page, limit, status, subject, lean, sort, from, to, userId });
 
       try {
-        const cacheKey = `tests:${userId}:${page}:${limit}:${status || ''}:${subject || ''}`;
-        let tests = await cacheService.get(cacheKey) as any[];
-
-        if (!tests) {
-          if (supabaseService) {
-            logger.debug('Calling supabaseService.getUserTests', { userId, page, limit, status, subject });
-            tests = await supabaseService.getUserTests(userId, {
-              page: parseInt(page as string),
-              limit: parseInt(limit as string),
-              status: status as string,
-              subject: subject as string,
-            });
-            logger.debug('getUserTests returned', { testsCount: tests?.length });
-          } else {
-            logger.debug('No supabaseService', { supabaseService: !!supabaseService });
-            tests = [];
-          }
-
-          // Cache for 5 minutes
-          await cacheService.set(cacheKey, tests, 300);
+        if (!supabaseService) {
+          res.json({
+            success: true,
+            data: [],
+            pagination: { page, limit, total: 0, hasMore: false },
+          });
+          return;
         }
+
+        const { tests, total } = await supabaseService.getUserTests(userId, {
+          page,
+          limit,
+          status,
+          subject,
+          lean,
+          sort,
+          from,
+          to,
+        });
+
+        logger.debug('getUserTests returned', { testsCount: tests?.length, total });
 
         res.json({
           success: true,
           data: tests,
           pagination: {
-            page: parseInt(page as string),
-            limit: parseInt(limit as string),
-            total: tests.length,
+            page,
+            limit,
+            total,
+            hasMore: page * limit < total,
           },
         });
       } catch (error) {

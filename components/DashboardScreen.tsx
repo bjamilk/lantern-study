@@ -10,7 +10,7 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatHexColor, getActivityHeatHexColorForCount, computeStudyStreak, getDashboardFirstName, type ActivityHeatLevel } from '@lantern/shared/utils';
+import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatHexColor, getActivityHeatHexColorForCount, computeStudyStreak, getDashboardFirstName, getGroupIdWithDescendants, buildRolledUpGroupSeries, type ActivityHeatLevel } from '@lantern/shared/utils';
 import { buildDashboardStats, type RawTestResult } from '@lantern/shared/utils/buildDashboardStats';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
@@ -27,6 +27,7 @@ import {
   type GroupPerformanceOption,
 } from './dashboard/GroupPerformanceMultiSelect';
 import Modal from './ui/Modal';
+import { fetchTestResultsPage, fetchTestSessionById, type TestResultsSort } from '../services/supabase';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 
@@ -346,6 +347,11 @@ export default function DashboardScreen({
   const [selectedGroupChartIds, setSelectedGroupChartIds] = useState<string[]>(() =>
     loadSelectedGroupChartIds()
   );
+  const [recentSort, setRecentSort] = useState<TestResultsSort>('newest');
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentPageData, setRecentPageData] = useState<TestResult[]>([]);
+  const [recentTotal, setRecentTotal] = useState(0);
+  const [recentLoading, setRecentLoading] = useState(false);
   const [aiCoachData, setAiCoachData] = useState<{ weakTopics: string[]; suggestedCards: string[]; suggestedQuestions: string[]; studyTip: string; estimatedMinutes: number } | null>(null);
   const [isCoachLoading, setIsCoachLoading] = useState(false);
 
@@ -552,11 +558,22 @@ export default function DashboardScreen({
 
   const activeGroupChartOptions = useMemo(() => {
     const activeGroups = groups.filter((g) => !g.isArchived);
-    const dataIds = new Set(
+    const directDataIds = new Set(
       allGroupPerformanceData
         .filter((row) => activeGroups.some((g) => g.id === row.id))
         .map((row) => row.id)
     );
+    // Include parents that have no direct tests but have descendant results (rollup).
+    const dataIds = new Set<string>();
+    for (const group of activeGroups) {
+      const rollup = getGroupIdWithDescendants(group.id, activeGroups, { activeOnly: true });
+      for (const id of rollup) {
+        if (directDataIds.has(id)) {
+          dataIds.add(group.id);
+          break;
+        }
+      }
+    }
     return buildHierarchicalGroupOptions(activeGroups, dataIds);
   }, [groups, allGroupPerformanceData]);
 
@@ -670,8 +687,6 @@ export default function DashboardScreen({
   // Same computation as the mobile dashboard (shared builder).
   const overallAverageTimePerQuestion = sharedStats.averageTimePerQuestion;
 
-  const recentTests = [...filteredTestResults].sort((a,b) => new Date(b.session.startTime).getTime() - new Date(a.session.startTime).getTime()).slice(0, 5);
-
   const getTimePeriodLabel = () => {
     if (selectedTimePeriod === 'custom') {
       if (customStartDate && customEndDate) {
@@ -727,15 +742,34 @@ export default function DashboardScreen({
     return labels[type] || "Unknown Type";
   };
   
-  const selectedGroupPerformance = useMemo(
-    () =>
-      allGroupPerformanceData.filter(
-        (row) =>
-          selectedGroupChartIds.includes(row.id) &&
-          activeGroupChartOptions.some((opt) => opt.id === row.id)
-      ),
-    [allGroupPerformanceData, selectedGroupChartIds, activeGroupChartOptions]
-  );
+  const selectedGroupPerformance = useMemo(() => {
+    const activeGroups = groups.filter((g) => !g.isArchived);
+    const optionIds = new Set(activeGroupChartOptions.map((opt) => opt.id));
+    return selectedGroupChartIds
+      .filter((id) => optionIds.has(id))
+      .map((id) => {
+        const name =
+          activeGroups.find((g) => g.id === id)?.name ||
+          allGroupPerformanceData.find((row) => row.id === id)?.name ||
+          getGroupName(id);
+        return buildRolledUpGroupSeries({
+          groupId: id,
+          groupName: name,
+          groups: activeGroups,
+          results: filteredTestResults,
+          activeOnly: true,
+        });
+      })
+      .filter((row) => row.testCount > 0);
+  }, [
+    groups,
+    activeGroupChartOptions,
+    selectedGroupChartIds,
+    allGroupPerformanceData,
+    filteredTestResults,
+  ]);
+
+  const selectionIncludesParentRollup = selectedGroupPerformance.some((g) => g.includesDescendants);
 
   const isMultiGroupChart = selectedGroupPerformance.length >= 2;
   // Multi-select uses weekly series (aligned dates); single group keeps Timeline/Weekly toggle.
@@ -771,16 +805,119 @@ export default function DashboardScreen({
     if (selectedGroupPerformance.length === 0) {
       return { testCount: 0, averageScore: 0, accuracy: 0 };
     }
-    const testCount = selectedGroupPerformance.reduce((sum, g) => sum + g.testCount, 0);
-    const totalScore = selectedGroupPerformance.reduce((sum, g) => sum + g.totalScore, 0);
-    const correctAnswers = selectedGroupPerformance.reduce((sum, g) => sum + g.correctAnswers, 0);
-    const totalQuestions = selectedGroupPerformance.reduce((sum, g) => sum + g.totalQuestions, 0);
+    // Dedupe overlapping parent/child selections in the aggregate strip.
+    const activeGroups = groups.filter((g) => !g.isArchived);
+    const seen = new Set<string>();
+    let testCount = 0;
+    let totalScore = 0;
+    let correctAnswers = 0;
+    let totalQuestions = 0;
+    for (const selectedId of selectedGroupChartIds) {
+      const rollup = getGroupIdWithDescendants(selectedId, activeGroups, { activeOnly: true });
+      for (const result of filteredTestResults) {
+        const gid = result.session.config.groupId;
+        if (!gid || !rollup.has(gid)) continue;
+        const key = result.session.id || result.id || String(result.session.startTime);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        testCount++;
+        totalScore += result.score;
+        correctAnswers += result.correctAnswersCount;
+        totalQuestions += result.totalQuestions;
+      }
+    }
     return {
       testCount,
       averageScore: testCount > 0 ? totalScore / testCount : 0,
       accuracy: totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0,
     };
-  }, [selectedGroupPerformance]);
+  }, [selectedGroupPerformance, selectedGroupChartIds, groups, filteredTestResults]);
+
+  const recentPeriodBounds = useMemo(() => {
+    if (selectedTimePeriod === 'allTime') return { from: undefined as string | undefined, to: undefined as string | undefined };
+    if (selectedTimePeriod === 'custom') {
+      if (!customStartDate || !customEndDate) return { from: undefined, to: undefined };
+      return {
+        from: new Date(customStartDate + 'T00:00:00').toISOString(),
+        to: new Date(customEndDate + 'T23:59:59.999').toISOString(),
+      };
+    }
+    const days =
+      selectedTimePeriod === 'last7Days' ? 7 : selectedTimePeriod === 'last30Days' ? 30 : 90;
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: undefined };
+  }, [selectedTimePeriod, customStartDate, customEndDate]);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [recentSort, selectedTimePeriod, customStartDate, customEndDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setRecentLoading(true);
+      try {
+        const { data, pagination } = await fetchTestResultsPage(currentUser.id, {
+          page: recentPage,
+          limit: 10,
+          lean: true,
+          sort: recentSort,
+          from: recentPeriodBounds.from,
+          to: recentPeriodBounds.to,
+        });
+        if (!cancelled) {
+          setRecentPageData(data as TestResult[]);
+          setRecentTotal(pagination.total ?? 0);
+        }
+      } catch (error) {
+        console.error('Failed to load recent tests page', error);
+        if (!cancelled) {
+          setRecentPageData([]);
+          setRecentTotal(0);
+        }
+      } finally {
+        if (!cancelled) setRecentLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to]);
+
+  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / 10));
+
+  const handleViewRecentAnalysis = useCallback(
+    async (result: TestResult) => {
+      const sessionId = result.session?.id || result.id;
+      const hasQuestions = Array.isArray(result.session?.questions) && result.session.questions.length > 0;
+      if (hasQuestions || !sessionId) {
+        onViewAnalysis(result);
+        return;
+      }
+      const full = await fetchTestSessionById(sessionId);
+      if (full?.session?.questions?.length) {
+        onViewAnalysis({
+          ...result,
+          ...full,
+          session: {
+            ...result.session,
+            ...full.session,
+            questions: full.session.questions,
+            userAnswers: full.session.userAnswers || {},
+          },
+          score: result.score,
+          totalQuestions: result.totalQuestions || full.totalQuestions,
+          correctAnswersCount: result.correctAnswersCount || full.correctAnswersCount,
+        });
+        return;
+      }
+      onViewAnalysis(result);
+    },
+    [onViewAnalysis]
+  );
 
 
   // --- Study streak calculation ---
@@ -1332,6 +1469,11 @@ export default function DashboardScreen({
                 Comparing multiple groups uses weekly averages so different test dates line up.
               </p>
             )}
+            {selectionIncludesParentRollup && (
+              <p className="text-[11px] text-lantern-text-tertiary mt-1">
+                Parent includes subgroup tests in its series.
+              </p>
+            )}
           </div>
 
           {activeGroupChartOptions.length === 0 ? (
@@ -1428,47 +1570,112 @@ export default function DashboardScreen({
             {isRecentTestsExpanded ? <ChevronUpIcon className="w-5 h-5 text-lantern-text-tertiary" /> : <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary" />}
           </button>
           {isRecentTestsExpanded && (
-            <div className="border-t border-lantern-border divide-y divide-lantern-border">
-              {recentTests.length > 0 ? recentTests.map((result, index) => {
-                let testTimeSpentSeconds = 0;
-                const answersWithTime = Object.values(result.session.userAnswers).filter((ans: UserAnswerRecord) => ans.timeSpentSeconds !== undefined);
-                if (answersWithTime.length > 0) {
-                  testTimeSpentSeconds = answersWithTime.reduce((sum: number, answer: UserAnswerRecord) => sum + (answer.timeSpentSeconds || 0), 0);
-                }
-                const avgTime = answersWithTime.length > 0 ? (testTimeSpentSeconds / answersWithTime.length).toFixed(1) : null;
-                const recentTestKey = result.id ?? `${result.session.startTime}-${result.session.config.groupId ?? 'group'}-${result.totalQuestions}-${index}`;
+            <div className="border-t border-lantern-border">
+              <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-lantern-border bg-lantern-background-secondary/40">
+                <label className="flex items-center gap-2 text-xs text-lantern-text-secondary">
+                  <span>Sort</span>
+                  <select
+                    value={recentSort}
+                    onChange={(e) => setRecentSort(e.target.value as TestResultsSort)}
+                    className="rounded-md border border-lantern-border bg-lantern-surface px-2 py-1 text-xs text-lantern-text"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="highestScore">Highest score</option>
+                  </select>
+                </label>
+                <p className="text-[11px] text-lantern-text-tertiary">
+                  {recentTotal > 0
+                    ? `Page ${recentPage} of ${recentTotalPages} · ${recentTotal} test${recentTotal !== 1 ? 's' : ''}`
+                    : 'No tests in this period'}
+                </p>
+              </div>
+              <div className="divide-y divide-lantern-border">
+                {recentLoading ? (
+                  <div className="p-8 text-center text-sm text-lantern-text-tertiary">Loading tests…</div>
+                ) : recentPageData.length > 0 ? (
+                  recentPageData.map((result, index) => {
+                    const answers = result.session?.userAnswers || {};
+                    const answersWithTime = Object.values(answers).filter(
+                      (ans: UserAnswerRecord) => ans?.timeSpentSeconds !== undefined
+                    );
+                    const testTimeSpentSeconds = answersWithTime.reduce(
+                      (sum: number, answer: UserAnswerRecord) => sum + (answer.timeSpentSeconds || 0),
+                      0
+                    );
+                    const avgTime =
+                      answersWithTime.length > 0
+                        ? (testTimeSpentSeconds / answersWithTime.length).toFixed(1)
+                        : null;
+                    const recentTestKey =
+                      result.id ??
+                      `${result.session.startTime}-${result.session.config?.groupId ?? 'group'}-${result.totalQuestions}-${index}`;
 
-                return (
-                  <div key={recentTestKey} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-lantern-background-secondary transition-colors">
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm text-lantern-text truncate">{getGroupName(result.session.config.groupId, result.session.config.groupName)}</p>
-                      <p className="text-xs text-lantern-text-tertiary mt-0.5">{new Date(result.session.startTime).toLocaleString()}</p>
-                    </div>
-                    <div className="flex items-center gap-4 flex-shrink-0">
-                      <div className="text-center">
-                        <p className="text-lg font-bold text-lantern-primary">{result.score.toFixed(1)}%</p>
-                        <p className="text-[10px] text-lantern-text-tertiary">{result.correctAnswersCount}/{result.totalQuestions}</p>
-                      </div>
-                      {avgTime && (
-                        <div className="text-center">
-                          <p className="text-lg font-bold text-lantern-text-secondary">{avgTime}s</p>
-                          <p className="text-[10px] text-lantern-text-tertiary">avg/q</p>
-                        </div>
-                      )}
-                      <button 
-                        onClick={() => onViewAnalysis(result)} 
-                        className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors"
+                    return (
+                      <div
+                        key={recentTestKey}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-lantern-background-secondary transition-colors"
                       >
-                        <PresentationChartLineIcon className="w-3.5 h-3.5" />
-                        Analyze
-                      </button>
-                    </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm text-lantern-text truncate">
+                            {getGroupName(result.session.config?.groupId, result.session.config?.groupName)}
+                          </p>
+                          <p className="text-xs text-lantern-text-tertiary mt-0.5">
+                            {new Date(result.session.startTime).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-lantern-primary">{result.score.toFixed(1)}%</p>
+                            <p className="text-[10px] text-lantern-text-tertiary">
+                              {result.correctAnswersCount}/{result.totalQuestions}
+                            </p>
+                          </div>
+                          {avgTime && (
+                            <div className="text-center">
+                              <p className="text-lg font-bold text-lantern-text-secondary">{avgTime}s</p>
+                              <p className="text-[10px] text-lantern-text-tertiary">avg/q</p>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void handleViewRecentAnalysis(result)}
+                            className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary rounded-lantern text-xs font-semibold flex items-center gap-1 transition-colors"
+                          >
+                            <PresentationChartLineIcon className="w-3.5 h-3.5" />
+                            Analyze
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center">
+                    <AcademicCapOutline className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+                    <p className="text-sm text-lantern-text-tertiary">
+                      No tests taken yet. Start a test from one of your groups!
+                    </p>
                   </div>
-                )
-              }) : (
-                <div className="p-8 text-center">
-                  <AcademicCapOutline className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
-                  <p className="text-sm text-lantern-text-tertiary">No tests taken yet. Start a test from one of your groups!</p>
+                )}
+              </div>
+              {recentTotal > 10 && (
+                <div className="p-3 flex items-center justify-between border-t border-lantern-border">
+                  <button
+                    type="button"
+                    disabled={recentPage <= 1 || recentLoading}
+                    onClick={() => setRecentPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={recentPage >= recentTotalPages || recentLoading}
+                    onClick={() => setRecentPage((p) => p + 1)}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lantern border border-lantern-border disabled:opacity-40"
+                  >
+                    Next
+                  </button>
                 </div>
               )}
             </div>

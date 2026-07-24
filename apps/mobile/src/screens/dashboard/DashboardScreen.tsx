@@ -52,8 +52,10 @@ import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard'
 import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
 import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
 import { DashboardInsights } from '../../components/dashboard/DashboardInsights';
+import { GroupPerformanceChartCard } from '../../components/dashboard/GroupPerformanceChartCard';
 import { AIStudyCoachCard } from '../../components/dashboard/AIStudyCoachCard';
 import { useCompanionStore } from '../../stores/companionStore';
+import * as api from '../../services/api';
 
 import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
@@ -162,7 +164,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const { notes, loadNotes } = useNotesStore();
 
-  const { stats, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
+  const { stats, leanTestResults, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
 
   const activeTest = useTestStore(s => s.activeTest);
 
@@ -205,6 +207,11 @@ export function DashboardScreen({ navigation }: Props) {
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
 
   const [analysisTest, setAnalysisTest] = useState<RecentTest | null>(null);
+  const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentPageItems, setRecentPageItems] = useState<RecentTest[]>([]);
+  const [recentTotal, setRecentTotal] = useState(0);
+  const [recentLoading, setRecentLoading] = useState(false);
 
 
 
@@ -224,7 +231,82 @@ export function DashboardScreen({ navigation }: Props) {
 
   const availableGroups = useMemo(() => groups.filter(g => !g.isArchived), [groups]);
 
+  const recentPeriodBounds = useMemo(() => {
+    if (selectedPeriod === 'all') return { from: undefined as string | undefined, to: undefined as string | undefined };
+    const days = selectedPeriod === '7days' ? 7 : selectedPeriod === '30days' ? 30 : 90;
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    from.setHours(0, 0, 0, 0);
+    return { from: from.toISOString(), to: undefined as string | undefined };
+  }, [selectedPeriod]);
 
+  useEffect(() => {
+    setRecentPage(1);
+  }, [recentSort, selectedPeriod]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const loadRecent = async () => {
+      setRecentLoading(true);
+      try {
+        const result = await api.fetchTestResultsPage(user.id, {
+          page: recentPage,
+          limit: 10,
+          lean: true,
+          sort: recentSort,
+          from: recentPeriodBounds.from,
+          to: recentPeriodBounds.to,
+        });
+        if (cancelled) return;
+        const rows = Array.isArray(result.data) ? result.data : [];
+        const mapped: RecentTest[] = rows.map((item: any) => {
+          const start = item.session?.startTime ? new Date(item.session.startTime) : new Date();
+          const end = item.session?.endTime ? new Date(item.session.endTime) : start;
+          const groupId = item.session?.config?.groupId;
+          const groupName =
+            item.session?.config?.groupName ||
+            groups.find((g) => g.id === groupId)?.name ||
+            'Unknown exam';
+          return {
+            id: item.id || item.session?.id || `${start.getTime()}`,
+            groupName,
+            score: item.correctAnswersCount ?? 0,
+            totalQuestions: item.totalQuestions ?? 0,
+            percentage: Math.round(item.score ?? 0),
+            completedAt: (item.session?.endTime || item.session?.startTime || start).toString(),
+            timeSpent: Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000)),
+            analysis: {
+              correctCount: item.correctAnswersCount ?? 0,
+              incorrectCount: Math.max(
+                0,
+                (item.totalQuestions ?? 0) - (item.correctAnswersCount ?? 0)
+              ),
+              unattemptedCount: 0,
+              timePerQuestion: [],
+              timePerTag: [],
+              tagPerformance: [],
+            },
+          };
+        });
+        setRecentPageItems(mapped);
+        setRecentTotal(result.pagination?.total ?? mapped.length);
+      } catch {
+        if (!cancelled) {
+          setRecentPageItems([]);
+          setRecentTotal(0);
+        }
+      } finally {
+        if (!cancelled) setRecentLoading(false);
+      }
+    };
+    void loadRecent();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to, groups]);
+
+  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / 10));
 
   const heatmap = useMemo(
 
@@ -759,95 +841,110 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        {stats?.recentTests && stats.recentTests.length > 0 ? (
+        <View className="mb-4">
+          <View className="flex-row items-center justify-between mb-2">
+            <Text className="text-sm font-semibold text-lantern-text">Recent tests</Text>
+            <View className="flex-row gap-1">
+              {([
+                { key: 'newest', label: 'New' },
+                { key: 'oldest', label: 'Old' },
+                { key: 'highestScore', label: 'Top' },
+              ] as const).map((opt) => (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setRecentSort(opt.key)}
+                  className={`px-2 py-1 rounded-full ${
+                    recentSort === opt.key ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                  }`}
+                >
+                  <Text
+                    className={`text-[10px] font-semibold ${
+                      recentSort === opt.key ? 'text-white' : 'text-lantern-text-secondary'
+                    }`}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
 
-          <View className="mb-4">
-
-            <Text className="text-sm font-semibold text-lantern-text mb-2">Recent tests</Text>
-
-            {stats.recentTests.slice(0, 5).map(test => (
-
+          {recentLoading ? (
+            <Text className="text-sm text-lantern-text-tertiary py-3">Loading tests…</Text>
+          ) : recentPageItems.length > 0 ? (
+            recentPageItems.map((test) => (
               <Pressable
                 key={`${test.id}-${test.completedAt}`}
                 onPress={() => setAnalysisTest(normalizeRecentTest(test))}
                 className="mb-2 active:opacity-90"
               >
-
                 <Card className="py-3">
-
                   <View className="flex-row items-center justify-between">
-
                     <View className="flex-1 min-w-0 pr-2">
-
                       <Text className="font-medium text-lantern-text" numberOfLines={1}>
-
                         {test.groupName}
-
                       </Text>
-
                       <Text className="text-xs text-lantern-text-secondary mt-0.5">
-
                         {new Date(test.completedAt).toLocaleDateString()} · {formatDuration(test.timeSpent)}
-
                       </Text>
-
                     </View>
-
                     <View
-
                       className={`px-2 py-1 rounded-full ${
-
                         test.percentage >= 80
-
                           ? 'bg-emerald-100 dark:bg-emerald-900/40'
-
                           : test.percentage >= 60
-
                             ? 'bg-amber-100 dark:bg-amber-900/40'
-
                             : 'bg-red-100 dark:bg-red-900/40'
-
                       }`}
-
                     >
-
                       <Text
-
                         className={`text-sm font-bold ${
-
                           test.percentage >= 80
-
                             ? 'text-emerald-700 dark:text-emerald-300'
-
                             : test.percentage >= 60
-
                               ? 'text-amber-700 dark:text-amber-300'
-
                               : 'text-red-700 dark:text-red-300'
-
                         }`}
-
                       >
-
                         {test.percentage}%
-
                       </Text>
-
                     </View>
-
                   </View>
-
                 </Card>
-
               </Pressable>
+            ))
+          ) : (
+            <Text className="text-sm text-lantern-text-tertiary py-3">
+              No tests in this period yet.
+            </Text>
+          )}
 
-            ))}
+          {recentTotal > 10 ? (
+            <View className="flex-row items-center justify-between mt-2">
+              <Pressable
+                disabled={recentPage <= 1 || recentLoading}
+                onPress={() => setRecentPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg border border-lantern-border"
+                style={{ opacity: recentPage <= 1 ? 0.4 : 1 }}
+              >
+                <Text className="text-xs font-semibold text-lantern-text">Previous</Text>
+              </Pressable>
+              <Text className="text-[11px] text-lantern-text-tertiary">
+                Page {recentPage} of {recentTotalPages}
+              </Text>
+              <Pressable
+                disabled={recentPage >= recentTotalPages || recentLoading}
+                onPress={() => setRecentPage((p) => p + 1)}
+                className="px-3 py-1.5 rounded-lg border border-lantern-border"
+                style={{ opacity: recentPage >= recentTotalPages ? 0.4 : 1 }}
+              >
+                <Text className="text-xs font-semibold text-lantern-text">Next</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
 
-          </View>
-
-        ) : null}
-
-
+        <GroupPerformanceChartCard groups={groups} testResults={leanTestResults} />
 
         <DashboardInsights stats={stats} />
 

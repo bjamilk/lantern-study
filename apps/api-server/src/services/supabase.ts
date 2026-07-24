@@ -1598,8 +1598,9 @@ export class SupabaseService {
   }
 
   async deleteGroup(groupId: string): Promise<void> {
-    // The database schema uses ON DELETE CASCADE for members and messages,
-    // so we only need to delete the group itself.
+    // Cascade removes members/messages. Intentionally do NOT purge test_sessions:
+    // group id lives in config JSONB with no FK, and product keeps orphan history
+    // for the user's Recent Tests (Group performance simply drops missing groups).
     const { error } = await this.supabase
       .from('groups')
       .delete()
@@ -1610,7 +1611,7 @@ export class SupabaseService {
       throw error;
     }
 
-    logger.info(`Group ${groupId} deleted. Associated data should be removed by cascade.`);
+    logger.info(`Group ${groupId} deleted. Members/messages cascaded; test history retained.`);
 
     // Invalidate relevant caches
     await cacheService.invalidateGroupCache(groupId);
@@ -4544,27 +4545,56 @@ export class SupabaseService {
     limit?: number;
     status?: string;
     subject?: string;
-  } = {}): Promise<any[]> {
-    const { page = 1, limit = 20, status, subject } = options;
+    lean?: boolean;
+    sort?: 'newest' | 'oldest' | 'highestScore';
+    from?: string;
+    to?: string;
+  } = {}): Promise<{ tests: any[]; total: number }> {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      subject,
+      lean = false,
+      sort = 'newest',
+      from,
+      to,
+    } = options;
     const offset = (page - 1) * limit;
+    const sortKey = sort || 'newest';
+    const fromKey = from || '';
+    const toKey = to || '';
 
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ''}:${subject || ''}`;
+    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ''}:${subject || ''}:${lean ? 'lean' : 'full'}:${sortKey}:${fromKey}:${toKey}`;
 
     return cacheService.cached(cacheKey, async () => {
-      // Join with test_results to get score data
-      let query = this.supabase
-        .from('test_sessions')
-        .select(`
+      const selectCols = lean
+        ? `
+          id,
+          start_time,
+          end_time,
+          is_offline,
+          config,
+          test_results (
+            score,
+            correct_answers_count,
+            total_questions
+          )
+        `
+        : `
           *,
           test_results (
             score,
             correct_answers_count,
             total_questions
           )
-        `)
+        `;
+
+      let query = this.supabase
+        .from('test_sessions')
+        .select(selectCols, { count: 'exact' })
         .eq('user_id', userId);
 
-      // Filter by status (derive from end_time)
       if (status === 'completed') {
         query = query.not('end_time', 'is', null);
       } else if (status === 'in_progress') {
@@ -4573,41 +4603,89 @@ export class SupabaseService {
         query = query.is('start_time', null);
       }
 
-      // Filter by subject (from config)
       if (subject) {
         query = query.eq('config->>subject', subject);
       }
 
-      const { data, error } = await query
-        .order('start_time', { ascending: false })
-        .range(offset, offset + limit - 1);
+      if (from) {
+        query = query.gte('start_time', from);
+      }
+      if (to) {
+        query = query.lte('start_time', to);
+      }
+
+      if (sortKey === 'oldest') {
+        query = query.order('start_time', { ascending: true });
+      } else if (sortKey === 'highestScore') {
+        // Prefer score from joined test_results; fall back below if PostgREST rejects the order.
+        query = query
+          .order('score', { referencedTable: 'test_results', ascending: false, nullsFirst: false })
+          .order('start_time', { ascending: false });
+      } else {
+        query = query.order('start_time', { ascending: false });
+      }
+
+      let { data, error, count } = await query.range(offset, offset + limit - 1);
+
+      if (error && sortKey === 'highestScore') {
+        logger.warn('highestScore order failed; falling back to newest', { error: error.message });
+        let fallback = this.supabase
+          .from('test_sessions')
+          .select(selectCols, { count: 'exact' })
+          .eq('user_id', userId);
+        if (status === 'completed') fallback = fallback.not('end_time', 'is', null);
+        else if (status === 'in_progress') {
+          fallback = fallback.is('end_time', null).not('start_time', 'is', null);
+        } else if (status === 'not_started') fallback = fallback.is('start_time', null);
+        if (subject) fallback = fallback.eq('config->>subject', subject);
+        if (from) fallback = fallback.gte('start_time', from);
+        if (to) fallback = fallback.lte('start_time', to);
+        const retry = await fallback
+          .order('start_time', { ascending: false })
+          .range(offset, offset + limit - 1);
+        data = retry.data;
+        error = retry.error;
+        count = retry.count;
+        if (!error && Array.isArray(data)) {
+          data = [...data].sort((a: any, b: any) => {
+            const aScore = Array.isArray(a.test_results)
+              ? a.test_results[0]?.score
+              : a.test_results?.score;
+            const bScore = Array.isArray(b.test_results)
+              ? b.test_results[0]?.score
+              : b.test_results?.score;
+            return (bScore || 0) - (aScore || 0);
+          });
+        }
+      }
 
       if (error) throw error;
 
-      // Transform to TestResult format expected by frontend
-      return (data || []).map((session: any) => {
-        // Get score from joined test_results (may be array or single object)
-        const result = Array.isArray(session.test_results) 
-          ? session.test_results[0] 
+      const tests = (data || []).map((session: any) => {
+        const result = Array.isArray(session.test_results)
+          ? session.test_results[0]
           : session.test_results;
-        
+
         return {
+          id: session.id,
           session: {
             id: session.id,
             config: session.config || {},
-            questions: session.questions || [],
-            userAnswers: session.user_answers || {},
+            questions: lean ? [] : (session.questions || []),
+            userAnswers: lean ? {} : (session.user_answers || {}),
             currentQuestionIndex: 0,
             startTime: session.start_time ? new Date(session.start_time) : new Date(),
             endTime: session.end_time ? new Date(session.end_time) : undefined,
             isOffline: session.is_offline || false,
           },
           score: result?.score || 0,
-          totalQuestions: result?.total_questions || session.questions?.length || 0,
+          totalQuestions: result?.total_questions || (lean ? 0 : session.questions?.length) || 0,
           correctAnswersCount: result?.correct_answers_count || 0,
         };
       });
-    }, { ttl: 300 }); // Cache for 5 minutes
+
+      return { tests, total: typeof count === 'number' ? count : tests.length };
+    }, { ttl: 300 });
   }
 
   async getTestById(testId: string, userId?: string): Promise<any | null> {

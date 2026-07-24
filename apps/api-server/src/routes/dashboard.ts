@@ -6,6 +6,10 @@
  * streak, activity) into one authenticated round trip. Raw inputs are
  * returned and stat computation stays on-device because period cutoffs
  * and activity-day labels are user-timezone sensitive.
+ *
+ * testResults are lean (no questions/userAnswers) so we can return a
+ * larger history window for charts without huge payloads. Topic insights
+ * that need per-question detail continue to use userQuestionStats.
  */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -27,21 +31,29 @@ export const initializeDashboardRoutes = (supabase: SupabaseService, cache: Cach
   cacheService = cache;
 };
 
-const TESTS_LIMIT = 50;
+/** Lean completed-history window for charts / group performance. */
+const TESTS_LIMIT = 500;
 
 /** Reuses the same cache keys as the individual routes so existing write-path invalidation applies. */
 async function getCompletedTests(userId: string) {
-  const cacheKey = `tests:${userId}:1:${TESTS_LIMIT}:completed:`;
+  const cacheKey = `tests:${userId}:1:${TESTS_LIMIT}:completed::lean:newest::`;
   const cached = await cacheService.get(cacheKey);
-  if (cached) return cached as unknown[];
+  if (cached) {
+    if (Array.isArray(cached)) return cached;
+    if (cached && typeof cached === 'object' && Array.isArray((cached as { tests?: unknown }).tests)) {
+      return (cached as { tests: unknown[] }).tests;
+    }
+  }
 
-  const tests = await supabaseService.getUserTests(userId, {
+  const page = await supabaseService.getUserTests(userId, {
     page: 1,
     limit: TESTS_LIMIT,
     status: 'completed',
+    lean: true,
+    sort: 'newest',
   });
-  await cacheService.set(cacheKey, tests, 300);
-  return tests;
+  await cacheService.set(cacheKey, page, 300);
+  return page.tests;
 }
 
 async function getQuestionStats(userId: string) {

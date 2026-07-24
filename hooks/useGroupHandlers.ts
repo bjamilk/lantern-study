@@ -1707,7 +1707,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, []);
 
     const handleDeleteGroup = useCallback(async (groupId: string) => {
-        if (window.confirm("Are you sure you want to permanently delete this group and all its sub-groups? This action cannot be undone.")) {
+        if (window.confirm("Are you sure you want to permanently delete this group and all its sub-groups? This cannot be undone. Past test scores stay in your history, but they won’t appear under Group performance after the group is gone.")) {
             const group = groups.find(g => g.id === groupId);
             const idsToDelete = [groupId, ...getAllSubgroupIDs(groupId, groups)];
             

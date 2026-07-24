@@ -1063,12 +1063,27 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify(result),
       }),
 
-    fetchTestResults: (userId: string, options?: { limit?: number }) => {
+    fetchTestResults: (
+      userId: string,
+      options?: {
+        limit?: number;
+        page?: number;
+        lean?: boolean;
+        sort?: 'newest' | 'oldest' | 'highestScore';
+        from?: string;
+        to?: string;
+      }
+    ) => {
       const params = new URLSearchParams({
         userId,
         status: 'completed',
-        limit: String(options?.limit ?? 100),
+        limit: String(options?.limit ?? 500),
+        page: String(options?.page ?? 1),
+        sort: options?.sort ?? 'newest',
       });
+      if (options?.lean !== false) params.set('lean', '1');
+      if (options?.from) params.set('from', options.from);
+      if (options?.to) params.set('to', options.to);
       return apiRequest<
         Array<{
           id?: string;
@@ -1090,6 +1105,52 @@ export function createApiEndpoints(client: ApiClient) {
           correctAnswersCount: number;
         }>
       >(`/tests?${params.toString()}`);
+    },
+
+    fetchTestResultsPage: (
+      userId: string,
+      options?: {
+        limit?: number;
+        page?: number;
+        lean?: boolean;
+        sort?: 'newest' | 'oldest' | 'highestScore';
+        from?: string;
+        to?: string;
+      }
+    ) => {
+      const params = new URLSearchParams({
+        userId,
+        status: 'completed',
+        limit: String(options?.limit ?? 10),
+        page: String(options?.page ?? 1),
+        sort: options?.sort ?? 'newest',
+      });
+      if (options?.lean !== false) params.set('lean', '1');
+      if (options?.from) params.set('from', options.from);
+      if (options?.to) params.set('to', options.to);
+      return apiRequestRaw<{
+        success: boolean;
+        data: Array<{
+          id?: string;
+          session: {
+            id?: string;
+            config?: {
+              groupId?: string;
+              groupName?: string;
+              name?: string;
+              passingScore?: number;
+            };
+            questions?: unknown[];
+            userAnswers?: Record<string, unknown>;
+            startTime?: string;
+            endTime?: string;
+          };
+          score: number;
+          totalQuestions: number;
+          correctAnswersCount: number;
+        }>;
+        pagination?: { page: number; limit: number; total: number; hasMore: boolean };
+      }>(`/tests?${params.toString()}`);
     },
 
     saveTestResult: (

@@ -599,7 +599,7 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
     
     try {
-      const apiResults = await fetchTestResultsCached(userId, api.fetchTestResults, { limit: 50 });
+      const apiResults = await fetchTestResultsCached(userId, api.fetchTestResults, { limit: 500 });
       const attempts: TestAttempt[] = apiResults.map((r: any) => {
         const session = r.session || r;
         const config = session.config || {};

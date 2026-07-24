@@ -189,6 +189,18 @@ interface StatsFetchContext {
 
 interface StatsState {
   stats: DashboardStats | null;
+  /** Lean completed tests from dashboard summary (for charts / rollup). */
+  leanTestResults: Array<{
+    id?: string;
+    score: number;
+    totalQuestions: number;
+    correctAnswersCount: number;
+    session: {
+      id?: string;
+      startTime?: string | Date;
+      config?: { groupId?: string; groupName?: string };
+    };
+  }>;
   selectedPeriod: TimePeriod;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -506,6 +518,7 @@ const generateMockStats = (period: TimePeriod): DashboardStats => {
 
 export const useStatsStore = create<StatsState>((set, get) => ({
   stats: null,
+  leanTestResults: [],
   selectedPeriod: '30days',
   isLoading: false,
   isRefreshing: false,
@@ -541,7 +554,7 @@ export const useStatsStore = create<StatsState>((set, get) => ({
       if (DEMO_MODE) {
         await new Promise(resolve => setTimeout(resolve, 300));
         const stats = generateMockStats(period);
-        set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false });
+        set({ stats, leanTestResults: [], selectedPeriod: period, isLoading: false, isRefreshing: false });
         return;
       }
 
@@ -577,7 +590,7 @@ export const useStatsStore = create<StatsState>((set, get) => ({
         } else {
           [testResultsRaw, questionStatsRaw, loginStreak, gamification, activityDaysRaw] = await Promise.all([
             fetchTestResultsCached(userId, api.fetchTestResults, {
-              limit: 50,
+              limit: 500,
               force: forceRefresh,
             }).catch(() => []),
             api.fetchUserQuestionStats(userId).catch(() => []),
@@ -615,7 +628,14 @@ export const useStatsStore = create<StatsState>((set, get) => ({
           activityDays: Array.isArray(activityDaysRaw) ? activityDaysRaw : [],
         });
 
-        set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false, error: null });
+        set({
+          stats,
+          leanTestResults: testResults,
+          selectedPeriod: period,
+          isLoading: false,
+          isRefreshing: false,
+          error: null,
+        });
         void saveCachedDashboardStats(userId, period, stats);
       } catch (error: any) {
         console.error('Failed to fetch stats from API:', error);
@@ -632,7 +652,14 @@ export const useStatsStore = create<StatsState>((set, get) => ({
             currentStreak: 0,
             longestStreak: 0,
           });
-          set({ stats, selectedPeriod: period, isLoading: false, isRefreshing: false, error: error.message });
+          set({
+            stats,
+            leanTestResults: [],
+            selectedPeriod: period,
+            isLoading: false,
+            isRefreshing: false,
+            error: error.message,
+          });
         } else {
           set({ isLoading: false, isRefreshing: false, error: error.message });
         }

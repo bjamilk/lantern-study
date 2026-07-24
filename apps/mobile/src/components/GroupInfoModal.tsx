@@ -142,7 +142,7 @@ export default function GroupInfoModal({
   const handleDelete = () => {
     Alert.alert(
       'Delete Group',
-      'This action is permanent and cannot be undone. All messages and data will be deleted.',
+      'This is permanent and cannot be undone. Group chat data will be removed. Past test scores stay in your history, but they won’t appear under Group performance after the group is gone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { 

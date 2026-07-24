@@ -622,7 +622,7 @@ export function useAppEffects({
                 const summary = await fetchDashboardSummary();
                 if (summary) return summary;
                 const [testResults, userQuestionStats] = await Promise.all([
-                    fetchTestResults(userId, { limit: 50 }),
+                    fetchTestResults(userId, { limit: 500, lean: true }),
                     fetchUserQuestionStats(userId),
                 ]);
                 return { testResults, userQuestionStats };

@@ -3,8 +3,8 @@
  * topic strengths/weaknesses, questions to review, and per-group performance.
  * All data comes from stats already computed by buildDashboardStats.
  */
-import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React from 'react';
+import { Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../ui';
 import type { DashboardStats } from '../../types/dashboardStats';
@@ -25,8 +25,6 @@ function TopicRow({ tag, accuracy, tone }: { tag: string; accuracy: number; tone
 }
 
 export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
-  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
-
   if (!stats) return null;
 
   const rankedTopics = (stats.topicPerformance ?? [])
@@ -36,10 +34,9 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
   const weakest = rankedTopics.length > 3 ? rankedTopics.slice(-3).reverse() : [];
 
   const troublesome = (stats.troublesomeQuestions ?? []).slice(0, 5);
-  const groupPerformance = (stats.groupPerformance ?? []).filter(g => g.testsCount > 0);
 
   const hasTopics = strongest.length > 0 || weakest.length > 0;
-  if (!hasTopics && troublesome.length === 0 && groupPerformance.length === 0) return null;
+  if (!hasTopics && troublesome.length === 0) return null;
 
   return (
     <>
@@ -108,55 +105,6 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
         </Card>
       ) : null}
 
-      {groupPerformance.length > 0 ? (
-        <Card className="mb-4">
-          <View className="flex-row items-center gap-2 mb-3">
-            <Ionicons name="people" size={16} color="#3b82f6" />
-            <Text className="text-sm font-semibold text-lantern-text">Performance by group</Text>
-          </View>
-          <View className="gap-2">
-            {groupPerformance.map(g => {
-              const expanded = expandedGroupId === g.groupId;
-              return (
-                <View key={g.groupId} className="rounded-xl border border-lantern-border overflow-hidden">
-                  <Pressable
-                    onPress={() => setExpandedGroupId(expanded ? null : g.groupId)}
-                    className="flex-row items-center justify-between px-3 py-2.5 active:opacity-80"
-                    accessibilityRole="button"
-                    accessibilityLabel={`${g.groupName} performance`}
-                  >
-                    <Text className="text-sm font-medium text-lantern-text flex-1 pr-2" numberOfLines={1}>
-                      {g.groupName}
-                    </Text>
-                    <View className="flex-row items-center gap-2">
-                      <Text className="text-sm font-bold text-lantern-primary">{g.averageScore.toFixed(0)}%</Text>
-                      <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color="#94a3b8" />
-                    </View>
-                  </Pressable>
-                  {expanded ? (
-                    <View className="flex-row border-t border-lantern-border">
-                      <View className="flex-1 items-center py-2">
-                        <Text className="text-xs text-lantern-text-secondary">Tests</Text>
-                        <Text className="text-sm font-bold text-lantern-text">{g.testsCount}</Text>
-                      </View>
-                      <View className="flex-1 items-center py-2">
-                        <Text className="text-xs text-lantern-text-secondary">Accuracy</Text>
-                        <Text className="text-sm font-bold text-lantern-text">{g.accuracy.toFixed(0)}%</Text>
-                      </View>
-                      <View className="flex-1 items-center py-2">
-                        <Text className="text-xs text-lantern-text-secondary">Avg / Q</Text>
-                        <Text className="text-sm font-bold text-lantern-text">
-                          {g.averageTimePerQuestion > 0 ? `${g.averageTimePerQuestion.toFixed(0)}s` : '—'}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        </Card>
-      ) : null}
     </>
   );
 }

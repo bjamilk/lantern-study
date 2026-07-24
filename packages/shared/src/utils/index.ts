@@ -26,3 +26,5 @@ export * from './chatMedia';
 export * from './questionVisibility';
 export * from './deliveryIntegrity';
 export * from './noteComments';
+export * from './groupTree';
+export * from './groupPerformanceSeries';

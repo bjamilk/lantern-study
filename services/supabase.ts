@@ -1824,44 +1824,136 @@ export const createTestResult = async (resultData: {
   }
 };
 
-export const fetchTestResults = async (userId: string, options?: { limit?: number }) => {
+export type TestResultsSort = 'newest' | 'oldest' | 'highestScore';
+
+export type FetchTestResultsOptions = {
+  limit?: number;
+  page?: number;
+  lean?: boolean;
+  sort?: TestResultsSort;
+  from?: string;
+  to?: string;
+};
+
+function mapTestResultItem(item: any) {
+  if (!item?.session) return item;
+  const normalized = normalizeTestResultSession(item.session);
+  return {
+    ...item,
+    id: item.id ?? item.session?.id,
+    session: {
+      ...item.session,
+      questions: normalized.questions,
+      userAnswers: normalized.userAnswers,
+    },
+  };
+}
+
+export const fetchTestResultsPage = async (
+  userId: string,
+  options?: FetchTestResultsOptions
+): Promise<{
+  data: any[];
+  pagination: { page: number; limit: number; total: number; hasMore: boolean };
+}> => {
+  if (!(await hasValidSession())) {
+    return { data: [], pagination: { page: 1, limit: options?.limit ?? 10, total: 0, hasMore: false } };
+  }
+
+  const page = options?.page ?? 1;
+  const limit = options?.limit ?? 10;
+  const params = new URLSearchParams({
+    status: 'completed',
+    page: String(page),
+    limit: String(limit),
+    sort: options?.sort ?? 'newest',
+  });
+  if (options?.lean !== false) params.set('lean', '1');
+  if (options?.from) params.set('from', options.from);
+  if (options?.to) params.set('to', options.to);
+
+  const response = await fetch(`${getApiRoot()}/api/v1/tests?${params.toString()}`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    return { data: [], pagination: { page, limit, total: 0, hasMore: false } };
+  }
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const result = await response.json();
+  const data = (result.data || []).map(mapTestResultItem);
+  const pagination = result.pagination || {
+    page,
+    limit,
+    total: data.length,
+    hasMore: false,
+  };
+  return { data, pagination };
+};
+
+export const fetchTestResults = async (userId: string, options?: FetchTestResultsOptions) => {
   console.log('Fetching test results for user:', userId);
   try {
-    if (!(await hasValidSession())) {
-      return [];
-    }
-
-    const limit = options?.limit ?? 50;
-    const response = await fetch(`${getApiRoot()}/api/v1/tests?status=completed&limit=${limit}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
+    const { data } = await fetchTestResultsPage(userId, {
+      ...options,
+      page: options?.page ?? 1,
+      limit: options?.limit ?? 500,
+      lean: options?.lean !== false,
+      sort: options?.sort ?? 'newest',
     });
-
-    if (response.status === 401 || response.status === 403) {
-      return [];
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log('Fetched test results count:', result.data.length);
-    return (result.data || []).map((item: any) => {
-      if (!item?.session) return item;
-      const normalized = normalizeTestResultSession(item.session);
-      return {
-        ...item,
-        session: {
-          ...item.session,
-          questions: normalized.questions,
-          userAnswers: normalized.userAnswers,
-        },
-      };
-    });
+    console.log('Fetched test results count:', data.length);
+    return data;
   } catch (error) {
     console.error('Error fetching test results:', error);
     throw error;
+  }
+};
+
+/** Full session payload for Analyze when list rows are lean. */
+export const fetchTestSessionById = async (sessionId: string): Promise<any | null> => {
+  try {
+    if (!(await hasValidSession()) || !sessionId) return null;
+    const response = await fetch(`${getApiRoot()}/api/v1/tests/${sessionId}`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    const row = result?.data;
+    if (!row) return null;
+
+    // API returns raw session row; normalize to TestResult shape when possible.
+    if (row.session) return mapTestResultItem(row);
+    const normalized = normalizeTestResultSession({
+      id: row.id,
+      config: row.config,
+      questions: row.questions,
+      userAnswers: row.user_answers || row.userAnswers,
+      startTime: row.start_time || row.startTime,
+      endTime: row.end_time || row.endTime,
+    });
+    return {
+      id: row.id,
+      session: {
+        id: row.id,
+        config: row.config || {},
+        questions: normalized.questions,
+        userAnswers: normalized.userAnswers,
+        startTime: row.start_time ? new Date(row.start_time) : new Date(),
+        endTime: row.end_time ? new Date(row.end_time) : undefined,
+        isOffline: row.is_offline || false,
+      },
+      score: 0,
+      totalQuestions: normalized.questions?.length || 0,
+      correctAnswersCount: 0,
+    };
+  } catch (error) {
+    console.error('Error fetching test session:', error);
+    return null;
   }
 };
 

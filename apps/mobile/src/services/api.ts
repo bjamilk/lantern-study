@@ -107,6 +107,7 @@ export const {
   updateTestSession,
   submitTestResult,
   fetchTestResults,
+  fetchTestResultsPage,
   saveTestResult,
   deleteTestSession,
   clearTestHistory,
