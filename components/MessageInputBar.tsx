@@ -69,16 +69,38 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     }
   }, [inputText]);
 
+  const focusComposer = () => {
+    const el = textareaRef.current;
+    if (!el || isRecording || isUploadingAudio) return;
+    el.focus({ preventScroll: true });
+    const end = el.value.length;
+    try {
+      el.setSelectionRange(end, end);
+    } catch {
+      // Some browsers reject setSelectionRange on empty/readonly briefly.
+    }
+  };
+
   useEffect(() => {
     if (!editingMessage) return;
     setInputText(editingMessage.text);
     setMentionQuery(null);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      const end = editingMessage.text.length;
-      textareaRef.current?.setSelectionRange(end, end);
-    });
+    requestAnimationFrame(focusComposer);
   }, [editingMessage?.id]);
+
+  // Ready-to-type when opening a chat session (group or DM).
+  useEffect(() => {
+    if (!groupId && !threadId) return;
+    const timer = window.setTimeout(() => focusComposer(), 50);
+    return () => window.clearTimeout(timer);
+  }, [groupId, threadId]);
+
+  // Ready-to-type when starting a reply.
+  useEffect(() => {
+    if (!replyTo?.id) return;
+    const timer = window.setTimeout(() => focusComposer(), 0);
+    return () => window.clearTimeout(timer);
+  }, [replyTo?.id]);
 
   useEffect(() => {
     return () => {

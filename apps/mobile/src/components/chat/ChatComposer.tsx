@@ -67,6 +67,7 @@ export function ChatComposer({
   const [isRecording, setIsRecording] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const inputRef = useRef<TextInput>(null);
   const recordingRef = useRef<{
     stopAndUnloadAsync: () => Promise<unknown>;
     getURI: () => string | null;
@@ -74,12 +75,31 @@ export function ChatComposer({
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedAtRef = useRef(0);
 
+  const focusComposer = () => {
+    if (isRecording || uploadingAudio) return;
+    inputRef.current?.focus();
+  };
+
   useEffect(() => {
     return () => {
       if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
       void recordingRef.current?.stopAndUnloadAsync().catch(() => undefined);
     };
   }, []);
+
+  // Ready-to-type when opening a chat session (group or DM).
+  useEffect(() => {
+    if (!groupId && !threadId) return;
+    const timer = setTimeout(() => focusComposer(), 80);
+    return () => clearTimeout(timer);
+  }, [groupId, threadId]);
+
+  // Ready-to-type when starting a reply or edit.
+  useEffect(() => {
+    if (!replyTo?.id && !editingMessage?.id) return;
+    const timer = setTimeout(() => focusComposer(), 0);
+    return () => clearTimeout(timer);
+  }, [replyTo?.id, editingMessage?.id]);
 
   const mentionMatches = useMemo(() => {
     if (mentionQuery == null || !mentionCandidates.length) return [];
@@ -299,6 +319,7 @@ export function ChatComposer({
         ) : null}
 
         <TextInput
+          ref={inputRef}
           value={value}
           onChangeText={(next) => {
             onChangeText(next);
