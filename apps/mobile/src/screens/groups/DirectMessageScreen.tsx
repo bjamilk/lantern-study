@@ -515,7 +515,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     message={item}
                     isOwn={item.senderId === user?.id}
                     senderName={displayName}
-                    senderAvatar={peerAvatarUrl}
+                    senderAvatar={
+                      item.senderId === user?.id
+                        ? undefined
+                        : peerAvatarUrl || item.senderAvatar || undefined
+                    }
                     onReply={() => showMessageActions(item)}
                     onScrollToMessage={(messageId) => {
                       const index = messages.findIndex((m) => m.id === messageId);

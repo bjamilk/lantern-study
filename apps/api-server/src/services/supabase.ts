@@ -266,7 +266,9 @@ export class SupabaseService {
 
     if (bucket === 'profile-avatars') {
       if (!userId) return false;
-      return this.isProfileVisibleToViewer(userId, ownerId);
+      // Public/friends visibility, or conversation peers (DM / shared group) for chat bubbles.
+      if (await this.isProfileVisibleToViewer(userId, ownerId)) return true;
+      return this.canViewPeerChatAvatar(userId, ownerId);
     }
 
     if (bucket === 'group-avatars') {
@@ -1461,6 +1463,42 @@ export class SupabaseService {
     if (error && error.code !== 'PGRST116') throw error;
     const ids = Array.isArray(data?.participant_ids) ? data!.participant_ids : [];
     return ids.includes(userId);
+  }
+
+  /**
+   * True when viewer may see peer's profile avatar in chat (DM partner or shared active group),
+   * even if the peer's profile visibility is private.
+   */
+  async canViewPeerChatAvatar(viewerId: string, peerId: string): Promise<boolean> {
+    if (!viewerId || !peerId || viewerId === peerId) return viewerId === peerId;
+    const threadId = [viewerId, peerId].sort().join('-');
+    const { data: dm, error: dmError } = await this.supabase
+      .from('dm_threads')
+      .select('id')
+      .eq('id', threadId)
+      .maybeSingle();
+    if (dmError && dmError.code !== 'PGRST116') throw dmError;
+    if (dm) return true;
+
+    const { data: shared, error: sharedError } = await this.supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', viewerId)
+      .eq('pending', false);
+    if (sharedError) throw sharedError;
+    const groupIds = (shared || []).map((row: { group_id: string }) => row.group_id);
+    if (groupIds.length === 0) return false;
+
+    const { data: peerMembership, error: peerError } = await this.supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('user_id', peerId)
+      .eq('pending', false)
+      .in('group_id', groupIds)
+      .limit(1)
+      .maybeSingle();
+    if (peerError && peerError.code !== 'PGRST116') throw peerError;
+    return !!peerMembership;
   }
 
   /**

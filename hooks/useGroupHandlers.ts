@@ -71,10 +71,14 @@ function normalizeFetchedMessages(raw: unknown): Message[] {
 }
 
 function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
+    const sender = raw.sender || raw.profiles || null;
+    const senderObj = Array.isArray(sender) ? sender[0] : sender;
     return {
         id: raw.id,
         threadId: raw.threadId || raw.thread_id || threadId,
-        senderId: raw.senderId || raw.sender_id,
+        senderId: raw.senderId || raw.sender_id || senderObj?.id,
+        senderAvatar: senderObj?.avatarUrl || senderObj?.avatar_url || null,
+        senderName: senderObj?.name || senderObj?.username || null,
         text: raw.isRemoved || raw.removed_at ? '' : raw.text || '',
         timestamp: new Date(raw.timestamp),
         editedAt: raw.editedAt || raw.edited_at,

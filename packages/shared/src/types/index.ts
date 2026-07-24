@@ -580,6 +580,9 @@ export interface DirectMessage {
   id: string;
   threadId: string;
   senderId: string;
+  /** Profile photo from API/realtime — used for the other person's bubbles. */
+  senderAvatar?: string | null;
+  senderName?: string | null;
   text: string;
   timestamp: Date | string;
   editedAt?: string;

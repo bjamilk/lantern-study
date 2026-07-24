@@ -607,23 +607,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
         </p>
       </div>
 
-      {/* Right avatar */}
-      {isCurrentUserMessage && (
-        isGroupedWithPrevious ? (
-          <div className="w-7 shrink-0" aria-hidden />
-        ) : (
-          <Avatar
-            name={formatSenderLabel(message.sender, group?.members)}
-            src={resolveAvatarSrc(
-              currentUser.avatarUrl,
-              lowDataMode
-            )}
-            size="sm"
-            localOnly={lowDataMode}
-            className="self-end ring-1 ring-white dark:ring-lantern-border"
-          />
-        )
-      )}
+      {/* Own messages: no avatar — only the other person's messages show a profile picture. */}
     </div>
   );
 });

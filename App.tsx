@@ -617,10 +617,32 @@ export const App: React.FC = () => {
         : (Array.isArray(directMessages[selectedChat.id]) ? directMessages[selectedChat.id] : []).map((dm: DirectMessage): any => {
             const dmThread = selectedChat as any;
             const participantInfo = dmThread?.participants?.[dm.senderId];
-            const sender = users.find(u => u.id === dm.senderId)
-                || groups.flatMap(g => g.members || []).find(m => m.id === dm.senderId)
-                || (participantInfo ? { id: dm.senderId, name: participantInfo.name, avatarUrl: participantInfo.avatarUrl, points: 0, badges: [], stats: initialUserStats } : null)
-                || { id: dm.senderId, name: 'Unknown User', points: 0, badges: [], stats: initialUserStats };
+            const fromRoster = users.find(u => u.id === dm.senderId)
+                || groups.flatMap(g => g.members || []).find(m => m.id === dm.senderId);
+            const avatarUrl =
+                fromRoster?.avatarUrl
+                || participantInfo?.avatarUrl
+                || dm.senderAvatar
+                || undefined;
+            const sender = fromRoster
+                ? { ...fromRoster, avatarUrl: fromRoster.avatarUrl || avatarUrl }
+                : participantInfo
+                    ? {
+                        id: dm.senderId,
+                        name: participantInfo.name || dm.senderName || 'User',
+                        avatarUrl,
+                        points: 0,
+                        badges: [],
+                        stats: initialUserStats,
+                      }
+                    : {
+                        id: dm.senderId,
+                        name: dm.senderName || 'Unknown User',
+                        avatarUrl,
+                        points: 0,
+                        badges: [],
+                        stats: initialUserStats,
+                      };
             return {
                 id: dm.id, groupId: dm.threadId, timestamp: dm.timestamp,
                 sender, type: MessageType.TEXT, text: dm.text, upvotes: 0, downvotes: 0,

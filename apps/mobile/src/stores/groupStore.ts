@@ -498,10 +498,14 @@ function mapDmThread(t: any, unreadCounts: Record<string, number>): DMThread {
 function mapDirectMessage(m: any, threadId: string): DirectMessage {
   const removedAt = m.removed_at || m.removedAt;
   const isRemoved = m.isRemoved || !!removedAt;
+  const sender = m.sender || m.profiles || null;
+  const senderObj = Array.isArray(sender) ? sender[0] : sender;
   return {
     id: m.id,
     threadId: m.thread_id || threadId,
-    senderId: m.sender_id || m.senderId,
+    senderId: m.sender_id || m.senderId || senderObj?.id,
+    senderAvatar: senderObj?.avatarUrl || senderObj?.avatar_url || null,
+    senderName: senderObj?.name || senderObj?.username || null,
     text: isRemoved ? '' : m.content || m.text || '',
     timestamp: m.created_at || m.timestamp || new Date().toISOString(),
     editedAt: m.edited_at || m.editedAt,
