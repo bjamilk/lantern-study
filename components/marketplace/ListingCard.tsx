@@ -113,7 +113,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           {listing.title}
         </h3>
 
-        <p className="text-lantern-text-secondary text-xs mb-2 line-clamp-1 sm:line-clamp-2 leading-relaxed">
+        <p className="hidden sm:block text-lantern-text-secondary text-xs mb-2 line-clamp-2 leading-relaxed">
           {listing.description}
         </p>
 

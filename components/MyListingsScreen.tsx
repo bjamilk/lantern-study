@@ -7,7 +7,6 @@ import {
   updateListingStatus,
   deleteMarketplaceListing,
   fetchSellerPreferences,
-  updateSellerPreferences,
   fetchSellerOnboarding,
 } from '../services/supabase';
 import { MarketplaceListing, SellerStats, SellerAnalytics, SellerOnboardingStatus } from '../types';
@@ -17,6 +16,8 @@ import CreateBundleModal from './marketplace/CreateBundleModal';
 import SellerCampaignPanel from './marketplace/SellerCampaignPanel';
 import SellerCouponsPanel from './marketplace/SellerCouponsPanel';
 import SellerOnboardingWizard from './marketplace/SellerOnboardingWizard';
+import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
+import SellerInsightsDrawer from './marketplace/SellerInsightsDrawer';
 import {
   PlusIcon,
   PencilIcon,
@@ -29,7 +30,11 @@ import {
   ShoppingBagIcon,
   ChartBarIcon,
   ArrowLeftIcon,
-  EllipsisVerticalIcon
+  EllipsisVerticalIcon,
+  UserGroupIcon,
+  TicketIcon,
+  GiftIcon,
+  MegaphoneIcon,
 } from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
 
@@ -52,13 +57,13 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   const [bundleListings, setBundleListings] = useState<MarketplaceListing[]>([]);
   const [showCampaign, setShowCampaign] = useState(false);
   const [showCoupons, setShowCoupons] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const [hallDropoffEnabled, setHallDropoffEnabled] = useState(false);
   const [hallDropoffMin, setHallDropoffMin] = useState('');
   const [requirePaymentConfirmation, setRequirePaymentConfirmation] = useState(false);
   const [boostCredits, setBoostCredits] = useState<number | null>(null);
   const [onboardingStatus, setOnboardingStatus] = useState<SellerOnboardingStatus | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [savingPrefs, setSavingPrefs] = useState(false);
   const { refreshBudgetTransactions } = useBudgetHandlers();
 
   useEffect(() => {
@@ -86,44 +91,27 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadListings();
   }, [activeTab, refreshKey]);
 
-  const loadData = async () => {
-    setLoading(true);
-    
-    // Set a timeout to stop loading after 5 seconds even if requests fail
-    const timeoutId = setTimeout(() => {
-      setLoading(false);
-    }, 5000);
-    
-    try {
-      // Fetch listings and stats in parallel, but don't wait for both
-      const listingsPromise = fetchMyListings(activeTab).catch(err => {
-        console.error('Error fetching listings:', err);
-        return [];
-      });
-      
-      const statsPromise = fetchSellerStats().catch(err => {
-        console.error('Error fetching stats:', err);
-        return null;
-      });
-
-      const analyticsPromise = fetchSellerAnalytics().catch(err => {
-        console.error('Error fetching analytics:', err);
-        return null;
-      });
-      
-      const [listingsData, statsData, analyticsData] = await Promise.all([
-        listingsPromise,
-        statsPromise,
-        analyticsPromise,
-      ]);
-      setListings(listingsData || []);
+  useEffect(() => {
+    // Load stats/analytics in background so inventory is not blocked.
+    void Promise.all([
+      fetchSellerStats().catch(() => null),
+      fetchSellerAnalytics().catch(() => null),
+    ]).then(([statsData, analyticsData]) => {
       setStats(statsData);
       setAnalytics(analyticsData);
-    } catch (error) {
-      console.error('Error loading data:', error);
+    });
+  }, [refreshKey]);
+
+  const loadListings = async () => {
+    setLoading(true);
+    const timeoutId = setTimeout(() => setLoading(false), 5000);
+    try {
+      const listingsData = await fetchMyListings(activeTab).catch(() => []);
+      setListings(listingsData || []);
+    } catch {
       setListings([]);
     } finally {
       clearTimeout(timeoutId);
@@ -137,7 +125,13 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       if (newStatus === 'sold' && currentUser) {
         await refreshBudgetTransactions(currentUser.id);
       }
-      await loadData();
+      await loadListings();
+      const [statsData, analyticsData] = await Promise.all([
+        fetchSellerStats().catch(() => null),
+        fetchSellerAnalytics().catch(() => null),
+      ]);
+      setStats(statsData);
+      setAnalytics(analyticsData);
       setActionMenuOpen(null);
     } catch (error) {
       console.error('Error updating status:', error);
@@ -147,10 +141,9 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
 
   const handleDelete = async (listingId: string) => {
     if (!confirm('Are you sure you want to delete this listing?')) return;
-    
     try {
       await deleteMarketplaceListing(listingId);
-      await loadData();
+      await loadListings();
       setActionMenuOpen(null);
     } catch (error) {
       console.error('Error deleting listing:', error);
@@ -176,7 +169,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
       personal_goods: 'Personal Goods',
       aso_ebi: 'Fashion',
       campus_services: 'Campus Services',
-      events_social: 'Events & Social'
+      events_social: 'Events & Social',
     };
     return categoryNames[category] || category;
   };
@@ -190,385 +183,159 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
     ),
   };
 
+  const openNewListing = (category: 'academic' | 'student-life') => {
+    setShowCategoryPicker(false);
+    onNavigate('CreateMarketplaceListing', { category });
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-lantern-background">
-      {/* Header */}
-      <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 sm:py-4">
-        <div className="flex items-center justify-between">
+    <div className="flex-1 flex flex-col min-h-0 bg-lantern-background">
+      <div className="shrink-0 bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 space-y-3">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center min-w-0">
             <button
+              type="button"
               onClick={onBack}
-              className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0"
+              className="mr-2 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
+              aria-label="Back to marketplace"
             >
               <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
             </button>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-2xl font-bold text-lantern-text flex items-center">
-                <ShoppingBagIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-lantern-primary flex-shrink-0" />
-                My Listings
-              </h1>
-              <p className="text-lantern-text-secondary mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
-                Manage your marketplace listings
-                {boostCredits != null && (
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-xs font-semibold">
-                    {boostCredits} boost credit{boostCredits === 1 ? '' : 's'}
+              <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Selling</h1>
+              <p className="text-xs text-lantern-text-secondary truncate">
+                Manage your listings
+                {boostCredits != null ? (
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-[10px] font-semibold">
+                    {boostCredits} boost{boostCredits === 1 ? '' : 's'}
                   </span>
-                )}
+                ) : null}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+
+          <div className="relative flex items-center gap-2 shrink-0">
             <button
-              onClick={() => onNavigate('MarketplaceOrders')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
+              type="button"
+              onClick={() => setShowInsights(true)}
+              className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
+              aria-label="Open performance insights"
             >
-              <ShoppingBagIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Orders</span>
+              <ChartBarIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Insights</span>
             </button>
             <button
-              onClick={() => onNavigate('SellerCustomers')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5 hidden md:flex"
+              type="button"
+              onClick={() => setShowCategoryPicker(v => !v)}
+              className="h-8 px-2.5 sm:px-3 rounded-lg bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold inline-flex items-center gap-1"
             >
-              <ChartBarIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              Customers
+              <PlusIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">New listing</span>
+              <span className="sm:hidden">New</span>
             </button>
-            <button
-              onClick={() => setShowCampaign(true)}
-              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
-            >
-              Campaign
-            </button>
-            <button
-              onClick={async () => {
+            {showCategoryPicker ? (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-lantern-surface rounded-lg shadow-xl border border-lantern-border z-50 overflow-hidden">
+                <div className="p-2">
+                  <p className="text-xs font-medium text-lantern-text-secondary px-3 py-2">Select Category</p>
+                  <button
+                    type="button"
+                    onClick={() => openNewListing('academic')}
+                    className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors text-left"
+                  >
+                    <div className="w-9 h-9 bg-lantern-primary-background rounded-lg flex items-center justify-center mr-3">
+                      <ShoppingBagIcon className="w-4 h-4 text-lantern-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-lantern-text text-sm">Academic</p>
+                      <p className="text-xs text-lantern-text-secondary">Textbooks, notes, PQs</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openNewListing('student-life')}
+                    className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors text-left"
+                  >
+                    <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center mr-3">
+                      <GiftIcon className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-lantern-text text-sm">Student Life</p>
+                      <p className="text-xs text-lantern-text-secondary">Services, housing, events</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <MarketplaceWorkspaceBar
+          active="selling"
+          onNavigate={onNavigate}
+          onSell={() => setShowCategoryPicker(true)}
+          primaryLabel="Sell"
+          moreItems={[
+            {
+              id: 'customers',
+              label: 'Customers',
+              onSelect: () => onNavigate('SellerCustomers'),
+              icon: <UserGroupIcon className="w-4 h-4" />,
+            },
+            {
+              id: 'campaign',
+              label: 'Campaign',
+              onSelect: () => setShowCampaign(true),
+              icon: <MegaphoneIcon className="w-4 h-4" />,
+            },
+            {
+              id: 'bundle',
+              label: 'Bundle',
+              onSelect: async () => {
                 setBundleListings(await fetchMyListings('active'));
                 setShowBundleModal(true);
-              }}
-              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
-            >
-              Bundle
-            </button>
-            <button
-              onClick={() => setShowCoupons(true)}
-              className="hidden lg:flex px-3 py-1.5 border border-lantern-border rounded-lg text-xs font-semibold"
-            >
-              Coupons
-            </button>
-            <button
-              onClick={() => onNavigate('MarketplaceInquiries')}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 border border-lantern-border hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50 text-lantern-text rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm gap-1.5"
-            >
-              <ChatBubbleLeftIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Inquiries & Offers</span>
-              <span className="sm:hidden">Offers</span>
-            </button>
-            <div className="relative">
-              <button
-                onClick={() => setShowCategoryPicker(!showCategoryPicker)}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold flex items-center transition-colors text-xs sm:text-sm"
-              >
-                <PlusIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-2" />
-                <span className="hidden sm:inline">New Listing</span>
-              </button>
-              {showCategoryPicker && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-lantern-surface rounded-lg shadow-xl border border-lantern-border z-50 overflow-hidden">
-                  <div className="p-2">
-                    <p className="text-xs font-medium text-lantern-text-secondary px-3 py-2">Select Category</p>
-                    <button
-                      onClick={() => {
-                        setShowCategoryPicker(false);
-                        onNavigate('CreateMarketplaceListing', { category: 'academic' });
-                      }}
-                      className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-lantern-primary-background dark:bg-lantern-primary-dark/40 rounded-lg flex items-center justify-center mr-3">
-                        <svg className="w-5 h-5 text-lantern-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}/>
-                        </svg>
-                      </div>
-                      <div className="text-left">
-                        <p className="font-medium text-lantern-text">Academic Marketplace</p>
-                        <p className="text-xs text-lantern-text-secondary">Textbooks, notes, past questions</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowCategoryPicker(false);
-                        onNavigate('CreateMarketplaceListing', { category: 'student-life' });
-                      }}
-                      className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors"
-                    >
-                      <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center mr-3">
-                        <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 0 0 .75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 0 0-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0 1 12 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 0 1-.673-.38m0 0A2.18 2.18 0 0 1 3 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 0 1 3.413-.387m7.5 0V5.25A2.25 2.25 0 0 0 13.5 3h-3a2.25 2.25 0 0 0-2.25 2.25v.894m7.5 0a48.667 48.667 0 0 0-7.5 0M12 12.75h.008v.008H12v-.008Z" />
-                        </svg>
-                      </div>
-                      <div className="text-left">
-                        <p className="font-medium text-lantern-text">Student Life & Gigs</p>
-                        <p className="text-xs text-lantern-text-secondary">Services, accommodation, events</p>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+              },
+              icon: <GiftIcon className="w-4 h-4" />,
+            },
+            {
+              id: 'coupons',
+              label: 'Coupons',
+              onSelect: () => setShowCoupons(true),
+              icon: <TicketIcon className="w-4 h-4" />,
+            },
+            {
+              id: 'insights',
+              label: 'Insights & preferences',
+              onSelect: () => setShowInsights(true),
+              icon: <ChartBarIcon className="w-4 h-4" />,
+            },
+          ]}
+        />
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Kpi label="Active" value={stats?.activeListings ?? 0} />
+          <Kpi label="Views" value={stats?.totalViews ?? 0} />
+          <Kpi label="Inquiries" value={stats?.totalInquiries ?? 0} />
+          <Kpi
+            label="Revenue 30d"
+            value={
+              analytics
+                ? `₦${analytics.revenue30d.toLocaleString()}`
+                : stats?.revenue30d != null
+                  ? `₦${stats.revenue30d.toLocaleString()}`
+                  : '—'
+            }
+            accent
+          />
         </div>
       </div>
 
-      {/* Stats Cards */}
-      {stats && (
-        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 p-3 sm:p-4 md:p-6">
-          <StatCard icon={ShoppingBagIcon} label="Total Listings" value={stats.totalListings} color="indigo" />
-          <StatCard icon={CheckCircleIcon} label="Active" value={stats.activeListings} color="green" />
-          <StatCard icon={ShoppingBagIcon} label="Sold Listings" value={stats.soldListings} color="blue" />
-          <StatCard icon={CheckCircleIcon} label="Completed Sales" value={stats.completedOrders ?? analytics?.completedSalesCount ?? 0} color="purple" />
-          <StatCard icon={EyeIcon} label="Total Views" value={stats.totalViews} color="purple" />
-          <StatCard icon={ChatBubbleLeftIcon} label="Inquiries" value={stats.totalInquiries} color="orange" />
-        </div>
-      )}
-
-      {analytics && (
-        <div className="px-3 sm:px-4 md:px-6 pb-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-3">
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Revenue (30d)</p>
-              <p className="text-lg font-bold text-lantern-primary">₦{analytics.revenue30d.toLocaleString()}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Total revenue</p>
-              <p className="text-lg font-bold">₦{analytics.totalRevenue.toLocaleString()}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Avg sale price</p>
-              <p className="text-lg font-bold">₦{analytics.avgSalePrice.toLocaleString()}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Avg days to sell</p>
-              <p className="text-lg font-bold">{analytics.avgTimeToSellDays}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">
-                {analytics.conversionRate30d != null ? 'View-to-sale (30d)' : 'View-to-sale (all-time)'}
-              </p>
-              <p className="text-lg font-bold">
-                {analytics.conversionRate30d != null ? analytics.conversionRate30d : analytics.conversionRate}%
-              </p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Pending orders</p>
-              <p className="text-lg font-bold">{analytics.pendingOrders}</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Offer accept rate</p>
-              <p className="text-lg font-bold">{analytics.offerAcceptRate}%</p>
-            </div>
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs text-lantern-text-secondary">Discounts given</p>
-              <p className="text-lg font-bold">₦{analytics.discountsGiven.toLocaleString()}</p>
-            </div>
-          </div>
-          {analytics.funnel30d && (
-            <div className="mb-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Funnel (30d)</p>
-              <div className="grid grid-cols-5 gap-1 text-center text-xs">
-                {(
-                  [
-                    ['Impressions', analytics.funnel30d.impressions],
-                    ['Views', analytics.funnel30d.views],
-                    ['Inquiries', analytics.funnel30d.inquiries],
-                    ['Offers', analytics.funnel30d.offers],
-                    ['Sales', analytics.funnel30d.sales],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div key={label} className="p-2 rounded-lg bg-lantern-background">
-                    <p className="text-lantern-text-secondary">{label}</p>
-                    <p className="font-bold text-lantern-text">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {analytics.viewsByDay && analytics.viewsByDay.some((d) => d.views > 0) && (
-            <div className="mb-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
-                <ChartBarIcon className="w-4 h-4" /> Listing views (30d)
-              </p>
-              <div className="flex items-end gap-0.5 h-16">
-                {analytics.viewsByDay.map((day) => {
-                  const max = Math.max(...analytics.viewsByDay!.map((d) => d.views), 1);
-                  const height = Math.max(2, (day.views / max) * 100);
-                  return (
-                    <div
-                      key={day.date}
-                      className="flex-1 bg-emerald-500/80 rounded-t"
-                      style={{ height: `${height}%` }}
-                      title={`${day.date}: ${day.views} views · ${day.uniqueViewers} unique`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {analytics.salesByWeek.length > 0 && (
-            <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-              <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
-                <ChartBarIcon className="w-4 h-4" /> Weekly sales
-              </p>
-              <div className="flex items-end gap-1 h-16">
-                {analytics.salesByWeek.map((week) => {
-                  const max = Math.max(...analytics.salesByWeek.map((w) => w.revenue), 1);
-                  const height = Math.max(4, (week.revenue / max) * 100);
-                  return (
-                    <div
-                      key={week.weekStart}
-                      className="flex-1 bg-lantern-primary/80 rounded-t"
-                      style={{ height: `${height}%` }}
-                      title={`₦${week.revenue} · ${week.count} sales`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {(analytics.salesBySource?.length || analytics.inquiryToSaleRate != null) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-              {analytics.salesBySource && analytics.salesBySource.length > 0 && (
-                <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-                  <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Sales by channel</p>
-                  <div className="space-y-1">
-                    {analytics.salesBySource.map((row) => (
-                      <div key={row.source} className="flex justify-between text-sm">
-                        <span className="capitalize">{row.source.replace(/_/g, ' ')}</span>
-                        <span>{row.count} · ₦{row.revenue.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {analytics.inquiryToSaleRate != null && (
-                <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border">
-                  <p className="text-xs text-lantern-text-secondary">Inquiry → sale rate</p>
-                  <p className="text-lg font-bold">{analytics.inquiryToSaleRate}%</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {(analytics.staleListings?.length || analytics.highViewsLowEngagement?.length) ? (
-            <div className="mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
-              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-2">Listing insights</p>
-              {analytics.highViewsLowEngagement?.slice(0, 3).map((l) => (
-                <p key={l.id} className="text-xs text-amber-900 dark:text-amber-200">
-                  "{l.title}" — {l.views} views, no inquiries. Try a price drop or better photos.
-                </p>
-              ))}
-              {analytics.staleListings?.slice(0, 3).map((l) => (
-                <p key={l.id} className="text-xs text-amber-900 dark:text-amber-200 mt-1">
-                  "{l.title}" — listed {l.daysListed} days with low activity.
-                </p>
-              ))}
-            </div>
-          ) : null}
-
-          {analytics.favoriteHighlights && analytics.favoriteHighlights.length > 0 && (
-            <div className="mt-3 p-3 rounded-xl bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/40">
-              <p className="text-xs font-semibold text-pink-800 dark:text-pink-300 mb-2 flex items-center gap-1">
-                <HeartIcon className="w-4 h-4" /> Favorite highlights
-              </p>
-              {analytics.favoriteHighlights.map((l) => (
-                <p key={l.id} className="text-xs text-pink-900 dark:text-pink-200">
-                  "{l.title}" — {l.favoritesCount} favorite{l.favoritesCount === 1 ? '' : 's'}. Consider reaching out with a coupon.
-                </p>
-              ))}
-            </div>
-          )}
-
-          {analytics.topListings && analytics.topListings.length > 0 && (
-            <div className="mt-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border overflow-x-auto">
-              <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Top listings</p>
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="text-lantern-text-secondary border-b border-lantern-border">
-                    <th className="py-1 pr-2 font-medium">Listing</th>
-                    <th className="py-1 px-1 font-medium">Views</th>
-                    <th className="py-1 px-1 font-medium">Inquiries</th>
-                    <th className="py-1 px-1 font-medium">Offers</th>
-                    <th className="py-1 pl-1 font-medium">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analytics.topListings.slice(0, 8).map((l) => (
-                    <tr key={l.id} className="border-b border-lantern-border/60 last:border-0">
-                      <td className="py-1.5 pr-2 text-lantern-text max-w-[10rem] truncate" title={l.title}>
-                        {l.title}{l.sold ? ' · sold' : ''}
-                      </td>
-                      <td className="py-1.5 px-1">{l.views}</td>
-                      <td className="py-1.5 px-1">{l.inquiries}</td>
-                      <td className="py-1.5 px-1">{l.offers}</td>
-                      <td className="py-1.5 pl-1">₦{l.revenue.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div className="mt-3 p-3 rounded-xl bg-lantern-surface border border-lantern-border space-y-3">
-            <p className="text-xs font-semibold text-lantern-text-secondary mb-1">Seller preferences</p>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={requirePaymentConfirmation}
-                onChange={(e) => setRequirePaymentConfirmation(e.target.checked)}
-              />
-              Require payment proof before marking orders paid
-            </label>
-            <p className="text-xs font-semibold text-lantern-text-secondary mb-2">Delivery threshold</p>
-            <label className="flex items-center gap-2 text-sm mb-2">
-              <input
-                type="checkbox"
-                checked={hallDropoffEnabled}
-                onChange={(e) => setHallDropoffEnabled(e.target.checked)}
-              />
-              Offer delivery on eligible combined orders
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={hallDropoffMin}
-                onChange={(e) => setHallDropoffMin(e.target.value)}
-                placeholder="Min ₦ amount"
-                className="lantern-field flex-1 text-sm"
-              />
-              <button
-                type="button"
-                disabled={savingPrefs}
-                onClick={async () => {
-                  setSavingPrefs(true);
-                  try {
-                    await updateSellerPreferences({
-                      hallDropoffEnabled,
-                      hallDropoffMinAmount: hallDropoffMin ? Number(hallDropoffMin) : null,
-                      requirePaymentConfirmation,
-                    });
-                  } finally {
-                    setSavingPrefs(false);
-                  }
-                }}
-                className="px-3 py-2 rounded-lg bg-lantern-primary text-white text-sm font-semibold disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 flex flex-col flex-1 min-h-0">
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'active' | 'sold' | 'inactive')} aria-label="Listing status" className="flex flex-col flex-1 min-h-0">
+        <Tabs
+          value={activeTab}
+          onValueChange={value => setActiveTab(value as 'active' | 'sold' | 'inactive')}
+          aria-label="Listing status"
+          className="flex flex-col flex-1 min-h-0"
+        >
           <TabList className="space-x-0.5 sm:space-x-1 !border-0">
             {(['active', 'sold', 'inactive'] as const).map((tab, index) => (
               <Tab
@@ -582,167 +349,185 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
             ))}
           </TabList>
 
-      {/* Content */}
-      <div className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto">
-        {(['active', 'sold', 'inactive'] as const).map((tab) => (
-          <TabPanel key={tab} value={tab}>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lantern-primary"></div>
-          </div>
-        ) : listings.length === 0 ? (
-          <div className="text-center py-12">
-            <ShoppingBagIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
-            <h3 className="text-xl font-semibold text-lantern-text mb-2">
-              No {activeTab} listings
-            </h3>
-            <p className="text-lantern-text-secondary mb-6">
-              {activeTab === 'active' 
-                ? "Create your first listing to start selling!"
-                : `You don't have any ${activeTab} listings yet.`
-              }
-            </p>
-            {activeTab === 'active' && (
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={() => onNavigate('CreateMarketplaceListing', { category: 'academic' })}
-                  className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold inline-flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}/>
-                  </svg>
-                  Academic Listing
-                </button>
-                <button
-                  onClick={() => onNavigate('CreateMarketplaceListing', { category: 'student-life' })}
-                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold inline-flex items-center justify-center"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 0 0 .75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 0 0-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0 1 12 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 0 1-.673-.38m0 0A2.18 2.18 0 0 1 3 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 0 1 3.413-.387m7.5 0V5.25A2.25 2.25 0 0 0 13.5 3h-3a2.25 2.25 0 0 0-2.25 2.25v.894m7.5 0a48.667 48.667 0 0 0-7.5 0M12 12.75h.008v.008H12v-.008Z" />
-                  </svg>
-                  Student Life & Gigs
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {listings.map(listing => (
-              <div
-                key={listing.id}
-                className="bg-lantern-surface rounded-xl shadow-sm border border-lantern-border overflow-hidden hover:shadow-md transition-shadow"
-              >
-                <div className="flex flex-col md:flex-row">
-                  {/* Image */}
-                  <div className="w-full md:w-48 h-32 md:h-auto bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0">
-                    {listing.images && listing.images.length > 0 ? (
-                      <img
-                        src={listing.images[0]}
-                        alt={listing.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
-                      </div>
-                    )}
+          <div
+            role="region"
+            aria-label="Seller inventory"
+            data-testid="seller-inventory"
+            className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto"
+          >
+            {(['active', 'sold', 'inactive'] as const).map(tab => (
+              <TabPanel key={tab} value={tab}>
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lantern-primary" />
                   </div>
-
-                  {/* Content */}
-                  <div className="flex-1 p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="inline-block px-2 py-1 text-xs font-medium bg-lantern-primary-background dark:bg-lantern-primary-dark/40 text-lantern-primary rounded-full mb-2">
-                          {getCategoryName(listing.category)}
-                        </span>
-                        <h3 className="text-lg font-semibold text-lantern-text">
-                          {listing.title}
-                        </h3>
-                        <p className="text-lantern-text-secondary text-sm line-clamp-1 mt-1">
-                          {listing.description}
-                        </p>
-                      </div>
-
-                      {/* Actions Menu */}
-                      <Menu open={actionMenuOpen === listing.id} onOpenChange={(open) => setActionMenuOpen(open ? listing.id : null)}>
-                        <MenuTrigger
-                          aria-label={`Actions for ${listing.title}`}
-                          className="p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        >
-                          <EllipsisVerticalIcon className="w-5 h-5 text-lantern-text-secondary" />
-                        </MenuTrigger>
-                        <MenuContent align="end" className="w-48">
-                          <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
-                            Edit Listing
-                          </MenuItem>
-                          {listing.status !== 'active' && (
-                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'active')} icon={<CheckCircleIcon className="w-4 h-4" />} className="text-green-600">
-                              Mark Active
-                            </MenuItem>
-                          )}
-                          {listing.status !== 'sold' && (
-                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'sold')} icon={<ShoppingBagIcon className="w-4 h-4" />} className="text-lantern-primary">
-                              Mark as Sold
-                            </MenuItem>
-                          )}
-                          {listing.status !== 'inactive' && (
-                            <MenuItem onSelect={() => handleStatusChange(listing.id, 'inactive')} icon={<XCircleIcon className="w-4 h-4" />} className="text-orange-600">
-                              Deactivate
-                            </MenuItem>
-                          )}
-                          <MenuSeparator />
-                          <MenuItem onSelect={() => handleDelete(listing.id)} icon={<TrashIcon className="w-4 h-4" />} className="text-red-600">
-                            Delete
-                          </MenuItem>
-                        </MenuContent>
-                      </Menu>
-                    </div>
-
-                    {/* Stats Row */}
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 md:gap-6 mt-3 sm:mt-4 text-xs sm:text-sm text-lantern-text-secondary">
-                      <span className="font-semibold text-base sm:text-lg text-lantern-primary">
-                        {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
-                      </span>
-                      {listing.quantity != null && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary text-lantern-text-secondary">
-                          {listing.quantity > 0 ? `${listing.quantity} in stock` : 'Out of stock'}
-                        </span>
-                      )}
-                      <span className="flex items-center">
-                        <EyeIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
-                        {listing.views_count || 0}<span className="hidden sm:inline">&nbsp;views</span>
-                      </span>
-                      <span className="flex items-center">
-                        <HeartIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
-                        {listing.favorites_count || 0}<span className="hidden sm:inline">&nbsp;favorites</span>
-                      </span>
-                      <span className="flex items-center">
-                        <ChatBubbleLeftIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
-                        {listing.inquiries_count || 0}<span className="hidden sm:inline">&nbsp;inquiries</span>
-                      </span>
-                      <span className="text-lantern-text-secondary hidden sm:inline">
-                        {new Date(listing.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
+                ) : listings.length === 0 ? (
+                  <div className="text-center py-12">
+                    <ShoppingBagIcon className="w-14 h-14 mx-auto text-lantern-text-tertiary mb-4" />
+                    <h3 className="text-lg font-semibold text-lantern-text mb-2">No {activeTab} listings</h3>
+                    <p className="text-sm text-lantern-text-secondary mb-6">
+                      {activeTab === 'active'
+                        ? 'Create your first listing to start selling.'
+                        : `You don't have any ${activeTab} listings yet.`}
+                    </p>
+                    {activeTab === 'active' ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryPicker(true)}
+                        className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold inline-flex items-center"
+                      >
+                        <PlusIcon className="w-4 h-4 mr-2" />
+                        New listing
+                      </button>
+                    ) : null}
                   </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="space-y-2">
+                    {listings.map(listing => (
+                      <article
+                        key={listing.id}
+                        className="bg-lantern-surface rounded-xl border border-lantern-border overflow-hidden hover:border-lantern-primary/30 transition-colors"
+                      >
+                        <div className="flex items-stretch gap-0">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate('MarketplaceListingDetail', { listingId: listing.id })}
+                            className="w-20 sm:w-28 h-20 sm:h-24 bg-lantern-background-secondary flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+                            aria-label={`View ${listing.title}`}
+                          >
+                            {listing.images && listing.images.length > 0 ? (
+                              <img
+                                src={listing.images[0]}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                onError={e => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                              </div>
+                            )}
+                          </button>
+
+                          <div className="flex-1 min-w-0 p-2.5 sm:p-3 flex items-start justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onNavigate('MarketplaceListingDetail', { listingId: listing.id })}
+                              className="min-w-0 text-left flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"
+                            >
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-lantern-primary-background text-lantern-primary rounded">
+                                  {getCategoryName(listing.category)}
+                                </span>
+                                <span className="text-[10px] capitalize text-lantern-text-tertiary">{listing.status}</span>
+                              </div>
+                              <h3 className="text-sm sm:text-base font-semibold text-lantern-text truncate">
+                                {listing.title}
+                              </h3>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] sm:text-xs text-lantern-text-secondary">
+                                <span className="font-semibold text-sm text-lantern-primary">
+                                  {listing.price ? `₦${listing.price.toLocaleString()}` : 'Free'}
+                                </span>
+                                {listing.quantity != null ? (
+                                  <span>{listing.quantity > 0 ? `${listing.quantity} in stock` : 'Out of stock'}</span>
+                                ) : null}
+                                <span className="inline-flex items-center gap-0.5">
+                                  <EyeIcon className="w-3.5 h-3.5" />
+                                  {listing.views_count || 0}
+                                </span>
+                                <span className="inline-flex items-center gap-0.5">
+                                  <HeartIcon className="w-3.5 h-3.5" />
+                                  {listing.favorites_count || 0}
+                                </span>
+                                <span className="inline-flex items-center gap-0.5">
+                                  <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
+                                  {listing.inquiries_count || 0}
+                                </span>
+                              </div>
+                            </button>
+
+                            <Menu
+                              open={actionMenuOpen === listing.id}
+                              onOpenChange={open => setActionMenuOpen(open ? listing.id : null)}
+                            >
+                              <MenuTrigger
+                                aria-label={`Actions for ${listing.title}`}
+                                className="p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+                              >
+                                <EllipsisVerticalIcon className="w-5 h-5 text-lantern-text-secondary" />
+                              </MenuTrigger>
+                              <MenuContent align="end" className="w-48">
+                                <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
+                                  Edit Listing
+                                </MenuItem>
+                                {listing.status !== 'active' && (
+                                  <MenuItem
+                                    onSelect={() => handleStatusChange(listing.id, 'active')}
+                                    icon={<CheckCircleIcon className="w-4 h-4" />}
+                                    className="text-green-600"
+                                  >
+                                    Mark Active
+                                  </MenuItem>
+                                )}
+                                {listing.status !== 'sold' && (
+                                  <MenuItem
+                                    onSelect={() => handleStatusChange(listing.id, 'sold')}
+                                    icon={<ShoppingBagIcon className="w-4 h-4" />}
+                                    className="text-lantern-primary"
+                                  >
+                                    Mark as Sold
+                                  </MenuItem>
+                                )}
+                                {listing.status !== 'inactive' && (
+                                  <MenuItem
+                                    onSelect={() => handleStatusChange(listing.id, 'inactive')}
+                                    icon={<XCircleIcon className="w-4 h-4" />}
+                                    className="text-orange-600"
+                                  >
+                                    Deactivate
+                                  </MenuItem>
+                                )}
+                                <MenuSeparator />
+                                <MenuItem
+                                  onSelect={() => handleDelete(listing.id)}
+                                  icon={<TrashIcon className="w-4 h-4" />}
+                                  className="text-red-600"
+                                >
+                                  Delete
+                                </MenuItem>
+                              </MenuContent>
+                            </Menu>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </TabPanel>
             ))}
           </div>
-        )}
-          </TabPanel>
-        ))}
-      </div>
         </Tabs>
       </div>
 
+      <SellerInsightsDrawer
+        isOpen={showInsights}
+        onClose={() => setShowInsights(false)}
+        analytics={analytics}
+        requirePaymentConfirmation={requirePaymentConfirmation}
+        hallDropoffEnabled={hallDropoffEnabled}
+        hallDropoffMin={hallDropoffMin}
+        onRequirePaymentConfirmationChange={setRequirePaymentConfirmation}
+        onHallDropoffEnabledChange={setHallDropoffEnabled}
+        onHallDropoffMinChange={setHallDropoffMin}
+      />
 
       {showBundleModal && (
         <CreateBundleModal
           listings={bundleListings}
           onClose={() => setShowBundleModal(false)}
-          onCreated={() => loadData()}
+          onCreated={() => loadListings()}
         />
       )}
       {showCampaign && <SellerCampaignPanel onClose={() => setShowCampaign(false)} />}
@@ -767,31 +552,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   );
 };
 
-// Stat Card Component
-const StatCard: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: number;
-  color: string;
-}> = ({ icon: Icon, label, value, color }) => {
-  const colorClasses: Record<string, string> = {
-    indigo: 'bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-dark/40 dark:text-lantern-primary-light',
-    green: 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400',
-    blue: 'bg-blue-100 text-lantern-primary dark:bg-blue-900/40 dark:text-blue-400',
-    purple: 'bg-purple-100 text-lantern-primary dark:bg-purple-900/40 dark:text-lantern-primary-light',
-    orange: 'bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400',
-    red: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400',
-  };
-
+function Kpi({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className="bg-lantern-surface rounded-xl p-2.5 sm:p-4 border border-lantern-border">
-      <div className={`w-7 h-7 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center ${colorClasses[color]} mb-1.5 sm:mb-3`}>
-        <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
-      </div>
-      <p className="text-lg sm:text-2xl font-bold text-lantern-text">{value}</p>
-      <p className="text-[10px] sm:text-sm text-lantern-text-secondary leading-tight">{label}</p>
+    <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary/60 px-2.5 py-2">
+      <p className="text-[10px] sm:text-xs text-lantern-text-secondary truncate">{label}</p>
+      <p className={`text-sm sm:text-base font-bold truncate ${accent ? 'text-lantern-primary' : 'text-lantern-text'}`}>
+        {value}
+      </p>
     </div>
   );
-};
+}
 
 export default MyListingsScreen;

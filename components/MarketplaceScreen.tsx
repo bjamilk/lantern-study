@@ -15,16 +15,15 @@ import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
+import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import {
   buildMarketplaceSavedSearchFilters,
   restoreMarketplaceSavedSearchFilters,
   type MarketplaceSavedSearchFilters,
 } from './marketplace/marketplaceSearchFilters';
-import { FeatureHero, Tabs, TabList, Tab, TabPanel } from './ui';
-import { featureAccents } from '@lantern/shared/design';
+import { Tabs, TabList, Tab, TabPanel } from './ui';
 import {
   MagnifyingGlassIcon,
-  PlusIcon,
   ClockIcon,
   AcademicCapIcon,
   BriefcaseIcon,
@@ -33,12 +32,11 @@ import {
   TruckIcon,
   TicketIcon,
   SparklesIcon,
-  ClipboardDocumentListIcon,
-  ChatBubbleLeftEllipsisIcon,
   FunnelIcon,
   ChevronDownIcon,
   BookmarkIcon,
-  TrashIcon
+  TrashIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 
 interface MarketplaceScreenProps {
@@ -672,89 +670,69 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
-      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2">
+      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 space-y-2">
         <MarketplaceComplianceBanner />
-      </div>
-      <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-2 pb-2">
-        <FeatureHero
-          title="Explore"
-          subtitle="Discover academic resources and student essentials across Nigeria"
-          accentColor={featureAccents.marketplace}
-          icon={<ShoppingBagIcon className="w-6 h-6" style={{ color: featureAccents.marketplace }} />}
-          actions={
-            guestMode ? (
-              <button
-                type="button"
-                onClick={() => onSignInRequired?.()}
-                className="h-9 px-4 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern font-semibold text-sm transition-colors"
-              >
-                Sign in to buy or sell
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => onNavigate('MarketplaceOrders')}
-                  aria-label="Orders"
-                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
-                >
-                  Orders
-                </button>
-                <button
-                  onClick={() => onNavigate('MyListings')}
-                  aria-label="My listings"
-                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
-                >
-                  Listings
-                </button>
-                <button
-                  onClick={() => onNavigate('MarketplaceInquiries')}
-                  aria-label="Inquiries"
-                  className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern font-medium text-xs sm:text-sm hover:border-lantern-primary/30 transition-colors"
-                >
-                  Inquiries
-                </button>
-                <button
-                  onClick={handleCreateListing}
-                  aria-label="Create listing"
-                  className="h-9 px-3 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern font-semibold text-xs sm:text-sm transition-colors"
-                >
-                  <PlusIcon className="w-4 h-4 inline mr-1" />
-                  Sell
-                </button>
-              </>
-            )
-          }
-        >
-          <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
-            <div className="flex-1 min-w-0 w-full relative">
-              <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
-              <input
-                type="text"
-                aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
-                placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
-                defaultValue={searchTerm}
-                onChange={e => handleSearchChange(e.target.value)}
-                className="w-full min-w-0 max-w-full box-border pl-8 sm:pl-10 pr-3 py-2 sm:py-2.5 rounded-lantern bg-lantern-surface border border-lantern-border text-lantern-text placeholder-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary text-sm shadow-lantern"
-              />
-            </div>
+
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Explore</h1>
+            <p className="text-[11px] sm:text-xs text-lantern-text-secondary truncate">
+              Buy and sell across Nigeria
+            </p>
+          </div>
+          {topCategories.length > 0 ? (
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              aria-label="Toggle filters"
-              aria-expanded={showFilters}
-              className={`shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center gap-1 font-medium text-xs border transition-colors duration-150 ${
-                showFilters || activeFilterCount > 0
-                  ? 'bg-lantern-primary text-white border-lantern-primary'
-                  : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
-              }`}
+              type="button"
+              onClick={() => setShowPulse(v => !v)}
+              aria-expanded={showPulse}
+              className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-[11px] sm:text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 transition-colors"
             >
-              <FunnelIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Filters</span>
-              {activeFilterCount > 0 && (
-                <span className="ml-1 w-4 h-4 bg-lantern-surface text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
-                  {activeFilterCount}
-                </span>
-              )}
+              Pulse
+              <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showPulse ? 'rotate-180' : ''}`} />
             </button>
+          ) : null}
+        </div>
+
+        <MarketplaceWorkspaceBar
+          active="browse"
+          onNavigate={onNavigate}
+          onSell={guestMode ? undefined : handleCreateListing}
+          guestMode={guestMode}
+          onSignInRequired={onSignInRequired}
+          primaryLabel="Sell"
+        />
+
+        <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full">
+          <div className="flex-1 min-w-0 w-full relative">
+            <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
+            <input
+              type="text"
+              aria-label={activeTab === 'academic' ? 'Search textbooks and notes' : 'Search student essentials'}
+              placeholder={activeTab === 'academic' ? 'Search textbooks, notes…' : 'Search essentials…'}
+              defaultValue={searchTerm}
+              onChange={e => handleSearchChange(e.target.value)}
+              className="w-full min-w-0 max-w-full box-border pl-8 sm:pl-10 pr-3 py-2 rounded-lantern bg-lantern-surface border border-lantern-border text-lantern-text placeholder-lantern-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary text-sm shadow-lantern"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            aria-label="Toggle filters"
+            aria-expanded={showFilters}
+            className={`shrink-0 h-9 min-w-[36px] px-3 rounded-lantern flex items-center justify-center gap-1 font-medium text-xs border transition-colors duration-150 ${
+              showFilters || activeFilterCount > 0
+                ? 'bg-lantern-primary text-white border-lantern-primary'
+                : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
+            }`}
+          >
+            <FunnelIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-1 w-4 h-4 bg-lantern-surface text-lantern-primary text-[10px] items-center justify-center rounded-full hidden sm:flex">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          {!guestMode ? (
             <button
               onClick={handleSaveCurrentSearch}
               disabled={savingSearch}
@@ -764,65 +742,40 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             >
               <BookmarkIcon className="w-4 h-4" />
             </button>
-          </div>
+          ) : null}
+        </div>
 
-          {showFilters && (
-            <div className="mt-3">
-              <MarketplaceFilterPanel
-                minPrice={minPrice}
-                maxPrice={maxPrice}
-                campusIdFilter={campusIdFilter}
-                locationFilter={locationFilter}
-                sortBy={sortBy}
-                sortOrder={sortOrder}
-                campuses={campuses}
-                activeFilterCount={activeFilterCount}
-                onMinPriceChange={setMinPrice}
-                onMaxPriceChange={setMaxPrice}
-                onCampusChange={setCampusIdFilter}
-                onLocationChange={setLocationFilter}
-                onSortChange={(field, order) => {
-                  setSortBy(field);
-                  setSortOrder(order);
-                }}
-                onClearFilters={clearFilters}
-                variant="hero"
-              />
-            </div>
-          )}
-        </FeatureHero>
-      </div>
+        {showFilters && (
+          <MarketplaceFilterPanel
+            minPrice={minPrice}
+            maxPrice={maxPrice}
+            campusIdFilter={campusIdFilter}
+            locationFilter={locationFilter}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            campuses={campuses}
+            activeFilterCount={activeFilterCount}
+            onMinPriceChange={setMinPrice}
+            onMaxPriceChange={setMaxPrice}
+            onCampusChange={setCampusIdFilter}
+            onLocationChange={setLocationFilter}
+            onSortChange={(field, order) => {
+              setSortBy(field);
+              setSortOrder(order);
+            }}
+            onClearFilters={clearFilters}
+            variant="hero"
+          />
+        )}
 
-      {/* Marketplace Intelligence — collapsed on mobile */}
-      {topCategories.length > 0 && (
-        <div className="shrink-0 max-w-full bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-1.5 sm:py-3">
-          <button
-            type="button"
-            onClick={() => setShowPulse(v => !v)}
-            className="md:hidden w-full flex items-center justify-between gap-2 py-1 text-left"
-            aria-expanded={showPulse}
-          >
-            <span className="text-[11px] sm:text-xs text-lantern-text-secondary truncate">
+        {showPulse && topCategories.length > 0 ? (
+          <div className="rounded-lg border border-lantern-border bg-lantern-surface p-2.5 sm:p-3">
+            <p className="text-[11px] sm:text-xs text-lantern-text-secondary mb-2">
               {totalListingsCount.toLocaleString()} listings · Marketplace pulse
-            </span>
-            <ChevronDownIcon className={`w-4 h-4 shrink-0 text-lantern-text-tertiary transition-transform ${showPulse ? 'rotate-180' : ''}`} />
-          </button>
-          <div className={`${showPulse ? 'block' : 'hidden'} md:block mt-2 md:mt-0`}>
-            <div className="hidden md:flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary">Marketplace Pulse</p>
-                <p className="text-xs sm:text-sm text-lantern-text-secondary">
-                  {totalListingsCount.toLocaleString()} listings match your filters
-                </p>
-              </div>
-              <div className="hidden lg:flex items-center gap-2 text-xs text-lantern-text-tertiary shrink-0">
-                <ClockIcon className="w-4 h-4" />
-                Updated from live category analytics
-              </div>
-            </div>
+            </p>
             <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2">
               {topCategories.map((item) => (
-                <div key={item.category} className="min-w-0 rounded-md sm:rounded-lg border border-lantern-border px-2 py-1.5 sm:px-3 sm:py-2 bg-lantern-background-secondary">
+                <div key={item.category} className="min-w-0 rounded-md border border-lantern-border px-2 py-1.5 bg-lantern-background-secondary">
                   <p className="text-[10px] sm:text-xs font-semibold text-lantern-text truncate">
                     {getCategoryName(item.category)}
                   </p>
@@ -832,8 +785,8 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               ))}
             </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
 
       <Tabs
         value={activeTab}
@@ -843,7 +796,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           setShowCategoryPanel(false);
         }}
         aria-label="Marketplace categories"
-        className="flex-1 flex flex-col min-h-0 min-w-0 max-w-full"
+        className="flex-1 flex flex-col min-h-0 min-w-0 max-w-full mt-1"
       >
         <div className="shrink-0 max-w-full bg-lantern-surface border-b border-lantern-border">
           <div className="sticky top-0 z-20 bg-lantern-surface shadow-sm md:shadow-none px-3 sm:px-4 md:px-6 max-w-full">
@@ -881,14 +834,24 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
         <TabPanel value="academic" className="flex-1 flex flex-col min-h-0 min-w-0">
           {renderCategoryChips(academicCategories)}
-          <div className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border">
+          <div
+            role="region"
+            aria-label="Marketplace listings"
+            data-testid="marketplace-listings"
+            className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
+          >
             {marketplaceListingsBody}
           </div>
         </TabPanel>
 
         <TabPanel value="student-life" className="flex-1 flex flex-col min-h-0 min-w-0">
           {renderCategoryChips(studentLifeCategories)}
-          <div className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border">
+          <div
+            role="region"
+            aria-label="Marketplace listings"
+            data-testid="marketplace-listings"
+            className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
+          >
             {marketplaceListingsBody}
           </div>
         </TabPanel>

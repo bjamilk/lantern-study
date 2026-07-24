@@ -116,12 +116,40 @@ test.describe('Responsive smoke — auth + shell (credentials)', () => {
 
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 800 });
-      for (const route of ['/dashboard', '/marketplace', '/budget', '/library']) {
+      for (const route of [
+        '/dashboard',
+        '/marketplace',
+        '/marketplace/my-listings',
+        '/budget',
+        '/library',
+      ]) {
         await page.goto(`${BASE}${route}`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(500);
         await assertNoHorizontalOverflow(page);
       }
     }
+
+    // Compact marketplace workspace: listings dominate viewport; seller inventory landmark present
+    for (const width of [390, 768, 1280] as const) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${BASE}/marketplace`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('navigation', { name: /marketplace workspace/i })).toBeVisible();
+      await expect(page.getByTestId('marketplace-listings').first()).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+
+      await page.goto(`${BASE}/marketplace/my-listings`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('navigation', { name: /marketplace workspace/i })).toBeVisible();
+      await expect(page.getByTestId('seller-inventory')).toBeVisible();
+      await assertNoHorizontalOverflow(page);
+    }
+
+    // Short-height seller dashboard should not force horizontal overflow
+    await page.setViewportSize({ width: 390, height: 500 });
+    await page.goto(`${BASE}/marketplace/my-listings`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(500);
+    await assertNoHorizontalOverflow(page);
 
     // Mobile More menu must be clickable (portal fix regression)
     await page.setViewportSize({ width: 390, height: 844 });

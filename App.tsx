@@ -1217,6 +1217,8 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'Marketplace') {
+                        setAppMode(AppMode.MARKETPLACE);
                     }
                 }} />;
             case AppMode.MARKETPLACE_LISTING_DETAIL:
@@ -1257,6 +1259,8 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
                     } else if (screen === 'SellerCustomers') {
                         setAppMode(AppMode.SELLER_CUSTOMERS);
+                    } else if (screen === 'Marketplace') {
+                        setAppMode(AppMode.MARKETPLACE);
                     }
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} refreshKey={myListingsRefreshKey} />;
             case AppMode.MARKETPLACE_ORDERS:

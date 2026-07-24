@@ -12,8 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Skeleton, FeatureHero } from '../../components/ui';
-import { featureAccents } from '@lantern/shared/design';
+import { Skeleton, Button } from '../../components/ui';
 import {
   useMarketplaceStore,
   useAuthStore,
@@ -31,12 +30,12 @@ import {
   fetchMarketplaceListing,
   checkSavedSearchMatches,
 } from '../../services/api';
-import { Button } from '../../components/ui';
 import { categoryIcon, formatPrice, isOwnListing, ListingImage } from './marketplaceHelpers';
 import { getRecentlyViewedListingIds } from './marketplaceRecentlyViewed';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { CampusPicker, type MarketplaceCampusOption } from './CampusPicker';
 import { buildSavedMarketplaceFilters } from '../../stores/marketplaceFilters';
+import { MarketplaceWorkspaceBar } from './components/MarketplaceWorkspaceBar';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -362,48 +361,54 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <View className="px-4 pt-2">
-        <FeatureHero
-          title="Explore"
-          subtitle="Buy and sell across Nigeria"
-          accentColor={featureAccents.marketplace}
-          right={
-            <View className="flex-row flex-wrap gap-2 justify-end max-w-[160px]">
-              <Pressable onPress={() => navigation.navigate('Orders')} className="p-2 rounded-xl bg-lantern-primary-background min-w-[44px] min-h-[44px] items-center justify-center">
-                <Ionicons name="receipt-outline" size={20} color="#8b5cf6" />
-              </Pressable>
-              <Pressable onPress={() => navigation.navigate('Favorites')} className="p-2 rounded-xl bg-lantern-primary-background min-w-[44px] min-h-[44px] items-center justify-center">
-                <Ionicons name="heart-outline" size={20} color="#8b5cf6" />
-              </Pressable>
-              <Pressable onPress={() => navigation.navigate('CreateListing')} className="p-2 rounded-xl bg-lantern-primary min-w-[44px] min-h-[44px] items-center justify-center">
-                <Ionicons name="add" size={20} color="#fff" />
-              </Pressable>
-            </View>
-          }
-        >
-          <View className="flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-2">
-            <Ionicons name="search" size={18} color="#94a3b8" />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search listings…"
-              placeholderTextColor="#94a3b8"
-              className="flex-1 ml-2 text-sm text-lantern-text"
-            />
-            <Pressable
-              onPress={() => setShowFilters(v => !v)}
-              className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
-              accessibilityRole="button"
-              accessibilityLabel="Marketplace filters"
-            >
-              <Ionicons
-                name="options-outline"
-                size={18}
-                color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
-              />
-            </Pressable>
+      <View className="px-4 pt-2 pb-2 gap-2">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1 min-w-0 pr-2">
+            <Text className="text-xl font-bold text-lantern-text">Explore</Text>
+            <Text className="text-xs text-lantern-text-secondary">Buy and sell across Nigeria</Text>
           </View>
-        </FeatureHero>
+          <Pressable
+            onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            accessibilityRole="button"
+            accessibilityLabel={showFavoritesOnly ? 'Show all listings' : 'Show favorites only'}
+            className={`h-9 w-9 items-center justify-center rounded-lg ${
+              showFavoritesOnly ? 'bg-lantern-error/10' : 'bg-lantern-background-secondary'
+            }`}
+          >
+            <Ionicons name="heart" size={18} color={showFavoritesOnly ? '#dc2626' : '#64748b'} />
+          </Pressable>
+        </View>
+
+        <MarketplaceWorkspaceBar
+          active="browse"
+          onNavigate={screen => navigation.navigate(screen)}
+          onSell={() => navigation.navigate('CreateListing')}
+          showFavorites
+          primaryLabel="Sell"
+        />
+
+        <View className="flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern px-3 py-1.5">
+          <Ionicons name="search" size={18} color="#94a3b8" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search listings…"
+            placeholderTextColor="#94a3b8"
+            className="flex-1 ml-2 text-sm text-lantern-text"
+          />
+          <Pressable
+            onPress={() => setShowFilters(v => !v)}
+            className="p-2 min-w-[44px] min-h-[44px] items-center justify-center"
+            accessibilityRole="button"
+            accessibilityLabel="Marketplace filters"
+          >
+            <Ionicons
+              name="options-outline"
+              size={18}
+              color={activeFilterCount > 0 ? '#6366f1' : '#64748b'}
+            />
+          </Pressable>
+        </View>
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">
@@ -415,7 +420,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 setActiveTab(tab);
                 setShowCategories(false);
               }}
-              className={`flex-1 py-3 items-center border-b-2 ${
+              className={`flex-1 py-2.5 items-center border-b-2 ${
                 activeTab === tab ? 'border-lantern-primary' : 'border-transparent'
               }`}
             >
@@ -424,12 +429,6 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               </Text>
             </Pressable>
           ))}
-          <Pressable
-            onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
-            className={`px-2 py-1 rounded-lg ${showFavoritesOnly ? 'bg-lantern-error/10' : 'bg-lantern-background-secondary'}`}
-          >
-            <Ionicons name="heart" size={16} color={showFavoritesOnly ? '#dc2626' : '#64748b'} />
-          </Pressable>
         </View>
 
         <View className="flex-row px-3 pb-2 gap-2 flex-wrap">
@@ -462,7 +461,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             ) : null}
           </Pressable>
           <Pressable onPress={handleSaveSearch} className="px-2 py-1 rounded-lg bg-lantern-primary-background dark:bg-lantern-primary-dark/40">
-            <Text className="text-[11px] font-medium text-lantern-primary">Save search</Text>
+            <Text className="text-[11px] font-medium text-lantern-primary">Save</Text>
           </Pressable>
         </View>
 
