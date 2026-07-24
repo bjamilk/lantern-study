@@ -1,4 +1,10 @@
-import { getDashboardFirstName, resolveGroupChatAvatarUrl } from './displayNames';
+import {
+  formatChatSenderLabel,
+  getDashboardFirstName,
+  resolveGroupChatAvatarUrl,
+  resolveGroupChatMentionUsername,
+  resolveGroupChatSenderLabel,
+} from './displayNames';
 
 describe('getDashboardFirstName', () => {
   it('prefers firstName over display name', () => {
@@ -44,6 +50,52 @@ describe('getDashboardFirstName', () => {
         name: 'responsive.audit.1784645242',
       })
     ).toBe('Student');
+  });
+});
+
+describe('formatChatSenderLabel', () => {
+  it('prefers real name over @username', () => {
+    expect(formatChatSenderLabel({ username: 'dayveedo', name: 'David' })).toBe('David');
+  });
+
+  it('falls back to @username when name is missing', () => {
+    expect(formatChatSenderLabel({ username: 'dayveedo' })).toBe('@dayveedo');
+  });
+
+  it('never returns an empty author label', () => {
+    expect(formatChatSenderLabel({})).toBe('Member');
+    expect(formatChatSenderLabel({ username: '   ' })).toBe('Member');
+  });
+});
+
+describe('resolveGroupChatSenderLabel', () => {
+  it('resolves display name from roster by userId', () => {
+    expect(
+      resolveGroupChatSenderLabel(
+        { id: 'user-1' },
+        [{ id: 'membership-1', userId: 'user-1', username: 'amara', name: 'Amara' }]
+      )
+    ).toBe('Amara');
+  });
+
+  it('falls back to roster @username when display name is unavailable', () => {
+    expect(
+      resolveGroupChatSenderLabel(
+        { id: 'user-1' },
+        [{ id: 'user-1', username: 'amara' }]
+      )
+    ).toBe('@amara');
+  });
+});
+
+describe('resolveGroupChatMentionUsername', () => {
+  it('returns the bare username for composer inserts', () => {
+    expect(
+      resolveGroupChatMentionUsername(
+        { id: 'user-1' },
+        [{ id: 'user-1', username: 'amara', name: 'Amara' }]
+      )
+    ).toBe('amara');
   });
 });
 

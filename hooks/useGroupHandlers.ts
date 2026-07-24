@@ -1139,13 +1139,27 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 updateMessages(prev => {
                     const list = prev[selectedChat.id] || [];
                     const optimistic = list.find((message) => message.id === optimisticId);
+                    const confirmedSender = confirmed.sender;
+                    const optimisticSender = optimistic?.sender || currentUser;
+                    const reconciledSender = confirmedSender?.id
+                        ? {
+                            ...optimisticSender,
+                            ...confirmedSender,
+                            id: confirmedSender.id,
+                            username: confirmedSender.username || optimisticSender?.username,
+                            name:
+                              confirmedSender.name &&
+                              confirmedSender.name !== 'Member' &&
+                              confirmedSender.name !== 'Unknown'
+                                ? confirmedSender.name
+                                : optimisticSender?.name || confirmedSender.name,
+                          }
+                        : optimisticSender;
                     const reconciled = {
                         ...optimistic,
                         ...confirmed,
                         id: confirmed.id,
-                        sender: confirmed.sender?.id
-                            ? confirmed.sender
-                            : optimistic?.sender || currentUser,
+                        sender: reconciledSender,
                     };
                     return {
                         ...prev,

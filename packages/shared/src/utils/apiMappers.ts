@@ -121,13 +121,29 @@ export const mapMessageFromApi = (data: any): Message => {
   if (!data) return data;
 
   const senderId = data.sender_id ?? data.senderId;
-  const sender = data.sender
-    ? mapUserFromApi(data.sender)
-    : mapUserFromApi({
-        id: senderId || 'unknown',
-        name: 'Member',
-        username: data.sender?.username,
-      });
+  const rawSender =
+    data.sender && typeof data.sender === 'object' && !Array.isArray(data.sender)
+      ? data.sender
+      : null;
+  const senderHasIdentity = !!(
+    rawSender &&
+    (rawSender.id ||
+      rawSender.username ||
+      rawSender.name ||
+      rawSender.full_name ||
+      rawSender.avatar_url ||
+      rawSender.avatarUrl)
+  );
+  // Always prefer auth sender_id so roster lookups and message grouping stay stable
+  // even when nested sender payloads omit id.
+  const sender = mapUserFromApi(
+    senderHasIdentity
+      ? { ...rawSender, id: rawSender.id || senderId || 'unknown' }
+      : {
+          id: senderId || 'unknown',
+          name: 'Member',
+        }
+  );
 
   const questionData =
     data.question_data && typeof data.question_data === 'object'

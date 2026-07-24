@@ -398,6 +398,7 @@ function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): Message
     senderId,
     senderName: formatChatSenderLabel({
       username: sender.username || rosterMember?.username,
+      name: sender.name || rosterMember?.name,
     }),
     senderAvatar:
       sender.avatar_url || sender.avatarUrl || rosterMember?.avatarUrl,
@@ -750,7 +751,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       const result = await api.fetchMessages(groupId, { page, limit });
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const pagination = Array.isArray(result) ? undefined : (result as any)?.pagination;
-      const mapped = apiMessages.map((m: any) => mapApiMessage(m, groupId));
+      const roster =
+        get().groups.find((g) => g.id === groupId)?.members ||
+        (get().currentGroup?.id === groupId ? get().currentGroup?.members : undefined);
+      const mapped = apiMessages.map((m: any) => mapApiMessage(m, groupId, roster));
 
       const existing = refresh ? [] : (get().messagesCache[groupId] || []);
       const existingIds = new Set(existing.map(m => m.id));
@@ -812,7 +816,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const group = get().groups.find((g) => g.id === groupId);
     // Prefer userId — member.id may be the membership row id, not the auth user id.
     const member = group?.members?.find((m) => m.userId === senderId || m.id === senderId);
-    const senderName = formatChatSenderLabel({ username: member?.username });
+    const senderName = formatChatSenderLabel({
+      username: member?.username,
+      name: member?.name,
+    });
     let parsed: any = {};
     if (text.trim().startsWith('{')) {
       try {
@@ -1695,6 +1702,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       const updated = [...cached];
       const prev = updated[idx];
       const merged = { ...prev, ...message, id: message.id };
+      // Keep a concrete author label when the incoming payload only has a generic fallback.
+      if (
+        prev.senderName &&
+        prev.senderName !== 'Member' &&
+        prev.senderName !== '@member' &&
+        (!message.senderName ||
+          message.senderName === 'Member' ||
+          message.senderName === '@member')
+      ) {
+        merged.senderName = prev.senderName;
+      }
       if ((!message.options || message.options.length === 0) && prev.options?.length) {
         merged.options = prev.options;
       }

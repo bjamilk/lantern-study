@@ -35,6 +35,8 @@ interface ChatComposerProps {
   sending?: boolean;
   placeholder?: string;
   mentionCandidates?: MentionCandidate[];
+  seedMentionUsername?: string | null;
+  onSeedMentionConsumed?: () => void;
   replyTo?: ReplyPreview | null;
   onClearReply?: () => void;
   editingMessage?: { id: string; text: string } | null;
@@ -54,6 +56,8 @@ export function ChatComposer({
   sending = false,
   placeholder = 'Message...',
   mentionCandidates = [],
+  seedMentionUsername = null,
+  onSeedMentionConsumed,
   replyTo,
   onClearReply,
   editingMessage,
@@ -101,6 +105,21 @@ export function ChatComposer({
     return () => clearTimeout(timer);
   }, [replyTo?.id, editingMessage?.id]);
 
+  useEffect(() => {
+    const raw = seedMentionUsername?.trim();
+    if (!raw) return;
+    const username = raw.startsWith('@') ? raw.slice(1) : raw;
+    if (!username) {
+      onSeedMentionConsumed?.();
+      return;
+    }
+    const needsSpace = value.length > 0 && !/\s$/.test(value);
+    onChangeText(`${value}${needsSpace ? ' ' : ''}@${username} `);
+    setMentionQuery(null);
+    onSeedMentionConsumed?.();
+    requestAnimationFrame(focusComposer);
+  }, [seedMentionUsername]);
+
   const mentionMatches = useMemo(() => {
     if (mentionQuery == null || !mentionCandidates.length) return [];
     const q = mentionQuery.toLowerCase();
@@ -110,7 +129,7 @@ export function ChatComposer({
           m.username &&
           (m.username.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q))
       )
-      .slice(0, 6);
+      .slice(0, 8);
   }, [mentionQuery, mentionCandidates]);
 
   const detectMention = (text: string) => {
@@ -270,9 +289,9 @@ export function ChatComposer({
               style={{ borderBottomColor: colors.border }}
             >
               <Text className="text-sm font-semibold" style={{ color: colors.text }}>
-                @{m.username}
+                {m.name || `@${m.username}`}
                 {m.name ? (
-                  <Text style={{ color: colors.textSecondary }}>  {m.name}</Text>
+                  <Text style={{ color: colors.textSecondary }}>  @{m.username}</Text>
                 ) : null}
               </Text>
             </Pressable>

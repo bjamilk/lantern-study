@@ -1,10 +1,26 @@
-/** Display label for group chat — username only. */
+/** Display label for group chat — prefers real name, then @username. */
 export function formatChatSenderLabel(user: {
   username?: string | null;
+  name?: string | null;
 }): string {
+  const name = user.name?.trim();
+  if (name) return name;
   const raw = user.username?.trim();
-  if (!raw) return '@member';
-  return raw.startsWith('@') ? raw : `@${raw}`;
+  if (raw) {
+    const withoutAt = raw.startsWith('@') ? raw.slice(1).trim() : raw;
+    if (withoutAt) return `@${withoutAt}`;
+  }
+  return 'Member';
+}
+
+/** @username handle for composer inserts (no leading @). */
+export function formatChatMentionUsername(user: {
+  username?: string | null;
+}): string | null {
+  const raw = user.username?.trim();
+  if (!raw) return null;
+  const withoutAt = raw.startsWith('@') ? raw.slice(1).trim() : raw;
+  return withoutAt || null;
 }
 
 export interface DashboardNameInput {
@@ -44,7 +60,12 @@ export function getDashboardFirstName(
   return fallback;
 }
 
-type ChatMemberRef = { id: string; username?: string | null };
+type ChatMemberRef = {
+  id?: string;
+  userId?: string;
+  username?: string | null;
+  name?: string | null;
+};
 
 type ChatAvatarMemberRef = {
   id?: string;
@@ -52,21 +73,41 @@ type ChatAvatarMemberRef = {
   avatarUrl?: string | null;
 };
 
-/** Resolve @username for group chat from sender profile and/or loaded group members. */
+function findChatMember(
+  senderId: string | undefined,
+  members?: ChatMemberRef[] | null
+): ChatMemberRef | undefined {
+  if (!senderId || !members?.length) return undefined;
+  return members.find(
+    (candidate) => candidate.id === senderId || candidate.userId === senderId
+  );
+}
+
+/** Resolve author display name for group chat from sender profile and/or roster. */
 export function resolveGroupChatSenderLabel(
-  sender: { id?: string; username?: string | null },
+  sender: { id?: string; username?: string | null; name?: string | null },
   members?: ChatMemberRef[] | null
 ): string {
-  if (sender.username?.trim()) {
-    return formatChatSenderLabel(sender);
+  const direct = formatChatSenderLabel(sender);
+  if (direct !== 'Member') return direct;
+
+  const member = findChatMember(sender.id, members);
+  if (member) {
+    const fromMember = formatChatSenderLabel(member);
+    if (fromMember !== 'Member') return fromMember;
   }
-  if (sender.id && members?.length) {
-    const member = members.find((m) => m.id === sender.id);
-    if (member?.username?.trim()) {
-      return formatChatSenderLabel(member);
-    }
-  }
-  return '@member';
+  return 'Member';
+}
+
+/** Resolve @username handle for inserting a mention from a displayed author. */
+export function resolveGroupChatMentionUsername(
+  sender: { id?: string; username?: string | null },
+  members?: ChatMemberRef[] | null
+): string | null {
+  const direct = formatChatMentionUsername(sender);
+  if (direct) return direct;
+  const member = findChatMember(sender.id, members);
+  return member ? formatChatMentionUsername(member) : null;
 }
 
 /**

@@ -41,7 +41,9 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
         n.type?.startsWith('challenge') ||
         n.type === 'dm_message' ||
         n.type === 'group_invite' ||
-        n.type === 'group_message')
+        n.type === 'group_message' ||
+        n.type === 'mention' ||
+        n.type === 'reply')
     ) {
       const parsed = parseNotificationLink(n.link, n);
       if (parsed) {

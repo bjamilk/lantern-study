@@ -143,6 +143,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<MessageReplyPreview | null>(null);
+  const [seedMentionUsername, setSeedMentionUsername] = useState<string | null>(null);
   const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
@@ -251,7 +252,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         setThreadReplyTo({
           id: root.id,
           senderId: root.sender?.id,
-          senderName: root.sender?.username || root.sender?.name,
+          senderName: root.sender?.name || root.sender?.username,
           type: root.type,
           text: root.text,
           questionStem: root.questionStem,
@@ -833,13 +834,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const isGroupAdmin = Boolean(
     isGroup &&
       group &&
-      Array.isArray((group as Group).adminIds) &&
-      (group as Group).adminIds.includes(currentUser.id)
+      ((group as Group).ownerId === currentUser.id ||
+        (Array.isArray((group as Group).adminIds) &&
+          (group as Group).adminIds.includes(currentUser.id)))
   );
 
   const typingLabels = typingUserIds.map((userId) =>
     resolveGroupChatSenderLabel({ id: userId }, groupMemberList)
   );
+
+  const mentionCandidates = useMemo(() => {
+    if (!isGroup) return [];
+    const members = (group?.members || [])
+      .filter((m) => m.id !== currentUser.id && m.username)
+      .map((m) => ({ id: m.id, username: m.username!, name: m.name }));
+    if (isGroupAdmin) {
+      return [{ id: '__all__', username: 'all', name: 'Everyone in this group' }, ...members];
+    }
+    return members;
+  }, [isGroup, isGroupAdmin, group?.members, currentUser.id]);
 
   const otherParticipant = !isGroup
     ? (() => {
@@ -892,7 +905,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           const isGroupedWithPrevious =
             !!prevMsg &&
             !showDateSeparator &&
-            prevMsg.sender?.id === msg.sender?.id &&
+            !!prevMsg.sender?.id &&
+            !!msg.sender?.id &&
+            prevMsg.sender.id === msg.sender.id &&
             msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
 
           const formatDateLabel = (d: Date) => {
@@ -954,12 +969,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     setReplyTo({
                       id: m.id,
                       senderId: m.sender?.id,
-                      senderName: m.sender?.username || m.sender?.name,
+                      senderName: m.sender?.name || m.sender?.username,
                       type: m.type,
                       text: m.text,
                       questionStem: m.questionStem,
                     });
                   }}
+                  onMentionUser={(username) => setSeedMentionUsername(username)}
                   onScrollToMessage={(messageId) => {
                     messageNodeRefs.current[messageId]?.scrollIntoView({
                       behavior: 'smooth',
@@ -1035,13 +1051,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             onOpenQuestionModal={isGroup ? onOpenQuestionModal : undefined}
             onAIQuery={isGroup ? onAIQuery : undefined}
             onTyping={broadcastTyping}
-            mentionCandidates={
-              isGroup
-                ? (group?.members || [])
-                    .filter((m) => m.id !== currentUser.id && m.username)
-                    .map((m) => ({ id: m.id, username: m.username!, name: m.name }))
-                : []
-            }
+            mentionCandidates={mentionCandidates}
+            seedMentionUsername={seedMentionUsername}
+            onSeedMentionConsumed={() => setSeedMentionUsername(null)}
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
             editingMessage={editingMessage}
@@ -1099,12 +1111,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   setThreadReplyTo({
                     id: m.id,
                     senderId: m.sender?.id,
-                    senderName: m.sender?.username || m.sender?.name,
+                    senderName: m.sender?.name || m.sender?.username,
                     type: m.type,
                     text: m.text,
                     questionStem: m.questionStem,
                   });
                 }}
+                onMentionUser={(username) => setSeedMentionUsername(username)}
               />
             ))
           )}
@@ -1114,13 +1127,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <MessageInputBar
               onSendMessage={handleThreadSend}
               onAIQuery={chat.chatType === 'group' ? onAIQuery : undefined}
-              mentionCandidates={
-                chat.chatType === 'group'
-                  ? (group?.members || [])
-                      .filter((m) => m.id !== currentUser.id && m.username)
-                      .map((m) => ({ id: m.id, username: m.username!, name: m.name }))
-                  : []
-              }
+              mentionCandidates={mentionCandidates}
+              seedMentionUsername={seedMentionUsername}
+              onSeedMentionConsumed={() => setSeedMentionUsername(null)}
               replyTo={threadReplyTo}
               onClearReply={() => {
                 const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
@@ -1128,7 +1137,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   setThreadReplyTo({
                     id: root.id,
                     senderId: root.sender?.id,
-                    senderName: root.sender?.username || root.sender?.name,
+                    senderName: root.sender?.name || root.sender?.username,
                     type: root.type,
                     text: root.text,
                     questionStem: root.questionStem,

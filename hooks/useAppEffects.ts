@@ -1230,8 +1230,16 @@ export function useAppEffects({
             const rosterMember = useGroupStore
                 .getState()
                 .groups.find((g) => g.id === groupId)
-                ?.members?.find((m) => m.id === raw.sender_id);
-            if (rosterMember && (!mapped.sender?.username || mapped.sender.name === 'Member' || !mapped.sender?.avatarUrl)) {
+                ?.members?.find(
+                    (m) => m.id === raw.sender_id || (m as { userId?: string }).userId === raw.sender_id
+                );
+            if (
+                rosterMember &&
+                (!mapped.sender?.username ||
+                    mapped.sender.name === 'Member' ||
+                    mapped.sender.name === 'Unknown' ||
+                    !mapped.sender?.avatarUrl)
+            ) {
                 mapped.sender = {
                     ...mapped.sender,
                     ...rosterMember,
@@ -1240,9 +1248,23 @@ export function useAppEffects({
                     avatarUrl: mapped.sender?.avatarUrl || rosterMember.avatarUrl,
                     username: mapped.sender?.username || rosterMember.username,
                     name:
-                      mapped.sender?.name && mapped.sender.name !== 'Member' && mapped.sender.name !== 'Unknown'
+                      mapped.sender?.name &&
+                      mapped.sender.name !== 'Member' &&
+                      mapped.sender.name !== 'Unknown'
                         ? mapped.sender.name
                         : rosterMember.name || mapped.sender?.name || 'Member',
+                };
+            }
+            // Realtime payloads omit nested profiles — still stamp sender.id from sender_id.
+            if ((!mapped.sender?.id || mapped.sender.id === 'unknown') && raw.sender_id) {
+                mapped.sender = {
+                    ...(mapped.sender || {
+                        name: 'Member',
+                        points: 0,
+                        badges: [],
+                        stats: {} as any,
+                    }),
+                    id: raw.sender_id,
                 };
             }
 

@@ -21,6 +21,8 @@ const ALWAYS_DELIVER_TYPES = new Set([
 const NOTIFICATION_PREF_BY_TYPE: Record<string, keyof NotificationSettings | null> = {
   group_activity: 'groupActivity',
   group_message: 'groupActivity',
+  mention: 'groupActivity',
+  reply: 'groupActivity',
   group_invite: 'groupInvites',
   badge_unlock: 'badgeUnlocks',
   badge: 'badgeUnlocks',

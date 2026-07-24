@@ -235,6 +235,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     senderName?: string;
     text?: string;
   } | null>(null);
+  const [seedMentionUsername, setSeedMentionUsername] = useState<string | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -558,13 +559,20 @@ export function GroupChatScreen({ navigation, route }: Props) {
     return groups.find((g) => g.id === groupId)?.members || [];
   }, [currentGroup?.members, groups, groupId]);
 
-  const mentionCandidates = useMemo(
-    () =>
-      mentionRoster
-        .filter((m) => m.userId !== user?.id && m.username)
-        .map((m) => ({ id: m.userId, username: m.username!, name: m.name })),
-    [mentionRoster, user?.id]
-  );
+  const mentionCandidates = useMemo(() => {
+    const members = mentionRoster
+      .filter((m) => m.userId !== user?.id && m.username)
+      .map((m) => ({ id: m.userId, username: m.username!, name: m.name }));
+    const canMentionAll =
+      !!user?.id &&
+      (currentGroup?.ownerId === user.id ||
+        currentGroup?.adminIds?.includes(user.id) ||
+        false);
+    if (canMentionAll) {
+      return [{ id: '__all__', username: 'all', name: 'Everyone in this group' }, ...members];
+    }
+    return members;
+  }, [mentionRoster, user?.id, currentGroup?.ownerId, currentGroup?.adminIds]);
 
   const handleSend = async (overrideText?: string) => {
     const trimmed = (overrideText ?? text).trim();
@@ -586,9 +594,18 @@ export function GroupChatScreen({ navigation, route }: Props) {
       const mentionedUsernames = new Set(
         [...trimmed.matchAll(/@([a-zA-Z0-9_]{2,32})\b/g)].map((m) => m[1]!.toLowerCase())
       );
-      const mentionedUserIds = mentionCandidates
-        .filter((c) => mentionedUsernames.has(c.username.toLowerCase()))
-        .map((c) => c.id);
+      const canMentionAll = mentionCandidates.some((c) => c.id === '__all__');
+      const mentionedUserIds =
+        mentionedUsernames.has('all') && canMentionAll
+          ? mentionCandidates
+              .filter((c) => c.username.toLowerCase() !== 'all' && c.id !== '__all__')
+              .map((c) => c.id)
+          : mentionCandidates
+              .filter(
+                (c) =>
+                  mentionedUsernames.has(c.username.toLowerCase()) && c.id !== '__all__'
+              )
+              .map((c) => c.id);
       await sendMessage(groupId, trimmed, user.id, undefined, {
         replyToMessageId: replyId,
         mentionedUserIds,
@@ -907,6 +924,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
                 !!previous &&
                 !showDate &&
                 !showUnreadDivider &&
+                !!previous.senderId &&
+                !!item.senderId &&
                 previous.senderId === item.senderId &&
                 new Date(item.createdAt).getTime() - new Date(previous.createdAt).getTime() < 5 * 60 * 1000;
 
@@ -940,6 +959,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
                     }
                     canFlag={item.senderId !== user?.id}
                     onReply={showMessageActions}
+                    onMentionUser={(username) => setSeedMentionUsername(username)}
                     onScrollToMessage={(messageId) => {
                       const index = displayMessages.findIndex((m) => m.id === messageId);
                       if (index >= 0) {
@@ -993,6 +1013,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
             setText('');
           }}
           mentionCandidates={mentionCandidates}
+          seedMentionUsername={seedMentionUsername}
+          onSeedMentionConsumed={() => setSeedMentionUsername(null)}
           onSendAudioMarkdown={async (markdown) => {
             await handleSend(markdown);
           }}

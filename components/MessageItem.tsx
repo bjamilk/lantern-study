@@ -8,6 +8,7 @@ import { featureAccents } from '@lantern/shared/design';
 import {
   resolveGroupChatAvatarUrl,
   resolveGroupChatSenderLabel,
+  resolveGroupChatMentionUsername,
   getQuestionVerificationThreshold,
   parseChatAudioUrl,
   segmentMentions,
@@ -39,7 +40,7 @@ function formatChatAudioTime(seconds: number): string {
 }
 
 function formatSenderLabel(
-  sender: { id?: string; username?: string | null } | undefined,
+  sender: { id?: string; username?: string | null; name?: string | null } | undefined,
   members?: Group['members']
 ): string {
   return resolveGroupChatSenderLabel(sender ?? {}, members);
@@ -56,6 +57,7 @@ interface MessageItemProps {
   currentUser: User;
   isGroupedWithPrevious?: boolean;
   onReply?: (message: Message) => void;
+  onMentionUser?: (username: string) => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
   onEditMessage?: (message: Message) => void;
@@ -252,7 +254,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   );
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, isGroupChat = false }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, isGroupChat = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
@@ -419,9 +421,29 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             )}
           </div>
         )}
-        {/* Sender name for other users */}
+        {/* Sender name for other users — tap inserts @username in the composer */}
         {!isCurrentUserMessage && !isGroupedWithPrevious && (
-          <p className="text-xs font-semibold mb-0.5 text-lantern-primary">{formatSenderLabel(message.sender, group?.members)}</p>
+          onMentionUser &&
+          resolveGroupChatMentionUsername(message.sender ?? {}, group?.members) ? (
+            <button
+              type="button"
+              onClick={() => {
+                const username = resolveGroupChatMentionUsername(
+                  message.sender ?? {},
+                  group?.members
+                );
+                if (username) onMentionUser(username);
+              }}
+              className="text-xs font-semibold mb-0.5 text-lantern-primary hover:underline"
+              title="Mention in message"
+            >
+              {formatSenderLabel(message.sender, group?.members)}
+            </button>
+          ) : (
+            <p className="text-xs font-semibold mb-0.5 text-lantern-primary">
+              {formatSenderLabel(message.sender, group?.members)}
+            </p>
+          )
         )}
 
         {message.replyTo && (

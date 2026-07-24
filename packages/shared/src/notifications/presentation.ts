@@ -118,7 +118,10 @@ export function parseNotificationLink(
     const groupId = link.replace('/chat/', '').split(/[?#]/)[0];
     if (groupId) return { type: 'group', id: groupId };
   }
-  if (n?.type === 'group_message' && (n.data?.groupId || link)) {
+  if (
+    (n?.type === 'group_message' || n?.type === 'mention' || n?.type === 'reply') &&
+    (n.data?.groupId || link)
+  ) {
     const groupId =
       (n.data?.groupId as string) ||
       link?.replace('/chat/', '').split(/[?#]/)[0];
@@ -198,6 +201,24 @@ export function getNotificationMeta(
         mobileBgClass: 'bg-lantern-primary-background',
       };
     case 'group':
+      if (n?.type === 'mention') {
+        return {
+          iconKey: 'chat',
+          label: n.data?.mentionedEveryone ? 'Mentioned everyone' : 'Mentioned you',
+          webColorClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30',
+          mobileIconColor: '#b45309',
+          mobileBgClass: 'bg-amber-50 dark:bg-amber-950/30',
+        };
+      }
+      if (n?.type === 'reply') {
+        return {
+          iconKey: 'chat',
+          label: 'Reply',
+          webColorClass: 'text-violet-700 bg-violet-50 dark:bg-violet-950/30',
+          mobileIconColor: '#6d28d9',
+          mobileBgClass: 'bg-violet-50 dark:bg-violet-950/30',
+        };
+      }
       return {
         iconKey: 'chat',
         label: 'Group',

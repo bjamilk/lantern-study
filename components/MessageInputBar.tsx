@@ -22,6 +22,9 @@ interface MessageInputBarProps {
   onAIQuery?: (question: string) => Promise<string | null>;
   onTyping?: () => void;
   mentionCandidates?: MentionCandidate[];
+  /** When set, appends @username into the composer (e.g. tapping an author name). */
+  seedMentionUsername?: string | null;
+  onSeedMentionConsumed?: () => void;
   replyTo?: MessageReplyPreview | null;
   onClearReply?: () => void;
   editingMessage?: { id: string; text: string } | null;
@@ -38,6 +41,8 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   onAIQuery,
   onTyping,
   mentionCandidates = [],
+  seedMentionUsername = null,
+  onSeedMentionConsumed,
   replyTo,
   onClearReply,
   editingMessage,
@@ -103,6 +108,23 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
   }, [replyTo?.id]);
 
   useEffect(() => {
+    const raw = seedMentionUsername?.trim();
+    if (!raw) return;
+    const username = raw.startsWith('@') ? raw.slice(1) : raw;
+    if (!username) {
+      onSeedMentionConsumed?.();
+      return;
+    }
+    setInputText((prev) => {
+      const needsSpace = prev.length > 0 && !/\s$/.test(prev);
+      return `${prev}${needsSpace ? ' ' : ''}@${username} `;
+    });
+    setMentionQuery(null);
+    onSeedMentionConsumed?.();
+    requestAnimationFrame(focusComposer);
+  }, [seedMentionUsername]);
+
+  useEffect(() => {
     return () => {
       if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
       mediaRecorderRef.current?.stop();
@@ -115,7 +137,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
     const q = mentionQuery.toLowerCase();
     return mentionCandidates
       .filter((m) => m.username && (m.username.toLowerCase().includes(q) || (m.name || '').toLowerCase().includes(q)))
-      .slice(0, 6);
+      .slice(0, 8);
   }, [mentionQuery, mentionCandidates]);
 
   const detectMention = (value: string, caret: number) => {
@@ -157,8 +179,14 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       if (username) mentioned.add(username);
     }
     if (!mentioned.size) return [];
+    const canMentionAll = mentionCandidates.some((c) => c.id === '__all__');
+    if (mentioned.has('all') && canMentionAll) {
+      return mentionCandidates
+        .filter((c) => c.username.toLowerCase() !== 'all' && c.id !== '__all__')
+        .map((c) => c.id);
+    }
     return mentionCandidates
-      .filter((c) => mentioned.has(c.username.toLowerCase()))
+      .filter((c) => mentioned.has(c.username.toLowerCase()) && c.id !== '__all__')
       .map((c) => c.id);
   };
 
@@ -402,8 +430,10 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                 i === mentionIndex ? 'bg-lantern-primary-background text-lantern-primary' : 'text-lantern-text hover:bg-lantern-background'
               }`}
             >
-              <span className="font-semibold">@{m.username}</span>
-              {m.name ? <span className="text-lantern-text-secondary ml-2">{m.name}</span> : null}
+              <span className="font-semibold">{m.name || `@${m.username}`}</span>
+              {m.name ? (
+                <span className="text-lantern-text-secondary ml-2">@{m.username}</span>
+              ) : null}
             </button>
           ))}
         </div>

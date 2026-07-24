@@ -8,6 +8,8 @@ import {
   normalizeStorageUrl,
   parseChatAudioUrl,
   resolveGroupChatAvatarUrl,
+  resolveGroupChatMentionUsername,
+  resolveGroupChatSenderLabel,
   segmentMentions,
 } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
@@ -36,6 +38,7 @@ interface MessageBubbleProps {
   canFlag?: boolean;
   isGroupedWithPrevious?: boolean;
   onReply?: (message: Message) => void;
+  onMentionUser?: (username: string) => void;
   onScrollToMessage?: (messageId: string) => void;
   onOpenThread?: (rootId: string) => void;
 }
@@ -273,6 +276,7 @@ export function MessageBubble({
   canFlag,
   isGroupedWithPrevious = false,
   onReply,
+  onMentionUser,
   onScrollToMessage,
   onOpenThread,
 }: MessageBubbleProps) {
@@ -341,6 +345,22 @@ export function MessageBubble({
     borderWidth: 1,
   };
   const questionImageUri = useResolvedStorageUrl(message.imageUrl);
+  const storedLabel = message.senderName?.trim() || '';
+  const authorLabel = resolveGroupChatSenderLabel(
+    {
+      id: message.senderId,
+      username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
+      name: storedLabel && !storedLabel.startsWith('@') ? storedLabel : undefined,
+    },
+    messageGroup?.members
+  );
+  const mentionUsername = resolveGroupChatMentionUsername(
+    {
+      id: message.senderId,
+      username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
+    },
+    messageGroup?.members
+  );
 
   return (
     <Pressable
@@ -353,7 +373,7 @@ export function MessageBubble({
           <View style={{ width: 28 }} />
         ) : (
           <ResolvedAvatar
-            name={message.senderName}
+            name={authorLabel}
             uri={resolveGroupChatAvatarUrl(
               { id: message.senderId, avatarUrl: message.senderAvatar },
               messageGroup?.members
@@ -365,13 +385,30 @@ export function MessageBubble({
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
         {!isOwn && !isGroupedWithPrevious ? (
-          <Text
-            className="text-xs font-semibold mb-1 ml-0.5"
-            style={{ color: colors.primary }}
-            numberOfLines={1}
-          >
-            {message.senderName}
-          </Text>
+          onMentionUser && mentionUsername ? (
+            <Pressable
+              onPress={() => onMentionUser(mentionUsername)}
+              accessibilityRole="button"
+              accessibilityLabel={`Mention ${authorLabel}`}
+              className="mb-1 ml-0.5"
+            >
+              <Text
+                className="text-xs font-semibold"
+                style={{ color: colors.primary }}
+                numberOfLines={1}
+              >
+                {authorLabel}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text
+              className="text-xs font-semibold mb-1 ml-0.5"
+              style={{ color: colors.primary }}
+              numberOfLines={1}
+            >
+              {authorLabel}
+            </Text>
+          )
         ) : null}
 
         <View

@@ -125,9 +125,9 @@ export function DmBubble({
       ) : null}
 
       <View className={`flex-1 min-w-0 ${isOwn ? 'items-end' : 'items-start'}`}>
-        {!isOwn && senderName ? (
+        {!isOwn ? (
           <Text className="text-xs font-semibold mb-1 ml-0.5" style={{ color: colors.primary }}>
-            {senderName}
+            {senderName?.trim() || 'Member'}
           </Text>
         ) : null}
 

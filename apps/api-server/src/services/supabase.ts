@@ -5672,20 +5672,39 @@ export class SupabaseService {
     const usernames = extractMentionUsernames(content);
     const members = await this.fetchGroupMembers(groupId);
     const byUsername = new Map<string, string>();
+    const usernameById = new Map<string, string>();
+    const memberIds: string[] = [];
     for (const m of members || []) {
       const username = (m as any)?.username;
       const id = (m as any)?.id;
-      if (username && id) byUsername.set(String(username).toLowerCase(), id);
+      if (typeof id === 'string') memberIds.push(id);
+      if (username && id) {
+        const key = String(username).toLowerCase();
+        byUsername.set(key, id);
+        usernameById.set(id, key);
+      }
     }
+    const memberIdSet = new Set(memberIds);
     const fromText = usernames
+      .filter((u) => u !== 'all')
       .map((u: string) => byUsername.get(u))
       .filter((id: string | undefined): id is string => !!id && id !== senderId);
-    const memberIds = new Set(
-      (members || []).map((m: any) => m?.id).filter((id: unknown): id is string => typeof id === 'string')
-    );
-    const fromExplicit = (explicitIds || []).filter(
-      (id) => memberIds.has(id) && id !== senderId
-    );
+
+    // Admins may @all to notify every active member except themselves.
+    if (usernames.includes('all') && (await this.isGroupAdmin(groupId, senderId))) {
+      for (const id of memberIds) {
+        if (id !== senderId) fromText.push(id);
+      }
+    }
+
+    // Only accept client-provided IDs that match @usernames actually in the text
+    // (prevents non-admins from mass-notifying via a forged mentionedUserIds list).
+    const mentionedUsernameSet = new Set(usernames.filter((u) => u !== 'all'));
+    const fromExplicit = (explicitIds || []).filter((id) => {
+      if (!memberIdSet.has(id) || id === senderId || id === '__all__') return false;
+      const username = usernameById.get(id);
+      return !!username && mentionedUsernameSet.has(username);
+    });
     return [...new Set([...fromText, ...fromExplicit])];
   }
 
@@ -5696,7 +5715,7 @@ export class SupabaseService {
       return {
         id: parent.id,
         senderId: parent.sender_id,
-        senderName: profile?.username || profile?.name || 'Member',
+        senderName: profile?.name || (profile?.username ? `@${profile.username}` : 'Member'),
         type: 'TEXT',
         text: isRemoved ? undefined : parent.text,
         isRemoved,
@@ -5706,7 +5725,7 @@ export class SupabaseService {
     return {
       id: parent.id,
       senderId: parent.sender_id,
-      senderName: profile?.username || profile?.name || 'Member',
+      senderName: profile?.name || (profile?.username ? `@${profile.username}` : 'Member'),
       type: parent.type,
       text: isRemoved ? undefined : parent.text,
       questionStem: isRemoved ? undefined : qd.questionStem,
@@ -6101,27 +6120,78 @@ export class SupabaseService {
     messageId: string;
     mentionedUserIds: string[];
     preview: string;
+    mentionedEveryone?: boolean;
   }): Promise<void> {
-    const { groupId, senderId, messageId, mentionedUserIds, preview } = params;
+    const { groupId, senderId, messageId, mentionedUserIds, preview, mentionedEveryone } = params;
     if (!mentionedUserIds.length) return;
     const [groupMeta, sender] = await Promise.all([
       this.getGroupById(groupId),
       this.getUserById(senderId),
     ]);
     const groupName = (groupMeta as any)?.name || 'a group';
-    const actor = sender?.username || sender?.name || 'Someone';
+    const actor = sender?.name || (sender?.username ? `@${sender.username}` : 'Someone');
+    const snippet = preview.slice(0, 80);
+    const message = mentionedEveryone
+      ? `${actor} mentioned everyone in ${groupName}: ${snippet}`
+      : `${actor} mentioned you in ${groupName}: ${snippet}`;
     await Promise.all(
       mentionedUserIds.map((recipientId) =>
         this.createNotification(recipientId, {
-          message: `${actor} mentioned you in ${groupName}: ${preview.slice(0, 80)}`,
+          message,
           link: `/chat/${groupId}?messageId=${messageId}`,
           type: 'mention',
-          data: { groupId, messageId, senderId, preview: preview.slice(0, 80) },
+          data: {
+            groupId,
+            messageId,
+            senderId,
+            preview: snippet,
+            mentionedEveryone: !!mentionedEveryone,
+          },
         }).catch((err) => {
           logger.warn('Failed to notify mentioned user', { err, recipientId, messageId });
         })
       )
     );
+  }
+
+  private async notifyReplyRecipient(params: {
+    groupId: string;
+    senderId: string;
+    messageId: string;
+    replyToMessageId: string;
+    preview: string;
+    skipUserIds?: string[];
+  }): Promise<void> {
+    const { groupId, senderId, messageId, replyToMessageId, preview, skipUserIds } = params;
+    const { data: parent, error } = await this.supabase
+      .from('messages')
+      .select('id, sender_id')
+      .eq('id', replyToMessageId)
+      .eq('group_id', groupId)
+      .maybeSingle();
+    if (error || !parent?.sender_id || parent.sender_id === senderId) return;
+    if (skipUserIds?.includes(parent.sender_id)) return;
+
+    const [groupMeta, sender] = await Promise.all([
+      this.getGroupById(groupId),
+      this.getUserById(senderId),
+    ]);
+    const groupName = (groupMeta as any)?.name || 'a group';
+    const actor = sender?.name || (sender?.username ? `@${sender.username}` : 'Someone');
+    await this.createNotification(parent.sender_id, {
+      message: `${actor} replied to you in ${groupName}: ${preview.slice(0, 80)}`,
+      link: `/chat/${groupId}?messageId=${messageId}`,
+      type: 'reply',
+      data: {
+        groupId,
+        messageId,
+        senderId,
+        replyToMessageId,
+        preview: preview.slice(0, 80),
+      },
+    }).catch((err) => {
+      logger.warn('Failed to notify reply recipient', { err, messageId, replyToMessageId });
+    });
   }
 
   async sendMessage(
@@ -6235,11 +6305,13 @@ export class SupabaseService {
           last_message_time: data.timestamp || new Date().toISOString(),
         })
         .eq('id', groupId);
+      const mentionedEveryone = extractMentionUsernames(mentionSource).includes('all');
       void this.notifyGroupMessageRecipients({
         groupId,
         senderId: userId,
         content: questionPreview,
         messageId: data.id,
+        excludeUserIds: mentionedUserIds,
       }).catch((err) => {
         logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
       });
@@ -6249,7 +6321,18 @@ export class SupabaseService {
         messageId: data.id,
         mentionedUserIds,
         preview: questionPreview,
+        mentionedEveryone,
       });
+      if (replyToMessageId) {
+        void this.notifyReplyRecipient({
+          groupId,
+          senderId: userId,
+          messageId: data.id,
+          replyToMessageId,
+          preview: questionPreview,
+          skipUserIds: mentionedUserIds,
+        });
+      }
 
       const withReply = await this.attachReplyPreview(data);
       return {
@@ -6317,11 +6400,13 @@ export class SupabaseService {
           }
         });
 
+      const mentionedEveryone = extractMentionUsernames(content).includes('all');
       void this.notifyGroupMessageRecipients({
         groupId,
         senderId: userId,
         content,
         messageId: data.id,
+        excludeUserIds: mentionedUserIds,
       }).catch((err) => {
         logger.error('Failed to notify group message recipients', { err, groupId, messageId: data.id });
       });
@@ -6331,7 +6416,18 @@ export class SupabaseService {
         messageId: data.id,
         mentionedUserIds,
         preview: content,
+        mentionedEveryone,
       });
+      if (replyToMessageId) {
+        void this.notifyReplyRecipient({
+          groupId,
+          senderId: userId,
+          messageId: data.id,
+          replyToMessageId,
+          preview: content,
+          skipUserIds: mentionedUserIds,
+        });
+      }
 
       // Invalidate cache
       await cacheService.invalidateGroupCache(groupId);
@@ -6354,8 +6450,9 @@ export class SupabaseService {
     senderId: string;
     content: string;
     messageId: string;
+    excludeUserIds?: string[];
   }): Promise<void> {
-    const { groupId, senderId, content, messageId } = params;
+    const { groupId, senderId, content, messageId, excludeUserIds } = params;
     const [{ data: members, error: membersError }, groupMeta, sender] = await Promise.all([
       this.supabase
         .from('group_members')
@@ -6368,15 +6465,14 @@ export class SupabaseService {
 
     if (membersError) throw membersError;
 
+    const excluded = new Set(excludeUserIds || []);
     const recipientIds = (members || [])
       .map((m) => m.user_id)
-      .filter((id) => id && id !== senderId);
+      .filter((id) => id && id !== senderId && !excluded.has(id));
     if (!recipientIds.length) return;
 
     const groupName = groupMeta?.name || 'a group';
-    const actorLabel = sender?.username
-      ? `@${sender.username}`
-      : sender?.name || 'Someone';
+    const actorLabel = sender?.name || (sender?.username ? `@${sender.username}` : 'Someone');
     const preview = content.length > 50 ? `${content.substring(0, 50)}…` : content;
 
     await Promise.all(
