@@ -35,7 +35,7 @@ router.post(
 
     try {
       const challenge = await challengeService.createChallenge(userId, { groupId, opponentId, config });
-      await cacheService.deletePattern(`challenges:list:${userId}:*`);
+      // List caches are invalidated inside createChallenge; do not block the response.
       res.status(201).json({ success: true, data: challenge });
     } catch (err: any) {
       const status = err.statusCode || 500;

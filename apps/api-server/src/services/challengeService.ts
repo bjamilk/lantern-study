@@ -86,6 +86,49 @@ export class ChallengeService {
     return profileMap.get(userId) || { id: userId, name: 'Unknown', avatarUrl: undefined };
   }
 
+  /**
+   * Load question candidates for duel creation without the chat-page pipeline
+   * (reply previews, thread counts, profiles). That path was the main create latency.
+   */
+  private async loadCandidateQuestions(groupId: string): Promise<any[]> {
+    const { data, error } = await this.db
+      .from('messages')
+      .select('id, group_id, type, question_data, upvotes, downvotes, is_archived, image_url, timestamp')
+      .eq('group_id', groupId)
+      .eq('type', 'QUESTION')
+      .eq('is_archived', false)
+      .order('timestamp', { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    return (data || []).map((msg: any) => {
+      const questionData =
+        msg.question_data && typeof msg.question_data === 'object' ? msg.question_data : {};
+      return {
+        id: msg.id,
+        groupId: msg.group_id,
+        type: msg.type || 'QUESTION',
+        upvotes: msg.upvotes || 0,
+        downvotes: msg.downvotes || 0,
+        isArchived: !!msg.is_archived,
+        imageUrl: msg.image_url,
+        timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+        ...questionData,
+      };
+    });
+  }
+
+  private async invalidateChallengeCaches(...userIds: string[]): Promise<void> {
+    const unique = [...new Set(userIds.filter(Boolean))];
+    await Promise.all(
+      unique.flatMap((userId) => [
+        cacheService.deletePattern(`challenges:${userId}:*`),
+        cacheService.deletePattern(`challenges:list:${userId}:*`),
+      ])
+    );
+  }
+
   private async resolveQuestions(questionIds: string[]): Promise<any[]> {
     if (!questionIds.length) return [];
     const { data, error } = await this.db
@@ -291,14 +334,25 @@ export class ChallengeService {
     const existingPending = await this.findPendingChallenge(groupId, challengerId, opponentId);
     if (existingPending) {
       await this.ensureChallengeInviteNotification(existingPending);
-      return this.mapChallenge(existingPending, challengerId);
+      const profileMap = await this.fetchProfilesBatch([
+        existingPending.challenger_id,
+        existingPending.opponent_id,
+      ]);
+      return this.mapChallenge(existingPending, challengerId, {
+        profileMap,
+        participantRows: [],
+        skipQuestions: true,
+      });
     }
 
-    const messages = await this.supabaseService.getGroupMessages(groupId, { limit: 500, page: 1 });
-    const candidateQuestions = messages.filter(msg =>
-      isQuestionTestable(msg as any) &&
-      (!config.allowedQuestionTypes?.length || config.allowedQuestionTypes.includes(String((msg as any).questionType))) &&
-      (!config.selectedTags?.length || (msg as any).tags?.some((tag: string) => config.selectedTags!.includes(tag)))
+    const messages = await this.loadCandidateQuestions(groupId);
+    const candidateQuestions = messages.filter(
+      (msg) =>
+        isQuestionTestable(msg as any) &&
+        (!config.allowedQuestionTypes?.length ||
+          config.allowedQuestionTypes.includes(String((msg as any).questionType))) &&
+        (!config.selectedTags?.length ||
+          (msg as any).tags?.some((tag: string) => config.selectedTags!.includes(tag)))
     );
 
     if (candidateQuestions.length < config.numberOfQuestions) {
@@ -334,12 +388,21 @@ export class ChallengeService {
       if (!challenge) throw error;
     }
 
+    // Invite + cache invalidation after insert; keep invite awaited for delivery integrity.
     await this.ensureChallengeInviteNotification(challenge);
+    void this.invalidateChallengeCaches(challengerId, opponentId).catch((err) => {
+      logger.warn('Failed to invalidate challenge caches after create', { err });
+    });
 
-    await cacheService.deletePattern(`challenges:${challengerId}:*`);
-    await cacheService.deletePattern(`challenges:${opponentId}:*`);
-
-    return this.mapChallenge(challenge, challengerId);
+    const profileMap = await this.fetchProfilesBatch([
+      challenge.challenger_id,
+      challenge.opponent_id,
+    ]);
+    return this.mapChallenge(challenge, challengerId, {
+      profileMap,
+      participantRows: [],
+      skipQuestions: true,
+    });
   }
 
   async listChallenges(userId: string, status?: string): Promise<GroupChallenge[]> {
@@ -441,17 +504,29 @@ export class ChallengeService {
 
     if (error) throw error;
 
-    const opponentProfile = await this.fetchProfileBasics(userId);
-    await this.supabaseService.createNotification(challenge.challengerId, {
-      type: 'challenge_accepted',
-      message: `${opponentProfile.name} accepted your duel challenge!`,
-      link: `challenge:${challengeId}`,
-      data: { challengeId, groupId: challenge.groupId },
+    const opponentName = challenge.opponent?.name || 'Opponent';
+    void this.supabaseService
+      .createNotification(challenge.challengerId, {
+        type: 'challenge_accepted',
+        message: `${opponentName} accepted your duel challenge!`,
+        link: `challenge:${challengeId}`,
+        data: { challengeId, groupId: challenge.groupId },
+      })
+      .catch((err) => {
+        logger.warn('Failed to notify challenger of accept', { challengeId, err });
+      });
+
+    void this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId).catch((err) => {
+      logger.warn('Failed to invalidate challenge caches after accept', { challengeId, err });
     });
 
-    await cacheService.deletePattern(`challenges:*`);
-
-    return this.mapChallenge(data, userId);
+    // Play setup loads questions via GET /:id; skip them here to keep accept snappy.
+    const profileMap = await this.fetchProfilesBatch([data.challenger_id, data.opponent_id]);
+    return this.mapChallenge(data, userId, {
+      profileMap,
+      participantRows: [],
+      skipQuestions: true,
+    });
   }
 
   async declineChallenge(challengeId: string, userId: string): Promise<GroupChallenge> {
@@ -469,17 +544,28 @@ export class ChallengeService {
 
     if (error) throw error;
 
-    const opponentProfile = await this.fetchProfileBasics(userId);
-    await this.supabaseService.createNotification(challenge.challengerId, {
-      type: 'challenge_declined',
-      message: `${opponentProfile.name} declined your duel challenge.`,
-      link: `challenge:${challengeId}`,
-      data: { challengeId, groupId: challenge.groupId },
+    const opponentName = challenge.opponent?.name || 'Opponent';
+    void this.supabaseService
+      .createNotification(challenge.challengerId, {
+        type: 'challenge_declined',
+        message: `${opponentName} declined your duel challenge.`,
+        link: `challenge:${challengeId}`,
+        data: { challengeId, groupId: challenge.groupId },
+      })
+      .catch((err) => {
+        logger.warn('Failed to notify challenger of decline', { challengeId, err });
+      });
+
+    void this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId).catch((err) => {
+      logger.warn('Failed to invalidate challenge caches after decline', { challengeId, err });
     });
 
-    await cacheService.deletePattern(`challenges:*`);
-
-    return this.mapChallenge(data, userId);
+    const profileMap = await this.fetchProfilesBatch([data.challenger_id, data.opponent_id]);
+    return this.mapChallenge(data, userId, {
+      profileMap,
+      participantRows: [],
+      skipQuestions: true,
+    });
   }
 
   private computeWinner(

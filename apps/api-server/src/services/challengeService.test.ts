@@ -29,7 +29,7 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
     notifications.push(row);
     return row;
   });
-  const getGroupMessages = jest.fn().mockResolvedValue([
+  const candidateQuestions = [
     {
       id: 'question-1',
       groupId: 'group-1',
@@ -43,10 +43,24 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
       downvotes: 0,
       isArchived: false,
     },
-  ]);
+  ];
 
   const db = {
     from: jest.fn((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: () => ({
+            in: async () => ({
+              data: [
+                { id: 'challenger-1', name: 'Challenger', avatar_url: null },
+                { id: 'opponent-1', name: 'Opponent', avatar_url: null },
+              ],
+              error: null,
+            }),
+          }),
+        };
+      }
+
       if (table === 'notifications') {
         return {
           select: () => {
@@ -137,7 +151,6 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
 
   const supabaseService = {
     getClient: () => db,
-    getGroupMessages,
     createNotification,
     getUserById: jest.fn().mockResolvedValue({ id: 'challenger-1', name: 'Challenger' }),
   } as any;
@@ -145,6 +158,8 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
   const service = new ChallengeService(supabaseService);
   jest.spyOn(service as any, 'expireStalePending').mockResolvedValue(undefined);
   jest.spyOn(service as any, 'ensureGroupMember').mockResolvedValue(true);
+  jest.spyOn(service as any, 'loadCandidateQuestions').mockResolvedValue(candidateQuestions);
+  jest.spyOn(service as any, 'invalidateChallengeCaches').mockResolvedValue(undefined);
   jest
     .spyOn(service as any, 'mapChallenge')
     .mockImplementation(async (row: any) => ({ id: row.id }));
