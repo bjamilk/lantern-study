@@ -64,10 +64,24 @@ export function DmBubble({
         const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) setPlaying(false);
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) {
+            setPlaying(false);
+            void sound.setPositionAsync(0);
+          }
         });
       }
-      await soundRef.current.playAsync();
+      const status = await soundRef.current.getStatusAsync();
+      if (!status.isLoaded) return;
+      const total = status.durationMillis ?? 0;
+      const atEnd =
+        !!status.didJustFinish ||
+        (total > 0 && (status.positionMillis ?? 0) >= total - 40);
+      if (atEnd) {
+        await soundRef.current.playFromPositionAsync(0);
+      } else {
+        await soundRef.current.playAsync();
+      }
       setPlaying(true);
     } catch {
       setPlaying(false);

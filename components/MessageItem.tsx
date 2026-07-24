@@ -136,6 +136,11 @@ function MentionedText({
   );
 }
 
+function seekRatioFromClientX(clientX: number, left: number, width: number): number {
+  if (!(width > 0)) return 0;
+  return Math.max(0, Math.min(1, (clientX - left) / width));
+}
+
 function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -149,6 +154,32 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
     if (Number.isFinite(next) && next > 0) setDuration(next);
   };
 
+  const seekToRatio = (ratio: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    const total = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : duration;
+    if (!(total > 0)) return;
+    const next = Math.max(0, Math.min(total, ratio * total));
+    el.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const togglePlayback = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (!el.paused) {
+      el.pause();
+      return;
+    }
+    // After natural end (or a seek to the tail), browsers keep `ended` until currentTime moves.
+    const total = Number.isFinite(el.duration) ? el.duration : duration;
+    if (el.ended || (total > 0 && el.currentTime >= total - 0.05)) {
+      el.currentTime = 0;
+      setCurrentTime(0);
+    }
+    void el.play();
+  };
+
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   const trackClass = onPrimary ? 'bg-white/25' : 'bg-lantern-primary/15';
   const fillClass = onPrimary ? 'bg-white' : 'bg-lantern-primary';
@@ -158,15 +189,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
     <div className="flex items-center gap-2.5 min-w-[200px] w-full max-w-[260px]">
       <button
         type="button"
-        onClick={() => {
-          const el = audioRef.current;
-          if (!el) return;
-          if (el.paused) {
-            void el.play();
-          } else {
-            el.pause();
-          }
-        }}
+        onClick={togglePlayback}
         className={`shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full ${
           onPrimary ? 'bg-white/20 text-white' : 'bg-lantern-primary-background text-lantern-primary'
         }`}
@@ -180,15 +203,27 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
       </button>
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
         <div
-          className={`h-1.5 rounded-full overflow-hidden ${trackClass}`}
-          role="progressbar"
+          className={`h-1.5 rounded-full overflow-hidden cursor-pointer ${trackClass}`}
+          role="slider"
+          tabIndex={0}
           aria-valuemin={0}
           aria-valuemax={Math.round(duration)}
           aria-valuenow={Math.round(currentTime)}
-          aria-label="Voice note playback progress"
+          aria-label="Seek voice note"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            seekToRatio(seekRatioFromClientX(e.clientX, rect.left, rect.width));
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const step = e.key === 'ArrowRight' ? 0.05 : -0.05;
+            const base = duration > 0 ? currentTime / duration : 0;
+            seekToRatio(base + step);
+          }}
         >
           <div
-            className={`h-full rounded-full transition-[width] duration-100 ease-linear ${fillClass}`}
+            className={`h-full rounded-full transition-[width] duration-100 ease-linear pointer-events-none ${fillClass}`}
             style={{ width: `${progress * 100}%` }}
           />
         </div>
@@ -209,6 +244,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
         onEnded={() => {
           setPlaying(false);
           setCurrentTime(0);
+          if (audioRef.current) audioRef.current.currentTime = 0;
         }}
         className="hidden"
       />

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,9 +67,25 @@ function MentionText({
 
 function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; colors: any }) {
   const soundRef = useRef<Audio.Sound | null>(null);
+  const trackWidthRef = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
   const [positionMs, setPositionMs] = useState(0);
+
+  const onStatus = useCallback((status: Audio.AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+    if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
+      setDurationMs(status.durationMillis);
+    }
+    if (status.didJustFinish) {
+      setPlaying(false);
+      setPositionMs(0);
+      void soundRef.current?.setPositionAsync(0);
+      return;
+    }
+    setPositionMs(status.positionMillis ?? 0);
+    setPlaying(status.isPlaying);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,19 +95,7 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
         const { sound } = await Audio.Sound.createAsync(
           { uri: url },
           { shouldPlay: false, progressUpdateIntervalMillis: 100 },
-          (status) => {
-            if (!status.isLoaded) return;
-            if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
-              setDurationMs(status.durationMillis);
-            }
-            setPositionMs(status.positionMillis ?? 0);
-            setPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-              setPlaying(false);
-              setPositionMs(0);
-              void sound.setPositionAsync(0);
-            }
-          }
+          onStatus
         );
         if (cancelled) {
           await sound.unloadAsync();
@@ -115,36 +119,58 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
       soundRef.current = null;
       if (sound) void sound.unloadAsync();
     };
-  }, [url]);
+  }, [url, onStatus]);
+
+  const ensureSound = async (): Promise<Audio.Sound | null> => {
+    let sound = soundRef.current;
+    if (sound) return sound;
+    try {
+      const created = await Audio.Sound.createAsync(
+        { uri: url },
+        { shouldPlay: false, progressUpdateIntervalMillis: 100 },
+        onStatus
+      );
+      sound = created.sound;
+      soundRef.current = sound;
+      return sound;
+    } catch {
+      return null;
+    }
+  };
+
+  const seekToRatio = async (ratio: number) => {
+    const sound = await ensureSound();
+    if (!sound) return;
+    const status = await sound.getStatusAsync();
+    if (!status.isLoaded) return;
+    const total =
+      (typeof status.durationMillis === 'number' && status.durationMillis > 0
+        ? status.durationMillis
+        : durationMs) || 0;
+    if (!(total > 0)) return;
+    const next = Math.max(0, Math.min(total, Math.floor(ratio * total)));
+    // Avoid leaving the player stuck in the finished state after scrubbing to the tail.
+    const clamped = next >= total - 40 ? Math.max(0, total - 40) : next;
+    await sound.setPositionAsync(clamped);
+    setPositionMs(clamped);
+  };
 
   const toggle = async () => {
     try {
-      let sound = soundRef.current;
-      if (!sound) {
-        const created = await Audio.Sound.createAsync(
-          { uri: url },
-          { shouldPlay: false, progressUpdateIntervalMillis: 100 },
-          (status) => {
-            if (!status.isLoaded) return;
-            if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
-              setDurationMs(status.durationMillis);
-            }
-            setPositionMs(status.positionMillis ?? 0);
-            setPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-              setPlaying(false);
-              setPositionMs(0);
-              void created.sound.setPositionAsync(0);
-            }
-          }
-        );
-        sound = created.sound;
-        soundRef.current = sound;
-      }
+      const sound = await ensureSound();
+      if (!sound) return;
       const status = await sound.getStatusAsync();
       if (!status.isLoaded) return;
       if (status.isPlaying) {
         await sound.pauseAsync();
+        return;
+      }
+      const total = status.durationMillis ?? durationMs;
+      const atEnd =
+        !!status.didJustFinish ||
+        (typeof total === 'number' && total > 0 && (status.positionMillis ?? 0) >= total - 40);
+      if (atEnd) {
+        await sound.playFromPositionAsync(0);
       } else {
         await sound.playAsync();
       }
@@ -182,14 +208,22 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
         />
       </Pressable>
       <View className="flex-1 min-w-0" style={{ gap: 6 }}>
-        <View
-          style={{
-            height: 6,
-            borderRadius: 999,
-            overflow: 'hidden',
-            backgroundColor: trackColor,
+        <Pressable
+          onLayout={(e) => {
+            trackWidthRef.current = e.nativeEvent.layout.width;
           }}
-          accessibilityRole="progressbar"
+          onPress={(e) => {
+            const width = trackWidthRef.current;
+            if (!(width > 0)) return;
+            const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / width));
+            void seekToRatio(ratio);
+          }}
+          style={{
+            height: 16,
+            justifyContent: 'center',
+          }}
+          accessibilityRole="adjustable"
+          accessibilityLabel="Seek voice note"
           accessibilityValue={{
             min: 0,
             max: Math.round(durationSec),
@@ -198,13 +232,22 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
         >
           <View
             style={{
-              height: '100%',
-              width: `${progress * 100}%`,
+              height: 6,
               borderRadius: 999,
-              backgroundColor: fillColor,
+              overflow: 'hidden',
+              backgroundColor: trackColor,
             }}
-          />
-        </View>
+          >
+            <View
+              style={{
+                height: '100%',
+                width: `${progress * 100}%`,
+                borderRadius: 999,
+                backgroundColor: fillColor,
+              }}
+            />
+          </View>
+        </Pressable>
         <View className="flex-row items-center justify-between">
           <Text style={{ color: timeColor, fontSize: 11, fontVariant: ['tabular-nums'] }}>
             {formatChatAudioTime(positionSec)}
