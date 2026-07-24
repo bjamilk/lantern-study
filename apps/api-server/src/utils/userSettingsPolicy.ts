@@ -118,6 +118,35 @@ export async function usersShareConfirmedGroup(
   return (count ?? 0) > 0;
 }
 
+/** Deterministic DM thread id used across the API. */
+export function buildDmThreadId(userIdA: string, userIdB: string): string {
+  return [userIdA, userIdB].sort().join('-');
+}
+
+/**
+ * True when a DM thread already exists between the two users.
+ * Used so privacy settings gate cold outreach, not replies in an open thread
+ * (e.g. marketplace contact-seller → seller reply).
+ */
+export async function usersHaveExistingDmThread(
+  supabase: { from: (table: string) => any },
+  userIdA: string,
+  userIdB: string
+): Promise<boolean> {
+  if (!userIdA || !userIdB || userIdA === userIdB) return false;
+  const threadId = buildDmThreadId(userIdA, userIdB);
+  const { data, error } = await supabase
+    .from('dm_threads')
+    .select('id')
+    .eq('id', threadId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    return false;
+  }
+  return !!data?.id;
+}
+
 export async function canRecipientReceiveDirectMessage(
   supabase: { from: (table: string) => any },
   senderId: string,
@@ -130,12 +159,18 @@ export async function canRecipientReceiveDirectMessage(
 
   const policy = getDirectMessagePolicy(recipientSettingsRaw);
 
-  if (policy === 'none') {
-    return { allowed: false, reason: 'This user does not accept direct messages' };
-  }
-
   if (policy === 'everyone') {
     return { allowed: true };
+  }
+
+  // Established conversations (marketplace inquiries, prior DMs) stay open even when
+  // the recipient's policy would block a brand-new cold message.
+  if (await usersHaveExistingDmThread(supabase, senderId, recipientId)) {
+    return { allowed: true };
+  }
+
+  if (policy === 'none') {
+    return { allowed: false, reason: 'This user does not accept direct messages' };
   }
 
   const shareGroup = await usersShareConfirmedGroup(supabase, senderId, recipientId);
