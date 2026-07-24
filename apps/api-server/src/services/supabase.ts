@@ -42,6 +42,7 @@ function extractMentionUsernames(text?: string | null): string[] {
 import { assertImageMagicBytes, clampSignedUrlTtl, detectImageMime } from '../utils/fileValidation';
 import { VersionConflictError } from '../utils/versionConflict';
 import { buildNoteStoragePath } from './noteFiles';
+import { mapNoteCommentRow, NOTE_COMMENT_SELECT } from './noteCommentMapping';
 
 type UserStats = typeof initialUserStats;
 
@@ -9183,36 +9184,21 @@ export class SupabaseService {
   async getNoteComments(noteId: string) {
     const { data, error } = await this.supabase
       .from('note_comments')
-      .select('*, profiles(id, name, avatar_url)')
+      .select(NOTE_COMMENT_SELECT)
       .eq('note_id', noteId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      noteId: row.note_id,
-      userId: row.user_id,
-      comment: row.comment,
-      createdAt: row.created_at,
-      resolved: row.resolved,
-      user: row.profiles ? { id: row.profiles.id, name: row.profiles.name, avatarUrl: row.profiles.avatar_url } : undefined,
-    }));
+    return (data || []).map((row: any) => mapNoteCommentRow(row));
   }
 
   async addNoteComment(noteId: string, userId: string, comment: string) {
     const { data, error } = await this.supabase
       .from('note_comments')
       .insert({ note_id: noteId, user_id: userId, comment })
-      .select()
+      .select(NOTE_COMMENT_SELECT)
       .single();
     if (error) throw error;
-    return {
-      id: data.id,
-      noteId: data.note_id,
-      userId: data.user_id,
-      comment: data.comment,
-      createdAt: data.created_at,
-      resolved: data.resolved,
-    };
+    return mapNoteCommentRow(data as any);
   }
 
   async shareNoteWithGroup(noteId: string, userId: string, groupId: string) {

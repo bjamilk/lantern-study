@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { NoteAttachment, NoteComment, NoteFolder, StudyNote } from '../types';
+import { mergeNoteComments } from '@lantern/shared';
 import * as notesApi from '../services/notes';
 
 let loadNoteSeq = 0;
@@ -185,12 +186,21 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   loadComments: async (noteId) => {
     const comments = await notesApi.fetchNoteComments(noteId);
-    set({ comments });
+    set((state) => {
+      if (state.selectedNote?.id !== noteId) return state;
+      const currentForNote = state.comments.filter((comment) => comment.noteId === noteId);
+      return { comments: mergeNoteComments(currentForNote, comments) };
+    });
   },
 
   postComment: async (noteId, comment) => {
     const created = await notesApi.addNoteComment(noteId, comment);
-    set({ comments: [...get().comments, created] });
+    set((state) => ({
+      comments: mergeNoteComments(
+        state.comments.filter((existing) => existing.noteId === noteId),
+        [created]
+      ),
+    }));
   },
 
   reset: () =>

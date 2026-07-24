@@ -8,6 +8,7 @@ import {
   DocumentDuplicateIcon,
   MicrophoneIcon,
   StopIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
@@ -22,6 +23,7 @@ import * as notesApi from '../services/notes';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
+import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -45,6 +47,7 @@ interface NoteEditorScreenProps {
   onCompleteDailyQuiz?: () => void;
   onRegenerateQuiz?: () => Promise<void>;
   onPostComment: (comment: string) => void;
+  onRefreshComments: () => Promise<void>;
   onShareWithGroup: (groupId: string) => void;
   onTranscriptReady: (transcript: string) => void;
   /** Cancel pending autosave before/after voice transcription. */
@@ -174,6 +177,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   onCompleteDailyQuiz,
   onRegenerateQuiz,
   onPostComment,
+  onRefreshComments,
   onShareWithGroup,
   onTranscriptReady,
   onCancelPendingSave,
@@ -212,6 +216,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const isOwner = note.accessRole === 'owner' || (!note.accessRole && note.userId === currentUserId);
   const canEdit = isOwner || note.accessRole === 'editor';
   const isViewer = !canEdit;
+  const { refresh: refreshComments, isRefreshing: isRefreshingComments } =
+    useNoteCommentsSync(note.id, onRefreshComments);
 
   const isDocumentNote = note.sourceType === 'pdf' || note.sourceType === 'presentation';
   const isPhotoNote = note.sourceType === 'photos';
@@ -964,16 +970,57 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           )}
 
           <div className={`rounded-xl border p-3 sm:p-4 ${isDark ? 'border-lantern-border' : 'border-lantern-border'}`}>
-            <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
-              Discussion ({comments.length})
-            </h4>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className={`text-sm font-semibold ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
+                Discussion ({comments.length})
+              </h4>
+              <button
+                type="button"
+                onClick={() => void refreshComments()}
+                disabled={isRefreshingComments}
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-lantern-primary hover:bg-lantern-primary-background disabled:opacity-50"
+                aria-label="Refresh discussion"
+                title="Refresh discussion"
+              >
+                <ArrowPathIcon
+                  className={`h-4 w-4 ${isRefreshingComments ? 'animate-spin' : ''}`}
+                  aria-hidden
+                />
+                Refresh
+              </button>
+            </div>
             <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
-              {comments.map(c => (
-                <div key={c.id} className={`text-sm p-2 rounded-lg ${isDark ? 'bg-lantern-surface' : 'bg-lantern-background'}`}>
-                  <p className={isDark ? 'text-lantern-text' : 'text-lantern-text'}>{c.comment}</p>
-                  <p className="text-xs text-lantern-text-tertiary mt-1">{new Date(c.createdAt).toLocaleString()}</p>
-                </div>
-              ))}
+              {comments.map((c) => {
+                const authorName =
+                  c.user?.name ||
+                  c.user?.username ||
+                  (c.userId === currentUserId ? 'You' : 'Lantern user');
+                return (
+                  <div key={c.id} className={`text-sm p-2 rounded-lg ${isDark ? 'bg-lantern-surface' : 'bg-lantern-background'}`}>
+                    <div className="mb-1 flex items-center gap-2">
+                      {c.user?.avatarUrl ? (
+                        <img
+                          src={c.user.avatarUrl}
+                          alt=""
+                          className="h-5 w-5 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="flex h-5 w-5 items-center justify-center rounded-full bg-lantern-primary-background text-[10px] font-semibold uppercase text-lantern-primary"
+                          aria-hidden
+                        >
+                          {authorName.slice(0, 1)}
+                        </span>
+                      )}
+                      <span className="font-medium text-lantern-text">{authorName}</span>
+                      <span className="ml-auto text-xs text-lantern-text-tertiary">
+                        {new Date(c.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className={isDark ? 'text-lantern-text' : 'text-lantern-text'}>{c.comment}</p>
+                  </div>
+                );
+              })}
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <input

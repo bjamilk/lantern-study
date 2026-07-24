@@ -1131,6 +1131,7 @@ export const App: React.FC = () => {
                             }
                         }}
                         onPostComment={(text) => { void noteHandlers.handlePostComment(selectedNote.id, text); }}
+                        onRefreshComments={() => useNotesStore.getState().loadComments(selectedNote.id)}
                         onShareWithGroup={(groupId) => { void noteHandlers.handleShareWithGroup(selectedNote.id, groupId); }}
                         onTranscriptReady={() => {
                             noteHandlers.cancelAutoSave();

@@ -365,6 +365,7 @@ export interface NoteComment {
   comment: string;
   createdAt: string;
   resolved: boolean;
+  user?: NoteOwnerPresentation;
 }
 
 export interface NoteCollaborator {
