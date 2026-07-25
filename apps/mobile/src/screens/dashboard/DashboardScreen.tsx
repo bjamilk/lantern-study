@@ -96,6 +96,8 @@ const PERIOD_OPTIONS: { value: TimePeriod; label: string }[] = [
 
 ];
 
+const RECENT_TESTS_PAGE_SIZE = 5;
+
 
 
 function ActivityHeatmap({ days, theme }: { days: { date: string; count: number }[]; theme: 'light' | 'dark' }) {
@@ -259,7 +261,7 @@ export function DashboardScreen({ navigation }: Props) {
       try {
         const result = await api.fetchTestResultsPage(user.id, {
           page: recentPage,
-          limit: 10,
+          limit: RECENT_TESTS_PAGE_SIZE,
           lean: true,
           sort: recentSort,
           from: recentPeriodBounds.from,
@@ -313,7 +315,7 @@ export function DashboardScreen({ navigation }: Props) {
     };
   }, [user?.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to, groups]);
 
-  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / 10));
+  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / RECENT_TESTS_PAGE_SIZE));
 
   const heatmap = useMemo(
 
@@ -929,7 +931,7 @@ export function DashboardScreen({ navigation }: Props) {
             </Text>
           )}
 
-          {recentTotal > 10 ? (
+          {recentTotal > RECENT_TESTS_PAGE_SIZE ? (
             <View className="flex-row items-center justify-between mt-2">
               <Pressable
                 disabled={recentPage <= 1 || recentLoading}

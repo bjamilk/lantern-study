@@ -30,6 +30,7 @@ import Modal from './ui/Modal';
 import { fetchTestResultsPage, fetchTestSessionById, type TestResultsSort } from '../services/supabase';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
+const RECENT_TESTS_PAGE_SIZE = 5;
 
 function loadSelectedGroupChartIds(): string[] {
   try {
@@ -865,7 +866,7 @@ export default function DashboardScreen({
       try {
         const { data, pagination } = await fetchTestResultsPage(currentUser.id, {
           page: recentPage,
-          limit: 10,
+          limit: RECENT_TESTS_PAGE_SIZE,
           lean: true,
           sort: recentSort,
           from: recentPeriodBounds.from,
@@ -891,7 +892,7 @@ export default function DashboardScreen({
     };
   }, [currentUser.id, recentPage, recentSort, recentPeriodBounds.from, recentPeriodBounds.to]);
 
-  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / 10));
+  const recentTotalPages = Math.max(1, Math.ceil(recentTotal / RECENT_TESTS_PAGE_SIZE));
 
   const handleViewRecentAnalysis = useCallback(
     async (result: TestResult) => {
@@ -1664,7 +1665,7 @@ export default function DashboardScreen({
                   </div>
                 )}
               </div>
-              {recentTotal > 10 && (
+              {recentTotal > RECENT_TESTS_PAGE_SIZE && (
                 <div className="p-3 flex items-center justify-between border-t border-lantern-border">
                   <button
                     type="button"
