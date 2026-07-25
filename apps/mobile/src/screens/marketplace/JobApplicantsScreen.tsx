@@ -25,6 +25,7 @@ import {
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { JobApplicantNotes } from "../../components/jobs/JobApplicantNotes";
+import { JobInterviewScheduler } from "../../components/jobs/JobInterviewScheduler";
 import {
   fetchJobApplicants,
   fetchJobApplicationResumeUrl,
@@ -56,6 +57,7 @@ export function JobApplicantsScreen() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<JobApplicantSort>("newest");
   const [openNotesId, setOpenNotesId] = useState<string | null>(null);
+  const [openInterviewsId, setOpenInterviewsId] = useState<string | null>(null);
 
   // Resumes live in a private bucket, so each view needs a fresh signed link.
   const openResume = async (applicationId: string) => {
@@ -203,6 +205,23 @@ export function JobApplicantsScreen() {
                       : "Add note"}
                 </Text>
               </Pressable>
+              {app.status === "withdrawn" ? null : (
+                <Pressable
+                  onPress={() =>
+                    setOpenInterviewsId((current) =>
+                      current === app.id ? null : app.id,
+                    )
+                  }
+                  accessibilityRole="button"
+                  className="rounded-lg border border-lantern-border px-3 py-2"
+                >
+                  <Text className="text-sm font-medium text-lantern-primary">
+                    {openInterviewsId === app.id
+                      ? "Hide interviews"
+                      : "Interviews"}
+                  </Text>
+                </Pressable>
+              )}
             </View>
             {app.status === "withdrawn" ? (
               <Text className="mt-2 text-xs text-lantern-text-secondary">
@@ -241,6 +260,14 @@ export function JobApplicantsScreen() {
                 ))}
               </ScrollView>
             )}
+            {openInterviewsId === app.id ? (
+              <JobInterviewScheduler
+                applicationId={app.id}
+                candidateName={
+                  app.applicant?.name || app.applicant?.username || "Candidate"
+                }
+              />
+            ) : null}
             {openNotesId === app.id ? (
               <JobApplicantNotes
                 applicationId={app.id}

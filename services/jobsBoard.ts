@@ -5,11 +5,22 @@ import {
   type JobApplicantProfile,
   type JobApplication,
   type JobApplicationNote,
+  type JobInterview,
+  type JobInterviewMode,
   type JobPosting,
   type JobSavedSearch,
   type JobSearchFilters,
 } from "@lantern/shared";
 import { getAuthHeaders } from "./supabase";
+
+/** Fields the employer sets when proposing or re-proposing interview times. */
+export type JobInterviewDraft = {
+  mode: JobInterviewMode;
+  durationMinutes: number;
+  proposedSlots: string[];
+  locationText?: string;
+  details?: string;
+};
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -273,6 +284,60 @@ export async function createJobApplicationNote(
   return jobsRequest<{ success: boolean; data: JobApplicationNote }>(
     `/applications/${encodeURIComponent(applicationId)}/notes`,
     { method: "POST", body: JSON.stringify({ body }) },
+  );
+}
+
+export async function fetchJobInterviews(applicationId: string) {
+  return jobsRequest<{ success: boolean; data: JobInterview[] }>(
+    `/applications/${encodeURIComponent(applicationId)}/interviews`,
+  );
+}
+
+export async function fetchMyJobInterviews() {
+  return jobsRequest<{
+    success: boolean;
+    data: Array<JobInterview & { postingTitle?: string }>;
+  }>("/my-interviews");
+}
+
+export async function scheduleJobInterview(
+  applicationId: string,
+  body: JobInterviewDraft,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/applications/${encodeURIComponent(applicationId)}/interviews`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function rescheduleJobInterview(
+  interviewId: string,
+  body: JobInterviewDraft,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function setJobInterviewStatus(
+  interviewId: string,
+  status: "cancelled" | "completed",
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}`,
+    { method: "PATCH", body: JSON.stringify({ status }) },
+  );
+}
+
+export async function respondToJobInterview(
+  interviewId: string,
+  action: "accept" | "decline",
+  slot?: string,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}/respond`,
+    { method: "POST", body: JSON.stringify({ action, slot }) },
   );
 }
 

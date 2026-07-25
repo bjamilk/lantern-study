@@ -133,14 +133,18 @@ export function parseNotificationLink(
   }
   if (
     n?.type === "job_application_status" ||
+    n?.type === "job_interview" ||
     link === "/marketplace/applications"
   ) {
     return { type: "job_applications" };
   }
-  if (n?.type === "job_application") {
+  // Any employer-pipeline link lands on the applicant list for that posting.
+  {
     const postingId =
-      (n.data?.postingId as string) ||
-      link?.match(/\/marketplace\/employer\/jobs\/([^/?#]+)/)?.[1];
+      link?.match(/\/marketplace\/employer\/jobs\/([^/?#]+)/)?.[1] ||
+      (n?.type === "job_application" || n?.type === "job_interview_response"
+        ? (n.data?.postingId as string)
+        : undefined);
     if (postingId) return { type: "job_applicants", id: postingId };
   }
   if (
@@ -176,6 +180,17 @@ export function getNotificationMeta(
       webColorClass: "text-lantern-primary bg-lantern-primary-background",
       mobileIconColor: "#4f46e5",
       mobileBgClass: "bg-lantern-primary-background",
+    };
+  }
+  // Interviews are time-sensitive, so they get their own badge rather than
+  // being labelled as a generic application update.
+  if (n?.type === "job_interview" || n?.type === "job_interview_response") {
+    return {
+      iconKey: "bell",
+      label: "Interview",
+      webColorClass: "text-violet-600 bg-violet-50 dark:bg-violet-950/30",
+      mobileIconColor: "#7c3aed",
+      mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
     };
   }
   switch (parsed.type) {

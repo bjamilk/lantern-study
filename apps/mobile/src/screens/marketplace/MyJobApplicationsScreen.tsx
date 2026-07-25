@@ -15,13 +15,16 @@ import {
   type JobApplicantProfile,
   type JobApplication,
   type JobApplicationStatus,
+  type JobInterview,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { JobInterviewInvite } from "../../components/jobs/JobInterviewInvite";
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import {
   fetchJobApplicantProfile,
   fetchJobApplicationResumeUrl,
   fetchMyJobApplications,
+  fetchMyJobInterviews,
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
@@ -48,6 +51,7 @@ export function MyJobApplicationsScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [apps, setApps] = useState<JobApplication[]>([]);
+  const [interviews, setInterviews] = useState<JobInterview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"active" | "closed">("active");
@@ -80,6 +84,45 @@ export function MyJobApplicationsScreen() {
     void fetchJobApplicantProfile()
       .then((response) => setProfile(response.data))
       .catch(() => setProfile(null));
+  }, []);
+
+  useEffect(() => {
+    // One request for every interview beats one per application card.
+    void fetchMyJobInterviews()
+      .then((response) => setInterviews(response.data || []))
+      .catch(() => setInterviews([]));
+  }, []);
+
+  /**
+   * The newest unfinished interview per application. Cancelled and completed
+   * rounds stay out so an old invitation cannot be answered, but a declined one
+   * is kept so the candidate can see their own answer landed.
+   */
+  const interviewsByApplication = useMemo(() => {
+    const map = new Map<string, JobInterview>();
+    for (const interview of interviews) {
+      if (
+        interview.status === "cancelled" ||
+        interview.status === "completed"
+      ) {
+        continue;
+      }
+      const current = map.get(interview.applicationId);
+      if (
+        !current ||
+        new Date(interview.createdAt).getTime() >
+          new Date(current.createdAt).getTime()
+      ) {
+        map.set(interview.applicationId, interview);
+      }
+    }
+    return map;
+  }, [interviews]);
+
+  const applyInterviewUpdate = useCallback((updated: JobInterview) => {
+    setInterviews((prev) =>
+      prev.map((item) => (item.id === updated.id ? updated : item)),
+    );
   }, []);
 
   const openResume = async (applicationId: string) => {
@@ -233,6 +276,7 @@ export function MyJobApplicationsScreen() {
                 posting?.poster?.username ||
                 "Independent poster";
               const canWithdraw = !CLOSED_STATUSES.has(application.status);
+              const liveInterview = interviewsByApplication.get(application.id);
 
               return (
                 <Card
@@ -303,6 +347,12 @@ export function MyJobApplicationsScreen() {
                       </Pressable>
                     ) : null}
                   </View>
+                  {liveInterview ? (
+                    <JobInterviewInvite
+                      interview={liveInterview}
+                      onUpdated={applyInterviewUpdate}
+                    />
+                  ) : null}
                 </Card>
               );
             })}

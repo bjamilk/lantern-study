@@ -381,6 +381,123 @@ router.delete(
   }),
 );
 
+// ─── Interviews ────────────────────────────────────────────────────────────
+
+// GET /applications/:id/interviews — visible to both sides
+router.get(
+  "/applications/:id/interviews",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().listApplicationInterviews(
+        req.params.id,
+        userId,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /applications/:id/interviews — employer proposes times
+router.post(
+  "/applications/:id/interviews",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().scheduleInterview(
+        req.params.id,
+        userId,
+        req.body || {},
+      );
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// GET /my-interviews — candidate's own interviews
+router.get(
+  "/my-interviews",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const data = await jobs().listMyInterviews(userId);
+    res.json({ success: true, data });
+  }),
+);
+
+// PATCH /interviews/:id — employer reschedules, cancels, or completes
+router.patch(
+  "/interviews/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { status, ...rest } = req.body || {};
+    try {
+      if (status === "cancelled" || status === "completed") {
+        const data = await jobs().updateInterviewStatus(
+          req.params.id,
+          userId,
+          status,
+        );
+        return res.json({ success: true, data });
+      }
+      const data = await jobs().rescheduleInterview(
+        req.params.id,
+        userId,
+        rest,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /interviews/:id/respond — candidate accepts a slot or declines
+router.post(
+  "/interviews/:id/respond",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { action, slot } = req.body || {};
+    if (action !== "accept" && action !== "decline") {
+      return res
+        .status(400)
+        .json({ success: false, error: "action must be accept or decline" });
+    }
+    try {
+      const data = await jobs().respondToInterview(
+        req.params.id,
+        userId,
+        action,
+        slot,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // ─── Saved searches ────────────────────────────────────────────────────────
 
 // GET /saved-searches

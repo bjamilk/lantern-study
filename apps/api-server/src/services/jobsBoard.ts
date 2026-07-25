@@ -8,11 +8,21 @@ import {
   JOBS_MAX_SCREENERS_PHASE1,
   JOBS_MAX_SCREENERS_PHASE2,
   JOB_APPLICATION_NOTE_MAX_LENGTH,
+  JOB_INTERVIEW_DETAILS_MAX_LENGTH,
+  JOB_INTERVIEW_LOCATION_MAX_LENGTH,
+  JOB_INTERVIEW_MAX_SLOTS,
   JOB_POSTING_STATUS_LABELS,
   JOB_RESUME_MAX_BYTES,
   JOB_SAVED_SEARCH_LIMIT_PER_USER,
   JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
+  canEmployerRescheduleJobInterview,
   canEmployerSetJobPostingStatus,
+  canSetJobInterviewStatus,
+  clampJobInterviewDuration,
+  formatJobInterviewSlotList,
+  isJobInterviewMode,
+  matchJobInterviewSlot,
+  normalizeJobInterviewSlots,
   normalizeJobSearchFilters,
   suggestJobSavedSearchName,
   isJobCompensationPeriod,
@@ -28,6 +38,9 @@ import {
   type JobCompensation,
   type JobEmploymentType,
   type JobEngagementDuration,
+  type JobInterview,
+  type JobInterviewMode,
+  type JobInterviewStatus,
   type JobPostingStatus,
   type JobSavedSearch,
   type JobSearchFilters,
@@ -257,6 +270,25 @@ function mapApplicantProfile(row: any) {
     resumeFilename: row.resume_filename,
     resumeSizeBytes: row.resume_size_bytes,
     resumeUploadedAt: row.resume_uploaded_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapInterview(row: any): JobInterview {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    postingId: row.posting_id,
+    applicantId: row.applicant_id,
+    createdBy: row.created_by,
+    mode: row.mode,
+    status: row.status,
+    durationMinutes: row.duration_minutes,
+    locationText: row.location_text ?? null,
+    details: row.details ?? null,
+    proposedSlots: Array.isArray(row.proposed_slots) ? row.proposed_slots : [],
+    scheduledAt: row.scheduled_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1298,6 +1330,384 @@ export class JobsBoardService {
       .eq("id", noteId);
     if (deleteError) throw deleteError;
     return { id: noteId, applicationId: note.application_id };
+  }
+
+  // ─── Interview scheduling ─────────────────────────────────────────────────
+
+  /**
+   * Resolves an application for either side of it, reporting which side the
+   * viewer is on. Interviews differ from notes: the candidate has to be able to
+   * read the times in order to accept one.
+   */
+  private async resolveInterviewParticipant(
+    applicationId: string,
+    viewerId: string,
+  ) {
+    const { data: app, error } = await this.client()
+      .from("job_applications")
+      .select(
+        "id, applicant_id, posting_id, posting:job_postings(id, title, poster_user_id, company_id)",
+      )
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!app) throw httpError("Application not found", 404);
+
+    const posting: any = Array.isArray(app.posting)
+      ? app.posting[0]
+      : app.posting;
+    const isEmployer =
+      posting?.poster_user_id === viewerId ||
+      !!(
+        posting?.company_id &&
+        (await this.getCompanyMembership(posting.company_id, viewerId))
+      );
+    const isApplicant = app.applicant_id === viewerId;
+    if (!isEmployer && !isApplicant) throw httpError("Not allowed", 403);
+
+    return { app, posting, isEmployer, isApplicant };
+  }
+
+  private async getInterviewForActor(
+    interviewId: string,
+    actorId: string,
+    actor: "employer" | "applicant",
+  ) {
+    const { data: row, error } = await this.client()
+      .from("job_interviews")
+      .select("*")
+      .eq("id", interviewId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw httpError("Interview not found", 404);
+
+    const context = await this.resolveInterviewParticipant(
+      row.application_id,
+      actorId,
+    );
+    if (actor === "employer" && !context.isEmployer) {
+      throw httpError("Not allowed", 403);
+    }
+    if (actor === "applicant" && !context.isApplicant) {
+      throw httpError("Not allowed", 403);
+    }
+    return { row, ...context };
+  }
+
+  /** Employer-facing DM so the arrangement also lands in the conversation. */
+  private async sendInterviewDm(
+    fromUserId: string,
+    toUserId: string,
+    body: string,
+  ) {
+    try {
+      await this.supabase.sendDirectMessage(fromUserId, toUserId, body, {
+        bypassPrivacy: true,
+      });
+    } catch (dmErr) {
+      logger.warn("Interview DM failed", {
+        error: dmErr,
+        fromUserId,
+        toUserId,
+      });
+    }
+  }
+
+  private validateInterviewInput(input: {
+    mode?: unknown;
+    durationMinutes?: unknown;
+    locationText?: unknown;
+    details?: unknown;
+    proposedSlots?: unknown;
+  }) {
+    const mode: JobInterviewMode = isJobInterviewMode(input.mode)
+      ? input.mode
+      : "video";
+    const slots = normalizeJobInterviewSlots(input.proposedSlots);
+    if (!slots.length) {
+      throw httpError("Propose at least one future time");
+    }
+    if (
+      Array.isArray(input.proposedSlots) &&
+      input.proposedSlots.length > JOB_INTERVIEW_MAX_SLOTS
+    ) {
+      throw httpError(
+        `You can propose at most ${JOB_INTERVIEW_MAX_SLOTS} times`,
+      );
+    }
+
+    const locationText = String(input.locationText || "").trim();
+    if (locationText.length > JOB_INTERVIEW_LOCATION_MAX_LENGTH) {
+      throw httpError(
+        `Location is limited to ${JOB_INTERVIEW_LOCATION_MAX_LENGTH} characters`,
+      );
+    }
+    const details = String(input.details || "").trim();
+    if (details.length > JOB_INTERVIEW_DETAILS_MAX_LENGTH) {
+      throw httpError(
+        `Details are limited to ${JOB_INTERVIEW_DETAILS_MAX_LENGTH} characters`,
+      );
+    }
+
+    return {
+      mode,
+      slots,
+      locationText: locationText || null,
+      details: details || null,
+      durationMinutes: clampJobInterviewDuration(input.durationMinutes),
+    };
+  }
+
+  async listApplicationInterviews(applicationId: string, viewerId: string) {
+    await this.resolveInterviewParticipant(applicationId, viewerId);
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .select("*")
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map(mapInterview);
+  }
+
+  /** Every interview the user is the candidate for, newest first. */
+  async listMyInterviews(userId: string) {
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .select("*, posting:job_postings(id, title)")
+      .eq("applicant_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      ...mapInterview(row),
+      postingTitle: (Array.isArray(row.posting) ? row.posting[0] : row.posting)
+        ?.title,
+    }));
+  }
+
+  async scheduleInterview(
+    applicationId: string,
+    employerId: string,
+    input: {
+      mode?: unknown;
+      durationMinutes?: unknown;
+      locationText?: unknown;
+      details?: unknown;
+      proposedSlots?: unknown;
+    },
+  ) {
+    const { app, posting, isEmployer } = await this.resolveInterviewParticipant(
+      applicationId,
+      employerId,
+    );
+    if (!isEmployer) throw httpError("Not allowed", 403);
+
+    const clean = this.validateInterviewInput(input);
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .insert({
+        application_id: applicationId,
+        posting_id: app.posting_id,
+        applicant_id: app.applicant_id,
+        created_by: employerId,
+        mode: clean.mode,
+        status: "proposed",
+        duration_minutes: clean.durationMinutes,
+        location_text: clean.locationText,
+        details: clean.details,
+        proposed_slots: clean.slots,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    // Advancing the application keeps the pipeline and the interview in step.
+    await this.client()
+      .from("job_applications")
+      .update({ status: "interview", updated_at: new Date().toISOString() })
+      .eq("id", applicationId);
+
+    const title = posting?.title || "a job";
+    await this.supabase.createNotification(app.applicant_id, {
+      type: "job_interview",
+      message: `Interview invitation for "${title}" — choose a time`,
+      link: `/marketplace/applications`,
+      data: { interviewId: data.id, applicationId },
+    });
+    await this.sendInterviewDm(
+      employerId,
+      app.applicant_id,
+      `📅 Interview invitation for "${title}"\n\n${formatJobInterviewSlotList(
+        clean.slots,
+      )}\n\nPick a time from your applications list.`,
+    );
+
+    return mapInterview(data);
+  }
+
+  /** Replaces the offered times and sends the candidate back to `proposed`. */
+  async rescheduleInterview(
+    interviewId: string,
+    employerId: string,
+    input: {
+      mode?: unknown;
+      durationMinutes?: unknown;
+      locationText?: unknown;
+      details?: unknown;
+      proposedSlots?: unknown;
+    },
+  ) {
+    const { row, posting } = await this.getInterviewForActor(
+      interviewId,
+      employerId,
+      "employer",
+    );
+    if (!canEmployerRescheduleJobInterview(row.status)) {
+      throw httpError(`A ${row.status} interview cannot be rescheduled`);
+    }
+
+    const clean = this.validateInterviewInput(input);
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .update({
+        mode: clean.mode,
+        status: "proposed",
+        duration_minutes: clean.durationMinutes,
+        location_text: clean.locationText,
+        details: clean.details,
+        proposed_slots: clean.slots,
+        scheduled_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", interviewId)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    const title = posting?.title || "a job";
+    await this.supabase.createNotification(row.applicant_id, {
+      type: "job_interview",
+      message: `New interview times for "${title}"`,
+      link: `/marketplace/applications`,
+      data: { interviewId, applicationId: row.application_id },
+    });
+    await this.sendInterviewDm(
+      employerId,
+      row.applicant_id,
+      `📅 Updated interview times for "${title}"\n\n${formatJobInterviewSlotList(
+        clean.slots,
+      )}`,
+    );
+
+    return mapInterview(data);
+  }
+
+  /** The candidate accepts one of the offered times, or declines them all. */
+  async respondToInterview(
+    interviewId: string,
+    applicantId: string,
+    action: "accept" | "decline",
+    slot?: unknown,
+  ) {
+    const { row, posting } = await this.getInterviewForActor(
+      interviewId,
+      applicantId,
+      "applicant",
+    );
+    const nextStatus: JobInterviewStatus =
+      action === "accept" ? "confirmed" : "declined";
+    if (!canSetJobInterviewStatus(row.status, nextStatus, "applicant")) {
+      throw httpError(`This interview is ${row.status}`);
+    }
+
+    const offered: string[] = Array.isArray(row.proposed_slots)
+      ? row.proposed_slots
+      : [];
+    let scheduledAt: string | null = null;
+    if (action === "accept") {
+      const match = matchJobInterviewSlot(offered, slot);
+      if (!match) throw httpError("Choose one of the proposed times");
+      if (new Date(match).getTime() <= Date.now()) {
+        throw httpError("That time has already passed");
+      }
+      scheduledAt = match;
+    }
+
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .update({
+        status: nextStatus,
+        scheduled_at: scheduledAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", interviewId)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    const title = posting?.title || "a job";
+    const employerId = row.created_by;
+    await this.supabase.createNotification(employerId, {
+      type: "job_interview_response",
+      message:
+        action === "accept"
+          ? `A candidate confirmed an interview for "${title}"`
+          : `A candidate declined the interview times for "${title}"`,
+      link: `/marketplace/employer/jobs/${row.posting_id}`,
+      data: { interviewId, applicationId: row.application_id },
+    });
+    await this.sendInterviewDm(
+      applicantId,
+      employerId,
+      action === "accept" && scheduledAt
+        ? `✅ I confirmed the interview for "${title}":\n\n${formatJobInterviewSlotList(
+            [scheduledAt],
+          )}`
+        : `⚠️ None of the proposed interview times for "${title}" work for me.`,
+    );
+
+    return mapInterview(data);
+  }
+
+  /** Employer-side cancel or mark-complete. */
+  async updateInterviewStatus(
+    interviewId: string,
+    employerId: string,
+    status: JobInterviewStatus,
+  ) {
+    const { row, posting } = await this.getInterviewForActor(
+      interviewId,
+      employerId,
+      "employer",
+    );
+    if (!canSetJobInterviewStatus(row.status, status, "employer")) {
+      throw httpError(`Cannot move a ${row.status} interview to ${status}`);
+    }
+
+    const { data, error } = await this.client()
+      .from("job_interviews")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", interviewId)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    if (status === "cancelled") {
+      const title = posting?.title || "a job";
+      await this.supabase.createNotification(row.applicant_id, {
+        type: "job_interview",
+        message: `The interview for "${title}" was cancelled`,
+        link: `/marketplace/applications`,
+        data: { interviewId, applicationId: row.application_id },
+      });
+      await this.sendInterviewDm(
+        employerId,
+        row.applicant_id,
+        `❌ The interview for "${title}" has been cancelled.`,
+      );
+    }
+
+    return mapInterview(data);
   }
 
   async updateApplicationStatus(

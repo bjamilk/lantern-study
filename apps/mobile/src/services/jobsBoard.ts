@@ -5,10 +5,21 @@ import type {
   JobApplicantProfile,
   JobApplication,
   JobApplicationNote,
+  JobInterview,
+  JobInterviewMode,
   JobPosting,
   JobSavedSearch,
   JobSearchFilters,
 } from "@lantern/shared";
+
+/** Fields the employer sets when proposing or re-proposing interview times. */
+export type JobInterviewDraft = {
+  mode: JobInterviewMode;
+  durationMinutes: number;
+  proposedSlots: string[];
+  locationText?: string;
+  details?: string;
+};
 
 async function jobsRequest<T>(
   path: string,
@@ -276,6 +287,60 @@ export async function deleteJobApplicationNote(noteId: string) {
   return jobsRequest<{ success: boolean; data: { id: string } }>(
     `/application-notes/${encodeURIComponent(noteId)}`,
     { method: "DELETE" },
+  );
+}
+
+export async function fetchJobInterviews(applicationId: string) {
+  return jobsRequest<{ success: boolean; data: JobInterview[] }>(
+    `/applications/${encodeURIComponent(applicationId)}/interviews`,
+  );
+}
+
+export async function fetchMyJobInterviews() {
+  return jobsRequest<{
+    success: boolean;
+    data: Array<JobInterview & { postingTitle?: string }>;
+  }>("/my-interviews");
+}
+
+export async function scheduleJobInterview(
+  applicationId: string,
+  body: JobInterviewDraft,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/applications/${encodeURIComponent(applicationId)}/interviews`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function rescheduleJobInterview(
+  interviewId: string,
+  body: JobInterviewDraft,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function setJobInterviewStatus(
+  interviewId: string,
+  status: "cancelled" | "completed",
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}`,
+    { method: "PATCH", body: JSON.stringify({ status }) },
+  );
+}
+
+export async function respondToJobInterview(
+  interviewId: string,
+  action: "accept" | "decline",
+  slot?: string,
+) {
+  return jobsRequest<{ success: boolean; data: JobInterview }>(
+    `/interviews/${encodeURIComponent(interviewId)}/respond`,
+    { method: "POST", body: JSON.stringify({ action, slot }) },
   );
 }
 

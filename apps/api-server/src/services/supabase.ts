@@ -643,6 +643,8 @@ export class SupabaseService {
       "job_alert",
       "job_application",
       "job_application_status",
+      "job_interview",
+      "job_interview_response",
       "group_invite",
       "group_message",
       "badge_unlock",
