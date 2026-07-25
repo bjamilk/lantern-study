@@ -10,6 +10,7 @@ export interface AppRouteParams {
   noteId?: string;
   inviteId?: string;
   shareToken?: string;
+  jobId?: string;
 }
 
 export interface ParsedAppRoute {
@@ -70,6 +71,24 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return '/marketplace/new';
     case AppMode.SELLER_CUSTOMERS:
       return '/marketplace/seller/customers';
+    case AppMode.MARKETPLACE_JOBS:
+      return '/marketplace/jobs';
+    case AppMode.MARKETPLACE_JOB_DETAIL:
+      return params.jobId
+        ? `/marketplace/jobs/${encodeURIComponent(params.jobId)}`
+        : '/marketplace/jobs';
+    case AppMode.CREATE_MARKETPLACE_JOB:
+      return '/marketplace/jobs/new';
+    case AppMode.MY_JOB_POSTINGS:
+      return '/marketplace/my-jobs';
+    case AppMode.MY_JOB_APPLICATIONS:
+      return '/marketplace/applications';
+    case AppMode.JOB_EMPLOYER:
+      return '/marketplace/employer';
+    case AppMode.JOB_EMPLOYER_PIPELINE:
+      return params.jobId
+        ? `/marketplace/employer/jobs/${encodeURIComponent(params.jobId)}`
+        : '/marketplace/employer';
     case AppMode.NOTES:
       return '/notes';
     case AppMode.LIBRARY:
@@ -108,6 +127,11 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/marketplace/inquiries') return { mode: AppMode.MARKETPLACE_INQUIRIES, params: {} };
   if (path === '/marketplace/new') return { mode: AppMode.CREATE_MARKETPLACE_LISTING, params: {} };
   if (path === '/marketplace/seller/customers') return { mode: AppMode.SELLER_CUSTOMERS, params: {} };
+  if (path === '/marketplace/jobs') return { mode: AppMode.MARKETPLACE_JOBS, params: {} };
+  if (path === '/marketplace/jobs/new') return { mode: AppMode.CREATE_MARKETPLACE_JOB, params: {} };
+  if (path === '/marketplace/my-jobs') return { mode: AppMode.MY_JOB_POSTINGS, params: {} };
+  if (path === '/marketplace/applications') return { mode: AppMode.MY_JOB_APPLICATIONS, params: {} };
+  if (path === '/marketplace/employer') return { mode: AppMode.JOB_EMPLOYER, params: {} };
   if (path === '/notes') return { mode: AppMode.NOTES, params: {} };
   if (path === '/library') return { mode: AppMode.LIBRARY, params: {} };
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
@@ -146,6 +170,22 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return {
       mode: AppMode.MARKETPLACE_LISTING_DETAIL,
       params: { listingId: decodeURIComponent(listingMatch[1]) },
+    };
+  }
+
+  const employerJobMatch = path.match(/^\/marketplace\/employer\/jobs\/([^/]+)$/);
+  if (employerJobMatch) {
+    return {
+      mode: AppMode.JOB_EMPLOYER_PIPELINE,
+      params: { jobId: decodeURIComponent(employerJobMatch[1]) },
+    };
+  }
+
+  const jobMatch = path.match(/^\/marketplace\/jobs\/([^/]+)$/);
+  if (jobMatch && jobMatch[1] !== 'new') {
+    return {
+      mode: AppMode.MARKETPLACE_JOB_DETAIL,
+      params: { jobId: decodeURIComponent(jobMatch[1]) },
     };
   }
 
@@ -209,7 +249,9 @@ export const PUBLIC_PATH_PREFIXES = [
 export function isPublicMarketplacePath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (path === '/marketplace') return true;
+  if (path === '/marketplace/jobs') return true;
   if (/^\/marketplace\/listing\/[^/]+$/.test(path)) return true;
+  if (/^\/marketplace\/jobs\/[^/]+$/.test(path) && path !== '/marketplace/jobs/new') return true;
   if (/^\/marketplace\/seller\/[^/]+$/.test(path)) return true;
   return false;
 }

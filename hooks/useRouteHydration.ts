@@ -118,6 +118,20 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       ui.setSelectedSellerId(params.sellerId);
       return { mode: AppMode.SELLER_PROFILE };
 
+    case AppMode.MARKETPLACE_JOB_DETAIL:
+      if (!params.jobId) {
+        return { mode: AppMode.MARKETPLACE_JOBS, redirect: '/marketplace/jobs' };
+      }
+      ui.setSelectedJobId(params.jobId);
+      return { mode: AppMode.MARKETPLACE_JOB_DETAIL };
+
+    case AppMode.JOB_EMPLOYER_PIPELINE:
+      if (!params.jobId) {
+        return { mode: AppMode.JOB_EMPLOYER, redirect: '/marketplace/employer' };
+      }
+      ui.setSelectedJobId(params.jobId);
+      return { mode: AppMode.JOB_EMPLOYER_PIPELINE };
+
     case AppMode.NOTE_EDITOR: {
       if (!params.noteId) {
         return { mode: AppMode.NOTES, redirect: '/notes' };

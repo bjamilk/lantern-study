@@ -60,6 +60,7 @@ import apiKeysRoutes from './routes/apiKeys';
 import authRoutes, { initializeAuthRoutes } from './routes/auth';
 import storageRoutes, { initializeStorageRoutes } from './routes/storage';
 import jobsRoutes from './routes/jobs';
+import jobsBoardRoutes, { initializeJobsBoardRoutes } from './routes/jobsBoard';
 import budgetRoutes from './routes/budget';
 import contactRoutes from './routes/contact';
 import analyticsRoutes, { initializeAnalyticsRoutes } from './routes/analytics';
@@ -149,6 +150,7 @@ async function initializeServices() {
     initializeDashboardRoutes(supabaseService, cacheService);
     initializePreferencesRoutes(supabaseService, cacheService);
     initializeMarketplaceRoutes(supabaseService, cacheService);
+    initializeJobsBoardRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(supabaseService, cacheService);
     initializeOfflineBundlesRoutes(supabaseService, cacheService);
     initializeAdminRoutes(supabaseService, cacheService);
@@ -340,6 +342,7 @@ async function startServer() {
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
+    app.use('/api/v1/jobs-board', optionalAuthMiddleware, applyPublicRateLimits, jobsBoardRoutes);
     app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/contact', contactRoutes);
     app.use('/api/v1/analytics', analyticsRoutes);

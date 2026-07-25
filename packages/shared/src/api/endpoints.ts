@@ -2397,6 +2397,116 @@ export function createApiEndpoints(client: ApiClient) {
           slug: string;
         }>
       >(`/marketplace/campuses?country=${encodeURIComponent(country)}`),
+
+    // ========== JOBS BOARD API (/api/v1/jobs-board) ==========
+
+    fetchJobPostings: (filters: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      employmentType?: string;
+      campusId?: string;
+      companyOnly?: boolean;
+      sponsoredFirst?: boolean;
+    } = {}) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) params.append(key, String(value));
+      });
+      return apiRequestRaw<{
+        success: boolean;
+        data: unknown[];
+        pagination?: { page: number; limit: number; total: number };
+      }>(`/jobs-board/postings?${params.toString()}`);
+    },
+
+    fetchJobPosting: (id: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(`/jobs-board/postings/${encodeURIComponent(id)}`),
+
+    createJobPosting: (body: Record<string, unknown>) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/postings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+
+    updateJobPosting: (id: string, body: Record<string, unknown>) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/postings/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      ),
+
+    fetchMyJobPostings: () =>
+      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/my-postings'),
+
+    applyToJob: (
+      id: string,
+      body: { message?: string; answers?: Record<string, string>; resumeUrl?: string | null }
+    ) =>
+      apiRequestRaw<{
+        success: boolean;
+        data: unknown;
+        threadId?: string;
+        existing?: boolean;
+      }>(`/jobs-board/postings/${encodeURIComponent(id)}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+
+    trackJobExternalApply: (id: string) =>
+      apiRequestRaw<{ success: boolean; data: { url: string } }>(
+        `/jobs-board/postings/${encodeURIComponent(id)}/external-apply`,
+        { method: 'POST' }
+      ),
+
+    fetchMyJobApplications: () =>
+      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/my-applications'),
+
+    fetchJobApplicants: (postingId: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown[] }>(
+        `/jobs-board/postings/${encodeURIComponent(postingId)}/applications`
+      ),
+
+    updateJobApplicationStatus: (
+      applicationId: string,
+      body: { status: string; asApplicant?: boolean }
+    ) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/applications/${encodeURIComponent(applicationId)}/status`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      ),
+
+    reportJobPosting: (id: string, body: { reason: string; details?: string }) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/postings/${encodeURIComponent(id)}/reports`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      ),
+
+    createJobCompany: (body: Record<string, unknown>) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+
+    fetchMyJobCompanies: () =>
+      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/companies/mine'),
+
+    fetchJobTemplates: () =>
+      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/templates'),
   };
 }
 

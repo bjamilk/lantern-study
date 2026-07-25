@@ -24,7 +24,14 @@ export type AdminAuditAction =
   | 'ai_quota_reset'
   | 'user_delete'
   | 'order_dispute_release_seller'
-  | 'order_dispute_refund_buyer';
+  | 'order_dispute_refund_buyer'
+  | 'job_activate'
+  | 'job_suspend'
+  | 'job_status'
+  | 'job_remove'
+  | 'job_company_verification'
+  | 'job_school_approve'
+  | 'job_school_reject';
 
 export async function logAdminAction(
   supabaseService: SupabaseService,

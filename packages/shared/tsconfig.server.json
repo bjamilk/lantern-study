@@ -33,6 +33,7 @@
     "src/utils/chatMute.ts",
     "src/settings/**/*.ts",
     "src/marketplace/**/*.ts",
+    "src/jobs/**/*.ts",
     "src/analytics/**/*.ts",
     "src/cookieConsent.ts",
     "src/accountLifecycle.ts",

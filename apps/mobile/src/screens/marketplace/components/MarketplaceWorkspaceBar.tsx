@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type MarketplaceWorkspaceSection =
   | 'browse'
+  | 'jobs'
   | 'orders'
   | 'selling'
   | 'inquiries'
@@ -33,7 +34,8 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { id: 'browse', label: 'Browse', icon: 'search-outline', screen: 'MarketplaceHome' },
+  { id: 'browse', label: 'Goods', icon: 'search-outline', screen: 'MarketplaceHome' },
+  { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsHome' },
   { id: 'orders', label: 'Orders', icon: 'receipt-outline', screen: 'Orders' },
   { id: 'selling', label: 'Selling', icon: 'storefront-outline', screen: 'MyListings' },
   { id: 'inquiries', label: 'Offers', icon: 'chatbubble-ellipses-outline', screen: 'Inquiries' },

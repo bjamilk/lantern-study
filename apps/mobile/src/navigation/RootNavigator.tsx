@@ -130,6 +130,20 @@ import {
 
   SellerCustomersScreen,
 
+  JobsHomeScreen,
+
+  JobDetailScreen,
+
+  CreateJobScreen,
+
+  MyJobPostingsScreen,
+
+  MyJobApplicationsScreen,
+
+  JobEmployerScreen,
+
+  JobApplicantsScreen,
+
 } from '../screens/marketplace';
 
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen } from '../screens/settings';
@@ -339,6 +353,20 @@ function MarketNavigator() {
       <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 
       <MarketStack.Screen name="SellerCustomers" component={SellerCustomersScreen} />
+
+      <MarketStack.Screen name="JobsHome" component={JobsHomeScreen} />
+
+      <MarketStack.Screen name="JobDetail" component={JobDetailScreen} />
+
+      <MarketStack.Screen name="CreateJob" component={CreateJobScreen} />
+
+      <MarketStack.Screen name="MyJobPostings" component={MyJobPostingsScreen} />
+
+      <MarketStack.Screen name="MyJobApplications" component={MyJobApplicationsScreen} />
+
+      <MarketStack.Screen name="JobEmployer" component={JobEmployerScreen} />
+
+      <MarketStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
 
     </MarketStack.Navigator>
 

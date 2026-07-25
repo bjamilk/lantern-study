@@ -113,6 +113,12 @@
       "require": "./dist/marketplace/index.js",
       "default": "./src/marketplace/index.ts"
     },
+    "./jobs": {
+      "types": "./src/jobs/index.ts",
+      "import": "./src/jobs/index.ts",
+      "require": "./dist/jobs/index.js",
+      "default": "./src/jobs/index.ts"
+    },
     "./analytics": {
       "types": "./src/analytics/index.ts",
       "import": "./src/analytics/index.ts",

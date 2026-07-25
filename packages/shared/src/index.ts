@@ -26,6 +26,9 @@ export * from './linking';
 // Marketplace (location, compliance)
 export * from './marketplace';
 
+// Jobs board (campus employment — sibling of marketplace goods)
+export * from './jobs';
+
 // API client
 export * from './api';
 

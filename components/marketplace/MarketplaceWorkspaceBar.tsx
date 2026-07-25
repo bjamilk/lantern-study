@@ -95,7 +95,14 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'browse' ? 'page' : undefined}
         >
           <MagnifyingGlassIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span>Browse</span>
+          <span>Goods</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('MarketplaceJobs')}
+          className={navBtn(false)}
+        >
+          <span>Jobs</span>
         </button>
         <button
           type="button"

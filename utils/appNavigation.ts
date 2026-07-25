@@ -72,6 +72,9 @@ export function buildParamsFromState(mode: AppMode): AppRouteParams {
         : {};
     case AppMode.SELLER_PROFILE:
       return state.selectedSellerId ? { sellerId: state.selectedSellerId } : {};
+    case AppMode.MARKETPLACE_JOB_DETAIL:
+    case AppMode.JOB_EMPLOYER_PIPELINE:
+      return state.selectedJobId ? { jobId: state.selectedJobId } : {};
     case AppMode.NOTE_EDITOR:
       return state.selectedNote ? { noteId: state.selectedNote.id } : {};
     default:
@@ -95,6 +98,12 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
   }
   if (mode === AppMode.SELLER_PROFILE && params?.sellerId) {
     ui.setSelectedSellerId(params.sellerId);
+  }
+  if (
+    (mode === AppMode.MARKETPLACE_JOB_DETAIL || mode === AppMode.JOB_EMPLOYER_PIPELINE) &&
+    params?.jobId
+  ) {
+    ui.setSelectedJobId(params.jobId);
   }
 }
 

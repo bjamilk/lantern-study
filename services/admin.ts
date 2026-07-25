@@ -610,3 +610,68 @@ export async function fetchAdminAIQuota(userId: string) {
   }>(`/ai/quota/${userId}`);
   return response.data;
 }
+
+export async function fetchAdminJobPostings(params?: { status?: string; page?: number; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  const response = await adminRequest<{ success: boolean; data: any[]; pagination?: AdminPagination }>(
+    `/jobs/postings${query.toString() ? `?${query}` : ''}`
+  );
+  return { data: response.data || [], pagination: response.pagination };
+}
+
+export async function updateAdminJobPostingStatus(id: string, status: string) {
+  await adminRequest(`/jobs/postings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function removeAdminJobPosting(id: string) {
+  await adminRequest(`/jobs/postings/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchAdminJobCompanies(params?: { status?: string; page?: number; limit?: number }) {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  const response = await adminRequest<{ success: boolean; data: any[]; pagination?: AdminPagination }>(
+    `/jobs/companies${query.toString() ? `?${query}` : ''}`
+  );
+  return { data: response.data || [], pagination: response.pagination };
+}
+
+export async function setAdminJobCompanyVerification(
+  id: string,
+  status: 'verified' | 'rejected' | 'pending' | 'unverified',
+  note?: string
+) {
+  await adminRequest(`/jobs/companies/${id}/verification`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, note }),
+  });
+}
+
+export async function fetchAdminJobReports(status = 'pending') {
+  const response = await adminRequest<{ success: boolean; data: any[] }>(
+    `/jobs/reports?status=${encodeURIComponent(status)}`
+  );
+  return { data: response.data || [] };
+}
+
+export async function resolveAdminJobReport(id: string, status: 'resolved' | 'dismissed') {
+  await adminRequest(`/jobs/reports/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function schoolApproveAdminJobPosting(id: string, approve = true) {
+  await adminRequest(`/jobs/postings/${id}/school-approval`, {
+    method: 'PATCH',
+    body: JSON.stringify({ approve }),
+  });
+}

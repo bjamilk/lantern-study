@@ -39,6 +39,7 @@ import { AdminAudit } from './AdminAudit';
 import { AdminCommunications } from './AdminCommunications';
 import { AdminContentModeration } from './AdminContentModeration';
 import { AdminMarketplace, AdminMarketplaceView } from './AdminMarketplace';
+import { AdminJobs } from './AdminJobs';
 import { AdminOverview } from './AdminOverview';
 import { AdminReports } from './AdminReports';
 import { AdminUsers } from './AdminUsers';
@@ -620,6 +621,10 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           disputedOrdersTotal={disputedOrdersTotal}
           actionLoading={actionLoading}
         />
+      </TabPanel>
+
+      <TabPanel value="jobs">
+        <AdminJobs />
       </TabPanel>
 
       <TabPanel value="reports">

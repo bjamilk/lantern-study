@@ -63,6 +63,13 @@ export type MarketStackParamList = {
   Orders: undefined;
   OrderDetail: { orderId: string };
   SellerCustomers: undefined;
+  JobsHome: undefined;
+  JobDetail: { jobId: string };
+  CreateJob: undefined;
+  MyJobPostings: undefined;
+  MyJobApplications: undefined;
+  JobEmployer: undefined;
+  JobApplicants: { jobId: string };
 };
 
 export type BudgetStackParamList = {

@@ -5,6 +5,7 @@ export type AdminTab =
   | 'analytics'
   | 'users'
   | 'marketplace'
+  | 'jobs'
   | 'reports'
   | 'ai'
   | 'communications'
@@ -33,6 +34,7 @@ export const ADMIN_TABS: { id: AdminTab; label: string }[] = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'users', label: 'Users' },
   { id: 'marketplace', label: 'Marketplace' },
+  { id: 'jobs', label: 'Jobs' },
   { id: 'reports', label: 'Reports' },
   { id: 'ai', label: 'AI Ops' },
   { id: 'communications', label: 'Communications' },
@@ -45,6 +47,7 @@ export const emptyTabLoading = (): TabLoadingState => ({
   analytics: false,
   users: false,
   marketplace: false,
+  jobs: false,
   reports: false,
   ai: false,
   communications: false,

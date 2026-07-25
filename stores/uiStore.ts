@@ -134,6 +134,8 @@ interface UIState {
   setEditingMarketplaceListing: (listing: any) => void;
   selectedSellerId: string | null;
   setSelectedSellerId: (id: string | null) => void;
+  selectedJobId: string | null;
+  setSelectedJobId: (id: string | null) => void;
   
   // Online Status
   isOnline: boolean;
@@ -297,6 +299,8 @@ export const useUIStore = create<UIState>()(
       setEditingMarketplaceListing: (listing) => set({ editingMarketplaceListing: listing }),
       selectedSellerId: null,
       setSelectedSellerId: (id) => set({ selectedSellerId: id }),
+      selectedJobId: null,
+      setSelectedJobId: (id) => set({ selectedJobId: id }),
       
       // Online Status
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,

@@ -1249,4 +1249,146 @@ router.get('/ai/quota/:userId', async (req: any, res: any) => {
   }
 });
 
+// ─── Jobs board admin ────────────────────────────────────────────────────────
+
+router.get('/jobs/postings', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || '';
+    const result = await getJobsBoardService(supabaseService).adminListPostings(page, limit, status || undefined);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/jobs/postings/:id', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const { status } = req.body as { status: string };
+    const allowed = ['active', 'suspended_by_admin', 'removed_by_admin', 'closed', 'paused'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ success: false, error: `status must be one of ${allowed.join(', ')}` });
+    }
+    const posting = await getJobsBoardService(supabaseService).updatePosting(
+      req.params.id,
+      req.user.id,
+      { status: status as 'active' | 'suspended_by_admin' | 'removed_by_admin' | 'closed' | 'paused' },
+      { asAdmin: true }
+    );
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: status === 'active' ? 'job_activate' : status === 'suspended_by_admin' ? 'job_suspend' : 'job_status',
+      targetType: 'job_posting',
+      targetId: req.params.id,
+    });
+    res.json({ success: true, data: posting });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.delete('/jobs/postings/:id', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    await getJobsBoardService(supabaseService).updatePosting(
+      req.params.id,
+      req.user.id,
+      { status: 'removed_by_admin' },
+      { asAdmin: true }
+    );
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'job_remove',
+      targetType: 'job_posting',
+      targetId: req.params.id,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/jobs/companies', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
+    const status = (req.query.status as string) || '';
+    const result = await getJobsBoardService(supabaseService).adminListCompanies(page, limit, status || undefined);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/jobs/companies/:id/verification', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const { status, note } = req.body as { status: 'verified' | 'rejected' | 'pending' | 'unverified'; note?: string };
+    if (!['verified', 'rejected', 'pending', 'unverified'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid verification status' });
+    }
+    const company = await getJobsBoardService(supabaseService).setCompanyVerification(
+      req.params.id,
+      status,
+      note
+    );
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'job_company_verification',
+      targetType: 'job_company',
+      targetId: req.params.id,
+      metadata: { status },
+    });
+    res.json({ success: true, data: company });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.get('/jobs/reports', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const status = (req.query.status as string) || 'pending';
+    const data = await getJobsBoardService(supabaseService).adminListReports(status);
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/jobs/reports/:id', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const { status } = req.body as { status: 'resolved' | 'dismissed' };
+    if (!['resolved', 'dismissed'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'status must be resolved or dismissed' });
+    }
+    await getJobsBoardService(supabaseService).resolveReport(req.params.id, status);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
+router.patch('/jobs/postings/:id/school-approval', async (req: any, res: any) => {
+  try {
+    const { getJobsBoardService } = await import('../services/jobsBoard');
+    const approve = req.body?.approve !== false;
+    const posting = await getJobsBoardService(supabaseService).schoolApprovePosting(req.params.id, approve);
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: approve ? 'job_school_approve' : 'job_school_reject',
+      targetType: 'job_posting',
+      targetId: req.params.id,
+    });
+    res.json({ success: true, data: posting });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  }
+});
+
 export default router;
