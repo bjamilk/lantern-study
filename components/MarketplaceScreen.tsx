@@ -449,7 +449,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   };
 
   const categoryChipClass = (isSelected: boolean) =>
-    `lg:snap-start lg:flex-shrink-0 lg:min-w-[max-content] min-h-[30px] sm:min-h-[34px] px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-colors duration-150 flex items-center justify-center lg:justify-start gap-1 touch-manipulation ${
+    `shrink-0 min-w-0 md:min-w-[max-content] min-h-[44px] sm:min-h-[34px] px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-medium transition-colors duration-150 flex items-center justify-center md:justify-start gap-1 touch-manipulation ${
       isSelected
         ? 'bg-lantern-primary text-white shadow-sm'
         : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/50'
@@ -458,11 +458,11 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const activeCategoryLabel = selectedCategory ? getCategoryName(selectedCategory) : 'All categories';
 
   const renderCategoryChips = (categories: typeof academicCategories) => (
-    <div className={`px-3 sm:px-4 md:px-6 md:py-2 ${showCategoryPanel ? 'py-1' : 'py-0'}`}>
+    <div className={`px-3 sm:px-4 md:px-6 md:py-2 min-w-0 max-w-full ${showCategoryPanel ? 'py-1' : 'py-0'}`}>
       <div
         role="radiogroup"
         aria-label="Marketplace category"
-        className={`gap-1.5 lg:gap-2 lg:overflow-x-auto lg:pb-1 lg:scrollbar-none lg:snap-x lg:snap-mandatory touch-pan-x ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
+        className={`gap-1.5 md:gap-2 overflow-x-auto pb-1 scrollbar-none touch-pan-x min-w-0 max-w-full ${showCategoryPanel ? 'grid grid-cols-3 sm:grid-cols-4' : 'hidden'} md:flex md:items-stretch`}
       >
         <button
           type="button"
@@ -486,7 +486,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               className={categoryChipClass(isSelected)}
             >
               <IconComponent className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" aria-hidden="true" />
-              <span className="text-center lg:text-left leading-tight truncate">{category.name}</span>
+              <span className="text-center md:text-left leading-tight truncate">{category.name}</span>
             </button>
           );
         })}

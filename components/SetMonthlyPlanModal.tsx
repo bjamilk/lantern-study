@@ -139,16 +139,16 @@ const SetMonthlyPlanModal: React.FC<SetMonthlyPlanModalProps> = ({ isOpen, onClo
         {availableCategories.length > 0 && (
           <div>
             {showAdd ? (
-              <div className="grid grid-cols-4 gap-2 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-2">
                 {availableCategories.map(cat => (
                   <button
                     key={cat.id}
                     type="button"
                     onClick={() => handleAdd(cat.id)}
-                    className="flex flex-col items-center p-2 rounded-xl text-xs font-medium bg-lantern-surface-secondary text-lantern-text-muted hover:bg-lantern-primary/10 hover:text-lantern-primary transition-colors min-h-[44px]"
+                    className="flex flex-col items-center p-2 rounded-xl text-xs font-medium bg-lantern-surface-secondary text-lantern-text-muted hover:bg-lantern-primary/10 hover:text-lantern-primary transition-colors min-h-[44px] min-w-0"
                   >
                     <span className="text-lg mb-0.5" aria-hidden>{cat.icon}</span>
-                    <span className="line-clamp-1 text-center leading-tight" style={{ fontSize: '9px' }}>{cat.label.split('/')[0].split('&')[0].trim()}</span>
+                    <span className="line-clamp-2 text-center leading-tight text-[11px] sm:text-xs">{cat.label.split('/')[0].split('&')[0].trim()}</span>
                   </button>
                 ))}
               </div>

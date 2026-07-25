@@ -75,21 +75,21 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ isOpen, onClose, onSu
         </div>
         <div>
           <p className="block text-sm font-medium text-lantern-text mb-1">Category</p>
-          <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto" role="group" aria-label="Expense category">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto" role="group" aria-label="Expense category">
             {STUDENT_EXPENSE_CATEGORIES.map(cat => (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setCategory(cat.id)}
                 aria-pressed={category === cat.id}
-                className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium transition-all min-h-[44px] ${
+                className={`flex flex-col items-center p-2 rounded-xl text-xs font-medium transition-all min-h-[44px] min-w-0 ${
                   category === cat.id
                     ? 'bg-lantern-error/10 ring-2 ring-lantern-error text-lantern-error'
                     : 'bg-lantern-background-secondary text-lantern-text-muted hover:bg-lantern-surface-secondary'
                 }`}
               >
                 <span className="text-lg mb-0.5" aria-hidden>{cat.icon}</span>
-                <span className="line-clamp-1 text-center leading-tight" style={{ fontSize: '10px' }}>{cat.label.split('/')[0].split('&')[0].trim()}</span>
+                <span className="line-clamp-2 text-center leading-tight text-[11px] sm:text-xs">{cat.label.split('/')[0].split('&')[0].trim()}</span>
               </button>
             ))}
           </div>

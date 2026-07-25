@@ -36,7 +36,7 @@ export interface MarketplaceWorkspaceBarProps {
 }
 
 const navBtn = (active: boolean) =>
-  `inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors touch-manipulation min-h-[36px] ${
+  `inline-flex items-center gap-1.5 shrink-0 h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-colors touch-manipulation ${
     active
       ? 'bg-lantern-primary text-white shadow-sm'
       : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/50 hover:text-lantern-text'
@@ -73,7 +73,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
         <button
           type="button"
           onClick={() => onSignInRequired?.()}
-          className="h-8 px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
+          className="h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors"
         >
           Sign in
         </button>
@@ -87,7 +87,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
       role="navigation"
       aria-label="Marketplace workspace"
     >
-      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none">
+      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-x-auto overscroll-x-contain scrollbar-none touch-pan-x">
         <button
           type="button"
           onClick={() => onNavigate('Marketplace')}
@@ -95,7 +95,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'browse' ? 'page' : undefined}
         >
           <MagnifyingGlassIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span className="truncate">Browse</span>
+          <span>Browse</span>
         </button>
         <button
           type="button"
@@ -104,7 +104,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'orders' ? 'page' : undefined}
         >
           <ReceiptPercentIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span className="truncate">Orders</span>
+          <span>Orders</span>
         </button>
         <button
           type="button"
@@ -113,7 +113,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'selling' ? 'page' : undefined}
         >
           <ShoppingBagIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span className="truncate">Selling</span>
+          <span>Selling</span>
         </button>
         <button
           type="button"
@@ -122,8 +122,8 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'inquiries' ? 'page' : undefined}
         >
           <ChatBubbleLeftIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span className="truncate hidden sm:inline">Inquiries</span>
-          <span className="truncate sm:hidden">Offers</span>
+          <span className="hidden sm:inline">Inquiries</span>
+          <span className="sm:hidden">Offers</span>
         </button>
         {showFavorites ? (
           <button
@@ -161,7 +161,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           <button
             type="button"
             onClick={onSell}
-            className="h-8 px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors inline-flex items-center gap-1"
+            className="h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors inline-flex items-center gap-1"
             aria-label={primaryLabel}
           >
             <PlusIcon className="w-3.5 h-3.5" aria-hidden />

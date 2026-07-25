@@ -1055,7 +1055,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             const isBookmarked = !!answerRecord?.isBookmarked;
             const isMarkedQ = markedQuestions.includes(q.id);
 
-            let buttonClasses = "min-w-[28px] sm:min-w-[36px] md:min-w-[40px] h-7 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-lantern-surface";
+            let buttonClasses = "min-w-[44px] sm:min-w-[36px] md:min-w-[40px] min-h-[44px] h-11 sm:h-9 md:h-10 px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs sm:text-xs font-medium rounded-md flex items-center justify-center relative transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-lantern-surface touch-manipulation";
             let title = `Go to Question ${q.questionNumber}`;
             if (isBookmarked) title += " (Bookmarked)";
             if (isMarkedQ) title += " (Flagged)";

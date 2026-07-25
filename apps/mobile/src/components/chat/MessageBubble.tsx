@@ -194,7 +194,7 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
   const timeColor = isOwn ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
 
   return (
-    <View className="flex-row items-center gap-2.5 py-1 min-w-[200px]" style={{ maxWidth: 260 }}>
+    <View className="flex-row items-center gap-2.5 py-1 min-w-0 w-full" style={{ maxWidth: 260 }}>
       <Pressable
         onPress={() => void toggle()}
         accessibilityRole="button"

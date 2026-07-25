@@ -45,7 +45,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
   return (
     <article
       style={cardRenderStyle}
-      className={`min-w-0 rounded-lantern-xl shadow-lantern border overflow-hidden hover:shadow-lantern-md hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 group focus-within:ring-2 focus-within:ring-lantern-primary ${
+      className={`min-w-0 rounded-lantern-xl shadow-lantern border overflow-hidden hover:shadow-lantern-md md:hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 group focus-within:ring-2 focus-within:ring-lantern-primary ${
         isOwner
           ? 'bg-lantern-primary-background border-lantern-primary/30'
           : 'bg-lantern-surface border-lantern-border hover:border-lantern-primary/30'

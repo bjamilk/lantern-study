@@ -1,9 +1,50 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = process.env.AUDIT_BASE_URL || 'http://localhost:5173';
-const WIDTHS = [320, 390, 768, 1280, 1920] as const;
+const WIDTHS = [320, 360, 390, 414, 768, 820, 1024, 1280, 1440, 1920] as const;
 
 const PUBLIC_ROUTES = ['/', '/login', '/signup', '/marketplace', '/privacy'];
+
+async function assertMarketplaceCategoriesReachable(page: import('@playwright/test').Page) {
+  const group = page.getByRole('radiogroup', { name: /marketplace category/i });
+  if (!(await group.isVisible().catch(() => false))) return;
+  const metrics = await group.evaluate((el) => {
+    const chips = [...el.querySelectorAll('button')];
+    const outsides = chips.filter((c) => {
+      const r = c.getBoundingClientRect();
+      return r.width > 0 && r.right > window.innerWidth + 1;
+    }).length;
+    return {
+      overflowX: getComputedStyle(el).overflowX,
+      canScroll: el.scrollWidth > el.clientWidth + 2,
+      outsides,
+    };
+  });
+  // Chips may extend past the viewport only when the strip itself scrolls.
+  if (metrics.outsides > 0) {
+    expect(metrics.canScroll, 'category strip must scroll when chips overflow').toBe(true);
+    expect(['auto', 'scroll']).toContain(metrics.overflowX);
+    await group.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+    });
+    await expect
+      .poll(async () =>
+        group.evaluate((el) => {
+          const last = [...el.querySelectorAll('button')].at(-1);
+          if (!last) return false;
+          const chip = last.getBoundingClientRect();
+          const port = el.getBoundingClientRect();
+          return (
+            el.scrollLeft > 0 &&
+            chip.width > 0 &&
+            chip.right <= port.right + 2 &&
+            chip.left >= port.left - 2
+          );
+        })
+      )
+      .toBe(true);
+  }
+}
 
 async function assertNoHorizontalOverflow(page: import('@playwright/test').Page) {
   const metrics = await page.evaluate(() => {
@@ -130,19 +171,39 @@ test.describe('Responsive smoke — auth + shell (credentials)', () => {
     }
 
     // Compact marketplace workspace: listings dominate viewport; seller inventory landmark present
-    for (const width of [390, 768, 1280] as const) {
+    for (const width of [390, 768, 820, 1280] as const) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`${BASE}/marketplace`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(600);
       await expect(page.getByRole('navigation', { name: /marketplace workspace/i })).toBeVisible();
       await expect(page.getByTestId('marketplace-listings').first()).toBeVisible();
       await assertNoHorizontalOverflow(page);
+      await assertMarketplaceCategoriesReachable(page);
 
       await page.goto(`${BASE}/marketplace/my-listings`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(600);
       await expect(page.getByRole('navigation', { name: /marketplace workspace/i })).toBeVisible();
       await expect(page.getByTestId('seller-inventory')).toBeVisible();
       await assertNoHorizontalOverflow(page);
+    }
+
+    // Budget category pickers stay readable on narrow phones
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.goto(`${BASE}/budget`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(700);
+    const addExpense = page.getByRole('button', { name: /add expense/i }).first();
+    if (await addExpense.isVisible().catch(() => false)) {
+      await addExpense.click();
+      await page.waitForTimeout(400);
+      const fontSizes = await page.locator('[role="group"][aria-label="Expense category"] button span').evaluateAll((nodes) =>
+        nodes
+          .map((n) => parseFloat(getComputedStyle(n).fontSize))
+          .filter((n) => Number.isFinite(n) && n > 0)
+      );
+      expect(fontSizes.length).toBeGreaterThan(0);
+      expect(Math.min(...fontSizes)).toBeGreaterThanOrEqual(11);
+      await assertNoHorizontalOverflow(page);
+      await page.keyboard.press('Escape');
     }
 
     // Short-height seller dashboard should not force horizontal overflow
@@ -211,4 +272,50 @@ test.describe('Responsive — cookie banner height', () => {
       await assertNoHorizontalOverflow(page);
     }
   });
+});
+
+test.describe('Responsive — marketplace category strip (guest)', () => {
+  for (const width of [768, 820, 1024] as const) {
+    test(`category chips reachable @ ${width}px`, async ({ page }) => {
+      await page.addInitScript(() => {
+        try {
+          localStorage.setItem('lantern_cookie_notice_v1', 'dismissed');
+          localStorage.setItem(
+            'lantern_cookie_prefs_v2',
+            JSON.stringify({
+              necessary: true,
+              functional: false,
+              analytics: false,
+              advertising: false,
+              updatedAt: new Date().toISOString(),
+            })
+          );
+        } catch {
+          /* ignore */
+        }
+      });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${BASE}/marketplace`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(800);
+      await assertNoHorizontalOverflow(page);
+      await assertMarketplaceCategoriesReachable(page);
+    });
+  }
+});
+
+test.describe('Responsive — landscape / short height public', () => {
+  for (const [width, height] of [
+    [844, 390],
+    [1024, 500],
+    [320, 568],
+  ] as const) {
+    test(`public shell ${width}x${height}`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      for (const route of ['/', '/login', '/marketplace'] as const) {
+        await page.goto(`${BASE}${route}`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(350);
+        await assertNoHorizontalOverflow(page);
+      }
+    });
+  }
 });

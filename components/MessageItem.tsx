@@ -188,11 +188,11 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   const timeClass = onPrimary ? 'text-white/80' : 'text-lantern-text-secondary';
 
   return (
-    <div className="flex items-center gap-2.5 min-w-[200px] w-full max-w-[260px]">
+    <div className="flex items-center gap-2.5 min-w-0 w-full max-w-[min(260px,100%)]">
       <button
         type="button"
         onClick={togglePlayback}
-        className={`shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full ${
+        className={`shrink-0 inline-flex items-center justify-center min-w-[44px] min-h-[44px] w-11 h-11 rounded-full ${
           onPrimary ? 'bg-white/20 text-white' : 'bg-lantern-primary-background text-lantern-primary'
         }`}
         aria-label={playing ? 'Pause voice note' : 'Play voice note'}
