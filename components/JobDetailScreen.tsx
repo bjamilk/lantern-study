@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
+import { BookmarkIcon } from "@heroicons/react/24/outline";
+import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOBS_COMPANY_DISCLAIMER,
@@ -7,14 +9,15 @@ import {
   formatJobLocation,
   formatJobPostedDate,
   type JobPosting,
-} from '@lantern/shared';
+} from "@lantern/shared";
 import {
   applyToJob,
   fetchJobPosting,
   reportJobPosting,
+  setJobPostingSaved,
   trackJobExternalApply,
-} from '../services/jobsBoard';
-import { JobsWorkspaceNav } from './jobs/JobsWorkspaceNav';
+} from "../services/jobsBoard";
+import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 interface Props {
   jobId: string;
@@ -22,19 +25,26 @@ interface Props {
   onOpenDm?: (threadId: string) => void;
 }
 
-export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) {
+export default function JobDetailScreen({
+  jobId,
+  onNavigate,
+  onOpenDm,
+}: Props) {
   const [job, setJob] = useState<JobPosting | null>(null);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [resumeUrl, setResumeUrl] = useState('');
+  const [resumeUrl, setResumeUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [savingSaved, setSavingSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchJobPosting(jobId)
       .then((res) => setJob(res.data))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load job'));
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Failed to load job"),
+      );
   }, [jobId]);
 
   const handleApply = async () => {
@@ -48,12 +58,32 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
         answers,
         resumeUrl: resumeUrl.trim() || null,
       });
-      setSuccess(res.existing ? 'You already applied — opening chat.' : 'Application sent.');
+      setSuccess(
+        res.existing
+          ? "You already applied — opening chat."
+          : "Application sent.",
+      );
       if (res.threadId && onOpenDm) onOpenDm(res.threadId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Apply failed');
+      setError(e instanceof Error ? e.message : "Apply failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleToggleSaved = async () => {
+    if (!job) return;
+    const nextSaved = !job.isSaved;
+    setSavingSaved(true);
+    setError(null);
+    setJob({ ...job, isSaved: nextSaved });
+    try {
+      await setJobPostingSaved(job.id, nextSaved);
+    } catch (e) {
+      setJob({ ...job, isSaved: job.isSaved });
+      setError(e instanceof Error ? e.message : "Could not update saved jobs");
+    } finally {
+      setSavingSaved(false);
     }
   };
 
@@ -63,9 +93,11 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
     setError(null);
     try {
       const res = await trackJobExternalApply(job.id);
-      window.open(res.data.url, '_blank', 'noopener,noreferrer');
+      window.open(res.data.url, "_blank", "noopener,noreferrer");
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not open external apply');
+      setError(
+        e instanceof Error ? e.message : "Could not open external apply",
+      );
     } finally {
       setBusy(false);
     }
@@ -82,25 +114,35 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
   if (!job) {
     return (
       <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overscroll-contain bg-lantern-background">
-      <div className="max-w-3xl mx-auto p-4 pb-20 md:pb-6">
-        <p className="text-red-600 text-sm">{error}</p>
-        <button type="button" className="mt-3 text-sm text-lantern-primary" onClick={() => onNavigate('MarketplaceJobs')}>
-          Back to jobs
-        </button>
-      </div>
+        <div className="max-w-3xl mx-auto p-4 pb-20 md:pb-6">
+          <p className="text-red-600 text-sm">{error}</p>
+          <button
+            type="button"
+            className="mt-3 text-sm text-lantern-primary"
+            onClick={() => onNavigate("MarketplaceJobs")}
+          >
+            Back to jobs
+          </button>
+        </div>
       </div>
     );
   }
 
-  const showInApp = job.applyMode === 'in_app' || job.applyMode === 'both';
-  const showExternal = (job.applyMode === 'external' || job.applyMode === 'both') && !!job.externalUrl;
-  const employer = job.company?.displayName || job.poster?.name || job.poster?.username || 'Independent poster';
+  const showInApp = job.applyMode === "in_app" || job.applyMode === "both";
+  const showExternal =
+    (job.applyMode === "external" || job.applyMode === "both") &&
+    !!job.externalUrl;
+  const employer =
+    job.company?.displayName ||
+    job.poster?.name ||
+    job.poster?.username ||
+    "Independent poster";
   const duration = formatJobEngagementDuration(job.engagementDuration);
   const deadline = job.deadline
     ? new Date(job.deadline).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       })
     : null;
 
@@ -112,13 +154,35 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
         <button
           type="button"
           className="text-sm font-medium text-lantern-primary hover:underline"
-          onClick={() => onNavigate('MarketplaceJobs')}
+          onClick={() => onNavigate("MarketplaceJobs")}
         >
           ← Back to job results
         </button>
 
         <header className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-7">
           <div className="flex items-start gap-4">
+            <div className="order-last ml-auto shrink-0">
+              <button
+                type="button"
+                disabled={savingSaved}
+                aria-pressed={!!job.isSaved}
+                onClick={() => void handleToggleSaved()}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${
+                  job.isSaved
+                    ? "border-lantern-primary bg-lantern-primary/10 text-lantern-primary"
+                    : "border-lantern-border text-lantern-text hover:border-lantern-primary/40"
+                }`}
+              >
+                {job.isSaved ? (
+                  <BookmarkSolidIcon className="h-4 w-4" aria-hidden />
+                ) : (
+                  <BookmarkIcon className="h-4 w-4" aria-hidden />
+                )}
+                <span className="hidden sm:inline">
+                  {job.isSaved ? "Saved" : "Save job"}
+                </span>
+              </button>
+            </div>
             {job.company?.logoUrl ? (
               <img
                 src={job.company.logoUrl}
@@ -140,7 +204,7 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                     Featured
                   </span>
                 ) : null}
-                {job.company?.verificationStatus === 'verified' ? (
+                {job.company?.verificationStatus === "verified" ? (
                   <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
                     Verified company
                   </span>
@@ -149,9 +213,12 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-lantern-text sm:text-3xl">
                 {job.title}
               </h1>
-              <p className="mt-1 text-sm font-medium text-lantern-text-secondary">{employer}</p>
+              <p className="mt-1 text-sm font-medium text-lantern-text-secondary">
+                {employer}
+              </p>
               <p className="mt-2 text-sm text-lantern-text-tertiary">
-                {formatJobLocation(job)} · {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]} ·{' '}
+                {formatJobLocation(job)} ·{" "}
+                {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]} ·{" "}
                 {formatJobPostedDate(job.createdAt)}
               </p>
             </div>
@@ -161,7 +228,9 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <main className="space-y-4">
             <section className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
-              <h2 className="text-lg font-semibold text-lantern-text">Job overview</h2>
+              <h2 className="text-lg font-semibold text-lantern-text">
+                Job overview
+              </h2>
               <dl className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg bg-lantern-background p-3">
                   <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
@@ -189,31 +258,37 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                 </div>
                 <div className="rounded-lg bg-lantern-background p-3">
                   <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
-                    {deadline ? 'Application deadline' : 'Duration'}
+                    {deadline ? "Application deadline" : "Duration"}
                   </dt>
                   <dd className="mt-1 text-sm font-semibold text-lantern-text">
-                    {deadline || duration || 'Ongoing'}
+                    {deadline || duration || "Ongoing"}
                   </dd>
                 </div>
               </dl>
             </section>
 
             <article className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
-              <h2 className="text-lg font-semibold text-lantern-text">About this role</h2>
+              <h2 className="text-lg font-semibold text-lantern-text">
+                About this role
+              </h2>
               <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-lantern-text">
                 {job.description}
               </p>
             </article>
 
             <section className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
-              <h2 className="text-lg font-semibold text-lantern-text">About the poster</h2>
-              <p className="mt-2 text-sm font-semibold text-lantern-text">{employer}</p>
+              <h2 className="text-lg font-semibold text-lantern-text">
+                About the poster
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-lantern-text">
+                {employer}
+              </p>
               <p className="mt-1 text-sm text-lantern-text-secondary">
                 {job.company
-                  ? job.company.verificationStatus === 'verified'
-                    ? 'This company has completed Lantern’s company verification.'
-                    : 'This company has not completed Lantern’s company verification.'
-                  : 'This role was posted by an individual or organization without a company profile.'}
+                  ? job.company.verificationStatus === "verified"
+                    ? "This company has completed Lantern’s company verification."
+                    : "This company has not completed Lantern’s company verification."
+                  : "This role was posted by an individual or organization without a company profile."}
               </p>
               {job.company?.website ? (
                 <a
@@ -236,8 +311,8 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
               type="button"
               className="text-xs text-lantern-text-tertiary underline"
               onClick={() =>
-                void reportJobPosting(job.id, { reason: 'scam' }).then(() =>
-                  setSuccess('Report submitted. Thanks for flagging this.')
+                void reportJobPosting(job.id, { reason: "scam" }).then(() =>
+                  setSuccess("Report submitted. Thanks for flagging this."),
                 )
               }
             >
@@ -247,12 +322,12 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
 
           <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">
             <h2 className="text-lg font-semibold text-lantern-text">
-              {showInApp ? 'Apply for this job' : 'Continue your application'}
+              {showInApp ? "Apply for this job" : "Continue your application"}
             </h2>
             <p className="mt-1 text-sm text-lantern-text-secondary">
               {showInApp
-                ? 'Send your details directly to the poster.'
-                : 'This employer accepts applications on an external site.'}
+                ? "Send your details directly to the poster."
+                : "This employer accepts applications on an external site."}
             </p>
 
             {showInApp ? (
@@ -267,13 +342,13 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                   <label key={question.id} className="block text-sm">
                     <span className="font-medium text-lantern-text">
                       {question.prompt}
-                      {question.required ? ' *' : ''}
+                      {question.required ? " *" : ""}
                     </span>
-                    {question.questionType === 'single_choice' ? (
+                    {question.questionType === "single_choice" ? (
                       <select
                         required={question.required}
                         className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                        value={answers[question.id] || ''}
+                        value={answers[question.id] || ""}
                         onChange={(event) =>
                           setAnswers((current) => ({
                             ...current,
@@ -292,7 +367,7 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                       <input
                         required={question.required}
                         className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                        value={answers[question.id] || ''}
+                        value={answers[question.id] || ""}
                         onChange={(event) =>
                           setAnswers((current) => ({
                             ...current,
@@ -304,8 +379,12 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                   </label>
                 ))}
                 <label className="block text-sm">
-                  <span className="font-medium text-lantern-text">Message to the poster</span>
-                  <span className="ml-1 text-lantern-text-tertiary">(optional)</span>
+                  <span className="font-medium text-lantern-text">
+                    Message to the poster
+                  </span>
+                  <span className="ml-1 text-lantern-text-tertiary">
+                    (optional)
+                  </span>
                   <textarea
                     className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
                     rows={4}
@@ -316,8 +395,12 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                 </label>
                 {job.companyId ? (
                   <label className="block text-sm">
-                    <span className="font-medium text-lantern-text">Resume URL</span>
-                    <span className="ml-1 text-lantern-text-tertiary">(optional)</span>
+                    <span className="font-medium text-lantern-text">
+                      Resume URL
+                    </span>
+                    <span className="ml-1 text-lantern-text-tertiary">
+                      (optional)
+                    </span>
                     <input
                       type="url"
                       className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
@@ -332,13 +415,15 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
                   disabled={busy}
                   className="w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {busy ? 'Submitting…' : 'Submit application'}
+                  {busy ? "Submitting…" : "Submit application"}
                 </button>
               </form>
             ) : null}
 
             {showExternal ? (
-              <div className={`${showInApp ? 'mt-4 border-t border-lantern-border pt-4' : 'mt-5'}`}>
+              <div
+                className={`${showInApp ? "mt-4 border-t border-lantern-border pt-4" : "mt-5"}`}
+              >
                 <button
                   type="button"
                   disabled={busy}
@@ -351,15 +436,21 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
             ) : null}
 
             {error ? (
-              <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              <p
+                role="alert"
+                className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+              >
                 {error}
               </p>
             ) : null}
             {success ? (
-              <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>
+              <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+                {success}
+              </p>
             ) : null}
             <p className="mt-4 text-xs leading-5 text-lantern-text-tertiary">
-              Never pay a fee to apply. Do not send BVN, NIN, passwords, or banking details.
+              Never pay a fee to apply. Do not send BVN, NIN, passwords, or
+              banking details.
             </p>
           </aside>
         </div>

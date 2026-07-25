@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from "react";
+import { BookmarkIcon } from "@heroicons/react/24/outline";
+import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
@@ -8,9 +10,13 @@ import {
   formatJobLocation,
   formatJobPostedDate,
   type JobPosting,
-} from '@lantern/shared';
-import { fetchJobPostings } from '../services/jobsBoard';
-import { JobsWorkspaceNav } from './jobs/JobsWorkspaceNav';
+} from "@lantern/shared";
+import {
+  fetchJobPostings,
+  fetchSavedJobPostings,
+  setJobPostingSaved,
+} from "../services/jobsBoard";
+import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 interface Props {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -19,30 +25,35 @@ interface Props {
 interface PortalFilters {
   search: string;
   employmentType: string;
-  location: '' | 'remote' | 'onsite';
-  compensationKind: '' | 'paid' | 'discuss' | 'unpaid';
+  location: "" | "remote" | "onsite";
+  compensationKind: "" | "paid" | "discuss" | "unpaid";
   companyOnly: boolean;
-  sort: 'newest' | 'closing';
+  sort: "newest" | "closing";
 }
 
 const EMPTY_FILTERS: PortalFilters = {
-  search: '',
-  employmentType: '',
-  location: '',
-  compensationKind: '',
+  search: "",
+  employmentType: "",
+  location: "",
+  compensationKind: "",
   companyOnly: false,
-  sort: 'newest',
+  sort: "newest",
 };
 
 function formatDeadline(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `Apply by ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  return `Apply by ${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
 function companyLabel(job: JobPosting) {
-  return job.company?.displayName || job.poster?.name || job.poster?.username || 'Independent poster';
+  return (
+    job.company?.displayName ||
+    job.poster?.name ||
+    job.poster?.username ||
+    "Independent poster"
+  );
 }
 
 export default function JobsBoardScreen({ onNavigate }: Props) {
@@ -50,24 +61,33 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<PortalFilters>(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<PortalFilters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] =
+    useState<PortalFilters>(EMPTY_FILTERS);
+  const [view, setView] = useState<"browse" | "saved">("browse");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const limit = 12;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      if (view === "saved") {
+        const res = await fetchSavedJobPostings();
+        setJobs(res.data || []);
+        setTotal((res.data || []).length);
+        return;
+      }
       const res = await fetchJobPostings({
         page,
         limit,
         search: appliedFilters.search.trim() || undefined,
         employmentType: appliedFilters.employmentType || undefined,
         remote:
-          appliedFilters.location === 'remote'
+          appliedFilters.location === "remote"
             ? true
-            : appliedFilters.location === 'onsite'
+            : appliedFilters.location === "onsite"
               ? false
               : undefined,
         compensationKind: appliedFilters.compensationKind || undefined,
@@ -77,11 +97,11 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
       setJobs(res.data || []);
       setTotal(res.pagination?.total ?? 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load jobs');
+      setError(e instanceof Error ? e.message : "Failed to load jobs");
     } finally {
       setLoading(false);
     }
-  }, [appliedFilters, page]);
+  }, [appliedFilters, page, view]);
 
   useEffect(() => {
     void load();
@@ -99,7 +119,36 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
     setPage(1);
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const toggleSaved = async (job: JobPosting) => {
+    const nextSaved = !job.isSaved;
+    setSavingId(job.id);
+    setError(null);
+    // Reflect the change immediately, then reconcile if the request fails.
+    setJobs((current) =>
+      current.map((item) =>
+        item.id === job.id ? { ...item, isSaved: nextSaved } : item,
+      ),
+    );
+    try {
+      await setJobPostingSaved(job.id, nextSaved);
+      if (view === "saved" && !nextSaved) {
+        setJobs((current) => current.filter((item) => item.id !== job.id));
+        setTotal((current) => Math.max(0, current - 1));
+      }
+    } catch (e) {
+      setJobs((current) =>
+        current.map((item) =>
+          item.id === job.id ? { ...item, isSaved: job.isSaved } : item,
+        ),
+      );
+      setError(e instanceof Error ? e.message : "Could not update saved jobs");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const totalPages =
+    view === "saved" ? 1 : Math.max(1, Math.ceil(total / limit));
   const hasFilters =
     !!appliedFilters.search ||
     !!appliedFilters.employmentType ||
@@ -113,7 +162,7 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
         <JobsWorkspaceNav
           active="jobs"
           onNavigate={onNavigate}
-          onPostJob={() => onNavigate('CreateMarketplaceJob')}
+          onPostJob={() => onNavigate("CreateMarketplaceJob")}
         />
 
         <section className="overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-sm">
@@ -125,135 +174,188 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
               Find work that fits your goals
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-lantern-text-secondary">
-              Search full-time roles, internships, part-time work, tutoring, research, and local gigs.
+              Search full-time roles, internships, part-time work, tutoring,
+              research, and local gigs.
             </p>
+
+            <div
+              role="tablist"
+              aria-label="Job list"
+              className="mt-5 inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-1"
+            >
+              {(
+                [
+                  { id: "browse", label: "All jobs" },
+                  { id: "saved", label: "Saved jobs" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === tab.id}
+                  onClick={() => {
+                    setView(tab.id);
+                    setPage(1);
+                  }}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    view === tab.id
+                      ? "bg-lantern-primary text-white shadow-sm"
+                      : "text-lantern-text-secondary hover:text-lantern-text"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <form onSubmit={applyFilters} className="border-t border-lantern-border p-4 sm:p-5">
-            <div className="grid gap-3 lg:grid-cols-[minmax(240px,2fr)_repeat(3,minmax(140px,1fr))_auto]">
-              <label className="block">
-                <span className="sr-only">Search jobs</span>
-                <input
-                  value={filters.search}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, search: event.target.value }))
-                  }
-                  placeholder="Job title, skill, or company"
-                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none transition focus:border-lantern-primary focus:ring-2 focus:ring-lantern-primary/20"
-                />
-              </label>
-              <label className="block">
-                <span className="sr-only">Job type</span>
-                <select
-                  value={filters.employmentType}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, employmentType: event.target.value }))
-                  }
-                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
-                >
-                  <option value="">All job types</option>
-                  {JOB_EMPLOYMENT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {JOB_EMPLOYMENT_TYPE_LABELS[type]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="sr-only">Location type</span>
-                <select
-                  value={filters.location}
-                  onChange={(event) =>
-                    setFilters((current) => ({
-                      ...current,
-                      location: event.target.value as PortalFilters['location'],
-                    }))
-                  }
-                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
-                >
-                  <option value="">Any location</option>
-                  <option value="remote">Remote</option>
-                  <option value="onsite">On-site / hybrid</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="sr-only">Compensation</span>
-                <select
-                  value={filters.compensationKind}
-                  onChange={(event) =>
-                    setFilters((current) => ({
-                      ...current,
-                      compensationKind: event.target.value as PortalFilters['compensationKind'],
-                    }))
-                  }
-                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
-                >
-                  <option value="">Any compensation</option>
-                  <option value="paid">Paid</option>
-                  <option value="discuss">Pay discussed</option>
-                  <option value="unpaid">Unpaid</option>
-                </select>
-              </label>
-              <button
-                type="submit"
-                className="h-11 rounded-lg bg-lantern-primary px-5 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 focus:outline-none focus:ring-2 focus:ring-lantern-primary/30"
-              >
-                Search jobs
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-lantern-text-secondary">
-                <input
-                  type="checkbox"
-                  checked={filters.companyOnly}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, companyOnly: event.target.checked }))
-                  }
-                  className="h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
-                />
-                Company roles only
-              </label>
-              <label className="inline-flex items-center gap-2 text-sm text-lantern-text-secondary">
-                Sort
-                <select
-                  value={filters.sort}
-                  onChange={(event) =>
-                    setFilters((current) => ({
-                      ...current,
-                      sort: event.target.value as PortalFilters['sort'],
-                    }))
-                  }
-                  className="rounded-md border border-lantern-border bg-lantern-background px-2 py-1 text-sm text-lantern-text"
-                >
-                  <option value="newest">Newest</option>
-                  <option value="closing">Closing soon</option>
-                </select>
-              </label>
-              {hasFilters ? (
+          {view === "browse" ? (
+            <form
+              onSubmit={applyFilters}
+              className="border-t border-lantern-border p-4 sm:p-5"
+            >
+              <div className="grid gap-3 lg:grid-cols-[minmax(240px,2fr)_repeat(3,minmax(140px,1fr))_auto]">
+                <label className="block">
+                  <span className="sr-only">Search jobs</span>
+                  <input
+                    value={filters.search}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        search: event.target.value,
+                      }))
+                    }
+                    placeholder="Job title, skill, or company"
+                    className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none transition focus:border-lantern-primary focus:ring-2 focus:ring-lantern-primary/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="sr-only">Job type</span>
+                  <select
+                    value={filters.employmentType}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        employmentType: event.target.value,
+                      }))
+                    }
+                    className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                  >
+                    <option value="">All job types</option>
+                    {JOB_EMPLOYMENT_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {JOB_EMPLOYMENT_TYPE_LABELS[type]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="sr-only">Location type</span>
+                  <select
+                    value={filters.location}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        location: event.target
+                          .value as PortalFilters["location"],
+                      }))
+                    }
+                    className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                  >
+                    <option value="">Any location</option>
+                    <option value="remote">Remote</option>
+                    <option value="onsite">On-site / hybrid</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="sr-only">Compensation</span>
+                  <select
+                    value={filters.compensationKind}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        compensationKind: event.target
+                          .value as PortalFilters["compensationKind"],
+                      }))
+                    }
+                    className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                  >
+                    <option value="">Any compensation</option>
+                    <option value="paid">Paid</option>
+                    <option value="discuss">Pay discussed</option>
+                    <option value="unpaid">Unpaid</option>
+                  </select>
+                </label>
                 <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="text-sm font-medium text-lantern-primary hover:underline"
+                  type="submit"
+                  className="h-11 rounded-lg bg-lantern-primary px-5 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 focus:outline-none focus:ring-2 focus:ring-lantern-primary/30"
                 >
-                  Clear filters
+                  Search jobs
                 </button>
-              ) : null}
-            </div>
-          </form>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-lantern-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={filters.companyOnly}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        companyOnly: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
+                  />
+                  Company roles only
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-lantern-text-secondary">
+                  Sort
+                  <select
+                    value={filters.sort}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        sort: event.target.value as PortalFilters["sort"],
+                      }))
+                    }
+                    className="rounded-md border border-lantern-border bg-lantern-background px-2 py-1 text-sm text-lantern-text"
+                  >
+                    <option value="newest">Newest</option>
+                    <option value="closing">Closing soon</option>
+                  </select>
+                </label>
+                {hasFilters ? (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-sm font-medium text-lantern-primary hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : null}
         </section>
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-lantern-text">
-              {loading ? 'Finding opportunities…' : `${total} ${total === 1 ? 'job' : 'jobs'} found`}
+              {loading
+                ? "Finding opportunities…"
+                : view === "saved"
+                  ? `${total} saved ${total === 1 ? "job" : "jobs"}`
+                  : `${total} ${total === 1 ? "job" : "jobs"} found`}
             </h2>
             <p className="mt-0.5 text-xs text-lantern-text-tertiary">
-              Review the poster and role details before sharing personal information.
+              Review the poster and role details before sharing personal
+              information.
             </p>
           </div>
           <button
             type="button"
-            onClick={() => onNavigate('MyJobApplications')}
+            onClick={() => onNavigate("MyJobApplications")}
             className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text hover:border-lantern-primary/40"
           >
             Track my applications
@@ -261,9 +363,16 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
         </div>
 
         {error ? (
-          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
             {error}
-            <button type="button" className="ml-2 font-semibold underline" onClick={() => void load()}>
+            <button
+              type="button"
+              className="ml-2 font-semibold underline"
+              onClick={() => void load()}
+            >
               Try again
             </button>
           </div>
@@ -278,21 +387,35 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
           </div>
         ) : jobs.length === 0 ? (
           <div className="rounded-lantern-xl border border-dashed border-lantern-border bg-lantern-surface/70 px-6 py-12 text-center">
-            <p className="text-lg font-semibold text-lantern-text">No matching jobs</p>
+            <p className="text-lg font-semibold text-lantern-text">
+              {view === "saved" ? "No saved jobs yet" : "No matching jobs"}
+            </p>
             <p className="mx-auto mt-2 max-w-md text-sm text-lantern-text-secondary">
-              Try a broader keyword or remove a filter. New opportunities are added regularly.
+              {view === "saved"
+                ? "Save roles while browsing to compare them later and apply when you are ready."
+                : "Try a broader keyword or remove a filter. New opportunities are added regularly."}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {view === "saved" ? (
+                <button
+                  type="button"
+                  onClick={() => setView("browse")}
+                  className="rounded-lg bg-lantern-primary px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Browse jobs
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="rounded-lg bg-lantern-primary px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Clear filters
+                </button>
+              )}
               <button
                 type="button"
-                onClick={clearFilters}
-                className="rounded-lg bg-lantern-primary px-4 py-2 text-sm font-semibold text-white"
-              >
-                Clear filters
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate('CreateMarketplaceJob')}
+                onClick={() => onNavigate("CreateMarketplaceJob")}
                 className="rounded-lg border border-lantern-border px-4 py-2 text-sm font-semibold text-lantern-text"
               >
                 Post a job
@@ -304,17 +427,19 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
             {jobs.map((job) => {
               const employer = companyLabel(job);
               const deadline = formatDeadline(job.deadline);
-              const duration = formatJobEngagementDuration(job.engagementDuration);
+              const duration = formatJobEngagementDuration(
+                job.engagementDuration,
+              );
               return (
                 <li key={job.id}>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('MarketplaceJobDetail', { jobId: job.id })}
-                    className={`group w-full rounded-lantern-xl border bg-lantern-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-lantern-primary/50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-lantern-primary/30 sm:p-5 ${
-                      job.isSponsored ? 'border-amber-300/80' : 'border-lantern-border'
+                  <article
+                    className={`group relative rounded-lantern-xl border bg-lantern-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-lantern-primary/50 hover:shadow-md focus-within:ring-2 focus-within:ring-lantern-primary/30 sm:p-5 ${
+                      job.isSponsored
+                        ? "border-amber-300/80"
+                        : "border-lantern-border"
                     }`}
                   >
-                    <article className="flex gap-4">
+                    <div className="flex gap-4">
                       {job.company?.logoUrl ? (
                         <img
                           src={job.company.logoUrl}
@@ -333,20 +458,57 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0">
                             <h3 className="text-base font-semibold text-lantern-text transition group-hover:text-lantern-primary sm:text-lg">
-                              {job.title}
+                              {/* Stretched target keeps the whole card clickable without nesting buttons. */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onNavigate("MarketplaceJobDetail", {
+                                    jobId: job.id,
+                                  })
+                                }
+                                className="text-left after:absolute after:inset-0 after:content-[''] focus:outline-none"
+                              >
+                                {job.title}
+                              </button>
                             </h3>
                             <p className="mt-0.5 truncate text-sm text-lantern-text-secondary">
                               {employer}
-                              {job.company?.verificationStatus === 'verified' ? (
-                                <span className="ml-1 font-medium text-emerald-700">✓ Verified</span>
+                              {job.company?.verificationStatus ===
+                              "verified" ? (
+                                <span className="ml-1 font-medium text-emerald-700">
+                                  ✓ Verified
+                                </span>
                               ) : null}
                             </p>
                           </div>
-                          {job.isSponsored ? (
-                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
-                              Featured
-                            </span>
-                          ) : null}
+                          <div className="relative z-10 flex shrink-0 items-center gap-2">
+                            {job.isSponsored ? (
+                              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                                Featured
+                              </span>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={savingId === job.id}
+                              aria-pressed={!!job.isSaved}
+                              aria-label={
+                                job.isSaved
+                                  ? `Unsave ${job.title}`
+                                  : `Save ${job.title}`
+                              }
+                              onClick={() => void toggleSaved(job)}
+                              className="rounded-lg p-2 text-lantern-text-tertiary transition hover:bg-lantern-primary/10 hover:text-lantern-primary disabled:opacity-50"
+                            >
+                              {job.isSaved ? (
+                                <BookmarkSolidIcon
+                                  className="h-5 w-5 text-lantern-primary"
+                                  aria-hidden
+                                />
+                              ) : (
+                                <BookmarkIcon className="h-5 w-5" aria-hidden />
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -371,11 +533,15 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-lantern-text-tertiary">
                           <span>{formatJobPostedDate(job.createdAt)}</span>
-                          {deadline ? <span className="font-medium text-amber-700">{deadline}</span> : null}
+                          {deadline ? (
+                            <span className="font-medium text-amber-700">
+                              {deadline}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
-                    </article>
-                  </button>
+                    </div>
+                  </article>
                 </li>
               );
             })}
@@ -383,7 +549,10 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
         )}
 
         {!loading && !error && totalPages > 1 ? (
-          <nav aria-label="Job results pages" className="flex items-center justify-center gap-3 pt-2">
+          <nav
+            aria-label="Job results pages"
+            className="flex items-center justify-center gap-3 pt-2"
+          >
             <button
               type="button"
               disabled={page === 1}
@@ -398,7 +567,9 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
             <button
               type="button"
               disabled={page >= totalPages}
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              onClick={() =>
+                setPage((current) => Math.min(totalPages, current + 1))
+              }
               className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next

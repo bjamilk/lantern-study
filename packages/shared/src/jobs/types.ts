@@ -1,19 +1,25 @@
-import type { JobEmploymentType } from './employmentTypes';
+import type { JobEmploymentType } from "./employmentTypes";
 
 export type JobPostingStatus =
-  | 'draft'
-  | 'active'
-  | 'paused'
-  | 'closed'
-  | 'pending_school_approval'
-  | 'suspended_by_admin'
-  | 'removed_by_admin';
+  | "draft"
+  | "active"
+  | "paused"
+  | "closed"
+  | "pending_school_approval"
+  | "suspended_by_admin"
+  | "removed_by_admin";
 
-export type JobApplyMode = 'in_app' | 'external' | 'both';
+export type JobApplyMode = "in_app" | "external" | "both";
 
-export type JobCompensationKind = 'paid' | 'unpaid' | 'discuss';
+export type JobCompensationKind = "paid" | "unpaid" | "discuss";
 
-export type JobCompensationPeriod = 'hour' | 'day' | 'week' | 'month' | 'total' | 'stipend';
+export type JobCompensationPeriod =
+  | "hour"
+  | "day"
+  | "week"
+  | "month"
+  | "total"
+  | "stipend";
 
 export interface JobCompensation {
   kind: JobCompensationKind;
@@ -25,31 +31,31 @@ export interface JobCompensation {
 }
 
 export type JobEngagementDuration =
-  | { kind: 'ongoing'; value?: null; unit?: null }
+  | { kind: "ongoing"; value?: null; unit?: null }
   | {
-      kind: 'fixed';
+      kind: "fixed";
       value: number;
-      unit: 'day' | 'week' | 'month';
+      unit: "day" | "week" | "month";
     };
 
 export type JobCompanyVerificationStatus =
-  | 'unverified'
-  | 'pending'
-  | 'verified'
-  | 'rejected';
+  | "unverified"
+  | "pending"
+  | "verified"
+  | "rejected";
 
 export type JobApplicationStatus =
-  | 'interested'
-  | 'chatting'
-  | 'new'
-  | 'reviewing'
-  | 'interview'
-  | 'offer'
-  | 'hired'
-  | 'rejected'
-  | 'withdrawn';
+  | "interested"
+  | "chatting"
+  | "new"
+  | "reviewing"
+  | "interview"
+  | "offer"
+  | "hired"
+  | "rejected"
+  | "withdrawn";
 
-export type JobCompanyMemberRole = 'owner' | 'recruiter';
+export type JobCompanyMemberRole = "owner" | "recruiter";
 
 export interface JobCompany {
   id: string;
@@ -71,7 +77,7 @@ export interface JobScreeningQuestion {
   postingId: string;
   sortOrder: number;
   prompt: string;
-  questionType: 'text' | 'single_choice';
+  questionType: "text" | "single_choice";
   options?: string[] | null;
   required: boolean;
 }
@@ -102,8 +108,15 @@ export interface JobPosting {
   requiresSchoolApproval: boolean;
   countryCode: string;
   screeningQuestions?: JobScreeningQuestion[];
+  /** Whether the requesting viewer saved this posting. Absent for anonymous reads. */
+  isSaved?: boolean;
   company?: JobCompany | null;
-  poster?: { id: string; name?: string | null; username?: string | null; avatarUrl?: string | null } | null;
+  poster?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  } | null;
   campusName?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -117,10 +130,15 @@ export interface JobApplication {
   resumeUrl?: string | null;
   status: JobApplicationStatus;
   dmThreadId?: string | null;
-  source: 'in_app' | 'external_click';
+  source: "in_app" | "external_click";
   profileSnapshot?: Record<string, unknown> | null;
   posting?: JobPosting | null;
-  applicant?: { id: string; name?: string | null; username?: string | null; avatarUrl?: string | null } | null;
+  applicant?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -129,15 +147,15 @@ export interface JobReport {
   id: string;
   postingId: string;
   reporterId: string;
-  reason: 'scam' | 'spam' | 'inappropriate' | 'discriminatory' | 'other';
+  reason: "scam" | "spam" | "inappropriate" | "discriminatory" | "other";
   details?: string | null;
-  status: 'pending' | 'resolved' | 'dismissed';
+  status: "pending" | "resolved" | "dismissed";
   createdAt: string;
 }
 
 export type JobsWorkspaceSection =
-  | 'goods'
-  | 'jobs'
-  | 'my_applications'
-  | 'my_jobs'
-  | 'employer';
+  | "goods"
+  | "jobs"
+  | "my_applications"
+  | "my_jobs"
+  | "employer";
