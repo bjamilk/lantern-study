@@ -2,9 +2,12 @@ import { ChallengeService } from './challengeService';
 
 jest.mock('./cache', () => ({
   cacheService: {
+    delete: jest.fn().mockResolvedValue(undefined),
     deletePattern: jest.fn().mockResolvedValue(undefined),
   },
 }));
+
+import { cacheService } from './cache';
 
 function createHarness(options: { enforceUniquePending?: boolean } = {}) {
   const rows: any[] = [];
@@ -166,6 +169,39 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
 
   return { service, rows, notifications, createNotification };
 }
+
+describe('ChallengeService cache invalidation (PERF-01)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('scopes invalidation to per-user list keys and never uses challenges:*', async () => {
+    // Fresh service without harness spies that stub invalidateChallengeCaches.
+    const service = new ChallengeService({ getClient: () => ({}) } as any);
+    await (service as any).invalidateChallengeCaches('challenger-1', 'opponent-1');
+
+    const patterns = (cacheService.deletePattern as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(patterns).toEqual(
+      expect.arrayContaining([
+        'challenges:list:challenger-1:*',
+        'challenges:list:opponent-1:*',
+      ])
+    );
+    expect(patterns.some((p: string) => p === 'challenges:*')).toBe(false);
+    expect(patterns.some((p: string) => /^challenges:[^:]+:\*$/.test(p) && !p.includes('list'))).toBe(
+      false
+    );
+
+    const exactKeys = (cacheService.delete as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(exactKeys).toEqual(
+      expect.arrayContaining([
+        'challenges:list:challenger-1:all',
+        'challenges:list:challenger-1:pending',
+        'challenges:list:opponent-1:all',
+      ])
+    );
+  });
+});
 
 describe('ChallengeService.createChallenge delivery integrity', () => {
   it('replays the existing pending invite instead of creating and notifying twice', async () => {

@@ -7,6 +7,7 @@ import type { GroupChallenge, ChallengeConfig, ChallengeParticipant } from '../t
 import type { User } from '../types';
 import { SupabaseService } from './supabase';
 import { cacheService } from './cache';
+import { CacheKeys } from './cachePolicy';
 import { logger } from '../utils/logger';
 
 const CHALLENGE_EXPIRY_HOURS = 24;
@@ -120,11 +121,13 @@ export class ChallengeService {
   }
 
   private async invalidateChallengeCaches(...userIds: string[]): Promise<void> {
+    // PERF-01: scoped per-user list keys only — never wipe global challenges:*.
     const unique = [...new Set(userIds.filter(Boolean))];
+    const statuses = ['all', 'pending', 'accepted', 'completed', 'declined', 'cancelled', 'expired'];
     await Promise.all(
       unique.flatMap((userId) => [
-        cacheService.deletePattern(`challenges:${userId}:*`),
         cacheService.deletePattern(`challenges:list:${userId}:*`),
+        ...statuses.map((status) => cacheService.delete(CacheKeys.challengeList(userId, status))),
       ])
     );
   }
