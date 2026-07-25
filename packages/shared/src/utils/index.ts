@@ -23,6 +23,7 @@ export * from './photoNoteTitle';
 export * from './displayNames';
 export * from './uploadValidation';
 export * from './chatMedia';
+export * from './chatMute';
 export * from './questionVisibility';
 export * from './deliveryIntegrity';
 export * from './noteComments';

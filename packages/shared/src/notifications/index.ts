@@ -1,2 +1,2 @@
 export * from './presentation';
-export * from './chatMute';
+export * from '../utils/chatMute';

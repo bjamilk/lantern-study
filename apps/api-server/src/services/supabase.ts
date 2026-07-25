@@ -4369,7 +4369,7 @@ export class SupabaseService {
       }
 
       const type = notificationData.type || 'info';
-      const { CHAT_MUTEABLE_NOTIFICATION_TYPES } = await import('@lantern/shared');
+      const { CHAT_MUTEABLE_NOTIFICATION_TYPES } = await import('@lantern/shared/utils/chatMute');
       if (CHAT_MUTEABLE_NOTIFICATION_TYPES.has(type)) {
         const data = notificationData.data || {};
         const groupId = typeof data.groupId === 'string' ? data.groupId : null;

@@ -12,7 +12,7 @@ import { clientErrorMessage } from '../utils/safeError';
 import {
   mutedUntilFromMinutes,
   resolveChatMuteDurationMinutes,
-} from '@lantern/shared';
+} from '@lantern/shared/utils/chatMute';
 
 const router = Router();
 const DEFAULT_GROUP_PAGE_SIZE = 20;

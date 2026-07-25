@@ -14,7 +14,7 @@ import { AuthenticatedRequest, Message } from '../types';
 import {
   mutedUntilFromMinutes,
   resolveChatMuteDurationMinutes,
-} from '@lantern/shared';
+} from '@lantern/shared/utils/chatMute';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const ALLOWED_AUDIO_TYPES = [
