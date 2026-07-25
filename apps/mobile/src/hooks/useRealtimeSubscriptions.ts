@@ -1,11 +1,14 @@
 /**
  * Realtime Subscriptions Hook
- * Manages Supabase realtime subscriptions for authenticated users
- * 
- * Channels:
- * - Notifications: Listens for new notifications for the current user
- * - Group Messages: Listens for new messages in user's groups
- * - Profile/Settings Updates: Listens for settings changes synced from other devices
+ * Manages Supabase realtime subscriptions for authenticated users.
+ *
+ * Lean channel model (cost-conscious):
+ * - notifications:{userId} — always on while subscribed
+ * - group-messages-all:{userId} — one channel for all groups (RLS + client filter)
+ * - dm-messages-all:{userId} — one channel for all DMs (RLS + client filter)
+ * - user_settings:{userId} — foreground only
+ *
+ * Background (lean): keep notifications only; drop message/DM/settings feeds.
  */
 import { useEffect, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
@@ -51,11 +54,19 @@ export interface Notification {
   createdAt: string;
 }
 
-// Callback types for subscription events
 type NotificationCallback = (notification: Notification) => void;
 type MessageCallback = (message: Message) => void;
 type DirectMessageCallback = (message: DirectMessage) => void;
 type SettingsCallback = (settings: Record<string, unknown>) => void;
+
+export type RealtimeSubscribeMode = 'full' | 'lean';
+
+const CHANNEL = {
+  notifications: (userId: string) => `notifications:${userId}`,
+  groupMessages: (userId: string) => `group-messages-all:${userId}`,
+  dmMessages: (userId: string) => `dm-messages-all:${userId}`,
+  settings: (userId: string) => `user_settings:${userId}`,
+} as const;
 
 // ============================================
 // Subscription Manager
@@ -69,50 +80,71 @@ class RealtimeSubscriptionManager {
   private settingsCallbacks: Set<SettingsCallback> = new Set();
   private isSubscribed = false;
   private userId: string | null = null;
-  private groupIds: string[] = [];
-  private dmThreadIds: string[] = [];
+  private mode: RealtimeSubscribeMode = 'full';
+  private groupIds = new Set<string>();
+  private dmThreadIds = new Set<string>();
 
   /**
-   * Subscribe to all realtime channels for a user
+   * Subscribe with a fixed lean channel set (not one channel per group/DM).
    */
-  async subscribe(userId: string, groupIds: string[] = [], dmThreadIds: string[] = []): Promise<void> {
-    if (this.isSubscribed && this.userId !== userId) {
+  async subscribe(
+    userId: string,
+    groupIds: string[] = [],
+    dmThreadIds: string[] = [],
+    mode: RealtimeSubscribeMode = 'full'
+  ): Promise<void> {
+    if (this.isSubscribed && this.userId && this.userId !== userId) {
       await this.unsubscribe();
     }
 
-    if (this.isSubscribed && this.userId === userId) {
-      if (JSON.stringify(this.groupIds) !== JSON.stringify(groupIds)) {
-        await this.updateGroupSubscriptions(groupIds);
-      }
-      if (JSON.stringify(this.dmThreadIds) !== JSON.stringify(dmThreadIds)) {
-        await this.updateDmSubscriptions(dmThreadIds);
-      }
+    const sameUser = this.isSubscribed && this.userId === userId;
+    this.userId = userId;
+    this.groupIds = new Set(groupIds);
+    this.dmThreadIds = new Set(dmThreadIds);
+
+    // Membership-only update — keep existing channels.
+    if (sameUser && this.mode === mode && this.channels.size > 0) {
       return;
     }
 
-    this.userId = userId;
-    this.groupIds = groupIds;
-    this.dmThreadIds = dmThreadIds;
     this.isSubscribed = true;
+    console.log(`[Realtime] Starting ${mode} subscriptions for user:`, userId);
+    await this.applyMode(mode);
+  }
 
-    console.log('[Realtime] Starting subscriptions for user:', userId);
+  /** Update which groups/threads we accept without recreating channels. */
+  setMembership(groupIds: string[], dmThreadIds: string[]): void {
+    this.groupIds = new Set(groupIds);
+    this.dmThreadIds = new Set(dmThreadIds);
+  }
+
+  async setMode(mode: RealtimeSubscribeMode): Promise<void> {
+    if (!this.userId || !this.isSubscribed) return;
+    if (this.mode === mode) return;
+    console.log(`[Realtime] Switching mode: ${this.mode} → ${mode}`);
+    await this.applyMode(mode);
+  }
+
+  private async applyMode(mode: RealtimeSubscribeMode): Promise<void> {
+    const userId = this.userId;
+    if (!userId) return;
+    this.mode = mode;
 
     this.subscribeToNotifications(userId);
 
-    for (const groupId of groupIds) {
-      this.subscribeToGroupMessages(groupId);
+    if (mode === 'full') {
+      this.subscribeToAllGroupMessages(userId);
+      this.subscribeToAllDmMessages(userId);
+      this.subscribeToSettings(userId);
+    } else {
+      await this.removeChannels([
+        CHANNEL.groupMessages(userId),
+        CHANNEL.dmMessages(userId),
+        CHANNEL.settings(userId),
+      ]);
     }
-
-    for (const threadId of dmThreadIds) {
-      this.subscribeToDmMessages(threadId);
-    }
-
-    this.subscribeToSettings(userId);
   }
 
-  /**
-   * Unsubscribe from all channels
-   */
   async unsubscribe(): Promise<void> {
     console.log('[Realtime] Unsubscribing from all channels');
 
@@ -124,73 +156,24 @@ class RealtimeSubscriptionManager {
     this.channels.clear();
     this.isSubscribed = false;
     this.userId = null;
-    this.groupIds = [];
-    this.dmThreadIds = [];
+    this.mode = 'full';
+    this.groupIds.clear();
+    this.dmThreadIds.clear();
   }
 
-  private async updateDmSubscriptions(newThreadIds: string[]): Promise<void> {
-    const current = new Set(this.dmThreadIds);
-    const next = new Set(newThreadIds);
-
-    for (const threadId of current) {
-      if (!next.has(threadId)) {
-        const channelName = `dm:${threadId}`;
-        const channel = this.channels.get(channelName);
-        if (channel) {
-          await supabase.removeChannel(channel);
-          this.channels.delete(channelName);
-        }
-      }
+  private async removeChannels(names: string[]): Promise<void> {
+    for (const name of names) {
+      const channel = this.channels.get(name);
+      if (!channel) continue;
+      await supabase.removeChannel(channel);
+      this.channels.delete(name);
+      console.log(`[Realtime] Removed channel: ${name}`);
     }
-
-    for (const threadId of next) {
-      if (!current.has(threadId)) {
-        this.subscribeToDmMessages(threadId);
-      }
-    }
-
-    this.dmThreadIds = newThreadIds;
   }
 
-  /**
-   * Update group message subscriptions when groups change
-   */
-  private async updateGroupSubscriptions(newGroupIds: string[]): Promise<void> {
-    const currentGroupIds = new Set(this.groupIds);
-    const newGroupIdsSet = new Set(newGroupIds);
-
-    // Unsubscribe from removed groups
-    for (const groupId of currentGroupIds) {
-      if (!newGroupIdsSet.has(groupId)) {
-        const channelName = `messages:${groupId}`;
-        const channel = this.channels.get(channelName);
-        if (channel) {
-          await supabase.removeChannel(channel);
-          this.channels.delete(channelName);
-          console.log(`[Realtime] Unsubscribed from group: ${groupId}`);
-        }
-      }
-    }
-
-    // Subscribe to new groups
-    for (const groupId of newGroupIdsSet) {
-      if (!currentGroupIds.has(groupId)) {
-        this.subscribeToGroupMessages(groupId);
-      }
-    }
-
-    this.groupIds = newGroupIds;
-  }
-
-  /**
-   * Subscribe to notifications channel
-   */
   private subscribeToNotifications(userId: string): void {
-    const channelName = `notifications:${userId}`;
-
-    if (this.channels.has(channelName)) {
-      return;
-    }
+    const channelName = CHANNEL.notifications(userId);
+    if (this.channels.has(channelName)) return;
 
     const channel = supabase
       .channel(channelName)
@@ -203,7 +186,6 @@ class RealtimeSubscriptionManager {
           filter: `user_id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
-          console.log('[Realtime] New notification');
           const row = payload.new as Record<string, unknown>;
           const notification = {
             id: String(row.id ?? ''),
@@ -229,7 +211,6 @@ class RealtimeSubscriptionManager {
           filter: `user_id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<Notification>) => {
-          console.log('[Realtime] Notification updated');
           const notification = payload.new as Notification;
           this.notificationCallbacks.forEach(cb => cb(notification));
         }
@@ -241,68 +222,55 @@ class RealtimeSubscriptionManager {
     this.channels.set(channelName, channel);
   }
 
-  /**
-   * Subscribe to messages for a specific group
-   */
-  private subscribeToGroupMessages(groupId: string): void {
-    const channelName = `messages:${groupId}`;
+  /** Single channel for all group messages (RLS scopes rows; client filters by membership). */
+  private subscribeToAllGroupMessages(userId: string): void {
+    const channelName = CHANNEL.groupMessages(userId);
+    if (this.channels.has(channelName)) return;
 
-    if (this.channels.has(channelName)) {
-      return;
-    }
+    const emit = (payload: RealtimePostgresChangesPayload<Message>, isUpdate: boolean) => {
+      const raw = payload.new as Message & { group_id?: string; groupId?: string };
+      const groupId = raw.group_id || raw.groupId;
+      if (!groupId) return;
+      // If membership list is loaded, ignore unknown groups; if empty (still loading), accept RLS-filtered events.
+      if (this.groupIds.size > 0 && !this.groupIds.has(groupId)) return;
+      const message = isUpdate
+        ? ({ ...raw, __realtimeEvent: 'UPDATE' } as Message)
+        : raw;
+      this.messageCallbacks.forEach(cb => cb(message));
+    };
 
     const channel = supabase
       .channel(channelName)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `group_id=eq.${groupId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Message>) => {
-          console.log('[Realtime] New message in group:', groupId);
-          const message = payload.new as Message;
-          this.messageCallbacks.forEach(cb => cb(message));
-        }
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => emit(payload as RealtimePostgresChangesPayload<Message>, false)
       )
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `group_id=eq.${groupId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<Message>) => {
-          console.log('[Realtime] Message updated in group:', groupId);
-          const message = {
-            ...(payload.new as Message),
-            __realtimeEvent: 'UPDATE',
-          } as Message;
-          this.messageCallbacks.forEach(cb => cb(message));
-        }
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => emit(payload as RealtimePostgresChangesPayload<Message>, true)
       )
       .subscribe((status) => {
-        console.log(`[Realtime] Messages channel (${groupId}) status: ${status}`);
+        console.log(`[Realtime] Group messages (all) status: ${status}`);
       });
 
     this.channels.set(channelName, channel);
   }
 
-  private subscribeToDmMessages(threadId: string): void {
-    const channelName = `dm:${threadId}`;
-
-    if (this.channels.has(channelName)) {
-      return;
-    }
+  /** Single channel for all DM messages. */
+  private subscribeToAllDmMessages(userId: string): void {
+    const channelName = CHANNEL.dmMessages(userId);
+    if (this.channels.has(channelName)) return;
 
     const emitDmMessage = (
       payload: RealtimePostgresChangesPayload<RawDmMessage>,
       isUpdate: boolean
     ) => {
       const raw = payload.new as RawDmMessage;
+      if (!raw?.thread_id) return;
+      if (this.dmThreadIds.size > 0 && !this.dmThreadIds.has(raw.thread_id)) return;
+
       const message: DirectMessage = {
         id: raw.id,
         threadId: raw.thread_id,
@@ -323,48 +291,26 @@ class RealtimeSubscriptionManager {
       .channel(channelName)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'dm_messages',
-          filter: `thread_id=eq.${threadId}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'dm_messages' },
         (payload) =>
-          emitDmMessage(
-            payload as RealtimePostgresChangesPayload<RawDmMessage>,
-            false
-          )
+          emitDmMessage(payload as RealtimePostgresChangesPayload<RawDmMessage>, false)
       )
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'dm_messages',
-          filter: `thread_id=eq.${threadId}`,
-        },
+        { event: 'UPDATE', schema: 'public', table: 'dm_messages' },
         (payload) =>
-          emitDmMessage(
-            payload as RealtimePostgresChangesPayload<RawDmMessage>,
-            true
-          )
+          emitDmMessage(payload as RealtimePostgresChangesPayload<RawDmMessage>, true)
       )
       .subscribe((status) => {
-        console.log(`[Realtime] DM channel (${threadId}) status: ${status}`);
+        console.log(`[Realtime] DM messages (all) status: ${status}`);
       });
 
     this.channels.set(channelName, channel);
   }
 
-  /**
-   * Subscribe to user settings updates
-   */
   private subscribeToSettings(userId: string): void {
-    const channelName = `user_settings:${userId}`;
-
-    if (this.channels.has(channelName)) {
-      return;
-    }
+    const channelName = CHANNEL.settings(userId);
+    if (this.channels.has(channelName)) return;
 
     const channel = supabase
       .channel(channelName)
@@ -377,7 +323,6 @@ class RealtimeSubscriptionManager {
           filter: `id=eq.${userId}`,
         },
         (payload: RealtimePostgresChangesPayload<{ settings: Record<string, unknown> }>) => {
-          console.log('[Realtime] Profile settings updated');
           const settings = (payload.new as { settings: Record<string, unknown> })?.settings;
           if (settings) {
             this.settingsCallbacks.forEach(cb => cb(settings));
@@ -391,17 +336,11 @@ class RealtimeSubscriptionManager {
     this.channels.set(channelName, channel);
   }
 
-  /**
-   * Add a callback for notification events
-   */
   onNotification(callback: NotificationCallback): () => void {
     this.notificationCallbacks.add(callback);
     return () => this.notificationCallbacks.delete(callback);
   }
 
-  /**
-   * Add a callback for message events
-   */
   onMessage(callback: MessageCallback): () => void {
     this.messageCallbacks.add(callback);
     return () => this.messageCallbacks.delete(callback);
@@ -412,26 +351,20 @@ class RealtimeSubscriptionManager {
     return () => this.dmMessageCallbacks.delete(callback);
   }
 
-  /**
-   * Add a callback for settings events
-   */
   onSettings(callback: SettingsCallback): () => void {
     this.settingsCallbacks.add(callback);
     return () => this.settingsCallbacks.delete(callback);
   }
 
-  /**
-   * Get subscription status
-   */
-  getStatus(): { isSubscribed: boolean; channelCount: number } {
+  getStatus(): { isSubscribed: boolean; channelCount: number; mode: RealtimeSubscribeMode } {
     return {
       isSubscribed: this.isSubscribed,
       channelCount: this.channels.size,
+      mode: this.mode,
     };
   }
 }
 
-// Singleton instance
 const subscriptionManager = new RealtimeSubscriptionManager();
 
 // ============================================
@@ -439,26 +372,18 @@ const subscriptionManager = new RealtimeSubscriptionManager();
 // ============================================
 
 export interface UseRealtimeSubscriptionsOptions {
-  /** Called when a new notification is received */
   onNotification?: NotificationCallback;
-  /** Called when a new group message is received */
   onMessage?: MessageCallback;
-  /** Called when a new DM is received */
   onDirectMessage?: DirectMessageCallback;
-  /** Called when settings are updated from another device */
   onSettingsUpdate?: SettingsCallback;
-  /** Whether to automatically subscribe when authenticated */
   autoSubscribe?: boolean;
 }
 
 export interface UseRealtimeSubscriptionsResult {
-  /** Whether realtime subscriptions are active */
   isSubscribed: boolean;
-  /** Number of active channels */
   channelCount: number;
-  /** Manually trigger subscription (usually not needed) */
+  mode: RealtimeSubscribeMode;
   subscribe: () => Promise<void>;
-  /** Manually trigger unsubscription (usually not needed) */
   unsubscribe: () => Promise<void>;
 }
 
@@ -483,16 +408,16 @@ export function useRealtimeSubscriptions(
     mergeGroupMessage,
   } = useGroupStore();
   const { loadSettings } = useSettingsStore();
-  
+
   const isSubscribedRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const groupIds = groups.map(g => g.id);
   const dmThreadIds = dmThreads.map(t => t.id);
+  const groupIdsKey = groupIds.slice().sort().join(',');
+  const dmThreadIdsKey = dmThreadIds.slice().sort().join(',');
 
-  // Handle notification received
   const handleNotification = useCallback((notification: Notification) => {
-    console.log('[useRealtimeSubscriptions] Notification received:', notification.title);
     const { increment, loadUnreadCount } = useNotificationStore.getState();
     if (!notification.isRead) {
       increment();
@@ -502,7 +427,6 @@ export function useRealtimeSubscriptions(
     onNotification?.(notification);
   }, [onNotification, user?.id]);
 
-  // Handle message received
   const handleMessage = useCallback((raw: Message) => {
     const groupId = (raw as { group_id?: string; groupId?: string }).group_id
       || raw.groupId;
@@ -553,7 +477,6 @@ export function useRealtimeSubscriptions(
   }, [onMessage, appendGroupMessage, mergeGroupMessage, user?.id]);
 
   const handleDirectMessage = useCallback((message: DirectMessage) => {
-    console.log('[useRealtimeSubscriptions] DM received in thread:', message.threadId);
     const isUpdate =
       (message as DirectMessage & { __realtimeEvent?: string }).__realtimeEvent === 'UPDATE';
     const existing = useGroupStore.getState().directMessages[message.threadId] || [];
@@ -572,12 +495,8 @@ export function useRealtimeSubscriptions(
     onDirectMessage?.(message);
   }, [onDirectMessage, addDirectMessage, mergeDirectMessage, user?.id]);
 
-  // Handle settings update
   const handleSettingsUpdate = useCallback(async (settings: Record<string, unknown>) => {
-    console.log('[useRealtimeSubscriptions] Settings updated from remote');
     onSettingsUpdate?.(settings);
-    
-    // Reload settings from remote to ensure consistency
     if (user?.id) {
       try {
         await loadSettings(user.id);
@@ -587,24 +506,21 @@ export function useRealtimeSubscriptions(
     }
   }, [onSettingsUpdate, loadSettings, user?.id]);
 
-  // Subscribe to realtime updates
   const subscribe = useCallback(async () => {
-    if (!user?.id) {
-      console.log('[useRealtimeSubscriptions] No user, skipping subscription');
-      return;
-    }
-
-    await subscriptionManager.subscribe(user.id, groupIds, dmThreadIds);
+    if (!user?.id) return;
+    const mode: RealtimeSubscribeMode =
+      appStateRef.current === 'active' ? 'full' : 'lean';
+    const gIds = useGroupStore.getState().groups.map(g => g.id);
+    const dIds = useGroupStore.getState().dmThreads.map(t => t.id);
+    await subscriptionManager.subscribe(user.id, gIds, dIds, mode);
     isSubscribedRef.current = true;
-  }, [user?.id, groupIds, dmThreadIds]);
+  }, [user?.id]);
 
-  // Unsubscribe from realtime updates
   const unsubscribe = useCallback(async () => {
     await subscriptionManager.unsubscribe();
     isSubscribedRef.current = false;
   }, []);
 
-  // Register callbacks
   useEffect(() => {
     const unsubNotification = subscriptionManager.onNotification(handleNotification);
     const unsubMessage = subscriptionManager.onMessage(handleMessage);
@@ -619,76 +535,59 @@ export function useRealtimeSubscriptions(
     };
   }, [handleNotification, handleMessage, handleDirectMessage, handleSettingsUpdate]);
 
-  // Auto-subscribe when authenticated
   useEffect(() => {
     if (!autoSubscribe) return;
-
     if (user?.id) {
-      subscribe();
+      void subscribe();
     } else {
-      unsubscribe();
+      void unsubscribe();
     }
   }, [user?.id, autoSubscribe, subscribe, unsubscribe]);
 
-  // Update group subscriptions when groups change
+  // Membership changes update filters only — no per-group channel churn.
   useEffect(() => {
-    if (user?.id && isSubscribedRef.current) {
-      subscriptionManager.subscribe(user.id, groupIds, dmThreadIds);
-    }
-  }, [user?.id, groupIds, dmThreadIds]);
+    if (!user?.id || !isSubscribedRef.current) return;
+    subscriptionManager.setMembership(groupIds, dmThreadIds);
+  }, [user?.id, groupIds, dmThreadIds, groupIdsKey, dmThreadIdsKey]);
 
-  // Handle app state changes (background/foreground)
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App came to foreground - reconnect subscriptions
-        console.log('[useRealtimeSubscriptions] App resumed, reconnecting...');
+        console.log('[useRealtimeSubscriptions] App resumed — full realtime');
         if (user?.id && autoSubscribe) {
-          await subscribe();
+          const gIds = useGroupStore.getState().groups.map(g => g.id);
+          const dIds = useGroupStore.getState().dmThreads.map(t => t.id);
+          subscriptionManager.setMembership(gIds, dIds);
+          await subscriptionManager.setMode('full');
         }
-      } else if (nextAppState.match(/inactive|background/)) {
-        // App going to background - optionally disconnect to save battery
-        // For now, we keep subscriptions active
-        console.log('[useRealtimeSubscriptions] App going to background');
+      } else if (nextAppState === 'background') {
+        // Lean only on true background (not iOS inactive / control center).
+        console.log('[useRealtimeSubscriptions] App backgrounded — lean realtime');
+        if (user?.id && autoSubscribe) {
+          await subscriptionManager.setMode('lean');
+        }
       }
       appStateRef.current = nextAppState;
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
-
-    return () => {
-      subscription.remove();
-    };
-  }, [user?.id, autoSubscribe, subscribe]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      // Don't unsubscribe on unmount - let the manager persist
-      // This prevents re-subscribing when navigating between screens
-    };
-  }, []);
+    return () => subscription.remove();
+  }, [user?.id, autoSubscribe]);
 
   const status = subscriptionManager.getStatus();
 
   return {
     isSubscribed: status.isSubscribed,
     channelCount: status.channelCount,
+    mode: status.mode,
     subscribe,
     unsubscribe,
   };
 }
 
-// ============================================
-// Hook: useNotificationSubscription
-// ============================================
-
-/**
- * Simplified hook for just notification subscriptions
- */
 export function useNotificationSubscription(
   onNotification: NotificationCallback
 ): { isSubscribed: boolean } {
@@ -696,17 +595,9 @@ export function useNotificationSubscription(
     onNotification,
     autoSubscribe: true,
   });
-
   return { isSubscribed: result.isSubscribed };
 }
 
-// ============================================
-// Hook: useGroupMessageSubscription
-// ============================================
-
-/**
- * Simplified hook for group message subscriptions
- */
 export function useGroupMessageSubscription(
   onMessage: MessageCallback
 ): { isSubscribed: boolean } {
@@ -714,13 +605,8 @@ export function useGroupMessageSubscription(
     onMessage,
     autoSubscribe: true,
   });
-
   return { isSubscribed: result.isSubscribed };
 }
-
-// ============================================
-// Exports
-// ============================================
 
 export { subscriptionManager };
 export default useRealtimeSubscriptions;

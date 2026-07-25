@@ -26,6 +26,7 @@ export {
 
 export type {
   RealtimeSubscriptionStatus,
+  RealtimeSubscribeMode,
   Notification,
   UseRealtimeSubscriptionsOptions,
   UseRealtimeSubscriptionsResult,

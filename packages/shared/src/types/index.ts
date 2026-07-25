@@ -414,6 +414,8 @@ export interface DailyQuizQuestion {
 export interface DailyQuizSession {
   date: string;
   noteId?: string;
+  /** Display title of the source note — shown on dashboard so users know context. */
+  sourceNoteTitle?: string;
   questions: DailyQuizQuestion[];
   answers: Record<string, string>;
   completed: boolean;

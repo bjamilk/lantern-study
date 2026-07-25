@@ -1079,7 +1079,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               progress={dailyQuizProgress}
               title="Note quiz"
               onStudyGoalChange={onStudyGoalChange || (() => {})}
-              onStartQuiz={() => {}}
+              onStartQuiz={(_noteId) => {}}
               onAnswer={onDailyQuizAnswer}
               onComplete={onCompleteDailyQuiz}
               onRegenerateQuiz={

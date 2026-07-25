@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useCallback, useState, useRef, type Dispatch, type SetStateAction } from 'react';
 import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
@@ -1085,148 +1085,147 @@ export function useAppEffects({
         };
     }, [currentUser?.id, lowDataMode, refreshDmThreadsForUser]);
 
-    // Stable key so lastMessage/unread bumps do not tear down every DM channel.
+    // Stable key for membership filtering (does not recreate the DM channel).
     const dmThreadIdsKey = dmThreads.map((t) => t.id).sort().join(',');
+    const dmThreadIdsRef = useRef(new Set<string>());
+    useEffect(() => {
+        dmThreadIdsRef.current = new Set(dmThreadIdsKey ? dmThreadIdsKey.split(',') : []);
+    }, [dmThreadIdsKey]);
 
-    // --- Real-time DM message subscription ---
+    // --- Real-time DM messages: one channel for all threads (RLS + client filter) ---
     useEffect(() => {
         if (!currentUser || lowDataMode) return;
-        const threadIds = dmThreadIdsKey ? dmThreadIdsKey.split(',') : [];
-        if (threadIds.length === 0) return;
 
-        const channels = threadIds.map((threadId) => {
-            const applyDmChange = (
-                payload: { new: Record<string, unknown> },
-                isUpdate: boolean
-            ) => {
-                const raw = payload.new as {
-                    id: string;
-                    thread_id: string;
-                    sender_id: string;
-                    text: string;
-                    timestamp: string;
-                    edited_at?: string;
-                    removed_at?: string;
-                    client_message_id?: string;
-                    reply_to_message_id?: string;
-                    thread_root_id?: string;
-                };
-                if (!isUpdate && raw.sender_id === currentUser.id) return;
-                const viewingThisThread =
-                    useUIStore.getState().selectedChat?.chatType === 'dm' &&
-                    useUIStore.getState().selectedChat?.id === threadId;
-                const message: DirectMessage = {
-                    id: raw.id,
-                    threadId: raw.thread_id,
-                    senderId: raw.sender_id,
-                    text: raw.removed_at ? '' : raw.text,
-                    timestamp: new Date(raw.timestamp),
-                    editedAt: raw.edited_at,
-                    removedAt: raw.removed_at,
-                    isRemoved: !!raw.removed_at,
-                    replyToMessageId: raw.reply_to_message_id,
-                    threadRootId: raw.thread_root_id,
-                    replyCount: 0,
-                };
-                updateDirectMessages(prev => {
-                    const existing = prev[threadId] || [];
-                    if (isUpdate) {
-                        return {
-                            ...prev,
-                            [threadId]: existing.map((item) => {
-                                const replyTo = item.replyTo?.id === message.id
-                                    ? {
-                                        ...item.replyTo,
-                                        text: message.isRemoved ? undefined : message.text,
-                                        isRemoved: !!message.isRemoved,
-                                    }
-                                    : item.replyTo;
-                                return item.id === message.id
-                                    ? { ...item, ...message, replyCount: item.replyCount, replyTo }
-                                    : { ...item, replyTo };
-                            }),
-                        };
-                    }
-                    if (existing.some(m => m.id === message.id)) return prev;
-                    if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
-                        return {
-                            ...prev,
-                            [threadId]: existing.map(m =>
-                                m.id === raw.client_message_id
-                                    ? { ...m, ...message, id: message.id }
-                                    : m
-                            ),
-                        };
-                    }
-                    return { ...prev, [threadId]: [...existing, message] };
-                });
-
-                if (isUpdate) {
-                    void refreshDmThreadsForUser(currentUser.id);
-                    return;
-                }
-                updateDmThreads(prev => prev.map(t => {
-                    if (t.id !== threadId) return t;
-                    const isIncoming = raw.sender_id !== currentUser.id;
-                    return {
-                        ...t,
-                        lastMessage: raw.removed_at ? t.lastMessage : raw.text,
-                        lastMessageTimestamp: new Date(raw.timestamp),
-                        unreadCount:
-                            isIncoming && !viewingThisThread
-                                ? (t.unreadCount || 0) + 1
-                                : t.unreadCount,
-                        isArchived: isIncoming ? false : t.isArchived,
-                    };
-                }));
+        const applyDmChange = (
+            payload: { new: Record<string, unknown> },
+            isUpdate: boolean
+        ) => {
+            const raw = payload.new as {
+                id: string;
+                thread_id: string;
+                sender_id: string;
+                text: string;
+                timestamp: string;
+                edited_at?: string;
+                removed_at?: string;
+                client_message_id?: string;
+                reply_to_message_id?: string;
+                thread_root_id?: string;
             };
+            const threadId = raw.thread_id;
+            if (!threadId) return;
+            const threadIds = dmThreadIdsRef.current;
+            if (threadIds.size > 0 && !threadIds.has(threadId)) return;
+            if (!isUpdate && raw.sender_id === currentUser.id) return;
+            const viewingThisThread =
+                useUIStore.getState().selectedChat?.chatType === 'dm' &&
+                useUIStore.getState().selectedChat?.id === threadId;
+            const message: DirectMessage = {
+                id: raw.id,
+                threadId,
+                senderId: raw.sender_id,
+                text: raw.removed_at ? '' : raw.text,
+                timestamp: new Date(raw.timestamp),
+                editedAt: raw.edited_at,
+                removedAt: raw.removed_at,
+                isRemoved: !!raw.removed_at,
+                replyToMessageId: raw.reply_to_message_id,
+                threadRootId: raw.thread_root_id,
+                replyCount: 0,
+            };
+            updateDirectMessages(prev => {
+                const existing = prev[threadId] || [];
+                if (isUpdate) {
+                    return {
+                        ...prev,
+                        [threadId]: existing.map((item) => {
+                            const replyTo = item.replyTo?.id === message.id
+                                ? {
+                                    ...item.replyTo,
+                                    text: message.isRemoved ? undefined : message.text,
+                                    isRemoved: !!message.isRemoved,
+                                }
+                                : item.replyTo;
+                            return item.id === message.id
+                                ? { ...item, ...message, replyCount: item.replyCount, replyTo }
+                                : { ...item, replyTo };
+                        }),
+                    };
+                }
+                if (existing.some(m => m.id === message.id)) return prev;
+                if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
+                    return {
+                        ...prev,
+                        [threadId]: existing.map(m =>
+                            m.id === raw.client_message_id
+                                ? { ...m, ...message, id: message.id }
+                                : m
+                        ),
+                    };
+                }
+                return { ...prev, [threadId]: [...existing, message] };
+            });
 
-            return supabase
-                .channel(`dm:${threadId}`)
-                .on(
-                    'postgres_changes',
-                    {
-                        event: 'INSERT',
-                        schema: 'public',
-                        table: 'dm_messages',
-                        filter: `thread_id=eq.${threadId}`,
-                    },
-                    (payload) => applyDmChange(payload as { new: Record<string, unknown> }, false)
-                )
-                .on(
-                    'postgres_changes',
-                    {
-                        event: 'UPDATE',
-                        schema: 'public',
-                        table: 'dm_messages',
-                        filter: `thread_id=eq.${threadId}`,
-                    },
-                    (payload) => applyDmChange(payload as { new: Record<string, unknown> }, true)
-                )
-                .subscribe();
-        });
+            if (isUpdate) {
+                void refreshDmThreadsForUser(currentUser.id);
+                return;
+            }
+            updateDmThreads(prev => prev.map(t => {
+                if (t.id !== threadId) return t;
+                const isIncoming = raw.sender_id !== currentUser.id;
+                return {
+                    ...t,
+                    lastMessage: raw.removed_at ? t.lastMessage : raw.text,
+                    lastMessageTimestamp: new Date(raw.timestamp),
+                    unreadCount:
+                        isIncoming && !viewingThisThread
+                            ? (t.unreadCount || 0) + 1
+                            : t.unreadCount,
+                    isArchived: isIncoming ? false : t.isArchived,
+                };
+            }));
+        };
+
+        const channel = supabase
+            .channel(`dm-messages-all:${currentUser.id}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'dm_messages' },
+                (payload) => applyDmChange(payload as { new: Record<string, unknown> }, false)
+            )
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'dm_messages' },
+                (payload) => applyDmChange(payload as { new: Record<string, unknown> }, true)
+            )
+            .subscribe();
 
         return () => {
-            channels.forEach(ch => ch.unsubscribe());
+            channel.unsubscribe();
         };
     }, [
         currentUser?.id,
-        dmThreadIdsKey,
         lowDataMode,
         refreshDmThreadsForUser,
         updateDirectMessages,
         updateDmThreads,
     ]);
 
+    const groupIdsKey = groups.map((g) => g.id).sort().join(',');
+    const groupIdsRef = useRef(new Set<string>());
+    useEffect(() => {
+        groupIdsRef.current = new Set(groupIdsKey ? groupIdsKey.split(',') : []);
+    }, [groupIdsKey]);
+
     // --- Real-time group messages for all joined groups (so chat updates before/with notifications) ---
     useEffect(() => {
         if (!currentUser || lowDataMode) return;
-        const groupIds = new Set(groups.map((g) => g.id));
-        if (groupIds.size === 0) return;
 
         const applyIncoming = (payloadNew: Record<string, unknown>, isUpdate: boolean) => {
             const groupId = String(payloadNew.group_id || '');
-            if (!groupId || !groupIds.has(groupId)) return;
+            if (!groupId) return;
+            const groupIds = groupIdsRef.current;
+            if (groupIds.size > 0 && !groupIds.has(groupId)) return;
 
             const mapped = mapMessageFromApi(payloadNew);
             const raw = payloadNew as {
@@ -1417,7 +1416,7 @@ export function useAppEffects({
         return () => {
             channel.unsubscribe();
         };
-    }, [currentUser?.id, groups.map((g) => g.id).join(','), lowDataMode, updateMessages]);
+    }, [currentUser?.id, lowDataMode, updateMessages]);
 
     // --- Real-time profile updates subscription ---
     useEffect(() => {

@@ -240,12 +240,34 @@ export function useNoteHandlers(currentUserId?: string) {
   );
 
   const handleStartDailyQuiz = useCallback(
-    async (content: string, noteId?: string) => {
+    async (noteId: string, sourceNoteTitle?: string) => {
+      const notes = useNotesStore.getState().notes;
+      const note =
+        notes.find((n) => n.id === noteId) ||
+        (selectedNote?.id === noteId ? selectedNote : null);
+      const title = (sourceNoteTitle || note?.title || 'Selected note').trim();
+
+      if (noteId) {
+        try {
+          const session = await notesApi.generateNoteQuiz(noteId, studyGoal, 5);
+          const withTitle = { ...session, sourceNoteTitle: title };
+          setDailyQuiz(withTitle);
+          return withTitle;
+        } catch {
+          // Fall back to content-based generation below.
+        }
+      }
+
+      const content = note ? getNoteStudyContent(note) : '';
+      if (content.trim().length < MIN_NOTE_STUDY_CONTENT_CHARS) {
+        throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
+      }
       const result = await notesApi.generateDailyQuizFromContent(content, studyGoal, 5);
       const questions = buildDailyQuizQuestions(result.questions);
       const session = {
         date: new Date().toISOString().slice(0, 10),
         noteId,
+        sourceNoteTitle: title,
         questions,
         answers: {},
         completed: false,
@@ -253,7 +275,7 @@ export function useNoteHandlers(currentUserId?: string) {
       setDailyQuiz(session);
       return session;
     },
-    [studyGoal, setDailyQuiz]
+    [studyGoal, setDailyQuiz, selectedNote]
   );
 
   const handleStartNoteQuiz = useCallback(
@@ -269,8 +291,9 @@ export function useNoteHandlers(currentUserId?: string) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
       const session = await notesApi.generateNoteQuiz(note.id, studyGoal, 5);
-      setDailyQuiz(session);
-      return session;
+      const withTitle = { ...session, sourceNoteTitle: note.title };
+      setDailyQuiz(withTitle);
+      return withTitle;
     },
     [selectedNote, studyGoal, setDailyQuiz, cancelAutoSave, saveNote, loadNote]
   );

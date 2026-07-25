@@ -155,7 +155,9 @@ interface DashboardScreenProps {
   onStudyGoalChange?: (goal: StudyGoalMode) => void;
   dailyQuiz?: DailyQuizSession | null;
   dailyQuizProgress?: number;
-  onStartDailyQuiz?: () => void;
+  dailyQuizNoteOptions?: Array<{ id: string; title: string }>;
+  startingDailyQuiz?: boolean;
+  onStartDailyQuiz?: (noteId: string) => void;
   onDailyQuizAnswer?: (questionId: string, answer: string) => void;
   onCompleteDailyQuiz?: () => void;
   activeTestSession?: TestSessionData | null;
@@ -297,6 +299,8 @@ export default function DashboardScreen({
   onStudyGoalChange,
   dailyQuiz = null,
   dailyQuizProgress = 0,
+  dailyQuizNoteOptions = [],
+  startingDailyQuiz = false,
   onStartDailyQuiz,
   onDailyQuizAnswer,
   onCompleteDailyQuiz,
@@ -1138,6 +1142,8 @@ export default function DashboardScreen({
             studyGoal={studyGoal}
             dailyQuiz={dailyQuiz}
             progress={dailyQuizProgress}
+            noteOptions={dailyQuizNoteOptions}
+            starting={startingDailyQuiz}
             onStudyGoalChange={onStudyGoalChange}
             onStartQuiz={onStartDailyQuiz}
             onAnswer={onDailyQuizAnswer}

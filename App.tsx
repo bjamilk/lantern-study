@@ -142,6 +142,7 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [startingDailyQuiz, setStartingDailyQuiz] = useState(false);
     const [accountLifecycle, setAccountLifecycle] = useState<{
         status: 'active' | 'deactivated';
         deletionScheduledAt?: string | null;
@@ -1021,16 +1022,36 @@ export const App: React.FC = () => {
                     onGetStudyRecommendations={handleAIStudyRecommendations}
                     studyGoal={studyGoal}
                     onStudyGoalChange={setStudyGoal}
-                    dailyQuiz={getDailyQuizForToday()}
+                    dailyQuiz={(() => {
+                        const quiz = getDailyQuizForToday();
+                        if (!quiz || quiz.sourceNoteTitle || !quiz.noteId) return quiz;
+                        const note = notes.find((n) => n.id === quiz.noteId);
+                        return note
+                            ? { ...quiz, sourceNoteTitle: note.title?.trim() || 'Untitled note' }
+                            : quiz;
+                    })()}
                     dailyQuizProgress={dailyQuizProgress}
-                    onStartDailyQuiz={async () => {
-                        const source = notes.find(n => (n.body?.length ?? 0) > 50) || notes[0];
-                        const content = source?.body || source?.summary || '';
-                        if (content.length < 50) {
+                    dailyQuizNoteOptions={notes
+                        .filter((n) => getNoteStudyContent(n).trim().length >= 50)
+                        .map((n) => ({
+                            id: n.id,
+                            title: n.title?.trim() || 'Untitled note',
+                        }))}
+                    startingDailyQuiz={startingDailyQuiz}
+                    onStartDailyQuiz={async (noteId) => {
+                        const source = notes.find((n) => n.id === noteId);
+                        if (!source || getNoteStudyContent(source).trim().length < 50) {
                             showToast('Add or import a note with at least 50 characters to generate a daily quiz.', 'info');
                             return;
                         }
-                        await noteHandlers.handleStartDailyQuiz(content, source?.id);
+                        setStartingDailyQuiz(true);
+                        try {
+                            await noteHandlers.handleStartDailyQuiz(noteId, source.title);
+                        } catch (e: any) {
+                            showToast(e?.message || 'Failed to generate daily quiz.', 'error');
+                        } finally {
+                            setStartingDailyQuiz(false);
+                        }
                     }}
                     onDailyQuizAnswer={answerDailyQuestion}
                     onCompleteDailyQuiz={completeDailyQuiz}

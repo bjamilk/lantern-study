@@ -227,7 +227,14 @@ export function DashboardScreen({ navigation }: Props) {
     [profileFirstName, profileName, user]
   );
 
-  const todayQuiz = getDailyQuizForToday() ?? dailyQuiz;
+  const todayQuiz = useMemo(() => {
+    const quiz = getDailyQuizForToday() ?? dailyQuiz;
+    if (!quiz || quiz.sourceNoteTitle || !quiz.noteId) return quiz;
+    const note = notes.find(n => n.id === quiz.noteId);
+    return note
+      ? { ...quiz, sourceNoteTitle: note.title?.trim() || 'Untitled note' }
+      : quiz;
+  }, [getDailyQuizForToday, dailyQuiz, notes]);
 
   const availableGroups = useMemo(() => groups.filter(g => !g.isArchived), [groups]);
 
@@ -421,31 +428,34 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-  const startQuiz = useCallback(async () => {
+  const quizNoteOptions = useMemo(
+    () =>
+      notes
+        .filter(n => ((n.body?.length ?? 0) >= 50) || ((n.summary?.length ?? 0) >= 50))
+        .map(n => ({
+          id: n.id,
+          title: n.title?.trim() || 'Untitled note',
+        })),
+    [notes]
+  );
 
-    setQuizLoading(true);
+  const startQuiz = useCallback(
+    async (noteId: string) => {
+      const note = notes.find(n => n.id === noteId);
+      if (!note) return;
 
-    try {
-
-      const content =
-
-        notes.slice(0, 3).map(n => `${n.title}\n${n.body}`).join('\n\n') ||
-
-        'Spaced repetition helps long-term memory. Active recall beats re-reading.';
-
-      await startDailyQuizFromContent(content.slice(0, 4000), notes[0]?.id);
-
-    } catch {
-
-      setDailyQuiz(null);
-
-    } finally {
-
-      setQuizLoading(false);
-
-    }
-
-  }, [notes, startDailyQuizFromContent, setDailyQuiz]);
+      setQuizLoading(true);
+      try {
+        const content = `${note.title}\n${note.body || note.summary || ''}`.slice(0, 4000);
+        await startDailyQuizFromContent(content, note.id, note.title);
+      } catch {
+        setDailyQuiz(null);
+      } finally {
+        setQuizLoading(false);
+      }
+    },
+    [notes, startDailyQuizFromContent, setDailyQuiz]
+  );
 
 
 
@@ -1031,23 +1041,15 @@ export function DashboardScreen({ navigation }: Props) {
 
 
         <DailyQuizWidget
-
           studyGoal={studyGoal}
-
           dailyQuiz={todayQuiz}
-
           progress={dailyQuizProgress}
-
           loading={quizLoading}
-
+          noteOptions={quizNoteOptions}
           onStudyGoalChange={setStudyGoal}
-
-          onStartQuiz={() => void startQuiz()}
-
+          onStartQuiz={(noteId) => void startQuiz(noteId)}
           onAnswer={answerDailyQuestion}
-
           onComplete={completeDailyQuiz}
-
         />
 
 

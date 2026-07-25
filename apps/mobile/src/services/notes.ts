@@ -367,10 +367,21 @@ export const generateDailyQuizFromContent = (
   studyGoal: StudyGoalMode = 'retention',
   count: number = 5
 ) =>
-  notesRequest<{ questions: Array<{ id: string; question: string; options?: string[]; correctAnswer: string }> }>(
-    '/daily-quiz',
-    { method: 'POST', body: JSON.stringify({ content, studyGoal, count }) }
-  );
+  notesRequest<{
+    questions: Array<{
+      id?: string;
+      text?: string;
+      question?: string;
+      type?: string;
+      options?: string[];
+      correctAnswer: string;
+      explanation?: string;
+      topic?: string;
+    }>;
+  }>('/daily-quiz', {
+    method: 'POST',
+    body: JSON.stringify({ content, studyGoal, count }),
+  });
 
 export const getNoteQuiz = (noteId: string) =>
   notesRequest<DailyQuizSession | null>(`/${noteId}/quiz`);
