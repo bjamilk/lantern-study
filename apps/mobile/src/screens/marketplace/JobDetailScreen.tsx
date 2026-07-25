@@ -22,15 +22,18 @@ import {
   formatJobEngagementDuration,
   formatJobLocation,
   formatJobPostedDate,
+  type JobApplicantProfile,
   type JobPosting,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import {
   applyToJob,
+  fetchJobApplicantProfile,
   fetchJobPosting,
   setJobPostingSaved,
   trackJobExternalApply,
 } from "../../services/jobsBoard";
+import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import type { MarketStackParamList } from "../../navigation/types";
 
 export function JobDetailScreen() {
@@ -39,7 +42,8 @@ export function JobDetailScreen() {
   const route = useRoute<RouteProp<MarketStackParamList, "JobDetail">>();
   const [job, setJob] = useState<JobPosting | null>(null);
   const [message, setMessage] = useState("");
-  const [resumeUrl, setResumeUrl] = useState("");
+  const [applicantProfile, setApplicantProfile] =
+    useState<JobApplicantProfile | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [savingSaved, setSavingSaved] = useState(false);
@@ -68,6 +72,13 @@ export function JobDetailScreen() {
         setError(e instanceof Error ? e.message : "Failed to load"),
       );
   }, [route.params.jobId]);
+
+  useEffect(() => {
+    // A missing profile is normal for first-time applicants.
+    void fetchJobApplicantProfile()
+      .then((res) => setApplicantProfile(res.data))
+      .catch(() => setApplicantProfile(null));
+  }, []);
 
   if (!job && !error) {
     return (
@@ -275,23 +286,12 @@ export function JobDetailScreen() {
               multiline
               textAlignVertical="top"
             />
-            {job.companyId ? (
-              <>
-                <Text className="mb-2 mt-4 text-sm font-medium text-lantern-text">
-                  Resume URL{" "}
-                  <Text className="text-lantern-text-tertiary">(optional)</Text>
-                </Text>
-                <TextInput
-                  className="rounded-xl border border-lantern-border bg-lantern-background px-3 py-3 text-sm text-lantern-text"
-                  placeholder="https://…"
-                  placeholderTextColor="#94a3b8"
-                  value={resumeUrl}
-                  onChangeText={setResumeUrl}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
-              </>
-            ) : null}
+            <View className="mt-4">
+              <ResumeUploadField
+                profile={applicantProfile}
+                onUploaded={setApplicantProfile}
+              />
+            </View>
             <Pressable
               disabled={busy}
               className="mt-4 items-center rounded-xl bg-lantern-primary py-3"
@@ -313,7 +313,8 @@ export function JobDetailScreen() {
                     await applyToJob(job.id, {
                       message: message.trim() || undefined,
                       answers,
-                      resumeUrl: resumeUrl.trim() || null,
+                      resumePath: applicantProfile?.resumePath || null,
+                      resumeFilename: applicantProfile?.resumeFilename || null,
                     });
                     setSuccess(
                       "Application sent. Track it from My applications.",

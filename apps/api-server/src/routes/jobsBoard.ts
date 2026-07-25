@@ -209,6 +209,116 @@ router.get(
   }),
 );
 
+// ─── Applicant profile + resumes ───────────────────────────────────────────
+
+// GET /applicant-profile
+router.get(
+  "/applicant-profile",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const data = await jobs().getApplicantProfile(userId);
+    res.json({ success: true, data });
+  }),
+);
+
+// PUT /applicant-profile
+router.put(
+  "/applicant-profile",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { headline, phone, locationText } = req.body || {};
+    try {
+      const data = await jobs().saveApplicantProfile(userId, {
+        headline,
+        phone,
+        locationText,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /resume/upload-url — mint a direct-to-storage upload target
+router.post(
+  "/resume/upload-url",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { filename, sizeBytes } = req.body || {};
+    if (!filename || typeof filename !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, error: "filename is required" });
+    }
+    try {
+      const data = await jobs().createResumeUploadUrl(userId, {
+        filename,
+        sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /resume — attach an uploaded object to the caller's profile
+router.post(
+  "/resume",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { path, filename, sizeBytes } = req.body || {};
+    if (!path || typeof path !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, error: "path is required" });
+    }
+    try {
+      const data = await jobs().attachResumeToProfile(userId, {
+        path,
+        filename: typeof filename === "string" ? filename : "",
+        sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// GET /applications/:id/resume — signed link for the applicant or the employer
+router.get(
+  "/applications/:id/resume",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().getApplicationResumeUrl(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // GET /saved — postings the caller bookmarked
 router.get(
   "/saved",
@@ -269,6 +379,8 @@ router.post(
         message: req.body?.message,
         answers: req.body?.answers,
         resumeUrl: req.body?.resumeUrl,
+        resumePath: req.body?.resumePath,
+        resumeFilename: req.body?.resumeFilename,
       });
       res.status(result.existing ? 200 : 201).json({
         success: true,
@@ -403,12 +515,10 @@ router.post(
     const { legalName, displayName, website, industry, verificationDomain } =
       req.body || {};
     if (!legalName || !displayName) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "legalName and displayName are required",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "legalName and displayName are required",
+      });
     }
     const data = await jobs().createCompany(userId, {
       legalName,

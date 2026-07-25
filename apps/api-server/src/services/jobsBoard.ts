@@ -2,11 +2,15 @@
  * Jobs board service — employment listings sibling of marketplace goods.
  * Mutations use the service-role Supabase client.
  */
+import { randomUUID } from "crypto";
 import {
   JOBS_DEFAULT_COUNTRY,
   JOBS_MAX_SCREENERS_PHASE1,
   JOBS_MAX_SCREENERS_PHASE2,
+  JOB_RESUME_MAX_BYTES,
   isJobCompensationPeriod,
+  jobResumeExtension,
+  jobResumeMimeType,
   isValidJobEngagementDuration,
   jobRequiresEngagementDuration,
   textFailsJobScamCheck,
@@ -47,6 +51,9 @@ export type CreateJobPostingInput = {
   atsExternalId?: string | null;
   atsWebhookUrl?: string | null;
 };
+
+const RESUME_BUCKET = "job-resumes";
+const RESUME_SIGNED_URL_TTL_SECONDS = 60 * 10;
 
 function httpError(message: string, statusCode = 400): Error {
   const err = new Error(message);
@@ -186,6 +193,8 @@ function mapApplication(row: any) {
     applicantId: row.applicant_id,
     answers: row.answers || {},
     resumeUrl: row.resume_url,
+    resumePath: row.resume_path || null,
+    resumeFilename: row.resume_filename || null,
     status: row.status,
     dmThreadId: row.dm_thread_id,
     source: row.source,
@@ -199,6 +208,22 @@ function mapApplication(row: any) {
           avatarUrl: row.applicant.avatar_url,
         }
       : undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapApplicantProfile(row: any) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    headline: row.headline,
+    phone: row.phone,
+    locationText: row.location_text,
+    resumePath: row.resume_path,
+    resumeFilename: row.resume_filename,
+    resumeSizeBytes: row.resume_size_bytes,
+    resumeUploadedAt: row.resume_uploaded_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -631,6 +656,8 @@ export class JobsBoardService {
       message?: string;
       answers?: Record<string, string>;
       resumeUrl?: string | null;
+      resumePath?: string | null;
+      resumeFilename?: string | null;
     },
   ) {
     const posting = await this.getPosting(postingId);
@@ -669,6 +696,20 @@ export class JobsBoardService {
       const err = new Error("This employer is not verified yet");
       (err as Error & { statusCode?: number }).statusCode = 403;
       throw err;
+    }
+
+    // Attach the resume the applicant chose, or fall back to the one saved on
+    // their profile so they do not have to upload it again per application.
+    let resumePath = payload.resumePath?.trim() || null;
+    let resumeFilename = payload.resumeFilename?.trim() || null;
+    if (resumePath) {
+      this.assertOwnedResumePath(applicantId, resumePath);
+    } else {
+      const profile = await this.getApplicantProfile(applicantId);
+      if (profile?.resumePath) {
+        resumePath = profile.resumePath;
+        resumeFilename = resumeFilename || profile.resumeFilename || null;
+      }
     }
 
     const existing = await this.getApplicationByPostingAndApplicant(
@@ -721,6 +762,8 @@ export class JobsBoardService {
         applicant_id: applicantId,
         answers: payload.answers || {},
         resume_url: payload.resumeUrl || null,
+        resume_path: resumePath,
+        resume_filename: resumeFilename,
         status: initialStatus,
         dm_thread_id: threadId,
         source: "in_app",
@@ -980,6 +1023,214 @@ export class JobsBoardService {
       .single();
     if (error && error.code !== "23505") throw error;
     return data;
+  }
+
+  // ─── Applicant profile + resumes ─────────────────────────────────────────
+
+  private resumeBucket() {
+    return this.client().storage.from(RESUME_BUCKET);
+  }
+
+  /** Storage paths are always `{userId}/{uuid}.{ext}` so ownership is provable. */
+  private assertOwnedResumePath(userId: string, path: string) {
+    if (
+      !path ||
+      path.includes("..") ||
+      path.includes("\\") ||
+      path.startsWith("/")
+    ) {
+      throw httpError("Invalid resume path");
+    }
+    if (!path.startsWith(`${userId}/`)) {
+      throw httpError("Not allowed", 403);
+    }
+  }
+
+  async getApplicantProfile(userId: string) {
+    const { data, error } = await this.client()
+      .from("job_applicant_profiles")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    return mapApplicantProfile(data);
+  }
+
+  async saveApplicantProfile(
+    userId: string,
+    input: {
+      headline?: string | null;
+      phone?: string | null;
+      locationText?: string | null;
+    },
+  ) {
+    const patch: Record<string, unknown> = {
+      user_id: userId,
+      updated_at: new Date().toISOString(),
+    };
+    if (input.headline !== undefined) {
+      patch.headline = input.headline?.trim().slice(0, 160) || null;
+    }
+    if (input.phone !== undefined) {
+      patch.phone = input.phone?.trim().slice(0, 40) || null;
+    }
+    if (input.locationText !== undefined) {
+      patch.location_text = input.locationText?.trim().slice(0, 120) || null;
+    }
+    if (
+      typeof patch.headline === "string" &&
+      textFailsJobScamCheck(patch.headline)
+    ) {
+      throw httpError("Your headline contains banned content");
+    }
+
+    const { data, error } = await this.client()
+      .from("job_applicant_profiles")
+      .upsert(patch, { onConflict: "user_id" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapApplicantProfile(data);
+  }
+
+  /**
+   * Mint a short-lived signed upload URL so the file goes straight to Storage
+   * rather than through the API process.
+   */
+  async createResumeUploadUrl(
+    userId: string,
+    input: { filename: string; sizeBytes?: number | null },
+  ) {
+    const filename = (input.filename || "").trim();
+    const extension = jobResumeExtension(filename);
+    const contentType = jobResumeMimeType(filename);
+    if (!extension || !contentType) {
+      throw httpError("Resumes must be a PDF, DOC, or DOCX file");
+    }
+    if (input.sizeBytes != null && input.sizeBytes > JOB_RESUME_MAX_BYTES) {
+      throw httpError("Resumes must be smaller than 5.0 MB");
+    }
+
+    const path = `${userId}/${randomUUID()}.${extension}`;
+    const { data, error } =
+      await this.resumeBucket().createSignedUploadUrl(path);
+    if (error || !data?.signedUrl || !data?.token) {
+      logger.error("Failed to create resume upload URL", { error, userId });
+      throw httpError(
+        error?.message || "Could not start the resume upload",
+        500,
+      );
+    }
+    return {
+      bucket: RESUME_BUCKET,
+      path,
+      token: data.token,
+      signedUrl: data.signedUrl,
+      contentType,
+    };
+  }
+
+  /**
+   * Point the applicant's profile at a freshly uploaded object, after confirming
+   * it exists so a failed upload cannot leave a dangling reference.
+   */
+  async attachResumeToProfile(
+    userId: string,
+    input: { path: string; filename: string; sizeBytes?: number | null },
+  ) {
+    this.assertOwnedResumePath(userId, input.path);
+    const objectName = input.path.slice(userId.length + 1);
+    const { data: found, error: listError } = await this.resumeBucket().list(
+      userId,
+      {
+        limit: 100,
+        search: objectName,
+      },
+    );
+    if (listError) throw listError;
+    const uploaded = (found || []).find(
+      (entry: any) => entry.name === objectName,
+    );
+    if (!uploaded) {
+      throw httpError("That upload did not complete. Please try again.");
+    }
+
+    const previous = await this.getApplicantProfile(userId);
+    const { data, error } = await this.client()
+      .from("job_applicant_profiles")
+      .upsert(
+        {
+          user_id: userId,
+          resume_path: input.path,
+          resume_filename: (input.filename || objectName).trim().slice(0, 200),
+          resume_size_bytes: input.sizeBytes ?? uploaded.metadata?.size ?? null,
+          resume_uploaded_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      )
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    // Old files stay referenced by past applications, so only drop a replaced
+    // resume when nothing else points at it.
+    if (previous?.resumePath && previous.resumePath !== input.path) {
+      await this.deleteResumeIfUnreferenced(previous.resumePath);
+    }
+    return mapApplicantProfile(data);
+  }
+
+  private async deleteResumeIfUnreferenced(path: string) {
+    const { count, error } = await this.client()
+      .from("job_applications")
+      .select("id", { count: "exact", head: true })
+      .eq("resume_path", path);
+    if (error) {
+      logger.warn("Could not check resume references; keeping file", { error });
+      return;
+    }
+    if ((count ?? 0) > 0) return;
+    const { error: removeError } = await this.resumeBucket().remove([path]);
+    if (removeError) {
+      logger.warn("Failed to remove replaced resume", { error: removeError });
+    }
+  }
+
+  /** Signed download URL for the applicant themselves or an authorized employer. */
+  async getApplicationResumeUrl(applicationId: string, viewerId: string) {
+    const { data: app, error } = await this.client()
+      .from("job_applications")
+      .select(
+        "id, applicant_id, resume_path, resume_filename, resume_url, posting:job_postings(id, poster_user_id, company_id)",
+      )
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!app) throw httpError("Application not found", 404);
+
+    const posting = Array.isArray(app.posting) ? app.posting[0] : app.posting;
+    const allowed =
+      app.applicant_id === viewerId ||
+      posting?.poster_user_id === viewerId ||
+      (posting?.company_id &&
+        (await this.getCompanyMembership(posting.company_id, viewerId)));
+    if (!allowed) throw httpError("Not allowed", 403);
+
+    if (!app.resume_path) {
+      // Legacy applications carry a pasted link instead of an uploaded file.
+      if (app.resume_url) {
+        return { url: app.resume_url, filename: null, external: true };
+      }
+      throw httpError("This application has no resume", 404);
+    }
+
+    const url = await this.supabase.createSignedStorageUrl(
+      RESUME_BUCKET,
+      app.resume_path,
+      RESUME_SIGNED_URL_TTL_SECONDS,
+    );
+    return { url, filename: app.resume_filename || null, external: false };
   }
 
   // ─── Companies (Phase 2) ─────────────────────────────────────────────────

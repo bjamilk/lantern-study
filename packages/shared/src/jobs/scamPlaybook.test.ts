@@ -1,13 +1,16 @@
-import { findJobScamMatches, textFailsJobScamCheck } from './scamPlaybook';
+import { describe, expect, it } from "vitest";
+import { findJobScamMatches, textFailsJobScamCheck } from "./scamPlaybook";
 
-describe('job scam playbook', () => {
-  it('blocks pay-to-start and BVN requests', () => {
-    expect(textFailsJobScamCheck('You must pay to start training')).toBe(true);
-    expect(textFailsJobScamCheck('Send your BVN to verify')).toBe(true);
-    expect(findJobScamMatches('gift card required').length).toBeGreaterThan(0);
+describe("job scam playbook", () => {
+  it("blocks pay-to-start and BVN requests", () => {
+    expect(textFailsJobScamCheck("You must pay to start training")).toBe(true);
+    expect(textFailsJobScamCheck("Send your BVN to verify")).toBe(true);
+    expect(findJobScamMatches("gift card required").length).toBeGreaterThan(0);
   });
 
-  it('allows normal tutoring copy', () => {
-    expect(textFailsJobScamCheck('Need a CHEM101 tutor, ₦3000/hour, campus library')).toBe(false);
+  it("allows normal tutoring copy", () => {
+    expect(
+      textFailsJobScamCheck("Need a CHEM101 tutor, ₦3000/hour, campus library"),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,11 @@
+import * as FileSystem from "expo-file-system/legacy";
+import { validateJobResume } from "@lantern/shared";
 import { API_BASE_URL, getAuthHeaders } from "./supabase";
-import type { JobApplication, JobPosting } from "@lantern/shared";
+import type {
+  JobApplicantProfile,
+  JobApplication,
+  JobPosting,
+} from "@lantern/shared";
 
 async function jobsRequest<T>(
   path: string,
@@ -69,12 +75,92 @@ export async function updateJobPosting(
   );
 }
 
+export async function fetchJobApplicantProfile() {
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile | null }>(
+    "/applicant-profile",
+  );
+}
+
+export async function saveJobApplicantProfile(body: {
+  headline?: string | null;
+  phone?: string | null;
+  locationText?: string | null;
+}) {
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile }>(
+    "/applicant-profile",
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
+export async function fetchJobApplicationResumeUrl(applicationId: string) {
+  return jobsRequest<{
+    success: boolean;
+    data: { url: string; filename: string | null; external: boolean };
+  }>(`/applications/${encodeURIComponent(applicationId)}/resume`);
+}
+
+/**
+ * Uploads the picked document straight to Storage from its local URI, then
+ * records it on the caller's applicant profile.
+ */
+export async function uploadJobResume(file: {
+  uri: string;
+  name: string;
+  size?: number | null;
+  mimeType?: string | null;
+}) {
+  const validationError = validateJobResume({
+    name: file.name,
+    size: file.size,
+    type: file.mimeType,
+  });
+  if (validationError) throw new Error(validationError);
+
+  const prepared = await jobsRequest<{
+    success: boolean;
+    data: {
+      bucket: string;
+      path: string;
+      token: string;
+      signedUrl: string;
+      contentType: string;
+    };
+  }>("/resume/upload-url", {
+    method: "POST",
+    body: JSON.stringify({ filename: file.name, sizeBytes: file.size ?? null }),
+  });
+
+  const { path, signedUrl, contentType } = prepared.data;
+  const uploadResult = await FileSystem.uploadAsync(signedUrl, file.uri, {
+    httpMethod: "PUT",
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: { "Content-Type": contentType, "x-upsert": "false" },
+  });
+  if (uploadResult.status < 200 || uploadResult.status >= 300) {
+    throw new Error("Resume upload failed. Please try again.");
+  }
+
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile }>(
+    "/resume",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        path,
+        filename: file.name,
+        sizeBytes: file.size ?? null,
+      }),
+    },
+  );
+}
+
 export async function applyToJob(
   id: string,
   body: {
     message?: string;
     answers?: Record<string, string>;
     resumeUrl?: string | null;
+    resumePath?: string | null;
+    resumeFilename?: string | null;
   },
 ) {
   return jobsRequest<{

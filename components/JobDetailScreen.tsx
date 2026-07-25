@@ -8,15 +8,18 @@ import {
   formatJobEngagementDuration,
   formatJobLocation,
   formatJobPostedDate,
+  type JobApplicantProfile,
   type JobPosting,
 } from "@lantern/shared";
 import {
   applyToJob,
+  fetchJobApplicantProfile,
   fetchJobPosting,
   reportJobPosting,
   setJobPostingSaved,
   trackJobExternalApply,
 } from "../services/jobsBoard";
+import { ResumeUploadField } from "./jobs/ResumeUploadField";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 interface Props {
@@ -33,7 +36,8 @@ export default function JobDetailScreen({
   const [job, setJob] = useState<JobPosting | null>(null);
   const [message, setMessage] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [resumeUrl, setResumeUrl] = useState("");
+  const [applicantProfile, setApplicantProfile] =
+    useState<JobApplicantProfile | null>(null);
   const [busy, setBusy] = useState(false);
   const [savingSaved, setSavingSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +51,13 @@ export default function JobDetailScreen({
       );
   }, [jobId]);
 
+  useEffect(() => {
+    // A missing profile is normal for first-time applicants.
+    void fetchJobApplicantProfile()
+      .then((res) => setApplicantProfile(res.data))
+      .catch(() => setApplicantProfile(null));
+  }, []);
+
   const handleApply = async () => {
     if (!job) return;
     setBusy(true);
@@ -56,7 +67,8 @@ export default function JobDetailScreen({
       const res = await applyToJob(job.id, {
         message: message.trim() || undefined,
         answers,
-        resumeUrl: resumeUrl.trim() || null,
+        resumePath: applicantProfile?.resumePath || null,
+        resumeFilename: applicantProfile?.resumeFilename || null,
       });
       setSuccess(
         res.existing
@@ -393,23 +405,10 @@ export default function JobDetailScreen({
                     placeholder="Briefly introduce yourself and your interest."
                   />
                 </label>
-                {job.companyId ? (
-                  <label className="block text-sm">
-                    <span className="font-medium text-lantern-text">
-                      Resume URL
-                    </span>
-                    <span className="ml-1 text-lantern-text-tertiary">
-                      (optional)
-                    </span>
-                    <input
-                      type="url"
-                      className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
-                      value={resumeUrl}
-                      onChange={(event) => setResumeUrl(event.target.value)}
-                      placeholder="https://…"
-                    />
-                  </label>
-                ) : null}
+                <ResumeUploadField
+                  profile={applicantProfile}
+                  onUploaded={setApplicantProfile}
+                />
                 <button
                   type="submit"
                   disabled={busy}

@@ -128,6 +128,9 @@ export interface JobApplication {
   applicantId: string;
   answers: Record<string, string>;
   resumeUrl?: string | null;
+  /** Storage path in the private job-resumes bucket. Read via a signed URL. */
+  resumePath?: string | null;
+  resumeFilename?: string | null;
   status: JobApplicationStatus;
   dmThreadId?: string | null;
   source: "in_app" | "external_click";
@@ -139,6 +142,23 @@ export interface JobApplication {
     username?: string | null;
     avatarUrl?: string | null;
   } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Reusable applicant details so a candidate does not re-enter the same
+ * information (and re-upload the same resume) for every application.
+ */
+export interface JobApplicantProfile {
+  userId: string;
+  headline?: string | null;
+  phone?: string | null;
+  locationText?: string | null;
+  resumePath?: string | null;
+  resumeFilename?: string | null;
+  resumeSizeBytes?: number | null;
+  resumeUploadedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

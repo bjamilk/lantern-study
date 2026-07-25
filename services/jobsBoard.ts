@@ -1,6 +1,8 @@
 /** Web client for /api/v1/jobs-board */
 import {
   getApiBaseUrl,
+  validateJobResume,
+  type JobApplicantProfile,
   type JobApplication,
   type JobPosting,
 } from "@lantern/shared";
@@ -93,12 +95,92 @@ export async function fetchMyJobPostings() {
   return jobsRequest<{ success: boolean; data: JobPosting[] }>("/my-postings");
 }
 
+export async function fetchJobApplicantProfile() {
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile | null }>(
+    "/applicant-profile",
+  );
+}
+
+export async function saveJobApplicantProfile(body: {
+  headline?: string | null;
+  phone?: string | null;
+  locationText?: string | null;
+}) {
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile }>(
+    "/applicant-profile",
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
+export async function fetchJobApplicationResumeUrl(applicationId: string) {
+  return jobsRequest<{
+    success: boolean;
+    data: { url: string; filename: string | null; external: boolean };
+  }>(`/applications/${encodeURIComponent(applicationId)}/resume`);
+}
+
+/**
+ * Uploads straight to Supabase Storage using a short-lived signed URL, then
+ * records the object on the caller's applicant profile.
+ */
+export async function uploadJobResume(file: File) {
+  const validationError = validateJobResume({
+    name: file.name,
+    size: file.size,
+    type: file.type,
+  });
+  if (validationError) throw new Error(validationError);
+
+  const prepared = await jobsRequest<{
+    success: boolean;
+    data: {
+      bucket: string;
+      path: string;
+      token: string;
+      signedUrl: string;
+      contentType: string;
+    };
+  }>("/resume/upload-url", {
+    method: "POST",
+    body: JSON.stringify({ filename: file.name, sizeBytes: file.size }),
+  });
+
+  const { bucket, path, token, signedUrl, contentType } = prepared.data;
+  const response = await fetch(signedUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType, "x-upsert": "false" },
+    body: file,
+  });
+  if (!response.ok) {
+    // Fall back to the supabase-js helper, which handles some proxy quirks.
+    const { supabase } = await import("./supabase");
+    const { error } = await supabase.storage
+      .from(bucket)
+      .uploadToSignedUrl(path, token, file, { contentType });
+    if (error) throw new Error(error.message || "Resume upload failed");
+  }
+
+  return jobsRequest<{ success: boolean; data: JobApplicantProfile }>(
+    "/resume",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        path,
+        filename: file.name,
+        sizeBytes: file.size,
+      }),
+    },
+  );
+}
+
 export async function applyToJob(
   id: string,
   body: {
     message?: string;
     answers?: Record<string, string>;
     resumeUrl?: string | null;
+    resumePath?: string | null;
+    resumeFilename?: string | null;
   },
 ) {
   return jobsRequest<{
