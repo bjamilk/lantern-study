@@ -3,7 +3,9 @@ import { BookmarkIcon } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
+  JOB_POSTING_STATUS_LABELS,
   JOBS_COMPANY_DISCLAIMER,
+  isJobPostingPubliclyVisible,
   formatJobCompensation,
   formatJobEngagementDuration,
   formatJobLocation,
@@ -140,8 +142,12 @@ export default function JobDetailScreen({
     );
   }
 
-  const showInApp = job.applyMode === "in_app" || job.applyMode === "both";
+  // Paused, closed and draft posts stay readable but take no new applications.
+  const isOpen = isJobPostingPubliclyVisible(job.status);
+  const showInApp =
+    isOpen && (job.applyMode === "in_app" || job.applyMode === "both");
   const showExternal =
+    isOpen &&
     (job.applyMode === "external" || job.applyMode === "both") &&
     !!job.externalUrl;
   const employer =
@@ -236,6 +242,18 @@ export default function JobDetailScreen({
             </div>
           </div>
         </header>
+
+        {!isOpen ? (
+          <p
+            role="status"
+            className="rounded-lantern-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            <span className="font-semibold">
+              {JOB_POSTING_STATUS_LABELS[job.status]}
+            </span>{" "}
+            — this job is not accepting applications right now.
+          </p>
+        ) : null}
 
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <main className="space-y-4">

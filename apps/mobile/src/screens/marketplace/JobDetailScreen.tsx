@@ -18,6 +18,8 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
+  JOB_POSTING_STATUS_LABELS,
+  isJobPostingPubliclyVisible,
   formatJobCompensation,
   formatJobEngagementDuration,
   formatJobLocation,
@@ -170,6 +172,17 @@ export function JobDetailScreen() {
               </Text>
             </Card>
 
+            {!isJobPostingPubliclyVisible(job.status) ? (
+              <View className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <Text className="text-sm text-amber-900">
+                  <Text className="font-semibold">
+                    {JOB_POSTING_STATUS_LABELS[job.status]}
+                  </Text>{" "}
+                  — this job is not accepting applications right now.
+                </Text>
+              </View>
+            ) : null}
+
             <Card className="mb-3 border border-lantern-border">
               <Text className="text-base font-semibold text-lantern-text">
                 Job overview
@@ -214,7 +227,9 @@ export function JobDetailScreen() {
             </Card>
           </>
         ) : null}
-        {job && (job.applyMode === "in_app" || job.applyMode === "both") ? (
+        {job &&
+        isJobPostingPubliclyVisible(job.status) &&
+        (job.applyMode === "in_app" || job.applyMode === "both") ? (
           <Card className="mb-3 border border-lantern-border">
             <Text className="text-base font-semibold text-lantern-text">
               Apply for this job
@@ -334,6 +349,7 @@ export function JobDetailScreen() {
           </Card>
         ) : null}
         {job?.externalUrl &&
+        isJobPostingPubliclyVisible(job.status) &&
         (job.applyMode === "external" || job.applyMode === "both") ? (
           <Pressable
             className="mb-3 items-center rounded-xl border border-lantern-primary bg-lantern-surface py-3"

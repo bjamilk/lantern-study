@@ -132,6 +132,11 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       ui.setSelectedJobId(params.jobId);
       return { mode: AppMode.JOB_EMPLOYER_PIPELINE };
 
+    // /jobs/new carries no id, so a stale one must not survive a reload.
+    case AppMode.CREATE_MARKETPLACE_JOB:
+      ui.setSelectedJobId(params.jobId ?? null);
+      return { mode: AppMode.CREATE_MARKETPLACE_JOB };
+
     case AppMode.NOTE_EDITOR: {
       if (!params.noteId) {
         return { mode: AppMode.NOTES, redirect: '/notes' };

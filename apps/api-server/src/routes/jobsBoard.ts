@@ -12,6 +12,7 @@ import { getJobsBoardService } from "../services/jobsBoard";
 import { clientErrorMessage } from "../utils/safeError";
 import {
   isJobEmploymentType,
+  isJobPostingLinkVisible,
   type JobApplicationStatus,
 } from "@lantern/shared/jobs";
 
@@ -80,19 +81,14 @@ router.get(
       incrementViews: true,
       viewerId: req.user?.id || null,
     });
+    // Drafts and moderated posts are owner-only; paused and closed stay
+    // readable by link so past applicants can revisit them.
     if (
       !posting ||
-      ["removed_by_admin", "suspended_by_admin", "draft"].includes(
-        posting.status,
-      )
+      (!isJobPostingLinkVisible(posting.status) &&
+        posting.posterUserId !== (req.user?.id || null))
     ) {
-      if (!posting || posting.status === "removed_by_admin") {
-        return res.status(404).json({ success: false, error: "Job not found" });
-      }
-      const userId = req.user?.id;
-      if (posting.status === "draft" && posting.posterUserId !== userId) {
-        return res.status(404).json({ success: false, error: "Job not found" });
-      }
+      return res.status(404).json({ success: false, error: "Job not found" });
     }
     res.json({ success: true, data: posting });
   }),

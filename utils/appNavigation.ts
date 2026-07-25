@@ -105,6 +105,11 @@ export function applyPreNavigationEffects(mode: AppMode, params?: AppRouteParams
   ) {
     ui.setSelectedJobId(params.jobId);
   }
+  if (mode === AppMode.CREATE_MARKETPLACE_JOB) {
+    // Clear when absent, or a previously viewed job would open the form in
+    // edit mode instead of starting a new post.
+    ui.setSelectedJobId(params?.jobId ?? null);
+  }
 }
 
 export function navigateForAppMode(

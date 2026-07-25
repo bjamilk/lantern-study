@@ -4,6 +4,7 @@ export * from "./employmentTypes";
 export * from "./compensation";
 export * from "./portal";
 export * from "./pipeline";
+export * from "./lifecycle";
 export * from "./resume";
 export * from "./intents";
 export * from "./types";

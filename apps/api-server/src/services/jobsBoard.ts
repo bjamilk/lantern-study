@@ -8,8 +8,12 @@ import {
   JOBS_MAX_SCREENERS_PHASE1,
   JOBS_MAX_SCREENERS_PHASE2,
   JOB_APPLICATION_NOTE_MAX_LENGTH,
+  JOB_POSTING_STATUS_LABELS,
   JOB_RESUME_MAX_BYTES,
+  canEmployerSetJobPostingStatus,
   isJobCompensationPeriod,
+  isJobPostingEditable,
+  isJobPostingStatus,
   isUnreviewedJobApplication,
   jobResumeExtension,
   jobResumeMimeType,
@@ -591,6 +595,40 @@ export class JobsBoardService {
         (err as Error & { statusCode?: number }).statusCode = 403;
         throw err;
       }
+      if (updates.status != null && !isJobPostingStatus(updates.status)) {
+        throw httpError("Unknown job status");
+      }
+      if (!isJobPostingEditable(existing.status)) {
+        throw httpError(
+          "This job was removed by moderation and can no longer be edited",
+          403,
+        );
+      }
+
+      const currentStatus = existing.status as JobPostingStatus;
+      const nextStatus = (updates.status || currentStatus) as JobPostingStatus;
+      if (!canEmployerSetJobPostingStatus(currentStatus, nextStatus)) {
+        // Without this an employer could hand themselves `active` out of an
+        // admin suspension, or hide a post as `removed_by_admin`.
+        throw httpError(
+          `A ${JOB_POSTING_STATUS_LABELS[currentStatus].toLowerCase()} job cannot be changed to ${JOB_POSTING_STATUS_LABELS[nextStatus].toLowerCase()}`,
+          403,
+        );
+      }
+
+      // Publishing has to clear the same bar as creating an active post.
+      if (nextStatus === "active" && currentStatus !== "active") {
+        const companyId = existing.companyId;
+        if (companyId) {
+          const company = await this.getCompany(companyId);
+          if (company?.verificationStatus !== "verified") {
+            throw httpError(
+              "Company must be verified before publishing jobs",
+              403,
+            );
+          }
+        }
+      }
     }
 
     const patch: Record<string, unknown> = {
@@ -652,7 +690,54 @@ export class JobsBoardService {
       .update(patch)
       .eq("id", postingId);
     if (error) throw error;
+
+    if (updates.screeningQuestions) {
+      await this.replaceScreeningQuestions(
+        postingId,
+        existing.companyId,
+        updates.screeningQuestions,
+      );
+    }
+
     return this.getPosting(postingId);
+  }
+
+  /**
+   * Screening questions are rewritten wholesale, since the client edits them as
+   * an ordered list and answers are keyed by question id rather than position.
+   */
+  private async replaceScreeningQuestions(
+    postingId: string,
+    companyId: string | null | undefined,
+    questions: NonNullable<CreateJobPostingInput["screeningQuestions"]>,
+  ) {
+    const maxScreeners = companyId
+      ? JOBS_MAX_SCREENERS_PHASE2
+      : JOBS_MAX_SCREENERS_PHASE1;
+    const trimmed = questions
+      .filter((question) => question.prompt?.trim())
+      .slice(0, maxScreeners);
+
+    const { error: deleteError } = await this.client()
+      .from("job_screening_questions")
+      .delete()
+      .eq("posting_id", postingId);
+    if (deleteError) throw deleteError;
+
+    if (!trimmed.length) return;
+    const { error: insertError } = await this.client()
+      .from("job_screening_questions")
+      .insert(
+        trimmed.map((question, index) => ({
+          posting_id: postingId,
+          sort_order: index,
+          prompt: question.prompt.trim().slice(0, 500),
+          question_type: question.questionType || "text",
+          options: question.options || null,
+          required: question.required !== false,
+        })),
+      );
+    if (insertError) throw insertError;
   }
 
   async listMyPostings(userId: string) {

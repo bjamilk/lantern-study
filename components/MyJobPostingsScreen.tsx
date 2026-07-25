@@ -5,7 +5,10 @@ import {
   formatJobCompensation,
   formatJobLocation,
   formatJobPostedDate,
+  isJobPostingEditable,
+  jobPostingStatusActions,
   type JobPosting,
+  type JobPostingStatus,
 } from "@lantern/shared";
 import { fetchMyJobPostings, updateJobPosting } from "../services/jobsBoard";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
@@ -28,7 +31,7 @@ export default function MyJobPostingsScreen({
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,20 +54,20 @@ export default function MyJobPostingsScreen({
     void load();
   }, [load]);
 
-  const closeJob = async (jobId: string) => {
-    setClosingId(jobId);
+  const changeStatus = async (jobId: string, status: JobPostingStatus) => {
+    setSavingId(jobId);
     setError(null);
     try {
-      await updateJobPosting(jobId, { status: "closed" });
+      await updateJobPosting(jobId, { status });
       await load();
-    } catch (closeError) {
+    } catch (statusError) {
       setError(
-        closeError instanceof Error
-          ? closeError.message
-          : "Could not close job",
+        statusError instanceof Error
+          ? statusError.message
+          : "Could not update this job",
       );
     } finally {
-      setClosingId(null);
+      setSavingId(null);
     }
   };
 
@@ -236,16 +239,33 @@ export default function MyJobPostingsScreen({
                     >
                       View post
                     </button>
-                    {job.status === "active" ? (
+                    {isJobPostingEditable(job.status) ? (
                       <button
                         type="button"
-                        disabled={closingId === job.id}
-                        className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text-secondary disabled:opacity-50"
-                        onClick={() => void closeJob(job.id)}
+                        className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text"
+                        onClick={() =>
+                          onNavigate("EditMarketplaceJob", { jobId: job.id })
+                        }
                       >
-                        {closingId === job.id ? "Closing…" : "Close post"}
+                        Edit
                       </button>
                     ) : null}
+                    {jobPostingStatusActions(job.status).map((action) => (
+                      <button
+                        key={action.status}
+                        type="button"
+                        title={action.description}
+                        disabled={savingId === job.id}
+                        className={`rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium disabled:opacity-50 ${
+                          action.destructive
+                            ? "text-lantern-text-secondary"
+                            : "text-lantern-text"
+                        }`}
+                        onClick={() => void changeStatus(job.id, action.status)}
+                      >
+                        {savingId === job.id ? "Saving…" : action.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </li>

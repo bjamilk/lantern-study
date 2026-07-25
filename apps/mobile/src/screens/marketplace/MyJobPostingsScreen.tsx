@@ -13,7 +13,10 @@ import {
   JOB_POSTING_STATUS_LABELS,
   formatJobCompensation,
   formatJobPostedDate,
+  isJobPostingEditable,
+  jobPostingStatusActions,
   type JobPosting,
+  type JobPostingStatus,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { fetchMyJobPostings, updateJobPosting } from "../../services/jobsBoard";
@@ -35,7 +38,7 @@ export function MyJobPostingsScreen() {
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,20 +61,20 @@ export function MyJobPostingsScreen() {
     void load();
   }, [load]);
 
-  const closeJob = async (jobId: string) => {
-    setClosingId(jobId);
+  const changeStatus = async (jobId: string, status: JobPostingStatus) => {
+    setSavingId(jobId);
     setError(null);
     try {
-      await updateJobPosting(jobId, { status: "closed" });
+      await updateJobPosting(jobId, { status });
       await load();
-    } catch (closeError) {
+    } catch (statusError) {
       setError(
-        closeError instanceof Error
-          ? closeError.message
-          : "Could not close job",
+        statusError instanceof Error
+          ? statusError.message
+          : "Could not update this job",
       );
     } finally {
-      setClosingId(null);
+      setSavingId(null);
     }
   };
 
@@ -228,17 +231,36 @@ export function MyJobPostingsScreen() {
                       View post
                     </Text>
                   </Pressable>
-                  {job.status === "active" ? (
+                  {isJobPostingEditable(job.status) ? (
                     <Pressable
-                      disabled={closingId === job.id}
                       className="rounded-lg border border-lantern-border px-3 py-2"
-                      onPress={() => void closeJob(job.id)}
+                      onPress={() =>
+                        navigation.navigate("CreateJob", { jobId: job.id })
+                      }
                     >
-                      <Text className="text-sm font-medium text-lantern-text-secondary">
-                        {closingId === job.id ? "Closing…" : "Close post"}
+                      <Text className="text-sm font-medium text-lantern-text">
+                        Edit
                       </Text>
                     </Pressable>
                   ) : null}
+                  {jobPostingStatusActions(job.status).map((action) => (
+                    <Pressable
+                      key={action.status}
+                      disabled={savingId === job.id}
+                      className="rounded-lg border border-lantern-border px-3 py-2"
+                      onPress={() => void changeStatus(job.id, action.status)}
+                    >
+                      <Text
+                        className={`text-sm font-medium ${
+                          action.destructive
+                            ? "text-lantern-text-secondary"
+                            : "text-lantern-text"
+                        }`}
+                      >
+                        {savingId === job.id ? "Saving…" : action.label}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
               </Card>
             ))}

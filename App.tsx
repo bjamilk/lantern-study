@@ -1421,6 +1421,7 @@ export const App: React.FC = () => {
             case AppMode.CREATE_MARKETPLACE_JOB:
                 return (
                     <CreateJobScreen
+                        jobId={selectedJobId}
                         onNavigate={(screen, params) => {
                             if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
                             else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
@@ -1442,7 +1443,9 @@ export const App: React.FC = () => {
                             else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
                             else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
                             else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
-                            else if (screen === 'JobEmployerPipeline' && params?.jobId) {
+                            else if (screen === 'EditMarketplaceJob' && params?.jobId) {
+                                navigateTo(AppMode.CREATE_MARKETPLACE_JOB, { jobId: String(params.jobId) });
+                            } else if (screen === 'JobEmployerPipeline' && params?.jobId) {
                                 navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
                             } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
                                 navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });

@@ -5,7 +5,7 @@ export type RootStackParamList = {
   Settings: undefined;
   EditProfile: undefined;
   Offline: undefined;
-  LegalDocument: { document: 'privacy' | 'terms' | 'cookies' };
+  LegalDocument: { document: "privacy" | "terms" | "cookies" };
 };
 
 export type AuthStackParamList = {
@@ -14,7 +14,7 @@ export type AuthStackParamList = {
   ForgotPassword: undefined;
   VerifyEmail: { email: string };
   ResetPassword: undefined;
-  LegalDocument: { document: 'privacy' | 'terms' | 'cookies' };
+  LegalDocument: { document: "privacy" | "terms" | "cookies" };
 };
 
 export type HomeStackParamList = {
@@ -24,7 +24,7 @@ export type HomeStackParamList = {
 
 export type StudyStackParamList = {
   StudyHub: undefined;
-  Library: { tab?: 'notes' | 'flashcards' } | undefined;
+  Library: { tab?: "notes" | "flashcards" } | undefined;
   FlashcardsList: undefined;
   DeckDetail: { deckId: string; deckName?: string };
   FlashcardReview: { deckId: string; deckName?: string };
@@ -35,7 +35,15 @@ export type StudyStackParamList = {
   NoteEditor: { noteId: string };
   NoteShareAccept: { token: string };
   TestsList: undefined;
-  TestTaking: { testId: string; testName: string; mode?: 'test' | 'study'; isOffline?: boolean; offlineTestId?: string; groupName?: string; groupId?: string };
+  TestTaking: {
+    testId: string;
+    testName: string;
+    mode?: "test" | "study";
+    isOffline?: boolean;
+    offlineTestId?: string;
+    groupName?: string;
+    groupId?: string;
+  };
   TestResults: { attemptId: string };
 };
 
@@ -43,9 +51,16 @@ export type ChatStackParamList = {
   GroupsList: undefined;
   CreateGroup: { parentId?: string; parentName?: string } | undefined;
   GroupChat: { groupId: string; groupName?: string; openAddMembers?: boolean };
-  DirectMessage: { threadId: string; recipientId: string; recipientName?: string };
+  DirectMessage: {
+    threadId: string;
+    recipientId: string;
+    recipientName?: string;
+  };
   GameScreen: { session?: Record<string, unknown> };
-  GameResult: { session: Record<string, unknown>; currentUser: Record<string, unknown> };
+  GameResult: {
+    session: Record<string, unknown>;
+    currentUser: Record<string, unknown>;
+  };
   ChallengesInbox: undefined;
 };
 
@@ -56,7 +71,11 @@ export type MarketStackParamList = {
   Inquiries: undefined;
   CreateListing: undefined;
   EditListing: { listingId: string };
-  MakeOffer: { listingId: string; listingTitle?: string; listingPrice?: number };
+  MakeOffer: {
+    listingId: string;
+    listingTitle?: string;
+    listingPrice?: number;
+  };
   SellerProfile: { sellerId: string; sellerName?: string };
   Offers: undefined;
   Favorites: undefined;
@@ -65,7 +84,8 @@ export type MarketStackParamList = {
   SellerCustomers: undefined;
   JobsHome: undefined;
   JobDetail: { jobId: string };
-  CreateJob: undefined;
+  /** `jobId` switches the form into edit mode for an existing posting. */
+  CreateJob: { jobId?: string } | undefined;
   MyJobPostings: undefined;
   MyJobApplications: undefined;
   JobEmployer: undefined;
@@ -95,18 +115,18 @@ export type MainTabParamList = {
 };
 
 const IMMERSIVE_SCREENS = new Set([
-  'FlashcardReview',
-  'CramSession',
-  'MatchStudy',
-  'LearnStudy',
-  'TestTaking',
-  'TestResults',
-  'GameScreen',
-  'GameResult',
-  'ListingDetail',
-  'CreateGroup',
-  'GroupChat',
-  'DirectMessage',
+  "FlashcardReview",
+  "CramSession",
+  "MatchStudy",
+  "LearnStudy",
+  "TestTaking",
+  "TestResults",
+  "GameScreen",
+  "GameResult",
+  "ListingDetail",
+  "CreateGroup",
+  "GroupChat",
+  "DirectMessage",
 ]);
 
 export function shouldHideTabBar(routeName: string | undefined): boolean {

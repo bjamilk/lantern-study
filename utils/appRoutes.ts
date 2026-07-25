@@ -78,7 +78,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
         ? `/marketplace/jobs/${encodeURIComponent(params.jobId)}`
         : '/marketplace/jobs';
     case AppMode.CREATE_MARKETPLACE_JOB:
-      return '/marketplace/jobs/new';
+      // The same screen handles creating and editing; the id decides which.
+      return params.jobId
+        ? `/marketplace/jobs/${encodeURIComponent(params.jobId)}/edit`
+        : '/marketplace/jobs/new';
     case AppMode.MY_JOB_POSTINGS:
       return '/marketplace/my-jobs';
     case AppMode.MY_JOB_APPLICATIONS:
@@ -178,6 +181,14 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return {
       mode: AppMode.JOB_EMPLOYER_PIPELINE,
       params: { jobId: decodeURIComponent(employerJobMatch[1]) },
+    };
+  }
+
+  const jobEditMatch = path.match(/^\/marketplace\/jobs\/([^/]+)\/edit$/);
+  if (jobEditMatch && jobEditMatch[1] !== 'new') {
+    return {
+      mode: AppMode.CREATE_MARKETPLACE_JOB,
+      params: { jobId: decodeURIComponent(jobEditMatch[1]) },
     };
   }
 
