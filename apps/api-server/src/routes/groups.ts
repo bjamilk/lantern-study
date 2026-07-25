@@ -9,6 +9,10 @@ import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
+import {
+  mutedUntilFromMinutes,
+  resolveChatMuteDurationMinutes,
+} from '@lantern/shared';
 
 const router = Router();
 const DEFAULT_GROUP_PAGE_SIZE = 20;
@@ -809,6 +813,82 @@ router.get(
     res.json({
       success: true,
       data: stats,
+    });
+  })
+);
+
+// GET /api/v1/groups/:groupId/mute - Current mute status for a group
+router.get(
+  '/:groupId/mute',
+  authMiddleware,
+  requireGroupMember('groupId'),
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { groupId } = req.params;
+    const status = await supabaseService.getChatMute(userId, 'group', groupId);
+    res.json({ success: true, data: status });
+  })
+);
+
+// PUT /api/v1/groups/:groupId/mute - Mute group notifications for a duration
+router.put(
+  '/:groupId/mute',
+  authMiddleware,
+  requireGroupMember('groupId'),
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { groupId } = req.params;
+    const minutes = resolveChatMuteDurationMinutes(req.body?.duration, req.body?.durationMinutes);
+    if (!minutes) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide duration (1h|8h|24h|7d) or durationMinutes (1-43200)',
+      });
+    }
+    const result = await supabaseService.setChatMute(
+      userId,
+      'group',
+      groupId,
+      mutedUntilFromMinutes(minutes)
+    );
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or you are not a member',
+      });
+    }
+    res.json({ success: true, data: result, message: 'Group notifications muted' });
+  })
+);
+
+// DELETE /api/v1/groups/:groupId/mute - Unmute group notifications
+router.delete(
+  '/:groupId/mute',
+  authMiddleware,
+  requireGroupMember('groupId'),
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { groupId } = req.params;
+    const success = await supabaseService.clearChatMute(userId, 'group', groupId);
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or you are not a member',
+      });
+    }
+    res.json({
+      success: true,
+      data: { muted: false, mutedUntil: null },
+      message: 'Group notifications unmuted',
     });
   })
 );

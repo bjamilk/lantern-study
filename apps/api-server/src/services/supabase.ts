@@ -4367,6 +4367,20 @@ export class SupabaseService {
           return null;
         }
       }
+
+      const type = notificationData.type || 'info';
+      const { CHAT_MUTEABLE_NOTIFICATION_TYPES } = await import('@lantern/shared');
+      if (CHAT_MUTEABLE_NOTIFICATION_TYPES.has(type)) {
+        const data = notificationData.data || {};
+        const groupId = typeof data.groupId === 'string' ? data.groupId : null;
+        const threadId = typeof data.threadId === 'string' ? data.threadId : null;
+        if (groupId && (await this.isChatMuted(userId, 'group', groupId))) {
+          return null;
+        }
+        if (threadId && (await this.isChatMuted(userId, 'dm', threadId))) {
+          return null;
+        }
+      }
     }
 
     const { data, error } = await this.supabase
@@ -8128,6 +8142,130 @@ export class SupabaseService {
       console.error('Error in unarchiveDmThread:', error);
       return false;
     }
+  }
+
+  async isChatMuted(
+    userId: string,
+    scopeType: 'group' | 'dm',
+    scopeId: string
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chat_mutes')
+      .select('muted_until')
+      .eq('user_id', userId)
+      .eq('scope_type', scopeType)
+      .eq('scope_id', scopeId)
+      .maybeSingle();
+    if (error || !data?.muted_until) return false;
+    return new Date(data.muted_until).getTime() > Date.now();
+  }
+
+  async getChatMute(
+    userId: string,
+    scopeType: 'group' | 'dm',
+    scopeId: string
+  ): Promise<{ muted: boolean; mutedUntil: string | null }> {
+    const { data, error } = await this.supabase
+      .from('chat_mutes')
+      .select('muted_until')
+      .eq('user_id', userId)
+      .eq('scope_type', scopeType)
+      .eq('scope_id', scopeId)
+      .maybeSingle();
+    if (error || !data?.muted_until) {
+      return { muted: false, mutedUntil: null };
+    }
+    const mutedUntil = data.muted_until as string;
+    const muted = new Date(mutedUntil).getTime() > Date.now();
+    if (!muted) {
+      // Opportunistically clean expired rows.
+      void this.supabase
+        .from('chat_mutes')
+        .delete()
+        .eq('user_id', userId)
+        .eq('scope_type', scopeType)
+        .eq('scope_id', scopeId);
+      return { muted: false, mutedUntil: null };
+    }
+    return { muted: true, mutedUntil };
+  }
+
+  private async assertChatMuteAccess(
+    userId: string,
+    scopeType: 'group' | 'dm',
+    scopeId: string
+  ): Promise<boolean> {
+    if (scopeType === 'group') {
+      const { data, error } = await this.supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', scopeId)
+        .eq('user_id', userId)
+        .eq('pending', false)
+        .maybeSingle();
+      return !error && !!data;
+    }
+    const { data, error } = await this.supabase
+      .from('dm_threads')
+      .select('participant_ids')
+      .eq('id', scopeId)
+      .maybeSingle();
+    if (error || !data) return false;
+    const pids = Array.isArray(data.participant_ids) ? data.participant_ids : [];
+    return pids.includes(userId);
+  }
+
+  async setChatMute(
+    userId: string,
+    scopeType: 'group' | 'dm',
+    scopeId: string,
+    mutedUntil: Date
+  ): Promise<{ muted: boolean; mutedUntil: string } | null> {
+    const allowed = await this.assertChatMuteAccess(userId, scopeType, scopeId);
+    if (!allowed) return null;
+    if (!(mutedUntil instanceof Date) || Number.isNaN(mutedUntil.getTime()) || mutedUntil.getTime() <= Date.now()) {
+      return null;
+    }
+    const untilIso = mutedUntil.toISOString();
+    const { data, error } = await this.supabase
+      .from('chat_mutes')
+      .upsert(
+        {
+          user_id: userId,
+          scope_type: scopeType,
+          scope_id: scopeId,
+          muted_until: untilIso,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,scope_type,scope_id' }
+      )
+      .select('muted_until')
+      .single();
+    if (error || !data) {
+      logger.error('Failed to set chat mute', { error, userId, scopeType, scopeId });
+      return null;
+    }
+    return { muted: true, mutedUntil: data.muted_until as string };
+  }
+
+  async clearChatMute(
+    userId: string,
+    scopeType: 'group' | 'dm',
+    scopeId: string
+  ): Promise<boolean> {
+    const allowed = await this.assertChatMuteAccess(userId, scopeType, scopeId);
+    if (!allowed) return false;
+    const { error } = await this.supabase
+      .from('chat_mutes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('scope_type', scopeType)
+      .eq('scope_id', scopeId);
+    if (error) {
+      logger.error('Failed to clear chat mute', { error, userId, scopeType, scopeId });
+      return false;
+    }
+    return true;
   }
 
   // ============ MARKETPLACE SELLER DASHBOARD METHODS ============

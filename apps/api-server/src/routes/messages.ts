@@ -11,6 +11,10 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { AuthenticatedRequest, Message } from '../types';
+import {
+  mutedUntilFromMinutes,
+  resolveChatMuteDurationMinutes,
+} from '@lantern/shared';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const ALLOWED_AUDIO_TYPES = [
@@ -646,6 +650,69 @@ router.put(
       console.error('Error archiving DM thread:', error);
       res.status(500).json({ success: false, error: 'Failed to archive DM thread' });
     }
+  })
+);
+
+// GET /api/v1/messages/dm/:threadId/mute - Current mute status for a DM
+router.get(
+  '/dm/:threadId/mute',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    const status = await supabaseService.getChatMute(userId, 'dm', threadId);
+    res.json({ success: true, data: status });
+  })
+);
+
+// PUT /api/v1/messages/dm/:threadId/mute - Mute DM notifications for a duration
+router.put(
+  '/dm/:threadId/mute',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    const minutes = resolveChatMuteDurationMinutes(req.body?.duration, req.body?.durationMinutes);
+    if (!minutes) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide duration (1h|8h|24h|7d) or durationMinutes (1-43200)',
+      });
+    }
+    const result = await supabaseService.setChatMute(
+      userId,
+      'dm',
+      threadId,
+      mutedUntilFromMinutes(minutes)
+    );
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: 'DM thread not found or you are not a participant',
+      });
+    }
+    res.json({ success: true, data: result, message: 'DM notifications muted' });
+  })
+);
+
+// DELETE /api/v1/messages/dm/:threadId/mute - Unmute DM notifications
+router.delete(
+  '/dm/:threadId/mute',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { threadId } = req.params;
+    const success = await supabaseService.clearChatMute(userId, 'dm', threadId);
+    if (!success) {
+      return res.status(404).json({
+        success: false,
+        error: 'DM thread not found or you are not a participant',
+      });
+    }
+    res.json({ success: true, data: { muted: false, mutedUntil: null }, message: 'DM notifications unmuted' });
   })
 );
 

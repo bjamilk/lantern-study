@@ -46,6 +46,11 @@ import {
   messagePassesQuestionVisibility,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
+import {
+  CHAT_MUTE_DURATIONS,
+  formatMuteUntilLabel,
+  type ChatMuteDurationId,
+} from '@lantern/shared';
 
 type NavigationProp = {
   goBack: () => void;
@@ -227,6 +232,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [showAIGenerate, setShowAIGenerate] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
+  const [chatMuted, setChatMuted] = useState(false);
+  const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
+  const [muteBusy, setMuteBusy] = useState(false);
   const [challengeMember, setChallengeMember] = useState<GroupMember | null>(null);
   const [cachedGroupMessages, setCachedGroupMessages] = useState<Message[]>([]);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -816,6 +824,79 @@ export function GroupChatScreen({ navigation, route }: Props) {
     }
   }, [navigation]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void api.getGroupMuteStatus(groupId)
+      .then((status) => {
+        if (cancelled) return;
+        setChatMuted(!!status?.muted);
+        setChatMutedUntil(status?.mutedUntil ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChatMuted(false);
+        setChatMutedUntil(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId]);
+
+  const applyMute = useCallback(
+    async (duration: ChatMuteDurationId) => {
+      if (muteBusy) return;
+      setMuteBusy(true);
+      try {
+        const status = await api.muteGroupChat(groupId, duration);
+        if (!status?.muted) {
+          Alert.alert('Mute failed', 'Could not mute notifications for this group.');
+          return;
+        }
+        setChatMuted(true);
+        setChatMutedUntil(status.mutedUntil);
+      } catch {
+        Alert.alert('Mute failed', 'Could not mute notifications for this group.');
+      } finally {
+        setMuteBusy(false);
+      }
+    },
+    [groupId, muteBusy]
+  );
+
+  const clearMute = useCallback(async () => {
+    if (muteBusy) return;
+    setMuteBusy(true);
+    try {
+      const status = await api.unmuteGroupChat(groupId);
+      if (!status || status.muted) {
+        Alert.alert('Unmute failed', 'Could not unmute notifications for this group.');
+        return;
+      }
+      setChatMuted(false);
+      setChatMutedUntil(null);
+    } catch {
+      Alert.alert('Unmute failed', 'Could not unmute notifications for this group.');
+    } finally {
+      setMuteBusy(false);
+    }
+  }, [groupId, muteBusy]);
+
+  const openMutePicker = useCallback(() => {
+    Alert.alert(
+      'Mute notifications',
+      'Pause alerts for this group chat.',
+      [
+        ...CHAT_MUTE_DURATIONS.map((opt) => ({
+          text: opt.label,
+          onPress: () => void applyMute(opt.id),
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
+  }, [applyMute]);
+
+  const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
+
   const headerMenuActions = useMemo((): GroupChatHeaderAction[] => {
     const actions: GroupChatHeaderAction[] = [
       {
@@ -853,6 +934,21 @@ export function GroupChatScreen({ navigation, route }: Props) {
         disabled: summarizing,
         iconColor: '#a855f7',
       },
+      chatMuted
+        ? {
+            id: 'unmute',
+            label: muteUntilLabel ? `Unmute (until ${muteUntilLabel})` : 'Unmute notifications',
+            icon: 'notifications-outline' as const,
+            onPress: () => void clearMute(),
+            disabled: muteBusy,
+          }
+        : {
+            id: 'mute',
+            label: 'Mute notifications…',
+            icon: 'notifications-off-outline' as const,
+            onPress: openMutePicker,
+            disabled: muteBusy,
+          },
       {
         id: 'info',
         label: 'About group',
@@ -872,7 +968,18 @@ export function GroupChatScreen({ navigation, route }: Props) {
     }
 
     return actions;
-  }, [isAdmin, summarizing, colors.warning, questionVisibilityMode, setQuestionVisibilityMode]);
+  }, [
+    isAdmin,
+    summarizing,
+    colors.warning,
+    questionVisibilityMode,
+    setQuestionVisibilityMode,
+    chatMuted,
+    muteUntilLabel,
+    muteBusy,
+    clearMute,
+    openMutePicker,
+  ]);
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
@@ -884,6 +991,17 @@ export function GroupChatScreen({ navigation, route }: Props) {
         onAddQuestion={() => setShowQuestionModal(true)}
         menuActions={headerMenuActions}
       />
+
+      {chatMuted ? (
+        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
+            Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
+          </Text>
+          <Pressable onPress={() => void clearMute()} disabled={muteBusy} className="px-2 py-1">
+            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">Unmute</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {isLoadingMessages && displayMessages.length === 0 ? (

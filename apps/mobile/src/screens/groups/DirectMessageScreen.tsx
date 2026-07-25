@@ -32,8 +32,16 @@ import {
   blockUser,
   fetchInquiryByThread,
   getDmBlockStatus,
+  getDmMuteStatus,
+  muteDmThread,
+  unmuteDmThread,
   unblockUser,
 } from '../../services/api';
+import {
+  CHAT_MUTE_DURATIONS,
+  formatMuteUntilLabel,
+  type ChatMuteDurationId,
+} from '@lantern/shared';
 import { useTheme } from '../../theme';
 
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
@@ -143,6 +151,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const [dmBlocked, setDmBlocked] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const [dmBlockBusy, setDmBlockBusy] = useState(false);
+  const [chatMuted, setChatMuted] = useState(false);
+  const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
+  const [muteBusy, setMuteBusy] = useState(false);
   const [editingMessage, setEditingMessage] = useState<DirectMessage | null>(null);
   const [inquiry, setInquiry] = useState<ThreadInquiry>(null);
   const [unreadAnchorAt, setUnreadAnchorAt] = useState<string | null | undefined>(undefined);
@@ -248,6 +259,83 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       ]
     );
   }, [user?.id, recipientId, dmBlockBusy, iBlockedThem, displayName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getDmMuteStatus(threadId)
+      .then((status) => {
+        if (cancelled) return;
+        setChatMuted(!!status?.muted);
+        setChatMutedUntil(status?.mutedUntil ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChatMuted(false);
+        setChatMutedUntil(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId]);
+
+  const applyMute = useCallback(
+    async (duration: ChatMuteDurationId) => {
+      if (muteBusy) return;
+      setMuteBusy(true);
+      try {
+        const status = await muteDmThread(threadId, duration);
+        if (!status?.muted) {
+          Alert.alert('Mute failed', 'Could not mute notifications for this chat.');
+          return;
+        }
+        setChatMuted(true);
+        setChatMutedUntil(status.mutedUntil);
+      } catch {
+        Alert.alert('Mute failed', 'Could not mute notifications for this chat.');
+      } finally {
+        setMuteBusy(false);
+      }
+    },
+    [threadId, muteBusy]
+  );
+
+  const clearMute = useCallback(async () => {
+    if (muteBusy) return;
+    setMuteBusy(true);
+    try {
+      const status = await unmuteDmThread(threadId);
+      if (!status || status.muted) {
+        Alert.alert('Unmute failed', 'Could not unmute notifications for this chat.');
+        return;
+      }
+      setChatMuted(false);
+      setChatMutedUntil(null);
+    } catch {
+      Alert.alert('Unmute failed', 'Could not unmute notifications for this chat.');
+    } finally {
+      setMuteBusy(false);
+    }
+  }, [threadId, muteBusy]);
+
+  const openMutePicker = useCallback(() => {
+    if (chatMuted) {
+      void clearMute();
+      return;
+    }
+    Alert.alert(
+      'Mute notifications',
+      'Pause alerts for this direct message.',
+      [
+        ...CHAT_MUTE_DURATIONS.map((opt) => ({
+          text: opt.label,
+          onPress: () => void applyMute(opt.id),
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
+  }, [chatMuted, clearMute, applyMute]);
+
+  const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
 
   const reloadThread = useCallback(async () => {
     if (!threadRootId) return;
@@ -508,6 +596,18 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           {displayName}
         </Text>
         <Pressable
+          onPress={openMutePicker}
+          disabled={muteBusy}
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+          accessibilityLabel={chatMuted ? 'Unmute notifications' : 'Mute notifications'}
+        >
+          <Ionicons
+            name={chatMuted ? 'notifications-outline' : 'notifications-off-outline'}
+            size={22}
+            color={chatMuted ? '#d97706' : '#64748b'}
+          />
+        </Pressable>
+        <Pressable
           onPress={handleToggleDmBlock}
           disabled={dmBlockBusy}
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
@@ -520,6 +620,17 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           />
         </Pressable>
       </View>
+
+      {chatMuted ? (
+        <View className="flex-row items-center justify-between gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <Text className="flex-1 text-[11px] text-amber-800 dark:text-amber-300" numberOfLines={2}>
+            Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
+          </Text>
+          <Pressable onPress={() => void clearMute()} disabled={muteBusy} className="px-2 py-1">
+            <Text className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">Unmute</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {inquiry?.listing ? (
         <Pressable

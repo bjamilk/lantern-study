@@ -956,6 +956,40 @@ export function createApiEndpoints(client: ApiClient) {
     unarchiveDmThread: (threadId: string, _userId: string) =>
       apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: 'PUT' }),
 
+    getDmMuteStatus: (threadId: string) =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/messages/dm/${encodeURIComponent(threadId)}/mute`
+      ),
+
+    muteDmThread: (threadId: string, duration: '1h' | '8h' | '24h' | '7d') =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/messages/dm/${encodeURIComponent(threadId)}/mute`,
+        { method: 'PUT', body: JSON.stringify({ duration }) }
+      ),
+
+    unmuteDmThread: (threadId: string) =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/messages/dm/${encodeURIComponent(threadId)}/mute`,
+        { method: 'DELETE' }
+      ),
+
+    getGroupMuteStatus: (groupId: string) =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/groups/${encodeURIComponent(groupId)}/mute`
+      ),
+
+    muteGroupChat: (groupId: string, duration: '1h' | '8h' | '24h' | '7d') =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/groups/${encodeURIComponent(groupId)}/mute`,
+        { method: 'PUT', body: JSON.stringify({ duration }) }
+      ),
+
+    unmuteGroupChat: (groupId: string) =>
+      apiRequest<{ muted: boolean; mutedUntil: string | null }>(
+        `/groups/${encodeURIComponent(groupId)}/mute`,
+        { method: 'DELETE' }
+      ),
+
     acceptDmMessageRequest: (threadId: string) =>
       apiRequest<{ id: string; status: 'open'; requestedBy: null }>(
         `/messages/dm/${encodeURIComponent(threadId)}/accept`,

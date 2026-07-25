@@ -4281,6 +4281,111 @@ export const unarchiveDmThread = async (threadId: string, userId: string): Promi
   }
 };
 
+export type ChatMuteStatus = { muted: boolean; mutedUntil: string | null };
+
+async function parseMuteResponse(response: Response): Promise<ChatMuteStatus | null> {
+  if (!response.ok) return null;
+  const json = await response.json().catch(() => null);
+  const data = json?.data;
+  if (!data || typeof data.muted !== 'boolean') return null;
+  return {
+    muted: data.muted,
+    mutedUntil: typeof data.mutedUntil === 'string' ? data.mutedUntil : null,
+  };
+}
+
+export const getDmMuteStatus = async (threadId: string): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error fetching DM mute status:', error);
+    return null;
+  }
+};
+
+export const muteDmThread = async (
+  threadId: string,
+  duration: '1h' | '8h' | '24h' | '7d'
+): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration }),
+      }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error muting DM thread:', error);
+    return null;
+  }
+};
+
+export const unmuteDmThread = async (threadId: string): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
+      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error unmuting DM thread:', error);
+    return null;
+  }
+};
+
+export const getGroupMuteStatus = async (groupId: string): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
+      { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error fetching group mute status:', error);
+    return null;
+  }
+};
+
+export const muteGroupChat = async (
+  groupId: string,
+  duration: '1h' | '8h' | '24h' | '7d'
+): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration }),
+      }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error muting group chat:', error);
+    return null;
+  }
+};
+
+export const unmuteGroupChat = async (groupId: string): Promise<ChatMuteStatus | null> => {
+  try {
+    const response = await fetch(
+      `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
+      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+    );
+    return parseMuteResponse(response);
+  } catch (error) {
+    console.error('Error unmuting group chat:', error);
+    return null;
+  }
+};
+
 // ============ OFFLINE BUNDLES SYNC FUNCTIONS ============
 
 export interface OfflineBundleData {

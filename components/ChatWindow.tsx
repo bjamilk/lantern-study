@@ -34,7 +34,14 @@ import {
   ShoppingBagIcon,
   CurrencyDollarIcon,
   NoSymbolIcon,
+  BellSlashIcon,
+  BellAlertIcon,
 } from '@heroicons/react/24/outline';
+import {
+  CHAT_MUTE_DURATIONS,
+  formatMuteUntilLabel,
+  type ChatMuteDurationId,
+} from '@lantern/shared';
 import {
   getInquiryByThread,
   threadMayHaveMarketplaceInquiry,
@@ -52,6 +59,12 @@ import {
   getDmBlockStatus,
   blockUser,
   unblockUser,
+  getDmMuteStatus,
+  muteDmThread,
+  unmuteDmThread,
+  getGroupMuteStatus,
+  muteGroupChat,
+  unmuteGroupChat,
 } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -788,6 +801,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [dmBlocked, setDmBlocked] = useState(false);
   const [iBlockedThem, setIBlockedThem] = useState(false);
   const [dmBlockBusy, setDmBlockBusy] = useState(false);
+  const [chatMuted, setChatMuted] = useState(false);
+  const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
+  const [muteBusy, setMuteBusy] = useState(false);
 
   const dmPeerId =
     dmThreadForHooks && Array.isArray(dmThreadForHooks.participantIds)
@@ -820,6 +836,76 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       cancelled = true;
     };
   }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!chat) {
+      setChatMuted(false);
+      setChatMutedUntil(null);
+      return;
+    }
+    const load = isGroup
+      ? getGroupMuteStatus(chat.id)
+      : getDmMuteStatus(chat.id);
+    void load
+      .then((status) => {
+        if (cancelled) return;
+        setChatMuted(!!status?.muted);
+        setChatMutedUntil(status?.mutedUntil ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChatMuted(false);
+        setChatMutedUntil(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chat?.id, isGroup]);
+
+  const handleMuteFor = async (duration: ChatMuteDurationId) => {
+    if (!chat || muteBusy) return;
+    setMuteBusy(true);
+    try {
+      const status = isGroup
+        ? await muteGroupChat(chat.id, duration)
+        : await muteDmThread(chat.id, duration);
+      if (!status?.muted) {
+        useToastStore.getState().showToast('Could not mute notifications.', 'error');
+        return;
+      }
+      setChatMuted(true);
+      setChatMutedUntil(status.mutedUntil);
+      const untilLabel = formatMuteUntilLabel(status.mutedUntil);
+      useToastStore.getState().showToast(
+        untilLabel ? `Notifications muted until ${untilLabel}.` : 'Notifications muted.',
+        'success'
+      );
+    } finally {
+      setMuteBusy(false);
+    }
+  };
+
+  const handleUnmute = async () => {
+    if (!chat || muteBusy) return;
+    setMuteBusy(true);
+    try {
+      const status = isGroup
+        ? await unmuteGroupChat(chat.id)
+        : await unmuteDmThread(chat.id);
+      if (!status || status.muted) {
+        useToastStore.getState().showToast('Could not unmute notifications.', 'error');
+        return;
+      }
+      setChatMuted(false);
+      setChatMutedUntil(null);
+      useToastStore.getState().showToast('Notifications unmuted.', 'success');
+    } finally {
+      setMuteBusy(false);
+    }
+  };
+
+  const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
 
   if (!chat) {
     // Desktop: show placeholder
@@ -1531,6 +1617,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     </MenuItem>
                   ))}
                   <MenuSeparator />
+                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+                    Notifications
+                  </div>
+                  {chatMuted ? (
+                    <MenuItem
+                      onSelect={() => handleDropdownAction(() => void handleUnmute())}
+                      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                      disabled={muteBusy}
+                    >
+                      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
+                    </MenuItem>
+                  ) : (
+                    CHAT_MUTE_DURATIONS.map((opt) => (
+                      <MenuItem
+                        key={opt.id}
+                        onSelect={() => handleDropdownAction(() => void handleMuteFor(opt.id))}
+                        icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                        disabled={muteBusy}
+                      >
+                        Mute for {opt.label}
+                      </MenuItem>
+                    ))
+                  )}
+                  <MenuSeparator />
                   {isArchived ? (
                     <MenuItem
                       onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
@@ -1589,6 +1699,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               )}
               {!isGroup && chat && (
                 <MenuContent align="end" className="w-56">
+                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+                    Notifications
+                  </div>
+                  {chatMuted ? (
+                    <MenuItem
+                      onSelect={() => {
+                        setIsDropdownOpen(false);
+                        void handleUnmute();
+                      }}
+                      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                      disabled={muteBusy}
+                    >
+                      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
+                    </MenuItem>
+                  ) : (
+                    CHAT_MUTE_DURATIONS.map((opt) => (
+                      <MenuItem
+                        key={opt.id}
+                        onSelect={() => {
+                          setIsDropdownOpen(false);
+                          void handleMuteFor(opt.id);
+                        }}
+                        icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                        disabled={muteBusy}
+                      >
+                        Mute for {opt.label}
+                      </MenuItem>
+                    ))
+                  )}
+                  <MenuSeparator />
                   {(chat as any).isArchived ? (
                     <MenuItem
                       onSelect={() => {
@@ -1666,6 +1806,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 {questionCount} question{questionCount !== 1 ? 's' : ''}
               </span>
             )}
+          </div>
+        )}
+        {chatMuted && (
+          <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <BellSlashIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+              <span className="truncate">
+                Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleUnmute()}
+              disabled={muteBusy}
+              className="shrink-0 font-semibold underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Unmute
+            </button>
           </div>
         )}
       </div>
