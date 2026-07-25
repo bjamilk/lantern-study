@@ -4319,7 +4319,7 @@ export const getDmMuteStatus = async (threadId: string): Promise<ChatMuteStatus 
   try {
     const response = await fetch(
       `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+      withApiCredentials({ method: 'GET', headers: await getAuthHeaders() })
     );
     return parseMuteResponse(response);
   } catch (error) {
@@ -4333,13 +4333,14 @@ export const muteDmThread = async (
   duration: '1h' | '8h' | '24h' | '7d'
 ): Promise<ChatMuteStatus | null> => {
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch(
       `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
-      {
+      withApiCredentials({
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ duration }),
-      }
+      })
     );
     return parseMuteResponse(response);
   } catch (error) {
@@ -4352,7 +4353,7 @@ export const unmuteDmThread = async (threadId: string): Promise<ChatMuteStatus |
   try {
     const response = await fetch(
       `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/mute`,
-      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+      withApiCredentials({ method: 'DELETE', headers: await getAuthHeaders() })
     );
     return parseMuteResponse(response);
   } catch (error) {
@@ -4365,7 +4366,7 @@ export const getGroupMuteStatus = async (groupId: string): Promise<ChatMuteStatu
   try {
     const response = await fetch(
       `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
-      { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+      withApiCredentials({ method: 'GET', headers: await getAuthHeaders() })
     );
     return parseMuteResponse(response);
   } catch (error) {
@@ -4379,13 +4380,14 @@ export const muteGroupChat = async (
   duration: '1h' | '8h' | '24h' | '7d'
 ): Promise<ChatMuteStatus | null> => {
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch(
       `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
-      {
+      withApiCredentials({
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ duration }),
-      }
+      })
     );
     return parseMuteResponse(response);
   } catch (error) {
@@ -4398,7 +4400,7 @@ export const unmuteGroupChat = async (groupId: string): Promise<ChatMuteStatus |
   try {
     const response = await fetch(
       `${getApiRoot()}/api/v1/groups/${encodeURIComponent(groupId)}/mute`,
-      { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
+      withApiCredentials({ method: 'DELETE', headers: await getAuthHeaders() })
     );
     return parseMuteResponse(response);
   } catch (error) {
