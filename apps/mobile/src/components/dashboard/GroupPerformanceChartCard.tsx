@@ -9,12 +9,16 @@ import { LineChart } from 'react-native-gifted-charts';
 import { Card } from '../ui';
 import {
   buildRolledUpGroupSeries,
+  filterResultsByGroupPerformancePeriod,
   getGroupIdWithDescendants,
+  GROUP_PERFORMANCE_PERIOD_OPTIONS,
+  type GroupPerformancePeriod,
   type LeanTestResultLike,
 } from '@lantern/shared/utils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
+const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
 
 export interface ChartGroupOption {
   id: string;
@@ -45,6 +49,24 @@ async function loadSelectedIds(): Promise<string[]> {
 async function saveSelectedIds(ids: string[]): Promise<void> {
   try {
     await AsyncStorage.setItem(SELECTED_GROUP_CHART_IDS_KEY, JSON.stringify(ids));
+  } catch {
+    // ignore
+  }
+}
+
+async function loadPeriod(): Promise<GroupPerformancePeriod> {
+  try {
+    const raw = await AsyncStorage.getItem(GROUP_PERF_PERIOD_KEY);
+    if (raw === '7days' || raw === '30days' || raw === '90days' || raw === 'all') return raw;
+  } catch {
+    // ignore
+  }
+  return '30days';
+}
+
+async function savePeriod(period: GroupPerformancePeriod): Promise<void> {
+  try {
+    await AsyncStorage.setItem(GROUP_PERF_PERIOD_KEY, period);
   } catch {
     // ignore
   }
@@ -107,15 +129,21 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [displayMode, setDisplayMode] = useState<'timeline' | 'weekly'>('timeline');
+  const [period, setPeriod] = useState<GroupPerformancePeriod>('30days');
 
   const activeGroups = useMemo(
     () => groups.filter((g) => !g.isArchived),
     [groups]
   );
 
+  const periodResults = useMemo(
+    () => filterResultsByGroupPerformancePeriod(testResults, period),
+    [testResults, period]
+  );
+
   const options = useMemo(() => {
     const directDataIds = new Set(
-      testResults
+      periodResults
         .map((r) => r.session.config?.groupId)
         .filter((id): id is string => typeof id === 'string' && activeGroups.some((g) => g.id === id))
     );
@@ -130,12 +158,14 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       }
     }
     return buildHierarchicalOptions(activeGroups, dataIds);
-  }, [activeGroups, testResults]);
+  }, [activeGroups, periodResults]);
 
   useEffect(() => {
     let cancelled = false;
-    void loadSelectedIds().then((ids) => {
-      if (!cancelled) setSelectedIds(ids);
+    void Promise.all([loadSelectedIds(), loadPeriod()]).then(([ids, savedPeriod]) => {
+      if (cancelled) return;
+      setSelectedIds(ids);
+      setPeriod(savedPeriod);
     });
     return () => {
       cancelled = true;
@@ -164,6 +194,11 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     void saveSelectedIds(ids);
   }, []);
 
+  const updatePeriod = useCallback((next: GroupPerformancePeriod) => {
+    setPeriod(next);
+    void savePeriod(next);
+  }, []);
+
   const selectedSeries = useMemo(
     () =>
       selectedIds
@@ -174,12 +209,12 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
             groupId: id,
             groupName: name,
             groups: activeGroups,
-            results: testResults,
+            results: periodResults,
             activeOnly: true,
           });
         })
         .filter((s) => s.testCount > 0),
-    [selectedIds, options, activeGroups, testResults]
+    [selectedIds, options, activeGroups, periodResults]
   );
 
   const isMulti = selectedSeries.length >= 2;
@@ -223,7 +258,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     let totalQ = 0;
     for (const id of selectedIds) {
       const rollup = getGroupIdWithDescendants(id, activeGroups, { activeOnly: true });
-      for (const result of testResults) {
+      for (const result of periodResults) {
         const gid = result.session.config?.groupId;
         if (!gid || !rollup.has(gid)) continue;
         const key = result.session.id || result.id || String(result.session.startTime);
@@ -240,7 +275,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       averageScore: testCount > 0 ? totalScore / testCount : 0,
       accuracy: totalQ > 0 ? (correct / totalQ) * 100 : 0,
     };
-  }, [selectedIds, activeGroups, testResults]);
+  }, [selectedIds, activeGroups, periodResults]);
 
   const buttonLabel =
     selectedIds.length === 0
@@ -256,8 +291,34 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
         <Text className="text-sm font-semibold text-lantern-text">Group performance</Text>
       </View>
       <Text className="text-[11px] text-lantern-text-secondary mb-3">
-        Select one or more active groups. Archived groups are removed automatically.
+        Select one or more active groups. Metrics follow the period you pick below.
       </Text>
+
+      <View className="flex-row flex-wrap gap-1.5 mb-3">
+        {GROUP_PERFORMANCE_PERIOD_OPTIONS.map((opt) => {
+          const active = period === opt.value;
+          return (
+            <Pressable
+              key={opt.value}
+              onPress={() => updatePeriod(opt.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={opt.label}
+              className={`px-2.5 py-1.5 rounded-lg min-h-[36px] justify-center ${
+                active ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+              }`}
+            >
+              <Text
+                className={`text-xs font-semibold ${
+                  active ? 'text-white' : 'text-lantern-text-secondary'
+                }`}
+              >
+                {opt.shortLabel}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <View className="flex-row flex-wrap gap-2 mb-3">
         <Pressable
@@ -313,7 +374,9 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
 
       {options.length === 0 ? (
         <Text className="text-sm text-lantern-text-tertiary py-4 text-center">
-          Take a test in an active group to see performance here.
+          {periodResults.length === 0
+            ? 'No group tests in this period. Try a wider range or All.'
+            : 'Take a test in an active group to see performance here.'}
         </Text>
       ) : selectedSeries.length === 0 ? (
         <Text className="text-sm text-lantern-text-tertiary py-4 text-center">

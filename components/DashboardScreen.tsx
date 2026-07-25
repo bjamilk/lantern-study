@@ -10,7 +10,22 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
 import { syncCopy } from '@lantern/shared/design';
-import { buildActivityMap, formatActivityLocalDate, normalizeTestQuestionForSession, normalizeStoredUserAnswer, getActivityHeatHexColor, getActivityHeatHexColorForCount, computeStudyStreak, getDashboardFirstName, getGroupIdWithDescendants, buildRolledUpGroupSeries, type ActivityHeatLevel } from '@lantern/shared/utils';
+import {
+  buildActivityMap,
+  formatActivityLocalDate,
+  normalizeTestQuestionForSession,
+  normalizeStoredUserAnswer,
+  getActivityHeatHexColor,
+  getActivityHeatHexColorForCount,
+  computeStudyStreak,
+  getDashboardFirstName,
+  getGroupIdWithDescendants,
+  buildRolledUpGroupSeries,
+  filterResultsByGroupPerformancePeriod,
+  GROUP_PERFORMANCE_PERIOD_OPTIONS,
+  type ActivityHeatLevel,
+  type GroupPerformancePeriod,
+} from '@lantern/shared/utils';
 import { buildDashboardStats, type RawTestResult } from '@lantern/shared/utils/buildDashboardStats';
 import type { StudyActivityDay } from '@lantern/shared';
 import { BADGE_DEFINITIONS, getXPLevel } from '../gamification';
@@ -30,6 +45,7 @@ import Modal from './ui/Modal';
 import { fetchTestResultsPage, fetchTestSessionById, type TestResultsSort } from '../services/supabase';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
+const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
 const RECENT_TESTS_PAGE_SIZE = 5;
 
 function loadSelectedGroupChartIds(): string[] {
@@ -50,6 +66,26 @@ function saveSelectedGroupChartIds(ids: string[]): void {
     localStorage.setItem(SELECTED_GROUP_CHART_IDS_KEY, JSON.stringify(ids));
   } catch {
     // ignore quota / private mode
+  }
+}
+
+function loadGroupPerfPeriod(): GroupPerformancePeriod {
+  try {
+    if (typeof localStorage === 'undefined') return '30days';
+    const raw = localStorage.getItem(GROUP_PERF_PERIOD_KEY);
+    if (raw === '7days' || raw === '30days' || raw === '90days' || raw === 'all') return raw;
+  } catch {
+    // ignore
+  }
+  return '30days';
+}
+
+function saveGroupPerfPeriod(period: GroupPerformancePeriod): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(GROUP_PERF_PERIOD_KEY, period);
+  } catch {
+    // ignore
   }
 }
 
@@ -351,6 +387,7 @@ export default function DashboardScreen({
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [chartDisplayMode, setChartDisplayMode] = useState<'bar' | 'line'>('line');
+  const [groupPerfPeriod, setGroupPerfPeriod] = useState<GroupPerformancePeriod>(() => loadGroupPerfPeriod());
   const [selectedGroupChartIds, setSelectedGroupChartIds] = useState<string[]>(() =>
     loadSelectedGroupChartIds()
   );
@@ -436,6 +473,24 @@ export default function DashboardScreen({
         return resultDate >= cutoffDate;
     });
   }, [initialTestResults, selectedTimePeriod, customStartDate, customEndDate]);
+
+  /** Deduped all-time results, then windowed for the Group performance card only. */
+  const groupPerformanceResults = useMemo(() => {
+    const byStartTime = new Map<number, (typeof initialTestResults)[number]>();
+    for (const r of initialTestResults) {
+      const ts = new Date(r.session.startTime).getTime();
+      const existing = byStartTime.get(ts);
+      if (!existing || (!existing.id && r.id)) {
+        byStartTime.set(ts, r);
+      }
+    }
+    return filterResultsByGroupPerformancePeriod(Array.from(byStartTime.values()), groupPerfPeriod);
+  }, [initialTestResults, groupPerfPeriod]);
+
+  const handleGroupPerfPeriodChange = useCallback((period: GroupPerformancePeriod) => {
+    setGroupPerfPeriod(period);
+    saveGroupPerfPeriod(period);
+  }, []);
   
   const totalTestsTakenOverall = filteredTestResults.length;
 
@@ -475,8 +530,8 @@ export default function DashboardScreen({
 
   useEffect(() => {
     const groupPerformanceMap: Map<string, GroupPerformanceData> = new Map();
-    if (totalTestsTakenOverall > 0) {
-      filteredTestResults.forEach(result => {
+    if (groupPerformanceResults.length > 0) {
+      groupPerformanceResults.forEach(result => {
         const groupId = result.session.config.groupId;
         const groupName = getGroupName(groupId, result.session.config.groupName);
         
@@ -519,14 +574,13 @@ export default function DashboardScreen({
         data.accuracy = data.totalQuestions > 0 ? (data.correctAnswers / data.totalQuestions) * 100 : 0;
         data.averageTimePerQuestion = data.questionsWithTimeData > 0 ? data.totalTimeSpentSeconds / data.questionsWithTimeData : 0;
 
-        const groupSpecificResults = filteredTestResults
+        const groupSpecificResults = groupPerformanceResults
           .filter(tr => tr.session.config.groupId === data.id)
           .sort((a, b) => new Date(a.session.startTime).getTime() - new Date(b.session.startTime).getTime());
         
         data.chartData = groupSpecificResults.map((result, index) => {
           const date = new Date(result.session.startTime);
           const formattedDate = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`;
-          const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           return {
             x: `Test ${index + 1} - ${formattedDate}`,
             y: result.score,
@@ -561,7 +615,7 @@ export default function DashboardScreen({
     }
     const performanceDataArray = Array.from(groupPerformanceMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     setAllGroupPerformanceData(performanceDataArray);
-  }, [filteredTestResults, groups, totalTestsTakenOverall]);
+  }, [groupPerformanceResults, groups]);
 
   const activeGroupChartOptions = useMemo(() => {
     const activeGroups = groups.filter((g) => !g.isArchived);
@@ -763,7 +817,7 @@ export default function DashboardScreen({
           groupId: id,
           groupName: name,
           groups: activeGroups,
-          results: filteredTestResults,
+          results: groupPerformanceResults,
           activeOnly: true,
         });
       })
@@ -773,7 +827,7 @@ export default function DashboardScreen({
     activeGroupChartOptions,
     selectedGroupChartIds,
     allGroupPerformanceData,
-    filteredTestResults,
+    groupPerformanceResults,
   ]);
 
   const selectionIncludesParentRollup = selectedGroupPerformance.some((g) => g.includesDescendants);
@@ -821,7 +875,7 @@ export default function DashboardScreen({
     let totalQuestions = 0;
     for (const selectedId of selectedGroupChartIds) {
       const rollup = getGroupIdWithDescendants(selectedId, activeGroups, { activeOnly: true });
-      for (const result of filteredTestResults) {
+      for (const result of groupPerformanceResults) {
         const gid = result.session.config.groupId;
         if (!gid || !rollup.has(gid)) continue;
         const key = result.session.id || result.id || String(result.session.startTime);
@@ -838,7 +892,7 @@ export default function DashboardScreen({
       averageScore: testCount > 0 ? totalScore / testCount : 0,
       accuracy: totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0,
     };
-  }, [selectedGroupPerformance, selectedGroupChartIds, groups, filteredTestResults]);
+  }, [selectedGroupPerformance, selectedGroupChartIds, groups, groupPerformanceResults]);
 
   const recentPeriodBounds = useMemo(() => {
     if (selectedTimePeriod === 'allTime') return { from: undefined as string | undefined, to: undefined as string | undefined };
@@ -1435,10 +1489,26 @@ export default function DashboardScreen({
                   Group performance
                 </h2>
                 <p className="text-xs text-lantern-text-secondary mt-1">
-                  Select one or more active groups or subgroups. Archived and deleted groups are removed automatically.
+                  Select one or more active groups or subgroups. Metrics follow the period you pick below.
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-shrink-0">
+                <label className="inline-flex items-center gap-1.5 min-w-0">
+                  <span className="sr-only">Group performance period</span>
+                  <FunnelIcon className="w-4 h-4 text-lantern-text-tertiary shrink-0" aria-hidden />
+                  <select
+                    value={groupPerfPeriod}
+                    onChange={(e) => handleGroupPerfPeriodChange(e.target.value as GroupPerformancePeriod)}
+                    aria-label="Group performance period"
+                    className="min-h-[36px] text-xs sm:text-sm p-1.5 rounded-lg bg-lantern-surface border border-lantern-border text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
+                  >
+                    {GROUP_PERFORMANCE_PERIOD_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <GroupPerformanceMultiSelect
                   options={activeGroupChartOptions}
                   selectedIds={selectedGroupChartIds}
@@ -1489,7 +1559,9 @@ export default function DashboardScreen({
             <div className="p-8 text-center">
               <UsersIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
               <p className="text-sm text-lantern-text-tertiary">
-                Take a test in an active group to see performance here.
+                {groupPerformanceResults.length === 0
+                  ? 'No group tests in this period. Try a wider range or All Time.'
+                  : 'Take a test in an active group to see performance here.'}
               </p>
             </div>
           ) : selectedGroupPerformance.length === 0 ? (

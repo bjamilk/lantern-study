@@ -31,9 +31,41 @@ export interface RolledUpGroupSeries {
   includesDescendants: boolean;
 }
 
+/** Period window for Group performance charts (independent of other dashboard filters). */
+export type GroupPerformancePeriod = '7days' | '30days' | '90days' | 'all';
+
+export const GROUP_PERFORMANCE_PERIOD_OPTIONS: ReadonlyArray<{
+  value: GroupPerformancePeriod;
+  label: string;
+  shortLabel: string;
+}> = [
+  { value: '7days', label: 'Last 7 Days', shortLabel: '7d' },
+  { value: '30days', label: 'Last 30 Days', shortLabel: '30d' },
+  { value: '90days', label: 'Last 90 Days', shortLabel: '90d' },
+  { value: 'all', label: 'All Time', shortLabel: 'All' },
+];
+
 function toDate(value?: string | Date): Date {
   if (!value) return new Date(0);
   return value instanceof Date ? value : new Date(value);
+}
+
+export function getGroupPerformancePeriodCutoff(period: GroupPerformancePeriod): Date | null {
+  if (period === 'all') return null;
+  const days = period === '7days' ? 7 : period === '30days' ? 30 : 90;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setHours(0, 0, 0, 0);
+  return cutoff;
+}
+
+export function filterResultsByGroupPerformancePeriod<T extends LeanTestResultLike>(
+  results: T[],
+  period: GroupPerformancePeriod
+): T[] {
+  const cutoff = getGroupPerformancePeriodCutoff(period);
+  if (!cutoff) return results;
+  return results.filter((result) => toDate(result.session.startTime) >= cutoff);
 }
 
 export function getIsoWeekKey(date: Date): string {
