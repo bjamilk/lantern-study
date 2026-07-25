@@ -11,6 +11,7 @@ import {
   MagnifyingGlassIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
@@ -92,7 +93,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
   const avatarFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+    if (normalizeUserSearchQuery(searchTerm).length < 2) {
       setSearchResults([]);
       setSearchError('');
       return;
@@ -214,7 +215,9 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
           </button>
           <div>
             <h1 className="text-xl font-semibold text-lantern-text dark:text-lantern-text">New Group</h1>
-            <p className="text-sm text-lantern-text-secondary">Add members by searching name, @username, or email</p>
+            <p className="text-sm text-lantern-text-secondary">
+              Add members by name or @username (e.g. <span className="font-medium text-lantern-text">@janedoe</span>)
+            </p>
           </div>
         </header>
 
@@ -228,7 +231,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
               value={searchTerm ?? ''}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 p-3 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-lg focus:ring-lantern-primary focus:border-lantern-primary"
-              placeholder="Search by name or @username"
+              placeholder="Search by name or @username…"
               autoFocus
             />
           </div>
@@ -251,7 +254,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
               <UsersIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
               <p className="text-sm text-lantern-text-secondary">No users found matching &quot;{searchTerm}&quot;</p>
               <p className="text-xs text-lantern-text-tertiary mt-2 max-w-xs mx-auto">
-                They may need to set a username in Settings before they can be found.
+                Try their @username, or ask them to set one in Settings if they do not have one yet.
               </p>
             </div>
           )}

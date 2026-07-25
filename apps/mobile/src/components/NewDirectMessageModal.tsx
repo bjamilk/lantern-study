@@ -67,7 +67,7 @@ export default function NewDirectMessageModal({
   }, [visible]);
 
   const trimmedSearch = searchTerm.trim();
-  const useApiSearch = trimmedSearch.length >= 2;
+  const useApiSearch = trimmedSearch.replace(/^@+/, '').length >= 2;
 
   useEffect(() => {
     if (!useApiSearch) {
@@ -121,9 +121,11 @@ export default function NewDirectMessageModal({
       return [];
     }
 
+    const q = trimmedSearch.toLowerCase().replace(/^@+/, '');
     return otherContacts.filter(contact =>
-      contact.name.toLowerCase().includes(trimmedSearch.toLowerCase()) ||
-      contact.email?.toLowerCase().includes(trimmedSearch.toLowerCase())
+      contact.name.toLowerCase().includes(q) ||
+      (contact.username || '').toLowerCase().includes(q) ||
+      contact.email?.toLowerCase().includes(q)
     );
   }, [trimmedSearch, contacts, currentUserId, useApiSearch]);
 

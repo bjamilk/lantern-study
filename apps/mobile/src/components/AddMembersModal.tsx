@@ -76,7 +76,7 @@ export default function AddMembersModal({
 
   // Debounced search for users
   useEffect(() => {
-    if (view !== 'search' || !searchTerm.trim() || searchTerm.trim().length < 2) {
+    if (view !== 'search' || searchTerm.trim().replace(/^@+/, '').length < 2) {
       setSearchResults([]);
       setIsSearching(false);
       return;

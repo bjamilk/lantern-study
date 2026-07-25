@@ -90,7 +90,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
         setUserSuggestions([]);
         return;
       }
-      if (userQuery.trim().length < 2) {
+      if (userQuery.trim().replace(/^@+/, '').length < 2) {
         setUserSuggestions([]);
         return;
       }

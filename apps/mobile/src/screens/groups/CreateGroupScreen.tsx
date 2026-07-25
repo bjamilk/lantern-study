@@ -92,7 +92,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const selectedUserIdSet = useMemo(() => new Set(selectedUserIds), [selectedUserIds]);
 
   useEffect(() => {
-    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+    if (searchTerm.trim().replace(/^@+/, '').length < 2) {
       setSearchResults([]);
       setIsSearching(false);
       return;
@@ -251,7 +251,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             <TextInput
               value={searchTerm}
               onChangeText={setSearchTerm}
-              placeholder="Search by @username or name..."
+              placeholder="Search by name or @username…"
               placeholderTextColor="#94a3b8"
               autoFocus
               className="flex-1 py-3 px-2 text-lantern-text"

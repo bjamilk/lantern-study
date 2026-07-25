@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Group } from '../types';
 import { XMarkIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
@@ -47,7 +48,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
   // Debounced search for users by username or name using Supabase RPC
   useEffect(() => {
-    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+    if (normalizeUserSearchQuery(searchTerm).length < 2) {
       setSearchResults([]);
       return;
     }
@@ -160,7 +161,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 p-2.5 border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-lantern-primary"
-            placeholder="Search by name or @username"
+            placeholder="Search by name or @username…"
           />
         </div>
 

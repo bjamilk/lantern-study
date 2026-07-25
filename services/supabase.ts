@@ -1239,11 +1239,12 @@ export const fetchUsers = async (search?: string, options?: { page?: number; lim
 
 export const searchUsers = async (query: string, limit: number = 20) => {
   try {
-    const normalizedQuery = query.trim().toLowerCase().replace(/^@+/, '');
-    if (normalizedQuery.length < 2) {
+    // Preserve leading @ so the API can prefer username matches for @queries.
+    const searchQuery = query.trim();
+    if (searchQuery.replace(/^@+/, '').length < 2) {
       return [];
     }
-    const response = await fetch(`${getApiRoot()}/api/v1/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`, {
+    const response = await fetch(`${getApiRoot()}/api/v1/users/search?q=${encodeURIComponent(searchQuery)}&limit=${limit}`, {
       method: 'GET',
       headers: await getAuthHeaders(),
     });

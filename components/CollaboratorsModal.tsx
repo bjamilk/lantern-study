@@ -39,7 +39,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
   };
 
   const searchUsersForCollaborator = async (query: string) => {
-    if (!query.trim() || query.trim().length < 2) {
+    if (query.trim().replace(/^@+/, '').length < 2) {
       setUserSuggestions([]);
       return;
     }

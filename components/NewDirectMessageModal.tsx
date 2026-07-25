@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { XCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import Modal from './ui/Modal';
 
@@ -42,7 +43,7 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
   }, [isOpen]);
 
   useEffect(() => {
-    if (!searchTerm.trim() || searchTerm.trim().length < 2) {
+    if (normalizeUserSearchQuery(searchTerm).length < 2) {
       setSearchResults([]);
       setSearchError('');
       return;
@@ -86,7 +87,7 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 p-2 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"
-            placeholder="Search by name or @username"
+            placeholder="Search by name or @username…"
             autoFocus
           />
         </div>

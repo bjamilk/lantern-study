@@ -72,7 +72,7 @@ export default function CollaboratorsModal({
   }, [visible, loadCollaborators]);
 
   useEffect(() => {
-    if (!userQuery.trim() || userQuery.trim().length < 2) {
+    if (userQuery.trim().replace(/^@+/, '').length < 2) {
       setUserSuggestions([]);
       return;
     }

@@ -454,15 +454,17 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     searchUsers: (query: string, limit = 20) => {
-      const normalizedQuery = query.trim().toLowerCase().replace(/^@+/, '');
+      // Preserve leading @ so the API can prefer username matches for @queries.
+      const searchQuery = query.trim();
       return apiRequest<
         Array<{
           id: string;
           name: string;
           username?: string;
           avatar_url?: string;
+          avatarUrl?: string;
         }>
-      >(`/users/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`);
+      >(`/users/search?q=${encodeURIComponent(searchQuery)}&limit=${limit}`);
     },
 
     checkUsername: (username: string) =>

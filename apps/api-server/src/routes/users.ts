@@ -131,14 +131,14 @@ router.get(
 
     const { q, limit = 20 } = req.query;
 
-    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+    // Keep leading @ in the RPC arg so search_users can prefer username matches.
+    const searchQuery = typeof q === 'string' ? q.trim() : '';
+    if (searchQuery.replace(/^@+/, '').length < 2) {
       return res.status(400).json({
         success: false,
-        error: 'Search query must be at least 2 characters',
+        error: 'Search query must be at least 2 characters (use name or @username)',
       });
     }
-
-    const searchQuery = q.trim().toLowerCase().replace(/^@+/, '');
     const resultLimit = Math.min(parseInt(limit as string) || 20, 50);
 
     logger.debug('Searching users', { query: searchQuery, limit: resultLimit, currentUserId });
