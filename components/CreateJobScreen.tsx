@@ -110,7 +110,8 @@ export default function CreateJobScreen({ onNavigate }: Props) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+    <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+    <div className="max-w-2xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav active="my_jobs" onNavigate={onNavigate} />
 
       <div className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-5 space-y-4">
@@ -314,6 +315,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
           {busy ? 'Publishing…' : 'Publish job'}
         </button>
       </div>
+    </div>
     </div>
   );
 }

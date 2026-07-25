@@ -23,7 +23,8 @@ export default function MyJobApplicationsScreen({
   }, []);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+    <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+    <div className="max-w-3xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav active="my_applications" onNavigate={onNavigate} />
       <h1 className="text-xl font-semibold text-lantern-text">My applications</h1>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -78,6 +79,7 @@ export default function MyJobApplicationsScreen({
       {apps.length === 0 && !error ? (
         <p className="text-sm text-lantern-text-secondary">No applications yet. Browse jobs to apply.</p>
       ) : null}
+    </div>
     </div>
   );
 }

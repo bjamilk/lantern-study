@@ -68,16 +68,22 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
   };
 
   if (!job && !error) {
-    return <p className="p-6 text-sm text-lantern-text-tertiary">Loading…</p>;
+    return (
+      <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overscroll-contain bg-lantern-background">
+        <p className="p-6 text-sm text-lantern-text-tertiary">Loading…</p>
+      </div>
+    );
   }
 
   if (!job) {
     return (
-      <div className="max-w-3xl mx-auto p-4">
+      <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overscroll-contain bg-lantern-background">
+      <div className="max-w-3xl mx-auto p-4 pb-20 md:pb-6">
         <p className="text-red-600 text-sm">{error}</p>
         <button type="button" className="mt-3 text-sm text-lantern-primary" onClick={() => onNavigate('MarketplaceJobs')}>
           Back to jobs
         </button>
+      </div>
       </div>
     );
   }
@@ -86,7 +92,8 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
   const showExternal = (job.applyMode === 'external' || job.applyMode === 'both') && !!job.externalUrl;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+    <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+    <div className="max-w-3xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
 
       <article className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-5 space-y-4">
@@ -189,6 +196,7 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
           Report this job
         </button>
       </article>
+    </div>
     </div>
   );
 }

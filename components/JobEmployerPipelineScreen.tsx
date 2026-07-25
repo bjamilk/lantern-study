@@ -47,7 +47,8 @@ export default function JobEmployerPipelineScreen({
   }, [apps]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
+    <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+    <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav active="employer" onNavigate={onNavigate} />
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-lantern-text">Applicant pipeline</h1>
@@ -118,6 +119,7 @@ export default function JobEmployerPipelineScreen({
           ))}
         </div>
       </div>
+    </div>
     </div>
   );
 }

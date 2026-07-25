@@ -55,7 +55,8 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
   }, [load]);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
+    <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
+    <div className="max-w-5xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav
         active="jobs"
         onNavigate={onNavigate}
@@ -149,6 +150,7 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
           ))}
         </ul>
       )}
+    </div>
     </div>
   );
 }
