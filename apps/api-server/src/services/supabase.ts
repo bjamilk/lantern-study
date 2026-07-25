@@ -4762,6 +4762,7 @@ export class SupabaseService {
     // Generate questions based on config (simplified - in real app this would be more complex)
     const questions = this.generateTestQuestions(test.config);
 
+    // RC-04: only the first start wins; empty questions array is the CAS precondition.
     const { data, error } = await this.supabase
       .from('test_sessions')
       .update({
@@ -4769,13 +4770,27 @@ export class SupabaseService {
         questions,
       })
       .eq('id', testId)
+      .eq('user_id', userId)
+      .eq('questions', [])
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
 
+    if (!data) {
+      // Bypass stale pre-start cache from the concurrent loser path.
+      await cacheService.delete(`test:${testId}`);
+      await cacheService.delete(`test:${testId}:user:${userId}`);
+      const existing = await this.getTestById(testId, userId);
+      if (existing?.questions && existing.questions.length > 0) {
+        return existing;
+      }
+      throw new Error('Test has already been started');
+    }
+
     // Invalidate caches
     await cacheService.delete(`test:${testId}`);
+    await cacheService.delete(`test:${testId}:user:${userId}`);
     await cacheService.deletePattern(`tests:${userId}:*`);
 
     return data;
@@ -9676,23 +9691,63 @@ export class SupabaseService {
     }
   ) {
     await this.getNote(noteId, userId);
-    const { data, error } = await this.supabase
-      .from('note_quizzes')
-      .upsert(
-        {
-          note_id: noteId,
-          user_id: userId,
+
+    // REL-02: never wipe an in-progress or completed quiz on regenerate.
+    const existing = await this.getNoteQuiz(userId, noteId);
+    if (existing) {
+      const answerCount =
+        existing.answers && typeof existing.answers === 'object'
+          ? Object.keys(existing.answers).length
+          : 0;
+      if (existing.completed || answerCount > 0) {
+        return existing;
+      }
+
+      const { data, error } = await this.supabase
+        .from('note_quizzes')
+        .update({
           study_goal: payload.studyGoal,
           questions: payload.questions,
           answers: {},
           completed: false,
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'note_id,user_id' }
-      )
+        })
+        .eq('note_id', noteId)
+        .eq('user_id', userId)
+        .eq('completed', false)
+        .eq('answers', {})
+        .select()
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        const raced = await this.getNoteQuiz(userId, noteId);
+        if (raced) return raced;
+        throw new Error('Failed to update note quiz');
+      }
+      return this.mapNoteQuiz(data);
+    }
+
+    const { data, error } = await this.supabase
+      .from('note_quizzes')
+      .insert({
+        note_id: noteId,
+        user_id: userId,
+        study_goal: payload.studyGoal,
+        questions: payload.questions,
+        answers: {},
+        completed: false,
+        updated_at: new Date().toISOString(),
+      })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // Concurrent first insert: return the winner's row rather than wipe.
+      if (error.code === '23505') {
+        const raced = await this.getNoteQuiz(userId, noteId);
+        if (raced) return raced;
+      }
+      throw error;
+    }
     return this.mapNoteQuiz(data);
   }
 

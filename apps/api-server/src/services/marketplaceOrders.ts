@@ -61,27 +61,6 @@ export class MarketplaceOrdersService {
     return data?.require_payment_confirmation ? 'pending_payment' : 'paid';
   }
 
-  private async adjustListingStockAfterSale(listingId: string): Promise<void> {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
-    if (!listing || listing.quantity == null) {
-      await this.db
-        .from('marketplace_listings')
-        .update({ status: 'sold', updated_at: new Date().toISOString() })
-        .eq('id', listingId);
-      return;
-    }
-
-    const nextQty = Math.max(0, Number(listing.quantity) - 1);
-    await this.db
-      .from('marketplace_listings')
-      .update({
-        quantity: nextQty,
-        status: nextQty <= 0 ? 'sold' : 'active',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', listingId);
-  }
-
   async submitPaymentProof(
     orderId: string,
     userId: string,
@@ -557,65 +536,96 @@ export class MarketplaceOrdersService {
     }
     if (order.status === 'completed') return order;
 
-    const now = new Date().toISOString();
-    const listing = await this.supabaseService.getMarketplaceListingById(order.listing_id);
-    const listingTitle = listing?.title || 'Marketplace item';
+    return this.finalizeEscrowRelease(orderId, {
+      actorId: userId,
+      allowDisputed: false,
+      notifyCompletion: true,
+    });
+  }
 
-    if (order.transaction_id) {
-      await this.db
-        .from('marketplace_transactions')
-        .update({ status: 'released' })
-        .eq('id', order.transaction_id);
-
-      await this.supabaseService.logMarketplaceBudgetTransactions({
-        listingId: order.listing_id,
-        listingTitle,
-        amount: Number(order.amount),
-        sellerId: order.seller_id,
-        buyerId: order.buyer_id,
-        marketplaceTransactionId: order.transaction_id,
-        source: order.source === 'offer_accept' ? 'offer_accept' : 'buy_now',
-      });
+  /**
+   * RC-01: complete order via marketplace_release_escrow (row lock + one stock decrement).
+   * Budget ledger uses deterministic ids (upsert) so duplicate calls are safe.
+   */
+  private async finalizeEscrowRelease(
+    orderId: string,
+    options: {
+      actorId?: string | null;
+      allowDisputed: boolean;
+      notifyCompletion: boolean;
+      adminNote?: string;
     }
+  ): Promise<MarketplaceOrderRow> {
+    const { data: rpcRows, error: rpcError } = await this.db.rpc('marketplace_release_escrow', {
+      p_order_id: orderId,
+      p_actor_id: options.actorId ?? null,
+      p_allow_disputed: options.allowDisputed,
+    });
 
-    await this.adjustListingStockAfterSale(order.listing_id);
+    if (rpcError) throw rpcError;
 
-    if (order.inquiry_id) {
-      await this.db
-        .from('marketplace_inquiries')
-        .update({ status: 'purchased', updated_at: now })
-        .eq('id', order.inquiry_id);
-    }
+    const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!rpcRow?.order_id) throw new Error('Failed to release marketplace escrow');
 
     const { data, error } = await this.db
       .from('marketplace_orders')
-      .update({
-        status: 'completed',
-        buyer_confirmed_at: order.buyer_confirmed_at || now,
-        completed_at: now,
-      })
-      .eq('id', orderId)
       .select(this.orderSelect)
+      .eq('id', orderId)
       .single();
 
-    if (error) throw error;
+    if (error || !data) throw error || new Error('Order not found after escrow release');
+    const completed = data as MarketplaceOrderRow;
+    const alreadyCompleted = Boolean(rpcRow.already_completed);
 
-    await this.notifyOrderParty(order.seller_id, {
-      type: 'marketplace_order_update',
-      message: `Order completed for "${listingTitle}" — ₦${Number(order.amount).toLocaleString()}`,
-      link: `marketplace:order:${orderId}`,
-      data: { orderId, completed: true },
-    });
+    const listingTitle =
+      (completed.listing as { title?: string } | null)?.title || 'Marketplace item';
 
-    await this.notifyOrderParty(order.buyer_id, {
-      type: 'marketplace_review_prompt',
-      message: `How was your purchase of "${listingTitle}"? Leave a review for the seller.`,
-      link: `marketplace:listing:${order.listing_id}:review`,
-      data: { orderId, listingId: order.listing_id },
-    });
+    if (completed.transaction_id) {
+      await this.supabaseService.logMarketplaceBudgetTransactions({
+        listingId: completed.listing_id,
+        listingTitle,
+        amount: Number(completed.amount),
+        sellerId: completed.seller_id,
+        buyerId: completed.buyer_id,
+        marketplaceTransactionId: completed.transaction_id,
+        source: completed.source === 'offer_accept' ? 'offer_accept' : 'buy_now',
+      });
+    }
 
-    await invalidateSellerAnalyticsCache(order.seller_id);
-    return data as MarketplaceOrderRow;
+    if (!alreadyCompleted && options.notifyCompletion) {
+      const noteSuffix = options.adminNote?.trim() ? ` Note: ${options.adminNote.trim()}` : '';
+      if (options.allowDisputed) {
+        await this.notifyOrderParty(completed.seller_id, {
+          type: 'marketplace_order_update',
+          message: `Dispute resolved in your favor — order completed for "${listingTitle}".${noteSuffix}`,
+          link: `marketplace:order:${orderId}`,
+          data: { orderId, disputeResolved: true, resolution: 'release_to_seller' },
+        });
+        await this.notifyOrderParty(completed.buyer_id, {
+          type: 'marketplace_order_update',
+          message: `Dispute closed: payment released to the seller for "${listingTitle}".${noteSuffix}`,
+          link: `marketplace:order:${orderId}`,
+          data: { orderId, disputeResolved: true, resolution: 'release_to_seller' },
+        });
+      } else {
+        await this.notifyOrderParty(completed.seller_id, {
+          type: 'marketplace_order_update',
+          message: `Order completed for "${listingTitle}" — ₦${Number(completed.amount).toLocaleString()}`,
+          link: `marketplace:order:${orderId}`,
+          data: { orderId, completed: true },
+        });
+      }
+
+      await this.notifyOrderParty(completed.buyer_id, {
+        type: 'marketplace_review_prompt',
+        message: `How was your purchase of "${listingTitle}"? Leave a review for the seller.`,
+        link: `marketplace:listing:${completed.listing_id}:review`,
+        data: { orderId, listingId: completed.listing_id },
+      });
+    }
+
+    await invalidateSellerAnalyticsCache(completed.seller_id);
+    return completed;
   }
 
   private async refundEscrow(order: MarketplaceOrderRow): Promise<void> {
@@ -1170,74 +1180,12 @@ export class MarketplaceOrdersService {
     order: MarketplaceOrderRow,
     adminNote?: string
   ): Promise<MarketplaceOrderRow> {
-    const orderId = order.id;
-    const now = new Date().toISOString();
-    const listing = await this.supabaseService.getMarketplaceListingById(order.listing_id);
-    const listingTitle = listing?.title || 'Marketplace item';
-    const noteSuffix = adminNote?.trim() ? ` Note: ${adminNote.trim()}` : '';
-
-    if (order.transaction_id) {
-      await this.db
-        .from('marketplace_transactions')
-        .update({ status: 'released' })
-        .eq('id', order.transaction_id);
-
-      await this.supabaseService.logMarketplaceBudgetTransactions({
-        listingId: order.listing_id,
-        listingTitle,
-        amount: Number(order.amount),
-        sellerId: order.seller_id,
-        buyerId: order.buyer_id,
-        marketplaceTransactionId: order.transaction_id,
-        source: order.source === 'offer_accept' ? 'offer_accept' : 'buy_now',
-      });
-    }
-
-    await this.adjustListingStockAfterSale(order.listing_id);
-
-    if (order.inquiry_id) {
-      await this.db
-        .from('marketplace_inquiries')
-        .update({ status: 'purchased', updated_at: now })
-        .eq('id', order.inquiry_id);
-    }
-
-    const { data, error } = await this.db
-      .from('marketplace_orders')
-      .update({
-        status: 'completed',
-        completed_at: now,
-        updated_at: now,
-      })
-      .eq('id', orderId)
-      .select(this.orderSelect)
-      .single();
-
-    if (error) throw error;
-
-    await this.notifyOrderParty(order.seller_id, {
-      type: 'marketplace_order_update',
-      message: `Dispute resolved in your favor — order completed for "${listingTitle}".${noteSuffix}`,
-      link: `marketplace:order:${orderId}`,
-      data: { orderId, disputeResolved: true, resolution: 'release_to_seller' },
+    return this.finalizeEscrowRelease(order.id, {
+      actorId: null,
+      allowDisputed: true,
+      notifyCompletion: true,
+      adminNote,
     });
-
-    await this.notifyOrderParty(order.buyer_id, {
-      type: 'marketplace_order_update',
-      message: `Dispute closed: payment released to the seller for "${listingTitle}".${noteSuffix}`,
-      link: `marketplace:order:${orderId}`,
-      data: { orderId, disputeResolved: true, resolution: 'release_to_seller' },
-    });
-
-    await this.notifyOrderParty(order.buyer_id, {
-      type: 'marketplace_review_prompt',
-      message: `How was your purchase of "${listingTitle}"? Leave a review for the seller.`,
-      link: `marketplace:listing:${order.listing_id}:review`,
-      data: { orderId, listingId: order.listing_id },
-    });
-
-    await invalidateSellerAnalyticsCache(order.seller_id);
-    return data as MarketplaceOrderRow;
   }
 
   private async refundDisputeForBuyer(

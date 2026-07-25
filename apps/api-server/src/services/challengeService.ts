@@ -495,14 +495,19 @@ export class ChallengeService {
     if (challenge.opponentId !== userId) throw Object.assign(new Error('Only the opponent can accept'), { statusCode: 403 });
     if (challenge.status !== 'pending') throw Object.assign(new Error(`Challenge is ${challenge.status}`), { statusCode: 400 });
 
+    // RC-02: only one of accept/decline can win the pending → accepted transition.
     const { data, error } = await this.db
       .from('group_challenges')
       .update({ status: 'accepted' })
       .eq('id', challengeId)
+      .eq('status', 'pending')
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw Object.assign(new Error('Challenge is no longer pending'), { statusCode: 409 });
+    }
 
     const opponentName = challenge.opponent?.name || 'Opponent';
     void this.supabaseService
@@ -535,14 +540,19 @@ export class ChallengeService {
     if (challenge.opponentId !== userId) throw Object.assign(new Error('Only the opponent can decline'), { statusCode: 403 });
     if (challenge.status !== 'pending') throw Object.assign(new Error(`Challenge is ${challenge.status}`), { statusCode: 400 });
 
+    // RC-02: conditional transition so concurrent accept cannot be overwritten.
     const { data, error } = await this.db
       .from('group_challenges')
       .update({ status: 'declined' })
       .eq('id', challengeId)
+      .eq('status', 'pending')
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw Object.assign(new Error('Challenge is no longer pending'), { statusCode: 409 });
+    }
 
     const opponentName = challenge.opponent?.name || 'Opponent';
     void this.supabaseService
@@ -656,6 +666,7 @@ export class ChallengeService {
         opponentPart
       );
 
+      // RC-03: only the first accepted → completed transition awards / notifies.
       const { data: completed, error: completeError } = await this.db
         .from('group_challenges')
         .update({
@@ -664,10 +675,18 @@ export class ChallengeService {
           completed_at: new Date().toISOString(),
         })
         .eq('id', challengeId)
+        .eq('status', 'accepted')
         .select()
-        .single();
+        .maybeSingle();
 
       if (completeError) throw completeError;
+
+      if (!completed) {
+        await this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId);
+        const settled = await this.getChallenge(challengeId, userId);
+        if (!settled) throw Object.assign(new Error('Challenge not found'), { statusCode: 404 });
+        return settled;
+      }
 
       if (winnerId) {
         await this.awardWinner(winnerId);
@@ -699,7 +718,7 @@ export class ChallengeService {
         }),
       ]);
 
-      await cacheService.deletePattern(`challenges:*`);
+      await this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId);
       const gamification = await this.supabaseService.syncGamificationProgress(userId).catch((err) => {
         logger.warn('Failed to sync gamification after duel completion', { userId, err });
         return undefined;
@@ -723,7 +742,7 @@ export class ChallengeService {
       });
     }
 
-    await cacheService.deletePattern(`challenges:*`);
+    await this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId);
     const { data: refreshed } = await this.db.from('group_challenges').select('*').eq('id', challengeId).single();
     return this.mapChallenge(refreshed, userId);
   }
@@ -749,18 +768,19 @@ export class ChallengeService {
         completed_at: now,
       })
       .eq('id', challengeId)
+      .eq('status', 'accepted')
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
+    if (!data) {
+      throw Object.assign(new Error('Challenge can no longer be forfeited'), { statusCode: 409 });
+    }
 
     await this.awardWinner(winnerId);
     await this.recordDuelActivity(challenge.challengerId, challenge.opponentId);
 
-    const [quitterProfile, winnerProfile] = await Promise.all([
-      this.fetchProfileBasics(userId),
-      this.fetchProfileBasics(winnerId),
-    ]);
+    const quitterProfile = await this.fetchProfileBasics(userId);
 
     await this.supabaseService.createNotification(winnerId, {
       type: 'challenge_result',
@@ -771,7 +791,7 @@ export class ChallengeService {
 
     logger.info('Challenge forfeited', { challengeId, userId, winnerId });
 
-    await cacheService.deletePattern(`challenges:*`);
+    await this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId);
     return this.mapChallenge(data, userId);
   }
 }
