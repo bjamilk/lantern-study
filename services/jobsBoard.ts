@@ -27,6 +27,9 @@ export async function fetchJobPostings(filters: {
   employmentType?: string;
   campusId?: string;
   companyOnly?: boolean;
+  remote?: boolean;
+  compensationKind?: 'paid' | 'unpaid' | 'discuss';
+  sort?: 'newest' | 'closing';
 } = {}) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {

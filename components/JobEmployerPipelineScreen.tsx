@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { JobApplication, JobApplicationStatus } from '@lantern/shared';
+import {
+  JOB_APPLICATION_STATUS_LABELS,
+  type JobApplication,
+  type JobApplicationStatus,
+} from '@lantern/shared';
 import { fetchJobApplicants, updateJobApplicationStatus } from '../services/jobsBoard';
 import { JobsWorkspaceNav } from './jobs/JobsWorkspaceNav';
 
@@ -12,7 +16,9 @@ const COLUMNS: JobApplicationStatus[] = [
   'offer',
   'hired',
   'rejected',
+  'withdrawn',
 ];
+const EMPLOYER_STATUSES = COLUMNS.filter((status) => status !== 'withdrawn');
 
 export default function JobEmployerPipelineScreen({
   jobId,
@@ -50,11 +56,21 @@ export default function JobEmployerPipelineScreen({
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
     <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
       <JobsWorkspaceNav active="employer" onNavigate={onNavigate} />
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-lantern-text">Applicant pipeline</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.15em] text-lantern-primary">
+            Hiring workflow
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-lantern-text">
+            Applicant pipeline
+          </h1>
+          <p className="mt-1 text-sm text-lantern-text-secondary">
+            {apps.length} {apps.length === 1 ? 'candidate' : 'candidates'} across all stages
+          </p>
+        </div>
         <button
           type="button"
-          className="text-sm text-lantern-primary"
+          className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text"
           onClick={() => onNavigate('MarketplaceJobDetail', { jobId })}
         >
           View job
@@ -67,16 +83,28 @@ export default function JobEmployerPipelineScreen({
           {COLUMNS.map((col) => (
             <div
               key={col}
-              className="w-56 shrink-0 rounded-lantern-xl border border-lantern-border bg-lantern-background-secondary/40 p-2"
+              className="w-64 shrink-0 rounded-lantern-xl border border-lantern-border bg-lantern-background-secondary/40 p-3"
             >
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary px-1 mb-2">
-                {col} ({byStatus[col]?.length || 0})
-              </h2>
+              <div className="mb-3 flex items-center justify-between gap-2 px-1">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-secondary">
+                  {JOB_APPLICATION_STATUS_LABELS[col]}
+                </h2>
+                <span className="rounded-full bg-lantern-surface px-2 py-0.5 text-xs font-semibold text-lantern-text-tertiary">
+                  {byStatus[col]?.length || 0}
+                </span>
+              </div>
               <ul className="space-y-2">
                 {(byStatus[col] || []).map((app) => (
-                  <li key={app.id} className="rounded-lg border border-lantern-border bg-lantern-surface p-2 space-y-2">
+                  <li key={app.id} className="rounded-lg border border-lantern-border bg-lantern-surface p-3 space-y-2 shadow-sm">
                     <p className="text-sm font-medium text-lantern-text">
                       {app.applicant?.name || app.applicant?.username || 'Applicant'}
+                    </p>
+                    <p className="text-[11px] text-lantern-text-tertiary">
+                      Applied{' '}
+                      {new Date(app.createdAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
                     </p>
                     {app.resumeUrl ? (
                       <a
@@ -91,15 +119,19 @@ export default function JobEmployerPipelineScreen({
                     <select
                       className="w-full text-xs rounded border border-lantern-border bg-lantern-background px-1 py-1"
                       value={app.status}
+                      disabled={app.status === 'withdrawn'}
                       onChange={(e) =>
                         void updateJobApplicationStatus(app.id, {
                           status: e.target.value,
                         }).then(() => load())
                       }
                     >
-                      {COLUMNS.map((s) => (
+                      {app.status === 'withdrawn' ? (
+                        <option value="withdrawn">Withdrawn by applicant</option>
+                      ) : null}
+                      {EMPLOYER_STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {JOB_APPLICATION_STATUS_LABELS[s]}
                         </option>
                       ))}
                     </select>

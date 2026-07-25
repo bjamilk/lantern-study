@@ -36,6 +36,12 @@ router.get(
   '/postings',
   optionalAuthMiddleware,
   asyncHandler(async (req: any, res: any) => {
+    const compensationKind = ['paid', 'unpaid', 'discuss'].includes(req.query.compensationKind)
+      ? req.query.compensationKind
+      : undefined;
+    const sort = req.query.sort === 'closing' ? 'closing' : 'newest';
+    const remote =
+      req.query.remote === 'true' ? true : req.query.remote === 'false' ? false : undefined;
     const result = await jobs().listPostings({
       page: Number(req.query.page) || 1,
       limit: Number(req.query.limit) || 20,
@@ -43,6 +49,9 @@ router.get(
       employmentType: (req.query.employmentType as string) || undefined,
       campusId: (req.query.campusId as string) || undefined,
       companyOnly: req.query.companyOnly === 'true',
+      remote,
+      compensationKind,
+      sort,
       sponsoredFirst: req.query.sponsoredFirst !== 'false',
     });
     res.json({ success: true, ...result });

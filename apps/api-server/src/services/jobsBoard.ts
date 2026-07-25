@@ -227,6 +227,9 @@ export class JobsBoardService {
     employmentType?: string;
     campusId?: string;
     companyOnly?: boolean;
+    remote?: boolean;
+    compensationKind?: 'paid' | 'unpaid' | 'discuss';
+    sort?: 'newest' | 'closing';
     sponsoredFirst?: boolean;
   }) {
     const page = Math.max(1, filters.page || 1);
@@ -251,6 +254,10 @@ export class JobsBoardService {
     if (filters.employmentType) query = query.eq('employment_type', filters.employmentType);
     if (filters.campusId) query = query.eq('campus_id', filters.campusId);
     if (filters.companyOnly) query = query.not('company_id', 'is', null);
+    if (filters.remote !== undefined) query = query.eq('is_remote', filters.remote);
+    if (filters.compensationKind) {
+      query = query.contains('compensation', { kind: filters.compensationKind });
+    }
     if (filters.search?.trim()) {
       query = query.textSearch('search_vector', filters.search.trim(), {
         type: 'websearch',
@@ -258,7 +265,12 @@ export class JobsBoardService {
       });
     }
 
-    if (filters.sponsoredFirst !== false) {
+    if (filters.sort === 'closing') {
+      query = query
+        .not('deadline', 'is', null)
+        .gte('deadline', new Date().toISOString())
+        .order('deadline', { ascending: true });
+    } else if (filters.sponsoredFirst !== false) {
       query = query
         .order('is_sponsored', { ascending: false })
         .order('created_at', { ascending: false });

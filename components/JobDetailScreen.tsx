@@ -4,6 +4,8 @@ import {
   JOBS_COMPANY_DISCLAIMER,
   formatJobCompensation,
   formatJobEngagementDuration,
+  formatJobLocation,
+  formatJobPostedDate,
   type JobPosting,
 } from '@lantern/shared';
 import {
@@ -92,119 +94,276 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
 
   const showInApp = job.applyMode === 'in_app' || job.applyMode === 'both';
   const showExternal = (job.applyMode === 'external' || job.applyMode === 'both') && !!job.externalUrl;
+  const employer = job.company?.displayName || job.poster?.name || job.poster?.username || 'Independent poster';
+  const duration = formatJobEngagementDuration(job.engagementDuration);
+  const deadline = job.deadline
+    ? new Date(job.deadline).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
 
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
-    <div className="max-w-3xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
-      <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
-
-      <article className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-5 space-y-4">
-        <header>
-          <p className="text-xs text-lantern-text-tertiary">
-            {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType] || job.employmentType}
-            {job.campusName ? ` · ${job.campusName}` : ''}
-          </p>
-          <h1 className="text-2xl font-semibold text-lantern-text mt-1">{job.title}</h1>
-          {job.company ? (
-            <p className="text-sm text-lantern-text-secondary mt-1">
-              {job.company.displayName}
-              {job.company.verificationStatus === 'verified' ? ' · Verified company' : ''}
-            </p>
-          ) : job.poster?.name ? (
-            <p className="text-sm text-lantern-text-secondary mt-1">Posted by {job.poster.name}</p>
-          ) : null}
-          <p className="text-sm text-lantern-text-secondary mt-2">
-            {formatJobCompensation(job.compensation)}
-            {formatJobEngagementDuration(job.engagementDuration)
-              ? ` · Duration: ${formatJobEngagementDuration(job.engagementDuration)}`
-              : ''}
-          </p>
-        </header>
-
-        <p className="text-sm text-lantern-text whitespace-pre-wrap break-words">{job.description}</p>
-
-        {job.company ? (
-          <p className="text-xs text-lantern-text-tertiary border-t border-lantern-border pt-3">
-            {JOBS_COMPANY_DISCLAIMER}
-          </p>
-        ) : null}
-
-        {showInApp ? (
-          <div className="space-y-3 border-t border-lantern-border pt-4">
-            <h2 className="text-sm font-semibold text-lantern-text">Easy Apply</h2>
-            {(job.screeningQuestions || []).map((q) => (
-              <label key={q.id} className="block text-sm">
-                <span className="text-lantern-text-secondary">{q.prompt}</span>
-                <input
-                  className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
-                  value={answers[q.id] || ''}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                />
-              </label>
-            ))}
-            <label className="block text-sm">
-              <span className="text-lantern-text-secondary">Message (optional)</span>
-              <textarea
-                className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
-                rows={3}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-            </label>
-            {job.companyId ? (
-              <label className="block text-sm">
-                <span className="text-lantern-text-secondary">Resume URL (optional)</span>
-                <input
-                  className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
-                  value={resumeUrl}
-                  onChange={(e) => setResumeUrl(e.target.value)}
-                  placeholder="https://…"
-                />
-              </label>
-            ) : null}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void handleApply()}
-              className="rounded-lg bg-lantern-primary text-white px-4 py-2 text-sm font-semibold disabled:opacity-60"
-            >
-              {busy ? 'Submitting…' : 'Apply / I’m interested'}
-            </button>
-          </div>
-        ) : null}
-
-        {showExternal ? (
-          <div className="border-t border-lantern-border pt-4 space-y-2">
-            <p className="text-sm text-lantern-text-secondary">
-              This role also accepts applications on the company site.
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void handleExternal()}
-              className="rounded-lg border border-lantern-border px-4 py-2 text-sm font-medium hover:border-lantern-primary/40"
-            >
-              Apply on company site
-            </button>
-          </div>
-        ) : null}
-
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        {success ? <p className="text-sm text-emerald-600">{success}</p> : null}
+      <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-4">
+        <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
 
         <button
           type="button"
-          className="text-xs text-lantern-text-tertiary underline"
-          onClick={() =>
-            void reportJobPosting(job.id, { reason: 'scam' }).then(() =>
-              setSuccess('Report submitted. Thanks for flagging this.')
-            )
-          }
+          className="text-sm font-medium text-lantern-primary hover:underline"
+          onClick={() => onNavigate('MarketplaceJobs')}
         >
-          Report this job
+          ← Back to job results
         </button>
-      </article>
-    </div>
+
+        <header className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-7">
+          <div className="flex items-start gap-4">
+            {job.company?.logoUrl ? (
+              <img
+                src={job.company.logoUrl}
+                alt=""
+                className="h-14 w-14 shrink-0 rounded-xl border border-lantern-border bg-white object-contain p-2 sm:h-16 sm:w-16"
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-lantern-primary/10 text-xl font-bold text-lantern-primary sm:h-16 sm:w-16"
+              >
+                {employer.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {job.isSponsored ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                    Featured
+                  </span>
+                ) : null}
+                {job.company?.verificationStatus === 'verified' ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                    Verified company
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-lantern-text sm:text-3xl">
+                {job.title}
+              </h1>
+              <p className="mt-1 text-sm font-medium text-lantern-text-secondary">{employer}</p>
+              <p className="mt-2 text-sm text-lantern-text-tertiary">
+                {formatJobLocation(job)} · {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]} ·{' '}
+                {formatJobPostedDate(job.createdAt)}
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="space-y-4">
+            <section className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
+              <h2 className="text-lg font-semibold text-lantern-text">Job overview</h2>
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg bg-lantern-background p-3">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
+                    Compensation
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-lantern-text">
+                    {formatJobCompensation(job.compensation)}
+                  </dd>
+                </div>
+                <div className="rounded-lg bg-lantern-background p-3">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
+                    Job type
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-lantern-text">
+                    {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]}
+                  </dd>
+                </div>
+                <div className="rounded-lg bg-lantern-background p-3">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
+                    Location
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-lantern-text">
+                    {formatJobLocation(job)}
+                  </dd>
+                </div>
+                <div className="rounded-lg bg-lantern-background p-3">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-lantern-text-tertiary">
+                    {deadline ? 'Application deadline' : 'Duration'}
+                  </dt>
+                  <dd className="mt-1 text-sm font-semibold text-lantern-text">
+                    {deadline || duration || 'Ongoing'}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            <article className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
+              <h2 className="text-lg font-semibold text-lantern-text">About this role</h2>
+              <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-lantern-text">
+                {job.description}
+              </p>
+            </article>
+
+            <section className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-6">
+              <h2 className="text-lg font-semibold text-lantern-text">About the poster</h2>
+              <p className="mt-2 text-sm font-semibold text-lantern-text">{employer}</p>
+              <p className="mt-1 text-sm text-lantern-text-secondary">
+                {job.company
+                  ? job.company.verificationStatus === 'verified'
+                    ? 'This company has completed Lantern’s company verification.'
+                    : 'This company has not completed Lantern’s company verification.'
+                  : 'This role was posted by an individual or organization without a company profile.'}
+              </p>
+              {job.company?.website ? (
+                <a
+                  href={job.company.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-block text-sm font-medium text-lantern-primary hover:underline"
+                >
+                  Visit company website
+                </a>
+              ) : null}
+              {job.company ? (
+                <p className="mt-4 border-t border-lantern-border pt-3 text-xs leading-5 text-lantern-text-tertiary">
+                  {JOBS_COMPANY_DISCLAIMER}
+                </p>
+              ) : null}
+            </section>
+
+            <button
+              type="button"
+              className="text-xs text-lantern-text-tertiary underline"
+              onClick={() =>
+                void reportJobPosting(job.id, { reason: 'scam' }).then(() =>
+                  setSuccess('Report submitted. Thanks for flagging this.')
+                )
+              }
+            >
+              Report this job
+            </button>
+          </main>
+
+          <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">
+            <h2 className="text-lg font-semibold text-lantern-text">
+              {showInApp ? 'Apply for this job' : 'Continue your application'}
+            </h2>
+            <p className="mt-1 text-sm text-lantern-text-secondary">
+              {showInApp
+                ? 'Send your details directly to the poster.'
+                : 'This employer accepts applications on an external site.'}
+            </p>
+
+            {showInApp ? (
+              <form
+                className="mt-5 space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleApply();
+                }}
+              >
+                {(job.screeningQuestions || []).map((question) => (
+                  <label key={question.id} className="block text-sm">
+                    <span className="font-medium text-lantern-text">
+                      {question.prompt}
+                      {question.required ? ' *' : ''}
+                    </span>
+                    {question.questionType === 'single_choice' ? (
+                      <select
+                        required={question.required}
+                        className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                        value={answers[question.id] || ''}
+                        onChange={(event) =>
+                          setAnswers((current) => ({
+                            ...current,
+                            [question.id]: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Select an answer</option>
+                        {(question.options || []).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        required={question.required}
+                        className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                        value={answers[question.id] || ''}
+                        onChange={(event) =>
+                          setAnswers((current) => ({
+                            ...current,
+                            [question.id]: event.target.value,
+                          }))
+                        }
+                      />
+                    )}
+                  </label>
+                ))}
+                <label className="block text-sm">
+                  <span className="font-medium text-lantern-text">Message to the poster</span>
+                  <span className="ml-1 text-lantern-text-tertiary">(optional)</span>
+                  <textarea
+                    className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                    rows={4}
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    placeholder="Briefly introduce yourself and your interest."
+                  />
+                </label>
+                {job.companyId ? (
+                  <label className="block text-sm">
+                    <span className="font-medium text-lantern-text">Resume URL</span>
+                    <span className="ml-1 text-lantern-text-tertiary">(optional)</span>
+                    <input
+                      type="url"
+                      className="mt-1.5 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 py-2.5 text-lantern-text outline-none focus:border-lantern-primary"
+                      value={resumeUrl}
+                      onChange={(event) => setResumeUrl(event.target.value)}
+                      placeholder="https://…"
+                    />
+                  </label>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full rounded-lg bg-lantern-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? 'Submitting…' : 'Submit application'}
+                </button>
+              </form>
+            ) : null}
+
+            {showExternal ? (
+              <div className={`${showInApp ? 'mt-4 border-t border-lantern-border pt-4' : 'mt-5'}`}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleExternal()}
+                  className="w-full rounded-lg border border-lantern-primary px-4 py-3 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/5 disabled:opacity-60"
+                >
+                  Apply on company site
+                </button>
+              </div>
+            ) : null}
+
+            {error ? (
+              <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </p>
+            ) : null}
+            {success ? (
+              <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>
+            ) : null}
+            <p className="mt-4 text-xs leading-5 text-lantern-text-tertiary">
+              Never pay a fee to apply. Do not send BVN, NIN, passwords, or banking details.
+            </p>
+          </aside>
+        </div>
+      </div>
     </div>
   );
 }

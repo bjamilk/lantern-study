@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
-  JOB_PHASE1_EMPLOYMENT_TYPES,
+  JOB_EMPLOYMENT_TYPES,
   formatJobCompensation,
   formatJobEngagementDuration,
-  type JobEmploymentType,
+  formatJobLocation,
+  formatJobPostedDate,
   type JobPosting,
 } from '@lantern/shared';
 import { fetchJobPostings } from '../services/jobsBoard';
@@ -15,135 +16,400 @@ interface Props {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
 }
 
+interface PortalFilters {
+  search: string;
+  employmentType: string;
+  location: '' | 'remote' | 'onsite';
+  compensationKind: '' | 'paid' | 'discuss' | 'unpaid';
+  companyOnly: boolean;
+  sort: 'newest' | 'closing';
+}
+
+const EMPTY_FILTERS: PortalFilters = {
+  search: '',
+  employmentType: '',
+  location: '',
+  compensationKind: '',
+  companyOnly: false,
+  sort: 'newest',
+};
+
+function formatDeadline(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `Apply by ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+function companyLabel(job: JobPosting) {
+  return job.company?.displayName || job.poster?.name || job.poster?.username || 'Independent poster';
+}
+
 export default function JobsBoardScreen({ onNavigate }: Props) {
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [employmentType, setEmploymentType] = useState<string>('');
+  const [filters, setFilters] = useState<PortalFilters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<PortalFilters>(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 12;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetchJobPostings({
-        page: 1,
-        limit: 40,
-        search: search.trim() || undefined,
-        employmentType: employmentType || undefined,
+        page,
+        limit,
+        search: appliedFilters.search.trim() || undefined,
+        employmentType: appliedFilters.employmentType || undefined,
+        remote:
+          appliedFilters.location === 'remote'
+            ? true
+            : appliedFilters.location === 'onsite'
+              ? false
+              : undefined,
+        compensationKind: appliedFilters.compensationKind || undefined,
+        companyOnly: appliedFilters.companyOnly || undefined,
+        sort: appliedFilters.sort,
       });
       setJobs(res.data || []);
+      setTotal(res.pagination?.total ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load jobs');
     } finally {
       setLoading(false);
     }
-  }, [search, employmentType]);
+  }, [appliedFilters, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const applyFilters = (event: React.FormEvent) => {
+    event.preventDefault();
+    setPage(1);
+    setAppliedFilters(filters);
+  };
+
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
+    setPage(1);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const hasFilters =
+    !!appliedFilters.search ||
+    !!appliedFilters.employmentType ||
+    !!appliedFilters.location ||
+    !!appliedFilters.compensationKind ||
+    appliedFilters.companyOnly;
+
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
-    <div className="max-w-5xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
-      <JobsWorkspaceNav
-        active="jobs"
-        onNavigate={onNavigate}
-        onPostJob={() => onNavigate('CreateMarketplaceJob')}
-      />
+      <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-5">
+        <JobsWorkspaceNav
+          active="jobs"
+          onNavigate={onNavigate}
+          onPostJob={() => onNavigate('CreateMarketplaceJob')}
+        />
 
-      <div className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-4 space-y-3">
-        <div>
-          <h1 className="text-xl font-semibold text-lantern-text">Jobs</h1>
-          <p className="text-sm text-lantern-text-secondary mt-1">{JOBS_COMPLIANCE_BANNER}</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search roles, internships, gigs…"
-            className="flex-1 rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm"
-          />
-          <select
-            value={employmentType}
-            onChange={(e) => setEmploymentType(e.target.value)}
-            className="rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm"
-          >
-            <option value="">All types</option>
-            {JOB_PHASE1_EMPLOYMENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {JOB_EMPLOYMENT_TYPE_LABELS[t as JobEmploymentType]}
-              </option>
-            ))}
-            <option value="internship">Internship</option>
-            <option value="full_time">Full-time</option>
-            <option value="contract">Contract</option>
-          </select>
+        <section className="overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-sm">
+          <div className="bg-gradient-to-br from-lantern-primary/10 via-lantern-surface to-lantern-surface px-5 py-6 sm:px-7">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-lantern-primary">
+              Opportunities across Nigeria
+            </p>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-lantern-text sm:text-3xl">
+              Find work that fits your goals
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-lantern-text-secondary">
+              Search full-time roles, internships, part-time work, tutoring, research, and local gigs.
+            </p>
+          </div>
+
+          <form onSubmit={applyFilters} className="border-t border-lantern-border p-4 sm:p-5">
+            <div className="grid gap-3 lg:grid-cols-[minmax(240px,2fr)_repeat(3,minmax(140px,1fr))_auto]">
+              <label className="block">
+                <span className="sr-only">Search jobs</span>
+                <input
+                  value={filters.search}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, search: event.target.value }))
+                  }
+                  placeholder="Job title, skill, or company"
+                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none transition focus:border-lantern-primary focus:ring-2 focus:ring-lantern-primary/20"
+                />
+              </label>
+              <label className="block">
+                <span className="sr-only">Job type</span>
+                <select
+                  value={filters.employmentType}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, employmentType: event.target.value }))
+                  }
+                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                >
+                  <option value="">All job types</option>
+                  {JOB_EMPLOYMENT_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {JOB_EMPLOYMENT_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="sr-only">Location type</span>
+                <select
+                  value={filters.location}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      location: event.target.value as PortalFilters['location'],
+                    }))
+                  }
+                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                >
+                  <option value="">Any location</option>
+                  <option value="remote">Remote</option>
+                  <option value="onsite">On-site / hybrid</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="sr-only">Compensation</span>
+                <select
+                  value={filters.compensationKind}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      compensationKind: event.target.value as PortalFilters['compensationKind'],
+                    }))
+                  }
+                  className="h-11 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text outline-none focus:border-lantern-primary"
+                >
+                  <option value="">Any compensation</option>
+                  <option value="paid">Paid</option>
+                  <option value="discuss">Pay discussed</option>
+                  <option value="unpaid">Unpaid</option>
+                </select>
+              </label>
+              <button
+                type="submit"
+                className="h-11 rounded-lg bg-lantern-primary px-5 text-sm font-semibold text-white transition hover:bg-lantern-primary/90 focus:outline-none focus:ring-2 focus:ring-lantern-primary/30"
+              >
+                Search jobs
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-lantern-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={filters.companyOnly}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, companyOnly: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-lantern-border text-lantern-primary focus:ring-lantern-primary"
+                />
+                Company roles only
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm text-lantern-text-secondary">
+                Sort
+                <select
+                  value={filters.sort}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      sort: event.target.value as PortalFilters['sort'],
+                    }))
+                  }
+                  className="rounded-md border border-lantern-border bg-lantern-background px-2 py-1 text-sm text-lantern-text"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="closing">Closing soon</option>
+                </select>
+              </label>
+              {hasFilters ? (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-sm font-medium text-lantern-primary hover:underline"
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+          </form>
+        </section>
+
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-lantern-text">
+              {loading ? 'Finding opportunities…' : `${total} ${total === 1 ? 'job' : 'jobs'} found`}
+            </h2>
+            <p className="mt-0.5 text-xs text-lantern-text-tertiary">
+              Review the poster and role details before sharing personal information.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={() => void load()}
-            className="rounded-lg bg-lantern-primary text-white px-4 py-2 text-sm font-medium"
+            onClick={() => onNavigate('MyJobApplications')}
+            className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text hover:border-lantern-primary/40"
           >
-            Search
+            Track my applications
           </button>
         </div>
-      </div>
 
-      {loading ? (
-        <p className="text-sm text-lantern-text-tertiary">Loading jobs…</p>
-      ) : error ? (
-        <p className="text-sm text-red-600">{error}</p>
-      ) : jobs.length === 0 ? (
-        <div className="rounded-lantern-xl border border-dashed border-lantern-border p-8 text-center">
-          <p className="text-lantern-text font-medium">No jobs yet</p>
-          <p className="text-sm text-lantern-text-secondary mt-1">
-            Post a role for companies, campus orgs, or individuals to get started.
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {jobs.map((job) => (
-            <li key={job.id}>
+        {error ? (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+            <button type="button" className="ml-2 font-semibold underline" onClick={() => void load()}>
+              Try again
+            </button>
+          </div>
+        ) : loading ? (
+          <div className="space-y-3" aria-label="Loading jobs">
+            {[0, 1, 2].map((item) => (
+              <div
+                key={item}
+                className="h-44 animate-pulse rounded-lantern-xl border border-lantern-border bg-lantern-surface"
+              />
+            ))}
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="rounded-lantern-xl border border-dashed border-lantern-border bg-lantern-surface/70 px-6 py-12 text-center">
+            <p className="text-lg font-semibold text-lantern-text">No matching jobs</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-lantern-text-secondary">
+              Try a broader keyword or remove a filter. New opportunities are added regularly.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
               <button
                 type="button"
-                onClick={() => onNavigate('MarketplaceJobDetail', { jobId: job.id })}
-                className="w-full text-left rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-4 hover:border-lantern-primary/40 transition-colors"
+                onClick={clearFilters}
+                className="rounded-lg bg-lantern-primary px-4 py-2 text-sm font-semibold text-white"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-semibold text-lantern-text truncate">{job.title}</h2>
-                      {job.isSponsored ? (
-                        <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                          Sponsored
-                        </span>
-                      ) : null}
-                      {job.company?.verificationStatus === 'verified' ? (
-                        <span className="text-[10px] uppercase tracking-wide font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                          Verified company
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="text-xs text-lantern-text-tertiary mt-1">
-                      {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType] || job.employmentType}
-                      {job.campusName ? ` · ${job.campusName}` : ''}
-                      {job.isRemote ? ' · Remote' : ''}
-                      {' · '}
-                      {formatJobCompensation(job.compensation)}
-                      {formatJobEngagementDuration(job.engagementDuration)
-                        ? ` · ${formatJobEngagementDuration(job.engagementDuration)}`
-                        : ''}
-                    </p>
-                    <p className="text-sm text-lantern-text-secondary mt-2 line-clamp-2">{job.description}</p>
-                  </div>
-                </div>
+                Clear filters
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('CreateMarketplaceJob')}
+                className="rounded-lg border border-lantern-border px-4 py-2 text-sm font-semibold text-lantern-text"
+              >
+                Post a job
+              </button>
+            </div>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {jobs.map((job) => {
+              const employer = companyLabel(job);
+              const deadline = formatDeadline(job.deadline);
+              const duration = formatJobEngagementDuration(job.engagementDuration);
+              return (
+                <li key={job.id}>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('MarketplaceJobDetail', { jobId: job.id })}
+                    className={`group w-full rounded-lantern-xl border bg-lantern-surface p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-lantern-primary/50 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-lantern-primary/30 sm:p-5 ${
+                      job.isSponsored ? 'border-amber-300/80' : 'border-lantern-border'
+                    }`}
+                  >
+                    <article className="flex gap-4">
+                      {job.company?.logoUrl ? (
+                        <img
+                          src={job.company.logoUrl}
+                          alt=""
+                          className="h-12 w-12 shrink-0 rounded-xl border border-lantern-border bg-white object-contain p-1.5"
+                        />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-lantern-primary/10 text-lg font-bold text-lantern-primary"
+                        >
+                          {employer.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="text-base font-semibold text-lantern-text transition group-hover:text-lantern-primary sm:text-lg">
+                              {job.title}
+                            </h3>
+                            <p className="mt-0.5 truncate text-sm text-lantern-text-secondary">
+                              {employer}
+                              {job.company?.verificationStatus === 'verified' ? (
+                                <span className="ml-1 font-medium text-emerald-700">✓ Verified</span>
+                              ) : null}
+                            </p>
+                          </div>
+                          {job.isSponsored ? (
+                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                              Featured
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                          <span className="rounded-full bg-lantern-background px-2.5 py-1 text-lantern-text-secondary">
+                            {formatJobLocation(job)}
+                          </span>
+                          <span className="rounded-full bg-lantern-background px-2.5 py-1 text-lantern-text-secondary">
+                            {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]}
+                          </span>
+                          <span className="rounded-full bg-lantern-primary/10 px-2.5 py-1 font-medium text-lantern-primary">
+                            {formatJobCompensation(job.compensation)}
+                          </span>
+                          {duration ? (
+                            <span className="rounded-full bg-lantern-background px-2.5 py-1 text-lantern-text-secondary">
+                              {duration}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <p className="mt-3 line-clamp-2 text-sm leading-6 text-lantern-text-secondary">
+                          {job.description}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-lantern-text-tertiary">
+                          <span>{formatJobPostedDate(job.createdAt)}</span>
+                          {deadline ? <span className="font-medium text-amber-700">{deadline}</span> : null}
+                        </div>
+                      </div>
+                    </article>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {!loading && !error && totalPages > 1 ? (
+          <nav aria-label="Job results pages" className="flex items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              disabled={page === 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-lantern-text-secondary">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </nav>
+        ) : null}
+
+        <p className="rounded-lg bg-lantern-surface/70 px-4 py-3 text-xs leading-5 text-lantern-text-tertiary">
+          {JOBS_COMPLIANCE_BANNER}
+        </p>
+      </div>
     </div>
   );
 }

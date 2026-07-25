@@ -23,12 +23,20 @@ export async function fetchJobPostings(filters: {
   limit?: number;
   search?: string;
   employmentType?: string;
+  companyOnly?: boolean;
+  remote?: boolean;
+  compensationKind?: 'paid' | 'unpaid' | 'discuss';
+  sort?: 'newest' | 'closing';
 } = {}) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
   });
-  return jobsRequest<{ success: boolean; data: JobPosting[] }>(`/postings?${params}`);
+  return jobsRequest<{
+    success: boolean;
+    data: JobPosting[];
+    pagination: { page: number; limit: number; total: number };
+  }>(`/postings?${params}`);
 }
 
 export async function fetchJobPosting(id: string) {
@@ -42,7 +50,17 @@ export async function createJobPosting(body: Record<string, unknown>) {
   });
 }
 
-export async function applyToJob(id: string, body: { message?: string; answers?: Record<string, string> }) {
+export async function updateJobPosting(id: string, body: Record<string, unknown>) {
+  return jobsRequest<{ success: boolean; data: JobPosting }>(
+    `/postings/${encodeURIComponent(id)}`,
+    { method: 'PATCH', body: JSON.stringify(body) }
+  );
+}
+
+export async function applyToJob(
+  id: string,
+  body: { message?: string; answers?: Record<string, string>; resumeUrl?: string | null }
+) {
   return jobsRequest<{ success: boolean; data: JobApplication; threadId?: string }>(
     `/postings/${encodeURIComponent(id)}/apply`,
     { method: 'POST', body: JSON.stringify(body) }
