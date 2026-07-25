@@ -772,9 +772,37 @@ export function useAppEffects({
 
                 // --- [7] User question stats ---
                 if (results[7].status === 'fulfilled') {
-                    const fetchedStats = results[7].value;
-                    if (fetchedStats && Object.keys(fetchedStats).length > 0) {
+                    let fetchedStats = results[7].value;
+                    // Summary/bootstrap may return {} when the aggregate path
+                    // failed open. Retry the dedicated endpoint so "Questions
+                    // to review" can still populate.
+                    if (
+                        !fetchedStats ||
+                        typeof fetchedStats !== 'object' ||
+                        Array.isArray(fetchedStats) ||
+                        Object.keys(fetchedStats).length === 0
+                    ) {
+                        try {
+                            fetchedStats = await fetchUserQuestionStats(userId);
+                        } catch {
+                            // keep prior empty/failed value
+                        }
+                    }
+                    if (
+                        fetchedStats &&
+                        typeof fetchedStats === 'object' &&
+                        !Array.isArray(fetchedStats)
+                    ) {
                         setUserQuestionStats(fetchedStats);
+                    }
+                } else {
+                    try {
+                        const retryStats = await fetchUserQuestionStats(userId);
+                        if (retryStats && typeof retryStats === 'object' && !Array.isArray(retryStats)) {
+                            setUserQuestionStats(retryStats);
+                        }
+                    } catch {
+                        // leave store as-is
                     }
                 }
 

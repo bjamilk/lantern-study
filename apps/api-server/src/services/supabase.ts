@@ -3598,7 +3598,7 @@ export class SupabaseService {
   async getUserQuestionStats(userId: string): Promise<any[]> {
     const cacheKey = `user-stats:${userId}`;
     const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
+    if (cached !== null && cached !== undefined) return cached;
 
     const { data, error } = await this.supabase
       .from('user_question_stats')
@@ -3608,8 +3608,9 @@ export class SupabaseService {
 
     if (error) throw error;
 
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    const rows = Array.isArray(data) ? data : [];
+    await cacheService.set(cacheKey, rows, 1800); // 30 minutes
+    return rows;
   }
 
   async updateUserQuestionStats(userId: string, questionId: string, stats: {
@@ -3662,8 +3663,9 @@ export class SupabaseService {
       result = data;
     }
 
-    // Invalidate cache
+    // Invalidate both cache key shapes used by summary + dedicated routes.
     await cacheService.delete(`user-stats:${userId}`);
+    await cacheService.delete(`user:question-stats:${userId}`);
 
     return result;
   }
@@ -3739,8 +3741,9 @@ export class SupabaseService {
       result = data;
     }
 
-    // Invalidate cache
+    // Invalidate both cache key shapes used by summary + dedicated routes.
     await cacheService.delete(`user-stats:${userId}`);
+    await cacheService.delete(`user:question-stats:${userId}`);
 
     return result;
   }

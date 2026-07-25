@@ -42,7 +42,13 @@ import {
   type GroupPerformanceOption,
 } from './dashboard/GroupPerformanceMultiSelect';
 import Modal from './ui/Modal';
-import { fetchTestResultsPage, fetchTestSessionById, type TestResultsSort } from '../services/supabase';
+import {
+  fetchTestResultsPage,
+  fetchTestSessionById,
+  fetchUserQuestionStats,
+  type TestResultsSort,
+} from '../services/supabase';
+import { useTestStore } from '../stores/testStore';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
@@ -348,6 +354,30 @@ export default function DashboardScreen({
   onResumeSession,
   studyActivityDays = [],
 }: DashboardScreenProps) {
+  const setUserQuestionStats = useTestStore(s => s.setUserQuestionStats);
+  // Prefer freshly fetched stats over bootstrap props (bootstrap can miss
+  // question stats when the aggregate summary section fails open).
+  const [refetchedQuestionStats, setRefetchedQuestionStats] = useState<UserQuestionStats | null>(null);
+  const effectiveQuestionStats = refetchedQuestionStats ?? userQuestionStats;
+
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stats = await fetchUserQuestionStats(userId);
+        if (cancelled || !stats || typeof stats !== 'object' || Array.isArray(stats)) return;
+        setRefetchedQuestionStats(stats);
+        setUserQuestionStats(stats);
+      } catch {
+        // Keep bootstrap props if refresh fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, setUserQuestionStats]);
 
   // Group picker state for Quick Test / Quick Study
   const [quickActionPicker, setQuickActionPicker] = useState<'test' | 'study' | null>(null);
@@ -503,14 +533,14 @@ export default function DashboardScreen({
         testResults: filteredTestResults as unknown as RawTestResult[],
         period: 'all',
         groups: groups.map(g => ({ id: g.id, name: g.name })),
-        userQuestionStats,
+        userQuestionStats: effectiveQuestionStats,
         totalPoints: currentUser.points ?? 0,
         badges: [],
         currentStreak: 0,
         longestStreak: 0,
         cardsReviewed: 0,
       }),
-    [filteredTestResults, groups, userQuestionStats, currentUser.points]
+    [filteredTestResults, groups, effectiveQuestionStats, currentUser.points]
   );
   
   const getGroupName = (groupId: string, storedName?: string): string => {

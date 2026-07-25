@@ -2081,6 +2081,9 @@ export const fetchUserQuestionStats = async (userId: string) => {
  * One round trip replacing fetchTestResults + fetchUserQuestionStats during
  * bootstrap (GET /api/v1/dashboard/summary). Returns null on any failure so
  * callers can fall back to the individual requests.
+ *
+ * When the API marks question stats as failed (`userQuestionStats: null`),
+ * this falls back to GET /user-stats/:id rather than treating it as empty.
  */
 export const fetchDashboardSummary = async (): Promise<{
   testResults: any[];
@@ -2116,6 +2119,11 @@ export const fetchDashboardSummary = async (): Promise<{
         },
       };
     });
+
+    // null => server failed to load stats; do not coerce to {}.
+    if (data.userQuestionStats === null) {
+      return null;
+    }
 
     const userQuestionStats: UserQuestionStats = {};
     if (Array.isArray(data.userQuestionStats)) {

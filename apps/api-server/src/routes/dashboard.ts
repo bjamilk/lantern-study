@@ -59,11 +59,13 @@ async function getCompletedTests(userId: string) {
 async function getQuestionStats(userId: string) {
   const cacheKey = `user:question-stats:${userId}`;
   const cached = await cacheService.get(cacheKey);
-  if (cached) return cached;
+  // Distinguish cache miss (null) from a cached empty list ([]).
+  if (cached !== null && cached !== undefined) return cached;
 
   const stats = await supabaseService.getUserQuestionStats(userId);
-  await cacheService.set(cacheKey, stats, 600);
-  return stats;
+  const rows = Array.isArray(stats) ? stats : [];
+  await cacheService.set(cacheKey, rows, 600);
+  return rows;
 }
 
 // GET /api/v1/dashboard/summary - One-shot payload for the dashboard screens (self only)
@@ -78,19 +80,40 @@ router.get(
     const days = Math.min(365, Math.max(7, Number(req.query.days) || 112));
     const activityDate = resolveAllowedActivityDate(req.query.activityDate);
 
-    const [testResults, questionStats, profile, streak, activityDays] = await Promise.allSettled([
+    const settled = await Promise.allSettled([
       getCompletedTests(userId),
       getQuestionStats(userId),
       supabaseService.getUserById(userId),
       supabaseService.recomputeUserStreak(userId, activityDate),
       supabaseService.getStudyActivity(userId, days),
-    ]).then(results =>
-      results.map(result => {
-        if (result.status === 'fulfilled') return result.value;
-        logger.warn('Dashboard summary section failed', { userId, reason: `${result.reason}` });
-        return null;
-      })
-    );
+    ]);
+
+    const unwrap = <T,>(result: PromiseSettledResult<T>, section: string): T | null => {
+      if (result.status === 'fulfilled') return result.value;
+      logger.warn('Dashboard summary section failed', { userId, section, reason: `${result.reason}` });
+      return null;
+    };
+
+    let testResults = unwrap(settled[0], 'testResults');
+    let questionStats = unwrap(settled[1], 'userQuestionStats');
+    const profile = unwrap(settled[2], 'profile');
+    const streak = unwrap(settled[3], 'streak');
+    const activityDays = unwrap(settled[4], 'activityDays');
+
+    // Question stats power "Questions to review". Retry once on failure so a
+    // transient error is not silently turned into an empty list for clients.
+    let questionStatsFailed = questionStats === null;
+    if (questionStatsFailed) {
+      try {
+        questionStats = await getQuestionStats(userId);
+        questionStatsFailed = false;
+      } catch (retryErr) {
+        logger.warn('Dashboard question-stats retry failed', {
+          userId,
+          reason: `${retryErr}`,
+        });
+      }
+    }
 
     const user = profile as {
       points?: number;
@@ -102,7 +125,12 @@ router.get(
       success: true,
       data: {
         testResults: Array.isArray(testResults) ? testResults : [],
-        userQuestionStats: Array.isArray(questionStats) ? questionStats : [],
+        // null => section failed (clients must fall back). [] => loaded, truly empty.
+        userQuestionStats: questionStatsFailed
+          ? null
+          : Array.isArray(questionStats)
+            ? questionStats
+            : [],
         profile: user
           ? { points: user.points ?? 0, badges: user.badges ?? [], stats: user.stats ?? {} }
           : null,

@@ -578,7 +578,12 @@ export const useStatsStore = create<StatsState>((set, get) => ({
 
         if (summary) {
           testResultsRaw = summary.testResults;
-          questionStatsRaw = summary.userQuestionStats;
+          // null => summary section failed; fall back to dedicated endpoint.
+          if (summary.userQuestionStats === null) {
+            questionStatsRaw = await api.fetchUserQuestionStats(userId).catch(() => []);
+          } else {
+            questionStatsRaw = summary.userQuestionStats;
+          }
           loginStreak = {
             current: summary.streak?.current_streak ?? summary.streak?.currentStreak ?? 0,
             longest: summary.streak?.longest_streak ?? summary.streak?.longestStreak ?? 0,

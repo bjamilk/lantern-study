@@ -1269,7 +1269,8 @@ export function createApiEndpoints(client: ApiClient) {
       const query = params.toString();
       return apiRequest<{
         testResults: unknown[];
-        userQuestionStats: unknown[];
+        /** null means the server failed to load stats — clients should fall back. */
+        userQuestionStats: unknown[] | null;
         profile: { points: number; badges: unknown[]; stats: unknown } | null;
         streak: {
           current_streak?: number;
