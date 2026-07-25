@@ -1,9 +1,11 @@
 /** Web client for /api/v1/jobs-board */
-import type { JobApplication, JobPosting } from '@lantern/shared';
-import { getApiRoot, getAuthHeaders } from './supabase';
+import { getApiBaseUrl, type JobApplication, type JobPosting } from '@lantern/shared';
+import { getAuthHeaders } from './supabase';
+
+const API_BASE_URL = getApiBaseUrl();
 
 async function jobsRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${getApiRoot()}/api/v1/jobs-board${path}`, {
+  const response = await fetch(`${API_BASE_URL}/api/v1/jobs-board${path}`, {
     ...options,
     headers: {
       ...(await getAuthHeaders()),
