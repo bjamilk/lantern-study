@@ -1,6 +1,7 @@
 export * from './compliance';
 export * from './scamPlaybook';
 export * from './employmentTypes';
+export * from './compensation';
 export * from './intents';
 export * from './types';
 export * from './ux';

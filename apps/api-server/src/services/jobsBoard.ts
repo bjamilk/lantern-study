@@ -6,10 +6,14 @@ import {
   JOBS_DEFAULT_COUNTRY,
   JOBS_MAX_SCREENERS_PHASE1,
   JOBS_MAX_SCREENERS_PHASE2,
+  isJobCompensationPeriod,
+  isValidJobEngagementDuration,
+  jobRequiresEngagementDuration,
   textFailsJobScamCheck,
   type JobApplicationStatus,
   type JobCompensation,
   type JobEmploymentType,
+  type JobEngagementDuration,
   type JobPostingStatus,
 } from '@lantern/shared/jobs';
 import { SupabaseService } from './supabase';
@@ -24,6 +28,7 @@ export type CreateJobPostingInput = {
   locationText?: string | null;
   isRemote?: boolean;
   compensation: JobCompensation;
+  engagementDuration?: JobEngagementDuration | null;
   deadline?: string | null;
   applyMode?: 'in_app' | 'external' | 'both';
   externalUrl?: string | null;
@@ -43,6 +48,54 @@ export type CreateJobPostingInput = {
   atsWebhookUrl?: string | null;
 };
 
+function httpError(message: string, statusCode = 400): Error {
+  const err = new Error(message);
+  (err as Error & { statusCode?: number }).statusCode = statusCode;
+  return err;
+}
+
+function normalizeCompensation(compensation: JobCompensation | null | undefined): JobCompensation {
+  const c = compensation || { kind: 'discuss' as const };
+  if (c.kind !== 'paid') {
+    return { kind: c.kind, currency: c.currency || 'NGN', notes: c.notes || null };
+  }
+  if (c.amountMin != null && !isJobCompensationPeriod(c.period)) {
+    throw httpError('Pay period is required when a paid amount is set');
+  }
+  if (c.amountMin == null && !c.period) {
+    throw httpError('Paid jobs need an amount and pay period, or use Discuss');
+  }
+  if (!isJobCompensationPeriod(c.period)) {
+    throw httpError('Pay period is required for paid jobs');
+  }
+  return {
+    kind: 'paid',
+    currency: c.currency || 'NGN',
+    amountMin: c.amountMin ?? null,
+    amountMax: c.amountMax ?? null,
+    period: c.period,
+    notes: c.notes || null,
+  };
+}
+
+function normalizeEngagementDuration(
+  employmentType: JobEmploymentType,
+  duration: JobEngagementDuration | null | undefined
+): JobEngagementDuration | null {
+  if (!jobRequiresEngagementDuration(employmentType)) {
+    return null;
+  }
+  if (!isValidJobEngagementDuration(duration)) {
+    throw httpError('Role duration is required for non–full-time jobs (ongoing or a fixed length)');
+  }
+  if (duration.kind === 'ongoing') return { kind: 'ongoing' };
+  return {
+    kind: 'fixed',
+    value: Number(duration.value),
+    unit: duration.unit,
+  };
+}
+
 function mapPosting(row: any) {
   if (!row) return null;
   const campus = Array.isArray(row.campus) ? row.campus[0] : row.campus;
@@ -58,6 +111,7 @@ function mapPosting(row: any) {
     locationText: row.location_text,
     isRemote: !!row.is_remote,
     compensation: row.compensation || { kind: 'discuss' },
+    engagementDuration: row.engagement_duration || null,
     deadline: row.deadline,
     applyMode: row.apply_mode,
     externalUrl: row.external_url,
@@ -251,18 +305,20 @@ export class JobsBoardService {
   async createPosting(userId: string, input: CreateJobPostingInput) {
     const combined = `${input.title}\n${input.description}`;
     if (textFailsJobScamCheck(combined)) {
-      const err = new Error(
+      throw httpError(
         'This job text matches banned scam patterns (fees to start, BVN/NIN, crypto, etc.).'
       );
-      (err as Error & { statusCode?: number }).statusCode = 400;
-      throw err;
     }
+
+    const compensation = normalizeCompensation(input.compensation);
+    const engagementDuration = normalizeEngagementDuration(
+      input.employmentType,
+      input.engagementDuration
+    );
 
     if (input.applyMode === 'external' || input.applyMode === 'both') {
       if (!input.externalUrl?.trim()) {
-        const err = new Error('externalUrl is required when applyMode is external or both');
-        (err as Error & { statusCode?: number }).statusCode = 400;
-        throw err;
+        throw httpError('externalUrl is required when applyMode is external or both');
       }
     }
 
@@ -303,7 +359,8 @@ export class JobsBoardService {
             : [],
         location_text: input.locationText?.trim() || null,
         is_remote: !!input.isRemote,
-        compensation: input.compensation || { kind: 'discuss' },
+        compensation,
+        engagement_duration: engagementDuration,
         deadline: input.deadline || null,
         apply_mode: input.applyMode || 'in_app',
         external_url: input.externalUrl?.trim() || null,
@@ -371,7 +428,17 @@ export class JobsBoardService {
     if (updates.campusId !== undefined) patch.campus_id = updates.campusId;
     if (updates.locationText !== undefined) patch.location_text = updates.locationText;
     if (updates.isRemote != null) patch.is_remote = updates.isRemote;
-    if (updates.compensation != null) patch.compensation = updates.compensation;
+    if (updates.compensation != null) {
+      patch.compensation = normalizeCompensation(updates.compensation);
+    }
+    if (updates.engagementDuration !== undefined || updates.employmentType != null) {
+      const nextType = updates.employmentType || existing.employmentType;
+      const nextDuration =
+        updates.engagementDuration !== undefined
+          ? updates.engagementDuration
+          : existing.engagementDuration;
+      patch.engagement_duration = normalizeEngagementDuration(nextType, nextDuration);
+    }
     if (updates.deadline !== undefined) patch.deadline = updates.deadline;
     if (updates.applyMode != null) patch.apply_mode = updates.applyMode;
     if (updates.externalUrl !== undefined) patch.external_url = updates.externalUrl;

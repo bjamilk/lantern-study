@@ -2,13 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   JOBS_CREATE_CONFIRMATION,
   JOBS_SCAM_PLAYBOOK_SUMMARY,
+  JOB_COMPENSATION_PERIOD_LABELS,
+  JOB_COMPENSATION_PERIODS,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  JOB_ENGAGEMENT_DURATION_UNIT_LABELS,
+  JOB_ENGAGEMENT_DURATION_UNITS,
   JOB_INTENT_TEMPLATE_GROUPS,
   JOB_INTENT_TEMPLATES,
   JOB_PHASE1_EMPLOYMENT_TYPES,
   JOB_PHASE2_EMPLOYMENT_TYPES,
   jobIntentTemplatesByGroup,
+  jobRequiresEngagementDuration,
+  type JobCompensationPeriod,
   type JobEmploymentType,
+  type JobEngagementDurationUnit,
 } from '@lantern/shared';
 import { createJobPosting, fetchJobTemplates, fetchMyJobCompanies } from '../services/jobsBoard';
 import { fetchMarketplaceCampuses } from '../services/supabase';
@@ -26,6 +33,10 @@ export default function CreateJobScreen({ onNavigate }: Props) {
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string }>>([]);
   const [compensationKind, setCompensationKind] = useState<'paid' | 'unpaid' | 'discuss'>('discuss');
   const [amountMin, setAmountMin] = useState('');
+  const [payPeriod, setPayPeriod] = useState<JobCompensationPeriod>('month');
+  const [durationKind, setDurationKind] = useState<'ongoing' | 'fixed'>('fixed');
+  const [durationValue, setDurationValue] = useState('1');
+  const [durationUnit, setDurationUnit] = useState<JobEngagementDurationUnit>('month');
   const [confirmed, setConfirmed] = useState(false);
   const [companyId, setCompanyId] = useState('');
   const [companies, setCompanies] = useState<Array<{ id: string; displayName: string; verificationStatus: string }>>([]);
@@ -95,6 +106,17 @@ export default function CreateJobScreen({ onNavigate }: Props) {
       if (!allowedTypes.includes(employmentType)) {
         throw new Error('That employment type requires a verified company account.');
       }
+      if (compensationKind === 'paid' && !payPeriod) {
+        throw new Error('Select a pay period for the compensated amount.');
+      }
+      if (compensationKind === 'paid' && !amountMin.trim()) {
+        throw new Error('Enter the compensated amount.');
+      }
+      if (jobRequiresEngagementDuration(employmentType)) {
+        if (durationKind === 'fixed' && (!durationValue.trim() || Number(durationValue) < 1)) {
+          throw new Error('Enter how long this role lasts.');
+        }
+      }
       const screeningQuestions = screener1.trim()
         ? [{ prompt: screener1.trim(), questionType: 'text' as const, required: true }]
         : [];
@@ -106,9 +128,14 @@ export default function CreateJobScreen({ onNavigate }: Props) {
         compensation: {
           kind: compensationKind,
           currency: 'NGN',
-          amountMin: amountMin ? Number(amountMin) : null,
-          period: compensationKind === 'paid' ? 'hour' : null,
+          amountMin: compensationKind === 'paid' && amountMin ? Number(amountMin) : null,
+          period: compensationKind === 'paid' ? payPeriod : null,
         },
+        engagementDuration: jobRequiresEngagementDuration(employmentType)
+          ? durationKind === 'ongoing'
+            ? { kind: 'ongoing' }
+            : { kind: 'fixed', value: Number(durationValue), unit: durationUnit }
+          : null,
         applyMode,
         externalUrl: externalUrl || null,
         companyId: companyId || null,
@@ -177,7 +204,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
 
         <div className="grid sm:grid-cols-2 gap-3">
           <label className="block text-sm">
-            Type
+            Type of job offer
             <select
               className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
               value={employmentType}
@@ -225,6 +252,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
               Amount (NGN)
               <input
                 type="number"
+                min={0}
                 className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
                 value={amountMin}
                 onChange={(e) => setAmountMin(e.target.value)}
@@ -232,6 +260,68 @@ export default function CreateJobScreen({ onNavigate }: Props) {
             </label>
           ) : null}
         </div>
+
+        {compensationKind === 'paid' ? (
+          <label className="block text-sm">
+            Pay period
+            <select
+              className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
+              value={payPeriod}
+              onChange={(e) => setPayPeriod(e.target.value as JobCompensationPeriod)}
+            >
+              {JOB_COMPENSATION_PERIODS.map((p) => (
+                <option key={p} value={p}>
+                  {JOB_COMPENSATION_PERIOD_LABELS[p]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {jobRequiresEngagementDuration(employmentType) ? (
+          <div className="space-y-2 rounded-lg border border-lantern-border p-3 bg-lantern-background/60">
+            <p className="text-sm font-medium text-lantern-text">How long does this role last?</p>
+            <label className="block text-sm">
+              Duration
+              <select
+                className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
+                value={durationKind}
+                onChange={(e) => setDurationKind(e.target.value as 'ongoing' | 'fixed')}
+              >
+                <option value="fixed">Fixed length</option>
+                <option value="ongoing">Ongoing</option>
+              </select>
+            </label>
+            {durationKind === 'fixed' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-sm">
+                  Length
+                  <input
+                    type="number"
+                    min={1}
+                    className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
+                    value={durationValue}
+                    onChange={(e) => setDurationValue(e.target.value)}
+                  />
+                </label>
+                <label className="block text-sm">
+                  Unit
+                  <select
+                    className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
+                    value={durationUnit}
+                    onChange={(e) => setDurationUnit(e.target.value as JobEngagementDurationUnit)}
+                  >
+                    {JOB_ENGAGEMENT_DURATION_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {JOB_ENGAGEMENT_DURATION_UNIT_LABELS[u]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <label className="block text-sm">
           Screening question (optional)

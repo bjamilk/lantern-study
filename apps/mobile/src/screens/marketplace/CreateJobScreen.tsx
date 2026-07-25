@@ -4,13 +4,20 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   JOBS_CREATE_CONFIRMATION,
+  JOB_COMPENSATION_PERIOD_LABELS,
+  JOB_COMPENSATION_PERIODS,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  JOB_ENGAGEMENT_DURATION_UNIT_LABELS,
+  JOB_ENGAGEMENT_DURATION_UNITS,
   JOB_INTENT_TEMPLATE_GROUPS,
   JOB_INTENT_TEMPLATES,
   JOB_PHASE1_EMPLOYMENT_TYPES,
   JOB_PHASE2_EMPLOYMENT_TYPES,
   jobIntentTemplatesByGroup,
+  jobRequiresEngagementDuration,
+  type JobCompensationPeriod,
   type JobEmploymentType,
+  type JobEngagementDurationUnit,
 } from '@lantern/shared';
 import { Card, ScreenHeader } from '../../components/ui';
 import { createJobPosting, fetchMyJobCompanies } from '../../services/jobsBoard';
@@ -25,6 +32,12 @@ export function CreateJobScreen() {
   const [companies, setCompanies] = useState<Array<{ id: string; displayName: string; verificationStatus: string }>>(
     []
   );
+  const [compensationKind, setCompensationKind] = useState<'paid' | 'unpaid' | 'discuss'>('discuss');
+  const [amountMin, setAmountMin] = useState('');
+  const [payPeriod, setPayPeriod] = useState<JobCompensationPeriod>('month');
+  const [durationKind, setDurationKind] = useState<'ongoing' | 'fixed'>('fixed');
+  const [durationValue, setDurationValue] = useState('1');
+  const [durationUnit, setDurationUnit] = useState<JobEngagementDurationUnit>('month');
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +83,12 @@ export function CreateJobScreen() {
     setDescription(t.descriptionHint);
   };
 
+  const chip = (active: boolean) =>
+    `mr-2 mb-2 px-3 py-1.5 rounded-lg border ${
+      active ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
+    }`;
+  const chipText = (active: boolean) => `text-xs ${active ? 'text-white' : 'text-lantern-text'}`;
+
   return (
     <View className="flex-1 bg-lantern-background">
       <ScreenHeader title="Post a job" onBack={() => navigation.goBack()} />
@@ -112,26 +131,88 @@ export function CreateJobScreen() {
             multiline
           />
 
-          <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">Type</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-1">
+          <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">
+            Type of job offer
+          </Text>
+          <View className="flex-row flex-wrap">
             {allowedTypes.map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setEmploymentType(t)}
-                className={`mr-2 px-3 py-1.5 rounded-lg border ${
-                  employmentType === t ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
-                }`}
-              >
-                <Text className={`text-xs ${employmentType === t ? 'text-white' : 'text-lantern-text'}`}>
-                  {JOB_EMPLOYMENT_TYPE_LABELS[t]}
-                </Text>
+              <Pressable key={t} onPress={() => setEmploymentType(t)} className={chip(employmentType === t)}>
+                <Text className={chipText(employmentType === t)}>{JOB_EMPLOYMENT_TYPE_LABELS[t]}</Text>
               </Pressable>
             ))}
-          </ScrollView>
+          </View>
           {!companyId ? (
             <Text className="text-[11px] text-lantern-text-tertiary mb-1">
               Internship, full-time, and contract unlock when you post as a company.
             </Text>
+          ) : null}
+
+          <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">Compensation</Text>
+          <View className="flex-row flex-wrap">
+            {(['discuss', 'paid', 'unpaid'] as const).map((k) => (
+              <Pressable key={k} onPress={() => setCompensationKind(k)} className={chip(compensationKind === k)}>
+                <Text className={chipText(compensationKind === k)}>
+                  {k === 'discuss' ? 'Discuss' : k === 'paid' ? 'Paid' : 'Unpaid'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {compensationKind === 'paid' ? (
+            <>
+              <TextInput
+                className="rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+                placeholder="Amount (NGN)"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                value={amountMin}
+                onChangeText={setAmountMin}
+              />
+              <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">Pay period</Text>
+              <View className="flex-row flex-wrap">
+                {JOB_COMPENSATION_PERIODS.map((p) => (
+                  <Pressable key={p} onPress={() => setPayPeriod(p)} className={chip(payPeriod === p)}>
+                    <Text className={chipText(payPeriod === p)}>{JOB_COMPENSATION_PERIOD_LABELS[p]}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          {jobRequiresEngagementDuration(employmentType) ? (
+            <>
+              <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">
+                How long does this role last?
+              </Text>
+              <View className="flex-row flex-wrap">
+                <Pressable onPress={() => setDurationKind('fixed')} className={chip(durationKind === 'fixed')}>
+                  <Text className={chipText(durationKind === 'fixed')}>Fixed length</Text>
+                </Pressable>
+                <Pressable onPress={() => setDurationKind('ongoing')} className={chip(durationKind === 'ongoing')}>
+                  <Text className={chipText(durationKind === 'ongoing')}>Ongoing</Text>
+                </Pressable>
+              </View>
+              {durationKind === 'fixed' ? (
+                <>
+                  <TextInput
+                    className="rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text"
+                    placeholder="Length"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    value={durationValue}
+                    onChangeText={setDurationValue}
+                  />
+                  <View className="flex-row flex-wrap">
+                    {JOB_ENGAGEMENT_DURATION_UNITS.map((u) => (
+                      <Pressable key={u} onPress={() => setDurationUnit(u)} className={chip(durationUnit === u)}>
+                        <Text className={chipText(durationUnit === u)}>
+                          {JOB_ENGAGEMENT_DURATION_UNIT_LABELS[u]}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </>
           ) : null}
 
           {companies.length > 0 ? (
@@ -140,27 +221,12 @@ export function CreateJobScreen() {
                 Post as
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <Pressable
-                  onPress={() => setCompanyId('')}
-                  className={`mr-2 px-3 py-1.5 rounded-lg border ${
-                    !companyId ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
-                  }`}
-                >
-                  <Text className={`text-xs ${!companyId ? 'text-white' : 'text-lantern-text'}`}>
-                    Individual / org (no company)
-                  </Text>
+                <Pressable onPress={() => setCompanyId('')} className={chip(!companyId)}>
+                  <Text className={chipText(!companyId)}>Individual / org (no company)</Text>
                 </Pressable>
                 {companies.map((c) => (
-                  <Pressable
-                    key={c.id}
-                    onPress={() => setCompanyId(c.id)}
-                    className={`mr-2 px-3 py-1.5 rounded-lg border ${
-                      companyId === c.id ? 'bg-lantern-primary border-lantern-primary' : 'border-lantern-border'
-                    }`}
-                  >
-                    <Text className={`text-xs ${companyId === c.id ? 'text-white' : 'text-lantern-text'}`}>
-                      {c.displayName}
-                    </Text>
+                  <Pressable key={c.id} onPress={() => setCompanyId(c.id)} className={chip(companyId === c.id)}>
+                    <Text className={chipText(companyId === c.id)}>{c.displayName}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -183,11 +249,31 @@ export function CreateJobScreen() {
                   if (!allowedTypes.includes(employmentType)) {
                     throw new Error('That employment type requires a verified company account.');
                   }
+                  if (compensationKind === 'paid' && !amountMin.trim()) {
+                    throw new Error('Enter the compensated amount.');
+                  }
+                  if (
+                    jobRequiresEngagementDuration(employmentType) &&
+                    durationKind === 'fixed' &&
+                    (!durationValue.trim() || Number(durationValue) < 1)
+                  ) {
+                    throw new Error('Enter how long this role lasts.');
+                  }
                   const res = await createJobPosting({
                     title,
                     description,
                     employmentType,
-                    compensation: { kind: 'discuss' },
+                    compensation: {
+                      kind: compensationKind,
+                      currency: 'NGN',
+                      amountMin: compensationKind === 'paid' && amountMin ? Number(amountMin) : null,
+                      period: compensationKind === 'paid' ? payPeriod : null,
+                    },
+                    engagementDuration: jobRequiresEngagementDuration(employmentType)
+                      ? durationKind === 'ongoing'
+                        ? { kind: 'ongoing' }
+                        : { kind: 'fixed', value: Number(durationValue), unit: durationUnit }
+                      : null,
                     applyMode: 'in_app',
                     status: 'active',
                     companyId: companyId || null,

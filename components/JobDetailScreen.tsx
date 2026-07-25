@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOBS_COMPANY_DISCLAIMER,
+  formatJobCompensation,
+  formatJobEngagementDuration,
   type JobPosting,
 } from '@lantern/shared';
 import {
@@ -111,6 +113,12 @@ export default function JobDetailScreen({ jobId, onNavigate, onOpenDm }: Props) 
           ) : job.poster?.name ? (
             <p className="text-sm text-lantern-text-secondary mt-1">Posted by {job.poster.name}</p>
           ) : null}
+          <p className="text-sm text-lantern-text-secondary mt-2">
+            {formatJobCompensation(job.compensation)}
+            {formatJobEngagementDuration(job.engagementDuration)
+              ? ` · Duration: ${formatJobEngagementDuration(job.engagementDuration)}`
+              : ''}
+          </p>
         </header>
 
         <p className="text-sm text-lantern-text whitespace-pre-wrap break-words">{job.description}</p>

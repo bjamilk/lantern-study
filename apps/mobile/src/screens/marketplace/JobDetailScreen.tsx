@@ -2,7 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { JOB_EMPLOYMENT_TYPE_LABELS, type JobPosting } from '@lantern/shared';
+import {
+  JOB_EMPLOYMENT_TYPE_LABELS,
+  formatJobCompensation,
+  formatJobEngagementDuration,
+  type JobPosting,
+} from '@lantern/shared';
 import { Card, ScreenHeader } from '../../components/ui';
 import { applyToJob, fetchJobPosting, trackJobExternalApply } from '../../services/jobsBoard';
 import type { MarketStackParamList } from '../../navigation/types';
@@ -41,6 +46,12 @@ export function JobDetailScreen() {
               {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]}
             </Text>
             <Text className="text-xl font-semibold text-lantern-text mt-1">{job.title}</Text>
+            <Text className="text-sm text-lantern-text-secondary mt-2">
+              {formatJobCompensation(job.compensation)}
+              {formatJobEngagementDuration(job.engagementDuration)
+                ? ` · Duration: ${formatJobEngagementDuration(job.engagementDuration)}`
+                : ''}
+            </Text>
             <Text className="text-sm text-lantern-text mt-3">{job.description}</Text>
           </Card>
         ) : null}

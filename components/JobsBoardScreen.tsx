@@ -3,6 +3,8 @@ import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_PHASE1_EMPLOYMENT_TYPES,
+  formatJobCompensation,
+  formatJobEngagementDuration,
   type JobEmploymentType,
   type JobPosting,
 } from '@lantern/shared';
@@ -11,18 +13,6 @@ import { JobsWorkspaceNav } from './jobs/JobsWorkspaceNav';
 
 interface Props {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
-}
-
-function compensationLabel(job: JobPosting): string {
-  const c = job.compensation;
-  if (!c || c.kind === 'discuss') return 'Pay: discuss';
-  if (c.kind === 'unpaid') return 'Unpaid';
-  const cur = c.currency || 'NGN';
-  if (c.amountMin != null && c.amountMax != null) {
-    return `${cur} ${c.amountMin}–${c.amountMax}${c.period ? ` / ${c.period}` : ''}`;
-  }
-  if (c.amountMin != null) return `${cur} ${c.amountMin}${c.period ? ` / ${c.period}` : ''}`;
-  return 'Paid';
 }
 
 export default function JobsBoardScreen({ onNavigate }: Props) {
@@ -140,7 +130,10 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                       {job.campusName ? ` · ${job.campusName}` : ''}
                       {job.isRemote ? ' · Remote' : ''}
                       {' · '}
-                      {compensationLabel(job)}
+                      {formatJobCompensation(job.compensation)}
+                      {formatJobEngagementDuration(job.engagementDuration)
+                        ? ` · ${formatJobEngagementDuration(job.engagementDuration)}`
+                        : ''}
                     </p>
                     <p className="text-sm text-lantern-text-secondary mt-2 line-clamp-2">{job.description}</p>
                   </div>

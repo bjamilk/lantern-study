@@ -5,6 +5,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  formatJobCompensation,
+  formatJobEngagementDuration,
   type JobPosting,
 } from '@lantern/shared';
 import { Card, ScreenHeader } from '../../components/ui';
@@ -78,6 +80,11 @@ export function JobsHomeScreen() {
                 {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType] || job.employmentType}
                 {job.isSponsored ? ' · Sponsored' : ''}
                 {job.company?.verificationStatus === 'verified' ? ' · Verified' : ''}
+                {' · '}
+                {formatJobCompensation(job.compensation)}
+                {formatJobEngagementDuration(job.engagementDuration)
+                  ? ` · ${formatJobEngagementDuration(job.engagementDuration)}`
+                  : ''}
               </Text>
               <Text className="text-sm text-lantern-text-secondary mt-2" numberOfLines={3}>
                 {job.description}

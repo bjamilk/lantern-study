@@ -13,14 +13,24 @@ export type JobApplyMode = 'in_app' | 'external' | 'both';
 
 export type JobCompensationKind = 'paid' | 'unpaid' | 'discuss';
 
+export type JobCompensationPeriod = 'hour' | 'day' | 'week' | 'month' | 'total' | 'stipend';
+
 export interface JobCompensation {
   kind: JobCompensationKind;
   currency?: string;
   amountMin?: number | null;
   amountMax?: number | null;
-  period?: 'hour' | 'day' | 'week' | 'month' | 'total' | 'stipend' | null;
+  period?: JobCompensationPeriod | null;
   notes?: string | null;
 }
+
+export type JobEngagementDuration =
+  | { kind: 'ongoing'; value?: null; unit?: null }
+  | {
+      kind: 'fixed';
+      value: number;
+      unit: 'day' | 'week' | 'month';
+    };
 
 export type JobCompanyVerificationStatus =
   | 'unverified'
@@ -76,6 +86,7 @@ export interface JobPosting {
   locationText?: string | null;
   isRemote: boolean;
   compensation: JobCompensation;
+  engagementDuration?: JobEngagementDuration | null;
   deadline?: string | null;
   applyMode: JobApplyMode;
   externalUrl?: string | null;
