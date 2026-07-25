@@ -1500,7 +1500,7 @@ export default function DashboardScreen({
                     <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{q.accuracy.toFixed(0)}%</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-lantern-text line-clamp-2">{q.stem}</p>
+                    <p className="text-sm text-lantern-text whitespace-pre-wrap break-words">{q.stem}</p>
                     <p className="text-xs text-lantern-text-tertiary mt-1">{q.incorrectAttempts} incorrect attempt{q.incorrectAttempts !== 1 ? 's' : ''}</p>
                   </div>
                 </div>

@@ -91,7 +91,7 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
                     <Text className="text-xs font-bold text-amber-600 dark:text-amber-400">{accuracy}%</Text>
                   </View>
                   <View className="flex-1 min-w-0">
-                    <Text className="text-sm text-lantern-text" numberOfLines={2}>
+                    <Text className="text-sm text-lantern-text">
                       {q.stem}
                     </Text>
                     <Text className="text-xs text-lantern-text-tertiary mt-0.5">
