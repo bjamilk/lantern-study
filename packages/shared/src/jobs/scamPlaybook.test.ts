@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import { findJobScamMatches, textFailsJobScamCheck } from "./scamPlaybook";
 
 describe("job scam playbook", () => {

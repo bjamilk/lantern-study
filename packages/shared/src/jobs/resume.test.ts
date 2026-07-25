@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
   JOB_RESUME_MAX_BYTES,
   formatJobResumeSize,

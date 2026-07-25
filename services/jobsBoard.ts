@@ -4,6 +4,7 @@ import {
   validateJobResume,
   type JobApplicantProfile,
   type JobApplication,
+  type JobApplicationNote,
   type JobPosting,
 } from "@lantern/shared";
 import { getAuthHeaders } from "./supabase";
@@ -220,6 +221,29 @@ export async function updateJobApplicationStatus(
   return jobsRequest<{ success: boolean; data: JobApplication }>(
     `/applications/${encodeURIComponent(applicationId)}/status`,
     { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function fetchJobApplicationNotes(applicationId: string) {
+  return jobsRequest<{ success: boolean; data: JobApplicationNote[] }>(
+    `/applications/${encodeURIComponent(applicationId)}/notes`,
+  );
+}
+
+export async function createJobApplicationNote(
+  applicationId: string,
+  body: string,
+) {
+  return jobsRequest<{ success: boolean; data: JobApplicationNote }>(
+    `/applications/${encodeURIComponent(applicationId)}/notes`,
+    { method: "POST", body: JSON.stringify({ body }) },
+  );
+}
+
+export async function deleteJobApplicationNote(noteId: string) {
+  return jobsRequest<{ success: boolean; data: { id: string } }>(
+    `/application-notes/${encodeURIComponent(noteId)}`,
+    { method: "DELETE" },
   );
 }
 

@@ -7,8 +7,10 @@ import {
   JOBS_DEFAULT_COUNTRY,
   JOBS_MAX_SCREENERS_PHASE1,
   JOBS_MAX_SCREENERS_PHASE2,
+  JOB_APPLICATION_NOTE_MAX_LENGTH,
   JOB_RESUME_MAX_BYTES,
   isJobCompensationPeriod,
+  isUnreviewedJobApplication,
   jobResumeExtension,
   jobResumeMimeType,
   isValidJobEngagementDuration,
@@ -208,6 +210,27 @@ function mapApplication(row: any) {
           avatarUrl: row.applicant.avatar_url,
         }
       : undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapApplicationNote(row: any) {
+  if (!row) return null;
+  const author = Array.isArray(row.author) ? row.author[0] : row.author;
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    authorId: row.author_id,
+    body: row.body,
+    author: author
+      ? {
+          id: author.id,
+          name: author.name,
+          username: author.username,
+          avatarUrl: author.avatar_url,
+        }
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -646,7 +669,47 @@ export class JobsBoardService {
       .neq("status", "removed_by_admin")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    return (data || []).map((row: any) => mapPosting(row));
+    const postings = (data || []).map((row: any) => mapPosting(row));
+    return this.attachApplicationCounts(postings);
+  }
+
+  /**
+   * Adds applicant counts to a poster's own postings. One grouped read for the
+   * whole dashboard rather than a count query per posting.
+   */
+  private async attachApplicationCounts<T extends { id: string } | null>(
+    postings: T[],
+  ): Promise<T[]> {
+    const ids = postings
+      .map((posting) => posting?.id)
+      .filter((id): id is string => !!id);
+    if (!ids.length) return postings;
+
+    const { data, error } = await this.client()
+      .from("job_applications")
+      .select("posting_id, status")
+      .in("posting_id", ids);
+    if (error) throw error;
+
+    const totals = new Map<string, number>();
+    const needsReview = new Map<string, number>();
+    for (const row of data || []) {
+      const key = (row as any).posting_id as string;
+      totals.set(key, (totals.get(key) || 0) + 1);
+      if (isUnreviewedJobApplication((row as any).status)) {
+        needsReview.set(key, (needsReview.get(key) || 0) + 1);
+      }
+    }
+
+    return postings.map((posting) =>
+      posting
+        ? {
+            ...posting,
+            applicationsCount: totals.get(posting.id) || 0,
+            newApplicationsCount: needsReview.get(posting.id) || 0,
+          }
+        : posting,
+    );
   }
 
   async expressApply(
@@ -935,7 +998,113 @@ export class JobsBoardService {
       .eq("posting_id", postingId)
       .order("created_at", { ascending: false });
     if (error) throw error;
-    return (data || []).map(mapApplication);
+    const applications = (data || []).map(mapApplication);
+
+    // Note counts let the pipeline show which candidates have been discussed
+    // without fetching every note body up front.
+    const ids = applications
+      .map((app) => app?.id)
+      .filter((id): id is string => !!id);
+    if (!ids.length) return applications;
+    const { data: noteRows, error: noteError } = await this.client()
+      .from("job_application_notes")
+      .select("application_id")
+      .in("application_id", ids);
+    if (noteError) throw noteError;
+    const counts = new Map<string, number>();
+    for (const row of noteRows || []) {
+      const key = (row as any).application_id as string;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return applications.map((app) =>
+      app ? { ...app, notesCount: counts.get(app.id) || 0 } : app,
+    );
+  }
+
+  // ─── Private recruiter notes ──────────────────────────────────────────────
+
+  /**
+   * Resolves an application only if the viewer is on the hiring side of it.
+   * Applicants are deliberately excluded: notes are about them, not for them.
+   */
+  private async assertCanReviewApplication(
+    applicationId: string,
+    viewerId: string,
+  ) {
+    const { data: app, error } = await this.client()
+      .from("job_applications")
+      .select("id, posting:job_postings(id, poster_user_id, company_id)")
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!app) throw httpError("Application not found", 404);
+
+    const posting = Array.isArray(app.posting) ? app.posting[0] : app.posting;
+    const allowed =
+      posting?.poster_user_id === viewerId ||
+      (posting?.company_id &&
+        (await this.getCompanyMembership(posting.company_id, viewerId)));
+    if (!allowed) throw httpError("Not allowed", 403);
+    return app;
+  }
+
+  async listApplicationNotes(applicationId: string, viewerId: string) {
+    await this.assertCanReviewApplication(applicationId, viewerId);
+    const { data, error } = await this.client()
+      .from("job_application_notes")
+      .select("*, author:profiles!author_id(id, name, username, avatar_url)")
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map(mapApplicationNote);
+  }
+
+  async createApplicationNote(
+    applicationId: string,
+    authorId: string,
+    body: string,
+  ) {
+    await this.assertCanReviewApplication(applicationId, authorId);
+    const trimmed = (body || "").trim();
+    if (!trimmed) throw httpError("Write something first");
+    if (trimmed.length > JOB_APPLICATION_NOTE_MAX_LENGTH) {
+      throw httpError(
+        `Notes are limited to ${JOB_APPLICATION_NOTE_MAX_LENGTH} characters`,
+      );
+    }
+
+    const { data, error } = await this.client()
+      .from("job_application_notes")
+      .insert({
+        application_id: applicationId,
+        author_id: authorId,
+        body: trimmed,
+      })
+      .select("*, author:profiles!author_id(id, name, username, avatar_url)")
+      .single();
+    if (error) throw error;
+    return mapApplicationNote(data);
+  }
+
+  /** Only the author may remove their own note. */
+  async deleteApplicationNote(noteId: string, viewerId: string) {
+    const { data: note, error } = await this.client()
+      .from("job_application_notes")
+      .select("id, author_id, application_id")
+      .eq("id", noteId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!note) throw httpError("Note not found", 404);
+    if (note.author_id !== viewerId) {
+      throw httpError("You can only delete your own notes", 403);
+    }
+
+    const { error: deleteError } = await this.client()
+      .from("job_application_notes")
+      .delete()
+      .eq("id", noteId);
+    if (deleteError) throw deleteError;
+    return { id: noteId, applicationId: note.application_id };
   }
 
   async updateApplicationStatus(

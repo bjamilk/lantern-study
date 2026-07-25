@@ -319,6 +319,72 @@ router.get(
   }),
 );
 
+// ─── Private recruiter notes ───────────────────────────────────────────────
+
+// GET /applications/:id/notes — hiring side only
+router.get(
+  "/applications/:id/notes",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().listApplicationNotes(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /applications/:id/notes
+router.post(
+  "/applications/:id/notes",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { body } = req.body || {};
+    if (typeof body !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, error: "Note text is required" });
+    }
+    try {
+      const data = await jobs().createApplicationNote(
+        req.params.id,
+        userId,
+        body,
+      );
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// DELETE /application-notes/:id — author only
+router.delete(
+  "/application-notes/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().deleteApplicationNote(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // GET /saved — postings the caller bookmarked
 router.get(
   "/saved",

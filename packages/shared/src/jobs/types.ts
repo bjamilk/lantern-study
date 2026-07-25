@@ -110,6 +110,10 @@ export interface JobPosting {
   screeningQuestions?: JobScreeningQuestion[];
   /** Whether the requesting viewer saved this posting. Absent for anonymous reads. */
   isSaved?: boolean;
+  /** Applications received. Only returned to the poster on their own dashboard. */
+  applicationsCount?: number;
+  /** Subset of `applicationsCount` the employer has not triaged yet. */
+  newApplicationsCount?: number;
   company?: JobCompany | null;
   poster?: {
     id: string;
@@ -137,6 +141,27 @@ export interface JobApplication {
   profileSnapshot?: Record<string, unknown> | null;
   posting?: JobPosting | null;
   applicant?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+  /** Private recruiter notes on this application. Never sent to the applicant. */
+  notesCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A private note the hiring side keeps on an application. Visible to the
+ * posting owner and the posting company's members, never to the candidate.
+ */
+export interface JobApplicationNote {
+  id: string;
+  applicationId: string;
+  authorId: string;
+  body: string;
+  author?: {
     id: string;
     name?: string | null;
     username?: string | null;
