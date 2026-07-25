@@ -65,14 +65,14 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
 
       <div className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-4 space-y-3">
         <div>
-          <h1 className="text-xl font-semibold text-lantern-text">Campus jobs</h1>
+          <h1 className="text-xl font-semibold text-lantern-text">Jobs</h1>
           <p className="text-sm text-lantern-text-secondary mt-1">{JOBS_COMPLIANCE_BANNER}</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tutoring, gigs, internships…"
+            placeholder="Search roles, internships, gigs…"
             className="flex-1 rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm"
           />
           <select
@@ -108,7 +108,7 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
         <div className="rounded-lantern-xl border border-dashed border-lantern-border p-8 text-center">
           <p className="text-lantern-text font-medium">No jobs yet</p>
           <p className="text-sm text-lantern-text-secondary mt-1">
-            Post a tutoring gig or campus role to get started.
+            Post a role for companies, campus orgs, or individuals to get started.
           </p>
         </div>
       ) : (

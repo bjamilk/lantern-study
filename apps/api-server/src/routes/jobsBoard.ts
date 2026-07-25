@@ -324,12 +324,17 @@ router.get(
 router.get(
   '/templates',
   asyncHandler(async (_req: any, res: any) => {
-    const { CAMPUS_JOB_INTENT_TEMPLATES, JOBS_SCAM_PLAYBOOK_SUMMARY, JOB_EMPLOYMENT_TYPE_LABELS } =
-      await import('@lantern/shared/jobs');
+    const {
+      JOB_INTENT_TEMPLATES,
+      JOB_INTENT_TEMPLATE_GROUPS,
+      JOBS_SCAM_PLAYBOOK_SUMMARY,
+      JOB_EMPLOYMENT_TYPE_LABELS,
+    } = await import('@lantern/shared/jobs');
     res.json({
       success: true,
       data: {
-        templates: CAMPUS_JOB_INTENT_TEMPLATES,
+        templates: JOB_INTENT_TEMPLATES,
+        templateGroups: JOB_INTENT_TEMPLATE_GROUPS,
         scamPlaybook: JOBS_SCAM_PLAYBOOK_SUMMARY,
         employmentTypeLabels: JOB_EMPLOYMENT_TYPE_LABELS,
       },

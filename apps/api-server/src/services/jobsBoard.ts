@@ -1,5 +1,5 @@
 /**
- * Jobs board service — campus employment sibling of marketplace goods.
+ * Jobs board service — employment listings sibling of marketplace goods.
  * Mutations use the service-role Supabase client.
  */
 import {
@@ -530,7 +530,7 @@ export class JobsBoardService {
       logger.warn('Job apply DM failed', { error: dmErr, postingId, applicantId });
     }
 
-    const applicantName = profile?.name || profile?.username || 'A student';
+    const applicantName = profile?.name || profile?.username || 'An applicant';
     await this.supabase.createNotification(posterId, {
       type: 'job_application',
       message: `${applicantName} applied to "${posting.title}"`,

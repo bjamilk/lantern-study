@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  CAMPUS_JOB_INTENT_TEMPLATES,
   JOBS_CREATE_CONFIRMATION,
   JOBS_SCAM_PLAYBOOK_SUMMARY,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  JOB_INTENT_TEMPLATE_GROUPS,
+  JOB_INTENT_TEMPLATES,
   JOB_PHASE1_EMPLOYMENT_TYPES,
   JOB_PHASE2_EMPLOYMENT_TYPES,
+  jobIntentTemplatesByGroup,
   type JobEmploymentType,
 } from '@lantern/shared';
 import { createJobPosting, fetchJobTemplates, fetchMyJobCompanies } from '../services/jobsBoard';
@@ -19,7 +21,7 @@ interface Props {
 export default function CreateJobScreen({ onNavigate }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [employmentType, setEmploymentType] = useState<JobEmploymentType>('tutoring');
+  const [employmentType, setEmploymentType] = useState<JobEmploymentType>('part_time');
   const [campusId, setCampusId] = useState('');
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string }>>([]);
   const [compensationKind, setCompensationKind] = useState<'paid' | 'unpaid' | 'discuss'>('discuss');
@@ -57,9 +59,25 @@ export default function CreateJobScreen({ onNavigate }: Props) {
     void fetchJobTemplates().catch(() => undefined);
   }, []);
 
+  const allowedTypes = useMemo(
+    () => (companyId ? JOB_PHASE2_EMPLOYMENT_TYPES : JOB_PHASE1_EMPLOYMENT_TYPES),
+    [companyId]
+  );
+
+  useEffect(() => {
+    if (!allowedTypes.includes(employmentType)) {
+      setEmploymentType('part_time');
+    }
+  }, [allowedTypes, employmentType]);
+
   const applyTemplate = (id: string) => {
-    const t = CAMPUS_JOB_INTENT_TEMPLATES.find((x) => x.id === id);
+    const t = JOB_INTENT_TEMPLATES.find((x) => x.id === id);
     if (!t) return;
+    if (!allowedTypes.includes(t.employmentType) && !companyId) {
+      setError('That template’s type needs a company account. Select a company below, or pick another template.');
+    } else {
+      setError(null);
+    }
     setEmploymentType(t.employmentType);
     setTitle(t.title);
     setDescription(t.descriptionHint);
@@ -74,8 +92,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const types = companyId ? JOB_PHASE2_EMPLOYMENT_TYPES : JOB_PHASE1_EMPLOYMENT_TYPES;
-      if (!types.includes(employmentType)) {
+      if (!allowedTypes.includes(employmentType)) {
         throw new Error('That employment type requires a verified company account.');
       }
       const screeningQuestions = screener1.trim()
@@ -117,22 +134,26 @@ export default function CreateJobScreen({ onNavigate }: Props) {
       <div className="rounded-lantern-xl border border-lantern-border bg-lantern-surface/95 p-5 space-y-4">
         <h1 className="text-xl font-semibold text-lantern-text">Post a job</h1>
 
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-2">
-            Quick templates
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {CAMPUS_JOB_INTENT_TEMPLATES.slice(0, 6).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => applyTemplate(t.id)}
-                className="text-xs px-2 py-1 rounded-lg border border-lantern-border hover:border-lantern-primary/40"
-              >
-                {t.title.replace(/\s*\[.*?\]\s*/g, ' ').trim()}
-              </button>
-            ))}
-          </div>
+        <div className="space-y-3">
+          {JOB_INTENT_TEMPLATE_GROUPS.map((group) => (
+            <div key={group.id}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-2">
+                {group.label}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {jobIntentTemplatesByGroup(group.id).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => applyTemplate(t.id)}
+                    className="text-xs px-2 py-1 rounded-lg border border-lantern-border hover:border-lantern-primary/40"
+                  >
+                    {t.title.replace(/\s*\[.*?\]\s*/g, ' ').trim()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         <label className="block text-sm">
@@ -162,7 +183,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
               value={employmentType}
               onChange={(e) => setEmploymentType(e.target.value as JobEmploymentType)}
             >
-              {(companyId ? JOB_PHASE2_EMPLOYMENT_TYPES : JOB_PHASE1_EMPLOYMENT_TYPES).map((t) => (
+              {allowedTypes.map((t) => (
                 <option key={t} value={t}>
                   {JOB_EMPLOYMENT_TYPE_LABELS[t]}
                 </option>
@@ -170,7 +191,7 @@ export default function CreateJobScreen({ onNavigate }: Props) {
             </select>
           </label>
           <label className="block text-sm">
-            Campus
+            Campus (optional)
             <select
               className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
               value={campusId}
@@ -224,13 +245,13 @@ export default function CreateJobScreen({ onNavigate }: Props) {
         {companies.length > 0 ? (
           <div className="space-y-3 border-t border-lantern-border pt-3">
             <label className="block text-sm">
-              Post as company (Phase 2)
+              Post as company
               <select
                 className="mt-1 w-full rounded-lg border border-lantern-border px-3 py-2 bg-lantern-background"
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
               >
-                <option value="">Personal / campus poster</option>
+                <option value="">Individual / org (no company)</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.displayName} ({c.verificationStatus})

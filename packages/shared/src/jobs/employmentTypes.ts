@@ -22,7 +22,7 @@ export const JOB_EMPLOYMENT_TYPE_LABELS: Record<JobEmploymentType, string> = {
   contract: 'Contract',
 };
 
-/** Types allowed for peer / campus-org posters in Phase 1. */
+/** Types allowed for individual / org posters without a company account. */
 export const JOB_PHASE1_EMPLOYMENT_TYPES: JobEmploymentType[] = [
   'gig',
   'tutoring',

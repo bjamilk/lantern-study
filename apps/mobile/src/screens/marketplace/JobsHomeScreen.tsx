@@ -38,7 +38,7 @@ export function JobsHomeScreen() {
   return (
     <View className="flex-1 bg-lantern-background">
       <ScreenHeader
-        title="Campus jobs"
+        title="Jobs"
         subtitle="Goods · Jobs"
         onBack={() => navigation.navigate('MarketplaceHome')}
         right={
@@ -52,7 +52,7 @@ export function JobsHomeScreen() {
         <View className="flex-row gap-2 mb-3">
           <TextInput
             className="flex-1 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text"
-            placeholder="Search jobs"
+            placeholder="Search roles, internships, gigs…"
             placeholderTextColor="#94a3b8"
             value={search}
             onChangeText={setSearch}
@@ -86,7 +86,9 @@ export function JobsHomeScreen() {
           </Pressable>
         ))}
         {!loading && jobs.length === 0 ? (
-          <Text className="text-sm text-lantern-text-secondary">No jobs yet. Be the first to post.</Text>
+          <Text className="text-sm text-lantern-text-secondary">
+            No jobs yet. Post a role for companies, campus orgs, or individuals.
+          </Text>
         ) : null}
       </ScrollView>
     </View>

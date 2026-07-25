@@ -1,5 +1,5 @@
 /**
- * Phase 0 scam playbook for campus job posts and first-touch messages.
+ * Scam playbook for job posts and first-touch messages.
  * Used for create-time heuristics and admin triage.
  */
 
@@ -55,5 +55,5 @@ export const JOBS_SCAM_PLAYBOOK_SUMMARY = [
   'Never require a fee, gift card, or crypto deposit to start work.',
   'Never hire for money-mule / “receive and forward funds” roles.',
   'State compensation clearly: paid range, unpaid (flagged), or discuss.',
-  'Prefer campus meetup or known org channels; report suspicious posts.',
+  'Prefer verified companies, known orgs, or safe public meetups; report suspicious posts.',
 ] as const;
