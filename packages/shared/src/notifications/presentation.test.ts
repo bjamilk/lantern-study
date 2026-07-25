@@ -83,6 +83,44 @@ describe("job notification links", () => {
     }
   });
 
+  it("routes a reminder by its link, since each side gets a different one", () => {
+    // The same notification type goes to both the candidate and the employer,
+    // so the link is what decides where it lands.
+    expect(
+      parseNotificationLink("/marketplace/applications", {
+        type: "job_interview_reminder",
+        link: "/marketplace/applications",
+      }),
+    ).toEqual({ type: "job_applications" });
+    expect(
+      parseNotificationLink("/marketplace/employer/jobs/posting-5", {
+        type: "job_interview_reminder",
+        link: "/marketplace/employer/jobs/posting-5",
+      }),
+    ).toEqual({ type: "job_applicants", id: "posting-5" });
+    expect(
+      parseNotificationLink("/marketplace/employer/jobs/posting-6", {
+        type: "job_offer_reminder",
+        link: "/marketplace/employer/jobs/posting-6",
+      }),
+    ).toEqual({ type: "job_applicants", id: "posting-6" });
+  });
+
+  it("labels reminders distinctly from the events they chase", () => {
+    expect(
+      getNotificationMeta("/marketplace/applications", {
+        type: "job_interview_reminder",
+        link: "/marketplace/applications",
+      }).label,
+    ).toBe("Interview reminder");
+    expect(
+      getNotificationMeta("/marketplace/applications", {
+        type: "job_offer_reminder",
+        link: "/marketplace/applications",
+      }).label,
+    ).toBe("Offer expiring");
+  });
+
   it("does not confuse a job offer with a marketplace goods offer", () => {
     expect(parseNotificationLink("marketplace:offer:offer-9")).toEqual({
       type: "offer",

@@ -8,6 +8,7 @@ export * from "./lifecycle";
 export * from "./resume";
 export * from "./interviews";
 export * from "./offers";
+export * from "./reminders";
 export * from "./savedSearches";
 export * from "./intents";
 export * from "./types";

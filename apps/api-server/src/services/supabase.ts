@@ -647,6 +647,8 @@ export class SupabaseService {
       "job_interview_response",
       "job_offer",
       "job_offer_response",
+      "job_interview_reminder",
+      "job_offer_reminder",
       "group_invite",
       "group_message",
       "badge_unlock",

@@ -24,10 +24,12 @@ import {
   scheduleJobInterview,
   setJobInterviewStatus,
 } from "../../services/jobsBoard";
+import { InterviewCalendarActions } from "./InterviewCalendarActions";
 
 interface Props {
   applicationId: string;
   candidateName: string;
+  jobTitle?: string | null;
 }
 
 const DURATIONS = [15, 30, 45, 60, 90];
@@ -49,7 +51,11 @@ function formatSlot(date: Date): string {
   });
 }
 
-export function JobInterviewScheduler({ applicationId, candidateName }: Props) {
+export function JobInterviewScheduler({
+  applicationId,
+  candidateName,
+  jobTitle,
+}: Props) {
   const [interviews, setInterviews] = useState<JobInterview[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -411,6 +417,10 @@ export function JobInterviewScheduler({ applicationId, candidateName }: Props) {
                 {interview.locationText}
               </Text>
             ) : null}
+            <InterviewCalendarActions
+              interview={interview}
+              jobTitle={jobTitle}
+            />
             <ScrollView
               horizontal
               className="mt-2"

@@ -399,6 +399,7 @@ export function MyJobApplicationsScreen() {
                     <JobInterviewInvite
                       interview={liveInterview}
                       onUpdated={applyInterviewUpdate}
+                      jobTitle={posting?.title}
                     />
                   ) : null}
                 </Card>

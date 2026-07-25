@@ -20,10 +20,12 @@ import {
   scheduleJobInterview,
   setJobInterviewStatus,
 } from "../../services/jobsBoard";
+import { InterviewCalendarActions } from "./InterviewCalendarActions";
 
 interface Props {
   applicationId: string;
   candidateName: string;
+  jobTitle?: string | null;
 }
 
 /** `datetime-local` needs a local-time string with no timezone suffix. */
@@ -41,7 +43,11 @@ function defaultSlotValue(): string {
   return toLocalInputValue(date);
 }
 
-export function JobInterviewScheduler({ applicationId, candidateName }: Props) {
+export function JobInterviewScheduler({
+  applicationId,
+  candidateName,
+  jobTitle,
+}: Props) {
   const [interviews, setInterviews] = useState<JobInterview[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -372,6 +378,10 @@ export function JobInterviewScheduler({ applicationId, candidateName }: Props) {
                   {interview.details}
                 </p>
               ) : null}
+              <InterviewCalendarActions
+                interview={interview}
+                jobTitle={jobTitle}
+              />
               <div className="mt-2 flex flex-wrap gap-3">
                 {canEmployerRescheduleJobInterview(interview.status) ? (
                   <button

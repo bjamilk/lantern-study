@@ -187,10 +187,17 @@ export function getNotificationMeta(
   }
   // Interviews are time-sensitive, so they get their own badge rather than
   // being labelled as a generic application update.
-  if (n?.type === "job_interview" || n?.type === "job_interview_response") {
+  if (
+    n?.type === "job_interview" ||
+    n?.type === "job_interview_response" ||
+    n?.type === "job_interview_reminder"
+  ) {
     return {
       iconKey: "bell",
-      label: "Interview",
+      label:
+        n.type === "job_interview_reminder"
+          ? "Interview reminder"
+          : "Interview",
       webColorClass: "text-violet-600 bg-violet-50 dark:bg-violet-950/30",
       mobileIconColor: "#7c3aed",
       mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
@@ -198,10 +205,14 @@ export function getNotificationMeta(
   }
   // A job offer is the highest-stakes notification in the pipeline, so it gets
   // the money badge rather than reading as another status change.
-  if (n?.type === "job_offer" || n?.type === "job_offer_response") {
+  if (
+    n?.type === "job_offer" ||
+    n?.type === "job_offer_response" ||
+    n?.type === "job_offer_reminder"
+  ) {
     return {
       iconKey: "currency",
-      label: "Job offer",
+      label: n.type === "job_offer_reminder" ? "Offer expiring" : "Job offer",
       webColorClass: "text-lantern-success bg-lantern-success/10",
       mobileIconColor: "#059669",
       mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",

@@ -48,6 +48,8 @@ const NOTIFICATION_PREF_BY_TYPE: Record<
   job_interview_response: "marketplaceUpdates",
   job_offer: "marketplaceUpdates",
   job_offer_response: "marketplaceUpdates",
+  job_interview_reminder: "marketplaceUpdates",
+  job_offer_reminder: "marketplaceUpdates",
   test_result: "testResults",
   srs_reminder: "srsReminders",
   daily_reminder: "dailyReminder",

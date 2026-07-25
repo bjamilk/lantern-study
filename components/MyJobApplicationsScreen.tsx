@@ -524,6 +524,7 @@ export default function MyJobApplicationsScreen({
                     <JobInterviewInvite
                       interview={liveInterview}
                       onUpdated={applyInterviewUpdate}
+                      jobTitle={posting?.title}
                     />
                   ) : null}
                 </li>

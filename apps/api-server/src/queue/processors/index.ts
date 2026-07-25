@@ -29,6 +29,7 @@ import {
   processStaleOfferReminders,
 } from "../../services/marketplaceAlerts";
 import { processJobSavedSearchAlerts } from "../../services/jobAlerts";
+import { processJobDeadlineReminders } from "../../services/jobReminders";
 import { logAIInference } from "../../services/aiInferenceLog";
 
 let supabaseService: SupabaseService;
@@ -301,6 +302,9 @@ async function processCronJob(job: Job): Promise<unknown> {
     const jobAlerts = await processJobSavedSearchAlerts(supabaseService);
     return { jobAlerts };
   }
+  if (job.name === "cron.jobReminders") {
+    return processJobDeadlineReminders(supabaseService);
+  }
   throw new Error(`Unknown cron job: ${job.name}`);
 }
 
@@ -393,5 +397,10 @@ export async function scheduleRepeatableCronJobs(): Promise<void> {
     "cron.jobAlerts",
     {},
     { repeat: { every: 15 * 60 * 1000 }, jobId: "repeat-job-alerts" },
+  );
+  await alertsQueue.add(
+    "cron.jobReminders",
+    {},
+    { repeat: { every: 15 * 60 * 1000 }, jobId: "repeat-job-reminders" },
   );
 }

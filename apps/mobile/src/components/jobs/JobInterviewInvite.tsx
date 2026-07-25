@@ -9,10 +9,12 @@ import {
   type JobInterview,
 } from "@lantern/shared";
 import { respondToJobInterview } from "../../services/jobsBoard";
+import { InterviewCalendarActions } from "./InterviewCalendarActions";
 
 interface Props {
   interview: JobInterview;
   onUpdated: (interview: JobInterview) => void;
+  jobTitle?: string | null;
 }
 
 function formatSlot(iso: string): string {
@@ -26,7 +28,7 @@ function formatSlot(iso: string): string {
 }
 
 /** Candidate view of an interview: pick one of the offered times, or decline. */
-export function JobInterviewInvite({ interview, onUpdated }: Props) {
+export function JobInterviewInvite({ interview, onUpdated, jobTitle }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canRespond = canApplicantRespondToJobInterview(interview.status);
@@ -115,6 +117,8 @@ export function JobInterviewInvite({ interview, onUpdated }: Props) {
           {interview.details}
         </Text>
       ) : null}
+
+      <InterviewCalendarActions interview={interview} jobTitle={jobTitle} />
 
       {error ? (
         <Text

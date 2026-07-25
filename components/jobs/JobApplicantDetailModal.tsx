@@ -175,6 +175,7 @@ export function JobApplicantDetailModal({
             <JobInterviewScheduler
               applicationId={application.id}
               candidateName={name}
+              jobTitle={posting?.title}
             />
           )}
 

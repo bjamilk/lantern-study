@@ -290,6 +290,7 @@ export function JobApplicantsScreen() {
                 candidateName={
                   app.applicant?.name || app.applicant?.username || "Candidate"
                 }
+                jobTitle={posting?.title}
               />
             ) : null}
             {openOfferId === app.id ? (
