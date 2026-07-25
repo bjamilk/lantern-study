@@ -517,6 +517,8 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
                 onPress={() => setShowPassword(!showPassword)}
                 style={styles.eyeIcon}
                 disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -554,6 +556,8 @@ export default function SignUpScreen({ navigation }: SignUpScreenProps) {
                 onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 style={styles.eyeIcon}
                 disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
               >
                 <Ionicons
                   name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}

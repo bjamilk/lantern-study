@@ -1192,30 +1192,40 @@ router.put(
         return res.status(400).json({ success: false, error: 'counterAmount is required for counter offers' });
       }
 
-      // Update original offer status to 'countered'
-      await supabaseService.getClient()
-        .from('marketplace_offers')
-        .update({ status: 'countered', counter_amount: counterAmount })
-        .eq('id', id);
+      // REL-04: atomic parent→countered + child insert (single RPC transaction).
+      const { data: rpcRows, error: counterRpcErr } = await supabaseService.getClient().rpc(
+        'marketplace_counter_offer',
+        {
+          p_offer_id: id,
+          p_seller_id: userId,
+          p_counter_amount: counterAmount,
+        }
+      );
 
-      // Create a new counter-offer (seller → buyer)
-      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      const { data: counterOffer, error: counterErr } = await supabaseService.getClient()
+      if (counterRpcErr) {
+        const msg = String(counterRpcErr.message || '');
+        if (/no longer pending/i.test(msg)) {
+          return res.status(409).json({
+            success: false,
+            error: 'Cannot counter an offer that is no longer pending',
+          });
+        }
+        throw counterRpcErr;
+      }
+
+      const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+      const counterOfferId = rpcRow?.counter_offer_id as string | undefined;
+      if (!counterOfferId) {
+        return res.status(500).json({ success: false, error: 'Failed to create counter offer' });
+      }
+
+      const { data: counterOffer, error: counterFetchErr } = await supabaseService
+        .getClient()
         .from('marketplace_offers')
-        .insert({
-          listing_id: offer.listing_id,
-          buyer_id: offer.buyer_id,
-          seller_id: offer.seller_id,
-          amount: counterAmount,
-          status: 'pending',
-          parent_offer_id: id,
-          expires_at: expiresAt,
-          message: `Counter offer from seller`,
-        })
         .select('*')
+        .eq('id', counterOfferId)
         .single();
-
-      if (counterErr) throw counterErr;
+      if (counterFetchErr || !counterOffer) throw counterFetchErr || new Error('Counter offer not found');
       updatedOffer = counterOffer;
 
       // Notify buyer of counter

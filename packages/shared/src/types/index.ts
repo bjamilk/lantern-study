@@ -601,6 +601,8 @@ export interface DirectMessage {
   threadRootId?: string;
   replyCount?: number;
   receiptStatus?: 'sent' | 'read';
+  /** Optimistic reconcile key from dm_messages.client_message_id (REL-03). */
+  clientMessageId?: string;
 }
 
 export interface AppNotification {

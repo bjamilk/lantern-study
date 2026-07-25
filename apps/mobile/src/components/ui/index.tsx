@@ -182,8 +182,14 @@ export function ConfirmSheetHost() {
   return (
     <Modal transparent animationType="fade" visible={open} onRequestClose={handleCancel}>
       <View className="flex-1 bg-black/50 justify-end">
-        <View className="bg-lantern-surface rounded-t-3xl px-5 pt-5 pb-8">
-          <Text className="text-lg font-bold text-lantern-text mb-2">{options.title}</Text>
+        <View
+          accessibilityViewIsModal
+          accessibilityLabel={options.title}
+          className="bg-lantern-surface rounded-t-3xl px-5 pt-5 pb-8"
+        >
+          <Text className="text-lg font-bold text-lantern-text mb-2" accessibilityRole="header">
+            {options.title}
+          </Text>
           <Text className="text-sm text-lantern-text-secondary mb-5">{options.message}</Text>
           <View className="flex-row gap-3">
             <Pressable onPress={handleCancel} className="flex-1 py-3 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center">

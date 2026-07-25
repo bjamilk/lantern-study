@@ -243,7 +243,12 @@ export function ChatThreadModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
+      <SafeAreaView
+        accessibilityViewIsModal
+        accessibilityLabel="Message thread"
+        className="flex-1 bg-lantern-background"
+        edges={['top', 'bottom']}
+      >
         <View
           className="flex-row items-center justify-between px-3 py-2 border-b border-lantern-border bg-lantern-surface"
         >

@@ -222,8 +222,9 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
     const legendLevels: ActivityHeatLevel[] = [0, 1, 2, 3, 4];
 
     return (
-        <div className="flex flex-col items-center gap-2">
-            <div className="grid grid-rows-7 grid-flow-col gap-1">
+        <div className="flex flex-col items-center gap-2 w-full min-w-0">
+            <div className="w-full overflow-x-auto">
+            <div className="grid grid-rows-7 grid-flow-col gap-0.5 sm:gap-1 w-max mx-auto">
                 {days.map(day => {
                     const dateString = formatLocalDate(day);
                     const count = data.get(dateString) || 0;
@@ -231,11 +232,12 @@ const StudyHeatmap = ({ data, theme }: { data: Map<string, number>, theme: 'ligh
                         <div
                         key={dateString}
                         title={`${count} activit${count !== 1 ? 'ies' : 'y'} on ${day.toLocaleDateString()}`}
-                        className="w-3.5 h-3.5 rounded-sm"
+                        className="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 rounded-sm"
                         style={{ backgroundColor: getActivityHeatHexColorForCount(count, theme) }}
                         />
                     );
                 })}
+            </div>
             </div>
             <div className="flex items-center gap-1 text-xs text-lantern-text-secondary">
                 <span>Less</span>
@@ -1272,7 +1274,7 @@ export default function DashboardScreen({
               </div>
             </div>
           )}
-          <div className="p-4 md:p-5">
+          <div className="p-4 md:p-5 overflow-x-auto min-w-0">
             <StudyHeatmap data={heatmapData} theme={theme} />
           </div>
         </div>

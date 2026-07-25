@@ -290,6 +290,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     return (
       <Pressable
         onPress={() => navigation.navigate('ListingDetail', { listingId: item.id })}
+        accessibilityRole="button"
+        accessibilityLabel={`View listing ${item.title}`}
         className={`flex-1 m-1.5 rounded-lantern-xl overflow-hidden border ${
           own
             ? 'bg-lantern-primary-background border-lantern-primary/30'
@@ -302,6 +304,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             onPress={() => {
               if (user?.id) void toggleFavorite(item.id, user.id);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
+            accessibilityState={{ selected: favorited }}
             className="absolute top-2 right-2 p-1.5 rounded-lg bg-lantern-surface/90 min-w-[44px] min-h-[44px] items-center justify-center"
           >
             <Ionicons name={favorited ? 'heart' : 'heart-outline'} size={16} color={favorited ? '#dc2626' : '#94a3b8'} />
@@ -394,6 +399,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             onChangeText={setSearchQuery}
             placeholder="Search listings…"
             placeholderTextColor="#94a3b8"
+            accessibilityLabel="Search listings"
             className="flex-1 ml-2 text-sm text-lantern-text"
           />
           <Pressable
@@ -566,7 +572,11 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 >
                   <Text className="text-sm text-lantern-text">{s.name}</Text>
                 </Pressable>
-                <Pressable onPress={() => void deleteSavedSearch(s.id)}>
+                <Pressable
+                  onPress={() => void deleteSavedSearch(s.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete saved search ${s.name}`}
+                >
                   <Ionicons name="trash-outline" size={16} color="#94a3b8" />
                 </Pressable>
               </View>

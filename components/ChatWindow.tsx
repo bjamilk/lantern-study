@@ -162,6 +162,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
   const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const threadCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Reset loading/hasMore/scroll state when the chat changes
   useEffect(() => {
@@ -290,6 +292,31 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     void loadThread(threadRootId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when root/chat changes
   }, [threadRootId, chat?.id]);
+
+  useEffect(() => {
+    if (!threadRootId) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    threadReturnFocusRef.current = previous;
+    const focusTimer = window.setTimeout(() => {
+      threadCloseButtonRef.current?.focus();
+    }, 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setThreadRootId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener('keydown', onKeyDown);
+      const restore = threadReturnFocusRef.current;
+      threadReturnFocusRef.current = null;
+      if (restore && typeof restore.focus === 'function') {
+        restore.focus();
+      }
+    };
+  }, [threadRootId]);
 
   const handleOpenThread = (rootId: string) => {
     setThreadRootId(rootId);
@@ -1266,17 +1293,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   );
 
   const threadPanel = threadRootId && chat ? (
-    <div className="absolute inset-0 z-30 flex justify-end bg-black/30">
-      <div className="w-full max-w-md h-full bg-lantern-surface border-l border-lantern-border flex flex-col shadow-xl">
+    <div
+      className="absolute inset-0 z-30 flex justify-end bg-black/30"
+      onClick={() => setThreadRootId(null)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-thread-title"
+        className="w-full max-w-md h-full bg-lantern-surface border-l border-lantern-border flex flex-col shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-center justify-between h-14 px-4 border-b border-lantern-border flex-shrink-0">
           <div>
-            <p className="text-sm font-semibold text-lantern-text">Thread</p>
+            <p id="chat-thread-title" className="text-sm font-semibold text-lantern-text">Thread</p>
             <p className="text-[11px] text-lantern-text-tertiary">
               {Math.max(0, visibleThreadMessages.length - 1)}{' '}
               {visibleThreadMessages.length - 1 === 1 ? 'reply' : 'replies'}
             </p>
           </div>
           <button
+            ref={threadCloseButtonRef}
             type="button"
             onClick={() => setThreadRootId(null)}
             className="p-1.5 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"

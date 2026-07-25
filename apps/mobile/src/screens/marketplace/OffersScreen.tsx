@@ -27,6 +27,7 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   const [tab, setTab] = useState<Tab>('seller');
   const [counterOfferId, setCounterOfferId] = useState<string | null>(null);
   const [counterAmount, setCounterAmount] = useState('');
+  const [busyOfferId, setBusyOfferId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await Promise.all([fetchOffers('seller'), fetchOffers('buyer')]);
@@ -42,28 +43,32 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
     offer: MarketplaceOffer,
     action: 'accept' | 'decline' | 'counter' | 'withdraw'
   ) => {
-    if (!user?.id) return;
+    if (!user?.id || busyOfferId) return;
     if (action === 'counter') {
       setCounterOfferId(offer.id);
       setCounterAmount(String(Math.round(offer.amount * 0.9)));
       return;
     }
+    setBusyOfferId(offer.id);
     try {
       await respondToOffer(offer.id, action, user.id);
       await load();
       Alert.alert('Done', `Offer ${action}ed.`);
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setBusyOfferId(null);
     }
   };
 
   const submitCounter = async () => {
-    if (!user?.id || !counterOfferId) return;
+    if (!user?.id || !counterOfferId || busyOfferId) return;
     const amount = parseFloat(counterAmount.replace(/,/g, ''));
     if (!amount || amount <= 0) {
       Alert.alert('Invalid amount', 'Enter a valid counter amount.');
       return;
     }
+    setBusyOfferId(counterOfferId);
     try {
       await respondToOffer(counterOfferId, 'counter', user.id, amount);
       setCounterOfferId(null);
@@ -72,15 +77,20 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
       Alert.alert('Counter sent', 'Your counter offer was sent.');
     } catch (e: unknown) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Counter failed');
+    } finally {
+      setBusyOfferId(null);
     }
   };
 
   const renderOffer = ({ item }: { item: MarketplaceOffer }) => {
     const isSeller = tab === 'seller';
     const pending = item.status === 'pending';
+    const busy = busyOfferId === item.id;
     return (
       <Pressable
         onPress={() => navigation.navigate('ListingDetail', { listingId: item.listing_id })}
+        accessibilityRole="button"
+        accessibilityLabel={`Offer ${formatPrice(item.amount)}, status ${item.status}`}
         className="mx-4 mb-3 p-4 rounded-2xl bg-lantern-surface border border-lantern-border"
       >
         <Text className="text-sm font-semibold text-lantern-text">
@@ -96,18 +106,39 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           <View className="flex-row flex-wrap gap-2 mt-3">
             {isSeller ? (
               <>
-                <Button className="px-3 py-1" onPress={() => void handleAction(item, 'accept')}>
+                <Button
+                  className="px-3 py-1"
+                  loading={busy}
+                  disabled={!!busyOfferId}
+                  onPress={() => void handleAction(item, 'accept')}
+                >
                   Accept
                 </Button>
-                <Button variant="secondary" className="px-3 py-1" onPress={() => void handleAction(item, 'decline')}>
+                <Button
+                  variant="secondary"
+                  className="px-3 py-1"
+                  disabled={!!busyOfferId}
+                  onPress={() => void handleAction(item, 'decline')}
+                >
                   Decline
                 </Button>
-                <Button variant="secondary" className="px-3 py-1" onPress={() => void handleAction(item, 'counter')}>
+                <Button
+                  variant="secondary"
+                  className="px-3 py-1"
+                  disabled={!!busyOfferId}
+                  onPress={() => void handleAction(item, 'counter')}
+                >
                   Counter
                 </Button>
               </>
             ) : (
-              <Button variant="secondary" className="px-3 py-1" onPress={() => void handleAction(item, 'withdraw')}>
+              <Button
+                variant="secondary"
+                className="px-3 py-1"
+                loading={busy}
+                disabled={!!busyOfferId}
+                onPress={() => void handleAction(item, 'withdraw')}
+              >
                 Withdraw
               </Button>
             )}
@@ -120,7 +151,12 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <View className="px-4 pt-2 pb-3 flex-row items-center">
-        <Pressable onPress={() => navigation.goBack()} className="p-2 -ml-2 mr-1">
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          className="p-2 -ml-2 mr-1"
+        >
           <Ionicons name="arrow-back" size={22} color="#64748b" />
         </Pressable>
         <Text className="text-xl font-bold text-lantern-text">Offers</Text>
@@ -131,6 +167,9 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
           <Pressable
             key={t}
             onPress={() => setTab(t)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === t }}
+            accessibilityLabel={t === 'seller' ? 'Received offers' : 'Sent offers'}
             className={`flex-1 py-2 rounded-lg items-center ${tab === t ? 'bg-lantern-surface dark:bg-lantern-surface-secondary' : ''}`}
           >
             <Text className={`text-sm font-semibold capitalize ${tab === t ? 'text-lantern-primary' : 'text-lantern-text-secondary'}`}>
@@ -157,19 +196,34 @@ export function OffersScreen({ navigation }: { navigation: NavigationProp }) {
       )}
 
       {counterOfferId ? (
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border">
+        <View
+          accessibilityViewIsModal
+          accessibilityLabel="Send counter offer"
+          className="absolute bottom-0 left-0 right-0 p-4 bg-lantern-surface border-t border-lantern-border"
+        >
           <Text className="text-sm font-semibold text-lantern-text mb-2">Counter amount (₦)</Text>
           <TextInput
             value={counterAmount}
             onChangeText={setCounterAmount}
             keyboardType="numeric"
+            accessibilityLabel="Counter amount in naira"
             className="p-3 rounded-xl border border-lantern-border text-lantern-text mb-3"
           />
           <View className="flex-row gap-2">
-            <Button variant="secondary" className="flex-1" onPress={() => setCounterOfferId(null)}>
+            <Button
+              variant="secondary"
+              className="flex-1"
+              disabled={!!busyOfferId}
+              onPress={() => setCounterOfferId(null)}
+            >
               Cancel
             </Button>
-            <Button className="flex-1" onPress={submitCounter}>
+            <Button
+              className="flex-1"
+              loading={busyOfferId === counterOfferId}
+              disabled={!!busyOfferId}
+              onPress={() => void submitCounter()}
+            >
               Send counter
             </Button>
           </View>

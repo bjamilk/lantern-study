@@ -768,6 +768,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           value={title}
           onChange={e => handleTitleChange(e.target.value)}
           readOnly={isViewer}
+          aria-label="Note title"
           className={`flex-1 min-w-0 text-base sm:text-lg font-semibold bg-transparent outline-none ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}
         />
         {isSaving && <span className="hidden sm:inline text-xs text-lantern-text-tertiary shrink-0">Saving...</span>}
@@ -947,6 +948,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 value={body}
                 onChange={e => handleBodyChange(e.target.value)}
                 readOnly={isViewer}
+                aria-label="Note body"
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
@@ -962,6 +964,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             value={body}
             onChange={e => handleBodyChange(e.target.value)}
             readOnly={isViewer}
+            aria-label="Note body"
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
               isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'

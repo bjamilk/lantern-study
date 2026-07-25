@@ -40,6 +40,7 @@ interface RawDmMessage {
   removed_at?: string;
   reply_to_message_id?: string;
   thread_root_id?: string;
+  client_message_id?: string;
 }
 
 export interface Notification {
@@ -282,6 +283,7 @@ class RealtimeSubscriptionManager {
         isRemoved: !!raw.removed_at,
         replyToMessageId: raw.reply_to_message_id,
         threadRootId: raw.thread_root_id,
+        clientMessageId: raw.client_message_id,
         ...(isUpdate ? { __realtimeEvent: 'UPDATE' } : {}),
       };
       this.dmMessageCallbacks.forEach(cb => cb(message));
@@ -489,9 +491,21 @@ export function useRealtimeSubscriptions(
       onDirectMessage?.(message);
       return;
     }
-    if (message.senderId !== user?.id) {
+
+    // REL-03: reconcile optimistic self-send; append unknown self messages (other devices).
+    if (message.senderId === user?.id) {
+      const clientMessageId = message.clientMessageId;
+      if (clientMessageId && existing.some((candidate) => candidate.id === clientMessageId)) {
+        mergeDirectMessage(message.threadId, message);
+        onDirectMessage?.(message);
+        return;
+      }
       addDirectMessage(message.threadId, message);
+      onDirectMessage?.(message);
+      return;
     }
+
+    addDirectMessage(message.threadId, message);
     onDirectMessage?.(message);
   }, [onDirectMessage, addDirectMessage, mergeDirectMessage, user?.id]);
 

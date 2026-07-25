@@ -21,6 +21,17 @@ const DEMO_MODE = false;
 let listingsRequestSeq = 0;
 let listingFetchSeq = 0;
 
+/** REL-01: queue only network / 5xx / 408 / 429 — permanent 4xx must not ghost-sync. */
+function isRetryableMarketplaceError(error: { status?: number; message?: string } | null | undefined): boolean {
+  const status = error?.status;
+  if (typeof status === 'number') {
+    if (status === 408 || status === 429 || status >= 500) return true;
+    if (status >= 400 && status < 500) return false;
+  }
+  const message = String(error?.message || '');
+  return /network request failed|network error|timed out|failed to fetch/i.test(message);
+}
+
 function unwrapListings<T>(raw: T[] | { data: T[] }): T[] {
   return Array.isArray(raw) ? raw : raw.data;
 }
@@ -900,10 +911,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       return { listing: newListing, queued: false };
     } catch (error: any) {
       console.error('Failed to create listing on server:', error);
-      const message = String(error?.message || '');
-      const isNetworkError = /network request failed|network error|timed out|failed to fetch/i.test(message);
-      if (isNetworkError) {
-        // Offline: queue for later sync and keep the optimistic listing.
+      if (isRetryableMarketplaceError(error)) {
+        // Offline / transient: queue for later sync and keep the optimistic listing.
         await syncService.queueOperation('listing', tempId, 'create', listingData, userId);
         return { listing: tempListing, queued: true };
       }
@@ -919,6 +928,11 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   },
   
   updateListing: async (listingId: string, updates: Partial<MarketplaceListing>, userId: string) => {
+    const previousMy = get().myListings.find((l) => l.id === listingId);
+    const previousBrowse = get().listings.find((l) => l.id === listingId);
+    const previousCurrent =
+      get().currentListing?.id === listingId ? get().currentListing : null;
+
     // Optimistic update
     set(state => ({
       myListings: state.myListings.map(l => 
@@ -945,12 +959,35 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       }
     } catch (error: any) {
       console.error('Failed to update listing on server:', error);
-      // Queue for later sync (keep local changes)
-      await syncService.queueOperation('listing', listingId, 'update', updates, userId);
+      // REL-01: queue only transient failures; roll back permanent 4xx.
+      if (isRetryableMarketplaceError(error)) {
+        await syncService.queueOperation('listing', listingId, 'update', updates, userId);
+        return;
+      }
+      set((state) => ({
+        myListings: previousMy
+          ? state.myListings.map((l) => (l.id === listingId ? previousMy : l))
+          : state.myListings,
+        listings: previousBrowse
+          ? state.listings.map((l) => (l.id === listingId ? previousBrowse : l))
+          : state.listings,
+        currentListing:
+          previousCurrent && state.currentListing?.id === listingId
+            ? previousCurrent
+            : state.currentListing,
+        error: error?.message || 'Failed to update listing',
+      }));
+      await get().saveToStorage();
+      throw error;
     }
   },
   
   deleteListing: async (listingId: string, userId: string) => {
+    const previousMy = get().myListings.find((l) => l.id === listingId);
+    const previousBrowse = get().listings.find((l) => l.id === listingId);
+    const previousCurrent =
+      get().currentListing?.id === listingId ? get().currentListing : null;
+
     // Optimistic delete
     set(state => ({
       myListings: state.myListings.filter(l => l.id !== listingId),
@@ -965,8 +1002,23 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       await api.deleteMarketplaceListing(listingId);
     } catch (error: any) {
       console.error('Failed to delete listing on server:', error);
-      // Queue for later sync
-      await syncService.queueOperation('listing', listingId, 'delete', {}, userId);
+      // REL-01: queue only transient failures; restore listing on permanent 4xx.
+      if (isRetryableMarketplaceError(error)) {
+        await syncService.queueOperation('listing', listingId, 'delete', {}, userId);
+        return;
+      }
+      set((state) => ({
+        myListings: previousMy
+          ? [previousMy, ...state.myListings.filter((l) => l.id !== listingId)]
+          : state.myListings,
+        listings: previousBrowse
+          ? [previousBrowse, ...state.listings.filter((l) => l.id !== listingId)]
+          : state.listings,
+        currentListing: previousCurrent || state.currentListing,
+        error: error?.message || 'Failed to delete listing',
+      }));
+      await get().saveToStorage();
+      throw error;
     }
   },
   

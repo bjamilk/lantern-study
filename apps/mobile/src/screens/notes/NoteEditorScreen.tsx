@@ -652,6 +652,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           editable={canEdit}
 
           placeholder="Note title"
+          accessibilityLabel="Note title"
 
           placeholderTextColor="#94a3b8"
 
@@ -839,6 +840,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 value={body}
                 onChangeText={setBody}
                 editable={canEdit}
+                accessibilityLabel="Note body"
                 placeholder={
                   isPhotoNote
                     ? 'Add your own notes alongside these photos...'
@@ -857,6 +859,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
             onChangeText={setBody}
             editable={canEdit}
+            accessibilityLabel="Note body"
 
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
 

@@ -1100,9 +1100,14 @@ export function DashboardScreen({ navigation }: Props) {
 
         <Pressable className="flex-1 bg-black/40 justify-center px-6" onPress={() => setGroupPickerOpen(false)}>
 
-          <Pressable onPress={e => e.stopPropagation?.()} className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border">
+          <Pressable
+            onPress={e => e.stopPropagation?.()}
+            accessibilityViewIsModal
+            accessibilityLabel="Pick a group"
+            className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border"
+          >
 
-            <Text className="text-lg font-bold text-lantern-text mb-3">Pick a group</Text>
+            <Text className="text-lg font-bold text-lantern-text mb-3" accessibilityRole="header">Pick a group</Text>
 
             {availableGroups.map(g => (
 

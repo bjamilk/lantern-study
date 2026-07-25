@@ -523,6 +523,7 @@ function mapDirectMessage(m: any, threadId: string): DirectMessage {
     threadRootId: m.threadRootId || m.thread_root_id || undefined,
     replyCount: typeof m.replyCount === 'number' ? m.replyCount : m.reply_count,
     receiptStatus: m.receiptStatus || m.receipt_status || undefined,
+    clientMessageId: m.client_message_id || m.clientMessageId || undefined,
   };
 }
 
@@ -1657,15 +1658,39 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   mergeDirectMessage: (threadId: string, rawMessage: unknown) => {
     const incoming = mapDirectMessage(rawMessage, threadId);
+    const clientMessageId =
+      incoming.clientMessageId ||
+      (rawMessage as { client_message_id?: string; clientMessageId?: string }).client_message_id ||
+      (rawMessage as { clientMessageId?: string }).clientMessageId;
     set((state) => {
       const existing = state.directMessages[threadId] || [];
-      if (!existing.some((message) => message.id === incoming.id)) return state;
-      const updated = applyDirectMessageMutation(existing, incoming);
-      const latest = [...updated].reverse().find(
+      let idx = existing.findIndex((message) => message.id === incoming.id);
+      if (idx === -1 && clientMessageId) {
+        idx = existing.findIndex((message) => message.id === clientMessageId);
+      }
+      if (idx === -1) return state;
+      const updated = [...existing];
+      const prev = updated[idx];
+      updated[idx] = {
+        ...prev,
+        ...incoming,
+        id: incoming.id,
+        replyCount: incoming.replyCount ?? prev.replyCount,
+        replyTo: incoming.replyTo ?? prev.replyTo,
+      };
+      const normalized =
+        clientMessageId && clientMessageId !== incoming.id
+          ? updated.map((message) =>
+              message.replyTo?.id === clientMessageId
+                ? { ...message, replyTo: { ...message.replyTo, id: incoming.id } }
+                : message
+            )
+          : updated;
+      const latest = [...normalized].reverse().find(
         (message) => !message.isRemoved && !message.removedAt
       );
       return {
-        directMessages: { ...state.directMessages, [threadId]: updated },
+        directMessages: { ...state.directMessages, [threadId]: normalized },
         dmThreads: state.dmThreads.map((thread) =>
           thread.id === threadId
             ? {

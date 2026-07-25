@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -504,6 +505,9 @@ export function GroupChatScreen({ navigation, route }: Props) {
     } else {
       const added = Math.max(1, displayMessages.length - prevMessageCountRef.current);
       setNewMessagesBelow((n) => n + added);
+      void AccessibilityInfo.announceForAccessibility(
+        `${added} new message${added === 1 ? '' : 's'}`
+      );
     }
     lastMessageIdRef.current = lastId;
     prevMessageCountRef.current = displayMessages.length;
@@ -1010,6 +1014,8 @@ export function GroupChatScreen({ navigation, route }: Props) {
                   setNewMessagesBelow(0);
                   isNearBottomRef.current = true;
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`${newMessagesBelow} new messages, jump to latest`}
                 className="px-3 py-1.5 rounded-full bg-lantern-primary"
               >
                 <Text className="text-xs font-semibold text-white">
@@ -1022,7 +1028,12 @@ export function GroupChatScreen({ navigation, route }: Props) {
         )}
 
         {typingLabel ? (
-          <Text className="px-4 py-1 text-xs text-lantern-text-secondary">{typingLabel}</Text>
+          <Text
+            accessibilityLiveRegion="polite"
+            className="px-4 py-1 text-xs text-lantern-text-secondary"
+          >
+            {typingLabel}
+          </Text>
         ) : null}
         <ChatComposer
           value={text}

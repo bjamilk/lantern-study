@@ -349,7 +349,17 @@ class SyncService {
             break;
         }
         return true;
-      } catch (error) {
+      } catch (error: any) {
+        const status = error?.status;
+        // REL-01: permanent client errors should not retry into failedOperations forever.
+        if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
+          console.warn('[SyncHandler:listing] Dropping non-retryable error', {
+            status,
+            operation: op.operation,
+            entityId: op.entityId,
+          });
+          return true;
+        }
         console.error('[SyncHandler:listing] Error:', error);
         return false;
       }
