@@ -321,9 +321,9 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           ) : (
             <Pressable
               onPress={() => setStep('group_details')}
-              className="w-full py-3 bg-lantern-surface-secondary border border-lantern-border rounded-2xl items-center active:opacity-90"
+              className="w-full py-3 bg-slate-500 rounded-2xl items-center active:opacity-90"
             >
-              <Text className="font-semibold text-sm text-lantern-text">Skip - Create Group Without Members</Text>
+              <Text className="font-semibold text-sm text-white">Skip - Create Group Without Members</Text>
             </Pressable>
           )}
         </StepFooter>

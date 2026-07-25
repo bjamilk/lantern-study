@@ -315,7 +315,9 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             type="button"
             onClick={() => setStep('group_details')}
             className={`w-full py-3 text-white rounded-lg font-semibold flex items-center justify-center ${
-              selectedUserIds.length > 0 ? 'bg-lantern-primary hover:bg-lantern-primary-dark' : 'bg-lantern-border hover:bg-lantern-surface-secondary'
+              selectedUserIds.length > 0
+                ? 'bg-lantern-primary hover:bg-lantern-primary-dark'
+                : 'bg-slate-500 hover:bg-slate-600 dark:bg-slate-500 dark:hover:bg-slate-400'
             }`}
           >
             {selectedUserIds.length > 0 ? (
