@@ -134,6 +134,7 @@ export function parseNotificationLink(
   if (
     n?.type === "job_application_status" ||
     n?.type === "job_interview" ||
+    n?.type === "job_offer" ||
     link === "/marketplace/applications"
   ) {
     return { type: "job_applications" };
@@ -142,7 +143,9 @@ export function parseNotificationLink(
   {
     const postingId =
       link?.match(/\/marketplace\/employer\/jobs\/([^/?#]+)/)?.[1] ||
-      (n?.type === "job_application" || n?.type === "job_interview_response"
+      (n?.type === "job_application" ||
+      n?.type === "job_interview_response" ||
+      n?.type === "job_offer_response"
         ? (n.data?.postingId as string)
         : undefined);
     if (postingId) return { type: "job_applicants", id: postingId };
@@ -191,6 +194,17 @@ export function getNotificationMeta(
       webColorClass: "text-violet-600 bg-violet-50 dark:bg-violet-950/30",
       mobileIconColor: "#7c3aed",
       mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
+    };
+  }
+  // A job offer is the highest-stakes notification in the pipeline, so it gets
+  // the money badge rather than reading as another status change.
+  if (n?.type === "job_offer" || n?.type === "job_offer_response") {
+    return {
+      iconKey: "currency",
+      label: "Job offer",
+      webColorClass: "text-lantern-success bg-lantern-success/10",
+      mobileIconColor: "#059669",
+      mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
     };
   }
   switch (parsed.type) {

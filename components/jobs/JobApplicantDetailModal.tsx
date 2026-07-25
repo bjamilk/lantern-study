@@ -9,6 +9,7 @@ import {
 } from "@lantern/shared";
 import { JobApplicantNotes } from "./JobApplicantNotes";
 import { JobInterviewScheduler } from "./JobInterviewScheduler";
+import { JobOfferPanel } from "./JobOfferPanel";
 
 interface Props {
   application: JobApplication;
@@ -174,6 +175,14 @@ export function JobApplicantDetailModal({
             <JobInterviewScheduler
               applicationId={application.id}
               candidateName={name}
+            />
+          )}
+
+          {withdrawn ? null : (
+            <JobOfferPanel
+              applicationId={application.id}
+              candidateName={name}
+              posting={posting}
             />
           )}
 

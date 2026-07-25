@@ -7,6 +7,7 @@ export * from "./pipeline";
 export * from "./lifecycle";
 export * from "./resume";
 export * from "./interviews";
+export * from "./offers";
 export * from "./savedSearches";
 export * from "./intents";
 export * from "./types";

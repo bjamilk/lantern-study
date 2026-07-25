@@ -498,6 +498,114 @@ router.post(
   }),
 );
 
+// ─── Offers ────────────────────────────────────────────────────────────────
+
+// GET /applications/:id/offers — visible to both sides
+router.get(
+  "/applications/:id/offers",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().listApplicationOffers(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /applications/:id/offers — employer sends an offer
+router.post(
+  "/applications/:id/offers",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().sendOffer(
+        req.params.id,
+        userId,
+        req.body || {},
+      );
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// GET /my-offers — candidate's own offers
+router.get(
+  "/my-offers",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const data = await jobs().listMyOffers(userId);
+    res.json({ success: true, data });
+  }),
+);
+
+// PATCH /offers/:id — employer withdraws an unanswered offer
+router.patch(
+  "/offers/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { status } = req.body || {};
+    if (status !== "withdrawn") {
+      return res.status(400).json({
+        success: false,
+        error: "Only withdrawing an offer is supported",
+      });
+    }
+    try {
+      const data = await jobs().withdrawOffer(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /offers/:id/respond — candidate accepts or declines
+router.post(
+  "/offers/:id/respond",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { action, declineReason } = req.body || {};
+    if (action !== "accept" && action !== "decline") {
+      return res
+        .status(400)
+        .json({ success: false, error: "action must be accept or decline" });
+    }
+    try {
+      const data = await jobs().respondToOffer(
+        req.params.id,
+        userId,
+        action,
+        declineReason,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err, 400))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // ─── Saved searches ────────────────────────────────────────────────────────
 
 // GET /saved-searches

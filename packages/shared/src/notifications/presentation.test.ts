@@ -54,4 +54,42 @@ describe("job notification links", () => {
     });
     expect(meta.label).not.toBe("Interview");
   });
+
+  it("sends an offer to the candidate's applications list", () => {
+    expect(
+      parseNotificationLink("/marketplace/applications", {
+        type: "job_offer",
+        link: "/marketplace/applications",
+      }),
+    ).toEqual({ type: "job_applications" });
+  });
+
+  it("sends an offer response to the employer pipeline for that posting", () => {
+    expect(
+      parseNotificationLink("/marketplace/employer/jobs/posting-4", {
+        type: "job_offer_response",
+        link: "/marketplace/employer/jobs/posting-4",
+      }),
+    ).toEqual({ type: "job_applicants", id: "posting-4" });
+  });
+
+  it("labels both sides of an offer as a job offer", () => {
+    for (const [type, link] of [
+      ["job_offer", "/marketplace/applications"],
+      ["job_offer_response", "/marketplace/employer/jobs/posting-4"],
+    ] as const) {
+      const meta = getNotificationMeta(link, { type, link });
+      expect(meta.label).toBe("Job offer");
+    }
+  });
+
+  it("does not confuse a job offer with a marketplace goods offer", () => {
+    expect(parseNotificationLink("marketplace:offer:offer-9")).toEqual({
+      type: "offer",
+      id: "offer-9",
+    });
+    expect(getNotificationMeta("marketplace:offer:offer-9").label).toBe(
+      "Offer",
+    );
+  });
 });

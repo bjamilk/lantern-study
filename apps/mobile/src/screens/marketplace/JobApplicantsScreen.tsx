@@ -22,13 +22,16 @@ import {
   type JobApplicantSort,
   type JobApplication,
   type JobApplicationStatus,
+  type JobPosting,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { JobApplicantNotes } from "../../components/jobs/JobApplicantNotes";
 import { JobInterviewScheduler } from "../../components/jobs/JobInterviewScheduler";
+import { JobOfferPanel } from "../../components/jobs/JobOfferPanel";
 import {
   fetchJobApplicants,
   fetchJobApplicationResumeUrl,
+  fetchJobPosting,
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import { useAuthStore } from "../../stores";
@@ -58,6 +61,9 @@ export function JobApplicantsScreen() {
   const [sort, setSort] = useState<JobApplicantSort>("newest");
   const [openNotesId, setOpenNotesId] = useState<string | null>(null);
   const [openInterviewsId, setOpenInterviewsId] = useState<string | null>(null);
+  const [openOfferId, setOpenOfferId] = useState<string | null>(null);
+  // Held so the offer form can seed from the job's own terms.
+  const [posting, setPosting] = useState<JobPosting | null>(null);
 
   // Resumes live in a private bucket, so each view needs a fresh signed link.
   const openResume = async (applicationId: string) => {
@@ -84,6 +90,9 @@ export function JobApplicantsScreen() {
 
   useEffect(() => {
     void load();
+    void fetchJobPosting(route.params.jobId)
+      .then((res) => setPosting(res.data))
+      .catch(() => setPosting(null));
   }, [route.params.jobId]);
 
   const applyNotesCount = (applicationId: string, count: number) =>
@@ -222,6 +231,21 @@ export function JobApplicantsScreen() {
                   </Text>
                 </Pressable>
               )}
+              {app.status === "withdrawn" ? null : (
+                <Pressable
+                  onPress={() =>
+                    setOpenOfferId((current) =>
+                      current === app.id ? null : app.id,
+                    )
+                  }
+                  accessibilityRole="button"
+                  className="rounded-lg border border-lantern-border px-3 py-2"
+                >
+                  <Text className="text-sm font-medium text-lantern-primary">
+                    {openOfferId === app.id ? "Hide offer" : "Offer"}
+                  </Text>
+                </Pressable>
+              )}
             </View>
             {app.status === "withdrawn" ? (
               <Text className="mt-2 text-xs text-lantern-text-secondary">
@@ -266,6 +290,15 @@ export function JobApplicantsScreen() {
                 candidateName={
                   app.applicant?.name || app.applicant?.username || "Candidate"
                 }
+              />
+            ) : null}
+            {openOfferId === app.id ? (
+              <JobOfferPanel
+                applicationId={app.id}
+                candidateName={
+                  app.applicant?.name || app.applicant?.username || "Candidate"
+                }
+                posting={posting}
               />
             ) : null}
             {openNotesId === app.id ? (

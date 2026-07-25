@@ -16,15 +16,18 @@ import {
   type JobApplication,
   type JobApplicationStatus,
   type JobInterview,
+  type JobOffer,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { JobInterviewInvite } from "../../components/jobs/JobInterviewInvite";
+import { JobOfferCard } from "../../components/jobs/JobOfferCard";
 import { ResumeUploadField } from "../../components/jobs/ResumeUploadField";
 import {
   fetchJobApplicantProfile,
   fetchJobApplicationResumeUrl,
   fetchMyJobApplications,
   fetchMyJobInterviews,
+  fetchMyJobOffers,
   updateJobApplicationStatus,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
@@ -52,6 +55,7 @@ export function MyJobApplicationsScreen() {
     useNavigation<NativeStackNavigationProp<MarketStackParamList>>();
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [interviews, setInterviews] = useState<JobInterview[]>([]);
+  const [offers, setOffers] = useState<JobOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"active" | "closed">("active");
@@ -91,6 +95,9 @@ export function MyJobApplicationsScreen() {
     void fetchMyJobInterviews()
       .then((response) => setInterviews(response.data || []))
       .catch(() => setInterviews([]));
+    void fetchMyJobOffers()
+      .then((response) => setOffers(response.data || []))
+      .catch(() => setOffers([]));
   }, []);
 
   /**
@@ -124,6 +131,40 @@ export function MyJobApplicationsScreen() {
       prev.map((item) => (item.id === updated.id ? updated : item)),
     );
   }, []);
+
+  /**
+   * The newest offer per application. Withdrawn ones stay out; an accepted or
+   * declined one is kept so the candidate can still see the terms they answered.
+   */
+  const offersByApplication = useMemo(() => {
+    const map = new Map<string, JobOffer>();
+    for (const offer of offers) {
+      if (offer.status === "withdrawn") continue;
+      const current = map.get(offer.applicationId);
+      if (
+        !current ||
+        new Date(offer.createdAt).getTime() >
+          new Date(current.createdAt).getTime()
+      ) {
+        map.set(offer.applicationId, offer);
+      }
+    }
+    return map;
+  }, [offers]);
+
+  /**
+   * Accepting an offer also moves the application to hired, so the list is
+   * refreshed rather than patched to keep the status badge honest.
+   */
+  const applyOfferUpdate = useCallback(
+    (updated: JobOffer) => {
+      setOffers((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      void load();
+    },
+    [load],
+  );
 
   const openResume = async (applicationId: string) => {
     setOpeningResumeId(applicationId);
@@ -277,6 +318,7 @@ export function MyJobApplicationsScreen() {
                 "Independent poster";
               const canWithdraw = !CLOSED_STATUSES.has(application.status);
               const liveInterview = interviewsByApplication.get(application.id);
+              const liveOffer = offersByApplication.get(application.id);
 
               return (
                 <Card
@@ -347,6 +389,12 @@ export function MyJobApplicationsScreen() {
                       </Pressable>
                     ) : null}
                   </View>
+                  {liveOffer ? (
+                    <JobOfferCard
+                      offer={liveOffer}
+                      onUpdated={applyOfferUpdate}
+                    />
+                  ) : null}
                   {liveInterview ? (
                     <JobInterviewInvite
                       interview={liveInterview}

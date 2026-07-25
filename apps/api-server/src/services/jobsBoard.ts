@@ -11,18 +11,28 @@ import {
   JOB_INTERVIEW_DETAILS_MAX_LENGTH,
   JOB_INTERVIEW_LOCATION_MAX_LENGTH,
   JOB_INTERVIEW_MAX_SLOTS,
+  JOB_OFFER_DECLINE_REASON_MAX_LENGTH,
+  JOB_OFFER_DETAILS_MAX_LENGTH,
+  JOB_OFFER_LOCATION_MAX_LENGTH,
   JOB_POSTING_STATUS_LABELS,
   JOB_RESUME_MAX_BYTES,
   JOB_SAVED_SEARCH_LIMIT_PER_USER,
   JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
+  canAutoCloseJobPostingOnHire,
   canEmployerRescheduleJobInterview,
   canEmployerSetJobPostingStatus,
   canSetJobInterviewStatus,
+  canSetJobOfferStatus,
   clampJobInterviewDuration,
+  describeJobOffer,
   formatJobInterviewSlotList,
+  hasOpenJobOffer,
   isJobInterviewMode,
+  isJobOfferExpired,
   matchJobInterviewSlot,
   normalizeJobInterviewSlots,
+  normalizeJobOfferExpiry,
+  normalizeJobOfferStartDate,
   normalizeJobSearchFilters,
   suggestJobSavedSearchName,
   isJobCompensationPeriod,
@@ -41,6 +51,8 @@ import {
   type JobInterview,
   type JobInterviewMode,
   type JobInterviewStatus,
+  type JobOffer,
+  type JobOfferStatus,
   type JobPostingStatus,
   type JobSavedSearch,
   type JobSearchFilters,
@@ -289,6 +301,28 @@ function mapInterview(row: any): JobInterview {
     details: row.details ?? null,
     proposedSlots: Array.isArray(row.proposed_slots) ? row.proposed_slots : [],
     scheduledAt: row.scheduled_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapOffer(row: any): JobOffer {
+  return {
+    id: row.id,
+    applicationId: row.application_id,
+    postingId: row.posting_id,
+    applicantId: row.applicant_id,
+    createdBy: row.created_by,
+    status: row.status,
+    compensation: row.compensation || { kind: "discuss" },
+    startDate: row.start_date ?? null,
+    engagementDuration: row.engagement_duration ?? null,
+    locationText: row.location_text ?? null,
+    details: row.details ?? null,
+    expiresAt: row.expires_at ?? null,
+    closePostingOnAccept: row.close_posting_on_accept !== false,
+    respondedAt: row.responded_at ?? null,
+    declineReason: row.decline_reason ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1332,14 +1366,14 @@ export class JobsBoardService {
     return { id: noteId, applicationId: note.application_id };
   }
 
-  // ─── Interview scheduling ─────────────────────────────────────────────────
+  // ─── Two-sided application records (interviews, offers) ───────────────────
 
   /**
    * Resolves an application for either side of it, reporting which side the
-   * viewer is on. Interviews differ from notes: the candidate has to be able to
-   * read the times in order to accept one.
+   * viewer is on. Interviews and offers differ from notes: the candidate has to
+   * be able to read them in order to respond.
    */
-  private async resolveInterviewParticipant(
+  private async resolveApplicationParticipant(
     applicationId: string,
     viewerId: string,
   ) {
@@ -1381,7 +1415,7 @@ export class JobsBoardService {
     if (error) throw error;
     if (!row) throw httpError("Interview not found", 404);
 
-    const context = await this.resolveInterviewParticipant(
+    const context = await this.resolveApplicationParticipant(
       row.application_id,
       actorId,
     );
@@ -1394,8 +1428,12 @@ export class JobsBoardService {
     return { row, ...context };
   }
 
-  /** Employer-facing DM so the arrangement also lands in the conversation. */
-  private async sendInterviewDm(
+  /**
+   * Mirrors the record into the conversation so the arrangement is also where
+   * both sides already talk. A DM failure must not lose the record itself, so
+   * this warns rather than throws.
+   */
+  private async sendApplicationDm(
     fromUserId: string,
     toUserId: string,
     body: string,
@@ -1405,13 +1443,15 @@ export class JobsBoardService {
         bypassPrivacy: true,
       });
     } catch (dmErr) {
-      logger.warn("Interview DM failed", {
+      logger.warn("Job application DM failed", {
         error: dmErr,
         fromUserId,
         toUserId,
       });
     }
   }
+
+  // ─── Interview scheduling ─────────────────────────────────────────────────
 
   private validateInterviewInput(input: {
     mode?: unknown;
@@ -1459,7 +1499,7 @@ export class JobsBoardService {
   }
 
   async listApplicationInterviews(applicationId: string, viewerId: string) {
-    await this.resolveInterviewParticipant(applicationId, viewerId);
+    await this.resolveApplicationParticipant(applicationId, viewerId);
     const { data, error } = await this.client()
       .from("job_interviews")
       .select("*")
@@ -1496,10 +1536,8 @@ export class JobsBoardService {
       proposedSlots?: unknown;
     },
   ) {
-    const { app, posting, isEmployer } = await this.resolveInterviewParticipant(
-      applicationId,
-      employerId,
-    );
+    const { app, posting, isEmployer } =
+      await this.resolveApplicationParticipant(applicationId, employerId);
     if (!isEmployer) throw httpError("Not allowed", 403);
 
     const clean = this.validateInterviewInput(input);
@@ -1534,7 +1572,7 @@ export class JobsBoardService {
       link: `/marketplace/applications`,
       data: { interviewId: data.id, applicationId },
     });
-    await this.sendInterviewDm(
+    await this.sendApplicationDm(
       employerId,
       app.applicant_id,
       `📅 Interview invitation for "${title}"\n\n${formatJobInterviewSlotList(
@@ -1591,7 +1629,7 @@ export class JobsBoardService {
       link: `/marketplace/applications`,
       data: { interviewId, applicationId: row.application_id },
     });
-    await this.sendInterviewDm(
+    await this.sendApplicationDm(
       employerId,
       row.applicant_id,
       `📅 Updated interview times for "${title}"\n\n${formatJobInterviewSlotList(
@@ -1656,7 +1694,7 @@ export class JobsBoardService {
       link: `/marketplace/employer/jobs/${row.posting_id}`,
       data: { interviewId, applicationId: row.application_id },
     });
-    await this.sendInterviewDm(
+    await this.sendApplicationDm(
       applicantId,
       employerId,
       action === "accept" && scheduledAt
@@ -1700,7 +1738,7 @@ export class JobsBoardService {
         link: `/marketplace/applications`,
         data: { interviewId, applicationId: row.application_id },
       });
-      await this.sendInterviewDm(
+      await this.sendApplicationDm(
         employerId,
         row.applicant_id,
         `❌ The interview for "${title}" has been cancelled.`,
@@ -1708,6 +1746,336 @@ export class JobsBoardService {
     }
 
     return mapInterview(data);
+  }
+
+  // ─── Offers and hire close-out ────────────────────────────────────────────
+
+  private async getOfferForActor(
+    offerId: string,
+    actorId: string,
+    actor: "employer" | "applicant",
+  ) {
+    const { data: row, error } = await this.client()
+      .from("job_offers")
+      .select("*")
+      .eq("id", offerId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw httpError("Offer not found", 404);
+
+    const context = await this.resolveApplicationParticipant(
+      row.application_id,
+      actorId,
+    );
+    if (actor === "employer" && !context.isEmployer) {
+      throw httpError("Not allowed", 403);
+    }
+    if (actor === "applicant" && !context.isApplicant) {
+      throw httpError("Not allowed", 403);
+    }
+    return { row, ...context };
+  }
+
+  private validateOfferInput(input: {
+    compensation?: unknown;
+    startDate?: unknown;
+    engagementDuration?: unknown;
+    locationText?: unknown;
+    details?: unknown;
+    expiresAt?: unknown;
+    closePostingOnAccept?: unknown;
+  }) {
+    const compensation = normalizeCompensation(
+      (input.compensation as JobCompensation | null) || null,
+    );
+
+    const locationText = String(input.locationText || "").trim();
+    if (locationText.length > JOB_OFFER_LOCATION_MAX_LENGTH) {
+      throw httpError(
+        `Location is limited to ${JOB_OFFER_LOCATION_MAX_LENGTH} characters`,
+      );
+    }
+    const details = String(input.details || "").trim();
+    if (details.length > JOB_OFFER_DETAILS_MAX_LENGTH) {
+      throw httpError(
+        `Offer details are limited to ${JOB_OFFER_DETAILS_MAX_LENGTH} characters`,
+      );
+    }
+
+    // An unparseable duration is dropped rather than rejected: unlike a
+    // posting, an offer does not have to state one.
+    const engagementDuration = isValidJobEngagementDuration(
+      input.engagementDuration,
+    )
+      ? (input.engagementDuration as JobEngagementDuration)
+      : null;
+
+    return {
+      compensation,
+      startDate: normalizeJobOfferStartDate(input.startDate),
+      engagementDuration,
+      locationText: locationText || null,
+      details: details || null,
+      expiresAt: normalizeJobOfferExpiry(input.expiresAt),
+      closePostingOnAccept: input.closePostingOnAccept !== false,
+    };
+  }
+
+  async listApplicationOffers(applicationId: string, viewerId: string) {
+    await this.resolveApplicationParticipant(applicationId, viewerId);
+    const { data, error } = await this.client()
+      .from("job_offers")
+      .select("*")
+      .eq("application_id", applicationId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map(mapOffer);
+  }
+
+  /** Every offer the user is the candidate for, newest first. */
+  async listMyOffers(userId: string) {
+    const { data, error } = await this.client()
+      .from("job_offers")
+      .select("*, posting:job_postings(id, title)")
+      .eq("applicant_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      ...mapOffer(row),
+      postingTitle: (Array.isArray(row.posting) ? row.posting[0] : row.posting)
+        ?.title,
+    }));
+  }
+
+  async sendOffer(
+    applicationId: string,
+    employerId: string,
+    input: {
+      compensation?: unknown;
+      startDate?: unknown;
+      engagementDuration?: unknown;
+      locationText?: unknown;
+      details?: unknown;
+      expiresAt?: unknown;
+      closePostingOnAccept?: unknown;
+    },
+  ) {
+    const { app, posting, isEmployer } =
+      await this.resolveApplicationParticipant(applicationId, employerId);
+    if (!isEmployer) throw httpError("Not allowed", 403);
+
+    const existing = await this.listApplicationOffers(
+      applicationId,
+      employerId,
+    );
+    if (hasOpenJobOffer(existing)) {
+      throw httpError(
+        "This candidate already has an open offer. Withdraw it before sending another.",
+      );
+    }
+    if (existing.some((offer) => offer.status === "accepted")) {
+      throw httpError("This candidate already accepted an offer");
+    }
+
+    const clean = this.validateOfferInput(input);
+    const { data, error } = await this.client()
+      .from("job_offers")
+      .insert({
+        application_id: applicationId,
+        posting_id: app.posting_id,
+        applicant_id: app.applicant_id,
+        created_by: employerId,
+        status: "sent",
+        compensation: clean.compensation,
+        start_date: clean.startDate,
+        engagement_duration: clean.engagementDuration,
+        location_text: clean.locationText,
+        details: clean.details,
+        expires_at: clean.expiresAt,
+        close_posting_on_accept: clean.closePostingOnAccept,
+      })
+      .select("*")
+      .single();
+    if (error) {
+      // The partial unique index is the last line of defence against a race
+      // putting two live offers on one application.
+      if ((error as any).code === "23505") {
+        throw httpError("This candidate already has an open offer");
+      }
+      throw error;
+    }
+
+    await this.client()
+      .from("job_applications")
+      .update({ status: "offer", updated_at: new Date().toISOString() })
+      .eq("id", applicationId);
+
+    const offer = mapOffer(data);
+    const title = posting?.title || "a job";
+    await this.supabase.createNotification(app.applicant_id, {
+      type: "job_offer",
+      message: `You have an offer for "${title}" — respond to accept or decline`,
+      link: `/marketplace/applications`,
+      data: { offerId: offer.id, applicationId },
+    });
+    await this.sendApplicationDm(
+      employerId,
+      app.applicant_id,
+      `🎉 Offer for "${title}"\n\n${describeJobOffer(offer)}\n\nOpen your applications list to accept or decline.`,
+    );
+
+    return offer;
+  }
+
+  /** An employer pulls the offer back before the candidate answers it. */
+  async withdrawOffer(offerId: string, employerId: string) {
+    const { row, posting } = await this.getOfferForActor(
+      offerId,
+      employerId,
+      "employer",
+    );
+    if (!canSetJobOfferStatus(row.status, "withdrawn", "employer")) {
+      throw httpError(`A ${row.status} offer cannot be withdrawn`);
+    }
+
+    const { data, error } = await this.client()
+      .from("job_offers")
+      .update({ status: "withdrawn", updated_at: new Date().toISOString() })
+      .eq("id", offerId)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    const title = posting?.title || "a job";
+    await this.supabase.createNotification(row.applicant_id, {
+      type: "job_offer",
+      message: `The offer for "${title}" was withdrawn`,
+      link: `/marketplace/applications`,
+      data: { offerId, applicationId: row.application_id },
+    });
+    await this.sendApplicationDm(
+      employerId,
+      row.applicant_id,
+      `The offer for "${title}" has been withdrawn.`,
+    );
+
+    return mapOffer(data);
+  }
+
+  /**
+   * The candidate accepts or declines. Accepting is what marks the application
+   * hired, and closes the posting when the employer asked for that — a filled
+   * job should stop collecting applications on its own.
+   */
+  async respondToOffer(
+    offerId: string,
+    applicantId: string,
+    action: "accept" | "decline",
+    declineReason?: unknown,
+  ) {
+    const { row, posting } = await this.getOfferForActor(
+      offerId,
+      applicantId,
+      "applicant",
+    );
+    const nextStatus: JobOfferStatus =
+      action === "accept" ? "accepted" : "declined";
+    if (!canSetJobOfferStatus(row.status, nextStatus, "applicant")) {
+      throw httpError(`This offer is ${row.status}`);
+    }
+    if (isJobOfferExpired(mapOffer(row))) {
+      // Record the lapse so the employer sees why it went unanswered.
+      await this.client()
+        .from("job_offers")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("id", offerId);
+      throw httpError("This offer has expired");
+    }
+
+    const reason = String(declineReason || "")
+      .trim()
+      .slice(0, JOB_OFFER_DECLINE_REASON_MAX_LENGTH);
+    const now = new Date().toISOString();
+    const { data, error } = await this.client()
+      .from("job_offers")
+      .update({
+        status: nextStatus,
+        responded_at: now,
+        decline_reason: action === "decline" ? reason || null : null,
+        updated_at: now,
+      })
+      .eq("id", offerId)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    // Declining an offer ends the process, which is a withdrawal in pipeline
+    // terms; accepting is the hire.
+    await this.client()
+      .from("job_applications")
+      .update({
+        status: action === "accept" ? "hired" : "withdrawn",
+        updated_at: now,
+      })
+      .eq("id", row.application_id);
+
+    let postingClosed = false;
+    if (action === "accept" && row.close_posting_on_accept) {
+      postingClosed = await this.closePostingAfterHire(row.posting_id);
+    }
+
+    const title = posting?.title || "a job";
+    const employerId = row.created_by;
+    await this.supabase.createNotification(employerId, {
+      type: "job_offer_response",
+      message:
+        action === "accept"
+          ? `Your offer for "${title}" was accepted${postingClosed ? " — the job is now closed" : ""}`
+          : `Your offer for "${title}" was declined`,
+      link: `/marketplace/employer/jobs/${row.posting_id}`,
+      data: { offerId, applicationId: row.application_id },
+    });
+    await this.sendApplicationDm(
+      applicantId,
+      employerId,
+      action === "accept"
+        ? `✅ I accept the offer for "${title}".`
+        : `Thank you for the offer for "${title}", but I am declining it.${
+            reason ? `\n\n${reason}` : ""
+          }`,
+    );
+
+    return { ...mapOffer(data), postingClosed };
+  }
+
+  /**
+   * Takes a filled posting out of search. Reports whether it actually closed so
+   * the employer's notification can say so, and leaves already-closed or
+   * moderated posts alone.
+   */
+  private async closePostingAfterHire(postingId: string): Promise<boolean> {
+    const { data: posting, error } = await this.client()
+      .from("job_postings")
+      .select("id, status")
+      .eq("id", postingId)
+      .maybeSingle();
+    if (error || !posting) return false;
+    if (!isJobPostingStatus(posting.status)) return false;
+    if (!canAutoCloseJobPostingOnHire(posting.status)) return false;
+
+    const { error: closeError } = await this.client()
+      .from("job_postings")
+      .update({ status: "closed", updated_at: new Date().toISOString() })
+      .eq("id", postingId);
+    if (closeError) {
+      logger.warn("Auto-close after hire failed", {
+        error: closeError,
+        postingId,
+      });
+      return false;
+    }
+    return true;
   }
 
   async updateApplicationStatus(

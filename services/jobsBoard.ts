@@ -5,8 +5,11 @@ import {
   type JobApplicantProfile,
   type JobApplication,
   type JobApplicationNote,
+  type JobCompensation,
+  type JobEngagementDuration,
   type JobInterview,
   type JobInterviewMode,
+  type JobOffer,
   type JobPosting,
   type JobSavedSearch,
   type JobSearchFilters,
@@ -20,6 +23,17 @@ export type JobInterviewDraft = {
   proposedSlots: string[];
   locationText?: string;
   details?: string;
+};
+
+/** Terms the employer sets when sending an offer. */
+export type JobOfferDraft = {
+  compensation: JobCompensation;
+  startDate?: string | null;
+  engagementDuration?: JobEngagementDuration | null;
+  locationText?: string;
+  details?: string;
+  expiresAt?: string;
+  closePostingOnAccept?: boolean;
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -339,6 +353,48 @@ export async function respondToJobInterview(
     `/interviews/${encodeURIComponent(interviewId)}/respond`,
     { method: "POST", body: JSON.stringify({ action, slot }) },
   );
+}
+
+export async function fetchJobOffers(applicationId: string) {
+  return jobsRequest<{ success: boolean; data: JobOffer[] }>(
+    `/applications/${encodeURIComponent(applicationId)}/offers`,
+  );
+}
+
+export async function fetchMyJobOffers() {
+  return jobsRequest<{
+    success: boolean;
+    data: Array<JobOffer & { postingTitle?: string }>;
+  }>("/my-offers");
+}
+
+export async function sendJobOffer(applicationId: string, body: JobOfferDraft) {
+  return jobsRequest<{ success: boolean; data: JobOffer }>(
+    `/applications/${encodeURIComponent(applicationId)}/offers`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function withdrawJobOffer(offerId: string) {
+  return jobsRequest<{ success: boolean; data: JobOffer }>(
+    `/offers/${encodeURIComponent(offerId)}`,
+    { method: "PATCH", body: JSON.stringify({ status: "withdrawn" }) },
+  );
+}
+
+export async function respondToJobOffer(
+  offerId: string,
+  action: "accept" | "decline",
+  declineReason?: string,
+) {
+  return jobsRequest<{
+    success: boolean;
+    /** `postingClosed` reports whether accepting also closed the job. */
+    data: JobOffer & { postingClosed?: boolean };
+  }>(`/offers/${encodeURIComponent(offerId)}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ action, declineReason }),
+  });
 }
 
 export async function deleteJobApplicationNote(noteId: string) {
