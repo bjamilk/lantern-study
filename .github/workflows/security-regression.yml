@@ -56,3 +56,8 @@ jobs:
         if: steps.creds.outputs.skip != 'true'
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-rls-privileges.ps1
+
+      - name: SEC-01/02/03 Phase 0 RLS PoC
+        if: steps.creds.outputs.skip != 'true'
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-sec01-03-rls-phase0.ps1

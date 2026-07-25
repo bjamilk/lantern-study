@@ -8686,9 +8686,10 @@ export class SupabaseService {
     if (data.group_id) {
       const { data: member } = await this.supabase
         .from('group_members')
-        .select('user_id')
+        .select('user_id, pending')
         .eq('group_id', data.group_id)
         .eq('user_id', userId)
+        .eq('pending', false)
         .maybeSingle();
       if (member) {
         return {
