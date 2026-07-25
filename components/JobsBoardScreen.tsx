@@ -1,20 +1,33 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { BookmarkIcon } from "@heroicons/react/24/outline";
+import {
+  BellAlertIcon,
+  BellSlashIcon,
+  BookmarkIcon,
+} from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_EMPLOYMENT_TYPES,
+  describeJobSearchFilters,
   formatJobCompensation,
   formatJobEngagementDuration,
   formatJobLocation,
   formatJobPostedDate,
+  isJobEmploymentType,
+  suggestJobSavedSearchName,
   type JobPosting,
+  type JobSavedSearch,
+  type JobSearchFilters,
 } from "@lantern/shared";
 import {
+  createJobSavedSearch,
+  deleteJobSavedSearch,
   fetchJobPostings,
+  fetchJobSavedSearches,
   fetchSavedJobPostings,
   setJobPostingSaved,
+  updateJobSavedSearch,
 } from "../services/jobsBoard";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
@@ -39,6 +52,39 @@ const EMPTY_FILTERS: PortalFilters = {
   companyOnly: false,
   sort: "newest",
 };
+
+/** The form's shape is UI-friendly; a saved search stores the shared shape. */
+function toSearchFilters(portal: PortalFilters): JobSearchFilters {
+  const filters: JobSearchFilters = {};
+  const search = portal.search.trim();
+  if (search) filters.search = search;
+  if (isJobEmploymentType(portal.employmentType)) {
+    filters.employmentType = portal.employmentType;
+  }
+  if (portal.location === "remote") filters.remote = true;
+  if (portal.location === "onsite") filters.remote = false;
+  if (portal.compensationKind)
+    filters.compensationKind = portal.compensationKind;
+  if (portal.companyOnly) filters.companyOnly = true;
+  if (portal.sort === "closing") filters.sort = "closing";
+  return filters;
+}
+
+function fromSearchFilters(filters: JobSearchFilters): PortalFilters {
+  return {
+    search: filters.search || "",
+    employmentType: filters.employmentType || "",
+    location:
+      filters.remote === true
+        ? "remote"
+        : filters.remote === false
+          ? "onsite"
+          : "",
+    compensationKind: filters.compensationKind || "",
+    companyOnly: !!filters.companyOnly,
+    sort: filters.sort === "closing" ? "closing" : "newest",
+  };
+}
 
 function formatDeadline(value?: string | null) {
   if (!value) return null;
@@ -67,6 +113,9 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedSearches, setSavedSearches] = useState<JobSavedSearch[]>([]);
+  const [savingSearch, setSavingSearch] = useState(false);
+  const [searchNameDraft, setSearchNameDraft] = useState<string | null>(null);
   const limit = 12;
 
   const load = useCallback(async () => {
@@ -107,6 +156,13 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    // Signed-out visitors have none; an error here should not block browsing.
+    void fetchJobSavedSearches()
+      .then((res) => setSavedSearches(res.data || []))
+      .catch(() => setSavedSearches([]));
+  }, []);
+
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
     setPage(1);
@@ -117,6 +173,63 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
+  };
+
+  const saveCurrentSearch = async (name: string) => {
+    setSavingSearch(true);
+    setError(null);
+    try {
+      const res = await createJobSavedSearch({
+        name,
+        filters: toSearchFilters(filters),
+        notify: true,
+      });
+      setSavedSearches((current) => [res.data, ...current]);
+      setSearchNameDraft(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save this search");
+    } finally {
+      setSavingSearch(false);
+    }
+  };
+
+  const applySavedSearch = (saved: JobSavedSearch) => {
+    const portal = fromSearchFilters(saved.filters);
+    setFilters(portal);
+    setAppliedFilters(portal);
+    setView("browse");
+    setPage(1);
+  };
+
+  const toggleSearchAlerts = async (saved: JobSavedSearch) => {
+    const notify = !saved.notify;
+    setSavedSearches((current) =>
+      current.map((item) =>
+        item.id === saved.id ? { ...item, notify } : item,
+      ),
+    );
+    try {
+      await updateJobSavedSearch(saved.id, { notify });
+    } catch (e) {
+      setSavedSearches((current) =>
+        current.map((item) =>
+          item.id === saved.id ? { ...item, notify: saved.notify } : item,
+        ),
+      );
+      setError(e instanceof Error ? e.message : "Could not update alerts");
+    }
+  };
+
+  const removeSavedSearch = async (saved: JobSavedSearch) => {
+    setSavedSearches((current) =>
+      current.filter((item) => item.id !== saved.id),
+    );
+    try {
+      await deleteJobSavedSearch(saved.id);
+    } catch (e) {
+      setSavedSearches((current) => [saved, ...current]);
+      setError(e instanceof Error ? e.message : "Could not delete this search");
+    }
   };
 
   const toggleSaved = async (job: JobPosting) => {
@@ -334,7 +447,113 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                     Clear filters
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchNameDraft(
+                      searchNameDraft === null
+                        ? suggestJobSavedSearchName(toSearchFilters(filters))
+                        : null,
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-lantern-primary hover:underline"
+                >
+                  <BellAlertIcon className="h-4 w-4" aria-hidden />
+                  Save search &amp; get alerts
+                </button>
               </div>
+
+              {searchNameDraft !== null ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-lantern-primary/30 bg-lantern-primary/5 p-3">
+                  <label className="flex-1 min-w-[200px] text-sm">
+                    <span className="sr-only">Name this search</span>
+                    <input
+                      autoFocus
+                      value={searchNameDraft}
+                      onChange={(event) =>
+                        setSearchNameDraft(event.target.value)
+                      }
+                      placeholder="Name this search"
+                      className="h-10 w-full rounded-lg border border-lantern-border bg-lantern-background px-3 text-sm text-lantern-text"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={savingSearch || !searchNameDraft.trim()}
+                    onClick={() =>
+                      void saveCurrentSearch(searchNameDraft.trim())
+                    }
+                    className="h-10 rounded-lg bg-lantern-primary px-4 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {savingSearch ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSearchNameDraft(null)}
+                    className="h-10 rounded-lg border border-lantern-border px-4 text-sm font-medium text-lantern-text"
+                  >
+                    Cancel
+                  </button>
+                  <p className="w-full text-xs text-lantern-text-tertiary">
+                    We&apos;ll notify you when a new job matches{" "}
+                    {describeJobSearchFilters(toSearchFilters(filters))}.
+                  </p>
+                </div>
+              ) : null}
+
+              {savedSearches.length ? (
+                <div className="mt-4 border-t border-lantern-border pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+                    Your saved searches
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {savedSearches.map((saved) => (
+                      <li
+                        key={saved.id}
+                        className="flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-background pl-3 pr-1.5 py-1"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => applySavedSearch(saved)}
+                          title={describeJobSearchFilters(saved.filters)}
+                          className="text-sm font-medium text-lantern-text hover:text-lantern-primary"
+                        >
+                          {saved.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void toggleSearchAlerts(saved)}
+                          aria-pressed={saved.notify}
+                          aria-label={
+                            saved.notify
+                              ? `Turn off alerts for ${saved.name}`
+                              : `Turn on alerts for ${saved.name}`
+                          }
+                          className={`rounded-full p-1 ${
+                            saved.notify
+                              ? "text-lantern-primary"
+                              : "text-lantern-text-tertiary"
+                          }`}
+                        >
+                          {saved.notify ? (
+                            <BellAlertIcon className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <BellSlashIcon className="h-4 w-4" aria-hidden />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeSavedSearch(saved)}
+                          aria-label={`Delete ${saved.name}`}
+                          className="rounded-full p-1 text-lantern-text-tertiary hover:text-red-600"
+                        >
+                          <span aria-hidden>×</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </form>
           ) : null}
         </section>

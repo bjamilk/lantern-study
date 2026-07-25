@@ -10,7 +10,11 @@ import {
   JOB_APPLICATION_NOTE_MAX_LENGTH,
   JOB_POSTING_STATUS_LABELS,
   JOB_RESUME_MAX_BYTES,
+  JOB_SAVED_SEARCH_LIMIT_PER_USER,
+  JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
   canEmployerSetJobPostingStatus,
+  normalizeJobSearchFilters,
+  suggestJobSavedSearchName,
   isJobCompensationPeriod,
   isJobPostingEditable,
   isJobPostingStatus,
@@ -25,6 +29,8 @@ import {
   type JobEmploymentType,
   type JobEngagementDuration,
   type JobPostingStatus,
+  type JobSavedSearch,
+  type JobSearchFilters,
 } from "@lantern/shared/jobs";
 import { SupabaseService } from "./supabase";
 import { logger } from "../utils/logger";
@@ -256,6 +262,18 @@ function mapApplicantProfile(row: any) {
   };
 }
 
+function mapSavedSearch(row: any): JobSavedSearch {
+  return {
+    id: row.id,
+    name: row.name,
+    filters: normalizeJobSearchFilters(row.filters),
+    notify: !!row.notify,
+    lastCheckedAt: row.last_checked_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function mapCompany(row: any) {
   if (!row) return null;
   return {
@@ -427,6 +445,96 @@ export class JobsBoardService {
         (posting: any) => posting && posting.status !== "removed_by_admin",
       )
       .map((posting: any) => mapPosting(posting, savedIds));
+  }
+
+  // ─── Saved searches ──────────────────────────────────────────────────────
+
+  async listSavedSearches(userId: string): Promise<JobSavedSearch[]> {
+    const { data, error } = await this.client()
+      .from("job_saved_searches")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map(mapSavedSearch);
+  }
+
+  async createSavedSearch(
+    userId: string,
+    input: { name?: string; filters?: unknown; notify?: boolean },
+  ): Promise<JobSavedSearch> {
+    const filters: JobSearchFilters = normalizeJobSearchFilters(input.filters);
+    const name =
+      (input.name || "").trim().slice(0, JOB_SAVED_SEARCH_NAME_MAX_LENGTH) ||
+      suggestJobSavedSearchName(filters);
+
+    const { count, error: countError } = await this.client()
+      .from("job_saved_searches")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (countError) throw countError;
+    if ((count || 0) >= JOB_SAVED_SEARCH_LIMIT_PER_USER) {
+      throw httpError(
+        `You can keep up to ${JOB_SAVED_SEARCH_LIMIT_PER_USER} saved searches. Delete one to add another.`,
+      );
+    }
+
+    const { data, error } = await this.client()
+      .from("job_saved_searches")
+      .insert({
+        user_id: userId,
+        name,
+        filters,
+        notify: input.notify !== false,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapSavedSearch(data);
+  }
+
+  async updateSavedSearch(
+    id: string,
+    userId: string,
+    patch: { name?: string; filters?: unknown; notify?: boolean },
+  ): Promise<JobSavedSearch> {
+    const update: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof patch.name === "string") {
+      const name = patch.name.trim().slice(0, JOB_SAVED_SEARCH_NAME_MAX_LENGTH);
+      if (!name) throw httpError("Give the saved search a name");
+      update.name = name;
+    }
+    if (patch.filters !== undefined) {
+      update.filters = normalizeJobSearchFilters(patch.filters);
+    }
+    if (typeof patch.notify === "boolean") {
+      update.notify = patch.notify;
+      // Re-enabling alerts should not replay every posting since it was muted.
+      if (patch.notify) update.last_checked_at = new Date().toISOString();
+    }
+
+    const { data, error } = await this.client()
+      .from("job_saved_searches")
+      .update(update)
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw httpError("Saved search not found", 404);
+    return mapSavedSearch(data);
+  }
+
+  async deleteSavedSearch(id: string, userId: string) {
+    const { error } = await this.client()
+      .from("job_saved_searches")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+    return { id };
   }
 
   async getPosting(

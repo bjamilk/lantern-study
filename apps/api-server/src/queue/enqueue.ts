@@ -21,6 +21,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   'export.userData': 'data-export',
   'cron.dataRetention': 'marketplace-alerts',
   'cron.marketplaceAlerts': 'marketplace-alerts',
+  'cron.jobAlerts': 'marketplace-alerts',
 };
 
 export interface EnqueueResult {

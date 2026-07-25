@@ -6,6 +6,8 @@ import {
   type JobApplication,
   type JobApplicationNote,
   type JobPosting,
+  type JobSavedSearch,
+  type JobSearchFilters,
 } from "@lantern/shared";
 import { getAuthHeaders } from "./supabase";
 
@@ -81,6 +83,40 @@ export async function updateJobPosting(
 
 export async function fetchSavedJobPostings() {
   return jobsRequest<{ success: boolean; data: JobPosting[] }>("/saved");
+}
+
+export async function fetchJobSavedSearches() {
+  return jobsRequest<{ success: boolean; data: JobSavedSearch[] }>(
+    "/saved-searches",
+  );
+}
+
+export async function createJobSavedSearch(body: {
+  name?: string;
+  filters: JobSearchFilters;
+  notify?: boolean;
+}) {
+  return jobsRequest<{ success: boolean; data: JobSavedSearch }>(
+    "/saved-searches",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function updateJobSavedSearch(
+  id: string,
+  body: { name?: string; filters?: JobSearchFilters; notify?: boolean },
+) {
+  return jobsRequest<{ success: boolean; data: JobSavedSearch }>(
+    `/saved-searches/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function deleteJobSavedSearch(id: string) {
+  return jobsRequest<{ success: boolean; data: { id: string } }>(
+    `/saved-searches/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
 }
 
 export async function setJobPostingSaved(id: string, saved: boolean) {

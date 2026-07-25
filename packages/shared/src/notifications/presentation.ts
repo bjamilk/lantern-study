@@ -1,16 +1,19 @@
-import type { AppNotification } from '../types';
+import type { AppNotification } from "../types";
 
 export type NotificationLinkType =
-  | 'challenge'
-  | 'offer'
-  | 'inquiry'
-  | 'listing'
-  | 'dm'
-  | 'group'
-  | 'group_invite'
-  | 'note'
-  | 'note_share'
-  | 'generic';
+  | "challenge"
+  | "offer"
+  | "inquiry"
+  | "listing"
+  | "dm"
+  | "group"
+  | "group_invite"
+  | "note"
+  | "note_share"
+  | "job"
+  | "job_applications"
+  | "job_applicants"
+  | "generic";
 
 export interface ParsedNotificationLink {
   type: NotificationLinkType;
@@ -19,11 +22,11 @@ export interface ParsedNotificationLink {
 }
 
 export type NotificationIconKey =
-  | 'bell'
-  | 'currency'
-  | 'chat'
-  | 'shopping'
-  | 'envelope';
+  | "bell"
+  | "currency"
+  | "chat"
+  | "shopping"
+  | "envelope";
 
 export interface NotificationMeta {
   iconKey: NotificationIconKey;
@@ -37,10 +40,10 @@ export interface NotificationMeta {
 }
 
 export function formatRelativeTime(dateInput: string | Date): string {
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
   const now = new Date();
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (Number.isNaN(seconds)) return '';
+  if (Number.isNaN(seconds)) return "";
 
   let interval = seconds / 31536000;
   if (interval > 1) return `${Math.floor(interval)}y ago`;
@@ -52,208 +55,257 @@ export function formatRelativeTime(dateInput: string | Date): string {
   if (interval > 1) return `${Math.floor(interval)}h ago`;
   interval = seconds / 60;
   if (interval > 1) return `${Math.floor(interval)}m ago`;
-  return 'Just now';
+  return "Just now";
 }
 
 export function parseNotificationLink(
   link?: string,
-  n?: Pick<AppNotification, 'type' | 'data' | 'link'>
+  n?: Pick<AppNotification, "type" | "data" | "link">,
 ): ParsedNotificationLink | null {
-  if (link?.startsWith('challenge:')) {
-    return { type: 'challenge', id: link.replace('challenge:', '') };
+  if (link?.startsWith("challenge:")) {
+    return { type: "challenge", id: link.replace("challenge:", "") };
   }
-  if (n?.type?.startsWith('challenge')) {
+  if (n?.type?.startsWith("challenge")) {
     const challengeId =
       (n.data?.challengeId as string) ||
-      (typeof n.data?.data === 'object'
+      (typeof n.data?.data === "object"
         ? ((n.data?.data as Record<string, unknown>)?.challengeId as string)
         : undefined) ||
-      link?.replace('challenge:', '');
-    if (challengeId) return { type: 'challenge', id: challengeId };
+      link?.replace("challenge:", "");
+    if (challengeId) return { type: "challenge", id: challengeId };
   }
-  if (link?.startsWith('dm:')) {
+  if (link?.startsWith("dm:")) {
     const rest = link.slice(3);
-    const lastColon = rest.lastIndexOf(':');
+    const lastColon = rest.lastIndexOf(":");
     if (lastColon > 0) {
       return {
-        type: 'dm',
+        type: "dm",
         threadId: rest.slice(0, lastColon),
         id: rest.slice(lastColon + 1),
       };
     }
   }
   if (
-    (n?.type === 'dm_message' || n?.type === 'dm_message_request') &&
+    (n?.type === "dm_message" || n?.type === "dm_message_request") &&
     n.data?.senderId
   ) {
     return {
-      type: 'dm',
+      type: "dm",
       threadId: n.data.threadId as string | undefined,
       id: n.data.senderId as string,
     };
   }
-  if (link?.startsWith('/invites/groups/')) {
-    const groupId = link.replace('/invites/groups/', '').split(/[?#]/)[0];
-    if (groupId) return { type: 'group_invite', id: groupId };
+  if (link?.startsWith("/invites/groups/")) {
+    const groupId = link.replace("/invites/groups/", "").split(/[?#]/)[0];
+    if (groupId) return { type: "group_invite", id: groupId };
   }
-  if (n?.type === 'group_invite') {
+  if (n?.type === "group_invite") {
     const groupId =
       (n.data?.groupId as string) ||
-      link?.replace('/invites/groups/', '').split(/[?#]/)[0] ||
-      link?.replace('/chat/', '').split(/[?#]/)[0];
-    if (groupId) return { type: 'group_invite', id: groupId };
+      link?.replace("/invites/groups/", "").split(/[?#]/)[0] ||
+      link?.replace("/chat/", "").split(/[?#]/)[0];
+    if (groupId) return { type: "group_invite", id: groupId };
   }
-  if (link?.startsWith('/notes/share/')) {
-    const token = link.replace('/notes/share/', '').split(/[?#]/)[0];
-    if (token) return { type: 'note_share', id: decodeURIComponent(token) };
+  if (link?.startsWith("/notes/share/")) {
+    const token = link.replace("/notes/share/", "").split(/[?#]/)[0];
+    if (token) return { type: "note_share", id: decodeURIComponent(token) };
   }
-  if (n?.type === 'note_share_invite' || n?.type === 'note_share_accepted') {
+  if (n?.type === "note_share_invite" || n?.type === "note_share_accepted") {
     const noteId =
       (n.data?.noteId as string) ||
-      link?.replace('/notes/', '').split(/[?#]/)[0];
-    if (noteId) return { type: 'note', id: noteId };
+      link?.replace("/notes/", "").split(/[?#]/)[0];
+    if (noteId) return { type: "note", id: noteId };
   }
-  if (link?.startsWith('/notes/') && !link.startsWith('/notes/share/')) {
-    const noteId = link.replace('/notes/', '').split(/[?#]/)[0];
-    if (noteId) return { type: 'note', id: noteId };
+  if (link?.startsWith("/notes/") && !link.startsWith("/notes/share/")) {
+    const noteId = link.replace("/notes/", "").split(/[?#]/)[0];
+    if (noteId) return { type: "note", id: noteId };
   }
-  if (link?.startsWith('/chat/')) {
-    const groupId = link.replace('/chat/', '').split(/[?#]/)[0];
-    if (groupId) return { type: 'group', id: groupId };
+  if (link?.startsWith("/chat/")) {
+    const groupId = link.replace("/chat/", "").split(/[?#]/)[0];
+    if (groupId) return { type: "group", id: groupId };
+  }
+  // Jobs board links are plain app paths rather than `marketplace:` tuples.
+  if (n?.type === "job_alert" || link?.startsWith("/marketplace/jobs/")) {
+    const postingId =
+      (n?.data?.postingId as string) ||
+      link?.replace("/marketplace/jobs/", "").split(/[?#]/)[0];
+    if (postingId) return { type: "job", id: postingId };
   }
   if (
-    (n?.type === 'group_message' || n?.type === 'mention' || n?.type === 'reply') &&
+    n?.type === "job_application_status" ||
+    link === "/marketplace/applications"
+  ) {
+    return { type: "job_applications" };
+  }
+  if (n?.type === "job_application") {
+    const postingId =
+      (n.data?.postingId as string) ||
+      link?.match(/\/marketplace\/employer\/jobs\/([^/?#]+)/)?.[1];
+    if (postingId) return { type: "job_applicants", id: postingId };
+  }
+  if (
+    (n?.type === "group_message" ||
+      n?.type === "mention" ||
+      n?.type === "reply") &&
     (n.data?.groupId || link)
   ) {
     const groupId =
       (n.data?.groupId as string) ||
-      link?.replace('/chat/', '').split(/[?#]/)[0];
-    if (groupId) return { type: 'group', id: groupId };
+      link?.replace("/chat/", "").split(/[?#]/)[0];
+    if (groupId) return { type: "group", id: groupId };
   }
   if (!link) return null;
-  const parts = link.split(':');
-  if (parts[0] !== 'marketplace' || parts.length < 3) return null;
+  const parts = link.split(":");
+  if (parts[0] !== "marketplace" || parts.length < 3) return null;
   const subType = parts[1];
-  if (subType === 'offer' || subType === 'inquiry' || subType === 'listing') {
+  if (subType === "offer" || subType === "inquiry" || subType === "listing") {
     return { type: subType, id: parts[2] };
   }
-  return { type: 'generic', id: parts[2] };
+  return { type: "generic", id: parts[2] };
 }
 
 export function getNotificationMeta(
   link?: string,
-  n?: Pick<AppNotification, 'type' | 'data' | 'link'>
+  n?: Pick<AppNotification, "type" | "data" | "link">,
 ): NotificationMeta {
   const parsed = parseNotificationLink(link, n);
   if (!parsed) {
     return {
-      iconKey: 'bell',
+      iconKey: "bell",
       label: null,
-      webColorClass: 'text-lantern-primary bg-lantern-primary-background',
-      mobileIconColor: '#4f46e5',
-      mobileBgClass: 'bg-lantern-primary-background',
+      webColorClass: "text-lantern-primary bg-lantern-primary-background",
+      mobileIconColor: "#4f46e5",
+      mobileBgClass: "bg-lantern-primary-background",
     };
   }
   switch (parsed.type) {
-    case 'challenge':
+    case "challenge":
       return {
-        iconKey: 'bell',
-        label: 'Duel',
-        webColorClass: 'text-lantern-error bg-lantern-error/10',
-        mobileIconColor: '#dc2626',
-        mobileBgClass: 'bg-red-50 dark:bg-red-950/30',
+        iconKey: "bell",
+        label: "Duel",
+        webColorClass: "text-lantern-error bg-lantern-error/10",
+        mobileIconColor: "#dc2626",
+        mobileBgClass: "bg-red-50 dark:bg-red-950/30",
       };
-    case 'offer':
+    case "offer":
       return {
-        iconKey: 'currency',
-        label: 'Offer',
-        webColorClass: 'text-lantern-success bg-lantern-success/10',
-        mobileIconColor: '#059669',
-        mobileBgClass: 'bg-emerald-50 dark:bg-emerald-950/30',
+        iconKey: "currency",
+        label: "Offer",
+        webColorClass: "text-lantern-success bg-lantern-success/10",
+        mobileIconColor: "#059669",
+        mobileBgClass: "bg-emerald-50 dark:bg-emerald-950/30",
       };
-    case 'inquiry':
+    case "inquiry":
       return {
-        iconKey: 'chat',
-        label: 'Inquiry',
-        webColorClass: 'text-lantern-accent bg-lantern-accent-background',
-        mobileIconColor: '#d97706',
-        mobileBgClass: 'bg-amber-50 dark:bg-amber-950/30',
+        iconKey: "chat",
+        label: "Inquiry",
+        webColorClass: "text-lantern-accent bg-lantern-accent-background",
+        mobileIconColor: "#d97706",
+        mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
       };
-    case 'listing':
+    case "listing":
       return {
-        iconKey: 'shopping',
-        label: 'Listing',
-        webColorClass: 'text-lantern-primary-light bg-lantern-primary-background',
-        mobileIconColor: '#6366f1',
-        mobileBgClass: 'bg-lantern-primary-background dark:bg-lantern-primary-background',
+        iconKey: "shopping",
+        label: "Listing",
+        webColorClass:
+          "text-lantern-primary-light bg-lantern-primary-background",
+        mobileIconColor: "#6366f1",
+        mobileBgClass:
+          "bg-lantern-primary-background dark:bg-lantern-primary-background",
       };
-    case 'dm':
-      if (n?.type === 'dm_message_request') {
+    case "dm":
+      if (n?.type === "dm_message_request") {
         return {
-          iconKey: 'chat',
-          label: 'Message request',
-          webColorClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30',
-          mobileIconColor: '#b45309',
-          mobileBgClass: 'bg-amber-50 dark:bg-amber-950/30',
+          iconKey: "chat",
+          label: "Message request",
+          webColorClass: "text-amber-700 bg-amber-50 dark:bg-amber-950/30",
+          mobileIconColor: "#b45309",
+          mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
         };
       }
       return {
-        iconKey: 'chat',
-        label: 'Message',
-        webColorClass: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
-        mobileIconColor: '#0ea5e9',
-        mobileBgClass: 'bg-sky-50 dark:bg-sky-950/30',
+        iconKey: "chat",
+        label: "Message",
+        webColorClass: "text-sky-600 bg-sky-50 dark:bg-sky-900/30",
+        mobileIconColor: "#0ea5e9",
+        mobileBgClass: "bg-sky-50 dark:bg-sky-950/30",
       };
-    case 'group_invite':
+    case "group_invite":
       return {
-        iconKey: 'envelope',
-        label: 'Group invite',
-        webColorClass: 'text-lantern-primary bg-lantern-primary-background',
-        mobileIconColor: '#4f46e5',
-        mobileBgClass: 'bg-lantern-primary-background',
+        iconKey: "envelope",
+        label: "Group invite",
+        webColorClass: "text-lantern-primary bg-lantern-primary-background",
+        mobileIconColor: "#4f46e5",
+        mobileBgClass: "bg-lantern-primary-background",
       };
-    case 'group':
-      if (n?.type === 'mention') {
+    case "group":
+      if (n?.type === "mention") {
         return {
-          iconKey: 'chat',
-          label: n.data?.mentionedEveryone ? 'Mentioned everyone' : 'Mentioned you',
-          webColorClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30',
-          mobileIconColor: '#b45309',
-          mobileBgClass: 'bg-amber-50 dark:bg-amber-950/30',
+          iconKey: "chat",
+          label: n.data?.mentionedEveryone
+            ? "Mentioned everyone"
+            : "Mentioned you",
+          webColorClass: "text-amber-700 bg-amber-50 dark:bg-amber-950/30",
+          mobileIconColor: "#b45309",
+          mobileBgClass: "bg-amber-50 dark:bg-amber-950/30",
         };
       }
-      if (n?.type === 'reply') {
+      if (n?.type === "reply") {
         return {
-          iconKey: 'chat',
-          label: 'Reply',
-          webColorClass: 'text-violet-700 bg-violet-50 dark:bg-violet-950/30',
-          mobileIconColor: '#6d28d9',
-          mobileBgClass: 'bg-violet-50 dark:bg-violet-950/30',
+          iconKey: "chat",
+          label: "Reply",
+          webColorClass: "text-violet-700 bg-violet-50 dark:bg-violet-950/30",
+          mobileIconColor: "#6d28d9",
+          mobileBgClass: "bg-violet-50 dark:bg-violet-950/30",
         };
       }
       return {
-        iconKey: 'chat',
-        label: 'Group',
-        webColorClass: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30',
-        mobileIconColor: '#0ea5e9',
-        mobileBgClass: 'bg-sky-50 dark:bg-sky-950/30',
+        iconKey: "chat",
+        label: "Group",
+        webColorClass: "text-sky-600 bg-sky-50 dark:bg-sky-900/30",
+        mobileIconColor: "#0ea5e9",
+        mobileBgClass: "bg-sky-50 dark:bg-sky-950/30",
       };
-    case 'note':
-    case 'note_share':
+    case "job":
       return {
-        iconKey: 'envelope',
-        label: 'Note share',
-        webColorClass: 'text-lantern-primary bg-lantern-primary-background',
-        mobileIconColor: '#4f46e5',
-        mobileBgClass: 'bg-lantern-primary-background',
+        iconKey: "shopping",
+        label: n?.type === "job_alert" ? "Job alert" : "Job",
+        webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
+        mobileIconColor: "#0f766e",
+        mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
+      };
+    case "job_applications":
+      return {
+        iconKey: "envelope",
+        label: "Application",
+        webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
+        mobileIconColor: "#0f766e",
+        mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
+      };
+    case "job_applicants":
+      return {
+        iconKey: "envelope",
+        label: "New applicant",
+        webColorClass: "text-teal-700 bg-teal-50 dark:bg-teal-950/30",
+        mobileIconColor: "#0f766e",
+        mobileBgClass: "bg-teal-50 dark:bg-teal-950/30",
+      };
+    case "note":
+    case "note_share":
+      return {
+        iconKey: "envelope",
+        label: "Note share",
+        webColorClass: "text-lantern-primary bg-lantern-primary-background",
+        mobileIconColor: "#4f46e5",
+        mobileBgClass: "bg-lantern-primary-background",
       };
     default:
       return {
-        iconKey: 'bell',
+        iconKey: "bell",
         label: null,
-        webColorClass: 'text-lantern-primary bg-lantern-primary-background',
-        mobileIconColor: '#4f46e5',
-        mobileBgClass: 'bg-lantern-primary-background',
+        webColorClass: "text-lantern-primary bg-lantern-primary-background",
+        mobileIconColor: "#4f46e5",
+        mobileBgClass: "bg-lantern-primary-background",
       };
   }
 }
@@ -263,7 +315,7 @@ export function getNotificationMessage(n: {
   body?: string;
   title?: string;
 }): string {
-  return n.message || n.body || n.title || '';
+  return n.message || n.body || n.title || "";
 }
 
 export function isNotificationRead(n: {

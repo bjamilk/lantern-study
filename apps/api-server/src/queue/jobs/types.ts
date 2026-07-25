@@ -42,6 +42,7 @@ export type ExportJobName = 'export.userData';
 
 export type CronJobName =
   | 'cron.dataRetention'
-  | 'cron.marketplaceAlerts';
+  | 'cron.marketplaceAlerts'
+  | 'cron.jobAlerts';
 
 export type JobName = AIJobName | FileJobName | ExportJobName | CronJobName;

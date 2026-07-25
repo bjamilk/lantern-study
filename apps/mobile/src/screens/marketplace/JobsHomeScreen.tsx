@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -14,17 +14,26 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  describeJobSearchFilters,
   formatJobCompensation,
   formatJobEngagementDuration,
   formatJobLocation,
   formatJobPostedDate,
+  isEmptyJobSearchFilters,
+  suggestJobSavedSearchName,
   type JobPosting,
+  type JobSavedSearch,
+  type JobSearchFilters,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import {
+  createJobSavedSearch,
+  deleteJobSavedSearch,
   fetchJobPostings,
+  fetchJobSavedSearches,
   fetchSavedJobPostings,
   setJobPostingSaved,
+  updateJobSavedSearch,
 } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
 
@@ -53,7 +62,27 @@ export function JobsHomeScreen() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedSearches, setSavedSearches] = useState<JobSavedSearch[]>([]);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [savingSearch, setSavingSearch] = useState(false);
   const limit = 12;
+
+  const activeFilters = useMemo<JobSearchFilters>(() => {
+    const saved = savedSearches.find((item) => item.id === activeSavedId);
+    if (saved) return saved.filters;
+    const filters: JobSearchFilters = {};
+    if (query) filters.search = query;
+    if (
+      filter === "full_time" ||
+      filter === "part_time" ||
+      filter === "internship"
+    ) {
+      filters.employmentType = filter;
+    }
+    if (filter === "remote") filters.remote = true;
+    if (filter === "company") filters.companyOnly = true;
+    return filters;
+  }, [activeSavedId, filter, query, savedSearches]);
 
   const load = useCallback(
     async (requestedPage = 1) => {
@@ -61,7 +90,7 @@ export function JobsHomeScreen() {
       else setLoadingMore(true);
       setError(null);
       try {
-        if (filter === "saved") {
+        if (filter === "saved" && !activeSavedId) {
           const response = await fetchSavedJobPostings();
           setJobs(response.data || []);
           setTotal((response.data || []).length);
@@ -71,15 +100,7 @@ export function JobsHomeScreen() {
         const response = await fetchJobPostings({
           page: requestedPage,
           limit,
-          search: query || undefined,
-          employmentType:
-            filter === "full_time" ||
-            filter === "part_time" ||
-            filter === "internship"
-              ? filter
-              : undefined,
-          remote: filter === "remote" ? true : undefined,
-          companyOnly: filter === "company" ? true : undefined,
+          ...activeFilters,
         });
         setJobs((current) =>
           requestedPage === 1
@@ -95,12 +116,74 @@ export function JobsHomeScreen() {
         else setLoadingMore(false);
       }
     },
-    [filter, query],
+    [activeFilters, activeSavedId, filter],
   );
 
   useEffect(() => {
     void load(1);
   }, [load]);
+
+  useEffect(() => {
+    // Signed-out visitors have none; a failure here should not block browsing.
+    void fetchJobSavedSearches()
+      .then((res) => setSavedSearches(res.data || []))
+      .catch(() => setSavedSearches([]));
+  }, []);
+
+  const saveCurrentSearch = useCallback(async () => {
+    setSavingSearch(true);
+    setError(null);
+    try {
+      const res = await createJobSavedSearch({
+        name: suggestJobSavedSearchName(activeFilters),
+        filters: activeFilters,
+        notify: true,
+      });
+      setSavedSearches((current) => [res.data, ...current]);
+      setActiveSavedId(res.data.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save this search");
+    } finally {
+      setSavingSearch(false);
+    }
+  }, [activeFilters]);
+
+  const toggleSearchAlerts = useCallback(async (saved: JobSavedSearch) => {
+    const notify = !saved.notify;
+    setSavedSearches((current) =>
+      current.map((item) =>
+        item.id === saved.id ? { ...item, notify } : item,
+      ),
+    );
+    try {
+      await updateJobSavedSearch(saved.id, { notify });
+    } catch (e) {
+      setSavedSearches((current) =>
+        current.map((item) =>
+          item.id === saved.id ? { ...item, notify: saved.notify } : item,
+        ),
+      );
+      setError(e instanceof Error ? e.message : "Could not update alerts");
+    }
+  }, []);
+
+  const removeSavedSearch = useCallback(
+    async (saved: JobSavedSearch) => {
+      setSavedSearches((current) =>
+        current.filter((item) => item.id !== saved.id),
+      );
+      if (activeSavedId === saved.id) setActiveSavedId(null);
+      try {
+        await deleteJobSavedSearch(saved.id);
+      } catch (e) {
+        setSavedSearches((current) => [saved, ...current]);
+        setError(
+          e instanceof Error ? e.message : "Could not delete this search",
+        );
+      }
+    },
+    [activeSavedId],
+  );
 
   const toggleSaved = useCallback(
     async (job: JobPosting) => {
@@ -188,6 +271,22 @@ export function JobsHomeScreen() {
               Search jobs
             </Text>
           </Pressable>
+          {!isEmptyJobSearchFilters(activeFilters) && !activeSavedId ? (
+            <Pressable
+              disabled={savingSearch}
+              onPress={() => void saveCurrentSearch()}
+              className="mt-2 h-11 flex-row items-center justify-center gap-2 rounded-xl border border-lantern-primary"
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={16}
+                color="#0f766e"
+              />
+              <Text className="text-sm font-semibold text-lantern-primary">
+                {savingSearch ? "Saving…" : "Save search & get alerts"}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <ScrollView
@@ -199,28 +298,93 @@ export function JobsHomeScreen() {
             gap: 8,
           }}
         >
-          {FILTERS.map((option) => (
-            <Pressable
-              key={option.id}
-              onPress={() => setFilter(option.id)}
-              className={`rounded-full border px-4 py-2 ${
-                filter === option.id
-                  ? "border-lantern-primary bg-lantern-primary"
-                  : "border-lantern-border bg-lantern-surface"
-              }`}
-            >
-              <Text
-                className={`text-sm font-medium ${
-                  filter === option.id
-                    ? "text-white"
-                    : "text-lantern-text-secondary"
+          {FILTERS.map((option) => {
+            const active = !activeSavedId && filter === option.id;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => {
+                  setActiveSavedId(null);
+                  setFilter(option.id);
+                }}
+                className={`rounded-full border px-4 py-2 ${
+                  active
+                    ? "border-lantern-primary bg-lantern-primary"
+                    : "border-lantern-border bg-lantern-surface"
                 }`}
               >
-                {option.label}
-              </Text>
-            </Pressable>
-          ))}
+                <Text
+                  className={`text-sm font-medium ${
+                    active ? "text-white" : "text-lantern-text-secondary"
+                  }`}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
+
+        {savedSearches.length ? (
+          <View className="mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-3">
+            <Text className="text-xs font-semibold uppercase text-lantern-text-tertiary">
+              Saved searches
+            </Text>
+            {savedSearches.map((saved) => (
+              <View
+                key={saved.id}
+                className="mt-2 flex-row items-center gap-2 border-t border-lantern-border pt-2"
+              >
+                <Pressable
+                  className="flex-1"
+                  onPress={() => setActiveSavedId(saved.id)}
+                >
+                  <Text
+                    className={`text-sm font-semibold ${
+                      activeSavedId === saved.id
+                        ? "text-lantern-primary"
+                        : "text-lantern-text"
+                    }`}
+                  >
+                    {saved.name}
+                  </Text>
+                  <Text className="text-xs text-lantern-text-tertiary">
+                    {describeJobSearchFilters(saved.filters)}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => void toggleSearchAlerts(saved)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: saved.notify }}
+                  accessibilityLabel={
+                    saved.notify
+                      ? `Turn off alerts for ${saved.name}`
+                      : `Turn on alerts for ${saved.name}`
+                  }
+                >
+                  <Ionicons
+                    name={
+                      saved.notify
+                        ? "notifications"
+                        : "notifications-off-outline"
+                    }
+                    size={20}
+                    color={saved.notify ? "#0f766e" : "#94a3b8"}
+                  />
+                </Pressable>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => void removeSavedSearch(saved)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${saved.name}`}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#94a3b8" />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View className="mx-4 mb-4 flex-row gap-2">
           <Pressable

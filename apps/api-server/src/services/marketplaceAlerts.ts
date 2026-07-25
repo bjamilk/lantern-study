@@ -340,6 +340,8 @@ export function startMarketplaceAlertJobs(supabaseService: SupabaseService): voi
       await processAbandonedCheckoutReminders(supabaseService);
       await processStaleOfferReminders(supabaseService);
       await processReviewReminders(supabaseService);
+      const { processJobSavedSearchAlerts } = await import('./jobAlerts');
+      await processJobSavedSearchAlerts(supabaseService);
     } catch (err) {
       logger.error('Marketplace alert job failed', err);
     }

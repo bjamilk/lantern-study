@@ -1,14 +1,18 @@
-import React from 'react';
-import { AppNotification } from '../types';
-import { XMarkIcon, BellIcon, EnvelopeOpenIcon } from '@heroicons/react/24/outline';
-import { Button, NotificationRow } from './ui';
-import Modal from './ui/Modal';
+import React from "react";
+import { AppNotification } from "../types";
+import {
+  XMarkIcon,
+  BellIcon,
+  EnvelopeOpenIcon,
+} from "@heroicons/react/24/outline";
+import { Button, NotificationRow } from "./ui";
+import Modal from "./ui/Modal";
 import {
   parseNotificationLink,
   getNotificationMessage,
   isNotificationRead,
   getNotificationDate,
-} from '@lantern/shared';
+} from "@lantern/shared";
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -28,7 +32,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
   onNavigate,
 }) => {
   const sortedNotifications = [...notifications].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   );
 
   const handleNotificationClick = (n: AppNotification) => {
@@ -38,29 +42,38 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
     if (
       onNavigate &&
       (n.link ||
-        n.type?.startsWith('challenge') ||
-        n.type === 'dm_message' ||
-        n.type === 'dm_message_request' ||
-        n.type === 'group_invite' ||
-        n.type === 'group_message' ||
-        n.type === 'mention' ||
-        n.type === 'reply')
+        n.type?.startsWith("challenge") ||
+        n.type === "dm_message" ||
+        n.type === "dm_message_request" ||
+        n.type === "group_invite" ||
+        n.type === "group_message" ||
+        n.type === "mention" ||
+        n.type === "reply")
     ) {
       const parsed = parseNotificationLink(n.link, n);
       if (parsed) {
-        if (parsed.type === 'offer' || parsed.type === 'inquiry') {
-          onNavigate('MarketplaceInquiries');
-        } else if (parsed.type === 'listing' && parsed.id) {
-          onNavigate('MarketplaceListingDetail', { listingId: parsed.id });
-        } else if (parsed.type === 'challenge' && parsed.id) {
-          onNavigate('Challenges');
-          onNavigate('PlayChallenge', { challengeId: parsed.id });
-        } else if (parsed.type === 'dm' && parsed.id) {
-          onNavigate('DirectMessages', { userId: parsed.id, threadId: parsed.threadId });
-        } else if (parsed.type === 'group_invite' && parsed.id) {
-          onNavigate('GroupInvite', { groupId: parsed.id });
-        } else if (parsed.type === 'group' && parsed.id) {
-          onNavigate('GroupChat', { groupId: parsed.id });
+        if (parsed.type === "offer" || parsed.type === "inquiry") {
+          onNavigate("MarketplaceInquiries");
+        } else if (parsed.type === "listing" && parsed.id) {
+          onNavigate("MarketplaceListingDetail", { listingId: parsed.id });
+        } else if (parsed.type === "challenge" && parsed.id) {
+          onNavigate("Challenges");
+          onNavigate("PlayChallenge", { challengeId: parsed.id });
+        } else if (parsed.type === "dm" && parsed.id) {
+          onNavigate("DirectMessages", {
+            userId: parsed.id,
+            threadId: parsed.threadId,
+          });
+        } else if (parsed.type === "group_invite" && parsed.id) {
+          onNavigate("GroupInvite", { groupId: parsed.id });
+        } else if (parsed.type === "group" && parsed.id) {
+          onNavigate("GroupChat", { groupId: parsed.id });
+        } else if (parsed.type === "job" && parsed.id) {
+          onNavigate("MarketplaceJobDetail", { jobId: parsed.id });
+        } else if (parsed.type === "job_applications") {
+          onNavigate("MyJobApplications");
+        } else if (parsed.type === "job_applicants" && parsed.id) {
+          onNavigate("JobEmployerPipeline", { jobId: parsed.id });
         }
         onClose();
       }
@@ -94,7 +107,12 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
       </div>
 
       <div className="flex justify-end items-center px-4 py-2 border-b border-lantern-border flex-shrink-0">
-        <Button variant="ghost" size="sm" onClick={onMarkAllAsRead} className="gap-1 min-h-[44px]">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onMarkAllAsRead}
+          className="gap-1 min-h-[44px]"
+        >
           <EnvelopeOpenIcon className="w-4 h-4" aria-hidden />
           Mark all as read
         </Button>
@@ -103,7 +121,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
       <div className="flex-1 overflow-y-auto pb-safe bg-lantern-surface">
         {sortedNotifications.length > 0 ? (
           <ul className="divide-y divide-lantern-border">
-            {sortedNotifications.map(n => (
+            {sortedNotifications.map((n) => (
               <li key={n.id}>
                 <NotificationRow
                   message={getNotificationMessage(n)}
@@ -122,9 +140,12 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
             <div className="w-14 h-14 mx-auto rounded-full bg-lantern-primary-background flex items-center justify-center">
               <BellIcon className="w-7 h-7 text-lantern-primary" aria-hidden />
             </div>
-            <p className="mt-4 text-sm font-medium text-lantern-text">No notifications yet</p>
+            <p className="mt-4 text-sm font-medium text-lantern-text">
+              No notifications yet
+            </p>
             <p className="mt-1 text-xs text-lantern-text-secondary">
-              You&apos;re all caught up — we&apos;ll let you know when something needs your attention.
+              You&apos;re all caught up — we&apos;ll let you know when something
+              needs your attention.
             </p>
           </div>
         )}

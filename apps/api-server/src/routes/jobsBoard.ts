@@ -381,6 +381,82 @@ router.delete(
   }),
 );
 
+// ─── Saved searches ────────────────────────────────────────────────────────
+
+// GET /saved-searches
+router.get(
+  "/saved-searches",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const data = await jobs().listSavedSearches(userId);
+    res.json({ success: true, data });
+  }),
+);
+
+// POST /saved-searches
+router.post(
+  "/saved-searches",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().createSavedSearch(userId, {
+        name: req.body?.name,
+        filters: req.body?.filters,
+        notify: req.body?.notify,
+      });
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// PATCH /saved-searches/:id
+router.patch(
+  "/saved-searches/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().updateSavedSearch(req.params.id, userId, {
+        name: req.body?.name,
+        filters: req.body?.filters,
+        notify: req.body?.notify,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// DELETE /saved-searches/:id
+router.delete(
+  "/saved-searches/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().deleteSavedSearch(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // GET /saved — postings the caller bookmarked
 router.get(
   "/saved",

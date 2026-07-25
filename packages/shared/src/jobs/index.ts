@@ -6,6 +6,7 @@ export * from "./portal";
 export * from "./pipeline";
 export * from "./lifecycle";
 export * from "./resume";
+export * from "./savedSearches";
 export * from "./intents";
 export * from "./types";
 export * from "./ux";

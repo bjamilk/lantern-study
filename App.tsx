@@ -1659,6 +1659,12 @@ export const App: React.FC = () => {
                             handleSelectChat({ ...g, chatType: 'group' });
                             setAppMode(AppMode.CHAT);
                         }
+                    } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+                        navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
+                    } else if (screen === 'MyJobApplications') {
+                        navigateTo(AppMode.MY_JOB_APPLICATIONS);
+                    } else if (screen === 'JobEmployerPipeline' && params?.jobId) {
+                        navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
                     }
                 }} />
             <ChallengesInboxModal
