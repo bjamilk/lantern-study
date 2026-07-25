@@ -551,6 +551,8 @@ export interface UserQuestionStat {
   correctAttempts: number;
   incorrectAttempts: number;
   lastAttempted: string;
+  stem?: string | null;
+  groupName?: string | null;
 }
 
 export interface UserQuestionStats {

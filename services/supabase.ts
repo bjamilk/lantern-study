@@ -2035,10 +2035,13 @@ export const fetchUserQuestionStats = async (userId: string) => {
         const retryStats: UserQuestionStats = {};
         if (retryResult.data && Array.isArray(retryResult.data)) {
           retryResult.data.forEach((stat: any) => {
+            if (!stat?.question_id) return;
             retryStats[stat.question_id] = {
               correctAttempts: stat.correct_attempts || 0,
               incorrectAttempts: stat.incorrect_attempts || 0,
-              lastAttempted: stat.last_attempted || null
+              lastAttempted: stat.last_attempted || null,
+              stem: stat.question_stem || stat.questionStem || stat.stem || null,
+              groupName: stat.group_name || stat.groupName || null,
             };
           });
         }
@@ -2056,10 +2059,13 @@ export const fetchUserQuestionStats = async (userId: string) => {
     const stats: UserQuestionStats = {};
     if (result.data && Array.isArray(result.data)) {
       result.data.forEach((stat: any) => {
+        if (!stat?.question_id) return;
         stats[stat.question_id] = {
           correctAttempts: stat.correct_attempts || 0,
           incorrectAttempts: stat.incorrect_attempts || 0,
-          lastAttempted: stat.last_attempted || null
+          lastAttempted: stat.last_attempted || null,
+          stem: stat.question_stem || stat.questionStem || stat.stem || null,
+          groupName: stat.group_name || stat.groupName || null,
         };
       });
     }
@@ -2130,10 +2136,16 @@ export const fetchDashboardSummary = async (): Promise<{
       data.userQuestionStats.forEach((stat: any) => {
         const id = stat?.question_id || stat?.questionId;
         if (!id) return;
+        const stem = stat.question_stem || stat.questionStem || stat.stem || null;
+        const groupName = stat.group_name || stat.groupName || null;
         userQuestionStats[id] = {
           correctAttempts: stat.correct_attempts ?? stat.correctAttempts ?? stat.correct_count ?? 0,
           incorrectAttempts: stat.incorrect_attempts ?? stat.incorrectAttempts ?? stat.incorrect_count ?? 0,
           lastAttempted: stat.last_attempted ?? stat.lastAttempted ?? stat.last_reviewed_at ?? null,
+          ...(typeof stem === 'string' && stem.trim() ? { stem: stem.trim() } : {}),
+          ...(typeof groupName === 'string' && groupName.trim()
+            ? { groupName: groupName.trim() }
+            : {}),
         };
       });
     }

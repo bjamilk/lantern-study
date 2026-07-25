@@ -232,6 +232,8 @@ export interface UserQuestionStatEntry {
   correctAttempts: number;
   incorrectAttempts: number;
   lastAttempted?: string | null;
+  stem?: string | null;
+  groupName?: string | null;
 }
 
 export interface TestPresetConfig {

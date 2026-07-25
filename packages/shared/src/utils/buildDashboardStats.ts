@@ -41,6 +41,9 @@ export interface UserQuestionStatEntry {
   correctAttempts: number;
   incorrectAttempts: number;
   lastAttempted?: string | null;
+  /** Optional stem from API message lookup (lean tests omit questions). */
+  stem?: string | null;
+  groupName?: string | null;
 }
 
 function toDate(value?: string | Date): Date {
@@ -432,12 +435,18 @@ function buildTroublesomeQuestions(
     .filter(([, stats]) => stats.incorrectAttempts > 0)
     .map(([questionId, stats]) => {
       const meta = questionMap.get(questionId);
+      const stemFromStats =
+        typeof stats.stem === 'string' && stats.stem.trim() ? stats.stem.trim() : '';
+      const groupFromStats =
+        typeof stats.groupName === 'string' && stats.groupName.trim()
+          ? stats.groupName.trim()
+          : '';
       return {
         id: questionId,
-        stem: meta?.stem || 'Question not found.',
+        stem: meta?.stem || stemFromStats || 'Question not found.',
         incorrectAttempts: stats.incorrectAttempts,
         totalAttempts: stats.correctAttempts + stats.incorrectAttempts,
-        groupName: meta?.groupName || 'Unknown Group',
+        groupName: meta?.groupName || groupFromStats || 'Unknown Group',
       };
     })
     .sort((a, b) => b.incorrectAttempts - a.incorrectAttempts)
@@ -496,10 +505,17 @@ export function normalizeUserQuestionStats(raw: unknown): Record<string, UserQue
   rows.forEach((row: any) => {
     const id = row.question_id || row.questionId;
     if (!id) return;
+    const stem =
+      row.question_stem || row.questionStem || row.stem || null;
+    const groupName = row.group_name || row.groupName || null;
     stats[id] = {
       correctAttempts: row.correct_attempts ?? row.correctAttempts ?? row.correct_count ?? 0,
       incorrectAttempts: row.incorrect_attempts ?? row.incorrectAttempts ?? row.incorrect_count ?? 0,
       lastAttempted: row.last_attempted || row.lastAttempted || row.last_reviewed_at || null,
+      ...(typeof stem === 'string' && stem.trim() ? { stem: stem.trim() } : {}),
+      ...(typeof groupName === 'string' && groupName.trim()
+        ? { groupName: groupName.trim() }
+        : {}),
     };
   });
 

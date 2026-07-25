@@ -3595,22 +3595,80 @@ export class SupabaseService {
     return true;
   }
 
+  /**
+   * Attach question stems / group names from chat messages so dashboards can
+   * render "Questions to review" even when lean test history omits questions.
+   */
+  private async attachQuestionStatStems(rows: any[]): Promise<any[]> {
+    if (!rows.length) return rows;
+    const questionIds = [
+      ...new Set(
+        rows
+          .map((row) => row?.question_id || row?.questionId)
+          .filter((id): id is string => typeof id === 'string' && !!id)
+      ),
+    ];
+    if (!questionIds.length) return rows;
+
+    const { data: messages, error } = await this.supabase
+      .from('messages')
+      .select('id, group_id, text, question_data, groups:group_id(name)')
+      .in('id', questionIds);
+
+    if (error) {
+      logger.warn('Failed to attach question stems for user stats', { error });
+      return rows;
+    }
+
+    const byId = new Map<string, any>();
+    (messages || []).forEach((msg: any) => {
+      if (msg?.id) byId.set(msg.id, msg);
+    });
+
+    return rows.map((row) => {
+      const questionId = row?.question_id || row?.questionId;
+      const msg = questionId ? byId.get(questionId) : null;
+      if (!msg) return row;
+      const qd =
+        msg.question_data && typeof msg.question_data === 'object' ? msg.question_data : {};
+      const stem =
+        (typeof qd.questionStem === 'string' && qd.questionStem) ||
+        (typeof qd.question === 'string' && qd.question) ||
+        (typeof qd.text === 'string' && qd.text) ||
+        (typeof msg.text === 'string' && msg.text) ||
+        null;
+      const groupProfile = Array.isArray(msg.groups) ? msg.groups[0] : msg.groups;
+      const groupName =
+        (typeof groupProfile?.name === 'string' && groupProfile.name) || null;
+      return {
+        ...row,
+        question_stem: stem,
+        group_id: msg.group_id || row.group_id || null,
+        group_name: groupName,
+      };
+    });
+  }
+
   async getUserQuestionStats(userId: string): Promise<any[]> {
     const cacheKey = `user-stats:${userId}`;
     const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null && cached !== undefined) return cached;
+    let rows: any[];
+    if (cached !== null && cached !== undefined) {
+      rows = Array.isArray(cached) ? cached : [];
+    } else {
+      const { data, error } = await this.supabase
+        .from('user_question_stats')
+        .select('*')
+        .eq('user_id', userId)
+        .order('last_attempted', { ascending: false });
 
-    const { data, error } = await this.supabase
-      .from('user_question_stats')
-      .select('*')
-      .eq('user_id', userId)
-      .order('last_attempted', { ascending: false });
+      if (error) throw error;
 
-    if (error) throw error;
+      rows = Array.isArray(data) ? data : [];
+      await cacheService.set(cacheKey, rows, 1800); // 30 minutes
+    }
 
-    const rows = Array.isArray(data) ? data : [];
-    await cacheService.set(cacheKey, rows, 1800); // 30 minutes
-    return rows;
+    return this.attachQuestionStatStems(rows);
   }
 
   async updateUserQuestionStats(userId: string, questionId: string, stats: {
