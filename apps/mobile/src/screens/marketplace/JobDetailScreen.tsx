@@ -19,6 +19,10 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_POSTING_STATUS_LABELS,
+  JOB_REPORT_REASON_LABELS,
+  JOB_REPORT_REASONS,
+  JOBS_CANDIDATE_SAFETY_TIPS,
+  getJobEmployerTrustFromPosting,
   isJobPostingPubliclyVisible,
   formatJobCompensation,
   formatJobEngagementDuration,
@@ -26,12 +30,14 @@ import {
   formatJobPostedDate,
   type JobApplicantProfile,
   type JobPosting,
+  type JobReportReason,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import {
   applyToJob,
   fetchJobApplicantProfile,
   fetchJobPosting,
+  reportJobPosting,
   setJobPostingSaved,
   trackJobExternalApply,
 } from "../../services/jobsBoard";
@@ -51,6 +57,10 @@ export function JobDetailScreen() {
   const [savingSaved, setSavingSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState<JobReportReason>("scam");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
 
   const toggleSaved = async (posting: JobPosting) => {
     const nextSaved = !posting.isSaved;
@@ -133,11 +143,22 @@ export function JobDetailScreen() {
                         FEATURED
                       </Text>
                     ) : null}
-                    {job.company?.verificationStatus === "verified" ? (
-                      <Text className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                        VERIFIED
-                      </Text>
-                    ) : null}
+                    {(() => {
+                      const trust = getJobEmployerTrustFromPosting(job);
+                      const toneClass =
+                        trust.tone === "positive"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : trust.tone === "caution"
+                            ? "bg-amber-100 text-amber-900"
+                            : "bg-slate-100 text-slate-700";
+                      return (
+                        <Text
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${toneClass}`}
+                        >
+                          {trust.label}
+                        </Text>
+                      );
+                    })()}
                   </View>
                   <Text className="mt-1 text-xl font-bold text-lantern-text">
                     {job.title}
@@ -384,10 +405,93 @@ export function JobDetailScreen() {
           </View>
         ) : null}
         {job ? (
-          <Text className="text-xs leading-5 text-lantern-text-tertiary">
-            Never pay a fee to apply. Do not send BVN, NIN, passwords, or
-            banking details.
-          </Text>
+          <Card className="mb-3">
+            <Text className="text-sm font-semibold text-lantern-text mb-1">
+              About the poster
+            </Text>
+            <Text className="text-sm text-lantern-text-secondary">
+              {getJobEmployerTrustFromPosting(job).shortHelp}
+            </Text>
+            <Text className="text-xs font-semibold text-lantern-text mt-3 mb-1">
+              Stay safe
+            </Text>
+            {JOBS_CANDIDATE_SAFETY_TIPS.map((tip) => (
+              <Text
+                key={tip}
+                className="text-xs leading-5 text-lantern-text-tertiary mb-0.5"
+              >
+                • {tip}
+              </Text>
+            ))}
+            {!reportOpen ? (
+              <Pressable className="mt-3" onPress={() => setReportOpen(true)}>
+                <Text className="text-xs text-lantern-text-tertiary underline">
+                  Report this job
+                </Text>
+              </Pressable>
+            ) : (
+              <View className="mt-3">
+                <Text className="text-xs font-semibold text-lantern-text mb-1">
+                  Why are you reporting?
+                </Text>
+                <View className="flex-row flex-wrap gap-2 mb-2">
+                  {JOB_REPORT_REASONS.map((r) => (
+                    <Pressable
+                      key={r}
+                      onPress={() => setReportReason(r)}
+                      className={`rounded-full border px-2 py-1 ${
+                        reportReason === r
+                          ? "border-lantern-primary bg-lantern-primary/10"
+                          : "border-lantern-border"
+                      }`}
+                    >
+                      <Text className="text-[11px] text-lantern-text">
+                        {JOB_REPORT_REASON_LABELS[r]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  className="rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text mb-2"
+                  placeholder="Optional details"
+                  placeholderTextColor="#94a3b8"
+                  value={reportDetails}
+                  onChangeText={setReportDetails}
+                  multiline
+                />
+                <Pressable
+                  disabled={reportBusy}
+                  className="rounded-lg bg-lantern-primary py-2 items-center"
+                  onPress={() =>
+                    void (async () => {
+                      setReportBusy(true);
+                      setError(null);
+                      try {
+                        await reportJobPosting(job.id, {
+                          reason: reportReason,
+                          details: reportDetails.trim() || undefined,
+                        });
+                        setSuccess("Report submitted. Thanks for flagging this.");
+                        setReportOpen(false);
+                      } catch (e) {
+                        setError(
+                          e instanceof Error
+                            ? e.message
+                            : "Could not submit report",
+                        );
+                      } finally {
+                        setReportBusy(false);
+                      }
+                    })()
+                  }
+                >
+                  <Text className="text-white text-sm font-semibold">
+                    {reportBusy ? "Sending…" : "Submit report"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </Card>
         ) : null}
       </ScrollView>
     </View>

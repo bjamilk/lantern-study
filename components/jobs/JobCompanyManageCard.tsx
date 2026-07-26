@@ -179,6 +179,12 @@ export function JobCompanyManageCard({
           <p className="text-xs text-lantern-text-tertiary">
             {statusLabel} · {role}
           </p>
+          {company.verificationStatus === "rejected" &&
+          company.verificationNote ? (
+            <p className="mt-1 text-xs text-red-700">
+              Admin note: {company.verificationNote}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 gap-2">
           <button

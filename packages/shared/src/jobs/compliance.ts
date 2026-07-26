@@ -15,6 +15,13 @@ export const JOBS_COMPANY_EEO_NOTICE =
 export const JOBS_COMPANY_DISCLAIMER =
   'Company job posts are advertisements. Lantern Study does not employ applicants and does not guarantee interviews or offers.';
 
+/** Short safety tips shown on job detail (web + mobile). */
+export const JOBS_CANDIDATE_SAFETY_TIPS = [
+  'Never pay a fee, gift card, or crypto deposit to apply or start work.',
+  'Do not send BVN, NIN, bank OTP, passwords, or full card details to a poster.',
+  'Prefer verified companies and public meetups; report posts that feel off.',
+] as const;
+
 /** Applications older than this (days after posting closed) may be anonymized. */
 export const JOBS_APPLICATION_RETENTION_DAYS = 540; // ~18 months
 

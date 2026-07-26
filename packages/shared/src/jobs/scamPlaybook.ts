@@ -3,6 +3,7 @@
  * Used for create-time heuristics and admin triage.
  */
 
+/** Hard blocks — create/apply messaging is rejected when these match. */
 export const JOBS_BANNED_PHRASE_PATTERNS: RegExp[] = [
   /\bpay\s*(to\s*)?start\b/i,
   /\btraining\s*fee\b/i,
@@ -24,6 +25,19 @@ export const JOBS_BANNED_PHRASE_PATTERNS: RegExp[] = [
   /\bearn\s*\$?\d{3,}\s*(a|per)\s*day\b/i,
 ];
 
+/**
+ * Soft flags — shown as create-time warnings; do not block publish alone.
+ * Keep these lower confidence than banned phrases.
+ */
+export const JOBS_FLAGGED_PHRASE_PATTERNS: RegExp[] = [
+  /\bno\s*experience\s*(needed|required)\b/i,
+  /\bimmediate\s*(start|hiring)\b/i,
+  /\bwhatsapp\s*(only|me)\b/i,
+  /\btelegram\s*(only|me)\b/i,
+  /\bquick\s*cash\b/i,
+  /\bguaranteed\s*(income|salary|earnings)\b/i,
+];
+
 export type JobScamFlagSeverity = 'block' | 'flag';
 
 export interface JobScamMatch {
@@ -31,7 +45,7 @@ export interface JobScamMatch {
   severity: JobScamFlagSeverity;
 }
 
-/** Returns matches that should block create/apply messaging. */
+/** Returns block + soft-flag matches for create-time feedback. */
 export function findJobScamMatches(text: string | null | undefined): JobScamMatch[] {
   if (!text || !text.trim()) return [];
   const matches: JobScamMatch[] = [];
@@ -43,11 +57,36 @@ export function findJobScamMatches(text: string | null | undefined): JobScamMatc
       });
     }
   }
+  for (const pattern of JOBS_FLAGGED_PHRASE_PATTERNS) {
+    if (pattern.test(text)) {
+      matches.push({
+        pattern: pattern.source,
+        severity: 'flag',
+      });
+    }
+  }
   return matches;
 }
 
 export function textFailsJobScamCheck(text: string | null | undefined): boolean {
   return findJobScamMatches(text).some((m) => m.severity === 'block');
+}
+
+/** Soft-flag only — useful for amber warnings without blocking publish. */
+export function textHasJobScamFlags(text: string | null | undefined): boolean {
+  return findJobScamMatches(text).some((m) => m.severity === 'flag');
+}
+
+export function describeJobScamMatches(matches: JobScamMatch[]): string {
+  const blocks = matches.filter((m) => m.severity === 'block').length;
+  const flags = matches.filter((m) => m.severity === 'flag').length;
+  if (blocks > 0) {
+    return 'This copy matches phrases Lantern blocks (fees, identity numbers, crypto, or money-mule roles). Remove them before publishing.';
+  }
+  if (flags > 0) {
+    return 'This copy looks risky (pressure tactics or chat-only contact). Double-check before publishing — candidates will be cautious.';
+  }
+  return '';
 }
 
 export const JOBS_SCAM_PLAYBOOK_SUMMARY = [

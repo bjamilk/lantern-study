@@ -12,11 +12,15 @@ import {
   JOB_PHASE1_EMPLOYMENT_TYPES,
   JOB_PHASE2_EMPLOYMENT_TYPES,
   JOB_POSTING_STATUS_LABELS,
+  describeJobScamMatches,
+  findJobScamMatches,
   formatJobCompensation,
+  formatJobCompanyVerificationLabel,
   formatJobLocation,
   isJobPostingEditable,
   jobIntentTemplatesByGroup,
   jobRequiresEngagementDuration,
+  textFailsJobScamCheck,
   type JobCompensationPeriod,
   type JobEmploymentType,
   type JobEngagementDurationUnit,
@@ -244,9 +248,22 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
     };
   };
 
+  const scamMatches = useMemo(
+    () => findJobScamMatches(`${title}\n${description}`),
+    [title, description],
+  );
+  const scamWarning = describeJobScamMatches(scamMatches);
+
   const submit = async (nextStatus: JobPostingStatus) => {
     if (!confirmed) {
       setError("Confirm the posting attestation first.");
+      return;
+    }
+    if (textFailsJobScamCheck(`${title}\n${description}`)) {
+      setError(
+        scamWarning ||
+          "This copy matches phrases Lantern blocks. Remove them before publishing.",
+      );
       return;
     }
     setBusy(true);
@@ -527,7 +544,8 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
                   <option value="">Individual / org (no company)</option>
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.displayName} ({c.verificationStatus})
+                      {c.displayName} (
+                      {formatJobCompanyVerificationLabel(c.verificationStatus)})
                     </option>
                   ))}
                 </select>
@@ -629,6 +647,19 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
               <li key={line}>{line}</li>
             ))}
           </ul>
+
+          {scamWarning ? (
+            <p
+              role="status"
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                textFailsJobScamCheck(`${title}\n${description}`)
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              }`}
+            >
+              {scamWarning}
+            </p>
+          ) : null}
 
           <label className="flex items-start gap-2 text-sm">
             <input

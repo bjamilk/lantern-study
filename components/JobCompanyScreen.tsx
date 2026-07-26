@@ -4,10 +4,12 @@ import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   formatJobCompensation,
   formatJobLocation,
+  getJobEmployerTrustPresentation,
   type JobCompany,
   type JobCompanyMemberRole,
   type JobPosting,
 } from "@lantern/shared";
+import { JobTrustBadge } from "./jobs/JobTrustBadge";
 import { fetchJobCompanyProfile } from "../services/jobsBoard";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
@@ -100,21 +102,31 @@ export default function JobCompanyScreen({
             )}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                {company.verificationStatus === "verified" ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
-                    Verified
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                <JobTrustBadge
+                  trust={getJobEmployerTrustPresentation({
+                    companyId: company.id,
+                    company,
+                  })}
+                />
+                {company.verificationStatus !== "verified" &&
+                company.verificationStatus !== "pending" ? (
+                  <span className="text-[11px] text-lantern-text-tertiary">
                     {statusLabel}
                   </span>
-                )}
+                ) : null}
                 {myRole ? (
                   <span className="text-[11px] text-lantern-text-tertiary">
                     Your role: {myRole}
                   </span>
                 ) : null}
               </div>
+              {myRole &&
+              company.verificationStatus === "rejected" &&
+              company.verificationNote ? (
+                <p className="mt-2 text-sm text-red-700">
+                  Verification note: {company.verificationNote}
+                </p>
+              ) : null}
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-lantern-text">
                 {company.displayName}
               </h1>

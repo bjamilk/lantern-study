@@ -439,6 +439,16 @@ export async function respondToJobOffer(
   });
 }
 
+export async function reportJobPosting(
+  id: string,
+  body: { reason: string; details?: string },
+) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/postings/${encodeURIComponent(id)}/reports`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export async function createJobCompany(body: Record<string, unknown>) {
   return jobsRequest<{ success: boolean; data: unknown }>("/companies", {
     method: "POST",

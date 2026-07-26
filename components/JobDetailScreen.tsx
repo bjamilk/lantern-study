@@ -5,6 +5,7 @@ import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_POSTING_STATUS_LABELS,
   JOBS_COMPANY_DISCLAIMER,
+  getJobEmployerTrustFromPosting,
   isJobPostingPubliclyVisible,
   formatJobCompensation,
   formatJobEngagementDuration,
@@ -17,12 +18,14 @@ import {
   applyToJob,
   fetchJobApplicantProfile,
   fetchJobPosting,
-  reportJobPosting,
   setJobPostingSaved,
   trackJobExternalApply,
 } from "../services/jobsBoard";
 import { ResumeUploadField } from "./jobs/ResumeUploadField";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
+import { JobTrustBadge } from "./jobs/JobTrustBadge";
+import { JobReportForm } from "./jobs/JobReportForm";
+import { JobSafetyTips } from "./jobs/JobSafetyTips";
 
 interface Props {
   jobId: string;
@@ -155,6 +158,7 @@ export default function JobDetailScreen({
     job.poster?.name ||
     job.poster?.username ||
     "Independent poster";
+  const trust = getJobEmployerTrustFromPosting(job);
   const duration = formatJobEngagementDuration(job.engagementDuration);
   const deadline = job.deadline
     ? new Date(job.deadline).toLocaleDateString(undefined, {
@@ -222,11 +226,7 @@ export default function JobDetailScreen({
                     Featured
                   </span>
                 ) : null}
-                {job.company?.verificationStatus === "verified" ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
-                    Verified company
-                  </span>
-                ) : null}
+                <JobTrustBadge trust={trust} />
               </div>
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-lantern-text sm:text-3xl">
                 {job.title}
@@ -322,15 +322,14 @@ export default function JobDetailScreen({
               <h2 className="text-lg font-semibold text-lantern-text">
                 About the poster
               </h2>
-              <p className="mt-2 text-sm font-semibold text-lantern-text">
-                {employer}
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-lantern-text">
+                  {employer}
+                </p>
+                <JobTrustBadge trust={trust} compact />
+              </div>
               <p className="mt-1 text-sm text-lantern-text-secondary">
-                {job.company
-                  ? job.company.verificationStatus === "verified"
-                    ? "This company has completed Lantern’s company verification."
-                    : "This company has not completed Lantern’s company verification."
-                  : "This role was posted by an individual or organization without a company profile."}
+                {trust.shortHelp}
               </p>
               {job.company?.website ? (
                 <a
@@ -349,17 +348,13 @@ export default function JobDetailScreen({
               ) : null}
             </section>
 
-            <button
-              type="button"
-              className="text-xs text-lantern-text-tertiary underline"
-              onClick={() =>
-                void reportJobPosting(job.id, { reason: "scam" }).then(() =>
-                  setSuccess("Report submitted. Thanks for flagging this."),
-                )
+            <JobSafetyTips />
+            <JobReportForm
+              jobId={job.id}
+              onReported={() =>
+                setSuccess("Report submitted. Thanks for flagging this.")
               }
-            >
-              Report this job
-            </button>
+            />
           </main>
 
           <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">

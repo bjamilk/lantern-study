@@ -77,8 +77,16 @@ export function AdminJobs() {
                 className="text-xs px-2 py-1 rounded border border-lantern-border"
                 onClick={() =>
                   void (async () => {
+                    const note =
+                      window.prompt(
+                        "Optional rejection note for the company owners:",
+                      ) || undefined;
                     setBusy(true);
-                    await setAdminJobCompanyVerification(c.id, 'rejected');
+                    await setAdminJobCompanyVerification(
+                      c.id,
+                      "rejected",
+                      note,
+                    );
                     await load();
                     setBusy(false);
                   })()
@@ -101,6 +109,9 @@ export function AdminJobs() {
               <p>
                 {r.reason} — {r.posting?.title || r.posting_id}
               </p>
+              {r.details ? (
+                <p className="text-xs text-lantern-text-secondary">{r.details}</p>
+              ) : null}
               <div className="flex gap-2">
                 <button
                   type="button"

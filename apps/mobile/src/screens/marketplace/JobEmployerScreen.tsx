@@ -85,6 +85,12 @@ export function JobEmployerScreen() {
                   {row.company.displayName} · {row.company.verificationStatus}
                 </Text>
               </View>
+              {row.company.verificationStatus === "rejected" &&
+              row.company.verificationNote ? (
+                <Text className="text-xs text-red-700 mb-1">
+                  Admin note: {row.company.verificationNote}
+                </Text>
+              ) : null}
               <View className="flex-row gap-3 mt-1">
                 <Pressable
                   onPress={() =>

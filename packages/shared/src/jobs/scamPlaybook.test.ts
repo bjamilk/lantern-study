@@ -1,4 +1,9 @@
-import { findJobScamMatches, textFailsJobScamCheck } from "./scamPlaybook";
+import {
+  describeJobScamMatches,
+  findJobScamMatches,
+  textFailsJobScamCheck,
+  textHasJobScamFlags,
+} from "./scamPlaybook";
 
 describe("job scam playbook", () => {
   it("blocks pay-to-start and BVN requests", () => {
@@ -7,9 +12,24 @@ describe("job scam playbook", () => {
     expect(findJobScamMatches("gift card required").length).toBeGreaterThan(0);
   });
 
+  it("soft-flags pressure copy without blocking", () => {
+    expect(textFailsJobScamCheck("WhatsApp me for immediate start")).toBe(
+      false,
+    );
+    expect(textHasJobScamFlags("WhatsApp me for immediate start")).toBe(true);
+    expect(
+      describeJobScamMatches(
+        findJobScamMatches("WhatsApp me for immediate start"),
+      ),
+    ).toMatch(/risky/i);
+  });
+
   it("allows normal tutoring copy", () => {
     expect(
       textFailsJobScamCheck("Need a CHEM101 tutor, ₦3000/hour, campus library"),
+    ).toBe(false);
+    expect(
+      textHasJobScamFlags("Need a CHEM101 tutor, ₦3000/hour, campus library"),
     ).toBe(false);
   });
 });

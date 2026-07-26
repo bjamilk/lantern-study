@@ -358,7 +358,10 @@ function mapSavedSearch(row: any): JobSavedSearch {
   };
 }
 
-function mapCompany(row: any) {
+function mapCompany(
+  row: any,
+  opts?: { includePrivate?: boolean },
+) {
   if (!row) return null;
   return {
     id: row.id,
@@ -373,6 +376,10 @@ function mapCompany(row: any) {
     countryCode: row.country_code,
     verificationStatus: row.verification_status,
     verificationDomain: row.verification_domain,
+    // Rejection notes are for the employer team only — never on public payloads.
+    ...(opts?.includePrivate
+      ? { verificationNote: row.verification_note ?? null }
+      : {}),
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -2614,14 +2621,17 @@ export class JobsBoardService {
     return mapCompany(data);
   }
 
-  async getCompany(companyId: string) {
+  async getCompany(
+    companyId: string,
+    opts?: { includePrivate?: boolean },
+  ) {
     const { data, error } = await this.client()
       .from("job_companies")
       .select("*")
       .eq("id", companyId)
       .maybeSingle();
     if (error) throw error;
-    return mapCompany(data);
+    return mapCompany(data, opts);
   }
 
   async getCompanyMembership(companyId: string, userId: string) {
@@ -2645,6 +2655,7 @@ export class JobsBoardService {
       role: row.role,
       company: mapCompany(
         Array.isArray(row.company) ? row.company[0] : row.company,
+        { includePrivate: true },
       ),
     }));
   }
@@ -2657,13 +2668,14 @@ export class JobsBoardService {
     companyId: string,
     viewerId?: string | null,
   ) {
-    const company = await this.getCompany(companyId);
-    if (!company) throw httpError("Company not found", 404);
-
     const membership = viewerId
       ? await this.getCompanyMembership(companyId, viewerId)
       : null;
     const isMember = !!membership;
+    const company = await this.getCompany(companyId, {
+      includePrivate: isMember,
+    });
+    if (!company) throw httpError("Company not found", 404);
     if (company.verificationStatus !== "verified" && !isMember) {
       throw httpError("Company not found", 404);
     }
@@ -2773,7 +2785,7 @@ export class JobsBoardService {
       .select("*")
       .single();
     if (error) throw error;
-    return mapCompany(data);
+    return mapCompany(data, { includePrivate: true });
   }
 
   async uploadCompanyLogo(
@@ -2984,7 +2996,7 @@ export class JobsBoardService {
     const { data, error, count } = await query;
     if (error) throw error;
     return {
-      data: (data || []).map(mapCompany),
+      data: (data || []).map((row: any) => mapCompany(row)),
       pagination: { page, limit, total: count ?? 0 },
     };
   }

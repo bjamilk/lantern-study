@@ -14,12 +14,14 @@ import {
   formatJobEngagementDuration,
   formatJobLocation,
   formatJobPostedDate,
+  getJobEmployerTrustFromPosting,
   isJobEmploymentType,
   suggestJobSavedSearchName,
   type JobPosting,
   type JobSavedSearch,
   type JobSearchFilters,
 } from "@lantern/shared";
+import { JobTrustBadge } from "./jobs/JobTrustBadge";
 import {
   createJobSavedSearch,
   deleteJobSavedSearch,
@@ -690,14 +692,12 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                                 {job.title}
                               </button>
                             </h3>
-                            <p className="mt-0.5 truncate text-sm text-lantern-text-secondary">
-                              {employer}
-                              {job.company?.verificationStatus ===
-                              "verified" ? (
-                                <span className="ml-1 font-medium text-emerald-700">
-                                  ✓ Verified
-                                </span>
-                              ) : null}
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 truncate text-sm text-lantern-text-secondary">
+                              <span className="truncate">{employer}</span>
+                              <JobTrustBadge
+                                trust={getJobEmployerTrustFromPosting(job)}
+                                compact
+                              />
                             </p>
                           </div>
                           <div className="relative z-10 flex shrink-0 items-center gap-2">

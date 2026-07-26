@@ -8,6 +8,7 @@ import {
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOBS_CREATE_CONFIRMATION,
+  JOBS_SCAM_PLAYBOOK_SUMMARY,
   JOB_COMPENSATION_PERIOD_LABELS,
   JOB_COMPENSATION_PERIODS,
   JOB_EMPLOYMENT_TYPE_LABELS,
@@ -18,9 +19,13 @@ import {
   JOB_PHASE1_EMPLOYMENT_TYPES,
   JOB_PHASE2_EMPLOYMENT_TYPES,
   JOB_POSTING_STATUS_LABELS,
+  describeJobScamMatches,
+  findJobScamMatches,
+  formatJobCompanyVerificationLabel,
   isJobPostingEditable,
   jobIntentTemplatesByGroup,
   jobRequiresEngagementDuration,
+  textFailsJobScamCheck,
   type JobCompensationPeriod,
   type JobEmploymentType,
   type JobEngagementDurationUnit,
@@ -200,7 +205,18 @@ export function CreateJobScreen() {
     };
   };
 
+  const scamWarning = describeJobScamMatches(
+    findJobScamMatches(`${title}\n${description}`),
+  );
+
   const submit = async (nextStatus: JobPostingStatus) => {
+    if (textFailsJobScamCheck(`${title}\n${description}`)) {
+      setError(
+        scamWarning ||
+          "This copy matches phrases Lantern blocks. Remove them before publishing.",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -475,7 +491,8 @@ export function CreateJobScreen() {
                     className={chip(companyId === c.id)}
                   >
                     <Text className={chipText(companyId === c.id)}>
-                      {c.displayName}
+                      {c.displayName} (
+                      {formatJobCompanyVerificationLabel(c.verificationStatus)})
                     </Text>
                   </Pressable>
                 ))}
@@ -503,6 +520,28 @@ export function CreateJobScreen() {
                 </Text>
               ) : null}
             </View>
+          ) : null}
+
+          <View className="mb-2">
+            {JOBS_SCAM_PLAYBOOK_SUMMARY.map((line) => (
+              <Text
+                key={line}
+                className="text-xs text-lantern-text-tertiary mb-0.5"
+              >
+                • {line}
+              </Text>
+            ))}
+          </View>
+          {scamWarning ? (
+            <Text
+              className={`text-sm mb-2 ${
+                textFailsJobScamCheck(`${title}\n${description}`)
+                  ? "text-red-700"
+                  : "text-amber-800"
+              }`}
+            >
+              {scamWarning}
+            </Text>
           ) : null}
 
           <Pressable

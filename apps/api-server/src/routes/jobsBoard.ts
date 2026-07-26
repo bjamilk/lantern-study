@@ -924,15 +924,9 @@ router.post(
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
+    const { isJobReportReason } = await import("@lantern/shared/jobs");
     const reason = req.body?.reason || "other";
-    const allowed = [
-      "scam",
-      "spam",
-      "inappropriate",
-      "discriminatory",
-      "other",
-    ];
-    if (!allowed.includes(reason)) {
+    if (!isJobReportReason(reason)) {
       return res.status(400).json({ success: false, error: "Invalid reason" });
     }
     const data = await jobs().reportPosting(

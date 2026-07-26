@@ -73,6 +73,11 @@ export interface JobCompany {
   countryCode: string;
   verificationStatus: JobCompanyVerificationStatus;
   verificationDomain?: string | null;
+  /**
+   * Admin note — only returned to company members (e.g. rejection reason).
+   * Omitted on public company/job payloads.
+   */
+  verificationNote?: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

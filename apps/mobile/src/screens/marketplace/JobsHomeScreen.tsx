@@ -492,9 +492,12 @@ export function JobsHomeScreen() {
                           numberOfLines={1}
                         >
                           {employer}
+                          {" · "}
                           {job.company?.verificationStatus === "verified"
-                            ? " · ✓ Verified"
-                            : ""}
+                            ? "Verified company"
+                            : job.companyId
+                              ? "Unverified company"
+                              : "Individual poster"}
                         </Text>
                       </View>
                       <Pressable
