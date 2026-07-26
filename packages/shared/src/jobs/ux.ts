@@ -22,7 +22,8 @@ export const JOBS_ROUTE_PATHS = {
   employer: '/marketplace/employer',
   employerPipeline: (postingId: string) =>
     `/marketplace/employer/jobs/${encodeURIComponent(postingId)}`,
-  company: '/marketplace/employer/company',
+  company: (id: string) =>
+    `/marketplace/companies/${encodeURIComponent(id)}`,
 } as const;
 
 export const JOBS_MAX_SCREENERS_PHASE1 = 3;

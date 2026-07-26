@@ -11,6 +11,7 @@ const MarketplaceListingDetailScreen = lazyWithRetry(() => import('../Marketplac
 const SellerProfileScreen = lazyWithRetry(() => import('../SellerProfileScreen'));
 const JobCompanyScreen = lazyWithRetry(() => import('../JobCompanyScreen'));
 const JobDetailScreen = lazyWithRetry(() => import('../JobDetailScreen'));
+const JobsBoardScreen = lazyWithRetry(() => import('../JobsBoardScreen'));
 
 interface GuestMarketplaceShellProps {
   onSignIn: () => void;
@@ -91,6 +92,8 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
       return (
         <JobDetailScreen
           jobId={parsed.params.jobId}
+          guestMode
+          onSignInRequired={promptSignIn}
           onNavigate={(screen, params) => {
             if (screen === 'MarketplaceJobs') {
               navigateToPath('/marketplace/jobs');
@@ -100,6 +103,30 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
               );
             } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
               navigateToPath(`/marketplace/jobs/${encodeURIComponent(String(params.jobId))}`);
+            } else {
+              promptSignIn();
+            }
+          }}
+        />
+      );
+    }
+
+    if (parsed.mode === AppMode.MARKETPLACE_JOBS) {
+      return (
+        <JobsBoardScreen
+          guestMode
+          onSignInRequired={promptSignIn}
+          onNavigate={(screen, params) => {
+            if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+              navigateToPath(
+                `/marketplace/jobs/${encodeURIComponent(String(params.jobId))}`,
+              );
+            } else if (screen === 'JobCompany' && params?.companyId) {
+              navigateToPath(
+                `/marketplace/companies/${encodeURIComponent(String(params.companyId))}`,
+              );
+            } else if (screen === 'Marketplace') {
+              navigateToPath('/marketplace');
             } else {
               promptSignIn();
             }

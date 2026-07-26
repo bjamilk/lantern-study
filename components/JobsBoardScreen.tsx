@@ -6,6 +6,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
+  JOBS_BROWSE_SEO,
   JOBS_COMPLIANCE_BANNER,
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_EMPLOYMENT_TYPES,
@@ -21,6 +22,7 @@ import {
   type JobSavedSearch,
   type JobSearchFilters,
 } from "@lantern/shared";
+import { usePageSeo } from "../hooks/usePageSeo";
 import { JobTrustBadge } from "./jobs/JobTrustBadge";
 import {
   createJobSavedSearch,
@@ -35,6 +37,8 @@ import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 interface Props {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
+  guestMode?: boolean;
+  onSignInRequired?: () => void;
 }
 
 interface PortalFilters {
@@ -104,7 +108,12 @@ function companyLabel(job: JobPosting) {
   );
 }
 
-export default function JobsBoardScreen({ onNavigate }: Props) {
+export default function JobsBoardScreen({
+  onNavigate,
+  guestMode,
+  onSignInRequired,
+}: Props) {
+  usePageSeo(JOBS_BROWSE_SEO);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,10 +169,14 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
 
   useEffect(() => {
     // Signed-out visitors have none; an error here should not block browsing.
+    if (guestMode) {
+      setSavedSearches([]);
+      return;
+    }
     void fetchJobSavedSearches()
       .then((res) => setSavedSearches(res.data || []))
       .catch(() => setSavedSearches([]));
-  }, []);
+  }, [guestMode]);
 
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
@@ -235,6 +248,10 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
   };
 
   const toggleSaved = async (job: JobPosting) => {
+    if (guestMode) {
+      onSignInRequired?.();
+      return;
+    }
     const nextSaved = !job.isSaved;
     setSavingId(job.id);
     setError(null);
@@ -274,11 +291,13 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
       <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-5">
-        <JobsWorkspaceNav
-          active="jobs"
-          onNavigate={onNavigate}
-          onPostJob={() => onNavigate("CreateMarketplaceJob")}
-        />
+        {!guestMode ? (
+          <JobsWorkspaceNav
+            active="jobs"
+            onNavigate={onNavigate}
+            onPostJob={() => onNavigate("CreateMarketplaceJob")}
+          />
+        ) : null}
 
         <section className="overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-sm">
           <div className="bg-gradient-to-br from-lantern-primary/10 via-lantern-surface to-lantern-surface px-5 py-6 sm:px-7">
@@ -293,36 +312,38 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
               research, and local gigs.
             </p>
 
-            <div
-              role="tablist"
-              aria-label="Job list"
-              className="mt-5 inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-1"
-            >
-              {(
-                [
-                  { id: "browse", label: "All jobs" },
-                  { id: "saved", label: "Saved jobs" },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === tab.id}
-                  onClick={() => {
-                    setView(tab.id);
-                    setPage(1);
-                  }}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    view === tab.id
-                      ? "bg-lantern-primary text-white shadow-sm"
-                      : "text-lantern-text-secondary hover:text-lantern-text"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+            {!guestMode ? (
+              <div
+                role="tablist"
+                aria-label="Job list"
+                className="mt-5 inline-flex rounded-lg border border-lantern-border bg-lantern-surface p-1"
+              >
+                {(
+                  [
+                    { id: "browse", label: "All jobs" },
+                    { id: "saved", label: "Saved jobs" },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === tab.id}
+                    onClick={() => {
+                      setView(tab.id);
+                      setPage(1);
+                    }}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                      view === tab.id
+                        ? "bg-lantern-primary text-white shadow-sm"
+                        : "text-lantern-text-secondary hover:text-lantern-text"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {view === "browse" ? (
@@ -449,23 +470,25 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                     Clear filters
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSearchNameDraft(
-                      searchNameDraft === null
-                        ? suggestJobSavedSearchName(toSearchFilters(filters))
-                        : null,
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-lantern-primary hover:underline"
-                >
-                  <BellAlertIcon className="h-4 w-4" aria-hidden />
-                  Save search &amp; get alerts
-                </button>
+                {!guestMode ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSearchNameDraft(
+                        searchNameDraft === null
+                          ? suggestJobSavedSearchName(toSearchFilters(filters))
+                          : null,
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-lantern-primary hover:underline"
+                  >
+                    <BellAlertIcon className="h-4 w-4" aria-hidden />
+                    Save search &amp; get alerts
+                  </button>
+                ) : null}
               </div>
 
-              {searchNameDraft !== null ? (
+              {!guestMode && searchNameDraft !== null ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-lantern-primary/30 bg-lantern-primary/5 p-3">
                   <label className="flex-1 min-w-[200px] text-sm">
                     <span className="sr-only">Name this search</span>
@@ -503,7 +526,7 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
                 </div>
               ) : null}
 
-              {savedSearches.length ? (
+              {!guestMode && savedSearches.length ? (
                 <div className="mt-4 border-t border-lantern-border pt-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Your saved searches
@@ -574,13 +597,23 @@ export default function JobsBoardScreen({ onNavigate }: Props) {
               information.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigate("MyJobApplications")}
-            className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text hover:border-lantern-primary/40"
-          >
-            Track my applications
-          </button>
+          {!guestMode ? (
+            <button
+              type="button"
+              onClick={() => onNavigate("MyJobApplications")}
+              className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text hover:border-lantern-primary/40"
+            >
+              Track my applications
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSignInRequired?.()}
+              className="rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm font-medium text-lantern-text hover:border-lantern-primary/40"
+            >
+              Sign in to apply
+            </button>
+          )}
         </div>
 
         {error ? (

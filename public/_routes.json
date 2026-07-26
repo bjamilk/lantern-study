@@ -11,7 +11,6 @@
     "/manifest.json",
     "/robots.txt",
     "/sitemap.xml",
-    "/sitemap/*",
     "/sw.js"
   ]
 }

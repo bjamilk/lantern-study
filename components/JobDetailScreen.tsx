@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { BookmarkIcon } from "@heroicons/react/24/outline";
+import React, { useEffect, useMemo, useState } from "react";
+import { BookmarkIcon, ShareIcon } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_POSTING_STATUS_LABELS,
   JOBS_COMPANY_DISCLAIMER,
+  buildJobPostingSeo,
   getJobEmployerTrustFromPosting,
   isJobPostingPubliclyVisible,
   formatJobCompensation,
@@ -21,6 +22,7 @@ import {
   setJobPostingSaved,
   trackJobExternalApply,
 } from "../services/jobsBoard";
+import { usePageSeo } from "../hooks/usePageSeo";
 import { ResumeUploadField } from "./jobs/ResumeUploadField";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 import { JobTrustBadge } from "./jobs/JobTrustBadge";
@@ -31,12 +33,16 @@ interface Props {
   jobId: string;
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
   onOpenDm?: (threadId: string) => void;
+  guestMode?: boolean;
+  onSignInRequired?: () => void;
 }
 
 export default function JobDetailScreen({
   jobId,
   onNavigate,
   onOpenDm,
+  guestMode,
+  onSignInRequired,
 }: Props) {
   const [job, setJob] = useState<JobPosting | null>(null);
   const [message, setMessage] = useState("");
@@ -56,15 +62,29 @@ export default function JobDetailScreen({
       );
   }, [jobId]);
 
+  const pageSeo = useMemo(
+    () => (job ? buildJobPostingSeo(job) : null),
+    [job],
+  );
+  usePageSeo(pageSeo);
+
   useEffect(() => {
+    if (guestMode) {
+      setApplicantProfile(null);
+      return;
+    }
     // A missing profile is normal for first-time applicants.
     void fetchJobApplicantProfile()
       .then((res) => setApplicantProfile(res.data))
       .catch(() => setApplicantProfile(null));
-  }, []);
+  }, [guestMode]);
 
   const handleApply = async () => {
     if (!job) return;
+    if (guestMode) {
+      onSignInRequired?.();
+      return;
+    }
     setBusy(true);
     setError(null);
     setSuccess(null);
@@ -171,7 +191,9 @@ export default function JobDetailScreen({
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
       <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-8 space-y-4">
-        <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
+        {!guestMode ? (
+          <JobsWorkspaceNav active="jobs" onNavigate={onNavigate} />
+        ) : null}
 
         <button
           type="button"
@@ -183,12 +205,42 @@ export default function JobDetailScreen({
 
         <header className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm sm:p-7">
           <div className="flex items-start gap-4">
-            <div className="order-last ml-auto shrink-0">
+            <div className="order-last ml-auto flex shrink-0 items-center gap-2">
+              {pageSeo ? (
+                <button
+                  type="button"
+                  aria-label="Share job"
+                  onClick={() => {
+                    const url = pageSeo.canonicalUrl;
+                    const text = `Check out "${job.title}" on Lantern Study Jobs`;
+                    if (navigator.share) {
+                      void navigator.share({ title: job.title, text, url }).catch(
+                        () => {},
+                      );
+                    } else {
+                      void navigator.clipboard.writeText(`${text}: ${url}`).then(
+                        () => setSuccess("Link copied to clipboard."),
+                        () => setError("Could not copy link."),
+                      );
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-lantern-border px-3 py-2 text-sm font-semibold text-lantern-text hover:border-lantern-primary/40"
+                >
+                  <ShareIcon className="h-4 w-4" aria-hidden />
+                  <span className="hidden sm:inline">Share</span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={savingSaved}
                 aria-pressed={!!job.isSaved}
-                onClick={() => void handleToggleSaved()}
+                onClick={() => {
+                  if (guestMode) {
+                    onSignInRequired?.();
+                    return;
+                  }
+                  void handleToggleSaved();
+                }}
                 className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${
                   job.isSaved
                     ? "border-lantern-primary bg-lantern-primary/10 text-lantern-primary"
@@ -349,12 +401,22 @@ export default function JobDetailScreen({
             </section>
 
             <JobSafetyTips />
-            <JobReportForm
-              jobId={job.id}
-              onReported={() =>
-                setSuccess("Report submitted. Thanks for flagging this.")
-              }
-            />
+            {guestMode ? (
+              <button
+                type="button"
+                className="text-xs text-lantern-text-tertiary underline"
+                onClick={() => onSignInRequired?.()}
+              >
+                Sign in to report this job
+              </button>
+            ) : (
+              <JobReportForm
+                jobId={job.id}
+                onReported={() =>
+                  setSuccess("Report submitted. Thanks for flagging this.")
+                }
+              />
+            )}
           </main>
 
           <aside className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-5 shadow-sm lg:sticky lg:top-4">

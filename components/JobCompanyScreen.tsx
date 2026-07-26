@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   JOB_COMPANY_VERIFICATION_LABELS,
   JOB_EMPLOYMENT_TYPE_LABELS,
+  buildJobCompanySeo,
   formatJobCompensation,
   formatJobLocation,
   getJobEmployerTrustPresentation,
@@ -11,6 +12,7 @@ import {
 } from "@lantern/shared";
 import { JobTrustBadge } from "./jobs/JobTrustBadge";
 import { fetchJobCompanyProfile } from "../services/jobsBoard";
+import { usePageSeo } from "../hooks/usePageSeo";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 interface Props {
@@ -28,6 +30,7 @@ export default function JobCompanyScreen({
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [myRole, setMyRole] = useState<JobCompanyMemberRole | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setError(null);
@@ -46,6 +49,12 @@ export default function JobCompanyScreen({
         setError(e instanceof Error ? e.message : "Company not found"),
       );
   }, [companyId]);
+
+  const pageSeo = useMemo(
+    () => (company ? buildJobCompanySeo(company, jobs.length) : null),
+    [company, jobs.length],
+  );
+  usePageSeo(pageSeo);
 
   if (error) {
     return (
@@ -127,9 +136,40 @@ export default function JobCompanyScreen({
                   Verification note: {company.verificationNote}
                 </p>
               ) : null}
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-lantern-text">
-                {company.displayName}
-              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-lantern-text">
+                  {company.displayName}
+                </h1>
+                {pageSeo ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = pageSeo.canonicalUrl;
+                      const text = `Jobs at ${company.displayName} on Lantern Study`;
+                      if (navigator.share) {
+                        void navigator
+                          .share({ title: company.displayName, text, url })
+                          .catch(() => {});
+                      } else {
+                        void navigator.clipboard
+                          .writeText(`${text}: ${url}`)
+                          .then(
+                            () => setShareMessage("Link copied."),
+                            () => setShareMessage("Could not copy link."),
+                          );
+                      }
+                    }}
+                    className="text-xs font-semibold text-lantern-primary hover:underline"
+                  >
+                    Share
+                  </button>
+                ) : null}
+              </div>
+              {shareMessage ? (
+                <p className="mt-1 text-xs text-lantern-text-tertiary">
+                  {shareMessage}
+                </p>
+              ) : null}
               {company.tagline ? (
                 <p className="mt-1 text-sm text-lantern-text-secondary">
                   {company.tagline}

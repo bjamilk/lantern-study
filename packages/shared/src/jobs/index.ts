@@ -8,6 +8,7 @@ export * from "./analytics";
 export * from "./employerTools";
 export * from "./companies";
 export * from "./trust";
+export * from "./seo";
 export * from "./lifecycle";
 export * from "./resume";
 export * from "./interviews";

@@ -168,6 +168,16 @@ export const generateListingLink = (listingId: string): string => {
     return `${WEB_BASE_URL}/marketplace/listing/${encodeURIComponent(listingId)}`;
 };
 
+/** Canonical web URL for a public job posting. */
+export const generateJobLink = (jobId: string): string => {
+    return `${WEB_BASE_URL}/marketplace/jobs/${encodeURIComponent(jobId)}`;
+};
+
+/** Canonical web URL for a public company profile. */
+export const generateJobCompanyLink = (companyId: string): string => {
+    return `${WEB_BASE_URL}/marketplace/companies/${encodeURIComponent(companyId)}`;
+};
+
 /**
  * Canonical web URL for a secure note share token (preview + accept).
  */

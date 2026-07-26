@@ -118,6 +118,7 @@ async function main() {
     console.log('Sitemap pings skipped (deprecated). Submit sitemaps in Google Search Console.');
     console.log(`  ${siteUrl}/sitemap.xml`);
     console.log(`  ${siteUrl}/sitemap/marketplace.xml`);
+    console.log(`  ${siteUrl}/sitemap/jobs.xml`);
   }
 
   console.log('\nIndexNow (priority URLs):');
