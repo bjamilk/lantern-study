@@ -18,7 +18,18 @@ import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import type { NoteFolder, StudyNote } from '../types';
-import { ScreenHeader, Button, EmptyState, FolderNameModal, Modal, Input } from './ui';
+import {
+  ScreenHeader,
+  Button,
+  EmptyState,
+  FolderNameModal,
+  Modal,
+  Input,
+  Menu,
+  MenuTrigger,
+  MenuContent,
+  MenuItem,
+} from './ui';
 import { useUIStore } from '../stores/uiStore';
 import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
 
@@ -165,21 +176,15 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     const isActive = folder ? selectedFolderId === folder.id : !selectedFolderId;
     const menuOpen = folder ? folderMenuId === folder.id : false;
     return (
-      <div key={folder?.id ?? 'all'} className={`relative ${compact ? 'w-full' : 'shrink-0'}`}>
-        <div
-          className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5 ${
-            compact ? '' : ''
-          }`}
-        >
+      <div key={folder?.id ?? 'all'} className={`${compact ? 'w-full' : 'shrink-0'}`}>
+        <div className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5`}>
           <button
             type="button"
             onClick={() => {
               setFolderMenuId(null);
               onSelectFolder(folder?.id ?? null);
             }}
-            className={`flex min-w-0 flex-1 items-center gap-1.5 text-left ${
-              compact ? '' : ''
-            }`}
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           >
             {folder && (
               <span
@@ -192,54 +197,53 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             </span>
           </button>
           {folder && (onRenameFolder || onDeleteFolder) ? (
-            <button
-              type="button"
-              aria-label={`Folder options for ${folder.name}`}
-              aria-expanded={menuOpen}
-              onClick={(e) => {
-                e.stopPropagation();
-                setFolderMenuId(menuOpen ? null : folder.id);
-              }}
-              className={`rounded p-0.5 shrink-0 ${
-                isActive
-                  ? 'text-white/90 hover:bg-white/15'
-                  : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'
-              }`}
+            // Portaled menu avoids clipping inside the mobile horizontal folder scroller.
+            <div
+              className="shrink-0"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
             >
-              <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
-            </button>
-          ) : null}
-        </div>
-        {folder && menuOpen ? (
-          <div
-            role="menu"
-            className="absolute left-0 top-full z-30 mt-1 min-w-[140px] rounded-lg border border-lantern-border bg-lantern-surface py-1 shadow-lg"
-          >
-            {onRenameFolder ? (
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
-                onClick={() => {
-                  setFolderMenuId(null);
-                  setRenameFolder(folder);
+              <Menu
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  setNoteMenuId(null);
+                  setFolderMenuId(open ? folder.id : null);
                 }}
               >
-                Rename
-              </button>
-            ) : null}
-            {onDeleteFolder ? (
-              <button
-                type="button"
-                role="menuitem"
-                className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                onClick={() => confirmDeleteFolder(folder)}
-              >
-                Delete folder
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+                <MenuTrigger
+                  aria-label={`Folder options for ${folder.name}`}
+                  className={`rounded-md p-1.5 min-h-[40px] min-w-[40px] inline-flex items-center justify-center ${
+                    isActive
+                      ? 'text-white/90 hover:bg-white/15'
+                      : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'
+                  }`}
+                >
+                  <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
+                </MenuTrigger>
+                <MenuContent align="end" className="w-44">
+                  {onRenameFolder ? (
+                    <MenuItem
+                      onSelect={() => {
+                        setFolderMenuId(null);
+                        setRenameFolder(folder);
+                      }}
+                    >
+                      Rename
+                    </MenuItem>
+                  ) : null}
+                  {onDeleteFolder ? (
+                    <MenuItem
+                      destructive
+                      onSelect={() => confirmDeleteFolder(folder)}
+                    >
+                      Delete folder
+                    </MenuItem>
+                  ) : null}
+                </MenuContent>
+              </Menu>
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   };
@@ -354,8 +358,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             </div>
           )}
 
-          <div className="md:hidden -mx-1 px-1 overflow-x-auto scrollbar-none">
-            <div className="flex gap-2 pb-1 w-max max-w-none">
+          <div className="md:hidden -mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
+            <div className="flex gap-2 pb-1 w-max max-w-none items-center">
               {renderFolderButton(null)}
               {folders.map(folder => renderFolderButton(folder))}
             </div>

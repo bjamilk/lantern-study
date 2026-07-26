@@ -76,36 +76,57 @@ function FolderChip({
   folder,
   isActive,
   onPress,
-  onLongPress,
+  onOpenOptions,
 }: {
   folder: NoteFolder;
   isActive: boolean;
   onPress: () => void;
-  onLongPress?: () => void;
+  onOpenOptions?: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={350}
-      className={`shrink-0 px-3 py-2 rounded-lg flex-row items-center gap-1.5 ${
+    <View
+      className={`shrink-0 rounded-lg flex-row items-center ${
         isActive
           ? 'bg-lantern-primary'
           : 'bg-lantern-surface border border-lantern-border'
       }`}
     >
-      {folder.color ? (
-        <View className="w-2 h-2 rounded-full" style={{ backgroundColor: folder.color }} />
-      ) : null}
-      <Text
-        className={`text-sm font-semibold ${
-          isActive ? 'text-white' : 'text-lantern-text'
-        }`}
-        numberOfLines={1}
+      <Pressable
+        onPress={onPress}
+        onLongPress={onOpenOptions}
+        delayLongPress={350}
+        className="px-3 py-2 flex-row items-center gap-1.5"
+        accessibilityRole="button"
+        accessibilityLabel={`Select folder ${folder.name}`}
       >
-        {folder.name}
-      </Text>
-    </Pressable>
+        {folder.color ? (
+          <View className="w-2 h-2 rounded-full" style={{ backgroundColor: folder.color }} />
+        ) : null}
+        <Text
+          className={`text-sm font-semibold ${
+            isActive ? 'text-white' : 'text-lantern-text'
+          }`}
+          numberOfLines={1}
+        >
+          {folder.name}
+        </Text>
+      </Pressable>
+      {onOpenOptions ? (
+        <Pressable
+          onPress={onOpenOptions}
+          hitSlop={8}
+          className="pr-2 pl-1 py-2 min-w-[36px] min-h-[40px] items-center justify-center"
+          accessibilityRole="button"
+          accessibilityLabel={`Folder options for ${folder.name}`}
+        >
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={16}
+            color={isActive ? '#ffffff' : '#64748b'}
+          />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -616,7 +637,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
                 folder={folder}
                 isActive={selectedFolderId === folder.id}
                 onPress={() => setSelectedFolderId(folder.id)}
-                onLongPress={() => handleFolderOptions(folder)}
+                onOpenOptions={() => handleFolderOptions(folder)}
               />
             ))}
           </ScrollView>
