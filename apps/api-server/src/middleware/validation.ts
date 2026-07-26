@@ -210,6 +210,8 @@ export const validateNoteUpdate = [
   body('body').optional().isString().isLength({ max: 500000 }).withMessage('Body is too large'),
   body('summary').optional().isString().isLength({ max: 10000 }).withMessage('Summary is too large'),
   body('folderId').optional().isUUID().withMessage('folderId must be a valid UUID'),
+  body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
+  body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
 ];
 
 export const validateFolderCreate = [

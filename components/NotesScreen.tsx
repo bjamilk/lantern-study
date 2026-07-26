@@ -11,7 +11,10 @@ import {
   CheckCircleIcon,
   XMarkIcon,
   EllipsisHorizontalIcon,
+  BookmarkIcon,
+  ArchiveBoxIcon,
 } from '@heroicons/react/24/outline';
+import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import type { NoteFolder, StudyNote } from '../types';
@@ -30,6 +33,8 @@ interface NotesScreenProps {
   onCreateFolder: (name: string) => void;
   onRenameFolder?: (folderId: string, name: string) => void | Promise<void>;
   onDeleteFolder?: (folderId: string) => void | Promise<void>;
+  onTogglePinNote?: (noteId: string, isPinned: boolean) => void | Promise<void>;
+  onArchiveNote?: (noteId: string, isArchived: boolean) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
@@ -58,6 +63,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onTogglePinNote,
+  onArchiveNote,
   onSelectNote,
   onPdfImport,
   onPresentationImport,
@@ -71,9 +78,11 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
+  const [noteMenuId, setNoteMenuId] = useState<string | null>(null);
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
+  const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
   const importProgress = useUIStore((s) => s.importProgress);
   const uploadJobList = useNoteUploadStore((s) => s.jobs);
@@ -96,6 +105,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
     list = list.filter((note) =>
       accessFilter === 'mine' ? (note.accessRole === 'owner' || !note.accessRole) : note.accessRole === 'viewer' || note.accessRole === 'editor'
     );
+    list = list.filter((note) =>
+      listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
+    );
     if (selectedFolderId) list = list.filter(n => n.folderId === selectedFolderId);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -103,8 +115,15 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
         n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [notes, selectedFolderId, search, accessFilter]);
+    return [...list].sort((a, b) => {
+      const pinDelta = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
+      if (pinDelta !== 0) return pinDelta;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [notes, selectedFolderId, search, accessFilter, listFilter]);
+
+  const canManageNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
 
   const handlePdf = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -228,7 +247,10 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   return (
     <div
       className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${embedded ? '' : 'bg-lantern-background'}`}
-      onClick={() => setFolderMenuId(null)}
+      onClick={() => {
+        setFolderMenuId(null);
+        setNoteMenuId(null);
+      }}
     >
       <FolderNameModal
         isOpen={folderModalOpen}
@@ -347,6 +369,25 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 </button>
               ))}
             </div>
+            <div className="inline-flex w-full sm:w-auto rounded-lg border border-lantern-border bg-lantern-surface p-1">
+              {(['active', 'archived'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setListFilter(filter)}
+                  className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
+                    listFilter === filter
+                      ? 'bg-lantern-primary text-white'
+                      : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'
+                  }`}
+                >
+                  {filter === 'archived' ? (
+                    <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
+                  ) : null}
+                  {filter === 'active' ? 'Active' : 'Archived'}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-lantern-border min-w-0 w-full sm:flex-1 sm:min-w-[200px] bg-lantern-surface">
               <MagnifyingGlassIcon className="w-5 h-5 text-lantern-text-secondary shrink-0" />
               <input
@@ -458,55 +499,132 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           {isLoading ? (
             <p className="text-sm text-lantern-text-secondary">Loading notes...</p>
           ) : filteredNotes.length === 0 ? (
-            <EmptyState
-              icon={<DocumentTextIcon className="w-8 h-8" />}
-              title="No notes yet"
-              description="Create a note, upload a PDF, or import PowerPoint slides to get started."
-              actionLabel="New note"
-              onAction={onCreateNote}
-              secondaryActionLabel="Import PDF"
-              onSecondaryAction={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'application/pdf';
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) onPdfImport(file);
-                };
-                input.click();
-              }}
-            />
+            listFilter === 'archived' ? (
+              <EmptyState
+                icon={<ArchiveBoxIcon className="w-8 h-8" />}
+                title="No archived notes"
+                description="Archive a note from its menu to hide it from your active list."
+                actionLabel="Back to active"
+                onAction={() => setListFilter('active')}
+              />
+            ) : (
+              <EmptyState
+                icon={<DocumentTextIcon className="w-8 h-8" />}
+                title="No notes yet"
+                description="Create a note, upload a PDF, or import PowerPoint slides to get started."
+                actionLabel="New note"
+                onAction={onCreateNote}
+                secondaryActionLabel="Import PDF"
+                onSecondaryAction={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'application/pdf';
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) onPdfImport(file);
+                  };
+                  input.click();
+                }}
+              />
+            )
           ) : (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 pb-4">
-              {filteredNotes.map(note => (
-                <button
-                  key={note.id}
-                  type="button"
-                  onClick={() => onSelectNote(note.id)}
-                  className="text-left p-3 sm:p-4 rounded-xl border border-lantern-border bg-lantern-surface transition hover:shadow-md hover:border-lantern-primary min-w-0"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
-                    <h3 className="font-semibold line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text">
-                      {note.title}
-                    </h3>
-                    <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary shrink-0">
-                      {sourceBadge(note)}
-                    </span>
+              {filteredNotes.map(note => {
+                const menuOpen = noteMenuId === note.id;
+                const showMenu = canManageNote(note) && (onTogglePinNote || onArchiveNote);
+                return (
+                  <div
+                    key={note.id}
+                    className="relative text-left p-3 sm:p-4 rounded-xl border border-lantern-border bg-lantern-surface transition hover:shadow-md hover:border-lantern-primary min-w-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSelectNote(note.id)}
+                      className={`w-full text-left min-w-0 ${showMenu ? 'pr-8' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
+                        <h3 className="font-semibold line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text inline-flex items-center gap-1.5">
+                          {note.isPinned ? (
+                            <BookmarkSolidIcon
+                              className="h-4 w-4 shrink-0 text-lantern-primary"
+                              aria-label="Pinned"
+                            />
+                          ) : null}
+                          {note.title}
+                        </h3>
+                        <span className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary shrink-0">
+                          {sourceBadge(note)}
+                        </span>
+                      </div>
+                      <p className="text-sm line-clamp-3 text-lantern-text-secondary">
+                        {note.summary || note.body || 'Empty note'}
+                      </p>
+                      {note.accessRole === 'viewer' || note.accessRole === 'editor' ? (
+                        <div className="mt-3 flex items-center gap-2 text-xs">
+                          <span className="text-lantern-text-secondary">Owner: {note.owner?.name || note.owner?.username || 'Unknown'}</span>
+                          <span className="rounded-full bg-lantern-primary-background px-2 py-0.5 font-semibold capitalize text-lantern-primary">{note.accessRole}</span>
+                        </div>
+                      ) : null}
+                      <p className="text-xs mt-3 text-lantern-text-secondary">
+                        Updated {new Date(note.updatedAt).toLocaleDateString()}
+                      </p>
+                    </button>
+                    {showMenu ? (
+                      <div className="absolute right-2 top-2">
+                        <button
+                          type="button"
+                          aria-label={`Options for ${note.title}`}
+                          aria-expanded={menuOpen}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderMenuId(null);
+                            setNoteMenuId(menuOpen ? null : note.id);
+                          }}
+                          className="rounded-md p-1 text-lantern-text-tertiary hover:bg-lantern-background-secondary hover:text-lantern-text"
+                        >
+                          <EllipsisHorizontalIcon className="h-5 w-5" aria-hidden />
+                        </button>
+                        {menuOpen ? (
+                          <div
+                            role="menu"
+                            className="absolute right-0 top-full z-30 mt-1 min-w-[160px] rounded-lg border border-lantern-border bg-lantern-surface py-1 shadow-lg"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {onTogglePinNote && !note.isArchived ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                onClick={() => {
+                                  setNoteMenuId(null);
+                                  void onTogglePinNote(note.id, !note.isPinned);
+                                }}
+                              >
+                                <BookmarkIcon className="h-4 w-4" aria-hidden />
+                                {note.isPinned ? 'Unpin' : 'Pin'}
+                              </button>
+                            ) : null}
+                            {onArchiveNote ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                                onClick={() => {
+                                  setNoteMenuId(null);
+                                  void onArchiveNote(note.id, !note.isArchived);
+                                }}
+                              >
+                                <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
+                                {note.isArchived ? 'Unarchive' : 'Archive'}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                  <p className="text-sm line-clamp-3 text-lantern-text-secondary">
-                    {note.summary || note.body || 'Empty note'}
-                  </p>
-                  {note.accessRole === 'viewer' || note.accessRole === 'editor' ? (
-                    <div className="mt-3 flex items-center gap-2 text-xs">
-                      <span className="text-lantern-text-secondary">Owner: {note.owner?.name || note.owner?.username || 'Unknown'}</span>
-                      <span className="rounded-full bg-lantern-primary-background px-2 py-0.5 font-semibold capitalize text-lantern-primary">{note.accessRole}</span>
-                    </div>
-                  ) : null}
-                  <p className="text-xs mt-3 text-lantern-text-secondary">
-                    Updated {new Date(note.updatedAt).toLocaleDateString()}
-                  </p>
-                </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>

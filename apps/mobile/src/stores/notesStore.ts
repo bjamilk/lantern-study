@@ -128,11 +128,22 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       try {
         const saved = await notesApi.updateNote(noteId, updates);
         set({
-          notes: get().notes.map((n) => (n.id === noteId ? { ...n, ...saved } : n)),
+          notes: get().notes.map((n) =>
+            n.id === noteId
+              ? {
+                  ...n,
+                  ...saved,
+                  accessRole: saved.accessRole ?? n.accessRole,
+                  owner: saved.owner ?? n.owner,
+                }
+              : n,
+          ),
           selectedNote: get().selectedNote?.id === noteId
             ? {
                 ...get().selectedNote!,
                 ...saved,
+                accessRole: saved.accessRole ?? get().selectedNote!.accessRole,
+                owner: saved.owner ?? get().selectedNote!.owner,
                 attachments: get().selectedNote!.attachments,
               }
             : get().selectedNote,

@@ -109,15 +109,33 @@ function FolderChip({
   );
 }
 
-function NoteCard({ note, onPress }: { note: StudyNote; onPress: () => void }) {
+function NoteCard({
+  note,
+  onPress,
+  onLongPress,
+}: {
+  note: StudyNote;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
   const isShared = note.accessRole && note.accessRole !== 'owner';
   return (
-    <Pressable onPress={onPress} className="mb-3 active:opacity-90">
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      className="mb-3 active:opacity-90"
+    >
       <Card className="border-lantern-border">
         <View className="flex-row items-start justify-between gap-2 mb-2">
-          <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={2}>
-            {note.title}
-          </Text>
+          <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
+            {note.isPinned ? (
+              <Ionicons name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
+            ) : null}
+            <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={2}>
+              {note.title}
+            </Text>
+          </View>
           <View className="bg-lantern-primary-background px-2 py-0.5 rounded-full shrink-0">
             <Text className="text-[10px] font-semibold text-lantern-primary">
               {sourceBadge(note)}
@@ -162,6 +180,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     createFolder,
     updateFolder,
     removeFolder,
+    saveNote,
     setSelectedFolderId,
     setError,
   } = useNotesStore();
@@ -173,6 +192,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ownershipFilter, setOwnershipFilter] = useState<'mine' | 'shared'>('mine');
+  const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
   const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renamingFolder, setRenamingFolder] = useState(false);
@@ -195,6 +215,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     list = list.filter((note) =>
       ownershipFilter === 'mine' ? !note.accessRole || note.accessRole === 'owner' : note.accessRole !== 'owner'
     );
+    list = list.filter((note) =>
+      listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
+    );
     if (selectedFolderId) {
       list = list.filter(n => n.folderId === selectedFolderId);
     }
@@ -204,8 +227,46 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [notes, selectedFolderId, search, ownershipFilter]);
+    return [...list].sort((a, b) => {
+      const pinDelta = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
+      if (pinDelta !== 0) return pinDelta;
+      const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [notes, selectedFolderId, search, ownershipFilter, listFilter]);
+
+  const canManageNote = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
+
+  const handleNoteOptions = (note: StudyNote) => {
+    if (!canManageNote(note)) return;
+    const buttons: {
+      text: string;
+      style?: 'cancel' | 'destructive' | 'default';
+      onPress?: () => void;
+    }[] = [];
+    if (!note.isArchived) {
+      buttons.push({
+        text: note.isPinned ? 'Unpin' : 'Pin',
+        onPress: () => {
+          void saveNote(note.id, { isPinned: !note.isPinned }).catch((e: unknown) => {
+            Alert.alert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
+          });
+        },
+      });
+    }
+    buttons.push({
+      text: note.isArchived ? 'Unarchive' : 'Archive',
+      onPress: () => {
+        void saveNote(note.id, { isArchived: !note.isArchived }).catch((e: unknown) => {
+          Alert.alert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
+        });
+      },
+    });
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert(note.title, 'Pin keeps a note at the top. Archive hides it from Active.', buttons);
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -576,6 +637,33 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         ))}
       </View>
 
+      <View className="mx-4 mb-2 flex-row rounded-lg border border-lantern-border overflow-hidden">
+        {(['active', 'archived'] as const).map((filter) => (
+          <Pressable
+            key={filter}
+            onPress={() => setListFilter(filter)}
+            className={`flex-1 py-2 flex-row items-center justify-center gap-1 ${
+              listFilter === filter ? 'bg-lantern-primary' : 'bg-lantern-surface'
+            }`}
+          >
+            {filter === 'archived' ? (
+              <Ionicons
+                name="archive-outline"
+                size={14}
+                color={listFilter === filter ? '#ffffff' : '#64748b'}
+              />
+            ) : null}
+            <Text
+              className={`text-center text-sm font-semibold ${
+                listFilter === filter ? 'text-white' : 'text-lantern-text'
+              }`}
+            >
+              {filter === 'active' ? 'Active' : 'Archived'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <View className="mx-4 mb-1.5 flex-row items-center gap-2 px-3 py-1.5 rounded-lg border border-lantern-border bg-lantern-surface">
         <Ionicons name="search" size={16} color="#64748b" />
         <TextInput
@@ -710,13 +798,23 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
           }
           ListEmptyComponent={
             <Card className="items-center py-10 border-lantern-border">
-              <Ionicons name="document-text-outline" size={40} color="#818cf8" />
+              <Ionicons
+                name={listFilter === 'archived' ? 'archive-outline' : 'document-text-outline'}
+                size={40}
+                color="#818cf8"
+              />
               <Text className="text-sm text-lantern-text-secondary text-center mt-3 px-4">
-                {ownershipFilter === 'shared'
-                  ? 'No shared notes yet.'
-                  : 'No notes yet. Create one to get started.'}
+                {listFilter === 'archived'
+                  ? 'No archived notes. Long-press a note to archive it.'
+                  : ownershipFilter === 'shared'
+                    ? 'No shared notes yet.'
+                    : 'No notes yet. Create one to get started.'}
               </Text>
-              {ownershipFilter === 'mine' ? (
+              {listFilter === 'archived' ? (
+                <Button className="mt-4" size="sm" variant="secondary" onPress={() => setListFilter('active')}>
+                  Back to active
+                </Button>
+              ) : ownershipFilter === 'mine' ? (
                 <>
                   <Button className="mt-4" size="sm" onPress={handleCreateNote}>
                     New note
@@ -732,6 +830,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
             <NoteCard
               note={item}
               onPress={() => navigation.navigate('NoteEditor', { noteId: item.id })}
+              onLongPress={canManageNote(item) ? () => handleNoteOptions(item) : undefined}
             />
           )}
         />

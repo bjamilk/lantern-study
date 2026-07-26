@@ -65,6 +65,9 @@ export interface StudyNote {
   youtubeUrl?: string;
   youtubeVideoId?: string;
   version?: number;
+  isArchived?: boolean;
+  isPinned?: boolean;
+  pinnedAt?: string;
   updatedAt?: string;
   createdAt?: string;
   accessRole?: 'owner' | 'editor' | 'viewer' | 'group_member';

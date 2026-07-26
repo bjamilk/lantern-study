@@ -1536,10 +1536,14 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { folderId, groupId } = req.query;
+  const { folderId, groupId, archived } = req.query;
+  let archivedFilter: boolean | undefined;
+  if (archived === 'true' || archived === '1') archivedFilter = true;
+  else if (archived === 'false' || archived === '0') archivedFilter = false;
   const notes = await supabaseService.getNotes(userId, {
     folderId: folderId as string | undefined,
     groupId: groupId as string | undefined,
+    archived: archivedFilter,
   });
   res.json({ success: true, data: notes });
 }));

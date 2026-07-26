@@ -351,6 +351,11 @@ export interface StudyNote {
   accessRole?: NoteAccessRole;
   /** Present for shared (non-owned) notes. */
   owner?: NoteOwnerPresentation;
+  /** Soft-hidden from the default Notes list. */
+  isArchived?: boolean;
+  /** Pinned notes sort above others in the active list. */
+  isPinned?: boolean;
+  pinnedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

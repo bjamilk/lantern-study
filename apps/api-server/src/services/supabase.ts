@@ -10103,6 +10103,9 @@ export class SupabaseService {
       isShared: row.is_shared || false,
       // Intentionally omit dormant plaintext share_token (secure links use note_share_links).
       copiedFromNoteId: row.copied_from_note_id || undefined,
+      isArchived: Boolean(row.is_archived),
+      isPinned: Boolean(row.is_pinned),
+      pinnedAt: row.pinned_at || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       version:
@@ -10299,18 +10302,23 @@ export class SupabaseService {
 
   async getNotes(
     userId: string,
-    options?: { folderId?: string; groupId?: string },
+    options?: { folderId?: string; groupId?: string; archived?: boolean },
   ) {
     let ownedQuery = this.supabase
       .from("notes")
       .select("*")
       .eq("user_id", userId)
+      .order("is_pinned", { ascending: false })
       .order("updated_at", { ascending: false });
 
     if (options?.folderId)
       ownedQuery = ownedQuery.eq("folder_id", options.folderId);
     if (options?.groupId)
       ownedQuery = ownedQuery.eq("group_id", options.groupId);
+    if (options?.archived === true)
+      ownedQuery = ownedQuery.eq("is_archived", true);
+    else if (options?.archived === false)
+      ownedQuery = ownedQuery.eq("is_archived", false);
 
     const { data: ownedRows, error: ownedError } = await ownedQuery;
     if (ownedError) throw ownedError;
@@ -10352,7 +10360,12 @@ export class SupabaseService {
     );
 
     const shared = (collabRows || [])
-      .filter((row: any) => row.notes && !ownedIds.has(row.notes.id))
+      .filter((row: any) => {
+        if (!row.notes || ownedIds.has(row.notes.id)) return false;
+        if (options?.archived === true) return Boolean(row.notes.is_archived);
+        if (options?.archived === false) return !row.notes.is_archived;
+        return true;
+      })
       .map((row: any) => {
         const role =
           row.role === "editor" || row.role === "owner"
@@ -10364,10 +10377,13 @@ export class SupabaseService {
         });
       });
 
-    return [...owned, ...shared].sort(
-      (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
+    return [...owned, ...shared].sort((a, b) => {
+      const pinDelta = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
+      if (pinDelta !== 0) return pinDelta;
+      return (
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    });
   }
 
   async getNote(noteId: string, userId: string) {
@@ -10465,6 +10481,19 @@ export class SupabaseService {
       dbUpdates.youtube_url = updates.youtubeUrl;
     if (updates.youtubeVideoId !== undefined)
       dbUpdates.youtube_video_id = updates.youtubeVideoId;
+    if (updates.isPinned !== undefined) {
+      const pinned = Boolean(updates.isPinned);
+      dbUpdates.is_pinned = pinned;
+      dbUpdates.pinned_at = pinned ? new Date().toISOString() : null;
+    }
+    if (updates.isArchived !== undefined) {
+      const archived = Boolean(updates.isArchived);
+      dbUpdates.is_archived = archived;
+      if (archived) {
+        dbUpdates.is_pinned = false;
+        dbUpdates.pinned_at = null;
+      }
+    }
 
     const maxAttempts = options.allowRetryOnConflict ? 2 : 1;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

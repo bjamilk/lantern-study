@@ -879,6 +879,16 @@ export const App: React.FC = () => {
                     showToast(e?.message || 'Failed to delete folder', 'error');
                 });
             }}
+            onTogglePinNote={(noteId, isPinned) => {
+                void noteHandlers.handleTogglePinNote(noteId, isPinned).catch((e: any) => {
+                    showToast(e?.message || 'Failed to update pin', 'error');
+                });
+            }}
+            onArchiveNote={(noteId, isArchived) => {
+                void noteHandlers.handleArchiveNote(noteId, isArchived).catch((e: any) => {
+                    showToast(e?.message || 'Failed to update archive', 'error');
+                });
+            }}
             onSelectNote={(id) => { void noteHandlers.openNote(id); }}
             onPdfImport={async (file) => {
                 try {

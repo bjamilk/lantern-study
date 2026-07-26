@@ -293,10 +293,14 @@ export async function deleteNoteFolder(folderId: string): Promise<void> {
 export async function fetchNotes(options?: {
   folderId?: string;
   groupId?: string;
+  /** When set, only active (`false`) or archived (`true`) notes. Omit for both. */
+  archived?: boolean;
 }): Promise<StudyNote[]> {
   const params = new URLSearchParams();
   if (options?.folderId) params.set('folderId', options.folderId);
   if (options?.groupId) params.set('groupId', options.groupId);
+  if (options?.archived === true) params.set('archived', 'true');
+  else if (options?.archived === false) params.set('archived', 'false');
   const qs = params.toString();
   return notesRequest<StudyNote[]>(`${qs ? `?${qs}` : ''}`);
 }

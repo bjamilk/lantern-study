@@ -391,6 +391,20 @@ export function useNoteHandlers(currentUserId?: string) {
     [removeFolder],
   );
 
+  const handleTogglePinNote = useCallback(
+    async (noteId: string, isPinned: boolean) => {
+      await saveNote(noteId, { isPinned });
+    },
+    [saveNote],
+  );
+
+  const handleArchiveNote = useCallback(
+    async (noteId: string, isArchived: boolean) => {
+      await saveNote(noteId, { isArchived });
+    },
+    [saveNote],
+  );
+
   return {
     navigateToNotes,
     openNote,
@@ -398,6 +412,8 @@ export function useNoteHandlers(currentUserId?: string) {
     handleCreateFolder: createFolder,
     handleRenameFolder,
     handleDeleteFolder,
+    handleTogglePinNote,
+    handleArchiveNote,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,
