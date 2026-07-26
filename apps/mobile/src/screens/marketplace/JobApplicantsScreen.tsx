@@ -28,6 +28,7 @@ import { Card, ScreenHeader } from "../../components/ui";
 import { JobApplicantNotes } from "../../components/jobs/JobApplicantNotes";
 import { JobInterviewScheduler } from "../../components/jobs/JobInterviewScheduler";
 import { JobOfferPanel } from "../../components/jobs/JobOfferPanel";
+import { JobPostingInsights } from "../../components/jobs/JobPostingInsights";
 import {
   fetchJobApplicants,
   fetchJobApplicationResumeUrl,
@@ -124,6 +125,8 @@ export function JobApplicantsScreen() {
             ? ` · ${summary.needsReview} awaiting review`
             : ""}
         </Text>
+
+        <JobPostingInsights postingId={route.params.jobId} />
 
         <TextInput
           value={search}

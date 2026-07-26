@@ -11,6 +11,7 @@ import {
   type JobPostingStatus,
 } from "@lantern/shared";
 import { fetchMyJobPostings, updateJobPosting } from "../services/jobsBoard";
+import { JobEmployerInsights } from "./jobs/JobEmployerInsights";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 
 const STATUS_STYLES: Record<JobPosting["status"], string> = {
@@ -155,6 +156,12 @@ export default function MyJobPostingsScreen({
             ) : null}
           </div>
         </section>
+
+        <JobEmployerInsights
+          onOpenPosting={(postingId) =>
+            onNavigate("JobEmployerPipeline", { jobId: postingId })
+          }
+        />
 
         {error ? (
           <p

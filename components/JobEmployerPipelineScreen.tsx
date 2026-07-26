@@ -20,6 +20,7 @@ import {
 import { useAuthStore } from "../stores/authStore";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 import { JobApplicantDetailModal } from "./jobs/JobApplicantDetailModal";
+import { JobPostingInsights } from "./jobs/JobPostingInsights";
 
 const COLUMNS: JobApplicationStatus[] = [
   "interested",
@@ -165,6 +166,8 @@ export default function JobEmployerPipelineScreen({
             View job
           </button>
         </div>
+
+        <JobPostingInsights postingId={jobId} />
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-0 flex-1 sm:max-w-xs">

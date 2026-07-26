@@ -18,18 +18,27 @@ import {
   JOB_RESUME_MAX_BYTES,
   JOB_SAVED_SEARCH_LIMIT_PER_USER,
   JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
+  averageNumber,
+  buildJobHiringFunnel,
   canAutoCloseJobPostingOnHire,
   canEmployerRescheduleJobInterview,
   canEmployerSetJobPostingStatus,
   canSetJobInterviewStatus,
   canSetJobOfferStatus,
   clampJobInterviewDuration,
+  countJobApplicationStatuses,
+  daysBetween,
   describeJobOffer,
+  emptyJobApplicationStatusCounts,
   formatJobInterviewSlotList,
   hasOpenJobOffer,
+  isHighViewsLowApply,
   isJobInterviewMode,
   isJobOfferExpired,
+  isStaleActivePosting,
+  jobConversionRates,
   matchJobInterviewSlot,
+  medianNumber,
   normalizeJobInterviewSlots,
   normalizeJobOfferExpiry,
   normalizeJobOfferStartDate,
@@ -46,6 +55,7 @@ import {
   textFailsJobScamCheck,
   type JobApplicationStatus,
   type JobCompensation,
+  type JobEmployerAnalytics,
   type JobEmploymentType,
   type JobEngagementDuration,
   type JobInterview,
@@ -53,6 +63,8 @@ import {
   type JobInterviewStatus,
   type JobOffer,
   type JobOfferStatus,
+  type JobPosting,
+  type JobPostingAnalytics,
   type JobPostingStatus,
   type JobSavedSearch,
   type JobSearchFilters,
@@ -2546,6 +2558,310 @@ export class JobsBoardService {
     } catch (err) {
       logger.warn("ATS webhook failed", { error: err, postingId: posting.id });
     }
+  }
+
+  /**
+   * Poster-wide hiring funnel. Mirrors marketplace seller insights: one read of
+   * the employer's posts plus the related applications / interviews / offers,
+   * then pure aggregation in shared helpers.
+   */
+  async getEmployerAnalytics(userId: string): Promise<JobEmployerAnalytics> {
+    const postings = (await this.listMyPostings(userId)).filter(
+      (posting) => !!posting?.id,
+    ) as JobPosting[];
+    const postingIds = postings.map((posting) => posting.id);
+    const now = new Date();
+
+    if (!postingIds.length) {
+      const emptyFunnel = buildJobHiringFunnel({
+        statusCounts: emptyJobApplicationStatusCounts(),
+      });
+      return {
+        totals: {
+          postings: 0,
+          activePostings: 0,
+          views: 0,
+          applications: 0,
+          needsReview: 0,
+          hired: 0,
+          openOffers: 0,
+        },
+        funnel: emptyFunnel,
+        conversion: jobConversionRates(emptyFunnel),
+        avgTimeToFillDays: null,
+        topPostings: [],
+        attention: { highViewsLowApply: [], staleActive: [] },
+        generatedAt: now.toISOString(),
+      };
+    }
+
+    const [applications, favorites, externalClicks, offers] = await Promise.all(
+      [
+        this.client()
+          .from("job_applications")
+          .select("id, posting_id, status, created_at, updated_at")
+          .in("posting_id", postingIds),
+        this.client()
+          .from("job_favorites")
+          .select("posting_id")
+          .in("posting_id", postingIds),
+        this.client()
+          .from("job_external_apply_clicks")
+          .select("posting_id")
+          .in("posting_id", postingIds),
+        this.client()
+          .from("job_offers")
+          .select("posting_id, status")
+          .in("posting_id", postingIds),
+      ],
+    );
+
+    if (applications.error) throw applications.error;
+    if (favorites.error) throw favorites.error;
+    if (externalClicks.error) throw externalClicks.error;
+    if (offers.error) throw offers.error;
+
+    const appsByPosting = new Map<string, typeof applications.data>();
+    for (const row of applications.data || []) {
+      const key = (row as { posting_id: string }).posting_id;
+      const list = appsByPosting.get(key) || [];
+      list.push(row);
+      appsByPosting.set(key, list);
+    }
+
+    const allStatuses = (applications.data || []).map(
+      (row) => (row as { status: JobApplicationStatus }).status,
+    );
+    const funnel = buildJobHiringFunnel({
+      views: postings.reduce(
+        (sum, posting) => sum + (posting.viewsCount || 0),
+        0,
+      ),
+      saved: (favorites.data || []).length,
+      externalClicks: (externalClicks.data || []).length,
+      statusCounts: countJobApplicationStatuses(allStatuses),
+    });
+
+    const timeToFillDays: number[] = [];
+    const topPostings = postings.map((posting) => {
+      const apps = appsByPosting.get(posting.id) || [];
+      const statusCounts = countJobApplicationStatuses(
+        apps.map((row) => (row as { status: JobApplicationStatus }).status),
+      );
+      const hiredApps = apps.filter(
+        (row) => (row as { status: string }).status === "hired",
+      );
+      if (hiredApps.length) {
+        const earliest = hiredApps
+          .map((row) =>
+            daysBetween(
+              posting.createdAt,
+              (row as { updated_at: string }).updated_at,
+            ),
+          )
+          .filter((value): value is number => value != null)
+          .sort((a, b) => a - b)[0];
+        if (earliest != null) timeToFillDays.push(earliest);
+      }
+      return {
+        id: posting.id,
+        title: posting.title,
+        status: posting.status,
+        views: posting.viewsCount || 0,
+        applications: apps.length,
+        hired: statusCounts.hired,
+        viewToApplyPercent: jobConversionRates(
+          buildJobHiringFunnel({
+            views: posting.viewsCount || 0,
+            statusCounts,
+          }),
+        ).viewToApplyPercent,
+      };
+    });
+
+    topPostings.sort((a, b) => {
+      if (b.applications !== a.applications) {
+        return b.applications - a.applications;
+      }
+      return b.views - a.views;
+    });
+
+    const highViewsLowApply = postings
+      .filter((posting) =>
+        isHighViewsLowApply({
+          status: posting.status,
+          views: posting.viewsCount || 0,
+          applications: (appsByPosting.get(posting.id) || []).length,
+        }),
+      )
+      .map((posting) => ({
+        id: posting.id,
+        title: posting.title,
+        views: posting.viewsCount || 0,
+        applications: (appsByPosting.get(posting.id) || []).length,
+        daysOpen: daysBetween(posting.createdAt, now.toISOString()) || 0,
+      }));
+
+    const staleActive = postings
+      .filter((posting) =>
+        isStaleActivePosting({
+          status: posting.status,
+          createdAt: posting.createdAt,
+          applications: (appsByPosting.get(posting.id) || []).length,
+          now,
+        }),
+      )
+      .map((posting) => ({
+        id: posting.id,
+        title: posting.title,
+        views: posting.viewsCount || 0,
+        applications: (appsByPosting.get(posting.id) || []).length,
+        daysOpen: daysBetween(posting.createdAt, now.toISOString()) || 0,
+      }));
+
+    return {
+      totals: {
+        postings: postings.length,
+        activePostings: postings.filter(
+          (posting) => posting.status === "active",
+        ).length,
+        views: funnel.views,
+        applications: funnel.applied,
+        needsReview: funnel.needsReview,
+        hired: funnel.hired,
+        openOffers: (offers.data || []).filter(
+          (row) => (row as { status: string }).status === "sent",
+        ).length,
+      },
+      funnel,
+      conversion: jobConversionRates(funnel),
+      avgTimeToFillDays: averageNumber(timeToFillDays),
+      topPostings: topPostings.slice(0, 8),
+      attention: {
+        highViewsLowApply: highViewsLowApply.slice(0, 5),
+        staleActive: staleActive.slice(0, 5),
+      },
+      generatedAt: now.toISOString(),
+    };
+  }
+
+  /** Per-posting funnel for the pipeline screen. */
+  async getPostingAnalytics(
+    postingId: string,
+    userId: string,
+  ): Promise<JobPostingAnalytics> {
+    const posting = await this.getPosting(postingId);
+    if (!posting) {
+      const err = new Error("Job not found");
+      (err as Error & { statusCode?: number }).statusCode = 404;
+      throw err;
+    }
+    const allowed =
+      posting.posterUserId === userId ||
+      (posting.companyId &&
+        (await this.getCompanyMembership(posting.companyId, userId)));
+    if (!allowed) {
+      const err = new Error("Not allowed");
+      (err as Error & { statusCode?: number }).statusCode = 403;
+      throw err;
+    }
+
+    const [applications, favorites, externalClicks, interviews, offers] =
+      await Promise.all([
+        this.client()
+          .from("job_applications")
+          .select("id, status, created_at, updated_at")
+          .eq("posting_id", postingId),
+        this.client()
+          .from("job_favorites")
+          .select("id", { count: "exact", head: true })
+          .eq("posting_id", postingId),
+        this.client()
+          .from("job_external_apply_clicks")
+          .select("id", { count: "exact", head: true })
+          .eq("posting_id", postingId),
+        this.client()
+          .from("job_interviews")
+          .select("status")
+          .eq("posting_id", postingId),
+        this.client()
+          .from("job_offers")
+          .select("status")
+          .eq("posting_id", postingId),
+      ]);
+
+    if (applications.error) throw applications.error;
+    if (favorites.error) throw favorites.error;
+    if (externalClicks.error) throw externalClicks.error;
+    if (interviews.error) throw interviews.error;
+    if (offers.error) throw offers.error;
+
+    const statusCounts = countJobApplicationStatuses(
+      (applications.data || []).map(
+        (row) => (row as { status: JobApplicationStatus }).status,
+      ),
+    );
+    const funnel = buildJobHiringFunnel({
+      views: posting.viewsCount || 0,
+      saved: favorites.count || 0,
+      externalClicks: externalClicks.count || 0,
+      statusCounts,
+    });
+
+    const hireDurations = (applications.data || [])
+      .filter((row) => (row as { status: string }).status === "hired")
+      .map((row) =>
+        daysBetween(
+          (row as { created_at: string }).created_at,
+          (row as { updated_at: string }).updated_at,
+        ),
+      )
+      .filter((value): value is number => value != null);
+
+    const firstHireUpdated = (applications.data || [])
+      .filter((row) => (row as { status: string }).status === "hired")
+      .map((row) => (row as { updated_at: string }).updated_at)
+      .sort()[0];
+    const timeToFillDays = firstHireUpdated
+      ? daysBetween(posting.createdAt, firstHireUpdated)
+      : null;
+
+    const interviewCounts = {
+      proposed: 0,
+      confirmed: 0,
+      completed: 0,
+      declined: 0,
+      cancelled: 0,
+    };
+    for (const row of interviews.data || []) {
+      const status = (row as { status: keyof typeof interviewCounts }).status;
+      if (status in interviewCounts) interviewCounts[status] += 1;
+    }
+
+    const offerCounts = {
+      sent: 0,
+      accepted: 0,
+      declined: 0,
+      withdrawn: 0,
+      expired: 0,
+    };
+    for (const row of offers.data || []) {
+      const status = (row as { status: keyof typeof offerCounts }).status;
+      if (status in offerCounts) offerCounts[status] += 1;
+    }
+
+    return {
+      postingId: posting.id,
+      title: posting.title,
+      status: posting.status,
+      createdAt: posting.createdAt,
+      funnel,
+      conversion: jobConversionRates(funnel),
+      timeToFillDays,
+      medianTimeToHireDays: medianNumber(hireDurations),
+      interviews: interviewCounts,
+      offers: offerCounts,
+    };
   }
 }
 

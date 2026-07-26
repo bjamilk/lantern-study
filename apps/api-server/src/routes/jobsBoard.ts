@@ -205,6 +205,42 @@ router.get(
   }),
 );
 
+// GET /analytics/employer — poster-wide hiring funnel
+router.get(
+  "/analytics/employer",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const cacheKey = `jobs:analytics:employer:${userId}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      return res.json({ success: true, data: cached });
+    }
+    const data = await jobs().getEmployerAnalytics(userId);
+    await cacheService.set(cacheKey, data, 120);
+    res.json({ success: true, data });
+  }),
+);
+
+// GET /postings/:id/analytics — per-job funnel for the pipeline screen
+router.get(
+  "/postings/:id/analytics",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().getPostingAnalytics(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // ─── Applicant profile + resumes ───────────────────────────────────────────
 
 // GET /applicant-profile

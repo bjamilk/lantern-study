@@ -1,13 +1,13 @@
-import type { ApiClient } from './client';
-import { createIdempotencyKey } from './idempotency';
+import type { ApiClient } from "./client";
+import { createIdempotencyKey } from "./idempotency";
 import {
   listingsCacheKey,
   marketplaceCategoryAnalyticsCache,
   marketplaceListingsCache,
   parseRetryAfterMs,
   RateLimitError,
-} from './marketplaceCache';
-import { retryUncertainDelivery } from '../utils/deliveryIntegrity';
+} from "./marketplaceCache";
+import { retryUncertainDelivery } from "../utils/deliveryIntegrity";
 
 type ChatMessageMutationPayload = {
   id: string;
@@ -15,7 +15,7 @@ type ChatMessageMutationPayload = {
   threadId?: string;
   senderId: string;
   timestamp: string;
-  type: 'TEXT';
+  type: "TEXT";
   text?: string;
   editedAt?: string;
   removedAt?: string;
@@ -23,32 +23,43 @@ type ChatMessageMutationPayload = {
 };
 
 export function createApiEndpoints(client: ApiClient) {
-  const apiRequest = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
-    client.request<T>(endpoint, options, timeoutMs);
+  const apiRequest = <T>(
+    endpoint: string,
+    options: RequestInit = {},
+    timeoutMs?: number,
+  ) => client.request<T>(endpoint, options, timeoutMs);
 
-  const apiRequestRaw = <T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number) =>
-    client.requestRaw<T>(endpoint, options, timeoutMs);
+  const apiRequestRaw = <T>(
+    endpoint: string,
+    options: RequestInit = {},
+    timeoutMs?: number,
+  ) => client.requestRaw<T>(endpoint, options, timeoutMs);
 
   return {
     // ========== DECK API ==========
 
     fetchDecks: (userId: string, options?: { includeShared?: boolean }) => {
       const params = new URLSearchParams({ userId });
-      if (options?.includeShared) params.set('includeShared', 'true');
-      params.set('limit', '50');
-      return apiRequest<Array<{
-        id: string;
-        name: string;
-        description?: string;
-        user_id: string;
-        is_shared?: boolean;
-        created_at: string;
-        updated_at: string;
-        card_count?: number;
-      }>>(`/decks?${params.toString()}`);
+      if (options?.includeShared) params.set("includeShared", "true");
+      params.set("limit", "50");
+      return apiRequest<
+        Array<{
+          id: string;
+          name: string;
+          description?: string;
+          user_id: string;
+          is_shared?: boolean;
+          created_at: string;
+          updated_at: string;
+          card_count?: number;
+        }>
+      >(`/decks?${params.toString()}`);
     },
 
-    createDeck: (userId: string, data: { name: string; description?: string }) =>
+    createDeck: (
+      userId: string,
+      data: { name: string; description?: string },
+    ) =>
       apiRequest<{
         id: string;
         name: string;
@@ -57,12 +68,15 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
         card_count?: number;
-      }>('/decks', {
-        method: 'POST',
+      }>("/decks", {
+        method: "POST",
         body: JSON.stringify({ ...data, userId }),
       }),
 
-    updateDeck: (deckId: string, updates: { name?: string; description?: string }) =>
+    updateDeck: (
+      deckId: string,
+      updates: { name?: string; description?: string },
+    ) =>
       apiRequest<{
         id: string;
         name: string;
@@ -72,33 +86,42 @@ export function createApiEndpoints(client: ApiClient) {
         updated_at: string;
         card_count?: number;
       }>(`/decks/${deckId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }),
 
-    deleteDeck: (deckId: string) => apiRequest<void>(`/decks/${deckId}`, { method: 'DELETE' }),
+    deleteDeck: (deckId: string) =>
+      apiRequest<void>(`/decks/${deckId}`, { method: "DELETE" }),
 
     resetDeckStatistics: (deckId: string, userId: string) =>
       apiRequest<void>(`/decks/${deckId}/reset`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId }),
       }),
 
-    exportDeck: (deckId: string) => apiRequest<unknown>(`/decks/${deckId}/export`),
+    exportDeck: (deckId: string) =>
+      apiRequest<unknown>(`/decks/${deckId}/export`),
 
-    exportDeckCsv: (deckId: string) => client.requestText(`/decks/${deckId}/export/csv`),
+    exportDeckCsv: (deckId: string) =>
+      client.requestText(`/decks/${deckId}/export/csv`),
 
     importDeckCsv: (csv: string, userId: string, deckName?: string) =>
-      apiRequest<{ deck: unknown; flashcards: unknown[] }>('/decks/import/csv', {
-        method: 'POST',
-        body: JSON.stringify({ csv, deckName, userId }),
-      }),
+      apiRequest<{ deck: unknown; flashcards: unknown[] }>(
+        "/decks/import/csv",
+        {
+          method: "POST",
+          body: JSON.stringify({ csv, deckName, userId }),
+        },
+      ),
 
     importDeckApkg: (apkgBase64: string, userId: string) =>
-      apiRequest<{ deck: unknown; flashcards: unknown[] }>('/decks/import/apkg', {
-        method: 'POST',
-        body: JSON.stringify({ apkgBase64, userId }),
-      }),
+      apiRequest<{ deck: unknown; flashcards: unknown[] }>(
+        "/decks/import/apkg",
+        {
+          method: "POST",
+          body: JSON.stringify({ apkgBase64, userId }),
+        },
+      ),
 
     importDeck: (importData: unknown, userId: string) =>
       apiRequest<{
@@ -113,7 +136,7 @@ export function createApiEndpoints(client: ApiClient) {
         flashcards: Array<{
           id: string;
           deck_id: string;
-          type: 'BASIC' | 'CLOZE';
+          type: "BASIC" | "CLOZE";
           front?: string;
           back?: string;
           cloze_text?: string;
@@ -121,8 +144,8 @@ export function createApiEndpoints(client: ApiClient) {
           created_at: string;
           updated_at: string;
         }>;
-      }>('/decks/import', {
-        method: 'POST',
+      }>("/decks/import", {
+        method: "POST",
         body: JSON.stringify({ importData, userId }),
       }),
 
@@ -143,26 +166,31 @@ export function createApiEndpoints(client: ApiClient) {
         role: string;
         added_at: string;
       }>(`/decks/${deckId}/collaborators`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId, role }),
       }),
 
     removeDeckCollaborator: (deckId: string, userId: string) =>
-      apiRequest<void>(`/decks/${deckId}/collaborators/${userId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/decks/${deckId}/collaborators/${userId}`, {
+        method: "DELETE",
+      }),
 
     // ========== FLASHCARD API ==========
 
-    fetchFlashcards: async (deckId?: string, options?: { page?: number; limit?: number }) => {
+    fetchFlashcards: async (
+      deckId?: string,
+      options?: { page?: number; limit?: number },
+    ) => {
       const params = new URLSearchParams();
-      if (deckId) params.append('deckId', deckId);
-      if (options?.page) params.append('page', options.page.toString());
+      if (deckId) params.append("deckId", deckId);
+      if (options?.page) params.append("page", options.page.toString());
       if (options?.limit) {
-        params.append('limit', options.limit.toString());
+        params.append("limit", options.limit.toString());
       } else if (deckId) {
-        params.append('limit', '500');
+        params.append("limit", "500");
       }
       const query = params.toString();
-      const endpoint = query ? `/flashcards?${query}` : '/flashcards';
+      const endpoint = query ? `/flashcards?${query}` : "/flashcards";
 
       if (options?.page || options?.limit) {
         return apiRequestRaw<{
@@ -170,7 +198,7 @@ export function createApiEndpoints(client: ApiClient) {
           data: Array<{
             id: string;
             deck_id: string;
-            type: 'BASIC' | 'CLOZE';
+            type: "BASIC" | "CLOZE";
             front?: string;
             back?: string;
             cloze_text?: string;
@@ -192,7 +220,7 @@ export function createApiEndpoints(client: ApiClient) {
         Array<{
           id: string;
           deck_id: string;
-          type: 'BASIC' | 'CLOZE';
+          type: "BASIC" | "CLOZE";
           front?: string;
           back?: string;
           cloze_text?: string;
@@ -213,25 +241,25 @@ export function createApiEndpoints(client: ApiClient) {
       userId: string,
       deckId: string,
       data: {
-        type: 'BASIC' | 'CLOZE';
+        type: "BASIC" | "CLOZE";
         front?: string;
         back?: string;
         clozeText?: string;
         tags?: string[];
-      }
+      },
     ) =>
       apiRequest<{
         id: string;
         deck_id: string;
-        type: 'BASIC' | 'CLOZE';
+        type: "BASIC" | "CLOZE";
         front?: string;
         back?: string;
         cloze_text?: string;
         tags?: string[];
         created_at: string;
         updated_at: string;
-      }>('/flashcards', {
-        method: 'POST',
+      }>("/flashcards", {
+        method: "POST",
         body: JSON.stringify({ ...data, deckId, userId }),
       }),
 
@@ -244,12 +272,12 @@ export function createApiEndpoints(client: ApiClient) {
         srsData?: unknown;
         tags?: string[];
         expectedVersion?: number;
-      }
+      },
     ) =>
       apiRequest<{
         id: string;
         deck_id: string;
-        type: 'BASIC' | 'CLOZE';
+        type: "BASIC" | "CLOZE";
         front?: string;
         back?: string;
         cloze_text?: string;
@@ -258,14 +286,14 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/flashcards/${flashcardId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }),
 
     reviewFlashcard: (
       flashcardId: string,
-      rating: 'again' | 'hard' | 'good' | 'easy',
-      expectedVersion?: number
+      rating: "again" | "hard" | "good" | "easy",
+      expectedVersion?: number,
     ) =>
       apiRequest<{
         id: string;
@@ -274,7 +302,7 @@ export function createApiEndpoints(client: ApiClient) {
         version?: number;
         updated_at: string;
       }>(`/flashcards/${flashcardId}/review`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({
           rating,
           ...(expectedVersion != null ? { expectedVersion } : {}),
@@ -282,7 +310,7 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     deleteFlashcard: (flashcardId: string) =>
-      apiRequest<void>(`/flashcards/${flashcardId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/flashcards/${flashcardId}`, { method: "DELETE" }),
 
     fetchFlashcardComments: (flashcardId: string) =>
       apiRequest<
@@ -296,7 +324,11 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/flashcards/${flashcardId}/comments`),
 
-    addFlashcardComment: (flashcardId: string, userId: string, comment: string) =>
+    addFlashcardComment: (
+      flashcardId: string,
+      userId: string,
+      comment: string,
+    ) =>
       apiRequest<{
         id: string;
         flashcard_id: string;
@@ -305,7 +337,7 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         resolved?: boolean;
       }>(`/flashcards/${flashcardId}/comments`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId, comment }),
       }),
 
@@ -317,26 +349,29 @@ export function createApiEndpoints(client: ApiClient) {
         comment: string;
         created_at: string;
         resolved: boolean;
-      }>(`/flashcards/comments/${commentId}/resolve`, { method: 'PUT' }),
+      }>(`/flashcards/comments/${commentId}/resolve`, { method: "PUT" }),
 
     uploadFlashcardImage: async (
       userId: string,
       file: Blob | { uri: string; name: string; type: string },
-      deckId?: string
+      deckId?: string,
     ) => {
       const formData = new FormData();
-      if ('uri' in file) {
-        formData.append('file', file as unknown as Blob);
+      if ("uri" in file) {
+        formData.append("file", file as unknown as Blob);
       } else {
-        formData.append('file', file);
+        formData.append("file", file);
       }
-      formData.append('userId', userId);
-      if (deckId) formData.append('deckId', deckId);
+      formData.append("userId", userId);
+      if (deckId) formData.append("deckId", deckId);
 
-      return apiRequest<{ url: string; path: string }>('/flashcards/upload-image', {
-        method: 'POST',
-        body: formData,
-      });
+      return apiRequest<{ url: string; path: string }>(
+        "/flashcards/upload-image",
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
     },
 
     // ========== USER PROFILE API ==========
@@ -355,7 +390,11 @@ export function createApiEndpoints(client: ApiClient) {
         updated_at: string;
       }>(`/users/${userId}`),
 
-    createUserProfile: (data: { id: string; name: string; avatar_url?: string }) =>
+    createUserProfile: (data: {
+      id: string;
+      name: string;
+      avatar_url?: string;
+    }) =>
       apiRequest<{
         id: string;
         name: string;
@@ -363,8 +402,8 @@ export function createApiEndpoints(client: ApiClient) {
         points: number;
         created_at: string;
         updated_at: string;
-      }>('/users', {
-        method: 'POST',
+      }>("/users", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
 
@@ -378,7 +417,7 @@ export function createApiEndpoints(client: ApiClient) {
         stats?: unknown;
         badges?: unknown[];
         settings?: unknown;
-      }>
+      }>,
     ) =>
       apiRequest<{
         id: string;
@@ -389,13 +428,13 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/users/${userId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }),
 
     uploadProfileAvatar: (
       userId: string,
-      payload: { fileName: string; base64Data: string; contentType: string }
+      payload: { fileName: string; base64Data: string; contentType: string },
     ) =>
       apiRequest<{
         url: string;
@@ -408,50 +447,60 @@ export function createApiEndpoints(client: ApiClient) {
           avatar_url?: string;
         };
       }>(`/users/${userId}/avatar`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(payload),
       }),
 
     deleteUserAccount: (userId: string) =>
-      apiRequest<{ success: boolean; message?: string }>(`/users/${userId}`, { method: 'DELETE' }),
+      apiRequest<{ success: boolean; message?: string }>(`/users/${userId}`, {
+        method: "DELETE",
+      }),
 
     exportUserData: (userId: string) =>
-      apiRequestRaw<{ success: boolean; data: Record<string, unknown> }>(`/users/${userId}/export`),
+      apiRequestRaw<{ success: boolean; data: Record<string, unknown> }>(
+        `/users/${userId}/export`,
+      ),
 
-    fetchUserSettings: (userId: string) => apiRequest<unknown>(`/users/${userId}/settings`),
+    fetchUserSettings: (userId: string) =>
+      apiRequest<unknown>(`/users/${userId}/settings`),
 
     listBlockedUsers: (userId: string) =>
       apiRequest<{ blockedUserIds: string[] }>(`/users/${userId}/blocks`),
 
     getDmBlockStatus: (userId: string, otherUserId: string) =>
       apiRequest<{ blocked: boolean; iBlockedThem: boolean }>(
-        `/users/${userId}/blocks/status/${encodeURIComponent(otherUserId)}`
+        `/users/${userId}/blocks/status/${encodeURIComponent(otherUserId)}`,
       ),
 
     blockUser: (userId: string, blockedUserId: string) =>
       apiRequest<{ blockedUserId: string }>(`/users/${userId}/blocks`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ blockedUserId }),
       }),
 
     unblockUser: (userId: string, blockedUserId: string) =>
       apiRequest<{ blockedUserId: string }>(
         `/users/${userId}/blocks/${encodeURIComponent(blockedUserId)}`,
-        { method: 'DELETE' }
+        { method: "DELETE" },
       ),
 
     updateUserSettings: (
       userId: string,
       settings: unknown,
-      expectedSettingsVersion?: number
+      expectedSettingsVersion?: number,
     ) =>
-      apiRequest<{ settings: unknown; settingsVersion?: number }>(`/users/${userId}/settings`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          settings,
-          ...(expectedSettingsVersion != null ? { expectedSettingsVersion } : {}),
-        }),
-      }),
+      apiRequest<{ settings: unknown; settingsVersion?: number }>(
+        `/users/${userId}/settings`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            settings,
+            ...(expectedSettingsVersion != null
+              ? { expectedSettingsVersion }
+              : {}),
+          }),
+        },
+      ),
 
     searchUsers: (query: string, limit = 20) => {
       // Preserve leading @ so the API can prefer username matches for @queries.
@@ -479,7 +528,7 @@ export function createApiEndpoints(client: ApiClient) {
     updateUsername: (
       userId: string,
       username: string,
-      extras?: { firstName?: string; lastName?: string }
+      extras?: { firstName?: string; lastName?: string },
     ) =>
       apiRequest<{
         id: string;
@@ -489,7 +538,7 @@ export function createApiEndpoints(client: ApiClient) {
         lastName?: string;
         name?: string;
       }>(`/users/${userId}/username`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({
           username,
           ...(extras?.firstName != null ? { firstName: extras.firstName } : {}),
@@ -499,10 +548,13 @@ export function createApiEndpoints(client: ApiClient) {
 
     // ========== GROUPS API ==========
 
-    fetchGroups: (userId: string, options?: { limit?: number; page?: number }) => {
+    fetchGroups: (
+      userId: string,
+      options?: { limit?: number; page?: number },
+    ) => {
       const params = new URLSearchParams({ userId });
-      if (options?.limit) params.set('limit', String(options.limit));
-      if (options?.page) params.set('page', String(options.page));
+      if (options?.limit) params.set("limit", String(options.limit));
+      if (options?.page) params.set("page", String(options.page));
       return apiRequest<
         Array<{
           id: string;
@@ -567,8 +619,8 @@ export function createApiEndpoints(client: ApiClient) {
         invite_id: string;
         created_at: string;
         updated_at: string;
-      }>('/groups', {
-        method: 'POST',
+      }>("/groups", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
 
@@ -579,7 +631,7 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         avatarUrl?: string;
         isArchived?: boolean;
-      }
+      },
     ) =>
       apiRequest<{
         id: string;
@@ -590,19 +642,24 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/groups/${groupId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }),
 
-    deleteGroup: (groupId: string) => apiRequest<void>(`/groups/${groupId}`, { method: 'DELETE' }),
+    deleteGroup: (groupId: string) =>
+      apiRequest<void>(`/groups/${groupId}`, { method: "DELETE" }),
 
-    fetchGroupMembers: (groupId: string) => apiRequest<unknown[]>(`/groups/${groupId}/members`),
+    fetchGroupMembers: (groupId: string) =>
+      apiRequest<unknown[]>(`/groups/${groupId}/members`),
 
     addGroupMember: (groupId: string, userId: string) =>
-      apiRequest<{ invited?: boolean; groupId?: string; userId?: string }>(`/groups/${groupId}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ userId }),
-      }),
+      apiRequest<{ invited?: boolean; groupId?: string; userId?: string }>(
+        `/groups/${groupId}/members`,
+        {
+          method: "POST",
+          body: JSON.stringify({ userId }),
+        },
+      ),
 
     addGroupMembersBatch: (groupId: string, userIds: string[]) =>
       apiRequest<{
@@ -612,35 +669,46 @@ export function createApiEndpoints(client: ApiClient) {
         alreadyPending: string[];
         failed: string[];
       }>(`/groups/${groupId}/members/batch`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userIds }),
       }),
 
     fetchPendingGroupInvites: () =>
-      apiRequest<Array<{
-        groupId: string;
-        groupName: string;
-        avatarUrl?: string;
-        invitedAt?: string;
-      }>>('/groups/invites/pending'),
+      apiRequest<
+        Array<{
+          groupId: string;
+          groupName: string;
+          avatarUrl?: string;
+          invitedAt?: string;
+        }>
+      >("/groups/invites/pending"),
 
     acceptGroupInvite: (groupId: string) =>
-      apiRequest<unknown>(`/groups/${groupId}/invites/accept`, { method: 'POST' }),
+      apiRequest<unknown>(`/groups/${groupId}/invites/accept`, {
+        method: "POST",
+      }),
 
     declineGroupInvite: (groupId: string) =>
-      apiRequest<void>(`/groups/${groupId}/invites/decline`, { method: 'POST' }),
+      apiRequest<void>(`/groups/${groupId}/invites/decline`, {
+        method: "POST",
+      }),
 
     uploadGroupAvatar: (
       groupId: string,
-      data: { fileName: string; base64Data: string; contentType: string }
+      data: { fileName: string; base64Data: string; contentType: string },
     ) =>
-      apiRequest<{ url: string; path: string; avatarUrl: string }>(`/groups/${groupId}/avatar`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+      apiRequest<{ url: string; path: string; avatarUrl: string }>(
+        `/groups/${groupId}/avatar`,
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
 
     removeGroupMember: (groupId: string, userId: string) =>
-      apiRequest<void>(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/groups/${groupId}/members/${userId}`, {
+        method: "DELETE",
+      }),
 
     joinGroupByInvite: (inviteId: string, userId: string) =>
       apiRequest<{
@@ -649,25 +717,29 @@ export function createApiEndpoints(client: ApiClient) {
         invite_id: string;
         created_at: string;
         updated_at: string;
-      }>('/groups/join', {
-        method: 'POST',
+      }>("/groups/join", {
+        method: "POST",
         body: JSON.stringify({ inviteId, userId }),
       }),
 
     leaveGroup: (groupId: string, userId: string) =>
       apiRequest<void>(`/groups/${groupId}/leave`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId }),
       }),
 
     promoteGroupAdmin: (groupId: string, memberId: string) =>
-      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, { method: 'POST' }),
+      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, {
+        method: "POST",
+      }),
 
     demoteGroupAdmin: (groupId: string, memberId: string) =>
-      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, { method: 'DELETE' }),
+      apiRequest<unknown>(`/groups/${groupId}/admins/${memberId}`, {
+        method: "DELETE",
+      }),
 
     fetchGroupUnreadCounts: (_userId: string) =>
-      apiRequest<Record<string, number>>('/groups/unread/all'),
+      apiRequest<Record<string, number>>("/groups/unread/all"),
 
     markGroupAsRead: (groupId: string, userId: string) =>
       apiRequestRaw<{
@@ -676,17 +748,20 @@ export function createApiEndpoints(client: ApiClient) {
         data?: { previousLastReadAt: string | null };
         message?: string;
       }>(`/groups/${groupId}/read`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId }),
       }),
 
     // ========== MESSAGES API ==========
 
-    fetchMessages: async (groupId: string, options?: { page?: number; limit?: number }) => {
+    fetchMessages: async (
+      groupId: string,
+      options?: { page?: number; limit?: number },
+    ) => {
       const params = new URLSearchParams();
-      if (options?.page) params.append('page', options.page.toString());
-      if (options?.limit) params.append('limit', options.limit.toString());
-      const query = params.toString() ? `?${params.toString()}` : '';
+      if (options?.page) params.append("page", options.page.toString());
+      if (options?.limit) params.append("limit", options.limit.toString());
+      const query = params.toString() ? `?${params.toString()}` : "";
       const endpoint = `/messages/group/${groupId}${query}`;
 
       if (options?.page || options?.limit) {
@@ -698,7 +773,7 @@ export function createApiEndpoints(client: ApiClient) {
             sender_id: string;
             content?: string;
             text?: string;
-            type: 'TEXT' | 'QUESTION';
+            type: "TEXT" | "QUESTION";
             upvotes: number;
             downvotes: number;
             created_at: string;
@@ -715,7 +790,7 @@ export function createApiEndpoints(client: ApiClient) {
           sender_id: string;
           content?: string;
           text?: string;
-          type: 'TEXT' | 'QUESTION';
+          type: "TEXT" | "QUESTION";
           upvotes: number;
           downvotes: number;
           created_at: string;
@@ -732,7 +807,7 @@ export function createApiEndpoints(client: ApiClient) {
         clientMessageId?: string;
         replyToMessageId?: string;
         mentionedUserIds?: string[];
-        type?: 'TEXT' | 'QUESTION';
+        type?: "TEXT" | "QUESTION";
         questionType?: string;
         questionStem?: string;
         options?: unknown[];
@@ -740,20 +815,21 @@ export function createApiEndpoints(client: ApiClient) {
         explanation?: string;
         tags?: string[];
         imageUrl?: string;
-      }
+      },
     ) => {
-      const request = () => apiRequest<{
-        id: string;
-        group_id: string;
-        sender_id: string;
-        content?: string;
-        type: 'TEXT' | 'QUESTION';
-        created_at: string;
-        updated_at: string;
-      }>(`/messages/group/${groupId}`, {
-        method: 'POST',
-        body: JSON.stringify({ ...data, userId }),
-      });
+      const request = () =>
+        apiRequest<{
+          id: string;
+          group_id: string;
+          sender_id: string;
+          content?: string;
+          type: "TEXT" | "QUESTION";
+          created_at: string;
+          updated_at: string;
+        }>(`/messages/group/${groupId}`, {
+          method: "POST",
+          body: JSON.stringify({ ...data, userId }),
+        });
       return retryUncertainDelivery(request);
     },
 
@@ -766,20 +842,25 @@ export function createApiEndpoints(client: ApiClient) {
           sender_id?: string;
           senderId?: string;
           text?: string;
-          type?: 'TEXT' | 'QUESTION';
+          type?: "TEXT" | "QUESTION";
           timestamp?: string;
           thread_root_id?: string;
           threadRootId?: string;
           replyCount?: number;
-          receiptStatus?: 'sent' | 'read';
+          receiptStatus?: "sent" | "read";
           seenByCount?: number;
           seenByTotal?: number;
         }>
-      >(`/messages/group/${encodeURIComponent(groupId)}/thread/${encodeURIComponent(rootId)}`),
+      >(
+        `/messages/group/${encodeURIComponent(groupId)}/thread/${encodeURIComponent(rootId)}`,
+      ),
 
     updateMessage: (
       messageId: string,
-      updates: { flagged_as_similar_user_ids?: string[]; flaggedUserIds?: string[] }
+      updates: {
+        flagged_as_similar_user_ids?: string[];
+        flaggedUserIds?: string[];
+      },
     ) =>
       apiRequest<{
         id: string;
@@ -788,7 +869,7 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/messages/${messageId}/update`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({
           flagged_as_similar_user_ids:
             updates.flagged_as_similar_user_ids ?? updates.flaggedUserIds,
@@ -797,13 +878,13 @@ export function createApiEndpoints(client: ApiClient) {
 
     editGroupMessage: (messageId: string, content: string) =>
       apiRequest<ChatMessageMutationPayload>(`/messages/${messageId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ content }),
       }),
 
     removeGroupMessage: (messageId: string) =>
       apiRequest<ChatMessageMutationPayload>(`/messages/${messageId}`, {
-        method: 'DELETE',
+        method: "DELETE",
       }),
 
     updateQuestionStatus: (messageId: string, questionStatus: string) =>
@@ -814,24 +895,31 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/messages/${messageId}/status`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ questionStatus }),
       }),
 
-    voteOnMessage: (messageId: string, userId: string, voteType: 'up' | 'down') =>
+    voteOnMessage: (
+      messageId: string,
+      userId: string,
+      voteType: "up" | "down",
+    ) =>
       apiRequest<unknown>(`/messages/${messageId}/vote`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId, voteType }),
       }),
 
     removeVote: (messageId: string, userId: string) =>
-      apiRequest<void>(`/messages/${messageId}/vote?userId=${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-      }),
+      apiRequest<void>(
+        `/messages/${messageId}/vote?userId=${encodeURIComponent(userId)}`,
+        {
+          method: "DELETE",
+        },
+      ),
 
     fetchUserVotesForGroup: (groupId: string, userId: string) =>
-      apiRequest<Record<string, 'up' | 'down'>>(
-        `/messages/group/${groupId}/user-votes?userId=${encodeURIComponent(userId)}`
+      apiRequest<Record<string, "up" | "down">>(
+        `/messages/group/${groupId}/user-votes?userId=${encodeURIComponent(userId)}`,
       ),
 
     // ========== DIRECT MESSAGES API ==========
@@ -851,11 +939,11 @@ export function createApiEndpoints(client: ApiClient) {
     fetchDirectMessages: async (
       userId: string,
       otherUserId: string,
-      options?: { page?: number; limit?: number }
+      options?: { page?: number; limit?: number },
     ) => {
       const params = new URLSearchParams({ otherUserId });
-      if (options?.page) params.append('page', options.page.toString());
-      if (options?.limit) params.append('limit', options.limit.toString());
+      if (options?.page) params.append("page", options.page.toString());
+      if (options?.limit) params.append("limit", options.limit.toString());
       const endpoint = `/messages/user/${userId}?${params.toString()}`;
 
       if (options?.page || options?.limit) {
@@ -888,36 +976,43 @@ export function createApiEndpoints(client: ApiClient) {
       recipientId: string,
       content: string,
       clientMessageId?: string,
-      options?: { replyToMessageId?: string }
+      options?: { replyToMessageId?: string },
     ) => {
-      const request = () => apiRequest<{
-        id: string;
-        thread_id: string;
-        sender_id: string;
-        content: string;
-        created_at: string;
-      }>(`/messages/user/${senderId}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          content,
-          recipientId,
-          clientMessageId,
-          replyToMessageId: options?.replyToMessageId,
-        }),
-      });
+      const request = () =>
+        apiRequest<{
+          id: string;
+          thread_id: string;
+          sender_id: string;
+          content: string;
+          created_at: string;
+        }>(`/messages/user/${senderId}`, {
+          method: "POST",
+          body: JSON.stringify({
+            content,
+            recipientId,
+            clientMessageId,
+            replyToMessageId: options?.replyToMessageId,
+          }),
+        });
       return retryUncertainDelivery(request);
     },
 
     editDirectMessage: (messageId: string, content: string) =>
-      apiRequest<ChatMessageMutationPayload>(`/messages/dm-message/${messageId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ content }),
-      }),
+      apiRequest<ChatMessageMutationPayload>(
+        `/messages/dm-message/${messageId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ content }),
+        },
+      ),
 
     removeDirectMessage: (messageId: string) =>
-      apiRequest<ChatMessageMutationPayload>(`/messages/dm-message/${messageId}`, {
-        method: 'DELETE',
-      }),
+      apiRequest<ChatMessageMutationPayload>(
+        `/messages/dm-message/${messageId}`,
+        {
+          method: "DELETE",
+        },
+      ),
 
     markDMAsRead: (threadId: string, userId: string) =>
       apiRequestRaw<{
@@ -925,11 +1020,12 @@ export function createApiEndpoints(client: ApiClient) {
         previousLastReadAt?: string | null;
         data?: { previousLastReadAt?: string | null };
       }>(`/messages/dm/${threadId}/read`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ userId }),
       }).then((body) => ({
         success: body.success !== false,
-        previousLastReadAt: body.previousLastReadAt ?? body.data?.previousLastReadAt ?? null,
+        previousLastReadAt:
+          body.previousLastReadAt ?? body.data?.previousLastReadAt ?? null,
       })),
 
     fetchDmThread: (threadId: string, rootId: string) =>
@@ -945,74 +1041,82 @@ export function createApiEndpoints(client: ApiClient) {
           thread_root_id?: string;
           threadRootId?: string;
           replyCount?: number;
-          receiptStatus?: 'sent' | 'read';
+          receiptStatus?: "sent" | "read";
         }>
-      >(`/messages/dm/${encodeURIComponent(threadId)}/thread/${encodeURIComponent(rootId)}`),
+      >(
+        `/messages/dm/${encodeURIComponent(threadId)}/thread/${encodeURIComponent(rootId)}`,
+      ),
 
     fetchDMUnreadCounts: (_userId: string) =>
-      apiRequest<Record<string, number>>('/messages/dm/unread/all'),
+      apiRequest<Record<string, number>>("/messages/dm/unread/all"),
 
     archiveDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}/archive`, { method: 'PUT' }),
+      apiRequest<void>(`/messages/dm/${threadId}/archive`, { method: "PUT" }),
 
     unarchiveDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: 'PUT' }),
+      apiRequest<void>(`/messages/dm/${threadId}/unarchive`, { method: "PUT" }),
 
     getDmMuteStatus: (threadId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
-        `/messages/dm/${encodeURIComponent(threadId)}/mute`
+        `/messages/dm/${encodeURIComponent(threadId)}/mute`,
       ),
 
-    muteDmThread: (threadId: string, duration: '1h' | '8h' | '24h' | '7d') =>
+    muteDmThread: (threadId: string, duration: "1h" | "8h" | "24h" | "7d") =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
         `/messages/dm/${encodeURIComponent(threadId)}/mute`,
-        { method: 'PUT', body: JSON.stringify({ duration }) }
+        { method: "PUT", body: JSON.stringify({ duration }) },
       ),
 
     unmuteDmThread: (threadId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
         `/messages/dm/${encodeURIComponent(threadId)}/mute`,
-        { method: 'DELETE' }
+        { method: "DELETE" },
       ),
 
     getGroupMuteStatus: (groupId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
-        `/groups/${encodeURIComponent(groupId)}/mute`
+        `/groups/${encodeURIComponent(groupId)}/mute`,
       ),
 
-    muteGroupChat: (groupId: string, duration: '1h' | '8h' | '24h' | '7d') =>
+    muteGroupChat: (groupId: string, duration: "1h" | "8h" | "24h" | "7d") =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
         `/groups/${encodeURIComponent(groupId)}/mute`,
-        { method: 'PUT', body: JSON.stringify({ duration }) }
+        { method: "PUT", body: JSON.stringify({ duration }) },
       ),
 
     unmuteGroupChat: (groupId: string) =>
       apiRequest<{ muted: boolean; mutedUntil: string | null }>(
         `/groups/${encodeURIComponent(groupId)}/mute`,
-        { method: 'DELETE' }
+        { method: "DELETE" },
       ),
 
     acceptDmMessageRequest: (threadId: string) =>
-      apiRequest<{ id: string; status: 'open'; requestedBy: null }>(
+      apiRequest<{ id: string; status: "open"; requestedBy: null }>(
         `/messages/dm/${encodeURIComponent(threadId)}/accept`,
-        { method: 'POST' }
+        { method: "POST" },
       ),
 
     declineDmMessageRequest: (threadId: string) =>
-      apiRequest<{ id: string; status: 'declined'; requestedBy: string | null }>(
-        `/messages/dm/${encodeURIComponent(threadId)}/decline`,
-        { method: 'POST' }
-      ),
+      apiRequest<{
+        id: string;
+        status: "declined";
+        requestedBy: string | null;
+      }>(`/messages/dm/${encodeURIComponent(threadId)}/decline`, {
+        method: "POST",
+      }),
 
     deleteDmThread: (threadId: string, _userId: string) =>
-      apiRequest<void>(`/messages/dm/${threadId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/messages/dm/${threadId}`, { method: "DELETE" }),
 
     // ========== TESTS API ==========
 
-    fetchTests: (userId: string, options?: { status?: string; groupId?: string }) => {
+    fetchTests: (
+      userId: string,
+      options?: { status?: string; groupId?: string },
+    ) => {
       const params = new URLSearchParams({ userId });
-      if (options?.status) params.append('status', options.status);
-      if (options?.groupId) params.append('groupId', options.groupId);
+      if (options?.status) params.append("status", options.status);
+      if (options?.groupId) params.append("groupId", options.groupId);
       return apiRequest<
         Array<{
           id: string;
@@ -1021,7 +1125,7 @@ export function createApiEndpoints(client: ApiClient) {
           config: unknown;
           questions: unknown[];
           user_answers: Record<string, unknown>;
-          status: 'in_progress' | 'completed' | 'abandoned';
+          status: "in_progress" | "completed" | "abandoned";
           start_time: string;
           end_time?: string;
           score?: number;
@@ -1046,8 +1150,8 @@ export function createApiEndpoints(client: ApiClient) {
         status: string;
         start_time: string;
         created_at: string;
-      }>('/tests', {
-        method: 'POST',
+      }>("/tests", {
+        method: "POST",
         body: JSON.stringify({
           config: data.config,
           questions: data.questions,
@@ -1065,7 +1169,7 @@ export function createApiEndpoints(client: ApiClient) {
         endTime?: string;
         status?: string;
       },
-      userId: string
+      userId: string,
     ) =>
       apiRequest<{
         id: string;
@@ -1074,9 +1178,11 @@ export function createApiEndpoints(client: ApiClient) {
         user_answers: Record<string, unknown>;
         end_time?: string;
       }>(`/tests/${sessionId}/submit`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({
-          answers: updates.userAnswers ? Object.values(updates.userAnswers) : [],
+          answers: updates.userAnswers
+            ? Object.values(updates.userAnswers)
+            : [],
           userId,
         }),
       }),
@@ -1087,7 +1193,7 @@ export function createApiEndpoints(client: ApiClient) {
         score: number;
         correctAnswersCount: number;
         totalQuestions: number;
-      }
+      },
     ) =>
       apiRequest<{
         session_id: string;
@@ -1095,7 +1201,7 @@ export function createApiEndpoints(client: ApiClient) {
         correct_answers_count: number;
         total_questions: number;
       }>(`/tests/${sessionId}/results`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(result),
       }),
 
@@ -1105,21 +1211,21 @@ export function createApiEndpoints(client: ApiClient) {
         limit?: number;
         page?: number;
         lean?: boolean;
-        sort?: 'newest' | 'oldest' | 'highestScore';
+        sort?: "newest" | "oldest" | "highestScore";
         from?: string;
         to?: string;
-      }
+      },
     ) => {
       const params = new URLSearchParams({
         userId,
-        status: 'completed',
+        status: "completed",
         limit: String(options?.limit ?? 500),
         page: String(options?.page ?? 1),
-        sort: options?.sort ?? 'newest',
+        sort: options?.sort ?? "newest",
       });
-      if (options?.lean !== false) params.set('lean', '1');
-      if (options?.from) params.set('from', options.from);
-      if (options?.to) params.set('to', options.to);
+      if (options?.lean !== false) params.set("lean", "1");
+      if (options?.from) params.set("from", options.from);
+      if (options?.to) params.set("to", options.to);
       return apiRequest<
         Array<{
           id?: string;
@@ -1149,21 +1255,21 @@ export function createApiEndpoints(client: ApiClient) {
         limit?: number;
         page?: number;
         lean?: boolean;
-        sort?: 'newest' | 'oldest' | 'highestScore';
+        sort?: "newest" | "oldest" | "highestScore";
         from?: string;
         to?: string;
-      }
+      },
     ) => {
       const params = new URLSearchParams({
         userId,
-        status: 'completed',
+        status: "completed",
         limit: String(options?.limit ?? 10),
         page: String(options?.page ?? 1),
-        sort: options?.sort ?? 'newest',
+        sort: options?.sort ?? "newest",
       });
-      if (options?.lean !== false) params.set('lean', '1');
-      if (options?.from) params.set('from', options.from);
-      if (options?.to) params.set('to', options.to);
+      if (options?.lean !== false) params.set("lean", "1");
+      if (options?.from) params.set("from", options.from);
+      if (options?.to) params.set("to", options.to);
       return apiRequestRaw<{
         success: boolean;
         data: Array<{
@@ -1185,7 +1291,12 @@ export function createApiEndpoints(client: ApiClient) {
           totalQuestions: number;
           correctAnswersCount: number;
         }>;
-        pagination?: { page: number; limit: number; total: number; hasMore: boolean };
+        pagination?: {
+          page: number;
+          limit: number;
+          total: number;
+          hasMore: boolean;
+        };
       }>(`/tests?${params.toString()}`);
     },
 
@@ -1202,7 +1313,7 @@ export function createApiEndpoints(client: ApiClient) {
         totalQuestions: number;
         startTime?: string;
         endTime?: string;
-      }
+      },
     ) => {
       if (data.sessionId) {
         return apiRequest<{
@@ -1211,7 +1322,7 @@ export function createApiEndpoints(client: ApiClient) {
           status: string;
           score?: number;
         }>(`/tests/${data.sessionId}/submit`, {
-          method: 'PUT',
+          method: "PUT",
           body: JSON.stringify({
             answers: data.userAnswers ? Object.values(data.userAnswers) : [],
             userId,
@@ -1225,8 +1336,8 @@ export function createApiEndpoints(client: ApiClient) {
         user_id: string;
         status: string;
         score?: number;
-      }>('/tests', {
-        method: 'POST',
+      }>("/tests", {
+        method: "POST",
         body: JSON.stringify({
           config: data.config || {},
           questions: data.questions || [],
@@ -1240,13 +1351,16 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     deleteTestSession: (sessionId: string) =>
-      apiRequest<{ deleted: boolean; message?: string }>(`/tests/sessions/${sessionId}`, {
-        method: 'DELETE',
-      }),
+      apiRequest<{ deleted: boolean; message?: string }>(
+        `/tests/sessions/${sessionId}`,
+        {
+          method: "DELETE",
+        },
+      ),
 
     clearTestHistory: () =>
-      apiRequest<{ deletedCount: number; message?: string }>('/tests/history', {
-        method: 'DELETE',
+      apiRequest<{ deletedCount: number; message?: string }>("/tests/history", {
+        method: "DELETE",
       }),
 
     // ========== USER QUESTION STATS API ==========
@@ -1264,10 +1378,14 @@ export function createApiEndpoints(client: ApiClient) {
     // ========== DASHBOARD AGGREGATE API ==========
 
     /** One round trip for everything the dashboard needs (self only). */
-    fetchDashboardSummary: (options?: { days?: number; activityDate?: string }) => {
+    fetchDashboardSummary: (options?: {
+      days?: number;
+      activityDate?: string;
+    }) => {
       const params = new URLSearchParams();
-      if (options?.days) params.set('days', String(options.days));
-      if (options?.activityDate) params.set('activityDate', options.activityDate);
+      if (options?.days) params.set("days", String(options.days));
+      if (options?.activityDate)
+        params.set("activityDate", options.activityDate);
       const query = params.toString();
       return apiRequest<{
         testResults: unknown[];
@@ -1281,7 +1399,7 @@ export function createApiEndpoints(client: ApiClient) {
           longestStreak?: number;
         } | null;
         activityDays: Array<Record<string, unknown>>;
-      }>(`/dashboard/summary${query ? `?${query}` : ''}`);
+      }>(`/dashboard/summary${query ? `?${query}` : ""}`);
     },
 
     upsertUserQuestionStat: (
@@ -1291,10 +1409,10 @@ export function createApiEndpoints(client: ApiClient) {
         correctAttempts: number;
         incorrectAttempts: number;
         lastAttempted: string;
-      }
+      },
     ) =>
-      apiRequest<void>('/user-stats', {
-        method: 'POST',
+      apiRequest<void>("/user-stats", {
+        method: "POST",
         body: JSON.stringify({
           userId,
           questionId,
@@ -1333,31 +1451,36 @@ export function createApiEndpoints(client: ApiClient) {
         type: string;
         read: boolean;
         created_at: string;
-      }>('/notifications', {
-        method: 'POST',
+      }>("/notifications", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
 
     markNotificationAsRead: (notificationId: string) =>
-      apiRequest<void>(`/notifications/${notificationId}/read`, { method: 'PUT' }),
+      apiRequest<void>(`/notifications/${notificationId}/read`, {
+        method: "PUT",
+      }),
 
     markAllNotificationsAsRead: async (userId: string) => {
       const result = await apiRequest<{ updatedCount: number }>(
         `/notifications/read-all?userId=${encodeURIComponent(userId)}`,
-        { method: 'PUT' }
+        { method: "PUT" },
       );
       return result.updatedCount;
     },
 
     deleteNotification: (notificationId: string, userId: string) =>
-      apiRequest<void>(`/notifications/${notificationId}?userId=${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-      }),
+      apiRequest<void>(
+        `/notifications/${notificationId}?userId=${encodeURIComponent(userId)}`,
+        {
+          method: "DELETE",
+        },
+      ),
 
     deleteAllNotifications: async (userId: string) => {
       const result = await apiRequest<{ deletedCount: number }>(
         `/notifications?userId=${encodeURIComponent(userId)}`,
-        { method: 'DELETE' }
+        { method: "DELETE" },
       );
       return result.deletedCount;
     },
@@ -1376,33 +1499,36 @@ export function createApiEndpoints(client: ApiClient) {
 
     awardPoints: (userId: string, points: number, reason: string) =>
       apiRequest<void>(`/gamification/user/${userId}/points`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ points, reason }),
       }),
 
-    checkBadges: (userId: string) => apiRequest<unknown[]>(`/gamification/user/${userId}/badges`),
+    checkBadges: (userId: string) =>
+      apiRequest<unknown[]>(`/gamification/user/${userId}/badges`),
 
     // ========== MARKETPLACE API ==========
 
-    fetchMarketplaceListings: async (filters: {
-      page?: number;
-      limit?: number;
-      category?: string;
-      /** Filter to a set of categories (server-side tab filter). Serialized comma-separated. */
-      categories?: string[];
-      /** Also include seller-defined `custom:` categories alongside `categories`. */
-      includeCustom?: boolean;
-      search?: string;
-      minPrice?: number;
-      maxPrice?: number;
-      location?: string;
-      campus_id?: string;
-      country_code?: string;
-      sortBy?: string;
-      sortOrder?: 'asc' | 'desc';
-      /** `compact` returns card-shaped rows (first image only) for grids. */
-      responseProfile?: 'compact' | 'full';
-    } = {}) => {
+    fetchMarketplaceListings: async (
+      filters: {
+        page?: number;
+        limit?: number;
+        category?: string;
+        /** Filter to a set of categories (server-side tab filter). Serialized comma-separated. */
+        categories?: string[];
+        /** Also include seller-defined `custom:` categories alongside `categories`. */
+        includeCustom?: boolean;
+        search?: string;
+        minPrice?: number;
+        maxPrice?: number;
+        location?: string;
+        campus_id?: string;
+        country_code?: string;
+        sortBy?: string;
+        sortOrder?: "asc" | "desc";
+        /** `compact` returns card-shaped rows (first image only) for grids. */
+        responseProfile?: "compact" | "full";
+      } = {},
+    ) => {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
@@ -1437,7 +1563,7 @@ export function createApiEndpoints(client: ApiClient) {
                 geopolitical_zone?: string | null;
               };
               images?: string[];
-              status: 'active' | 'sold' | 'inactive';
+              status: "active" | "sold" | "inactive";
               created_at: string;
               updated_at: string;
               seller?: { id: string; name: string; avatar_url?: string };
@@ -1469,7 +1595,7 @@ export function createApiEndpoints(client: ApiClient) {
               geopolitical_zone?: string | null;
             };
             images?: string[];
-            status: 'active' | 'sold' | 'inactive';
+            status: "active" | "sold" | "inactive";
             created_at: string;
             updated_at: string;
             seller?: { id: string; name: string; avatar_url?: string };
@@ -1482,7 +1608,10 @@ export function createApiEndpoints(client: ApiClient) {
         return await marketplaceListingsCache.get(cacheKey, fetchListings);
       } catch (err) {
         if (err instanceof RateLimitError) throw err;
-        if (err instanceof Error && err.message.toLowerCase().includes('rate limit')) {
+        if (
+          err instanceof Error &&
+          err.message.toLowerCase().includes("rate limit")
+        ) {
           throw new RateLimitError(err.message);
         }
         throw err;
@@ -1490,10 +1619,15 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     fetchMarketplaceCategoryAnalytics: () =>
-      marketplaceCategoryAnalyticsCache.get('categories', () =>
+      marketplaceCategoryAnalyticsCache.get("categories", () =>
         apiRequest<
-          Array<{ category: string; total: number; active: number; sold: number }>
-        >('/marketplace/analytics/categories', {}, 5000)
+          Array<{
+            category: string;
+            total: number;
+            active: number;
+            sold: number;
+          }>
+        >("/marketplace/analytics/categories", {}, 5000),
       ),
 
     fetchMarketplaceListing: (listingId: string) =>
@@ -1518,7 +1652,7 @@ export function createApiEndpoints(client: ApiClient) {
           geopolitical_zone?: string | null;
         };
         images?: string[];
-        status: 'active' | 'sold' | 'inactive';
+        status: "active" | "sold" | "inactive";
         category_specific_fields?: unknown;
         views_count?: number;
         favorites_count?: number;
@@ -1553,11 +1687,15 @@ export function createApiEndpoints(client: ApiClient) {
             geopolitical_zone?: string | null;
           };
           images?: string[];
-          status: 'active' | 'sold' | 'inactive';
+          status: "active" | "sold" | "inactive";
           created_at: string;
           seller?: { id: string; name: string; avatar_url?: string };
         }>
-      >(`/marketplace/listings/batch?ids=${ids.map(encodeURIComponent).join(',')}`, {}, 5000),
+      >(
+        `/marketplace/listings/batch?ids=${ids.map(encodeURIComponent).join(",")}`,
+        {},
+        5000,
+      ),
 
     createMarketplaceListing: (
       data: {
@@ -1574,7 +1712,7 @@ export function createApiEndpoints(client: ApiClient) {
         images?: string[];
         categorySpecificFields?: unknown;
       },
-      idempotencyKey?: string
+      idempotencyKey?: string,
     ) =>
       apiRequest<{
         id: string;
@@ -1588,11 +1726,12 @@ export function createApiEndpoints(client: ApiClient) {
         status: string;
         created_at: string;
         updated_at: string;
-      }>('/marketplace/listings', {
-        method: 'POST',
+      }>("/marketplace/listings", {
+        method: "POST",
         body: JSON.stringify(data),
         headers: {
-          'Idempotency-Key': idempotencyKey || createIdempotencyKey('create-listing'),
+          "Idempotency-Key":
+            idempotencyKey || createIdempotencyKey("create-listing"),
         },
       }),
 
@@ -1606,8 +1745,8 @@ export function createApiEndpoints(client: ApiClient) {
         location?: string;
         campus_id: string;
         images?: string[];
-        status: 'active' | 'sold' | 'inactive';
-      }>
+        status: "active" | "sold" | "inactive";
+      }>,
     ) =>
       apiRequest<{
         id: string;
@@ -1621,25 +1760,30 @@ export function createApiEndpoints(client: ApiClient) {
         created_at: string;
         updated_at: string;
       }>(`/marketplace/listings/${listingId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(updates),
       }),
 
     deleteMarketplaceListing: (listingId: string) =>
-      apiRequest<void>(`/marketplace/listings/${listingId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/marketplace/listings/${listingId}`, {
+        method: "DELETE",
+      }),
 
-    updateListingStatus: (listingId: string, status: 'active' | 'inactive' | 'sold') =>
+    updateListingStatus: (
+      listingId: string,
+      status: "active" | "inactive" | "sold",
+    ) =>
       apiRequest<{
         id: string;
         status: string;
         updated_at: string;
       }>(`/marketplace/listings/${listingId}/status`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ status }),
       }),
 
     fetchMyListings: (status?: string) => {
-      const params = status ? `?status=${status}` : '';
+      const params = status ? `?status=${status}` : "";
       return apiRequest<
         Array<{
           id: string;
@@ -1662,7 +1806,7 @@ export function createApiEndpoints(client: ApiClient) {
           totalViews: number;
           totalInquiries: number;
           totalFavorites: number;
-        }>('/marketplace/stats', {}, 5000);
+        }>("/marketplace/stats", {}, 5000);
       } catch {
         return null;
       }
@@ -1676,7 +1820,7 @@ export function createApiEndpoints(client: ApiClient) {
           listing_id: string;
           created_at: string;
         }>
-      >('/marketplace/favorites', {}, 5000),
+      >("/marketplace/favorites", {}, 5000),
 
     addToFavorites: (listingId: string) =>
       apiRequest<{
@@ -1684,18 +1828,20 @@ export function createApiEndpoints(client: ApiClient) {
         user_id: string;
         listing_id: string;
         created_at: string;
-      }>('/marketplace/favorites', {
-        method: 'POST',
+      }>("/marketplace/favorites", {
+        method: "POST",
         body: JSON.stringify({ listingId }),
       }),
 
     removeFromFavorites: (listingId: string) =>
-      apiRequest<void>(`/marketplace/favorites/${listingId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/marketplace/favorites/${listingId}`, {
+        method: "DELETE",
+      }),
 
     checkIfFavorited: async (listingId: string) => {
       try {
         const result = await apiRequest<{ isFavorited: boolean }>(
-          `/marketplace/favorites/${listingId}/check`
+          `/marketplace/favorites/${listingId}/check`,
         );
         return result.isFavorited;
       } catch {
@@ -1703,9 +1849,12 @@ export function createApiEndpoints(client: ApiClient) {
       }
     },
 
-    fetchMyInquiries: (role: 'seller' | 'buyer' = 'seller', status?: string) => {
+    fetchMyInquiries: (
+      role: "seller" | "buyer" = "seller",
+      status?: string,
+    ) => {
       const params = new URLSearchParams({ role });
-      if (status) params.append('status', status);
+      if (status) params.append("status", status);
       return apiRequest<
         Array<{
           id: string;
@@ -1713,7 +1862,7 @@ export function createApiEndpoints(client: ApiClient) {
           dm_thread_id: string;
           buyer_id: string;
           seller_id: string;
-          status: 'open' | 'negotiating' | 'closed' | 'purchased';
+          status: "open" | "negotiating" | "closed" | "purchased";
           initial_message: string;
           created_at: string;
           updated_at: string;
@@ -1729,7 +1878,7 @@ export function createApiEndpoints(client: ApiClient) {
         dm_thread_id: string;
         buyer_id: string;
         seller_id: string;
-        status: 'open' | 'negotiating' | 'closed' | 'purchased';
+        status: "open" | "negotiating" | "closed" | "purchased";
         initial_message?: string;
         created_at: string;
         updated_at?: string;
@@ -1741,7 +1890,9 @@ export function createApiEndpoints(client: ApiClient) {
           category?: string;
           user_id?: string;
         } | null;
-      } | null>(`/marketplace/inquiries/thread/${encodeURIComponent(threadId)}`),
+      } | null>(
+        `/marketplace/inquiries/thread/${encodeURIComponent(threadId)}`,
+      ),
 
     createInquiry: (listingId: string, message: string) =>
       apiRequest<{
@@ -1752,27 +1903,27 @@ export function createApiEndpoints(client: ApiClient) {
         seller_id: string;
         status: string;
         created_at: string;
-      }>('/marketplace/inquiries', {
-        method: 'POST',
+      }>("/marketplace/inquiries", {
+        method: "POST",
         body: JSON.stringify({ listingId, message }),
       }),
 
     updateInquiryStatus: (
       inquiryId: string,
-      status: 'open' | 'negotiating' | 'closed' | 'purchased'
+      status: "open" | "negotiating" | "closed" | "purchased",
     ) =>
       apiRequest<{
         id: string;
         status: string;
         updated_at: string;
       }>(`/marketplace/inquiries/${inquiryId}/status`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ status }),
       }),
 
     addMarketplaceReview: (
       listingId: string,
-      review: { rating: number; comment?: string }
+      review: { rating: number; comment?: string },
     ) =>
       apiRequest<{
         id: string;
@@ -1782,7 +1933,7 @@ export function createApiEndpoints(client: ApiClient) {
         comment?: string;
         created_at: string;
       }>(`/marketplace/listings/${listingId}/reviews`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(review),
       }),
 
@@ -1815,10 +1966,10 @@ export function createApiEndpoints(client: ApiClient) {
 
     reportMarketplaceListing: (
       listingId: string,
-      report: { reason: string; details?: string }
+      report: { reason: string; details?: string },
     ) =>
       apiRequest<void>(`/marketplace/listings/${listingId}/reports`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify(report),
       }),
 
@@ -1826,7 +1977,7 @@ export function createApiEndpoints(client: ApiClient) {
       listingId: string,
       amount: number,
       message?: string,
-      idempotencyKey?: string
+      idempotencyKey?: string,
     ) =>
       apiRequest<{
         id: string;
@@ -1837,21 +1988,21 @@ export function createApiEndpoints(client: ApiClient) {
         message?: string;
         status: string;
         created_at: string;
-      }>('/marketplace/offers', {
-        method: 'POST',
+      }>("/marketplace/offers", {
+        method: "POST",
         body: JSON.stringify({ listingId, amount, message }),
         headers: {
-          'Idempotency-Key':
+          "Idempotency-Key":
             idempotencyKey || createIdempotencyKey(`create-offer-${listingId}`),
         },
       }),
 
     respondToOffer: (
       offerId: string,
-      action: 'accept' | 'decline' | 'counter' | 'withdraw',
+      action: "accept" | "decline" | "counter" | "withdraw",
       counterAmount?: number,
       message?: string,
-      idempotencyKey?: string
+      idempotencyKey?: string,
     ) =>
       apiRequest<{
         id: string;
@@ -1860,13 +2011,14 @@ export function createApiEndpoints(client: ApiClient) {
         amount: number;
         updated_at: string;
       }>(`/marketplace/offers/${offerId}`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify({ action, counterAmount, message }),
         headers:
-          action === 'accept'
+          action === "accept"
             ? {
-                'Idempotency-Key':
-                  idempotencyKey || createIdempotencyKey(`offer-accept-${offerId}`),
+                "Idempotency-Key":
+                  idempotencyKey ||
+                  createIdempotencyKey(`offer-accept-${offerId}`),
               }
             : undefined,
       }),
@@ -1883,7 +2035,7 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/marketplace/listings/${listingId}/offers`),
 
-    fetchMarketplaceOffers: (role: 'buyer' | 'seller' = 'buyer') =>
+    fetchMarketplaceOffers: (role: "buyer" | "seller" = "buyer") =>
       apiRequest<
         Array<{
           id: string;
@@ -1898,33 +2050,42 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/marketplace/offers?role=${role}`, {}, 5000),
 
-    buyNowListing: (listingId: string, couponCode?: string, idempotencyKey?: string) =>
-      apiRequest<{ order: import('../types').MarketplaceOrder }>(
+    buyNowListing: (
+      listingId: string,
+      couponCode?: string,
+      idempotencyKey?: string,
+    ) =>
+      apiRequest<{ order: import("../types").MarketplaceOrder }>(
         `/marketplace/listings/${listingId}/buy-now`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Idempotency-Key': idempotencyKey || createIdempotencyKey('buy-now'),
+            "Idempotency-Key":
+              idempotencyKey || createIdempotencyKey("buy-now"),
           },
           body: JSON.stringify(couponCode ? { couponCode } : {}),
-        }
+        },
       ),
 
-    fetchMarketplaceOrders: (role: 'buyer' | 'seller' = 'buyer') =>
-      apiRequest<import('../types').MarketplaceOrder[]>(
+    fetchMarketplaceOrders: (role: "buyer" | "seller" = "buyer") =>
+      apiRequest<import("../types").MarketplaceOrder[]>(
         `/marketplace/orders?role=${role}`,
         {},
-        5000
+        5000,
       ),
 
     fetchMarketplaceOrder: (orderId: string) =>
-      apiRequest<import('../types').MarketplaceOrder>(`/marketplace/orders/${orderId}`, {}, 5000),
+      apiRequest<import("../types").MarketplaceOrder>(
+        `/marketplace/orders/${orderId}`,
+        {},
+        5000,
+      ),
 
     fetchOrderForInquiry: (inquiryId: string) =>
-      apiRequest<import('../types').MarketplaceOrder | null>(
+      apiRequest<import("../types").MarketplaceOrder | null>(
         `/marketplace/orders/inquiry/${inquiryId}`,
         {},
-        5000
+        5000,
       ),
 
     updateMarketplaceOrder: (
@@ -1934,59 +2095,73 @@ export function createApiEndpoints(client: ApiClient) {
         meetingLocation?: string;
         sellerNote?: string;
         fulfillmentMode?: string;
-      }
+      },
     ) =>
-      apiRequest<import('../types').MarketplaceOrder>(`/marketplace/orders/${orderId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<import("../types").MarketplaceOrder>(
+        `/marketplace/orders/${orderId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        },
+      ),
 
     requestOrderPayment: (orderId: string) =>
       apiRequest<{ orderId: string; amount: number; deepLink: string }>(
         `/marketplace/orders/${orderId}/payment-link`,
-        { method: 'POST' }
+        { method: "POST" },
       ),
 
     fetchSellerAnalytics: () =>
-      apiRequest<import('../types').SellerAnalytics>('/marketplace/analytics/seller', {}, 5000),
+      apiRequest<import("../types").SellerAnalytics>(
+        "/marketplace/analytics/seller",
+        {},
+        5000,
+      ),
 
     fetchSellerBuyers: (segment?: string) =>
-      apiRequest<import('../types').SellerBuyerContact[]>(
-        `/marketplace/seller/buyers${segment ? `?segment=${encodeURIComponent(segment)}` : ''}`,
+      apiRequest<import("../types").SellerBuyerContact[]>(
+        `/marketplace/seller/buyers${segment ? `?segment=${encodeURIComponent(segment)}` : ""}`,
         {},
-        5000
+        5000,
       ),
 
     fetchSellerCoupons: () =>
-      apiRequest<import('../types').MarketplaceCoupon[]>('/marketplace/coupons', {}, 5000),
+      apiRequest<import("../types").MarketplaceCoupon[]>(
+        "/marketplace/coupons",
+        {},
+        5000,
+      ),
 
     createSellerCoupon: (data: {
       code: string;
-      discountType: 'percent' | 'fixed';
+      discountType: "percent" | "fixed";
       discountValue: number;
       listingId?: string;
       maxUses?: number;
       endsAt?: string;
     }) =>
-      apiRequest<import('../types').MarketplaceCoupon>('/marketplace/coupons', {
-        method: 'POST',
+      apiRequest<import("../types").MarketplaceCoupon>("/marketplace/coupons", {
+        method: "POST",
         body: JSON.stringify(data),
         headers: {
-          'Idempotency-Key': createIdempotencyKey(`create-coupon-${data.code}`),
+          "Idempotency-Key": createIdempotencyKey(`create-coupon-${data.code}`),
         },
       }),
 
     validateMarketplaceCoupon: (code: string, listingId: string) =>
-      apiRequest<import('../types').CouponValidationResult>('/marketplace/coupons/validate', {
-        method: 'POST',
-        body: JSON.stringify({ code, listingId }),
-      }),
+      apiRequest<import("../types").CouponValidationResult>(
+        "/marketplace/coupons/validate",
+        {
+          method: "POST",
+          body: JSON.stringify({ code, listingId }),
+        },
+      ),
 
     fetchSellerPreferences: () =>
-      apiRequest<import('../types').MarketplaceSellerPreferences>(
-        '/marketplace/seller/preferences',
+      apiRequest<import("../types").MarketplaceSellerPreferences>(
+        "/marketplace/seller/preferences",
         {},
-        5000
+        5000,
       ),
 
     updateSellerPreferences: (data: {
@@ -1995,16 +2170,16 @@ export function createApiEndpoints(client: ApiClient) {
       requirePaymentConfirmation?: boolean;
       favoriteAlertThreshold?: number;
     }) =>
-      apiRequest<import('../types').MarketplaceSellerPreferences>(
-        '/marketplace/seller/preferences',
-        { method: 'PUT', body: JSON.stringify(data) }
+      apiRequest<import("../types").MarketplaceSellerPreferences>(
+        "/marketplace/seller/preferences",
+        { method: "PUT", body: JSON.stringify(data) },
       ),
 
     fetchPickupNudge: (sellerId: string) =>
-      apiRequest<import('../types').MarketplacePickupNudge>(
+      apiRequest<import("../types").MarketplacePickupNudge>(
         `/marketplace/sellers/${sellerId}/pickup-nudge`,
         {},
-        5000
+        5000,
       ),
 
     sendSellerCampaign: (data: {
@@ -2012,10 +2187,13 @@ export function createApiEndpoints(client: ApiClient) {
       segment?: string;
       buyerIds?: string[];
     }) =>
-      apiRequest<{ sent: number; skipped: number }>('/marketplace/seller/campaigns', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+      apiRequest<{ sent: number; skipped: number }>(
+        "/marketplace/seller/campaigns",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
 
     createMarketplaceBundle: (data: {
       title: string;
@@ -2024,58 +2202,67 @@ export function createApiEndpoints(client: ApiClient) {
       listingIds: string[];
       location?: string;
     }) =>
-      apiRequest<import('../types').MarketplaceListing>('/marketplace/bundles', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+      apiRequest<import("../types").MarketplaceListing>(
+        "/marketplace/bundles",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
 
     fetchSellerOnboarding: () =>
-      apiRequest<import('../types').SellerOnboardingStatus>(
-        '/marketplace/seller/onboarding',
+      apiRequest<import("../types").SellerOnboardingStatus>(
+        "/marketplace/seller/onboarding",
         {},
-        5000
+        5000,
       ),
 
     completeSellerOnboarding: () =>
-      apiRequest<import('../types').MarketplaceSellerPreferences>(
-        '/marketplace/seller/onboarding/complete',
-        { method: 'POST' }
+      apiRequest<import("../types").MarketplaceSellerPreferences>(
+        "/marketplace/seller/onboarding/complete",
+        { method: "POST" },
       ),
 
     submitOrderPaymentProof: (orderId: string, proofUrl: string) =>
-      apiRequest<import('../types').MarketplaceOrder>(
+      apiRequest<import("../types").MarketplaceOrder>(
         `/marketplace/orders/${orderId}/payment-proof`,
-        { method: 'POST', body: JSON.stringify({ proofUrl }) }
+        { method: "POST", body: JSON.stringify({ proofUrl }) },
       ),
 
     fetchListingOffersHistory: (listingId: string) =>
-      apiRequest<import('../types').MarketplaceOffer[]>(
-        `/marketplace/listings/${listingId}/offers-history`
+      apiRequest<import("../types").MarketplaceOffer[]>(
+        `/marketplace/listings/${listingId}/offers-history`,
       ),
 
     checkSavedSearchMatches: (searchId: string) =>
-      apiRequest<{ count: number; listings: import('../types').MarketplaceListing[] }>(
-        `/marketplace/saved-searches/${searchId}/matches`,
-        {},
-        5000
-      ),
+      apiRequest<{
+        count: number;
+        listings: import("../types").MarketplaceListing[];
+      }>(`/marketplace/saved-searches/${searchId}/matches`, {}, 5000),
 
-    updateSavedSearch: (id: string, updates: { notify?: boolean; name?: string }) =>
+    updateSavedSearch: (
+      id: string,
+      updates: { notify?: boolean; name?: string },
+    ) =>
       apiRequest<{ id: string; notify: boolean; name: string }>(
         `/marketplace/saved-searches/${id}`,
-        { method: 'PATCH', body: JSON.stringify(updates) }
+        { method: "PATCH", body: JSON.stringify(updates) },
       ),
 
     boostListing: (listingId: string, idempotencyKey?: string) =>
       apiRequest<{
         id: string;
-        category_specific_fields?: { boosted_until?: string; boost_level?: string };
+        category_specific_fields?: {
+          boosted_until?: string;
+          boost_level?: string;
+        };
         updated_at: string;
       }>(`/marketplace/listings/${listingId}/boost`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ durationHours: 72 }),
         headers: {
-          'Idempotency-Key': idempotencyKey || createIdempotencyKey(`boost-${listingId}`),
+          "Idempotency-Key":
+            idempotencyKey || createIdempotencyKey(`boost-${listingId}`),
         },
       }),
 
@@ -2085,10 +2272,13 @@ export function createApiEndpoints(client: ApiClient) {
       contentType?: string;
       listingId?: string;
     }) =>
-      apiRequest<{ url: string; path: string; storageUrl?: string }>('/marketplace/upload-image', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<{ url: string; path: string; storageUrl?: string }>(
+        "/marketplace/upload-image",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
 
     uploadChatImage: (payload: {
       fileName: string;
@@ -2096,8 +2286,8 @@ export function createApiEndpoints(client: ApiClient) {
       contentType: string;
       groupId?: string;
     }) =>
-      apiRequest<{ url: string; path: string }>('/messages/upload-image', {
-        method: 'POST',
+      apiRequest<{ url: string; path: string }>("/messages/upload-image", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
 
@@ -2108,8 +2298,8 @@ export function createApiEndpoints(client: ApiClient) {
       groupId?: string;
       threadId?: string;
     }) =>
-      apiRequest<{ url: string; path: string }>('/messages/upload-audio', {
-        method: 'POST',
+      apiRequest<{ url: string; path: string }>("/messages/upload-audio", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
 
@@ -2118,10 +2308,13 @@ export function createApiEndpoints(client: ApiClient) {
       base64Data: string;
       contentType: string;
     }) =>
-      apiRequest<{ url: string; path: string }>('/messages/upload-question-image', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
+      apiRequest<{ url: string; path: string }>(
+        "/messages/upload-question-image",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      ),
 
     fetchSavedSearches: () =>
       apiRequest<
@@ -2132,22 +2325,27 @@ export function createApiEndpoints(client: ApiClient) {
           filters: Record<string, unknown>;
           created_at: string;
         }>
-      >('/marketplace/saved-searches', {}, 5000),
+      >("/marketplace/saved-searches", {}, 5000),
 
-    createSavedSearch: (data: { filters: Record<string, unknown>; name?: string }) =>
+    createSavedSearch: (data: {
+      filters: Record<string, unknown>;
+      name?: string;
+    }) =>
       apiRequest<{
         id: string;
         user_id: string;
         name: string;
         filters: Record<string, unknown>;
         created_at: string;
-      }>('/marketplace/saved-searches', {
-        method: 'POST',
+      }>("/marketplace/saved-searches", {
+        method: "POST",
         body: JSON.stringify(data),
       }),
 
     deleteSavedSearch: (id: string) =>
-      apiRequest<void>(`/marketplace/saved-searches/${id}`, { method: 'DELETE' }),
+      apiRequest<void>(`/marketplace/saved-searches/${id}`, {
+        method: "DELETE",
+      }),
 
     fetchSellerProfile: (sellerId: string) =>
       apiRequest<{
@@ -2164,7 +2362,7 @@ export function createApiEndpoints(client: ApiClient) {
     // ========== BUDGET API ==========
 
     fetchUserBudget: async (userId: string, monthYear?: string) => {
-      const params = monthYear ? `?monthYear=${monthYear}` : '';
+      const params = monthYear ? `?monthYear=${monthYear}` : "";
       try {
         return await apiRequest<{
           monthly_limit: number;
@@ -2175,9 +2373,12 @@ export function createApiEndpoints(client: ApiClient) {
       }
     },
 
-    saveUserBudget: (userId: string, budget: { monthlyLimit: number; monthYear: string }) =>
+    saveUserBudget: (
+      userId: string,
+      budget: { monthlyLimit: number; monthYear: string },
+    ) =>
       apiRequest<void>(`/users/${userId}/budget`, {
-        method: 'PUT',
+        method: "PUT",
         body: JSON.stringify(budget),
       }),
 
@@ -2186,7 +2387,7 @@ export function createApiEndpoints(client: ApiClient) {
         Array<{
           id: string;
           user_id: string;
-          type: 'income' | 'expense' | 'investment';
+          type: "income" | "expense" | "investment";
           amount: number;
           category?: string;
           description?: string;
@@ -2204,13 +2405,13 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         date: string;
       },
-      idempotencyKey?: string
+      idempotencyKey?: string,
     ) =>
       apiRequest<{
         transaction: unknown;
         warning: unknown;
-      }>('/budget/transactions', {
-        method: 'POST',
+      }>("/budget/transactions", {
+        method: "POST",
         body: JSON.stringify({
           id: transaction.id,
           type: transaction.type.toLowerCase(),
@@ -2220,13 +2421,16 @@ export function createApiEndpoints(client: ApiClient) {
           date: transaction.date,
         }),
         headers: {
-          'Idempotency-Key':
-            idempotencyKey || createIdempotencyKey(`budget-tx-${transaction.id}`),
+          "Idempotency-Key":
+            idempotencyKey ||
+            createIdempotencyKey(`budget-tx-${transaction.id}`),
         },
       }),
 
     deleteBudgetTransaction: (_userId: string, transactionId: string) =>
-      apiRequest<void>(`/budget/transactions/${transactionId}`, { method: 'DELETE' }),
+      apiRequest<void>(`/budget/transactions/${transactionId}`, {
+        method: "DELETE",
+      }),
 
     fetchBudgetWallet: () =>
       apiRequest<{
@@ -2234,7 +2438,7 @@ export function createApiEndpoints(client: ApiClient) {
         savingsGoals: any[];
         expenseSplits: any[];
         categoryBudgets?: Record<string, number>;
-      }>('/budget/wallet'),
+      }>("/budget/wallet"),
 
     createSavingsGoal: (goal: {
       name: string;
@@ -2242,26 +2446,33 @@ export function createApiEndpoints(client: ApiClient) {
       icon?: string;
       deadline?: string;
     }) =>
-      apiRequest<{ goal: any; walletBalance: number }>('/budget/goals', {
-        method: 'POST',
+      apiRequest<{ goal: any; walletBalance: number }>("/budget/goals", {
+        method: "POST",
         body: JSON.stringify(goal),
       }),
 
     deleteSavingsGoal: (goalId: string) =>
-      apiRequest<{ walletBalance: number }>(`/budget/goals/${goalId}`, { method: 'DELETE' }),
+      apiRequest<{ walletBalance: number }>(`/budget/goals/${goalId}`, {
+        method: "DELETE",
+      }),
 
-    contributeToSavingsGoal: (goalId: string, amount: number, idempotencyKey?: string) =>
+    contributeToSavingsGoal: (
+      goalId: string,
+      amount: number,
+      idempotencyKey?: string,
+    ) =>
       apiRequest<{
         goal: any;
         transaction: any;
         walletBalance: number;
         awarded: number;
       }>(`/budget/goals/${goalId}/contribute`, {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({ amount }),
         headers: {
-          'Idempotency-Key':
-            idempotencyKey || createIdempotencyKey(`budget-contribute-${goalId}`),
+          "Idempotency-Key":
+            idempotencyKey ||
+            createIdempotencyKey(`budget-contribute-${goalId}`),
         },
       }),
 
@@ -2271,7 +2482,7 @@ export function createApiEndpoints(client: ApiClient) {
         walletBalance: number;
         alreadyAwarded?: boolean;
         reason?: string;
-      }>('/budget/awards/under-budget', { method: 'POST', body: '{}' }),
+      }>("/budget/awards/under-budget", { method: "POST", body: "{}" }),
 
     // ========== OFFLINE BUNDLES API ==========
 
@@ -2285,7 +2496,7 @@ export function createApiEndpoints(client: ApiClient) {
           display_name?: string;
           downloaded_at: string;
         }>
-      >('/offline-bundles'),
+      >("/offline-bundles"),
 
     saveOfflineBundle: (
       userId: string,
@@ -2296,10 +2507,10 @@ export function createApiEndpoints(client: ApiClient) {
         groupName: string;
         displayName?: string;
         downloadedAt: Date | string;
-      }
+      },
     ) =>
-      apiRequest<void>('/offline-bundles', {
-        method: 'POST',
+      apiRequest<void>("/offline-bundles", {
+        method: "POST",
         body: JSON.stringify({
           userId,
           bundle: {
@@ -2313,50 +2524,71 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     deleteOfflineBundle: (userId: string, bundleId: string) =>
-      apiRequest<void>(`/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`, {
-        method: 'DELETE',
-      }),
+      apiRequest<void>(
+        `/offline-bundles?bundleId=${encodeURIComponent(bundleId)}`,
+        {
+          method: "DELETE",
+        },
+      ),
 
     // ========== CHALLENGES API ==========
 
     createChallenge: (payload: {
       groupId: string;
       opponentId: string;
-      config: { numberOfQuestions: number; allowedQuestionTypes?: string[]; selectedTags?: string[] };
+      config: {
+        numberOfQuestions: number;
+        allowedQuestionTypes?: string[];
+        selectedTags?: string[];
+      };
     }) =>
-      apiRequest<{ id: string } & Record<string, unknown>>('/challenges', {
-        method: 'POST',
+      apiRequest<{ id: string } & Record<string, unknown>>("/challenges", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
 
     fetchChallenges: (status?: string) => {
-      const q = status ? `?status=${encodeURIComponent(status)}` : '';
+      const q = status ? `?status=${encodeURIComponent(status)}` : "";
       return apiRequest<Array<Record<string, unknown>>>(`/challenges${q}`);
     },
 
     fetchChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}`),
+      apiRequest<Record<string, unknown>>(
+        `/challenges/${encodeURIComponent(challengeId)}`,
+      ),
 
     acceptChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/accept`, {
-        method: 'POST',
-      }),
+      apiRequest<Record<string, unknown>>(
+        `/challenges/${encodeURIComponent(challengeId)}/accept`,
+        {
+          method: "POST",
+        },
+      ),
 
     declineChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/decline`, {
-        method: 'POST',
-      }),
+      apiRequest<Record<string, unknown>>(
+        `/challenges/${encodeURIComponent(challengeId)}/decline`,
+        {
+          method: "POST",
+        },
+      ),
 
     submitChallenge: (challengeId: string, answers: Record<string, unknown>) =>
-      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/submit`, {
-        method: 'POST',
-        body: JSON.stringify({ answers }),
-      }),
+      apiRequest<Record<string, unknown>>(
+        `/challenges/${encodeURIComponent(challengeId)}/submit`,
+        {
+          method: "POST",
+          body: JSON.stringify({ answers }),
+        },
+      ),
 
     forfeitChallenge: (challengeId: string) =>
-      apiRequest<Record<string, unknown>>(`/challenges/${encodeURIComponent(challengeId)}/forfeit`, {
-        method: 'POST',
-      }),
+      apiRequest<Record<string, unknown>>(
+        `/challenges/${encodeURIComponent(challengeId)}/forfeit`,
+        {
+          method: "POST",
+        },
+      ),
 
     // ========== PREFERENCES API ==========
 
@@ -2373,14 +2605,14 @@ export function createApiEndpoints(client: ApiClient) {
         theme: string;
         lowDataMode: boolean;
         /** Canonical appearance theme including `system` (stored in preferences JSONB). */
-        themePreference?: 'light' | 'dark' | 'system';
-      }
+        themePreference?: "light" | "dark" | "system";
+      },
     ) =>
-      apiRequest<void>('/preferences', {
-        method: 'POST',
+      apiRequest<void>("/preferences", {
+        method: "POST",
         body: JSON.stringify({
           userId,
-          theme: prefs.theme === 'dark' ? 'dark' : 'light',
+          theme: prefs.theme === "dark" ? "dark" : "light",
           preferences: {
             lowDataMode: prefs.lowDataMode,
             themePreference: prefs.themePreference ?? prefs.theme,
@@ -2388,7 +2620,7 @@ export function createApiEndpoints(client: ApiClient) {
         }),
       }),
 
-    fetchMarketplaceCampuses: (country = 'NG') =>
+    fetchMarketplaceCampuses: (country = "NG") =>
       apiRequest<
         Array<{
           id: string;
@@ -2402,18 +2634,21 @@ export function createApiEndpoints(client: ApiClient) {
 
     // ========== JOBS BOARD API (/api/v1/jobs-board) ==========
 
-    fetchJobPostings: (filters: {
-      page?: number;
-      limit?: number;
-      search?: string;
-      employmentType?: string;
-      campusId?: string;
-      companyOnly?: boolean;
-      sponsoredFirst?: boolean;
-    } = {}) => {
+    fetchJobPostings: (
+      filters: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        employmentType?: string;
+        campusId?: string;
+        companyOnly?: boolean;
+        sponsoredFirst?: boolean;
+      } = {},
+    ) => {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) params.append(key, String(value));
+        if (value !== undefined && value !== null)
+          params.append(key, String(value));
       });
       return apiRequestRaw<{
         success: boolean;
@@ -2423,31 +2658,52 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     fetchJobPosting: (id: string) =>
-      apiRequestRaw<{ success: boolean; data: unknown }>(`/jobs-board/postings/${encodeURIComponent(id)}`),
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/postings/${encodeURIComponent(id)}`,
+      ),
 
     createJobPosting: (body: Record<string, unknown>) =>
-      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/postings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        "/jobs-board/postings",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
 
     updateJobPosting: (id: string, body: Record<string, unknown>) =>
       apiRequestRaw<{ success: boolean; data: unknown }>(
         `/jobs-board/postings/${encodeURIComponent(id)}`,
         {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }
+        },
       ),
 
     fetchMyJobPostings: () =>
-      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/my-postings'),
+      apiRequestRaw<{ success: boolean; data: unknown[] }>(
+        "/jobs-board/my-postings",
+      ),
+
+    fetchJobEmployerAnalytics: () =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        "/jobs-board/analytics/employer",
+      ),
+
+    fetchJobPostingAnalytics: (postingId: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/postings/${encodeURIComponent(postingId)}/analytics`,
+      ),
 
     applyToJob: (
       id: string,
-      body: { message?: string; answers?: Record<string, string>; resumeUrl?: string | null }
+      body: {
+        message?: string;
+        answers?: Record<string, string>;
+        resumeUrl?: string | null;
+      },
     ) =>
       apiRequestRaw<{
         success: boolean;
@@ -2455,60 +2711,72 @@ export function createApiEndpoints(client: ApiClient) {
         threadId?: string;
         existing?: boolean;
       }>(`/jobs-board/postings/${encodeURIComponent(id)}/apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }),
 
     trackJobExternalApply: (id: string) =>
       apiRequestRaw<{ success: boolean; data: { url: string } }>(
         `/jobs-board/postings/${encodeURIComponent(id)}/external-apply`,
-        { method: 'POST' }
+        { method: "POST" },
       ),
 
     fetchMyJobApplications: () =>
-      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/my-applications'),
+      apiRequestRaw<{ success: boolean; data: unknown[] }>(
+        "/jobs-board/my-applications",
+      ),
 
     fetchJobApplicants: (postingId: string) =>
       apiRequestRaw<{ success: boolean; data: unknown[] }>(
-        `/jobs-board/postings/${encodeURIComponent(postingId)}/applications`
+        `/jobs-board/postings/${encodeURIComponent(postingId)}/applications`,
       ),
 
     updateJobApplicationStatus: (
       applicationId: string,
-      body: { status: string; asApplicant?: boolean }
+      body: { status: string; asApplicant?: boolean },
     ) =>
       apiRequestRaw<{ success: boolean; data: unknown }>(
         `/jobs-board/applications/${encodeURIComponent(applicationId)}/status`,
         {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }
+        },
       ),
 
-    reportJobPosting: (id: string, body: { reason: string; details?: string }) =>
+    reportJobPosting: (
+      id: string,
+      body: { reason: string; details?: string },
+    ) =>
       apiRequestRaw<{ success: boolean; data: unknown }>(
         `/jobs-board/postings/${encodeURIComponent(id)}/reports`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }
+        },
       ),
 
     createJobCompany: (body: Record<string, unknown>) =>
-      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/companies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        "/jobs-board/companies",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
 
     fetchMyJobCompanies: () =>
-      apiRequestRaw<{ success: boolean; data: unknown[] }>('/jobs-board/companies/mine'),
+      apiRequestRaw<{ success: boolean; data: unknown[] }>(
+        "/jobs-board/companies/mine",
+      ),
 
     fetchJobTemplates: () =>
-      apiRequestRaw<{ success: boolean; data: unknown }>('/jobs-board/templates'),
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        "/jobs-board/templates",
+      ),
   };
 }
 

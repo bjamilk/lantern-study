@@ -19,6 +19,7 @@ import {
   type JobPostingStatus,
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
+import { JobEmployerInsights } from "../../components/jobs/JobEmployerInsights";
 import { fetchMyJobPostings, updateJobPosting } from "../../services/jobsBoard";
 import type { MarketStackParamList } from "../../navigation/types";
 
@@ -159,6 +160,12 @@ export function MyJobPostingsScreen() {
               ) : null}
             </Card>
           </ScrollView>
+
+          <JobEmployerInsights
+            onOpenPosting={(postingId) =>
+              navigation.navigate("JobApplicants", { jobId: postingId })
+            }
+          />
 
           {error ? (
             <View className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">

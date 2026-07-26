@@ -6,11 +6,13 @@ import type {
   JobApplication,
   JobApplicationNote,
   JobCompensation,
+  JobEmployerAnalytics,
   JobEngagementDuration,
   JobInterview,
   JobInterviewMode,
   JobOffer,
   JobPosting,
+  JobPostingAnalytics,
   JobSavedSearch,
   JobSearchFilters,
 } from "@lantern/shared";
@@ -257,6 +259,18 @@ export async function setJobPostingSaved(id: string, saved: boolean) {
 
 export async function fetchMyJobPostings() {
   return jobsRequest<{ success: boolean; data: JobPosting[] }>("/my-postings");
+}
+
+export async function fetchJobEmployerAnalytics() {
+  return jobsRequest<{ success: boolean; data: JobEmployerAnalytics }>(
+    "/analytics/employer",
+  );
+}
+
+export async function fetchJobPostingAnalytics(postingId: string) {
+  return jobsRequest<{ success: boolean; data: JobPostingAnalytics }>(
+    `/postings/${encodeURIComponent(postingId)}/analytics`,
+  );
 }
 
 export async function fetchMyJobApplications() {
