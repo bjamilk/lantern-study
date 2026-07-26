@@ -1133,9 +1133,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         currentGroup: state.currentGroup?.id === groupId ? null : state.currentGroup,
         activeGroupId: state.activeGroupId === groupId ? null : state.activeGroupId,
         messages: state.activeGroupId === groupId ? [] : state.messages,
+        error: null,
       }));
+      await get().saveToStorage();
     } catch (error: any) {
-      set({ error: error.message || 'Failed to leave group' });
+      const message = error.message || 'Failed to leave group';
+      set({ error: message });
+      throw error instanceof Error ? error : new Error(message);
     }
   },
 

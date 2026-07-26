@@ -2668,6 +2668,22 @@ export const removeGroupMember = async (groupId: string, memberId: string) => {
   return result.data;
 };
 
+export const leaveGroup = async (groupId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/groups/${groupId}/leave`, {
+    method: 'POST',
+    headers: {
+      ...(await getAuthHeaders()),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || error.message || 'Failed to leave group');
+  }
+  return true;
+};
+
 // --- Marketplace Functions ---
 
 export const createMarketplaceListing = async (listingData: {

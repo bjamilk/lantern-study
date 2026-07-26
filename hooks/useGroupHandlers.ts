@@ -28,6 +28,7 @@ import {
     deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
     editGroupMessage, removeGroupMessage, editDirectMessage, removeDirectMessage,
     removeGroupMember,
+    leaveGroup,
     type ChatMessageMutationPayload,
 } from '../services/supabase';
 import { confirmDialog } from '../stores/confirmStore';
@@ -1696,6 +1697,56 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, groups, users, selectedChat, updateGroups, setSelectedChat]);
 
+    const handleLeaveGroup = useCallback(async (groupId: string) => {
+        if (!currentUser) return;
+        const group = groups.find((g) => g.id === groupId) ||
+          (selectedChat?.chatType === 'group' && selectedChat.id === groupId ? selectedChat : null);
+        if (!group) return;
+
+        const isSoleAdmin =
+          Array.isArray(group.adminIds) &&
+          group.adminIds.includes(currentUser.id) &&
+          group.adminIds.length <= 1;
+        if (isSoleAdmin) {
+          useToastStore.getState().showToast(
+            'Cannot leave as the only admin. Promote another member first.',
+            'error',
+          );
+          return;
+        }
+
+        const confirmed = await confirmDialog({
+          title: 'Leave group',
+          message: `Leave "${group.name}"? You will lose access until someone invites you again.`,
+          confirmLabel: 'Leave',
+          danger: true,
+        });
+        if (!confirmed) return;
+
+        try {
+          await leaveGroup(groupId);
+          updateGroups((prev) => prev.filter((g) => g.id !== groupId));
+          updateMessages((prev) => {
+            const next = { ...prev };
+            delete next[groupId];
+            return next;
+          });
+          if (selectedChat?.chatType === 'group' && selectedChat.id === groupId) {
+            setSelectedChat(null);
+          }
+          closeModal('groupInfo');
+          useToastStore.getState().showToast(`You left "${group.name}".`, 'success');
+        } catch (error) {
+          console.error('Failed to leave group:', error);
+          useToastStore
+            .getState()
+            .showToast(
+              error instanceof Error ? error.message : 'Failed to leave group.',
+              'error',
+            );
+        }
+    }, [currentUser, groups, selectedChat, updateGroups, updateMessages, setSelectedChat, closeModal]);
+
     const getAllSubgroupIDs = useCallback((parentId: string, allGroups: Group[]): string[] => {
         const subgroupIDs: string[] = [];
         const directSubgroups = allGroups.filter(g => g.parentId === parentId);
@@ -1971,6 +2022,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         handlePromoteToAdmin,
         handleDemoteAdmin,
         handleRemoveGroupMember,
+        handleLeaveGroup,
         getAllSubgroupIDs,
         handleDeleteGroup,
         handleToggleArchiveGroup,

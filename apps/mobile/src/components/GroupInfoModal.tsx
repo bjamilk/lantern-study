@@ -33,6 +33,7 @@ interface GroupInfoModalProps {
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
   onRemoveMember: (groupId: string, userId: string) => void;
+  onLeaveGroup: (groupId: string) => void;
   onArchiveGroup: (groupId: string) => void;
   onDeleteGroup: (groupId: string) => void;
   onAddMembers: () => void;
@@ -51,6 +52,7 @@ export default function GroupInfoModal({
   onPromoteToAdmin,
   onDemoteAdmin,
   onRemoveMember,
+  onLeaveGroup,
   onArchiveGroup,
   onDeleteGroup,
   onAddMembers,
@@ -70,6 +72,11 @@ export default function GroupInfoModal({
   const currentUserMember = group.members.find(m => m.userId === currentUserId);
   const isAdmin = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin';
   const isOwner = currentUserMember?.role === 'owner';
+  const isSoleAdmin =
+    Boolean(isAdmin) &&
+    (group.adminIds?.length
+      ? group.adminIds.length <= 1 && group.adminIds.includes(currentUserId)
+      : group.members.filter((m) => m.role === 'owner' || m.role === 'admin').length <= 1);
 
   const handleChangeAvatar = async () => {
     if (!isAdmin || uploadingAvatar) return;
@@ -154,6 +161,28 @@ export default function GroupInfoModal({
           },
         },
       ]
+    );
+  };
+
+  const handleLeave = () => {
+    if (isSoleAdmin) {
+      Alert.alert(
+        'Cannot leave',
+        'You are the only admin. Promote another member before leaving.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Leave Group',
+      `Leave "${group.name}"? You will lose access until someone invites you again.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: () => onLeaveGroup(group.id),
+        },
+      ],
     );
   };
 
@@ -408,14 +437,32 @@ export default function GroupInfoModal({
 
   const renderDangerTab = () => (
     <View style={styles.tabContent}>
-      {!isOwner ? (
-        <View style={styles.noAccessContainer}>
-          <Ionicons name="lock-closed" size={48} color="#6b7280" />
-          <Text style={styles.noAccessText}>
-            Only group owners can access these settings
-          </Text>
+      <View style={styles.dangerSection}>
+        <View style={styles.dangerHeader}>
+          <Ionicons name="exit-outline" size={24} color="#f97316" />
+          <View style={styles.dangerInfo}>
+            <Text style={styles.dangerTitle}>Leave Group</Text>
+            <Text style={styles.dangerDescription}>
+              {isSoleAdmin
+                ? 'Promote another admin before leaving'
+                : 'You will lose access until invited again'}
+            </Text>
+          </View>
         </View>
-      ) : (
+        <TouchableOpacity
+          style={[
+            styles.dangerButton,
+            { backgroundColor: isSoleAdmin ? '#fdba74' : '#f97316' },
+          ]}
+          onPress={handleLeave}
+          disabled={isSoleAdmin}
+        >
+          <Ionicons name="exit-outline" size={18} color="#ffffff" />
+          <Text style={styles.dangerButtonText}>Leave Group</Text>
+        </TouchableOpacity>
+      </View>
+
+      {isOwner ? (
         <>
           {/* Archive Section */}
           <View style={styles.dangerSection}>
@@ -465,7 +512,7 @@ export default function GroupInfoModal({
             </TouchableOpacity>
           </View>
         </>
-      )}
+      ) : null}
     </View>
   );
 
@@ -490,7 +537,7 @@ export default function GroupInfoModal({
           <View style={[styles.tabs, { borderBottomColor: colors.border }]}>
             {renderTab('details', 'Details', 'information-circle')}
             {renderTab('members', 'Members', 'people')}
-            {isOwner && renderTab('danger', 'Danger', 'warning')}
+            {renderTab('danger', 'Danger', 'warning')}
           </View>
 
           {/* Content */}

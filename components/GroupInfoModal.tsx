@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Group, User } from '../types';
-import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { compressImage } from '../utils/imageCompression';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
@@ -20,6 +20,7 @@ interface GroupInfoModalProps {
   onPromoteToAdmin: (groupId: string, userId: string) => void;
   onDemoteAdmin: (groupId: string, userId: string) => void;
   onRemoveMember: (groupId: string, userId: string) => void;
+  onLeaveGroup: (groupId: string) => void;
   onDeleteGroup: (groupId: string) => void;
   onToggleArchiveGroup: (groupId: string) => void;
   onChallengeUser: (user: User) => void;
@@ -41,6 +42,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
     onPromoteToAdmin,
     onDemoteAdmin,
     onRemoveMember,
+    onLeaveGroup,
     onDeleteGroup,
     onToggleArchiveGroup,
     onChallengeUser,
@@ -161,6 +163,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
   };
 
   const isCurrentUserAdmin = group.adminIds?.includes(currentUser.id) || false;
+  const isSoleAdmin =
+    isCurrentUserAdmin && (group.adminIds?.length || 0) <= 1;
   
   const inviteLink = group.inviteId ? buildGroupInviteLink(group.inviteId) : '';
 
@@ -318,8 +322,30 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             );
         case 'danger':
             return (
-                isCurrentUserAdmin ? (
-                    <div className="space-y-4">
+                <div className="space-y-4">
+                    <div className="p-4 border border-orange-500/30 dark:border-orange-600/50 bg-orange-50 dark:bg-orange-900/30 rounded-lg">
+                        <h4 className="font-semibold text-orange-800 dark:text-orange-300">Leave Group</h4>
+                        <p className="text-xs text-orange-700 dark:text-orange-400 mt-1 mb-3">
+                          {isSoleAdmin
+                            ? 'You are the only admin. Promote another member before leaving.'
+                            : 'You will lose access to this group until someone invites you again.'}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isSoleAdmin}
+                          onClick={() => onLeaveGroup(group.id)}
+                          className={`w-full flex items-center justify-center p-2 text-sm font-medium text-white rounded-md ${
+                            isSoleAdmin
+                              ? 'bg-orange-300 cursor-not-allowed'
+                              : 'bg-orange-500 hover:bg-orange-600'
+                          }`}
+                        >
+                            <ArrowRightOnRectangleIcon className="w-4 h-4 mr-2"/>
+                            Leave Group
+                        </button>
+                    </div>
+                    {isCurrentUserAdmin ? (
+                      <>
                          <div className="p-4 border border-yellow-500/30 dark:border-yellow-600/50 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
                             <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Archive Group</h4>
                             <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 mb-3">Archiving will hide the group from the main list for all members and disable new messages.</p>
@@ -336,10 +362,9 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                 Delete Group Permanently
                             </button>
                          </div>
-                    </div>
-                ) : (
-                    <p className="text-sm text-lantern-text-secondary">Only group admins can perform these actions.</p>
-                )
+                      </>
+                    ) : null}
+                </div>
             );
       }
   }
@@ -374,9 +399,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             <TabList className="!border-0 -mb-px gap-4">
                 <Tab value="details" index={0} className="!rounded-none whitespace-nowrap !px-1">Details</Tab>
                 <Tab value="members" index={1} className="!rounded-none whitespace-nowrap !px-1">Members</Tab>
-                {isCurrentUserAdmin ? (
-                  <Tab value="danger" index={2} className={`!rounded-none whitespace-nowrap !px-1 ${activeTab === 'danger' ? '!text-lantern-error' : ''}`}>Danger Zone</Tab>
-                ) : null}
+                <Tab value="danger" index={2} className={`!rounded-none whitespace-nowrap !px-1 ${activeTab === 'danger' ? '!text-lantern-error' : ''}`}>Danger Zone</Tab>
             </TabList>
         </div>
 
@@ -386,11 +409,9 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
         <TabPanel value="members" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
             {renderContent('members')}
         </TabPanel>
-        {isCurrentUserAdmin ? (
-          <TabPanel value="danger" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
+        <TabPanel value="danger" className="flex-grow overflow-y-auto px-6 py-4 bg-lantern-surface">
             {renderContent('danger')}
-          </TabPanel>
-        ) : null}
+        </TabPanel>
       </Tabs>
     </Modal>
   );

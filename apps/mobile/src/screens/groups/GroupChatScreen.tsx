@@ -210,6 +210,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     promoteToAdmin,
     demoteAdmin,
     removeMember,
+    leaveGroup,
     deleteGroup,
     submitQuestion,
     voteOnMessage,
@@ -1243,6 +1244,20 @@ export function GroupChatScreen({ navigation, route }: Props) {
           onPromoteToAdmin={(gid, uid) => void promoteToAdmin(gid, uid)}
           onDemoteAdmin={(gid, uid) => void demoteAdmin(gid, uid)}
           onRemoveMember={(gid, uid) => void removeMember(gid, uid)}
+          onLeaveGroup={(gid) => {
+            if (!user?.id) return;
+            void leaveGroup(gid, user.id)
+              .then(() => {
+                setShowGroupInfo(false);
+                navigation.goBack();
+              })
+              .catch((error: unknown) => {
+                Alert.alert(
+                  'Could not leave group',
+                  error instanceof Error ? error.message : 'Try again.',
+                );
+              });
+          }}
           onArchiveGroup={() => {}}
           onDeleteGroup={gid => void deleteGroup(gid)}
           onAddMembers={() => {

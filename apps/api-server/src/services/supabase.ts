@@ -1815,6 +1815,8 @@ export class SupabaseService {
     groupId: string,
     userId: string,
   ): Promise<Group | null> {
+    const group = await this.getGroupById(groupId);
+
     const { error } = await this.supabase
       .from("group_members")
       .delete()
@@ -1822,6 +1824,16 @@ export class SupabaseService {
       .eq("user_id", userId);
 
     if (error) throw error;
+
+    // Keep admin_ids in sync when an admin leaves or is removed.
+    if (group?.adminIds?.includes(userId)) {
+      const nextAdminIds = group.adminIds.filter((id) => id !== userId);
+      const { error: adminError } = await this.supabase
+        .from("groups")
+        .update({ admin_ids: nextAdminIds })
+        .eq("id", groupId);
+      if (adminError) throw adminError;
+    }
 
     // Invalidate caches
     await cacheService.invalidateGroupCache(groupId);

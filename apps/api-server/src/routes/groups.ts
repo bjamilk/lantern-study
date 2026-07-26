@@ -688,6 +688,59 @@ router.post(
   })
 );
 
+// POST /api/v1/groups/:groupId/leave - Current user leaves the group
+router.post(
+  '/:groupId/leave',
+  authMiddleware,
+  validateGroupId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { groupId } = req.params;
+    logger.debug('Leaving group', { groupId, userId });
+
+    const group = await supabaseService.getGroupById(groupId, userId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        error: 'Group not found or access denied',
+      });
+    }
+
+    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    if (!isMember) {
+      return res.status(400).json({
+        success: false,
+        error: 'You are not a member of this group',
+      });
+    }
+
+    const isAdmin =
+      (group.permissions && group.permissions[userId]?.admin) ||
+      (group.adminIds && group.adminIds.includes(userId));
+    if (isAdmin && (group.adminIds?.length || 0) <= 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot leave as the only admin. Promote another member first.',
+      });
+    }
+
+    await supabaseService.removeGroupMember(groupId, userId);
+
+    await cacheService.delete(`group:${groupId}`);
+    await cacheService.deletePattern(`group:members:${groupId}:*`);
+    await cacheService.deletePattern('groups:list:*');
+    await cacheService.deletePattern(`user:groups:${userId}:*`);
+
+    res.json({
+      success: true,
+      message: 'Left group successfully',
+    });
+  })
+);
+
 // DELETE /api/v1/groups/:groupId/members/:memberId - Remove member from group
 router.delete(
   '/:groupId/members/:memberId',
@@ -716,6 +769,19 @@ router.delete(
       return res.status(403).json({
         success: false,
         error: 'Access denied',
+      });
+    }
+
+    const targetIsAdmin =
+      (group.permissions && group.permissions[memberId]?.admin) ||
+      (group.adminIds && group.adminIds.includes(memberId));
+    if (targetIsAdmin && (group.adminIds?.length || 0) <= 1) {
+      return res.status(400).json({
+        success: false,
+        error:
+          userId === memberId
+            ? 'Cannot leave as the only admin. Promote another member first.'
+            : 'Cannot remove the only admin of the group.',
       });
     }
 
