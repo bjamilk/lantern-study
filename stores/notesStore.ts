@@ -30,6 +30,11 @@ interface NotesState {
   loadNotes: (options?: { folderId?: string }) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
   createFolder: (name: string, color?: string) => Promise<NoteFolder>;
+  updateFolder: (
+    folderId: string,
+    updates: { name?: string; color?: string },
+  ) => Promise<NoteFolder>;
+  removeFolder: (folderId: string) => Promise<void>;
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
   removeNote: (noteId: string) => Promise<void>;
@@ -100,6 +105,40 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       const folder = await notesApi.createNoteFolder({ name, color });
       set({ folders: [...get().folders, folder], error: null });
       return folder;
+    } catch (e: any) {
+      set({ error: e.message });
+      throw e;
+    }
+  },
+
+  updateFolder: async (folderId, updates) => {
+    try {
+      const folder = await notesApi.updateNoteFolder(folderId, updates);
+      set({
+        folders: get().folders.map((f) => (f.id === folderId ? folder : f)),
+        error: null,
+      });
+      return folder;
+    } catch (e: any) {
+      set({ error: e.message });
+      throw e;
+    }
+  },
+
+  removeFolder: async (folderId) => {
+    try {
+      await notesApi.deleteNoteFolder(folderId);
+      const { selectedFolderId, notes } = get();
+      set({
+        folders: get().folders.filter((f) => f.id !== folderId),
+        selectedFolderId:
+          selectedFolderId === folderId ? null : selectedFolderId,
+        // DB clears folder_id on delete; mirror that locally so chips stay accurate.
+        notes: notes.map((n) =>
+          n.folderId === folderId ? { ...n, folderId: undefined } : n,
+        ),
+        error: null,
+      });
     } catch (e: any) {
       set({ error: e.message });
       throw e;

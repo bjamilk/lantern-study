@@ -9,6 +9,9 @@ interface FolderNameModalProps {
   onSubmit: (name: string) => void;
   title?: string;
   placeholder?: string;
+  /** When set, the modal edits an existing folder name. */
+  initialName?: string;
+  submitLabel?: string;
 }
 
 export const FolderNameModal: React.FC<FolderNameModalProps> = ({
@@ -17,12 +20,14 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
   onSubmit,
   title = 'New folder',
   placeholder = 'Folder name',
+  initialName = '',
+  submitLabel,
 }) => {
   const [name, setName] = useState('');
 
   useEffect(() => {
-    if (isOpen) setName('');
-  }, [isOpen]);
+    if (isOpen) setName(initialName);
+  }, [isOpen, initialName]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +36,8 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
     onSubmit(trimmed);
     onClose();
   };
+
+  const actionLabel = submitLabel || (initialName ? 'Save' : 'Create');
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="folder-name-title" maxWidthClass="max-w-sm">
@@ -46,7 +53,7 @@ export const FolderNameModal: React.FC<FolderNameModalProps> = ({
         />
         <div className="flex gap-2 justify-end">
           <Button type="button" variant="ghost" onClick={onClose} className="min-h-[44px]">Cancel</Button>
-          <Button type="submit" disabled={!name.trim()} className="min-h-[44px]">Create</Button>
+          <Button type="submit" disabled={!name.trim()} className="min-h-[44px]">{actionLabel}</Button>
         </div>
       </form>
     </Modal>

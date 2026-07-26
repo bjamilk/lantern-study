@@ -25,6 +25,8 @@ export function useNoteHandlers(currentUserId?: string) {
     loadNote,
     createNote,
     createFolder,
+    updateFolder,
+    removeFolder,
     saveNote,
     removeNote,
     selectedNote,
@@ -375,11 +377,27 @@ export function useNoteHandlers(currentUserId?: string) {
     [cancelAutoSave, removeNote, setSelectedNote]
   );
 
+  const handleRenameFolder = useCallback(
+    async (folderId: string, name: string) => {
+      await updateFolder(folderId, { name });
+    },
+    [updateFolder],
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      await removeFolder(folderId);
+    },
+    [removeFolder],
+  );
+
   return {
     navigateToNotes,
     openNote,
     handleCreateNote,
     handleCreateFolder: createFolder,
+    handleRenameFolder,
+    handleDeleteFolder,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,

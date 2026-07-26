@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -75,14 +76,18 @@ function FolderChip({
   folder,
   isActive,
   onPress,
+  onLongPress,
 }: {
   folder: NoteFolder;
   isActive: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       className={`shrink-0 px-3 py-2 rounded-lg flex-row items-center gap-1.5 ${
         isActive
           ? 'bg-lantern-primary'
@@ -155,6 +160,8 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     loadNotes,
     createNote,
     createFolder,
+    updateFolder,
+    removeFolder,
     setSelectedFolderId,
     setError,
   } = useNotesStore();
@@ -166,6 +173,9 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ownershipFilter, setOwnershipFilter] = useState<'mine' | 'shared'>('mine');
+  const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renamingFolder, setRenamingFolder] = useState(false);
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
 
   const loadData = useCallback(async () => {
@@ -211,6 +221,64 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     });
     trackNoteCreated('editor');
     navigation.navigate('NoteEditor', { noteId: note.id });
+  };
+
+  const openRenameFolder = (folder: NoteFolder) => {
+    setRenameFolder(folder);
+    setRenameValue(folder.name);
+  };
+
+  const handleRenameFolderSubmit = async () => {
+    if (!renameFolder) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === renameFolder.name) {
+      setRenameFolder(null);
+      return;
+    }
+    setRenamingFolder(true);
+    try {
+      await updateFolder(renameFolder.id, { name: trimmed });
+      setRenameFolder(null);
+    } catch (e: unknown) {
+      Alert.alert('Could not rename', e instanceof Error ? e.message : 'Try again.');
+    } finally {
+      setRenamingFolder(false);
+    }
+  };
+
+  const handleFolderOptions = (folder: NoteFolder) => {
+    Alert.alert(folder.name, 'Manage this folder. Notes stay in All notes if you delete it.', [
+      {
+        text: 'Rename',
+        onPress: () => openRenameFolder(folder),
+      },
+      {
+        text: 'Delete folder',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            'Delete folder?',
+            `“${folder.name}” will be removed. Notes inside stay in All notes.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                  void removeFolder(folder.id).catch((e: unknown) => {
+                    Alert.alert(
+                      'Could not delete',
+                      e instanceof Error ? e.message : 'Try again.',
+                    );
+                  });
+                },
+              },
+            ],
+          );
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handleCreateFolder = async () => {
@@ -383,6 +451,51 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
 
   return (
     <Wrapper {...wrapperProps}>
+      <Modal
+        visible={!!renameFolder}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !renamingFolder && setRenameFolder(null)}
+      >
+        <Pressable
+          className="flex-1 bg-black/40 justify-center px-6"
+          onPress={() => !renamingFolder && setRenameFolder(null)}
+        >
+          <Pressable onPress={(e) => e.stopPropagation?.()}>
+            <Card className="border-0 shadow-lg">
+              <Text className="text-lg font-bold text-lantern-text mb-3">Rename folder</Text>
+              <TextInput
+                value={renameValue}
+                onChangeText={setRenameValue}
+                placeholder="Folder name"
+                placeholderTextColor="#94a3b8"
+                maxLength={80}
+                autoFocus
+                className="border border-lantern-border rounded-2xl px-4 py-3 text-lantern-text bg-lantern-surface mb-4"
+              />
+              <View className="flex-row gap-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={renamingFolder}
+                  onPress={() => setRenameFolder(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  loading={renamingFolder}
+                  disabled={!renameValue.trim()}
+                  onPress={() => void handleRenameFolderSubmit()}
+                >
+                  Save
+                </Button>
+              </View>
+            </Card>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {embedded && (
         <View className="flex-row gap-1.5 justify-end px-4 pt-3">
           <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
@@ -442,6 +555,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
                 folder={folder}
                 isActive={selectedFolderId === folder.id}
                 onPress={() => setSelectedFolderId(folder.id)}
+                onLongPress={() => handleFolderOptions(folder)}
               />
             ))}
           </ScrollView>

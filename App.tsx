@@ -869,6 +869,16 @@ export const App: React.FC = () => {
                     showToast(e?.message || 'Failed to create folder', 'error');
                 });
             }}
+            onRenameFolder={(folderId, name) => {
+                void noteHandlers.handleRenameFolder(folderId, name).catch((e: any) => {
+                    showToast(e?.message || 'Failed to rename folder', 'error');
+                });
+            }}
+            onDeleteFolder={(folderId) => {
+                void noteHandlers.handleDeleteFolder(folderId).catch((e: any) => {
+                    showToast(e?.message || 'Failed to delete folder', 'error');
+                });
+            }}
             onSelectNote={(id) => { void noteHandlers.openNote(id); }}
             onPdfImport={async (file) => {
                 try {

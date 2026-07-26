@@ -10,6 +10,7 @@ import {
   ExclamationCircleIcon,
   CheckCircleIcon,
   XMarkIcon,
+  EllipsisHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
@@ -27,6 +28,8 @@ interface NotesScreenProps {
   onBack?: () => void;
   onCreateNote: () => void;
   onCreateFolder: (name: string) => void;
+  onRenameFolder?: (folderId: string, name: string) => void | Promise<void>;
+  onDeleteFolder?: (folderId: string) => void | Promise<void>;
   onSelectNote: (noteId: string) => void;
   onPdfImport: (file: File) => void;
   onPresentationImport?: (file: File) => void;
@@ -53,6 +56,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   error,
   onCreateNote,
   onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
   onSelectNote,
   onPdfImport,
   onPresentationImport,
@@ -64,6 +69,8 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
   const [youtubeModalOpen, setYoutubeModalOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
@@ -73,6 +80,16 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
   const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
+
+  const confirmDeleteFolder = (folder: NoteFolder) => {
+    setFolderMenuId(null);
+    if (!onDeleteFolder) return;
+    const ok = window.confirm(
+      `Delete folder “${folder.name}”? Notes inside stay in All notes.`,
+    );
+    if (!ok) return;
+    void onDeleteFolder(folder.id);
+  };
 
   const filteredNotes = useMemo(() => {
     let list = notes;
@@ -127,27 +144,108 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
 
   const renderFolderButton = (folder: NoteFolder | null, compact = false) => {
     const isActive = folder ? selectedFolderId === folder.id : !selectedFolderId;
+    const menuOpen = folder ? folderMenuId === folder.id : false;
     return (
-      <button
-        key={folder?.id ?? 'all'}
-        type="button"
-        onClick={() => onSelectFolder(folder?.id ?? null)}
-        className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5`}
-      >
-        {folder && (
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: folder.color }} />
-        )}
-        <span className="truncate max-w-[96px] md:max-w-[120px]">{folder?.name ?? 'All notes'}</span>
-      </button>
+      <div key={folder?.id ?? 'all'} className={`relative ${compact ? 'w-full' : 'shrink-0'}`}>
+        <div
+          className={`${folderButtonClass(isActive, compact)} flex items-center gap-1.5 ${
+            compact ? '' : ''
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setFolderMenuId(null);
+              onSelectFolder(folder?.id ?? null);
+            }}
+            className={`flex min-w-0 flex-1 items-center gap-1.5 text-left ${
+              compact ? '' : ''
+            }`}
+          >
+            {folder && (
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: folder.color }}
+              />
+            )}
+            <span className="truncate max-w-[96px] md:max-w-[120px]">
+              {folder?.name ?? 'All notes'}
+            </span>
+          </button>
+          {folder && (onRenameFolder || onDeleteFolder) ? (
+            <button
+              type="button"
+              aria-label={`Folder options for ${folder.name}`}
+              aria-expanded={menuOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFolderMenuId(menuOpen ? null : folder.id);
+              }}
+              className={`rounded p-0.5 shrink-0 ${
+                isActive
+                  ? 'text-white/90 hover:bg-white/15'
+                  : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'
+              }`}
+            >
+              <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {folder && menuOpen ? (
+          <div
+            role="menu"
+            className="absolute left-0 top-full z-30 mt-1 min-w-[140px] rounded-lg border border-lantern-border bg-lantern-surface py-1 shadow-lg"
+          >
+            {onRenameFolder ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full px-3 py-2 text-left text-sm text-lantern-text hover:bg-lantern-background-secondary"
+                onClick={() => {
+                  setFolderMenuId(null);
+                  setRenameFolder(folder);
+                }}
+              >
+                Rename
+              </button>
+            ) : null}
+            {onDeleteFolder ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                onClick={() => confirmDeleteFolder(folder)}
+              >
+                Delete folder
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     );
   };
 
   return (
-    <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${embedded ? '' : 'bg-lantern-background'}`}>
+    <div
+      className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${embedded ? '' : 'bg-lantern-background'}`}
+      onClick={() => setFolderMenuId(null)}
+    >
       <FolderNameModal
         isOpen={folderModalOpen}
         onClose={() => setFolderModalOpen(false)}
         onSubmit={onCreateFolder}
+      />
+      <FolderNameModal
+        isOpen={!!renameFolder}
+        onClose={() => setRenameFolder(null)}
+        title="Rename folder"
+        initialName={renameFolder?.name || ''}
+        submitLabel="Save"
+        onSubmit={(name) => {
+          if (renameFolder && onRenameFolder) {
+            void onRenameFolder(renameFolder.id, name);
+          }
+        }}
       />
 
       <Modal

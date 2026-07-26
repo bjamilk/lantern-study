@@ -17,6 +17,11 @@ interface NotesState {
   loadNotes: (folderId?: string) => Promise<void>;
   loadNote: (noteId: string) => Promise<boolean>;
   createFolder: (name: string) => Promise<NoteFolder>;
+  updateFolder: (
+    folderId: string,
+    updates: { name?: string; color?: string },
+  ) => Promise<NoteFolder>;
+  removeFolder: (folderId: string) => Promise<void>;
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
   removeNote: (noteId: string) => Promise<void>;
@@ -80,6 +85,26 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const folder = await notesApi.createNoteFolder({ name });
     set({ folders: [...get().folders, folder] });
     return folder;
+  },
+
+  updateFolder: async (folderId, updates) => {
+    const folder = await notesApi.updateNoteFolder(folderId, updates);
+    set({
+      folders: get().folders.map((f) => (f.id === folderId ? folder : f)),
+    });
+    return folder;
+  },
+
+  removeFolder: async (folderId) => {
+    await notesApi.deleteNoteFolder(folderId);
+    const { selectedFolderId, notes } = get();
+    set({
+      folders: get().folders.filter((f) => f.id !== folderId),
+      selectedFolderId: selectedFolderId === folderId ? null : selectedFolderId,
+      notes: notes.map((n) =>
+        n.folderId === folderId ? { ...n, folderId: undefined } : n,
+      ),
+    });
   },
 
   createNote: async (payload) => {
