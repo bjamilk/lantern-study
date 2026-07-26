@@ -62,6 +62,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               MyJobApplications: 'marketplace/applications',
               JobEmployer: 'marketplace/employer',
               JobApplicants: 'marketplace/employer/jobs/:jobId',
+              JobCompany: 'marketplace/companies/:companyId',
             },
           },
           NotificationsTab: 'notifications',

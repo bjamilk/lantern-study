@@ -144,6 +144,8 @@ import {
 
   JobApplicantsScreen,
 
+  JobCompanyScreen,
+
 } from '../screens/marketplace';
 
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen } from '../screens/settings';
@@ -367,6 +369,8 @@ function MarketNavigator() {
       <MarketStack.Screen name="JobEmployer" component={JobEmployerScreen} />
 
       <MarketStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
+
+      <MarketStack.Screen name="JobCompany" component={JobCompanyScreen} />
 
     </MarketStack.Navigator>
 

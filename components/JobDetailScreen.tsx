@@ -231,9 +231,21 @@ export default function JobDetailScreen({
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-lantern-text sm:text-3xl">
                 {job.title}
               </h1>
-              <p className="mt-1 text-sm font-medium text-lantern-text-secondary">
-                {employer}
-              </p>
+              {job.companyId && job.company ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onNavigate("JobCompany", { companyId: job.companyId })
+                  }
+                  className="mt-1 text-sm font-medium text-lantern-primary hover:underline"
+                >
+                  {employer}
+                </button>
+              ) : (
+                <p className="mt-1 text-sm font-medium text-lantern-text-secondary">
+                  {employer}
+                </p>
+              )}
               <p className="mt-2 text-sm text-lantern-text-tertiary">
                 {formatJobLocation(job)} ·{" "}
                 {JOB_EMPLOYMENT_TYPE_LABELS[job.employmentType]} ·{" "}

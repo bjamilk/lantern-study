@@ -9,6 +9,8 @@ import { navigateToPath } from '../../utils/appNavigation';
 const MarketplaceScreen = lazyWithRetry(() => import('../MarketplaceScreen'));
 const MarketplaceListingDetailScreen = lazyWithRetry(() => import('../MarketplaceListingDetailScreen'));
 const SellerProfileScreen = lazyWithRetry(() => import('../SellerProfileScreen'));
+const JobCompanyScreen = lazyWithRetry(() => import('../JobCompanyScreen'));
+const JobDetailScreen = lazyWithRetry(() => import('../JobDetailScreen'));
 
 interface GuestMarketplaceShellProps {
   onSignIn: () => void;
@@ -55,6 +57,49 @@ const GuestMarketplaceShell: React.FC<GuestMarketplaceShellProps> = ({ onSignIn,
           onNavigate={(screen, params) => {
             if (screen === 'MarketplaceListingDetail' && params?.listingId) {
               navigateToPath(`/marketplace/listing/${encodeURIComponent(params.listingId)}`);
+            } else {
+              promptSignIn();
+            }
+          }}
+        />
+      );
+    }
+
+    if (parsed.mode === AppMode.JOB_COMPANY && parsed.params.companyId) {
+      return (
+        <JobCompanyScreen
+          companyId={parsed.params.companyId}
+          guestMode
+          onNavigate={(screen, params) => {
+            if (screen === 'MarketplaceJobs') {
+              navigateToPath('/marketplace/jobs');
+            } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+              navigateToPath(`/marketplace/jobs/${encodeURIComponent(String(params.jobId))}`);
+            } else if (screen === 'JobCompany' && params?.companyId) {
+              navigateToPath(
+                `/marketplace/companies/${encodeURIComponent(String(params.companyId))}`,
+              );
+            } else {
+              promptSignIn();
+            }
+          }}
+        />
+      );
+    }
+
+    if (parsed.mode === AppMode.MARKETPLACE_JOB_DETAIL && parsed.params.jobId) {
+      return (
+        <JobDetailScreen
+          jobId={parsed.params.jobId}
+          onNavigate={(screen, params) => {
+            if (screen === 'MarketplaceJobs') {
+              navigateToPath('/marketplace/jobs');
+            } else if (screen === 'JobCompany' && params?.companyId) {
+              navigateToPath(
+                `/marketplace/companies/${encodeURIComponent(String(params.companyId))}`,
+              );
+            } else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+              navigateToPath(`/marketplace/jobs/${encodeURIComponent(String(params.jobId))}`);
             } else {
               promptSignIn();
             }

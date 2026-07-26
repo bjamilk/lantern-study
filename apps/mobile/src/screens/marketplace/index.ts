@@ -30,4 +30,5 @@ export { MyJobPostingsScreen } from './MyJobPostingsScreen';
 export { MyJobApplicationsScreen } from './MyJobApplicationsScreen';
 export { JobEmployerScreen } from './JobEmployerScreen';
 export { JobApplicantsScreen } from './JobApplicantsScreen';
+export { JobCompanyScreen } from './JobCompanyScreen';
 

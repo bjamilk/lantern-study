@@ -2794,6 +2794,58 @@ export function createApiEndpoints(client: ApiClient) {
         "/jobs-board/companies/mine",
       ),
 
+    fetchJobCompanyProfile: (id: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}/profile`,
+      ),
+
+    updateJobCompany: (id: string, body: Record<string, unknown>) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+
+    uploadJobCompanyLogo: (
+      id: string,
+      body: { base64Data: string; fileName?: string },
+    ) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}/logo`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+
+    fetchJobCompanyMembers: (id: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown[] }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}/members`,
+      ),
+
+    inviteJobCompanyMember: (
+      id: string,
+      body: { username: string; role?: string },
+    ) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+
+    removeJobCompanyMember: (id: string, userId: string) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/companies/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+        { method: "DELETE" },
+      ),
+
     fetchJobTemplates: () =>
       apiRequestRaw<{ success: boolean; data: unknown }>(
         "/jobs-board/templates",

@@ -136,6 +136,8 @@ interface UIState {
   setSelectedSellerId: (id: string | null) => void;
   selectedJobId: string | null;
   setSelectedJobId: (id: string | null) => void;
+  selectedCompanyId: string | null;
+  setSelectedCompanyId: (id: string | null) => void;
   
   // Online Status
   isOnline: boolean;
@@ -301,6 +303,8 @@ export const useUIStore = create<UIState>()(
       setSelectedSellerId: (id) => set({ selectedSellerId: id }),
       selectedJobId: null,
       setSelectedJobId: (id) => set({ selectedJobId: id }),
+      selectedCompanyId: null,
+      setSelectedCompanyId: (id) => set({ selectedCompanyId: id }),
       
       // Online Status
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,

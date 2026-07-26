@@ -90,6 +90,7 @@ export type MarketStackParamList = {
   MyJobApplications: undefined;
   JobEmployer: undefined;
   JobApplicants: { jobId: string };
+  JobCompany: { companyId: string };
 };
 
 export type BudgetStackParamList = {

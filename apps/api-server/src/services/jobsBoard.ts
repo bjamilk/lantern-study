@@ -19,14 +19,25 @@ import {
   JOB_SAVED_SEARCH_LIMIT_PER_USER,
   JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
   JOB_BULK_STATUS_MAX,
+  JOB_COMPANY_ABOUT_MAX_LENGTH,
+  JOB_COMPANY_INDUSTRY_MAX_LENGTH,
+  JOB_COMPANY_LOCATION_MAX_LENGTH,
+  JOB_COMPANY_LOGO_MAX_BYTES,
+  JOB_COMPANY_MEMBER_LIMIT,
+  JOB_COMPANY_NAME_MAX_LENGTH,
+  JOB_COMPANY_TAGLINE_MAX_LENGTH,
   averageNumber,
   buildJobApplicantsCsv,
   buildJobHiringFunnel,
   canAutoCloseJobPostingOnHire,
+  canEditJobCompanyProfile,
   canEmployerRescheduleJobInterview,
   canEmployerSetJobPostingStatus,
+  canManageJobCompanyMembers,
+  canRemoveJobCompanyMember,
   canSetJobInterviewStatus,
   canSetJobOfferStatus,
+  clampJobCompanyText,
   clampJobInterviewDuration,
   countJobApplicationStatuses,
   daysBetween,
@@ -44,6 +55,8 @@ import {
   matchJobInterviewSlot,
   medianNumber,
   normalizeBulkApplicationIds,
+  normalizeJobCompanyDomain,
+  normalizeJobCompanyWebsite,
   normalizeJobInterviewSlots,
   normalizeJobOfferExpiry,
   normalizeJobOfferStartDate,
@@ -59,6 +72,7 @@ import {
   jobRequiresEngagementDuration,
   textFailsJobScamCheck,
   type JobApplicationStatus,
+  type JobCompanyMemberRole,
   type JobCompensation,
   type JobEmployerAnalytics,
   type JobEmploymentType,
@@ -75,6 +89,7 @@ import {
   type JobSearchFilters,
 } from "@lantern/shared/jobs";
 import { SupabaseService } from "./supabase";
+import { detectImageMime } from "../utils/fileValidation";
 import { logger } from "../utils/logger";
 
 export type CreateJobPostingInput = {
@@ -108,6 +123,7 @@ export type CreateJobPostingInput = {
 
 const RESUME_BUCKET = "job-resumes";
 const RESUME_SIGNED_URL_TTL_SECONDS = 60 * 10;
+const COMPANY_LOGO_BUCKET = "job-company-logos";
 
 function httpError(message: string, statusCode = 400): Error {
   const err = new Error(message);
@@ -197,22 +213,7 @@ function mapPosting(row: any, savedPostingIds?: ReadonlySet<string>) {
     countryCode: row.country_code || JOBS_DEFAULT_COUNTRY,
     campusName: campus?.name || null,
     isSaved: savedPostingIds ? savedPostingIds.has(row.id) : undefined,
-    company: company
-      ? {
-          id: company.id,
-          legalName: company.legal_name,
-          displayName: company.display_name,
-          website: company.website,
-          logoUrl: company.logo_url,
-          industry: company.industry,
-          countryCode: company.country_code,
-          verificationStatus: company.verification_status,
-          verificationDomain: company.verification_domain,
-          createdBy: company.created_by,
-          createdAt: company.created_at,
-          updatedAt: company.updated_at,
-        }
-      : null,
+    company: mapCompany(company),
     poster: poster
       ? {
           id: poster.id,
@@ -366,6 +367,9 @@ function mapCompany(row: any) {
     website: row.website,
     logoUrl: row.logo_url,
     industry: row.industry,
+    tagline: row.tagline ?? null,
+    about: row.about ?? null,
+    hqLocation: row.hq_location ?? null,
     countryCode: row.country_code,
     verificationStatus: row.verification_status,
     verificationDomain: row.verification_domain,
@@ -373,6 +377,31 @@ function mapCompany(row: any) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mapCompanyMember(row: any) {
+  if (!row) return null;
+  const user = Array.isArray(row.user) ? row.user[0] : row.user;
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    userId: row.user_id,
+    role: row.role as JobCompanyMemberRole,
+    user: user
+      ? {
+          id: user.id,
+          name: user.name ?? null,
+          username: user.username ?? null,
+          avatarUrl: user.avatar_url ?? null,
+        }
+      : null,
+    createdAt: row.created_at,
+  };
+}
+
+function companyLogoPublicUrl(filePath: string): string {
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
+  return `${base}/storage/v1/object/public/${COMPANY_LOGO_BUCKET}/${filePath}`;
 }
 
 export class JobsBoardService {
@@ -2532,17 +2561,42 @@ export class JobsBoardService {
       website?: string;
       industry?: string;
       verificationDomain?: string;
+      tagline?: string;
+      about?: string;
+      hqLocation?: string;
     },
   ) {
+    const legalName = clampJobCompanyText(
+      input.legalName,
+      JOB_COMPANY_NAME_MAX_LENGTH,
+    );
+    const displayName =
+      clampJobCompanyText(input.displayName, JOB_COMPANY_NAME_MAX_LENGTH) ||
+      legalName;
+    if (!legalName || !displayName) {
+      throw httpError("legalName and displayName are required");
+    }
+
     const { data, error } = await this.client()
       .from("job_companies")
       .insert({
-        legal_name: input.legalName.trim().slice(0, 200),
-        display_name: input.displayName.trim().slice(0, 200),
-        website: input.website?.trim() || null,
-        industry: input.industry?.trim() || null,
-        verification_domain:
-          input.verificationDomain?.trim()?.toLowerCase() || null,
+        legal_name: legalName,
+        display_name: displayName,
+        website: normalizeJobCompanyWebsite(input.website),
+        industry: clampJobCompanyText(
+          input.industry,
+          JOB_COMPANY_INDUSTRY_MAX_LENGTH,
+        ),
+        tagline: clampJobCompanyText(
+          input.tagline,
+          JOB_COMPANY_TAGLINE_MAX_LENGTH,
+        ),
+        about: clampJobCompanyText(input.about, JOB_COMPANY_ABOUT_MAX_LENGTH),
+        hq_location: clampJobCompanyText(
+          input.hqLocation,
+          JOB_COMPANY_LOCATION_MAX_LENGTH,
+        ),
+        verification_domain: normalizeJobCompanyDomain(input.verificationDomain),
         verification_status: "pending",
         created_by: userId,
         country_code: JOBS_DEFAULT_COUNTRY,
@@ -2593,6 +2647,293 @@ export class JobsBoardService {
         Array.isArray(row.company) ? row.company[0] : row.company,
       ),
     }));
+  }
+
+  /**
+   * Public company page payload. Verified companies are visible to everyone;
+   * unverified ones only to members (preview before admin approval).
+   */
+  async getCompanyPublicProfile(
+    companyId: string,
+    viewerId?: string | null,
+  ) {
+    const company = await this.getCompany(companyId);
+    if (!company) throw httpError("Company not found", 404);
+
+    const membership = viewerId
+      ? await this.getCompanyMembership(companyId, viewerId)
+      : null;
+    const isMember = !!membership;
+    if (company.verificationStatus !== "verified" && !isMember) {
+      throw httpError("Company not found", 404);
+    }
+
+    const { data, error } = await this.client()
+      .from("job_postings")
+      .select(
+        `
+        *,
+        campus:marketplace_campuses!campus_id(id, name, slug),
+        company:job_companies(*),
+        poster:profiles!poster_user_id(id, name, username, avatar_url)
+      `,
+      )
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+
+    const savedIds = await this.savedPostingIds(
+      viewerId,
+      (data || []).map((row: any) => row.id),
+    );
+
+    return {
+      company,
+      jobs: (data || []).map((row: any) => mapPosting(row, savedIds)),
+      myRole: (membership?.role as JobCompanyMemberRole | undefined) ?? null,
+    };
+  }
+
+  async updateCompany(
+    companyId: string,
+    userId: string,
+    input: {
+      displayName?: string;
+      website?: string | null;
+      industry?: string | null;
+      tagline?: string | null;
+      about?: string | null;
+      hqLocation?: string | null;
+      verificationDomain?: string | null;
+    },
+  ) {
+    const membership = await this.getCompanyMembership(companyId, userId);
+    if (!canEditJobCompanyProfile(membership?.role)) {
+      throw httpError("Only company members can edit this profile", 403);
+    }
+
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (input.displayName !== undefined) {
+      const displayName = clampJobCompanyText(
+        input.displayName,
+        JOB_COMPANY_NAME_MAX_LENGTH,
+      );
+      if (!displayName) throw httpError("displayName cannot be empty");
+      patch.display_name = displayName;
+    }
+    if (input.website !== undefined) {
+      patch.website =
+        input.website === null || input.website === ""
+          ? null
+          : normalizeJobCompanyWebsite(input.website);
+    }
+    if (input.industry !== undefined) {
+      patch.industry =
+        input.industry === null || input.industry === ""
+          ? null
+          : clampJobCompanyText(input.industry, JOB_COMPANY_INDUSTRY_MAX_LENGTH);
+    }
+    if (input.tagline !== undefined) {
+      patch.tagline =
+        input.tagline === null || input.tagline === ""
+          ? null
+          : clampJobCompanyText(input.tagline, JOB_COMPANY_TAGLINE_MAX_LENGTH);
+    }
+    if (input.about !== undefined) {
+      patch.about =
+        input.about === null || input.about === ""
+          ? null
+          : clampJobCompanyText(input.about, JOB_COMPANY_ABOUT_MAX_LENGTH);
+    }
+    if (input.hqLocation !== undefined) {
+      patch.hq_location =
+        input.hqLocation === null || input.hqLocation === ""
+          ? null
+          : clampJobCompanyText(
+              input.hqLocation,
+              JOB_COMPANY_LOCATION_MAX_LENGTH,
+            );
+    }
+    if (input.verificationDomain !== undefined) {
+      patch.verification_domain =
+        input.verificationDomain === null || input.verificationDomain === ""
+          ? null
+          : normalizeJobCompanyDomain(input.verificationDomain);
+    }
+
+    const { data, error } = await this.client()
+      .from("job_companies")
+      .update(patch)
+      .eq("id", companyId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapCompany(data);
+  }
+
+  async uploadCompanyLogo(
+    companyId: string,
+    userId: string,
+    input: { base64Data: string; fileName?: string },
+  ) {
+    const membership = await this.getCompanyMembership(companyId, userId);
+    if (!canEditJobCompanyProfile(membership?.role)) {
+      throw httpError("Only company members can update the logo", 403);
+    }
+
+    const raw = (input.base64Data || "").includes(",")
+      ? (input.base64Data || "").split(",")[1]!
+      : input.base64Data || "";
+    const buffer = Buffer.from(raw, "base64");
+    if (!buffer.length) throw httpError("Logo data is required");
+    if (buffer.length > JOB_COMPANY_LOGO_MAX_BYTES) {
+      throw httpError("Logo exceeds 2 MB limit");
+    }
+
+    const contentType = detectImageMime(buffer);
+    if (!contentType) {
+      throw httpError(
+        "File content is not a supported image (JPEG, PNG, GIF, or WebP)",
+      );
+    }
+    const ext =
+      contentType === "image/png"
+        ? "png"
+        : contentType === "image/webp"
+          ? "webp"
+          : contentType === "image/gif"
+            ? "gif"
+            : "jpg";
+    const safeCompany = companyId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const filePath = `${safeCompany}/${Date.now()}-logo.${ext}`;
+
+    const { error: uploadError } = await this.client()
+      .storage.from(COMPANY_LOGO_BUCKET)
+      .upload(filePath, buffer, {
+        contentType,
+        cacheControl: "86400",
+        upsert: false,
+      });
+    if (uploadError) throw uploadError;
+
+    const logoUrl = companyLogoPublicUrl(filePath);
+    const { data, error } = await this.client()
+      .from("job_companies")
+      .update({
+        logo_url: logoUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", companyId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapCompany(data);
+  }
+
+  async listCompanyMembers(companyId: string, userId: string) {
+    const membership = await this.getCompanyMembership(companyId, userId);
+    if (!membership) {
+      throw httpError("Only company members can view the team", 403);
+    }
+
+    const { data, error } = await this.client()
+      .from("job_company_members")
+      .select(
+        "*, user:profiles!user_id(id, name, username, avatar_url)",
+      )
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data || []).map(mapCompanyMember);
+  }
+
+  async inviteCompanyMember(
+    companyId: string,
+    actorId: string,
+    input: { username: string; role?: JobCompanyMemberRole },
+  ) {
+    const actor = await this.getCompanyMembership(companyId, actorId);
+    if (!canManageJobCompanyMembers(actor?.role)) {
+      throw httpError("Only company owners can invite teammates", 403);
+    }
+
+    const role: JobCompanyMemberRole =
+      input.role === "owner" ? "recruiter" : input.role || "recruiter";
+    if (role !== "recruiter") {
+      throw httpError("New teammates must join as recruiters");
+    }
+
+    const username = (input.username || "").trim().replace(/^@/, "");
+    if (!username) throw httpError("username is required");
+
+    const { count, error: countError } = await this.client()
+      .from("job_company_members")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId);
+    if (countError) throw countError;
+    if ((count ?? 0) >= JOB_COMPANY_MEMBER_LIMIT) {
+      throw httpError(
+        `Company teams are limited to ${JOB_COMPANY_MEMBER_LIMIT} members`,
+      );
+    }
+
+    const { data: profile, error: profileError } = await this.client()
+      .from("profiles")
+      .select("id, name, username, avatar_url")
+      .ilike("username", username)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (!profile) throw httpError("No Lantern user found with that username", 404);
+
+    const existing = await this.getCompanyMembership(companyId, profile.id);
+    if (existing) throw httpError("That user is already on this company", 409);
+
+    const { data, error } = await this.client()
+      .from("job_company_members")
+      .insert({
+        company_id: companyId,
+        user_id: profile.id,
+        role,
+      })
+      .select(
+        "*, user:profiles!user_id(id, name, username, avatar_url)",
+      )
+      .single();
+    if (error) throw error;
+    return mapCompanyMember(data);
+  }
+
+  async removeCompanyMember(
+    companyId: string,
+    actorId: string,
+    targetUserId: string,
+  ) {
+    const actor = await this.getCompanyMembership(companyId, actorId);
+    const target = await this.getCompanyMembership(companyId, targetUserId);
+    if (!target) throw httpError("Member not found", 404);
+    if (
+      !canRemoveJobCompanyMember({
+        actorRole: actor?.role,
+        targetRole: target.role,
+        actorUserId: actorId,
+        targetUserId,
+      })
+    ) {
+      throw httpError("You cannot remove that teammate", 403);
+    }
+
+    const { error } = await this.client()
+      .from("job_company_members")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("user_id", targetUserId);
+    if (error) throw error;
+    return { removed: true };
   }
 
   async setCompanyVerification(

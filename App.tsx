@@ -90,6 +90,7 @@ const MyJobPostingsScreen = lazyWithRetry(() => import('./components/MyJobPostin
 const MyJobApplicationsScreen = lazyWithRetry(() => import('./components/MyJobApplicationsScreen'));
 const JobEmployerScreen = lazyWithRetry(() => import('./components/JobEmployerScreen'));
 const JobEmployerPipelineScreen = lazyWithRetry(() => import('./components/JobEmployerPipelineScreen'));
+const JobCompanyScreen = lazyWithRetry(() => import('./components/JobCompanyScreen'));
 const AdminScreen = lazyWithRetry(() => import('./components/AdminScreen'));
 const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
 import NoteEditorScreen from './components/NoteEditorScreen';
@@ -213,6 +214,7 @@ export const App: React.FC = () => {
         selectedMarketplaceOrderId, setSelectedMarketplaceOrderId,
         editingMarketplaceListing, setEditingMarketplaceListing,
         selectedSellerId, setSelectedSellerId,
+        selectedCompanyId, setSelectedCompanyId,
         isOnline,
         libraryTab, setLibraryTab,
     } = useUIStore();
@@ -719,11 +721,13 @@ export const App: React.FC = () => {
             setAppMode(AppMode.MARKETPLACE);
         } else if (appMode === AppMode.SELLER_PROFILE && !selectedSellerId) {
             setAppMode(AppMode.MARKETPLACE);
+        } else if (appMode === AppMode.JOB_COMPANY && !selectedCompanyId) {
+            setAppMode(AppMode.MARKETPLACE_JOBS);
         }
     }, [
         appMode, activeTestSession, activeStudySession, activeGameSession, activeTestResult,
         isAuthLoading, isPlatformAdmin, selectedNote, selectedDeck, activeReviewSession,
-        activeCramSession, selectedMarketplaceListingId, selectedSellerId, setAppMode,
+        activeCramSession, selectedMarketplaceListingId, selectedSellerId, selectedCompanyId, setAppMode,
     ]);
 
     // Re-fetch notifications from DB when the notification modal opens
@@ -1408,6 +1412,9 @@ export const App: React.FC = () => {
                             else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
                             else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
                             else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
+                            else if (screen === 'JobCompany' && params?.companyId) {
+                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
+                            }
                             else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
                                 navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
                             }
@@ -1415,6 +1422,24 @@ export const App: React.FC = () => {
                         onOpenDm={(threadId) => {
                             handleSelectChat({ id: threadId, chatType: 'dm' } as any);
                             navigateTo(AppMode.CHAT, { threadId });
+                        }}
+                    />
+                );
+            case AppMode.JOB_COMPANY:
+                if (!selectedCompanyId) return null;
+                return (
+                    <JobCompanyScreen
+                        companyId={selectedCompanyId}
+                        onNavigate={(screen, params) => {
+                            if (screen === 'Marketplace') navigateTo(AppMode.MARKETPLACE);
+                            else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
+                            else if (screen === 'JobEmployer') navigateTo(AppMode.JOB_EMPLOYER);
+                            else if (screen === 'JobCompany' && params?.companyId) {
+                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
+                            }
+                            else if (screen === 'MarketplaceJobDetail' && params?.jobId) {
+                                navigateTo(AppMode.MARKETPLACE_JOB_DETAIL, { jobId: String(params.jobId) });
+                            }
                         }}
                     />
                 );
@@ -1480,6 +1505,9 @@ export const App: React.FC = () => {
                             else if (screen === 'CreateMarketplaceJob') navigateTo(AppMode.CREATE_MARKETPLACE_JOB);
                             else if (screen === 'MyJobPostings') navigateTo(AppMode.MY_JOB_POSTINGS);
                             else if (screen === 'MyJobApplications') navigateTo(AppMode.MY_JOB_APPLICATIONS);
+                            else if (screen === 'JobCompany' && params?.companyId) {
+                                navigateTo(AppMode.JOB_COMPANY, { companyId: String(params.companyId) });
+                            }
                             else if (screen === 'JobEmployerPipeline' && params?.jobId) {
                                 navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
                             }

@@ -118,6 +118,13 @@ export async function hydrateAppRoute(parsed: ParsedAppRoute): Promise<Hydration
       ui.setSelectedSellerId(params.sellerId);
       return { mode: AppMode.SELLER_PROFILE };
 
+    case AppMode.JOB_COMPANY:
+      if (!params.companyId) {
+        return { mode: AppMode.MARKETPLACE_JOBS, redirect: '/marketplace/jobs' };
+      }
+      ui.setSelectedCompanyId(params.companyId);
+      return { mode: AppMode.JOB_COMPANY };
+
     case AppMode.MARKETPLACE_JOB_DETAIL:
       if (!params.jobId) {
         return { mode: AppMode.MARKETPLACE_JOBS, redirect: '/marketplace/jobs' };

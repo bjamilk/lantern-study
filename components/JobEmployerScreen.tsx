@@ -1,18 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { JOBS_COMPANY_EEO_NOTICE, type JobPosting } from '@lantern/shared';
+import {
+  JOBS_COMPANY_EEO_NOTICE,
+  type JobCompany,
+  type JobCompanyMemberRole,
+  type JobPosting,
+} from '@lantern/shared';
 import {
   createJobCompany,
   fetchMyJobCompanies,
   fetchMyJobPostings,
 } from '../services/jobsBoard';
 import { JobsWorkspaceNav } from './jobs/JobsWorkspaceNav';
+import { JobCompanyManageCard } from './jobs/JobCompanyManageCard';
+import { useAuthStore } from '../stores/authStore';
 
 export default function JobEmployerScreen({
   onNavigate,
 }: {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
 }) {
-  const [companies, setCompanies] = useState<any[]>([]);
+  const actorUserId = useAuthStore((s) => s.currentUser?.id || null);
+  const [companies, setCompanies] = useState<
+    Array<{ role: JobCompanyMemberRole; company: JobCompany }>
+  >([]);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [legalName, setLegalName] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -23,7 +33,11 @@ export default function JobEmployerScreen({
 
   const load = async () => {
     const [c, j] = await Promise.all([fetchMyJobCompanies(), fetchMyJobPostings()]);
-    setCompanies(c.data || []);
+    setCompanies(
+      ((c.data || []) as Array<{ role: JobCompanyMemberRole; company: JobCompany }>).filter(
+        (row) => !!row.company?.id,
+      ),
+    );
     setJobs((j.data || []).filter((job) => !!job.companyId));
   };
 
@@ -64,12 +78,25 @@ export default function JobEmployerScreen({
           <p className="text-sm text-lantern-text-tertiary">No company profile yet.</p>
         ) : (
           <ul className="space-y-2">
-            {companies.map((row: any) => (
-              <li key={row.company?.id} className="text-sm border border-lantern-border rounded-lg p-3">
-                <span className="font-medium">{row.company?.displayName}</span>
-                <span className="text-lantern-text-tertiary"> · {row.company?.verificationStatus}</span>
-                <span className="text-lantern-text-tertiary"> · {row.role}</span>
-              </li>
+            {companies.map((row) => (
+              <JobCompanyManageCard
+                key={row.company.id}
+                company={row.company}
+                role={row.role}
+                actorUserId={actorUserId}
+                onUpdated={(next) =>
+                  setCompanies((prev) =>
+                    prev.map((item) =>
+                      item.company.id === next.id
+                        ? { ...item, company: next }
+                        : item,
+                    ),
+                  )
+                }
+                onOpenPublic={() =>
+                  onNavigate('JobCompany', { companyId: row.company.id })
+                }
+              />
             ))}
           </ul>
         )}

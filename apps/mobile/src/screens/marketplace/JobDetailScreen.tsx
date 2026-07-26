@@ -142,12 +142,26 @@ export function JobDetailScreen() {
                   <Text className="mt-1 text-xl font-bold text-lantern-text">
                     {job.title}
                   </Text>
-                  <Text className="mt-1 text-sm text-lantern-text-secondary">
-                    {job.company?.displayName ||
-                      job.poster?.name ||
-                      job.poster?.username ||
-                      "Independent poster"}
-                  </Text>
+                  {job.companyId && job.company ? (
+                    <Pressable
+                      onPress={() =>
+                        navigation.navigate("JobCompany", {
+                          companyId: job.companyId!,
+                        })
+                      }
+                    >
+                      <Text className="mt-1 text-sm font-medium text-lantern-primary">
+                        {job.company.displayName}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text className="mt-1 text-sm text-lantern-text-secondary">
+                      {job.company?.displayName ||
+                        job.poster?.name ||
+                        job.poster?.username ||
+                        "Independent poster"}
+                    </Text>
+                  )}
                 </View>
                 <Pressable
                   onPress={() => void toggleSaved(job)}

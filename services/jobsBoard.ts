@@ -467,6 +467,55 @@ export async function fetchMyJobCompanies() {
   }>("/companies/mine");
 }
 
+export async function fetchJobCompanyProfile(id: string) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/companies/${encodeURIComponent(id)}/profile`,
+  );
+}
+
+export async function updateJobCompany(
+  id: string,
+  body: Record<string, unknown>,
+) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/companies/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function uploadJobCompanyLogo(
+  id: string,
+  body: { base64Data: string; fileName?: string },
+) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/companies/${encodeURIComponent(id)}/logo`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function fetchJobCompanyMembers(id: string) {
+  return jobsRequest<{ success: boolean; data: unknown[] }>(
+    `/companies/${encodeURIComponent(id)}/members`,
+  );
+}
+
+export async function inviteJobCompanyMember(
+  id: string,
+  body: { username: string; role?: string },
+) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/companies/${encodeURIComponent(id)}/members`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function removeJobCompanyMember(id: string, userId: string) {
+  return jobsRequest<{ success: boolean; data: unknown }>(
+    `/companies/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function fetchJobTemplates() {
   return jobsRequest<{ success: boolean; data: unknown }>("/templates");
 }

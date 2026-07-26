@@ -64,12 +64,33 @@ export interface JobCompany {
   website?: string | null;
   logoUrl?: string | null;
   industry?: string | null;
+  /** One-line pitch shown under the company name on the public page. */
+  tagline?: string | null;
+  /** Longer about copy for the public company page. */
+  about?: string | null;
+  /** City / HQ line shown on the public page. */
+  hqLocation?: string | null;
   countryCode: string;
   verificationStatus: JobCompanyVerificationStatus;
   verificationDomain?: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A teammate on a company account (owner or recruiter). */
+export interface JobCompanyMember {
+  id: string;
+  companyId: string;
+  userId: string;
+  role: JobCompanyMemberRole;
+  user?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+  createdAt: string;
 }
 
 export interface JobScreeningQuestion {

@@ -996,6 +996,133 @@ router.get(
   }),
 );
 
+router.get(
+  "/companies/:id/profile",
+  optionalAuthMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    try {
+      const data = await jobs().getCompanyPublicProfile(
+        req.params.id,
+        req.user?.id || null,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
+router.patch(
+  "/companies/:id",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().updateCompany(req.params.id, userId, {
+        displayName: req.body?.displayName,
+        website: req.body?.website,
+        industry: req.body?.industry,
+        tagline: req.body?.tagline,
+        about: req.body?.about,
+        hqLocation: req.body?.hqLocation,
+        verificationDomain: req.body?.verificationDomain,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
+router.post(
+  "/companies/:id/logo",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().uploadCompanyLogo(req.params.id, userId, {
+        base64Data: req.body?.base64Data || req.body?.data || "",
+        fileName: req.body?.fileName,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
+router.get(
+  "/companies/:id/members",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().listCompanyMembers(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
+router.post(
+  "/companies/:id/members",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().inviteCompanyMember(req.params.id, userId, {
+        username: req.body?.username,
+        role: req.body?.role,
+      });
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
+router.delete(
+  "/companies/:id/members/:userId",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().removeCompanyMember(
+        req.params.id,
+        userId,
+        req.params.userId,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      return res.status(statusCode(err, 500)).json({
+        success: false,
+        error: clientErrorMessage(err),
+      });
+    }
+  }),
+);
+
 // Templates / intents (Phase 0 surface for create UX)
 router.get(
   "/templates",

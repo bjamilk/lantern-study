@@ -11,6 +11,7 @@ export interface AppRouteParams {
   inviteId?: string;
   shareToken?: string;
   jobId?: string;
+  companyId?: string;
 }
 
 export interface ParsedAppRoute {
@@ -92,6 +93,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.jobId
         ? `/marketplace/employer/jobs/${encodeURIComponent(params.jobId)}`
         : '/marketplace/employer';
+    case AppMode.JOB_COMPANY:
+      return params.companyId
+        ? `/marketplace/companies/${encodeURIComponent(params.companyId)}`
+        : '/marketplace/jobs';
     case AppMode.NOTES:
       return '/notes';
     case AppMode.LIBRARY:
@@ -216,6 +221,14 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     };
   }
 
+  const companyMatch = path.match(/^\/marketplace\/companies\/([^/]+)$/);
+  if (companyMatch) {
+    return {
+      mode: AppMode.JOB_COMPANY,
+      params: { companyId: decodeURIComponent(companyMatch[1]) },
+    };
+  }
+
   const noteMatch = path.match(/^\/notes\/([^/]+)$/);
   if (noteMatch) {
     return { mode: AppMode.NOTE_EDITOR, params: { noteId: decodeURIComponent(noteMatch[1]) } };
@@ -264,6 +277,7 @@ export function isPublicMarketplacePath(pathname: string): boolean {
   if (/^\/marketplace\/listing\/[^/]+$/.test(path)) return true;
   if (/^\/marketplace\/jobs\/[^/]+$/.test(path) && path !== '/marketplace/jobs/new') return true;
   if (/^\/marketplace\/seller\/[^/]+$/.test(path)) return true;
+  if (/^\/marketplace\/companies\/[^/]+$/.test(path)) return true;
   return false;
 }
 
