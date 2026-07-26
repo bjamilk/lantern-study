@@ -46,6 +46,7 @@
 
 - Admin hero with Refresh + Back to Dashboard in actions slot
 - KPI grid on Overview with highlighted moderation queue counts
+- **Features** tab (`AdminProductFeatures`): searchable registry of shipped product capabilities with expand-for-details cards (behavior, verification, admin notes). Source data in `components/admin/productFeatures.ts`.
 
 ---
 

@@ -41,6 +41,7 @@ import { AdminContentModeration } from './AdminContentModeration';
 import { AdminMarketplace, AdminMarketplaceView } from './AdminMarketplace';
 import { AdminJobs } from './AdminJobs';
 import { AdminOverview } from './AdminOverview';
+import { AdminProductFeatures } from './AdminProductFeatures';
 import { AdminReports } from './AdminReports';
 import { AdminUsers } from './AdminUsers';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -280,6 +281,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     if (activeTab === 'reports') loadReports();
     if (activeTab === 'ai') loadAI();
     if (activeTab === 'audit') loadAudit();
+    if (activeTab === 'features') {
+      setLoadedTabs((p) => (p.features ? p : { ...p, features: true }));
+    }
     if (activeTab === 'communications') {
       setLoadedTabs((p) => (p.communications ? p : { ...p, communications: true }));
     }
@@ -568,10 +572,15 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
           stats={stats}
           activity={activity}
           onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
+          onOpenFeatures={() => setActiveTab('features')}
         />
         {auditEntries.length > 0 && (
           <AdminAudit entries={auditEntries.slice(0, 8)} />
         )}
+      </TabPanel>
+
+      <TabPanel value="features">
+        <AdminProductFeatures />
       </TabPanel>
 
       <TabPanel value="analytics">

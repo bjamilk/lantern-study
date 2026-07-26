@@ -1,17 +1,29 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { AdminActivityItem, AdminStats } from '../../services/admin';
 import { Card } from '../ui/Card';
 import { StatPill } from '../ui/StatPill';
 import { StatChip } from '../ui/StatChip';
+import { PRODUCT_FEATURES, sortProductFeatures } from './productFeatures';
 import { formatDateTime } from './types';
 
 interface AdminOverviewProps {
   stats: AdminStats | null;
   activity: AdminActivityItem[];
   onExportStats: () => void;
+  onOpenFeatures?: () => void;
 }
 
-export const AdminOverview: React.FC<AdminOverviewProps> = ({ stats, activity, onExportStats }) => {
+export const AdminOverview: React.FC<AdminOverviewProps> = ({
+  stats,
+  activity,
+  onExportStats,
+  onOpenFeatures,
+}) => {
+  const recentFeatures = useMemo(
+    () => sortProductFeatures(PRODUCT_FEATURES).slice(0, 5),
+    [],
+  );
+
   if (!stats) return null;
 
   return (
@@ -29,6 +41,40 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({ stats, activity, o
           Export stats CSV
         </button>
       </div>
+
+      <Card padding="md">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-lantern-text">Recently shipped product features</h3>
+            <p className="text-xs text-lantern-text-muted mt-0.5">
+              Notes folders, pin/archive, group leave, chat menus, and jobs releases.
+            </p>
+          </div>
+          {onOpenFeatures ? (
+            <button
+              type="button"
+              onClick={onOpenFeatures}
+              className="text-sm font-medium text-lantern-primary hover:underline min-h-[44px]"
+            >
+              Open Features tab
+            </button>
+          ) : null}
+        </div>
+        <ul className="space-y-2">
+          {recentFeatures.map((feature) => (
+            <li
+              key={feature.id}
+              className="flex justify-between gap-3 text-sm border-b border-lantern-border pb-2 last:border-0"
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-lantern-text">{feature.title}</p>
+                <p className="text-lantern-text-muted line-clamp-2">{feature.summary}</p>
+              </div>
+              <span className="text-xs text-lantern-text-muted shrink-0">{feature.shippedAt}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatPill label="Users" value={stats.totalUsers} accent="primary" />
         <StatPill label="Active groups" value={stats.activeGroups ?? 0} accent="neutral" />

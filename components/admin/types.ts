@@ -2,6 +2,7 @@ import { AdminPagination, AdminStats, AdminUser } from '../services/admin';
 
 export type AdminTab =
   | 'overview'
+  | 'features'
   | 'analytics'
   | 'users'
   | 'marketplace'
@@ -31,6 +32,7 @@ export type TabLoadingState = Record<AdminTab, boolean>;
 
 export const ADMIN_TABS: { id: AdminTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'features', label: 'Features' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'users', label: 'Users' },
   { id: 'marketplace', label: 'Marketplace' },
@@ -44,6 +46,7 @@ export const ADMIN_TABS: { id: AdminTab; label: string }[] = [
 
 export const emptyTabLoading = (): TabLoadingState => ({
   overview: false,
+  features: false,
   analytics: false,
   users: false,
   marketplace: false,
