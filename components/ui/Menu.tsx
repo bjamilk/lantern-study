@@ -119,7 +119,13 @@ export function MenuContent({
 }) {
   const ctx = useMenuContext();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    resolvedPlacement: 'top' | 'bottom';
+  } | null>(null);
   useDismissableLayer(ctx.open, containerRef, ctx.closeMenu);
 
   const updatePosition = () => {
@@ -129,11 +135,19 @@ export function MenuContent({
     const menuWidth = Math.max(containerRef.current?.offsetWidth || 192, 192);
     let left = align === 'end' ? rect.right - menuWidth : rect.left;
     left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8));
-    const top =
-      placement === 'top'
-        ? Math.max(8, rect.top - 8)
-        : Math.min(window.innerHeight - 8, rect.bottom + 8);
-    setCoords({ top, left, width: menuWidth });
+
+    const gutter = 8;
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - gutter * 2);
+    const spaceAbove = Math.max(0, rect.top - gutter * 2);
+    const preferTop =
+      placement === 'top' ||
+      (placement === 'bottom' && spaceBelow < 240 && spaceAbove > spaceBelow);
+    const resolvedPlacement: 'top' | 'bottom' = preferTop ? 'top' : 'bottom';
+    const available = preferTop ? spaceAbove : spaceBelow;
+    const maxHeight = Math.max(160, Math.min(available, Math.floor(window.innerHeight * 0.7)));
+    const top = preferTop ? Math.max(gutter, rect.top - gutter) : rect.bottom + gutter;
+
+    setCoords({ top, left, width: menuWidth, maxHeight, resolvedPlacement });
   };
 
   useLayoutEffect(() => {
@@ -142,6 +156,9 @@ export function MenuContent({
       return;
     }
     updatePosition();
+    // Remeasure after paint so maxHeight matches actual content width/height needs.
+    const raf = window.requestAnimationFrame(updatePosition);
+    return () => window.cancelAnimationFrame(raf);
   }, [ctx.open, align, placement]);
 
   useEffect(() => {
@@ -157,21 +174,28 @@ export function MenuContent({
 
   if (!ctx.open || typeof document === 'undefined') return null;
 
+  const resolvedPlacement = coords?.resolvedPlacement ?? placement;
   const style: React.CSSProperties =
-    placement === 'top'
+    resolvedPlacement === 'top'
       ? {
           position: 'fixed',
           left: coords?.left ?? 0,
-          bottom: coords ? window.innerHeight - coords.top + 8 : 72,
+          bottom: coords ? window.innerHeight - coords.top : 72,
           width: coords?.width,
+          maxHeight: coords?.maxHeight,
           zIndex: 100,
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
         }
       : {
           position: 'fixed',
           left: coords?.left ?? 0,
           top: coords?.top ?? 0,
           width: coords?.width,
+          maxHeight: coords?.maxHeight ?? '70vh',
           zIndex: 100,
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
         };
 
   return createPortal(

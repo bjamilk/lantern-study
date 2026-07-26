@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Dimensions,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -40,6 +42,14 @@ export function GroupChatHeader({
 }: GroupChatHeaderProps) {
   const { colors } = useTheme();
   const [menuVisible, setMenuVisible] = useState(false);
+  const sheetMaxHeight = useMemo(
+    () => Math.round(Dimensions.get('window').height * 0.75),
+    [],
+  );
+  const listMaxHeight = useMemo(
+    () => Math.max(220, sheetMaxHeight - 140),
+    [sheetMaxHeight],
+  );
 
   const openMenu = () => setMenuVisible(true);
   const closeMenu = () => setMenuVisible(false);
@@ -106,10 +116,11 @@ export function GroupChatHeader({
       >
         <Pressable className="flex-1 justify-end" style={{ backgroundColor: colors.modalOverlay }} onPress={closeMenu}>
           <Pressable
-            className="rounded-t-2xl px-4 pt-3 pb-6"
+            className="rounded-t-2xl px-4 pt-3"
             style={{
               backgroundColor: colors.modalBackground,
               paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+              maxHeight: sheetMaxHeight,
             }}
             onPress={e => e.stopPropagation()}
           >
@@ -118,34 +129,41 @@ export function GroupChatHeader({
               Group actions
             </Text>
 
-            {menuActions.map(action => (
-              <TouchableOpacity
-                key={action.id}
-                onPress={() => handleAction(action)}
-                disabled={action.disabled}
-                className={`flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border ${
-                  action.disabled ? 'opacity-40' : ''
-                }`}
-                style={{ borderBottomColor: colors.border }}
-                accessibilityRole="button"
-                accessibilityLabel={action.label}
-              >
-                <View
-                  className="w-9 h-9 rounded-xl items-center justify-center"
-                  style={{ backgroundColor: colors.backgroundSecondary }}
+            <ScrollView
+              style={{ maxHeight: listMaxHeight }}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              bounces
+            >
+              {menuActions.map(action => (
+                <TouchableOpacity
+                  key={action.id}
+                  onPress={() => handleAction(action)}
+                  disabled={action.disabled}
+                  className={`flex-row items-center gap-3 py-3.5 px-1 border-b border-lantern-border ${
+                    action.disabled ? 'opacity-40' : ''
+                  }`}
+                  style={{ borderBottomColor: colors.border }}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
                 >
-                  <Ionicons
-                    name={action.icon}
-                    size={20}
-                    color={action.iconColor || featureAccents.groups}
-                  />
-                </View>
-                <Text className="text-base text-lantern-text flex-1" style={{ color: colors.text }}>
-                  {action.label}
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            ))}
+                  <View
+                    className="w-9 h-9 rounded-xl items-center justify-center"
+                    style={{ backgroundColor: colors.backgroundSecondary }}
+                  >
+                    <Ionicons
+                      name={action.icon}
+                      size={20}
+                      color={action.iconColor || featureAccents.groups}
+                    />
+                  </View>
+                  <Text className="text-base text-lantern-text flex-1" style={{ color: colors.text }}>
+                    {action.label}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
             <TouchableOpacity onPress={closeMenu} className="mt-3 py-3 items-center">
               <Text className="text-base font-medium" style={{ color: colors.primary }}>
