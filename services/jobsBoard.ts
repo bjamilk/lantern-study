@@ -5,6 +5,7 @@ import {
   type JobApplicantProfile,
   type JobApplication,
   type JobApplicationNote,
+  type JobApplicationStatus,
   type JobCompensation,
   type JobEmployerAnalytics,
   type JobEngagementDuration,
@@ -287,6 +288,30 @@ export async function fetchJobApplicants(postingId: string) {
   return jobsRequest<{ success: boolean; data: JobApplication[] }>(
     `/postings/${encodeURIComponent(postingId)}/applications`,
   );
+}
+
+export async function exportJobApplicantsCsv(postingId: string) {
+  return jobsRequest<{
+    success: boolean;
+    data: { csv: string; filename: string; rowCount: number };
+  }>(`/postings/${encodeURIComponent(postingId)}/applications/export`);
+}
+
+export async function bulkUpdateJobApplicationStatus(
+  postingId: string,
+  body: { applicationIds: string[]; status: JobApplicationStatus },
+) {
+  return jobsRequest<{
+    success: boolean;
+    data: {
+      updated: JobApplication[];
+      status: JobApplicationStatus;
+      count: number;
+    };
+  }>(`/postings/${encodeURIComponent(postingId)}/applications/bulk-status`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function updateJobApplicationStatus(

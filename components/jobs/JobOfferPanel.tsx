@@ -19,6 +19,7 @@ import {
   sendJobOffer,
   withdrawJobOffer,
 } from "../../services/jobsBoard";
+import { JobMessageTemplatePicker } from "./JobMessageTemplatePicker";
 
 interface Props {
   applicationId: string;
@@ -274,6 +275,9 @@ export function JobOfferPanel({
               placeholder="Reports to the team lead. Two-week paid onboarding."
               className="mt-1 w-full resize-y rounded-lg border border-lantern-border bg-lantern-surface px-2 py-1.5 text-sm text-lantern-text placeholder:text-lantern-text-tertiary"
             />
+            <div className="mt-1.5">
+              <JobMessageTemplatePicker kind="offer" onSelect={setDetails} />
+            </div>
           </div>
 
           <label className="flex items-start gap-2 text-xs text-lantern-text-secondary">

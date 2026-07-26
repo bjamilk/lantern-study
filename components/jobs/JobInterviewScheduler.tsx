@@ -21,6 +21,7 @@ import {
   setJobInterviewStatus,
 } from "../../services/jobsBoard";
 import { InterviewCalendarActions } from "./InterviewCalendarActions";
+import { JobMessageTemplatePicker } from "./JobMessageTemplatePicker";
 
 interface Props {
   applicationId: string;
@@ -317,6 +318,13 @@ export function JobInterviewScheduler({
               placeholder="30 minutes with the team lead. Bring a portfolio."
               className="mt-1 w-full resize-y rounded-lg border border-lantern-border bg-lantern-surface px-2 py-1.5 text-sm text-lantern-text placeholder:text-lantern-text-tertiary"
             />
+            <div className="mt-1.5">
+              <JobMessageTemplatePicker
+                kind="interview"
+                disabled={saving}
+                onSelect={setDetails}
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2">

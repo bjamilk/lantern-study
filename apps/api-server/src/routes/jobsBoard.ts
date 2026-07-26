@@ -844,6 +844,48 @@ router.get(
   }),
 );
 
+// GET /postings/:id/applications/export — CSV of applicants
+router.get(
+  "/postings/:id/applications/export",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await jobs().exportApplicantsCsv(req.params.id, userId);
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
+// POST /postings/:id/applications/bulk-status — move many candidates at once
+router.post(
+  "/postings/:id/applications/bulk-status",
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { applicationIds, status } = req.body || {};
+    try {
+      const data = await jobs().bulkUpdateApplicationStatus(
+        req.params.id,
+        userId,
+        applicationIds,
+        status,
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      res
+        .status(statusCode(err))
+        .json({ success: false, error: clientErrorMessage(err) });
+    }
+  }),
+);
+
 // PATCH /applications/:id/status
 router.patch(
   "/applications/:id/status",

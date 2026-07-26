@@ -15,6 +15,7 @@ import {
   deleteJobApplicationNote,
   fetchJobApplicationNotes,
 } from "../../services/jobsBoard";
+import { JobMessageTemplatePicker } from "./JobMessageTemplatePicker";
 
 interface Props {
   applicationId: string;
@@ -120,6 +121,16 @@ export function JobApplicantNotes({
         accessibilityLabel="Add a note about this candidate"
         className="mt-2 min-h-[64px] rounded-xl border border-lantern-border bg-lantern-background px-3 py-2 text-sm text-lantern-text"
         textAlignVertical="top"
+      />
+      <JobMessageTemplatePicker
+        kind="note"
+        disabled={saving}
+        onSelect={setDraft}
+      />
+      <JobMessageTemplatePicker
+        kind="rejection"
+        disabled={saving}
+        onSelect={setDraft}
       />
       <Pressable
         onPress={() => void addNote()}

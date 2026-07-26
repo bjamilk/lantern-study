@@ -18,7 +18,9 @@ import {
   JOB_RESUME_MAX_BYTES,
   JOB_SAVED_SEARCH_LIMIT_PER_USER,
   JOB_SAVED_SEARCH_NAME_MAX_LENGTH,
+  JOB_BULK_STATUS_MAX,
   averageNumber,
+  buildJobApplicantsCsv,
   buildJobHiringFunnel,
   canAutoCloseJobPostingOnHire,
   canEmployerRescheduleJobInterview,
@@ -33,12 +35,15 @@ import {
   formatJobInterviewSlotList,
   hasOpenJobOffer,
   isHighViewsLowApply,
+  isJobEmployerBulkStatus,
   isJobInterviewMode,
   isJobOfferExpired,
   isStaleActivePosting,
+  jobApplicantsCsvFilename,
   jobConversionRates,
   matchJobInterviewSlot,
   medianNumber,
+  normalizeBulkApplicationIds,
   normalizeJobInterviewSlots,
   normalizeJobOfferExpiry,
   normalizeJobOfferStartDate,
@@ -2155,6 +2160,138 @@ export class JobsBoardService {
     }
 
     return mapApplication(data);
+  }
+
+  /**
+   * Moves many applications on one posting to the same status. Auth is checked
+   * once against the posting; every id must belong to that posting so a bulk
+   * call cannot reach across jobs.
+   */
+  async bulkUpdateApplicationStatus(
+    postingId: string,
+    userId: string,
+    applicationIds: unknown,
+    status: unknown,
+  ) {
+    if (!isJobEmployerBulkStatus(status)) {
+      const err = new Error(
+        "Choose a hiring-stage status (reviewing, interview, offer, hired, or rejected)",
+      );
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      throw err;
+    }
+    const ids = normalizeBulkApplicationIds(applicationIds);
+    if (!ids) {
+      const err = new Error(
+        `Select between 1 and ${JOB_BULK_STATUS_MAX} applicants`,
+      );
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      throw err;
+    }
+
+    const posting = await this.getPosting(postingId);
+    if (!posting) {
+      const err = new Error("Job not found");
+      (err as Error & { statusCode?: number }).statusCode = 404;
+      throw err;
+    }
+    const allowed =
+      posting.posterUserId === userId ||
+      (posting.companyId &&
+        (await this.getCompanyMembership(posting.companyId, userId)));
+    if (!allowed) {
+      const err = new Error("Not allowed");
+      (err as Error & { statusCode?: number }).statusCode = 403;
+      throw err;
+    }
+
+    const { data: existing, error: listErr } = await this.client()
+      .from("job_applications")
+      .select("id, applicant_id, status")
+      .eq("posting_id", postingId)
+      .in("id", ids);
+    if (listErr) throw listErr;
+
+    const found = new Map(
+      (existing || []).map((row: { id: string }) => [row.id, row]),
+    );
+    if (found.size !== ids.length) {
+      const err = new Error(
+        "One or more applications are not part of this job",
+      );
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      throw err;
+    }
+
+    const now = new Date().toISOString();
+    const { data, error: upErr } = await this.client()
+      .from("job_applications")
+      .update({ status, updated_at: now })
+      .eq("posting_id", postingId)
+      .in("id", ids)
+      .select(
+        `
+        *,
+        posting:job_postings(*),
+        applicant:profiles!applicant_id(id, name, username, avatar_url)
+      `,
+      );
+    if (upErr) throw upErr;
+
+    const updated = (data || []).map(mapApplication);
+    for (const row of existing || []) {
+      const applicantId = (row as { applicant_id?: string }).applicant_id;
+      const previous = (row as { status?: string }).status;
+      if (!applicantId || previous === status) continue;
+      await this.supabase.createNotification(applicantId, {
+        type: "job_application_status",
+        message: `Your application for "${posting.title}" is now: ${status}`,
+        link: `/marketplace/applications`,
+      });
+    }
+
+    return {
+      updated,
+      status,
+      count: updated.length,
+    };
+  }
+
+  /** CSV export of applicants for a posting the caller can manage. */
+  async exportApplicantsCsv(postingId: string, userId: string) {
+    const posting = await this.getPosting(postingId);
+    if (!posting) {
+      const err = new Error("Job not found");
+      (err as Error & { statusCode?: number }).statusCode = 404;
+      throw err;
+    }
+    const allowed =
+      posting.posterUserId === userId ||
+      (posting.companyId &&
+        (await this.getCompanyMembership(posting.companyId, userId)));
+    if (!allowed) {
+      const err = new Error("Not allowed");
+      (err as Error & { statusCode?: number }).statusCode = 403;
+      throw err;
+    }
+
+    const applications = (
+      await this.listApplicantsForPosting(postingId, userId)
+    ).filter((app): app is NonNullable<typeof app> => !!app?.id);
+    const questionLabels: Record<string, string> = {};
+    for (const question of posting.screeningQuestions || []) {
+      questionLabels[question.id] = question.prompt;
+    }
+
+    const csv = buildJobApplicantsCsv(applications, {
+      postingTitle: posting.title,
+      questionLabels,
+    });
+    return {
+      csv,
+      filename: jobApplicantsCsvFilename(posting.title),
+      rowCount: applications.length,
+    };
   }
 
   async reportPosting(

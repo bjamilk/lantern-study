@@ -3,7 +3,9 @@ import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import {
   JOB_APPLICANT_SORT_LABELS,
   JOB_APPLICATION_STATUS_LABELS,
+  buildJobApplicantsCsv,
   filterJobApplicants,
+  jobApplicantsCsvFilename,
   sortJobApplicants,
   summarizeJobApplicants,
   type JobApplicantSort,
@@ -12,6 +14,8 @@ import {
   type JobPosting,
 } from "@lantern/shared";
 import {
+  bulkUpdateJobApplicationStatus,
+  exportJobApplicantsCsv,
   fetchJobApplicants,
   fetchJobApplicationResumeUrl,
   fetchJobPosting,
@@ -20,7 +24,18 @@ import {
 import { useAuthStore } from "../stores/authStore";
 import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 import { JobApplicantDetailModal } from "./jobs/JobApplicantDetailModal";
+import { JobBulkActionsBar } from "./jobs/JobBulkActionsBar";
 import { JobPostingInsights } from "./jobs/JobPostingInsights";
+
+function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 const COLUMNS: JobApplicationStatus[] = [
   "interested",
@@ -55,6 +70,8 @@ export default function JobEmployerPipelineScreen({
   const [openApplicationId, setOpenApplicationId] = useState<string | null>(
     null,
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Resumes live in a private bucket, so each view needs a fresh signed link.
   const openResume = async (applicationId: string) => {
@@ -138,6 +155,72 @@ export default function JobEmployerPipelineScreen({
     apps.find((app) => app.id === openApplicationId) || null;
   const filtering = !!search.trim();
 
+  const toggleSelected = (applicationId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(applicationId)) next.delete(applicationId);
+      else next.add(applicationId);
+      return next;
+    });
+  };
+
+  const questionLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const question of posting?.screeningQuestions || []) {
+      labels[question.id] = question.prompt;
+    }
+    return labels;
+  }, [posting]);
+
+  const runBulkStatus = async (status: JobApplicationStatus) => {
+    const applicationIds = [...selectedIds];
+    if (!applicationIds.length) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      await bulkUpdateJobApplicationStatus(jobId, { applicationIds, status });
+      setSelectedIds(new Set());
+      await load();
+    } catch (bulkError) {
+      setError(
+        bulkError instanceof Error
+          ? bulkError.message
+          : "Could not update selected applicants",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const exportSelected = () => {
+    const selected = apps.filter((app) => selectedIds.has(app.id));
+    if (!selected.length) return;
+    downloadCsv(
+      jobApplicantsCsvFilename(posting?.title),
+      buildJobApplicantsCsv(selected, {
+        postingTitle: posting?.title,
+        questionLabels,
+      }),
+    );
+  };
+
+  const exportAll = async () => {
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const response = await exportJobApplicantsCsv(jobId);
+      downloadCsv(response.data.filename, response.data.csv);
+    } catch (exportError) {
+      setError(
+        exportError instanceof Error
+          ? exportError.message
+          : "Could not export applicants",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain bg-lantern-background">
       <div className="max-w-6xl mx-auto px-4 py-4 pb-20 md:pb-6 space-y-4">
@@ -168,6 +251,19 @@ export default function JobEmployerPipelineScreen({
         </div>
 
         <JobPostingInsights postingId={jobId} />
+
+        <JobBulkActionsBar
+          selectedCount={selectedIds.size}
+          totalCount={apps.length}
+          busy={bulkBusy}
+          onClear={() => setSelectedIds(new Set())}
+          onSelectAll={() =>
+            setSelectedIds(new Set(visible.map((app) => app.id)))
+          }
+          onBulkStatus={runBulkStatus}
+          onExportSelected={exportSelected}
+          onExportAll={exportAll}
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
@@ -232,41 +328,64 @@ export default function JobEmployerPipelineScreen({
                   </span>
                 </div>
                 <ul className="space-y-2">
-                  {(byStatus[col] || []).map((app) => (
-                    <li key={app.id}>
-                      <button
-                        type="button"
-                        onClick={() => setOpenApplicationId(app.id)}
-                        className="w-full space-y-1 rounded-lg border border-lantern-border bg-lantern-surface p-3 text-left shadow-sm transition hover:border-lantern-primary/40"
+                  {(byStatus[col] || []).map((app) => {
+                    const selected = selectedIds.has(app.id);
+                    return (
+                      <li
+                        key={app.id}
+                        className={`rounded-lg border bg-lantern-surface shadow-sm transition ${
+                          selected
+                            ? "border-lantern-primary"
+                            : "border-lantern-border"
+                        }`}
                       >
-                        <p className="truncate text-sm font-medium text-lantern-text">
-                          {app.applicant?.name ||
-                            app.applicant?.username ||
-                            "Applicant"}
-                        </p>
-                        <p className="text-[11px] text-lantern-text-tertiary">
-                          Applied{" "}
-                          {new Date(app.createdAt).toLocaleDateString(
-                            undefined,
-                            { month: "short", day: "numeric" },
-                          )}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          {app.resumePath || app.resumeUrl ? (
-                            <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
-                              Resume
-                            </span>
-                          ) : null}
-                          {app.notesCount ? (
-                            <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
-                              {app.notesCount}{" "}
-                              {app.notesCount === 1 ? "note" : "notes"}
-                            </span>
-                          ) : null}
+                        <div className="flex items-start gap-2 p-3">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleSelected(app.id)}
+                            aria-label={`Select ${
+                              app.applicant?.name ||
+                              app.applicant?.username ||
+                              "applicant"
+                            }`}
+                            className="mt-1 h-4 w-4 shrink-0 rounded border-lantern-border text-lantern-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setOpenApplicationId(app.id)}
+                            className="min-w-0 flex-1 space-y-1 text-left"
+                          >
+                            <p className="truncate text-sm font-medium text-lantern-text">
+                              {app.applicant?.name ||
+                                app.applicant?.username ||
+                                "Applicant"}
+                            </p>
+                            <p className="text-[11px] text-lantern-text-tertiary">
+                              Applied{" "}
+                              {new Date(app.createdAt).toLocaleDateString(
+                                undefined,
+                                { month: "short", day: "numeric" },
+                              )}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                              {app.resumePath || app.resumeUrl ? (
+                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
+                                  Resume
+                                </span>
+                              ) : null}
+                              {app.notesCount ? (
+                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
+                                  {app.notesCount}{" "}
+                                  {app.notesCount === 1 ? "note" : "notes"}
+                                </span>
+                              ) : null}
+                            </div>
+                          </button>
                         </div>
-                      </button>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}

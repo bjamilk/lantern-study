@@ -3,6 +3,7 @@ import {
   Linking,
   Pressable,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
@@ -16,7 +17,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   JOB_APPLICANT_SORT_LABELS,
   JOB_APPLICATION_STATUS_LABELS,
+  buildJobApplicantsCsv,
   filterJobApplicants,
+  jobApplicantsCsvFilename,
   sortJobApplicants,
   summarizeJobApplicants,
   type JobApplicantSort,
@@ -26,10 +29,13 @@ import {
 } from "@lantern/shared";
 import { Card, ScreenHeader } from "../../components/ui";
 import { JobApplicantNotes } from "../../components/jobs/JobApplicantNotes";
+import { JobBulkActionsBar } from "../../components/jobs/JobBulkActionsBar";
 import { JobInterviewScheduler } from "../../components/jobs/JobInterviewScheduler";
 import { JobOfferPanel } from "../../components/jobs/JobOfferPanel";
 import { JobPostingInsights } from "../../components/jobs/JobPostingInsights";
 import {
+  bulkUpdateJobApplicationStatus,
+  exportJobApplicantsCsv,
   fetchJobApplicants,
   fetchJobApplicationResumeUrl,
   fetchJobPosting,
@@ -65,6 +71,8 @@ export function JobApplicantsScreen() {
   const [openOfferId, setOpenOfferId] = useState<string | null>(null);
   // Held so the offer form can seed from the job's own terms.
   const [posting, setPosting] = useState<JobPosting | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Resumes live in a private bucket, so each view needs a fresh signed link.
   const openResume = async (applicationId: string) => {
@@ -110,6 +118,80 @@ export function JobApplicantsScreen() {
   const summary = useMemo(() => summarizeJobApplicants(apps), [apps]);
   const filtering = !!search.trim();
 
+  const toggleSelected = (applicationId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(applicationId)) next.delete(applicationId);
+      else next.add(applicationId);
+      return next;
+    });
+  };
+
+  const questionLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const question of posting?.screeningQuestions || []) {
+      labels[question.id] = question.prompt;
+    }
+    return labels;
+  }, [posting]);
+
+  const runBulkStatus = async (status: JobApplicationStatus) => {
+    const applicationIds = [...selectedIds];
+    if (!applicationIds.length) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      await bulkUpdateJobApplicationStatus(route.params.jobId, {
+        applicationIds,
+        status,
+      });
+      setSelectedIds(new Set());
+      await load();
+    } catch (bulkError) {
+      setError(
+        bulkError instanceof Error
+          ? bulkError.message
+          : "Could not update selected applicants",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const shareCsv = async (csv: string, filename: string) => {
+    await Share.share({ message: csv, title: filename });
+  };
+
+  const exportSelected = async () => {
+    const selected = apps.filter((app) => selectedIds.has(app.id));
+    if (!selected.length) return;
+    const filename = jobApplicantsCsvFilename(posting?.title);
+    await shareCsv(
+      buildJobApplicantsCsv(selected, {
+        postingTitle: posting?.title,
+        questionLabels,
+      }),
+      filename,
+    );
+  };
+
+  const exportAll = async () => {
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const response = await exportJobApplicantsCsv(route.params.jobId);
+      await shareCsv(response.data.csv, response.data.filename);
+    } catch (exportError) {
+      setError(
+        exportError instanceof Error
+          ? exportError.message
+          : "Could not export applicants",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <View className="flex-1 bg-lantern-background">
       <ScreenHeader title="Applicants" onBack={() => navigation.goBack()} />
@@ -127,6 +209,19 @@ export function JobApplicantsScreen() {
         </Text>
 
         <JobPostingInsights postingId={route.params.jobId} />
+
+        <JobBulkActionsBar
+          selectedCount={selectedIds.size}
+          totalCount={apps.length}
+          busy={bulkBusy}
+          onClear={() => setSelectedIds(new Set())}
+          onSelectAll={() =>
+            setSelectedIds(new Set(visible.map((app) => app.id)))
+          }
+          onBulkStatus={runBulkStatus}
+          onExportSelected={exportSelected}
+          onExportAll={exportAll}
+        />
 
         <TextInput
           value={search}
@@ -172,7 +267,35 @@ export function JobApplicantsScreen() {
         ) : null}
 
         {visible.map((app) => (
-          <Card key={app.id} className="mb-3 border border-lantern-border">
+          <Card
+            key={app.id}
+            className={`mb-3 border ${
+              selectedIds.has(app.id)
+                ? "border-lantern-primary"
+                : "border-lantern-border"
+            }`}
+          >
+            <Pressable
+              onPress={() => toggleSelected(app.id)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: selectedIds.has(app.id) }}
+              className="mb-2 flex-row items-center"
+            >
+              <View
+                className={`mr-2 h-5 w-5 items-center justify-center rounded border ${
+                  selectedIds.has(app.id)
+                    ? "border-lantern-primary bg-lantern-primary"
+                    : "border-lantern-border bg-lantern-background"
+                }`}
+              >
+                {selectedIds.has(app.id) ? (
+                  <Text className="text-xs font-bold text-white">✓</Text>
+                ) : null}
+              </View>
+              <Text className="text-xs font-medium text-lantern-text-secondary">
+                {selectedIds.has(app.id) ? "Selected" : "Select"}
+              </Text>
+            </Pressable>
             <Text className="text-base font-semibold text-lantern-text">
               {app.applicant?.name || app.applicant?.username || "Applicant"}
             </Text>

@@ -2732,6 +2732,27 @@ export function createApiEndpoints(client: ApiClient) {
         `/jobs-board/postings/${encodeURIComponent(postingId)}/applications`,
       ),
 
+    exportJobApplicantsCsv: (postingId: string) =>
+      apiRequestRaw<{
+        success: boolean;
+        data: { csv: string; filename: string; rowCount: number };
+      }>(
+        `/jobs-board/postings/${encodeURIComponent(postingId)}/applications/export`,
+      ),
+
+    bulkUpdateJobApplicationStatus: (
+      postingId: string,
+      body: { applicationIds: string[]; status: string },
+    ) =>
+      apiRequestRaw<{ success: boolean; data: unknown }>(
+        `/jobs-board/postings/${encodeURIComponent(postingId)}/applications/bulk-status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+
     updateJobApplicationStatus: (
       applicationId: string,
       body: { status: string; asApplicant?: boolean },

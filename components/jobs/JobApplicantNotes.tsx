@@ -8,6 +8,7 @@ import {
   deleteJobApplicationNote,
   fetchJobApplicationNotes,
 } from "../../services/jobsBoard";
+import { JobMessageTemplatePicker } from "./JobMessageTemplatePicker";
 
 interface Props {
   applicationId: string;
@@ -121,6 +122,18 @@ export function JobApplicantNotes({
           placeholder="Strong portfolio, available from September…"
           className="w-full resize-y rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm text-lantern-text placeholder:text-lantern-text-tertiary focus:border-lantern-primary focus:outline-none"
         />
+        <div className="mt-1.5 space-y-1.5">
+          <JobMessageTemplatePicker
+            kind="note"
+            disabled={saving}
+            onSelect={setDraft}
+          />
+          <JobMessageTemplatePicker
+            kind="rejection"
+            disabled={saving}
+            onSelect={setDraft}
+          />
+        </div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <span className="text-xs text-lantern-text-tertiary">
             {remaining < 200 ? `${remaining} characters left` : ""}
