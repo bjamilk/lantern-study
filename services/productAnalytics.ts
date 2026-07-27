@@ -207,6 +207,22 @@ export function trackFlashcardReviewCompleted(reviewedCount: number): void {
   trackProductEvent({ event: 'flashcard_review_completed', props: { reviewedCount } });
 }
 
+export function trackDeckCreated(deckId?: string): void {
+  trackProductEvent({ event: 'deck_created', props: { deckId } });
+}
+
+export function trackFirstCardAdded(deckId?: string): void {
+  trackProductEvent({ event: 'first_card_added', props: { deckId } });
+}
+
+export function trackStudyModeSelected(mode: string): void {
+  trackProductEvent({ event: 'study_mode_selected', props: { mode: mode.slice(0, 40) } });
+}
+
+export function trackStudyModeCompleted(mode: string): void {
+  trackProductEvent({ event: 'study_mode_completed', props: { mode: mode.slice(0, 40) } });
+}
+
 export function trackNoteCreated(source?: string): void {
   trackProductEvent({ event: 'note_created', props: { source: source?.slice(0, 40) } });
 }

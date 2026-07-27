@@ -7,9 +7,11 @@ import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
+import { FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
 import { useCompanionStore } from '../stores/companionStore';
-import { trackFlashcardReviewCompleted } from '../services/productAnalytics';
+import { trackFlashcardReviewCompleted, trackStudyModeCompleted } from '../services/productAnalytics';
+import { useRegisterFeatureTip } from './featureTips/FeatureTip';
 
 interface FlashcardReviewScreenProps {
   session: FlashcardSession;
@@ -23,6 +25,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   const [comments, setComments] = useState<FlashcardComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
 
   const currentUser = useAuthStore(state => state.currentUser);
   const ratedCardIdsRef = useRef(new Set<string>());
@@ -32,6 +35,8 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   const isSessionComplete = currentIndex >= session.cardQueue.length;
   const canGoBack = currentIndex > 0;
   const canGoForward = currentIndex < session.cardQueue.length - 1;
+
+  useRegisterFeatureTip('flashcards.grading', !isSessionComplete && session.cardQueue.length > 0);
 
   useEffect(() => {
     // Reset answer visibility when card changes
@@ -43,6 +48,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     if (isSessionComplete && !completionTrackedRef.current) {
       completionTrackedRef.current = true;
       trackFlashcardReviewCompleted(ratedCardIdsRef.current.size);
+      trackStudyModeCompleted('smart_review');
     }
   }, [isSessionComplete]);
 
@@ -336,11 +342,27 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                   </button>
                 </div>
               )}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button type="button" onClick={() => handleRatePerformance('again')} className="py-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors">Again</button>
-                <button type="button" onClick={() => handleRatePerformance('hard')} className="py-3 bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/60 transition-colors">Hard</button>
-                <button type="button" onClick={() => handleRatePerformance('good')} className="py-3 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors">Good</button>
-                <button type="button" onClick={() => handleRatePerformance('easy')} className="py-3 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors">Easy</button>
+              <p className="mb-3 text-xs text-center text-lantern-text-tertiary">1–4 to rate</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-tip-id="flashcards.grading">
+                {(['again', 'hard', 'good', 'easy'] as const).map((grade) => (
+                  <button
+                    key={grade}
+                    type="button"
+                    onClick={() => handleRatePerformance(grade)}
+                    className={`py-3 rounded-lg font-semibold transition-colors ${
+                      grade === 'again'
+                        ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
+                        : grade === 'hard'
+                          ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/60'
+                          : grade === 'good'
+                            ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
+                            : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60'
+                    }`}
+                  >
+                    <span className="block">{FLASHCARD_GRADE_LABELS[grade].label}</span>
+                    <span className="block text-xs font-normal opacity-80">{FLASHCARD_GRADE_LABELS[grade].meaning}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </article>
@@ -358,7 +380,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
               className="text-center flex-grow flex flex-col justify-center items-center animate-[fadeIn_0.25s_ease-out]"
             >
               {renderCardContent(currentCard, false)}
-              <p className="mt-4 text-xs text-lantern-text-tertiary">Space or click to reveal · 1–4 to rate</p>
+              <p className="mt-4 text-xs text-lantern-text-tertiary">Space or click to reveal</p>
             </div>
             <div className="mt-6 pt-4 border-t border-lantern-border">
               <button
@@ -372,41 +394,52 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           </div>
         )}
       </div>
-      <div className="mt-6 p-4 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
-        <div className="flex items-center justify-between mb-2">
+      <div className="mt-6 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
+        <button
+          type="button"
+          onClick={() => setCommentsOpen((open) => !open)}
+          className="flex w-full items-center justify-between p-4 text-left"
+          aria-expanded={commentsOpen}
+        >
           <h3 className="text-sm font-semibold text-lantern-text">Comments</h3>
-          <span className="text-xs text-lantern-text-tertiary">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
-        </div>
+          <span className="text-xs text-lantern-text-tertiary">
+            {comments.length} comment{comments.length === 1 ? '' : 's'} {commentsOpen ? '▾' : '▸'}
+          </span>
+        </button>
 
-        {comments.length === 0 ? (
-          <p className="text-sm text-lantern-text-secondary">No comments yet. Add one to start a discussion.</p>
-        ) : (
-          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-            {comments.map((c) => (
-              <div key={c.id} className="rounded-lg bg-lantern-background p-3">
-                <p className="text-sm text-lantern-text">{c.comment}</p>
-                <div className="text-xs text-lantern-text-tertiary mt-1">{new Date((c as any).created_at || (c as any).createdAt).toLocaleString()}</div>
+        {commentsOpen && (
+          <div className="px-4 pb-4 border-t border-lantern-border pt-3">
+            {comments.length === 0 ? (
+              <p className="text-sm text-lantern-text-secondary">No comments yet. Add one to start a discussion.</p>
+            ) : (
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                {comments.map((c) => (
+                  <div key={c.id} className="rounded-lg bg-lantern-background p-3">
+                    <p className="text-sm text-lantern-text">{c.comment}</p>
+                    <div className="text-xs text-lantern-text-tertiary mt-1">{new Date((c as any).created_at || (c as any).createdAt).toLocaleString()}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Add a comment..."
+                className="flex-1 p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+              />
+              <button
+                onClick={handleSubmitComment}
+                disabled={isSubmittingComment || !newComment.trim()}
+                className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold transition-colors"
+              >
+                {isSubmittingComment ? 'Adding...' : 'Add'}
+              </button>
+            </div>
           </div>
         )}
-
-        <div className="mt-3 flex gap-2">
-          <input
-            type="text"
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Add a comment..."
-            className="flex-1 p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
-          />
-          <button
-            onClick={handleSubmitComment}
-            disabled={isSubmittingComment || !newComment.trim()}
-            className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white rounded-md text-sm font-semibold transition-colors"
-          >
-            {isSubmittingComment ? 'Adding...' : 'Add'}
-          </button>
-        </div>
       </div>
 
       <div className="flex-shrink-0 text-center pb-4">

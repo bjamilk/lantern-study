@@ -29,6 +29,9 @@ export * from './marketplace';
 // Jobs board (campus employment — sibling of marketplace goods)
 export * from './jobs';
 
+// Flashcard plain-language labels (web + mobile)
+export * from './flashcards';
+
 // API client
 export * from './api';
 

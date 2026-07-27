@@ -19,7 +19,7 @@ import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
-import { FlashcardType } from '@lantern/shared';
+import { FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 
@@ -78,22 +78,24 @@ function DeckCard({
               </View>
             ) : null}
           </View>
-          {dueCount > 0 ? (
-            <View className="bg-white/25 px-2 py-0.5 rounded-full ml-2">
-              <Text className="text-[10px] font-bold text-white">{dueCount} due</Text>
-            </View>
-          ) : (
+          <View className="flex-row items-center gap-1.5 ml-2 flex-shrink-0">
+            {dueCount > 0 ? (
+              <View className="bg-white/25 px-2 py-0.5 rounded-full">
+                <Text className="text-[10px] font-bold text-white">{dueCount} due</Text>
+              </View>
+            ) : null}
             <Pressable
               onPress={e => {
                 e.stopPropagation?.();
                 onAIGenerate();
               }}
-              className="p-1.5 rounded-full bg-white/20 ml-2"
+              className="flex-row items-center gap-1 px-2 py-1 rounded-full bg-white/20"
               hitSlop={8}
             >
-              <Ionicons name="sparkles-outline" size={16} color="#ffffff" />
+              <Ionicons name="sparkles-outline" size={14} color="#ffffff" />
+              <Text className="text-[10px] font-bold text-white">Generate</Text>
             </Pressable>
-          )}
+          </View>
         </LinearGradient>
         <View className="px-4 py-3">
           {deck.description ? (
@@ -101,27 +103,22 @@ function DeckCard({
               {deck.description}
             </Text>
           ) : null}
-          <View className="flex-row gap-4 items-center justify-between">
-            <View className="flex-row gap-4">
-            <View className="flex-row items-center gap-1.5">
-              <Text className="text-xs text-lantern-text-secondary">Cards</Text>
-              <Text className="text-sm font-semibold text-lantern-text">{cardCount}</Text>
-            </View>
-            <View className="flex-row items-center gap-1.5">
-              <Text className="text-xs text-lantern-text-secondary">Due</Text>
-              <Text
-                className={`text-sm font-semibold ${dueCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-lantern-text'}`}
-              >
-                {dueCount}
+          <Text className="text-xs text-lantern-text-secondary mb-3">
+            {getDeckListStatsLine(dueCount, cardCount)}
+          </Text>
+          {onStudy ? (
+            <Pressable
+              onPress={e => {
+                e.stopPropagation?.();
+                onStudy();
+              }}
+              className="px-4 py-2.5 rounded-xl bg-amber-500 active:opacity-90"
+            >
+              <Text className="text-sm font-bold text-white text-center">
+                {getStudyCtaLabel(dueCount, cardCount)}
               </Text>
-            </View>
-            </View>
-            {onStudy && dueCount > 0 ? (
-              <Pressable onPress={(e) => { e.stopPropagation?.(); onStudy(); }} className="px-3 py-1.5 rounded-lg bg-amber-500">
-                <Text className="text-xs font-bold text-white">Study</Text>
-              </Pressable>
-            ) : null}
-          </View>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Pressable>

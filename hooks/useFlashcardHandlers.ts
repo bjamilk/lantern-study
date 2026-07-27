@@ -3,6 +3,7 @@ import { AppMode, Deck, Flashcard, FlashcardType, TestResult } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useUIStore } from '../stores/uiStore';
+import { useToastStore } from '../stores/toastStore';
 import { shuffleArray } from '../utils/helpers';
 import {
   buildFlashcardReviewQueue,
@@ -14,7 +15,7 @@ import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
 import { normalizeUserSettings } from '@lantern/shared/settings/userSettings';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
-import { trackFlashcardReviewStarted } from '../services/productAnalytics';
+import { trackFlashcardReviewStarted, trackDeckCreated, trackFirstCardAdded, trackStudyModeCompleted, trackStudyModeSelected } from '../services/productAnalytics';
 import { useTestStore } from '../stores/testStore';
 import {
     createDeck, updateDeck, deleteDeck,
@@ -104,6 +105,7 @@ export function useFlashcardHandlers() {
             } else {
                 const newDeck = await createDeck({ name: data.name, description: data.description, isShared: data.isShared }, currentUser.id);
                 updateDecks(prev => [...prev, newDeck]);
+                trackDeckCreated(newDeck.id);
             }
             closeModal('createDeck');
         } catch (error) {
@@ -154,8 +156,10 @@ export function useFlashcardHandlers() {
                 });
                 setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
             } else {
+                const deckId = data.deckId!;
+                const cardsInDeckBefore = flashcards.filter((fc) => fc.deckId === deckId).length;
                 await createFlashcard({
-                    deckId: data.deckId!,
+                    deckId,
                     type: data.type!,
                     front: data.front,
                     back: data.back,
@@ -166,6 +170,9 @@ export function useFlashcardHandlers() {
                     tags: data.tags,
                     userId: currentUser.id,
                 });
+                if (cardsInDeckBefore === 0) {
+                    trackFirstCardAdded(deckId);
+                }
                 setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
             }
             closeModal('createFlashcard');
@@ -173,7 +180,7 @@ export function useFlashcardHandlers() {
             console.error('Error creating/updating flashcard:', error instanceof Error ? error.message : JSON.stringify(error));
             alert('Failed to create/update flashcard. Please try again.');
         }
-    }, [currentUser, setFlashcards, closeModal]);
+    }, [currentUser, setFlashcards, closeModal, flashcards]);
     
     const handleDeleteFlashcard = useCallback(async (flashcardId: string) => {
         if (!currentUser) return;
@@ -258,6 +265,8 @@ export function useFlashcardHandlers() {
                 return;
             }
 
+            const cardsInDeckBefore = flashcards.filter((fc) => fc.deckId === deckId).length;
+
             for (const card of cardsToCreate) {
                 await createFlashcard({
                     deckId,
@@ -270,6 +279,10 @@ export function useFlashcardHandlers() {
 
             setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
 
+            if (cardsInDeckBefore === 0) {
+                trackFirstCardAdded(deckId);
+            }
+
             alert(`Successfully generated ${cardsToCreate.length} flashcard(s)!`);
         } catch (error) {
             console.error('Error generating flashcards:', error);
@@ -277,7 +290,7 @@ export function useFlashcardHandlers() {
         } finally {
             setIsGeneratingFlashcards(false);
         }
-    }, [currentUser, setFlashcards]);
+    }, [currentUser, setFlashcards, flashcards]);
 
     const handleGenerateFlashcardsFromTestResult = useCallback(
         async (results: TestResult, weakTopics: string[]): Promise<boolean> => {
@@ -317,6 +330,7 @@ export function useFlashcardHandlers() {
                     currentUser.id
                 );
                 updateDecks((prev) => [...prev, newDeck]);
+                trackDeckCreated(newDeck.id);
 
                 for (const card of generated) {
                     await createFlashcard({
@@ -329,6 +343,7 @@ export function useFlashcardHandlers() {
                 }
 
                 setFlashcards(await fetchAllFlashcards(undefined, currentUser.id));
+                trackFirstCardAdded(newDeck.id);
 
                 setSelectedDeck(newDeck);
                 setAppMode(AppMode.DECK_DETAIL);
@@ -371,6 +386,7 @@ export function useFlashcardHandlers() {
         }
         setActiveReviewSession({ deck, cardQueue });
         setAppMode(AppMode.FLASHCARD_REVIEW);
+        trackStudyModeSelected('smart_review');
         trackFlashcardReviewStarted(cardQueue.length, deck.id);
     }, [currentUser, flashcards, setActiveReviewSession, setAppMode]);
 
@@ -394,6 +410,7 @@ export function useFlashcardHandlers() {
 
         setActiveCramSession(session);
         setAppMode(AppMode.FLASHCARD_CRAM);
+        trackStudyModeSelected(timerSeconds && timerSeconds > 0 ? 'timed_drill' : 'speed_run');
     }, [currentUser, flashcards, setActiveCramSession, setAppMode]);
     
     const handleCramAnswer = useCallback((cardId: string, isCorrect: boolean) => {
@@ -408,7 +425,16 @@ export function useFlashcardHandlers() {
     }, [setActiveCramSession]);
 
     const handleEndCramSession = useCallback((stats: { correct: number, incorrect: number }) => {
-        alert(`Cram session finished! You got ${stats.correct} correct and ${stats.incorrect} incorrect.`);
+        const activeCramSession = useUIStore.getState().activeCramSession;
+        const mode =
+            activeCramSession?.endTime || activeCramSession?.timerSeconds
+                ? 'timed_drill'
+                : 'speed_run';
+        trackStudyModeCompleted(mode);
+        useToastStore.getState().showToast(
+            `Session finished! ${stats.correct} correct, ${stats.incorrect} incorrect.`,
+            'success'
+        );
         setActiveCramSession(null);
         setAppMode(AppMode.DECK_DETAIL);
     }, [setActiveCramSession, setAppMode]);
@@ -508,11 +534,13 @@ export function useFlashcardHandlers() {
     const handleStartLearn = useCallback((deck: Deck) => {
         setSelectedDeck(deck);
         setAppMode(AppMode.FLASHCARD_LEARN);
+        trackStudyModeSelected('quiz');
     }, [setSelectedDeck, setAppMode]);
 
     const handleStartMatch = useCallback((deck: Deck) => {
         setSelectedDeck(deck);
         setAppMode(AppMode.FLASHCARD_MATCH);
+        trackStudyModeSelected('match');
     }, [setSelectedDeck, setAppMode]);
 
     const handleEndStudyMode = useCallback(() => {

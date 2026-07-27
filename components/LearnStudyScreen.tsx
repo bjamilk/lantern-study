@@ -1,8 +1,10 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { Flashcard } from '../types';
 import { shuffleArray } from '../utils/helpers';
 import { Button } from './ui';
 import { XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { trackStudyModeCompleted } from '../services/productAnalytics';
 
 interface LearnStudyScreenProps {
   cards: Flashcard[];
@@ -25,6 +27,7 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [mastered, setMastered] = useState(0);
   const isDark = theme === 'dark';
+  const completionTrackedRef = useRef(false);
 
   const current = queue[0];
   const progress = mastered;
@@ -55,6 +58,13 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
       setTypedAnswer('');
     }
   }, [current, queue.length]);
+
+  useEffect(() => {
+    if (phase === 'done' && !completionTrackedRef.current) {
+      completionTrackedRef.current = true;
+      trackStudyModeCompleted('quiz');
+    }
+  }, [phase]);
 
   const handleMcq = (option: string) => {
     const correct = current?.back || current?.clozeText || '';
@@ -99,7 +109,7 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
     <div className={`flex-1 flex flex-col ${isDark ? 'bg-lantern-background text-lantern-text' : 'bg-lantern-background text-lantern-text'}`}>
       <div className="flex items-center justify-between p-4 border-b border-lantern-border">
         <div>
-          <h1 className="font-bold">Learn — {deckName}</h1>
+          <h1 className="font-bold">{FLASHCARD_MODE_LABELS.quiz.label} — {deckName}</h1>
           <p className="text-sm text-lantern-text-secondary">{progress}/{total} mastered</p>
         </div>
         <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">

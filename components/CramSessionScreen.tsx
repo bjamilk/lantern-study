@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Deck, Flashcard, FlashcardSession, FlashcardType } from '../types';
 import { ArrowUturnLeftIcon, CheckIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { escapeHtml } from '../utils/helpers';
+import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
 import { useCompanionStore } from '../stores/companionStore';
 
@@ -29,6 +30,10 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
 
   const currentCard = session.cardQueue[currentIndex];
   const isSessionComplete = currentIndex >= session.cardQueue.length;
+  const isTimedDrill = Boolean(session.endTime || session.timerSeconds);
+  const modeLabel = isTimedDrill
+    ? FLASHCARD_MODE_LABELS.timed_drill.label
+    : FLASHCARD_MODE_LABELS.speed_run.label;
 
   useEffect(() => {
     // This effect runs when the session prop changes, which happens
@@ -230,7 +235,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background-secondary dark:bg-lantern-background">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-lantern-primary">Cramming: {session.deck.name}</h1>
+          <h1 className="text-xl font-semibold text-lantern-primary">{modeLabel} — {session.deck.name}</h1>
           {timeLeft !== null && (
             <div className="mt-1 text-sm font-medium text-lantern-text-secondary">
               Time left: <span className={isTimeLow ? 'text-rose-600 dark:text-rose-400' : ''}>{formatTime(timeLeft)}</span>

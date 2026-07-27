@@ -561,7 +561,7 @@ export default function SettingsScreen() {
               colors={colors}
               icon="refresh-outline"
               iconColor="#0ea5e9"
-              title="SRS Reminders"
+              title="Review reminders"
               subtitle="Flashcard review reminders"
               rightElement={
                 <Switch
@@ -620,7 +620,7 @@ export default function SettingsScreen() {
               colors={colors}
               icon="flash-outline"
               iconColor="#fbbf24"
-              title="SRS Settings"
+              title="Review settings"
               subtitle={`${settings.study.srsNewCardsPerDay} new cards/day`}
               onPress={() => setShowSRSSettingsModal(true)}
             />
@@ -1508,14 +1508,14 @@ export default function SettingsScreen() {
         <View style={[styles.modalOverlay, modalTheme.overlay]}>
           <View style={[styles.modalContent, modalTheme.content]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, modalTheme.title]}>SRS Settings</Text>
+              <Text style={[styles.modalTitle, modalTheme.title]}>Review settings</Text>
               <TouchableOpacity onPress={() => setShowSRSSettingsModal(false)}>
                 <Ionicons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
             <View style={styles.goalSection}>
-              <Text style={[styles.goalLabel, modalTheme.label]}>New Cards Per Day</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>New cards per day</Text>
               <Text style={[styles.goalValue, modalTheme.value]}>{settings.study.srsNewCardsPerDay} cards</Text>
               <Slider
                 style={styles.slider}
@@ -1531,7 +1531,7 @@ export default function SettingsScreen() {
             </View>
 
             <View style={styles.goalSection}>
-              <Text style={[styles.goalLabel, modalTheme.label]}>Max Interval (Days)</Text>
+              <Text style={[styles.goalLabel, modalTheme.label]}>Longest gap between reviews (days)</Text>
               <Text style={[styles.goalValue, modalTheme.value]}>{settings.study.srsMaxInterval} days</Text>
               <Slider
                 style={styles.slider}

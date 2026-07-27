@@ -15,6 +15,10 @@ export const PRODUCT_EVENT_NAMES = [
   'test_completed',
   'flashcard_review_started',
   'flashcard_review_completed',
+  'deck_created',
+  'first_card_added',
+  'study_mode_selected',
+  'study_mode_completed',
   'note_created',
   'ai_tool_used',
 ] as const;

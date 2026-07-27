@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore } from '../../stores';
 import { Button } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
+import { trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
 import { hapticSelection, hapticSuccess, hapticWarning } from '../../utils/haptics';
 
 type NavigationProp = {
@@ -51,6 +52,20 @@ export function MatchStudyScreen({ navigation, route }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [wrongPair, setWrongPair] = useState<string[]>([]);
   const [elapsed, setElapsed] = useState(0);
+  const startTrackedRef = useRef(false);
+  const completeTrackedRef = useRef(false);
+
+  useEffect(() => {
+    startTrackedRef.current = false;
+    completeTrackedRef.current = false;
+  }, [deckId]);
+
+  useEffect(() => {
+    if (basicCards.length >= 2 && !startTrackedRef.current) {
+      startTrackedRef.current = true;
+      trackStudyModeSelected('match');
+    }
+  }, [basicCards.length]);
 
   useEffect(() => {
     const next: MatchTile[] = [];
@@ -73,8 +88,10 @@ export function MatchStudyScreen({ navigation, route }: Props) {
   const isComplete = totalPairs > 0 && matchedPairs === totalPairs;
 
   useEffect(() => {
-    if (isComplete && totalPairs > 0) {
+    if (isComplete && totalPairs > 0 && !completeTrackedRef.current) {
+      completeTrackedRef.current = true;
       trackStudyActivity('flashcard', totalPairs);
+      trackStudyModeCompleted('match');
     }
   }, [isComplete, totalPairs]);
 

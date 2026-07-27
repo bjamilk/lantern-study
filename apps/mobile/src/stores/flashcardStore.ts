@@ -9,6 +9,7 @@ import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
 import { applyLocalFlashcardReview } from '@lantern/shared/utils/offlineReview';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import { trackDeckCreated, trackFirstCardAdded } from '../services/productAnalytics';
 import { useSettingsStore } from './settingsStore';
 import { getDeckCardStats, groupFlashcardsByDeck } from '../utils/flashcardHelpers';
 
@@ -448,18 +449,21 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     try {
       // Try API call
       const created = await api.createDeck(userId, { name, description });
-      const deck = mapDeckFromApi(created);
+      const mapped = mapDeckFromApi(created);
+      const deck = mapped ?? tempDeck;
 
       set(state => ({
-        decks: state.decks.map(d => d.id === tempId ? deck : d),
+        decks: state.decks.map(d => (d.id === tempId ? deck : d)),
       }));
       await get().saveToStorage();
+      trackDeckCreated(deck.id);
       return deck;
     } catch (error: any) {
       console.error('Failed to create deck on server:', error);
       
       // Queue for later sync
       await syncService.queueOperation('deck', tempId, 'create', { name, description }, userId);
+      trackDeckCreated(tempId);
       
       // Return temp deck for now
       return tempDeck;
@@ -516,6 +520,7 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   
   createFlashcard: async (data) => {
     const { deckId, userId, ...cardData } = data;
+    const cardsInDeckBefore = (get().flashcards[deckId] || []).length;
     
     // Optimistic local ID
     const tempId = `temp_card_${Date.now()}`;
@@ -557,12 +562,18 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
         };
       });
       await get().saveToStorage();
+      if (cardsInDeckBefore === 0) {
+        trackFirstCardAdded(deckId);
+      }
       return card;
     } catch (error: any) {
       console.error('Failed to create flashcard on server:', error);
       
       // Queue for later sync
       await syncService.queueOperation('flashcard', tempId, 'create', { ...cardData, deckId }, userId);
+      if (cardsInDeckBefore === 0) {
+        trackFirstCardAdded(deckId);
+      }
       
       return tempCard;
     }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { shuffleArray } from '@lantern/shared/utils';
@@ -6,6 +6,7 @@ import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
+import { trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
 import { hapticSelection, hapticSuccess, hapticWarning } from '../../utils/haptics';
 
@@ -34,6 +35,21 @@ export function CramSessionScreen({ navigation, route }: Props) {
   const [missedCards, setMissedCards] = useState<Flashcard[]>([]);
   const [timeRemaining, setTimeRemaining] = useState(timedMinutes > 0 ? timedMinutes * 60 : 0);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const startTrackedRef = useRef(false);
+  const completeTrackedRef = useRef(false);
+  const studyMode = timedMinutes > 0 ? 'timed_drill' : 'speed_run';
+
+  useEffect(() => {
+    startTrackedRef.current = false;
+    completeTrackedRef.current = false;
+  }, [deckId, timedMinutes]);
+
+  useEffect(() => {
+    if (queue.length > 0 && !startTrackedRef.current) {
+      startTrackedRef.current = true;
+      trackStudyModeSelected(studyMode);
+    }
+  }, [queue.length, studyMode]);
 
   useEffect(() => {
     setQueue(shuffleArray(allCards));
@@ -82,10 +98,12 @@ export function CramSessionScreen({ navigation, route }: Props) {
   }, [index]);
 
   useEffect(() => {
-    if (isComplete && (correct + incorrect) > 0) {
+    if (isComplete && !completeTrackedRef.current && (correct + incorrect) > 0) {
+      completeTrackedRef.current = true;
       trackStudyActivity('flashcard', correct + incorrect);
+      trackStudyModeCompleted(studyMode);
     }
-  }, [isComplete, correct, incorrect]);
+  }, [isComplete, correct, incorrect, studyMode]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

@@ -682,10 +682,20 @@ export const App: React.FC = () => {
     const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
     const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
     const handleFlashcardStudy = () => {
-        const today = new Date().toISOString().split('T')[0];
-        const best = decks.map(d => ({ deck: d, due: flashcards.filter(fc => fc.deckId === d.id && fc.srsData?.nextReviewDate && fc.srsData.nextReviewDate.split('T')[0] <= today).length })).sort((a, b) => b.due - a.due)[0];
-        if (best?.deck) { handleSelectDeck(best.deck); handleStartReview(best.deck); }
-        else showToast('No flashcard decks available. Create a deck first.', 'error');
+        const getDueCards = useFlashcardStore.getState().getDueCards;
+        const ranked = decks
+            .map(d => ({ deck: d, due: getDueCards(d.id).length }))
+            .filter(x => x.due > 0)
+            .sort((a, b) => b.due - a.due);
+        const best = ranked[0];
+        if (best?.deck) {
+            handleSelectDeck(best.deck);
+            handleStartReview(best.deck);
+        } else if (decks.length === 0) {
+            showToast('No flashcard decks available. Create a deck first.', 'error');
+        } else {
+            showToast('No cards ready to review right now.', 'info');
+        }
     };
     const handleStudyDeck = (deck: import('./types').Deck) => {
         handleSelectDeck(deck);
@@ -940,7 +950,6 @@ export const App: React.FC = () => {
                 await handleToggleDeckOffline(deck, enable);
                 showToast(enable ? 'Deck saved for offline use' : 'Deck removed from offline storage', 'success');
             }}
-            onExportDeck={handleExportDeck}
         />
     );
 
@@ -1022,6 +1031,7 @@ export const App: React.FC = () => {
                     onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
                     userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
                     onNavigateToFlashcards={() => { setLibraryTab('flashcards'); navigateTo(AppMode.LIBRARY); }}
+                    onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
                     onNavigateToCreateGroup={() => navigateTo(AppMode.CREATE_GROUP)}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
@@ -1109,6 +1119,7 @@ export const App: React.FC = () => {
                     <StudyHubScreen
                         dueCardsCount={dueCardsCount}
                         decks={decks}
+                        flashcards={flashcards}
                         onStartDueReview={handleFlashcardStudy}
                         onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
                         onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}

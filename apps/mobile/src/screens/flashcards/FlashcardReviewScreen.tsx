@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { FlashcardType } from '@lantern/shared';
+import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import type { PerformanceRating } from '@lantern/shared/utils';
 import {
   buildFlashcardReviewQueue,
@@ -14,7 +14,8 @@ import { Button } from '../../components/ui';
 import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
-import { trackFlashcardReviewStarted, trackFlashcardReviewCompleted } from '../../services/productAnalytics';
+import { trackFlashcardReviewStarted, trackFlashcardReviewCompleted, trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
+import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useStatsStore } from '../../stores/statsStore';
@@ -37,15 +38,37 @@ interface Props {
 
 const GRADE_BUTTONS: {
   rating: PerformanceRating;
-  label: string;
   variant: 'danger' | 'secondary' | 'primary' | 'accent';
   accessibilityLabel: string;
 }[] = [
-  { rating: 'again', label: 'Again', variant: 'danger', accessibilityLabel: 'Rate again, needs more review' },
-  { rating: 'hard', label: 'Hard', variant: 'secondary', accessibilityLabel: 'Rate hard' },
-  { rating: 'good', label: 'Good', variant: 'primary', accessibilityLabel: 'Rate good' },
-  { rating: 'easy', label: 'Easy', variant: 'accent', accessibilityLabel: 'Rate easy' },
+  {
+    rating: 'again',
+    variant: 'danger',
+    accessibilityLabel: `${FLASHCARD_GRADE_LABELS.again.label}, ${FLASHCARD_GRADE_LABELS.again.meaning}`,
+  },
+  {
+    rating: 'hard',
+    variant: 'secondary',
+    accessibilityLabel: `${FLASHCARD_GRADE_LABELS.hard.label}, ${FLASHCARD_GRADE_LABELS.hard.meaning}`,
+  },
+  {
+    rating: 'good',
+    variant: 'primary',
+    accessibilityLabel: `${FLASHCARD_GRADE_LABELS.good.label}, ${FLASHCARD_GRADE_LABELS.good.meaning}`,
+  },
+  {
+    rating: 'easy',
+    variant: 'accent',
+    accessibilityLabel: `${FLASHCARD_GRADE_LABELS.easy.label}, ${FLASHCARD_GRADE_LABELS.easy.meaning}`,
+  },
 ];
+
+const GRADE_TEXT_CLASS: Record<(typeof GRADE_BUTTONS)[number]['variant'], string> = {
+  danger: 'text-white',
+  secondary: 'text-lantern-text',
+  primary: 'text-white',
+  accent: 'text-white',
+};
 
 const EMPTY_CARDS: Flashcard[] = [];
 
@@ -77,6 +100,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const [index, setIndex] = useState(0);
   const [showBack, setShowBack] = useState(false);
   const [grading, setGrading] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(true);
 
   useEffect(() => {
     if (!deckId) return;
@@ -92,6 +116,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     completeTrackedRef.current = false;
     setIndex(0);
     setShowBack(false);
+    setShowSwipeHint(true);
   }, [deckId]);
 
   // Lock the queue once cards are available (=== null so an intentional empty queue stays locked)
@@ -107,8 +132,16 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const nextCard = queue[index + 1];
 
   useEffect(() => {
+    const { setTipReady } = useFeatureTipStore.getState();
+    const ready = sessionTotal > 0 && !isComplete;
+    setTipReady('flashcards.grading', ready);
+    return () => setTipReady('flashcards.grading', false);
+  }, [sessionTotal, isComplete]);
+
+  useEffect(() => {
     if (sessionTotal > 0 && !startTrackedRef.current) {
       startTrackedRef.current = true;
+      trackStudyModeSelected('smart_review');
       trackFlashcardReviewStarted(sessionTotal, deckId);
     }
   }, [sessionTotal, deckId]);
@@ -117,6 +150,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
     if (isComplete && !completeTrackedRef.current) {
       completeTrackedRef.current = true;
       trackFlashcardReviewCompleted(sessionTotal);
+      trackStudyModeCompleted('smart_review');
     }
   }, [isComplete, sessionTotal]);
 
@@ -156,6 +190,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
 
       void reviewFlashcard(cardId, deckId, rating, user.id)
         .then(() => {
+          setShowSwipeHint(false);
           trackStudyActivity('flashcard', 1);
           if (wasNew) {
             trackStudyActivity('flashcard_new', 1);
@@ -245,7 +280,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         />
       </View>
 
-      {index === 0 && !showBack ? (
+      {showSwipeHint ? (
         <Text
           className="text-xs text-center text-lantern-text-secondary px-6 mb-3"
           style={{ color: colors.textSecondary }}
@@ -292,7 +327,7 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
         ) : (
           <>
             <View className="flex-row gap-2">
-              {GRADE_BUTTONS.slice(0, 2).map(({ rating, label, variant, accessibilityLabel }) => (
+              {GRADE_BUTTONS.slice(0, 2).map(({ rating, variant, accessibilityLabel }) => (
                 <Button
                   key={rating}
                   variant={variant}
@@ -302,12 +337,19 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
                   accessibilityLabel={accessibilityLabel}
                   onPress={() => handleRate(rating)}
                 >
-                  {label}
+                  <View className="items-center">
+                    <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
+                      {FLASHCARD_GRADE_LABELS[rating].label}
+                    </Text>
+                    <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
+                      {FLASHCARD_GRADE_LABELS[rating].meaning}
+                    </Text>
+                  </View>
                 </Button>
               ))}
             </View>
             <View className="flex-row gap-2">
-              {GRADE_BUTTONS.slice(2).map(({ rating, label, variant, accessibilityLabel }) => (
+              {GRADE_BUTTONS.slice(2).map(({ rating, variant, accessibilityLabel }) => (
                 <Button
                   key={rating}
                   variant={variant}
@@ -317,7 +359,14 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
                   accessibilityLabel={accessibilityLabel}
                   onPress={() => handleRate(rating)}
                 >
-                  {label}
+                  <View className="items-center">
+                    <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
+                      {FLASHCARD_GRADE_LABELS[rating].label}
+                    </Text>
+                    <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
+                      {FLASHCARD_GRADE_LABELS[rating].meaning}
+                    </Text>
+                  </View>
                 </Button>
               ))}
             </View>

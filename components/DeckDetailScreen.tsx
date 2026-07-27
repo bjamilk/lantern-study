@@ -3,11 +3,36 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Deck, Flashcard, FlashcardType } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowUturnLeftIcon, PlayCircleIcon, PlusCircleIcon, PencilIcon, TrashIcon, SparklesIcon, BoltIcon, ArrowPathIcon, ClockIcon, UserGroupIcon, Squares2X2Icon, AcademicCapIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { useRegisterFeatureTip } from './featureTips/FeatureTip';
+import {
+  ArrowUturnLeftIcon,
+  PlayCircleIcon,
+  PlusCircleIcon,
+  PencilIcon,
+  TrashIcon,
+  SparklesIcon,
+  BoltIcon,
+  ArrowPathIcon,
+  ClockIcon,
+  UserGroupIcon,
+  Squares2X2Icon,
+  AcademicCapIcon,
+  ArrowDownTrayIcon,
+  ChevronDownIcon,
+  EllipsisVerticalIcon,
+} from '@heroicons/react/24/outline';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
-import { MarkdownRenderer, isCardDue } from '@lantern/shared';
+import { Button } from './ui';
+import { Menu, MenuTrigger, MenuContent, MenuItem } from './ui/Menu';
+import {
+  MarkdownRenderer,
+  isCardDue,
+  FLASHCARD_MODE_LABELS,
+  FLASHCARD_STAT_LABELS,
+  getStudyCtaLabel,
+} from '@lantern/shared';
 
 interface DeckDetailScreenProps {
   deck: Deck;
@@ -27,25 +52,26 @@ interface DeckDetailScreenProps {
   onResetStatistics: (deckId: string) => void;
   onExportDeck: (deckId: string, format: 'json' | 'csv') => void;
   onLoadMoreCards?: (deckId: string, page: number) => Promise<number>;
-  onEnhanceFlashcard?: (front: string, back: string) => Promise<{ front: string; back: string; mnemonic?: string; example?: string } | null>;
+  onEnhanceFlashcard?: (
+    front: string,
+    back: string
+  ) => Promise<{ front: string; back: string; mnemonic?: string; example?: string } | null>;
 }
 
-interface DeckActionButtonProps {
+interface PracticeButtonProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
   subtitle: string;
-  colorClass: string;
   disabled?: boolean;
   className?: string;
 }
 
-const DeckActionButton: React.FC<DeckActionButtonProps> = ({
+const PracticeButton: React.FC<PracticeButtonProps> = ({
   onClick,
   icon,
   label,
   subtitle,
-  colorClass,
   disabled,
   className = '',
 }) => (
@@ -53,14 +79,14 @@ const DeckActionButton: React.FC<DeckActionButtonProps> = ({
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className={`group flex items-center gap-2.5 px-3 py-2.5 min-h-[58px] rounded-xl text-white shadow-sm transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${colorClass} ${className}`}
+    className={`flex items-center gap-2.5 px-3 py-2.5 min-h-[52px] rounded-xl border border-lantern-border bg-lantern-surface text-lantern-text shadow-sm hover:bg-lantern-background-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
   >
-    <span className="flex-shrink-0 rounded-lg bg-black/10 p-1.5 group-hover:bg-black/15 transition-colors">
-      {icon}
-    </span>
+    <span className="flex-shrink-0 rounded-lg bg-lantern-primary/10 p-1.5 text-lantern-primary">{icon}</span>
     <span className="text-left min-w-0 flex-1">
       <span className="block text-sm font-semibold leading-snug truncate">{label}</span>
-      <span className="block text-[11px] leading-snug opacity-80 mt-0.5 truncate">{subtitle}</span>
+      <span className="block text-[11px] leading-snug text-lantern-text-secondary mt-0.5 truncate">
+        {subtitle}
+      </span>
     </span>
   </button>
 );
@@ -85,14 +111,19 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   onLoadMoreCards,
   onEnhanceFlashcard,
 }) => {
-  const currentUser = useAuthStore(s => s.currentUser);
-  const cardsInDeck = flashcards.filter(fc => fc && fc.deckId === deck.id);
+  const currentUser = useAuthStore((s) => s.currentUser);
+  const cardsInDeck = flashcards.filter((fc) => fc && fc.deckId === deck.id);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
   const [enhancingCardId, setEnhancingCardId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [moreModesOpen, setMoreModesOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+
+  useRegisterFeatureTip('flashcards.deckModes', true);
 
   const CARDS_PER_PAGE = 20;
 
@@ -101,13 +132,20 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     setHasMore(true);
   }, [deck.id]);
 
-  const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
-  const dueCards = cardsInDeck.filter(
-    fc => Boolean(fc.srsData?.repetitions) && isCardDue(fc.srsData)
-  ).length;
-  const reviewedCards = cardsInDeck.filter(fc => fc.srsData?.repetitions && fc.srsData.repetitions > 0);
-  const avgEaseFactor = reviewedCards.length > 0 ? reviewedCards.reduce((sum, fc) => sum + (fc.srsData?.easeFactor || 0), 0) / reviewedCards.length : 0;
-  const leechCards = cardsInDeck.filter(fc => fc.srsData?.isLeech).length;
+  const newCards = cardsInDeck.filter((fc) => !fc.srsData?.repetitions).length;
+  /** Match Library / Dashboard badges — due via shared isCardDue (excludes never-started). */
+  const dueCards = cardsInDeck.filter((fc) => isCardDue(fc.srsData)).length;
+  const reviewedCards = cardsInDeck.filter(
+    (fc) => fc.srsData?.repetitions && fc.srsData.repetitions > 0
+  );
+  const avgEaseFactor =
+    reviewedCards.length > 0
+      ? reviewedCards.reduce((sum, fc) => sum + (fc.srsData?.easeFactor || 0), 0) /
+        reviewedCards.length
+      : 0;
+  const leechCards = cardsInDeck.filter((fc) => fc.srsData?.isLeech).length;
+  const hasCards = cardsInDeck.length > 0;
+  const studyLabel = getStudyCtaLabel(dueCards, cardsInDeck.length);
 
   const handleDeleteDeckClick = async () => {
     const ok = await confirmDialog({
@@ -118,7 +156,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     });
     if (ok) onDeleteDeck(deck.id);
   };
-  
+
   const handleGenerateSubmit = (notes: string, count: number) => {
     onGenerateFlashcards(deck.id, notes, count);
     setIsGenerateModalOpen(false);
@@ -149,7 +187,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     setIsLoadingMore(false);
 
     if (fetched > 0) {
-      setPage(prev => prev + 1);
+      setPage((prev) => prev + 1);
       if (fetched < CARDS_PER_PAGE) {
         setHasMore(false);
       }
@@ -163,7 +201,6 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
       return card.front;
     }
     if (card.type === FlashcardType.CLOZE) {
-      // Render cloze text with blanks
       return card.clozeText
         ? card.clozeText.replace(/\{\{c\d+::(.*?)\}\}/g, '[...]')
         : 'Cloze card';
@@ -174,280 +211,369 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     return 'Unknown card type';
   };
 
+  const studyPanel = (
+    <div className="space-y-3" data-tip-id="flashcards.deckModes">
+      <Button
+        variant="accent"
+        size="lg"
+        fullWidth
+        disabled={!hasCards}
+        onClick={() => onStartReview(deck)}
+        className="min-h-[52px] text-base justify-center"
+      >
+        <PlayCircleIcon className="w-5 h-5" />
+        {studyLabel}
+      </Button>
+      <p className="text-xs text-lantern-text-secondary px-0.5">
+        {FLASHCARD_MODE_LABELS.smart_review.subtitle}
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {onStartLearn && (
+          <PracticeButton
+            onClick={() => onStartLearn(deck)}
+            disabled={!hasCards}
+            icon={<AcademicCapIcon className="w-5 h-5" />}
+            label={FLASHCARD_MODE_LABELS.quiz.label}
+            subtitle={FLASHCARD_MODE_LABELS.quiz.subtitle}
+          />
+        )}
+        {onStartMatch && (
+          <PracticeButton
+            onClick={() => onStartMatch(deck)}
+            disabled={!hasCards}
+            icon={<Squares2X2Icon className="w-5 h-5" />}
+            label={FLASHCARD_MODE_LABELS.match.label}
+            subtitle={FLASHCARD_MODE_LABELS.match.subtitle}
+          />
+        )}
+      </div>
+
+      <div className="rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setMoreModesOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-lantern-text hover:bg-lantern-background-secondary"
+        >
+          More ways to study
+          <ChevronDownIcon
+            className={`w-4 h-4 text-lantern-text-secondary transition-transform ${moreModesOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {moreModesOpen && (
+          <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-lantern-border pt-2">
+            <PracticeButton
+              onClick={() => onStartCram(deck)}
+              disabled={!hasCards}
+              icon={<BoltIcon className="w-5 h-5" />}
+              label={FLASHCARD_MODE_LABELS.speed_run.label}
+              subtitle={FLASHCARD_MODE_LABELS.speed_run.subtitle}
+            />
+            <PracticeButton
+              onClick={handleTimedCram}
+              disabled={!hasCards}
+              icon={<ClockIcon className="w-5 h-5" />}
+              label={FLASHCARD_MODE_LABELS.timed_drill.label}
+              subtitle={FLASHCARD_MODE_LABELS.timed_drill.subtitle}
+            />
+          </div>
+        )}
+      </div>
+
+      {hasCards && (
+        <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-lantern-background-secondary border border-lantern-border text-center text-sm">
+          <div>
+            <div className="font-semibold text-emerald-600 dark:text-emerald-400">{dueCards}</div>
+            <div className="text-[11px] text-lantern-text-secondary mt-0.5">
+              {FLASHCARD_STAT_LABELS.readyToReview}
+            </div>
+          </div>
+          <div>
+            <div className="font-semibold text-lantern-primary">{newCards}</div>
+            <div className="text-[11px] text-lantern-text-secondary mt-0.5">
+              {FLASHCARD_STAT_LABELS.notStarted}
+            </div>
+          </div>
+          <div>
+            <div className="font-semibold text-lantern-text">{cardsInDeck.length}</div>
+            <div className="text-[11px] text-lantern-text-secondary mt-0.5">
+              {FLASHCARD_STAT_LABELS.total}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasCards && (
+        <div className="rounded-xl border border-lantern-border bg-lantern-surface overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setInsightsOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-lantern-text hover:bg-lantern-background-secondary"
+          >
+            Deck insights
+            <ChevronDownIcon
+              className={`w-4 h-4 text-lantern-text-secondary transition-transform ${insightsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {insightsOpen && (
+            <div className="px-3 pb-3 grid grid-cols-2 gap-3 border-t border-lantern-border pt-3 text-sm text-center">
+              <div>
+                <div className="font-semibold text-orange-600">{avgEaseFactor.toFixed(2)}</div>
+                <div className="text-[11px] text-lantern-text-secondary mt-0.5">
+                  {FLASHCARD_STAT_LABELS.avgDifficulty}
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold text-red-600">{leechCards}</div>
+                <div className="text-[11px] text-lantern-text-secondary mt-0.5">
+                  {FLASHCARD_STAT_LABELS.trickyCards}
+                </div>
+              </div>
+              <div className="col-span-2">
+                <div className="font-semibold text-lantern-primary">{reviewedCards.length}</div>
+                <div className="text-[11px] text-lantern-text-secondary mt-0.5">Reviewed before</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="h-screen flex flex-col flex-1 overflow-y-auto p-4 md:p-6 bg-lantern-background text-lantern-text">
       <div className="mb-6 pb-4 border-b border-lantern-border dark:border-lantern-border">
-        <button onClick={onBack} className="flex items-center text-sm font-semibold text-lantern-primary hover:underline mb-4">
+        <button
+          onClick={onBack}
+          className="flex items-center text-sm font-semibold text-lantern-primary hover:underline mb-4"
+        >
           <ArrowUturnLeftIcon className="w-5 h-5 mr-1.5" />
           Back to All Decks
         </button>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-            <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-lantern-text">{deck.name}</h1>
-                <p className="text-sm text-lantern-text-secondary mt-1">{deck.description || 'No description.'}</p>
-            </div>
-            <div className="flex space-x-2 mt-3 sm:mt-0 flex-wrap gap-2">
-                <button onClick={() => onOpenEditDeck(deck)} className="px-3 py-2 bg-lantern-background-secondary hover:bg-lantern-border dark:bg-lantern-surface-secondary dark:hover:bg-lantern-border text-lantern-text rounded-md flex items-center text-sm shadow"><PencilIcon className="w-4 h-4 mr-1.5" /> Edit</button>
-                {deck.isShared && (
-                  <button onClick={() => setIsCollaboratorsModalOpen(true)} className="px-3 py-2 bg-lantern-primary hover:bg-lantern-primary text-white rounded-md flex items-center text-sm shadow">
-                    <UserGroupIcon className="w-4 h-4 mr-1.5" /> Collaborators
-                  </button>
-                )}
-                <button onClick={() => { void confirmDialog({ title: 'Reset statistics?', message: 'Are you sure you want to reset all SRS statistics for this deck? This will mark all cards as new.', danger: false }).then((ok) => { if (ok) onResetStatistics(deck.id); }); }} className="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center text-sm shadow"><ArrowPathIcon className="w-4 h-4 mr-1.5" /> Reset Stats</button>
-                <button onClick={handleDeleteDeckClick} className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md flex items-center text-sm shadow"><TrashIcon className="w-4 h-4 mr-1.5" /> Delete</button>
-            </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-bold text-lantern-text truncate">{deck.name}</h1>
+            <p className="text-sm text-lantern-text-secondary mt-1">
+              {deck.description || 'No description.'}
+            </p>
+          </div>
+          <Menu open={manageOpen} onOpenChange={setManageOpen}>
+            <MenuTrigger
+              aria-label="Manage deck"
+              className="inline-flex items-center gap-1.5 rounded-lantern px-3 py-2 text-sm font-medium bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border/40"
+            >
+              <EllipsisVerticalIcon className="w-4 h-4" />
+              Manage deck
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem
+                onSelect={() => {
+                  onOpenCreateFlashcard(deck.id);
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <PlusCircleIcon className="w-4 h-4" /> Add card
+                </span>
+              </MenuItem>
+              <MenuItem
+                onSelect={() => setIsGenerateModalOpen(true)}
+                disabled={isGenerating}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <SparklesIcon className="w-4 h-4" />
+                  {isGenerating ? 'Generating…' : 'Generate with AI'}
+                </span>
+              </MenuItem>
+              <MenuItem onSelect={() => onOpenEditDeck(deck)}>
+                <span className="inline-flex items-center gap-2">
+                  <PencilIcon className="w-4 h-4" /> Edit deck
+                </span>
+              </MenuItem>
+              {deck.isShared && (
+                <MenuItem onSelect={() => setIsCollaboratorsModalOpen(true)}>
+                  <span className="inline-flex items-center gap-2">
+                    <UserGroupIcon className="w-4 h-4" /> Collaborators
+                  </span>
+                </MenuItem>
+              )}
+              <MenuItem onSelect={() => onExportDeck(deck.id, 'json')}>
+                <span className="inline-flex items-center gap-2">
+                  <ArrowDownTrayIcon className="w-4 h-4" /> Export JSON
+                </span>
+              </MenuItem>
+              <MenuItem onSelect={() => onExportDeck(deck.id, 'csv')}>
+                <span className="inline-flex items-center gap-2">
+                  <ArrowDownTrayIcon className="w-4 h-4" /> Export CSV
+                </span>
+              </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  void confirmDialog({
+                    title: 'Reset progress?',
+                    message:
+                      'Reset review progress for this deck? All cards will be treated as not started again.',
+                    danger: false,
+                  }).then((ok) => {
+                    if (ok) onResetStatistics(deck.id);
+                  });
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <ArrowPathIcon className="w-4 h-4" /> Reset progress
+                </span>
+              </MenuItem>
+              <MenuItem destructive onSelect={() => void handleDeleteDeckClick()}>
+                <span className="inline-flex items-center gap-2">
+                  <TrashIcon className="w-4 h-4" /> Delete deck
+                </span>
+              </MenuItem>
+            </MenuContent>
+          </Menu>
         </div>
       </div>
 
       <div className="mb-6 flex flex-col md:flex-row gap-6">
-        {/* Study modes sidebar */}
-        <aside className="hidden md:block md:w-56 shrink-0 space-y-2">
-          <p className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wide px-1 mb-2">Study modes</p>
-          <DeckActionButton
-            onClick={() => onStartLearn ? onStartLearn(deck) : onStartReview(deck)}
-            icon={<AcademicCapIcon className="w-5 h-5" />}
-            label="Learn"
-            subtitle="Adaptive MCQ mode"
-            colorClass="bg-sky-500 hover:bg-sky-600 ring-1 ring-inset ring-white/20 w-full"
-            className="w-full"
-          />
-          <DeckActionButton
-            onClick={() => onStartReview(deck)}
-            icon={<PlayCircleIcon className="w-5 h-5" />}
-            label="Spaced repetition"
-            subtitle={`${dueCards} due · FSRS`}
-            colorClass="bg-rose-500 hover:bg-rose-600 ring-1 ring-inset ring-white/20 w-full"
-            className="w-full"
-          />
-          {onStartMatch && (
-            <DeckActionButton
-              onClick={() => onStartMatch(deck)}
-              icon={<Squares2X2Icon className="w-5 h-5" />}
-              label="Match"
-              subtitle="Pair terms quickly"
-              colorClass="bg-teal-500 hover:bg-teal-600 w-full"
-              className="w-full"
-            />
-          )}
-          <DeckActionButton
-            onClick={() => onStartCram(deck)}
-            icon={<BoltIcon className="w-5 h-5" />}
-            label="Cram"
-            subtitle="Review every card"
-            colorClass="bg-lantern-primary hover:bg-lantern-primary-dark w-full"
-            className="w-full"
-          />
-          <DeckActionButton
-            onClick={handleTimedCram}
-            icon={<ClockIcon className="w-5 h-5" />}
-            label="Timed Cram"
-            subtitle="Beat the clock"
-            colorClass="bg-lantern-primary hover:bg-lantern-primary w-full"
-            className="w-full"
-          />
-          <p className="text-xs font-semibold uppercase text-lantern-text-secondary tracking-wide px-1 mt-4 mb-2">Deck actions</p>
-          <DeckActionButton
-            onClick={() => onOpenCreateFlashcard(deck.id)}
-            icon={<PlusCircleIcon className="w-5 h-5" />}
-            label="Add Card"
-            subtitle="Create manually"
-            colorClass="bg-emerald-500 hover:bg-emerald-600 w-full"
-            className="w-full"
-          />
-          <DeckActionButton
-            onClick={() => setIsGenerateModalOpen(true)}
-            disabled={isGenerating}
-            icon={<SparklesIcon className="w-5 h-5" />}
-            label={isGenerating ? 'Generating…' : 'Generate'}
-            subtitle="From your notes"
-            colorClass="bg-amber-500 hover:bg-amber-600 w-full"
-            className="w-full"
-          />
-          <DeckActionButton
-            onClick={() => onExportDeck(deck.id, 'json')}
-            icon={<ArrowDownTrayIcon className="w-5 h-5" />}
-            label="Export JSON"
-            subtitle="Full backup"
-            colorClass="bg-lantern-border hover:bg-lantern-surface-secondary ring-1 ring-inset ring-white/10 w-full"
-            className="w-full"
-          />
-          <DeckActionButton
-            onClick={() => onExportDeck(deck.id, 'csv')}
-            icon={<ArrowDownTrayIcon className="w-5 h-5" />}
-            label="Export CSV"
-            subtitle="Spreadsheet export"
-            colorClass="bg-lantern-border hover:bg-lantern-border w-full"
-            className="w-full"
-          />
-          <div className="mt-4 p-3 rounded-xl bg-lantern-background-secondary border border-lantern-border text-xs space-y-1">
-            <p className="flex justify-between"><span className="text-lantern-text-secondary">New</span><span className="font-bold text-lantern-text">{newCards}</span></p>
-            <p className="flex justify-between"><span className="text-lantern-text-secondary">Due</span><span className="font-bold text-emerald-600">{dueCards}</span></p>
-            <p className="flex justify-between"><span className="text-lantern-text-secondary">Total</span><span className="font-bold text-lantern-text">{cardsInDeck.length}</span></p>
-          </div>
-        </aside>
+        <aside className="md:w-72 shrink-0">{studyPanel}</aside>
 
         <div className="flex-1 min-w-0">
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5 md:hidden">
-        {onStartLearn && (
-          <DeckActionButton
-            onClick={() => onStartLearn(deck)}
-            icon={<AcademicCapIcon className="w-5 h-5" />}
-            label="Learn"
-            subtitle="Adaptive MCQ mode"
-            colorClass="bg-sky-500 hover:bg-sky-600 ring-1 ring-inset ring-white/20 col-span-full"
-            className="w-full"
-          />
-        )}
-        <DeckActionButton
-          onClick={() => onStartReview(deck)}
-          icon={<PlayCircleIcon className="w-5 h-5" />}
-          label="Spaced repetition"
-          subtitle="FSRS review"
-          colorClass="bg-rose-500 hover:bg-rose-600 ring-1 ring-inset ring-white/20"
-        />
-        {onStartMatch && (
-          <DeckActionButton
-            onClick={() => onStartMatch(deck)}
-            icon={<Squares2X2Icon className="w-5 h-5" />}
-            label="Match"
-            subtitle="Pair terms quickly"
-            colorClass="bg-teal-500 hover:bg-teal-600"
-          />
-        )}
-        <DeckActionButton
-          onClick={() => onStartCram(deck)}
-          icon={<BoltIcon className="w-5 h-5" />}
-          label="Cram Mode"
-          subtitle="Review every card"
-          colorClass="bg-lantern-primary hover:bg-lantern-primary-dark"
-        />
-        <DeckActionButton
-          onClick={handleTimedCram}
-          icon={<ClockIcon className="w-5 h-5" />}
-          label="Timed Cram"
-          subtitle="Beat the clock"
-          colorClass="bg-lantern-primary hover:bg-lantern-primary"
-        />
-        <DeckActionButton
-          onClick={() => onOpenCreateFlashcard(deck.id)}
-          icon={<PlusCircleIcon className="w-5 h-5" />}
-          label="Add Card"
-          subtitle="Create manually"
-          colorClass="bg-emerald-500 hover:bg-emerald-600"
-        />
-        <DeckActionButton
-          onClick={() => setIsGenerateModalOpen(true)}
-          disabled={isGenerating}
-          icon={<SparklesIcon className="w-5 h-5" />}
-          label={isGenerating ? 'Generating…' : 'Generate'}
-          subtitle="From your notes"
-          colorClass="bg-amber-500 hover:bg-amber-600"
-        />
-        <DeckActionButton
-          onClick={() => onExportDeck(deck.id, 'json')}
-          icon={<ArrowDownTrayIcon className="w-5 h-5" />}
-          label="Export JSON"
-          subtitle="Full backup (images + progress)"
-          colorClass="bg-lantern-border hover:bg-lantern-surface-secondary ring-1 ring-inset ring-white/10"
-        />
-        <DeckActionButton
-          onClick={() => onExportDeck(deck.id, 'csv')}
-          icon={<ArrowDownTrayIcon className="w-5 h-5" />}
-          label="Export CSV"
-          subtitle="Spreadsheet (front/back only)"
-          colorClass="bg-lantern-border hover:bg-lantern-border"
-        />
-      </div>
+          <h2 className="text-xl font-semibold mb-3 text-lantern-text">
+            Cards in this deck ({cardsInDeck.length})
+            {hasMore && onLoadMoreCards && (
+              <span className="ml-3 text-sm text-lantern-text-secondary font-normal">
+                (showing first {CARDS_PER_PAGE}, load more below)
+              </span>
+            )}
+          </h2>
 
-      <h2 className="text-xl font-semibold mb-3 text-lantern-text">
-        Flashcards in this Deck ({cardsInDeck.length})
-        {hasMore && (
-          <span className="ml-3 text-sm text-lantern-text-secondary">(showing first {CARDS_PER_PAGE}, load more below)</span>
-        )}
-      </h2>
-      
-      <div className="flex-1 overflow-y-auto max-h-[calc(100vh-260px)]">
-        {cardsInDeck.length > 0 && (
-          <div className="mb-4 p-4 bg-lantern-background-secondary rounded-lg">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-              <div className="text-center">
-                <div className="font-semibold text-lantern-primary">{newCards}</div>
-                <div className="text-lantern-text-secondary">New Cards</div>
-              </div>
-              <div className="text-center">
-                <div className="font-semibold text-green-600">{dueCards}</div>
-                <div className="text-lantern-text-secondary">Due Today</div>
-              </div>
-              <div className="text-center">
-                <div className="font-semibold text-lantern-primary">{reviewedCards.length}</div>
-                <div className="text-lantern-text-secondary">Reviewed</div>
-              </div>
-              <div className="text-center">
-                <div className="font-semibold text-orange-600">{avgEaseFactor.toFixed(2)}</div>
-                <div className="text-lantern-text-secondary">Avg Ease</div>
-              </div>
-              <div className="text-center">
-                <div className="font-semibold text-red-600">{leechCards}</div>
-                <div className="text-lantern-text-secondary">Leeches</div>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {cardsInDeck.length > 0 ? (
-          <div className="bg-lantern-surface rounded-lg shadow-md overflow-hidden">
-            <ul className="divide-y divide-lantern-border">
-            {cardsInDeck.map(card => (
-              <li key={card.id} className="p-4 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50">
-                <div className="text-sm text-lantern-text flex-grow pr-4 truncate" title={getCardPreview(card)}>
-                  <MarkdownRenderer content={getCardPreview(card)} />
-                </div>
-                <div className="flex space-x-2 flex-shrink-0">
-                  {onEnhanceFlashcard && card.type === 'BASIC' && card.front && card.back && (
-                    <button
-                      onClick={async () => {
-                        setEnhancingCardId(card.id);
-                        const enhanced = await onEnhanceFlashcard(card.front!, card.back!);
-                        setEnhancingCardId(null);
-                        if (enhanced) {
-                          onOpenEditFlashcard({ ...card, front: enhanced.front, back: enhanced.back + (enhanced.mnemonic ? `\n\n💡 ${enhanced.mnemonic}` : '') + (enhanced.example ? `\n📝 ${enhanced.example}` : '') });
-                        }
-                      }}
-                      disabled={enhancingCardId === card.id}
-                      className="p-1.5 text-lantern-primary-light hover:text-lantern-primary rounded-md disabled:opacity-50"
-                      title="Enhance with AI"
+          {cardsInDeck.length > 0 ? (
+            <div className="bg-lantern-surface rounded-lg shadow-md overflow-hidden">
+              <ul className="divide-y divide-lantern-border">
+                {cardsInDeck.map((card) => (
+                  <li
+                    key={card.id}
+                    className="p-4 flex justify-between items-center hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary/50"
+                  >
+                    <div
+                      className="text-sm text-lantern-text flex-grow pr-4 truncate"
+                      title={getCardPreview(card)}
                     >
-                      <SparklesIcon className={`w-5 h-5 ${enhancingCardId === card.id ? 'animate-pulse' : ''}`} />
-                    </button>
-                  )}
-                  <button onClick={() => onOpenEditFlashcard(card)} className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary rounded-md"><PencilIcon className="w-5 h-5"/></button>
-                  <button onClick={() => { void confirmDialog({ title: 'Delete flashcard?', message: 'Are you sure you want to delete this flashcard?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeleteFlashcard(card.id); }); }} className="p-1.5 text-lantern-text-secondary hover:text-red-600 rounded-md"><TrashIcon className="w-5 h-5"/></button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                      <MarkdownRenderer content={getCardPreview(card)} />
+                    </div>
+                    <div className="flex space-x-2 flex-shrink-0">
+                      {onEnhanceFlashcard &&
+                        card.type === 'BASIC' &&
+                        card.front &&
+                        card.back && (
+                          <button
+                            onClick={async () => {
+                              setEnhancingCardId(card.id);
+                              const enhanced = await onEnhanceFlashcard(card.front!, card.back!);
+                              setEnhancingCardId(null);
+                              if (enhanced) {
+                                onOpenEditFlashcard({
+                                  ...card,
+                                  front: enhanced.front,
+                                  back:
+                                    enhanced.back +
+                                    (enhanced.mnemonic ? `\n\n💡 ${enhanced.mnemonic}` : '') +
+                                    (enhanced.example ? `\n📝 ${enhanced.example}` : ''),
+                                });
+                              }
+                            }}
+                            disabled={enhancingCardId === card.id}
+                            className="p-1.5 text-lantern-primary-light hover:text-lantern-primary rounded-md disabled:opacity-50"
+                            title="Enhance with AI"
+                          >
+                            <SparklesIcon
+                              className={`w-5 h-5 ${enhancingCardId === card.id ? 'animate-pulse' : ''}`}
+                            />
+                          </button>
+                        )}
+                      <button
+                        onClick={() => onOpenEditFlashcard(card)}
+                        className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary rounded-md"
+                      >
+                        <PencilIcon className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          void confirmDialog({
+                            title: 'Delete flashcard?',
+                            message: 'Are you sure you want to delete this flashcard?',
+                            danger: true,
+                            confirmLabel: 'Delete',
+                          }).then((ok) => {
+                            if (ok) onDeleteFlashcard(card.id);
+                          });
+                        }}
+                        className="p-1.5 text-lantern-text-secondary hover:text-red-600 rounded-md"
+                      >
+                        <TrashIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
 
-          {onLoadMoreCards && hasMore && (
-            <div className="p-4 border-t border-lantern-border flex justify-center">
-              <button
-                onClick={handleLoadMore}
-                disabled={isLoadingMore}
-                className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary text-white rounded-md shadow-sm disabled:opacity-50"
-              >
-                {isLoadingMore ? 'Loading…' : 'Load more cards'}
-              </button>
+              {onLoadMoreCards && hasMore && (
+                <div className="p-4 border-t border-lantern-border flex justify-center">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={isLoadingMore}
+                    className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary text-white rounded-md shadow-sm disabled:opacity-50"
+                  >
+                    {isLoadingMore ? 'Loading…' : 'Load more cards'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-lantern-border bg-lantern-surface p-6 shadow-sm">
+              <h3 className="text-lg font-semibold text-lantern-text mb-1">Get this deck ready</h3>
+              <p className="text-sm text-lantern-text-secondary mb-5">
+                Add a few cards, then tap Study for a smart review.
+              </p>
+              <ol className="space-y-4">
+                <li className="flex gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lantern-primary text-white text-sm font-bold">
+                    1
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-lantern-text mb-2">Add cards</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => onOpenCreateFlashcard(deck.id)}>
+                        <PlusCircleIcon className="w-4 h-4" />
+                        Add manually
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={isGenerating}
+                        onClick={() => setIsGenerateModalOpen(true)}
+                      >
+                        <SparklesIcon className="w-4 h-4" />
+                        Generate with AI
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+                <li className="flex gap-3 opacity-60">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lantern-background-secondary text-lantern-text-secondary text-sm font-bold border border-lantern-border">
+                    2
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-lantern-text">Study</p>
+                    <p className="text-xs text-lantern-text-secondary mt-0.5">
+                      The Study button unlocks once this deck has cards.
+                    </p>
+                  </div>
+                </li>
+              </ol>
             </div>
           )}
         </div>
-      ) : (
-        <div className="text-center py-10 bg-lantern-surface rounded-lg shadow">
-          <p className="text-lantern-text-secondary">This deck is empty.</p>
-          <p className="text-sm text-lantern-text-tertiary mt-1">Add some cards to start studying!</p>
-        </div>
-      )}
       </div>
-        </div>
-      </div>
+
       <GenerateFlashcardsModal
         isOpen={isGenerateModalOpen}
         onClose={() => setIsGenerateModalOpen(false)}
@@ -469,7 +595,9 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           zIndexClass="z-[70]"
         >
           <div className="space-y-4">
-            <h3 id="cram-minutes-title" className="text-lg font-semibold text-lantern-text">Timed cram</h3>
+            <h3 id="cram-minutes-title" className="text-lg font-semibold text-lantern-text">
+              {FLASHCARD_MODE_LABELS.timed_drill.label}
+            </h3>
             <label className="block text-sm text-lantern-text-secondary">
               Duration (minutes)
               <input
@@ -482,8 +610,20 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
               />
             </label>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setCramMinutesOpen(false)} className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-background-secondary text-lantern-text">Cancel</button>
-              <button type="button" onClick={confirmTimedCram} className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-primary text-white">Start</button>
+              <button
+                type="button"
+                onClick={() => setCramMinutesOpen(false)}
+                className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-background-secondary text-lantern-text"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmTimedCram}
+                className="min-h-[44px] px-3 py-2 text-sm rounded-lg bg-lantern-primary text-white"
+              >
+                Start
+              </button>
             </div>
           </div>
         </Modal>

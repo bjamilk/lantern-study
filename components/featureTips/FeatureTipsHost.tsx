@@ -7,6 +7,8 @@ import { normalizeUserSettings } from '@lantern/shared/settings';
 const ALL_TIP_IDS: FeatureTipId[] = [
   'nav.library',
   'library.tabs',
+  'flashcards.deckModes',
+  'flashcards.grading',
   'nav.companion',
   'nav.chat',
   'chat.question',

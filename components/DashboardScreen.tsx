@@ -155,6 +155,7 @@ interface DashboardScreenProps {
   theme: 'light' | 'dark';
   // Quick-action navigation
   onNavigateToFlashcards?: () => void;
+  onOpenCreateDeck?: () => void;
   onNavigateToMarketplace?: () => void;
   onNavigateToCreateGroup?: () => void;
   onNavigateToBudget?: () => void;
@@ -308,6 +309,7 @@ export default function DashboardScreen({
   onViewAnalysis,
   theme,
   onNavigateToFlashcards,
+  onOpenCreateDeck,
   onNavigateToMarketplace,
   onNavigateToCreateGroup,
   onNavigateToBudget,
@@ -1100,9 +1102,6 @@ export default function DashboardScreen({
           else if (onNavigateToAITools) onNavigateToAITools();
           else if (onOpenImportAndStudy) onOpenImportAndStudy();
         }}
-        primaryActionLabel={
-          dueCardsCount > 0 ? `Review ${dueCardsCount} due card${dueCardsCount !== 1 ? 's' : ''}` : 'Import & study'
-        }
         activeTestSession={activeTestSession}
         activeStudySession={activeStudySession}
         onResumeSession={onResumeSession}
@@ -1121,7 +1120,10 @@ export default function DashboardScreen({
             hasSubmittedQuestion={hasSubmittedQuestion}
             hasExploredMarketplace={hasExploredMarketplace}
             hasTriedOffline={hasTriedOffline}
-            onCreateDeck={() => onNavigateToFlashcards?.()}
+            onCreateDeck={() => {
+              if (onOpenCreateDeck) onOpenCreateDeck();
+              else onNavigateToFlashcards?.();
+            }}
             onTakeTest={() => {
               if (onNavigateToStudyHub) onNavigateToStudyHub();
               else if (groups[0]?.id && onOpenQuickTest) onOpenQuickTest(groups[0].id);

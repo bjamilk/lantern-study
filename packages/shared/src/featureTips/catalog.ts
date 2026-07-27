@@ -13,6 +13,8 @@ export const LEGACY_GETTING_STARTED_KEY = 'lantern_getting_started_v1';
 export type FeatureTipId =
   | 'nav.library'
   | 'library.tabs'
+  | 'flashcards.deckModes'
+  | 'flashcards.grading'
   | 'nav.companion'
   | 'nav.chat'
   | 'chat.question'
@@ -28,6 +30,8 @@ export type FeatureTipId =
 export const FEATURE_TIP_SEQUENCE: FeatureTipId[] = [
   'nav.library',
   'library.tabs',
+  'flashcards.deckModes',
+  'flashcards.grading',
   'nav.companion',
   'nav.chat',
   'chat.question',
@@ -60,6 +64,16 @@ export const FEATURE_TIP_CATALOG: Record<FeatureTipId, FeatureTipCopy> = {
     id: 'library.tabs',
     title: 'Notes & Flashcards',
     body: 'Switch between Notes and Flashcards with these tabs. Due cards show a badge when it is time to review.',
+  },
+  'flashcards.deckModes': {
+    id: 'flashcards.deckModes',
+    title: 'How to study this deck',
+    body: 'Tap Study for a smart review of cards you need most. Quiz yourself and Match are for practice — other modes live under More ways to study.',
+  },
+  'flashcards.grading': {
+    id: 'flashcards.grading',
+    title: 'Rate how you did',
+    body: 'After you reveal the answer, pick Again if you missed it, Hard if you barely got it, Good if you knew it, or Easy if it felt too simple. That choice schedules the next review.',
   },
   'nav.companion': {
     id: 'nav.companion',

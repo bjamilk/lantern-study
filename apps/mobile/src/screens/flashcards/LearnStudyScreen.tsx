@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFlashcardStore, type Flashcard } from '../../stores';
 import { Button, Card } from '../../components/ui';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
 import { trackStudyActivity } from '../../services/gamification';
+import { trackStudyModeCompleted, trackStudyModeSelected } from '../../services/productAnalytics';
 import { getCardDisplayText } from '../../utils/flashcardHelpers';
 import { hapticSuccess, hapticWarning } from '../../utils/haptics';
 
@@ -40,12 +41,23 @@ export function LearnStudyScreen({ navigation, route }: Props) {
   const [queue, setQueue] = useState<Flashcard[]>([]);
   const [mastered, setMastered] = useState(0);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const startTrackedRef = useRef(false);
+  const completeTrackedRef = useRef(false);
 
   useEffect(() => {
     setQueue(shuffle(eligible));
     setMastered(0);
     setFeedback(null);
+    startTrackedRef.current = false;
+    completeTrackedRef.current = false;
   }, [eligible]);
+
+  useEffect(() => {
+    if (eligible.length > 0 && !startTrackedRef.current) {
+      startTrackedRef.current = true;
+      trackStudyModeSelected('quiz');
+    }
+  }, [eligible.length]);
 
   const current = queue[0];
   const isDone = eligible.length > 0 && queue.length === 0;
@@ -58,8 +70,10 @@ export function LearnStudyScreen({ navigation, route }: Props) {
   });
 
   useEffect(() => {
-    if (isDone && mastered > 0) {
+    if (isDone && mastered > 0 && !completeTrackedRef.current) {
+      completeTrackedRef.current = true;
       trackStudyActivity('flashcard', mastered);
+      trackStudyModeCompleted('quiz');
     }
   }, [isDone, mastered]);
 

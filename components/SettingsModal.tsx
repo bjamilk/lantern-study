@@ -386,7 +386,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={notifications.groupInvites !== false} onChange={(val) => onUpdateSettingsCategory('notifications', { groupInvites: val })} label="Group Invites" description="When someone invites you to a group." />
                         <ToggleSwitch enabled={notifications.marketplaceUpdates} onChange={(val) => onUpdateSettingsCategory('notifications', { marketplaceUpdates: val })} label="Marketplace Updates" description="Alerts about listings and messages." />
                         <ToggleSwitch enabled={notifications.badgeUnlocks} onChange={(val) => onUpdateSettingsCategory('notifications', { badgeUnlocks: val })} label="Badge Unlocks" description="Achievement notifications." />
-                        <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="SRS Due Card Reminders" description="Browser alerts when cards are due — only while Lantern is in the background, at most every few hours." />
+                        <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="Review reminders" description="Browser alerts when cards are due — only while Lantern is in the background, at most every few hours." />
                         <ToggleSwitch enabled={notifications.testResults} onChange={(val) => onUpdateSettingsCategory('notifications', { testResults: val })} label="Test Results" description="Notifications when tests are completed." />
                         <ToggleSwitch enabled={notifications.emailEnabled} onChange={(val) => onUpdateSettingsCategory('notifications', { emailEnabled: val })} label="Email Notifications" description="Receive important updates by email." />
                         <ToggleSwitch enabled={notifications.weeklyDigest} onChange={(val) => onUpdateSettingsCategory('notifications', { weeklyDigest: val })} label="Weekly Digest" description="Summary of your weekly study activity." />
@@ -415,14 +415,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-lantern-text mb-1">New SRS cards / day</label>
+                            <label className="block text-sm font-medium text-lantern-text mb-1">New cards per day</label>
                             <input type="number" min={5} max={50} step={5} value={studyDraft.srsNewCardsPerDay}
                                 onChange={(e) => handleStudyDraftChange('srsNewCardsPerDay', e.target.value)}
                                 onBlur={() => commitStudyDraft(studyDraft)}
                                 className="w-full p-2 border border-lantern-border rounded-md bg-lantern-background text-lantern-text" />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-lantern-text mb-1">Max SRS interval (days)</label>
+                            <label className="block text-sm font-medium text-lantern-text mb-1">Longest gap between reviews (days)</label>
                             <input type="number" min={30} max={365} step={30} value={studyDraft.srsMaxInterval}
                                 onChange={(e) => handleStudyDraftChange('srsMaxInterval', e.target.value)}
                                 onBlur={() => commitStudyDraft(studyDraft)}

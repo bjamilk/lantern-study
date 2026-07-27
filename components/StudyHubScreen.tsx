@@ -4,15 +4,16 @@ import {
   PlayIcon,
   RectangleStackIcon,
   SparklesIcon,
-  BoltIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
-import { Deck, TestSessionData, StudySessionData } from '../types';
+import { Deck, Flashcard, TestSessionData, StudySessionData } from '../types';
+import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue } from '@lantern/shared';
 import { ScreenHeader, Card, Button, StatPill } from './ui';
 
 interface StudyHubScreenProps {
   dueCardsCount: number;
   decks: Deck[];
+  flashcards?: Flashcard[];
   onStartDueReview: () => void;
   onOpenLibrary: () => void;
   onOpenAITools: () => void;
@@ -28,6 +29,7 @@ interface StudyHubScreenProps {
 export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   dueCardsCount,
   decks,
+  flashcards = [],
   onStartDueReview,
   onOpenLibrary,
   onOpenAITools,
@@ -41,6 +43,13 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 }) => {
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
   const topDecks = decks.slice(0, 4);
+  const smartReviewLabel = FLASHCARD_MODE_LABELS.smart_review.label;
+
+  const getDeckDueCount = (deckId: string) =>
+    flashcards.filter((fc) => fc.deckId === deckId && isCardDue(fc.srsData)).length;
+
+  const getDeckTotalCount = (deckId: string) =>
+    flashcards.filter((fc) => fc.deckId === deckId).length;
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-lantern-background text-lantern-text">
@@ -76,12 +85,12 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-lantern-text">
-                {dueCardsCount > 0 ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} due` : 'All caught up!'}
+                {dueCardsCount > 0 ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review` : 'All caught up!'}
               </h2>
               <p className="text-sm text-lantern-text-secondary mt-1">
                 {dueCardsCount > 0
-                  ? 'Spaced repetition keeps knowledge fresh — review your due cards now.'
-                  : 'Create or import material, then come back when cards are due.'}
+                  ? 'Spaced repetition keeps knowledge fresh — review when cards are ready.'
+                  : 'Create or import material, then come back when cards are ready.'}
               </p>
             </div>
             <Button
@@ -91,7 +100,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
               disabled={dueCardsCount === 0 && decks.length === 0}
             >
               <AcademicCapIcon className="w-5 h-5" />
-              {dueCardsCount > 0 ? 'Review due cards' : 'Import & study'}
+              {dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : 'Import & study'}
             </Button>
           </div>
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-lantern-border">
@@ -127,9 +136,12 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 
         {topDecks.length > 0 && (
           <div>
-            <h3 className="text-sm font-semibold text-lantern-text-secondary uppercase tracking-wide mb-3">Quick learn</h3>
+            <h3 className="text-sm font-semibold text-lantern-text-secondary uppercase tracking-wide mb-3">{smartReviewLabel}</h3>
             <div className="space-y-2">
-              {topDecks.map((deck) => (
+              {topDecks.map((deck) => {
+                const dueCount = getDeckDueCount(deck.id);
+                const totalCount = getDeckTotalCount(deck.id);
+                return (
                 <div
                   key={deck.id}
                   className="flex items-center justify-between gap-3 p-3 rounded-xl border border-lantern-border bg-lantern-surface"
@@ -140,12 +152,13 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   </button>
                   {onStartLearn && (
                     <Button size="sm" variant="secondary" onClick={() => onStartLearn(deck)}>
-                      <BoltIcon className="w-4 h-4" />
-                      Learn
+                      <AcademicCapIcon className="w-4 h-4" />
+                      {getStudyCtaLabel(dueCount, totalCount)}
                     </Button>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}

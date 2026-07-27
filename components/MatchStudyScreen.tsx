@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { Flashcard } from '../types';
 import { shuffleArray } from '../utils/helpers';
 import { Button } from './ui';
 import { XMarkIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { trackStudyModeCompleted } from '../services/productAnalytics';
 
 interface MatchStudyScreenProps {
   cards: Flashcard[];
@@ -31,11 +33,21 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
   const [startTime] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const isDark = theme === 'dark';
+  const completionTrackedRef = useRef(false);
 
-  const basicCards = useMemo(
-    () => cards.filter((c) => c.type === 'BASIC' && c.front && c.back).slice(0, 6),
+  const MATCH_PAIR_LIMIT = 6;
+
+  const eligibleBasicCards = useMemo(
+    () => cards.filter((c) => c.type === 'BASIC' && c.front && c.back),
     [cards]
   );
+
+  const basicCards = useMemo(
+    () => eligibleBasicCards.slice(0, MATCH_PAIR_LIMIT),
+    [eligibleBasicCards]
+  );
+
+  const isTruncated = eligibleBasicCards.length > MATCH_PAIR_LIMIT;
 
   useEffect(() => {
     const newTiles: MatchTile[] = [];
@@ -54,6 +66,13 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
   const matchedCount = tiles.filter((t) => t.matched).length / 2;
   const totalPairs = basicCards.length;
   const isComplete = matchedCount === totalPairs && totalPairs > 0;
+
+  useEffect(() => {
+    if (isComplete && !completionTrackedRef.current) {
+      completionTrackedRef.current = true;
+      trackStudyModeCompleted('match');
+    }
+  }, [isComplete]);
 
   const handleTileClick = useCallback((tileId: string) => {
     const tile = tiles.find((t) => t.id === tileId);
@@ -97,8 +116,11 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
     <div className={`flex-1 flex flex-col ${isDark ? 'bg-lantern-background text-lantern-text' : 'bg-lantern-background text-lantern-text'}`}>
       <div className="flex items-center justify-between p-4 border-b border-lantern-border">
         <div>
-          <h1 className="font-bold text-lg">Match — {deckName}</h1>
-          <p className="text-sm text-lantern-text-secondary">{matchedCount}/{totalPairs} pairs · <ClockIcon className="w-3 h-3 inline" /> {formatTime(elapsed)}</p>
+          <h1 className="font-bold text-lg">{FLASHCARD_MODE_LABELS.match.label} — {deckName}</h1>
+          <p className="text-sm text-lantern-text-secondary">
+            {matchedCount}/{totalPairs} pairs · <ClockIcon className="w-3 h-3 inline" /> {formatTime(elapsed)}
+            {isTruncated ? ` · ${MATCH_PAIR_LIMIT} of ${eligibleBasicCards.length} pairs` : ''}
+          </p>
         </div>
         <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
           <XMarkIcon className="w-5 h-5" />

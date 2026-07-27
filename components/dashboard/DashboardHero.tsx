@@ -1,5 +1,6 @@
 import React from 'react';
 import { FireIcon, SparklesIcon, AcademicCapIcon, PlayIcon } from '@heroicons/react/24/solid';
+import { getStudyAllDueLabel } from '@lantern/shared';
 import { Card, Button, StatPill } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
 
@@ -14,7 +15,6 @@ interface DashboardHeroProps {
   dueCardsCount: number;
   totalTestsTaken: number;
   onPrimaryAction: () => void;
-  primaryActionLabel: string;
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
@@ -32,7 +32,6 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   dueCardsCount,
   totalTestsTaken,
   onPrimaryAction,
-  primaryActionLabel,
   activeTestSession,
   activeStudySession,
   onResumeSession,
@@ -44,6 +43,9 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
   })();
+
+  const primaryActionLabel =
+    dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : 'Import & study';
 
   return (
     <div className="px-4 md:px-8 py-6 w-full">
@@ -60,7 +62,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
               </h1>
               <p className="text-lantern-text-secondary mt-1.5 text-sm md:text-base leading-relaxed">
                 {dueCardsCount > 0
-                  ? `${dueCardsCount} flashcard${dueCardsCount !== 1 ? 's' : ''} due for review.`
+                  ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
                   : totalTestsTaken > 0
                     ? `You've completed ${totalTestsTaken} test${totalTestsTaken !== 1 ? 's' : ''}. What's next?`
                     : 'Import material or review flashcards to get started.'}

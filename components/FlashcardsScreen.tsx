@@ -4,15 +4,12 @@ import { Deck, Flashcard } from '../types';
 import {
   RectangleStackIcon,
   PlusCircleIcon,
-  ArrowUpTrayIcon,
   AcademicCapIcon,
   CloudArrowDownIcon,
   CloudArrowUpIcon,
-  SparklesIcon,
   EllipsisVerticalIcon,
-  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
-import { isCardDue } from '@lantern/shared';
+import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
@@ -29,7 +26,6 @@ interface FlashcardsScreenProps {
   onStartStudy?: () => void;
   onStudyDeck?: (deck: Deck) => void;
   onOfflineToggle?: (deck: Deck, enable: boolean) => void;
-  onExportDeck?: (deckId: string, format: 'json' | 'csv') => void;
   embedded?: boolean;
 }
 
@@ -53,7 +49,6 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   onStartStudy,
   onStudyDeck,
   onOfflineToggle,
-  onExportDeck,
   embedded = false,
 }) => {
   const { isDeckOffline } = useFlashcardStore();
@@ -70,11 +65,11 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
 
   const getDeckStats = (deckId: string) => {
     const cardsInDeck = flashcards.filter(fc => fc.deckId === deckId);
-    const newCards = cardsInDeck.filter(fc => !fc.srsData?.repetitions).length;
-    // Shared isCardDue includes new + overdue once (matches mobile due_count)
     const dueCards = cardsInDeck.filter(fc => isCardDue(fc.srsData)).length;
-    return { newCards, dueCards, totalCards: cardsInDeck.length };
+    return { dueCards, totalCards: cardsInDeck.length };
   };
+
+  const totalDueCount = flashcards.filter(fc => isCardDue(fc.srsData)).length;
 
   const handleOfflineToggle = (e: React.MouseEvent, deck: Deck) => {
     e.stopPropagation();
@@ -84,10 +79,10 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
-      {onStartStudy && (
+      {onStartStudy && totalDueCount > 0 && (
         <Button variant="accent" size="sm" onClick={onStartStudy}>
           <AcademicCapIcon className="w-4 h-4" />
-          Study due
+          {getStudyAllDueLabel(totalDueCount)}
         </Button>
       )}
       <Button size="sm" onClick={onOpenCreateDeck}>
@@ -145,8 +140,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         ) : validDecks.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {validDecks.map((deck, index) => {
-              const { newCards, dueCards, totalCards } = getDeckStats(deck.id);
-              const hasDueCards = dueCards > 0;
+              const { dueCards, totalCards } = getDeckStats(deck.id);
               const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
               return (
                 <div
@@ -167,11 +161,6 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      {hasDueCards && (
-                        <span className="bg-white/25 backdrop-blur-sm text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                          {dueCards} due
-                        </span>
-                      )}
                       <button
                         type="button"
                         onClick={(e) => handleOfflineToggle(e, deck)}
@@ -184,70 +173,33 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           <CloudArrowDownIcon className="w-4 h-4" />
                         )}
                       </button>
-                      {onExportDeck && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onExportDeck(deck.id, 'json');
-                          }}
-                          className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-                          title="Export deck (JSON)"
-                          aria-label={`Export ${deck.name}`}
-                        >
-                          <ArrowDownTrayIcon className="w-4 h-4" />
-                        </button>
-                      )}
                     </div>
                   </div>
 
                   <div className="p-4 flex-grow flex flex-col">
                     <p
-                      className="text-sm text-lantern-text-secondary line-clamp-2 mb-4 flex-grow cursor-pointer"
+                      className="text-sm text-lantern-text-secondary line-clamp-2 mb-2 flex-grow cursor-pointer"
                       onClick={() => onSelectDeck(deck)}
                     >
-                      {deck.description || `${totalCards} card${totalCards !== 1 ? 's' : ''} in this deck`}
+                      {deck.description || 'No description'}
                     </p>
-                    <div className="flex gap-2 text-xs mb-3">
-                      <div className="flex-1 bg-lantern-primary-background border border-lantern-border rounded-xl py-2.5 px-2 text-center">
-                        <p className="font-bold text-lg text-lantern-primary leading-none">{newCards}</p>
-                        <p className="text-lantern-text-secondary mt-1">New</p>
-                      </div>
-                      <div className="flex-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-900/50 rounded-xl py-2.5 px-2 text-center">
-                        <p className="font-bold text-lg text-emerald-600 dark:text-emerald-400 leading-none">{dueCards}</p>
-                        <p className="text-lantern-text-secondary mt-1">Due</p>
-                      </div>
-                      <div className="flex-1 bg-lantern-background-secondary border border-lantern-border rounded-xl py-2.5 px-2 text-center">
-                        <p className="font-bold text-lg text-lantern-text leading-none">{totalCards}</p>
-                        <p className="text-lantern-text-secondary mt-1">Total</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {(hasDueCards || onStudyDeck) && (
-                        <Button
-                          variant="accent"
-                          size="sm"
-                          fullWidth
-                          className="flex-1"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onStudyDeck) onStudyDeck(deck);
-                            else onSelectDeck(deck);
-                          }}
-                        >
-                          <AcademicCapIcon className="w-4 h-4" />
-                          {hasDueCards ? 'Study due' : 'Study'}
-                        </Button>
-                      )}
+                    <p className="text-xs text-lantern-text-secondary mb-4">
+                      {getDeckListStatsLine(dueCards, totalCards)}
+                    </p>
+                    {onStudyDeck && (
                       <Button
-                        variant="secondary"
+                        variant="accent"
                         size="sm"
-                        className="flex-1"
-                        onClick={() => onSelectDeck(deck)}
+                        fullWidth
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStudyDeck(deck);
+                        }}
                       >
-                        Open
+                        <AcademicCapIcon className="w-4 h-4" />
+                        {getStudyCtaLabel(dueCards, totalCards)}
                       </Button>
-                    </div>
+                    )}
                   </div>
                 </div>
               );

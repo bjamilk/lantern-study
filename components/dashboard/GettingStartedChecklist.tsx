@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
-import { CHECKLIST_ITEMS, shouldShowChecklist } from '@lantern/shared/featureTips';
+import { CHECKLIST_ITEMS, shouldShowChecklist, type ChecklistItemKey } from '@lantern/shared/featureTips';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 
 interface Props {

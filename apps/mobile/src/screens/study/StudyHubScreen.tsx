@@ -75,14 +75,14 @@ export function StudyHubScreen({ navigation }: Props) {
         {decks.slice(0, 4).map((deck) => (
           <Pressable
             key={deck.id}
-            onPress={() => navigation.navigate('LearnStudy', { deckId: deck.id, deckName: deck.name })}
+            onPress={() => navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name })}
             className="flex-row items-center justify-between p-3 mb-2 rounded-xl border border-lantern-border bg-lantern-surface"
           >
             <View className="flex-1 mr-2">
               <Text className="font-medium text-lantern-text" numberOfLines={1}>{deck.name}</Text>
               <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>{deck.description || 'Flashcard deck'}</Text>
             </View>
-            <Text className="text-sm font-semibold" style={{ color: featureAccents.groups }}>Learn</Text>
+            <Ionicons name="chevron-forward" size={18} color={featureAccents.groups} />
           </Pressable>
         ))}
       </ScrollView>

@@ -1,5 +1,5 @@
 import type { Flashcard } from '@lantern/shared';
-import { isCardDue } from '@lantern/shared';
+import { FLASHCARD_CARD_STATUS_LABELS, isCardDue } from '@lantern/shared';
 
 export interface DeckCardStats {
   total: number;
@@ -56,8 +56,8 @@ export function getCardDisplayText(card: Flashcard): { front: string; back: stri
 
 export function getCardStatus(card: Flashcard): { label: string; color: string } {
   const isMastered = (card.srsData?.repetitions || 0) >= 5;
-  if (isMastered) return { label: 'Mastered', color: '#10b981' };
-  if (!card.srsData?.repetitions) return { label: 'New', color: '#6366f1' };
-  if (isCardDue(card.srsData)) return { label: 'Due', color: '#f97316' };
-  return { label: 'Learning', color: '#8b5cf6' };
+  if (isMastered) return { label: FLASHCARD_CARD_STATUS_LABELS.mastered, color: '#10b981' };
+  if (!card.srsData?.repetitions) return { label: FLASHCARD_CARD_STATUS_LABELS.new, color: '#6366f1' };
+  if (isCardDue(card.srsData)) return { label: FLASHCARD_CARD_STATUS_LABELS.due, color: '#f97316' };
+  return { label: FLASHCARD_CARD_STATUS_LABELS.learning, color: '#8b5cf6' };
 }
