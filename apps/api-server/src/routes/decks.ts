@@ -43,7 +43,8 @@ router.get(
 
     logger.debug('Fetching decks', { page: parsedPage, limit: parsedLimit, userId, includeShared: includeSharedFlag, profile });
 
-    const cacheKey = `decks:${userId}:includeShared:${includeSharedFlag}:${parsedPage}:${parsedLimit}:profile:${profile}`;
+    // v2 busts caches that previously listed every globally shared deck.
+    const cacheKey = `decks:${userId}:scope:${includeSharedFlag ? "owned_collab" : "owned"}:${parsedPage}:${parsedLimit}:profile:${profile}:v2`;
     let decks = await cacheService.get(cacheKey) as any[];
 
     if (!decks) {
@@ -287,6 +288,7 @@ router.post(
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.status(201).json({ success: true, data: importedDeck });
   })
@@ -327,6 +329,7 @@ router.post(
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.status(201).json({ success: true, data: importedDeck });
   })
@@ -359,10 +362,25 @@ router.post(
     if (!userId) return;
 
     const { importData } = req.body;
+    if (!importData || typeof importData !== 'object' || Array.isArray(importData)) {
+      return res.status(400).json({ success: false, error: 'importData object is required' });
+    }
+    if (!importData.deck || typeof importData.deck.name !== 'string') {
+      return res.status(400).json({ success: false, error: 'importData.deck.name is required' });
+    }
+    // Reject multi-deck payloads — import always creates exactly one deck for the auth user.
+    if (Array.isArray((importData as { decks?: unknown }).decks)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Multi-deck import is not supported. Export and import one deck at a time.',
+      });
+    }
+
     const importedDeck = await supabaseService.importDeck(importData, userId);
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     res.status(201).json({ success: true, data: importedDeck });
   })

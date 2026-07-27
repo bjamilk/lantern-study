@@ -51,6 +51,48 @@ export function parseCsvLine(line: string): string[] {
   return fields;
 }
 
+/** Split CSV text into logical records without breaking on newlines inside quoted fields. */
+export function splitCsvRecords(csv: string): string[] {
+  const text = csv.replace(/^\uFEFF/, '');
+  const records: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      current += ch;
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          current += text[++i];
+        } else {
+          inQuotes = false;
+        }
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      current += ch;
+      continue;
+    }
+
+    if (ch === '\n') {
+      const trimmed = current.replace(/\r$/, '');
+      if (trimmed.trim()) records.push(trimmed);
+      current = '';
+      continue;
+    }
+
+    current += ch;
+  }
+
+  const last = current.replace(/\r$/, '');
+  if (last.trim()) records.push(last);
+  return records;
+}
+
 export function deckToCsv(data: DeckImportPayload): string {
   const header = 'front,back,tags,image_url';
   const rows = (data.flashcards || []).map((card) => {
@@ -64,7 +106,7 @@ export function deckToCsv(data: DeckImportPayload): string {
 }
 
 export function csvToImportData(csv: string, deckName = 'Imported Deck'): DeckImportPayload {
-  const lines = csv.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
+  const lines = splitCsvRecords(csv);
   if (lines.length === 0) {
     return { deck: { name: deckName }, flashcards: [] };
   }

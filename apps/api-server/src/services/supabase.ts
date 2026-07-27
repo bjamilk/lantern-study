@@ -2821,7 +2821,8 @@ export class SupabaseService {
     );
     const profile = this.getResponseProfile(options.responseProfile);
     const offset = (page - 1) * limit;
-    const cacheKey = `decks:user:${userId}:includeShared:${includeShared}:p${page}:l${limit}:profile:${profile}`;
+    // v2: includeShared means owned + collaborator decks — never every globally shared deck.
+    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:v2`;
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
 
@@ -2837,8 +2838,14 @@ export class SupabaseService {
       .range(offset, offset + limit - 1);
 
     if (includeShared) {
-      // Include decks owned by the user and decks that are shared by others
-      query = query.or(`user_id.eq.${userId},is_shared.eq.true`);
+      // Owned decks + decks where the user is an explicit collaborator.
+      // Do NOT list every is_shared=true deck in the product (that leaked other users' libraries).
+      const accessibleIds = await this.getAccessibleDeckIds(userId);
+      if (accessibleIds.length === 0) {
+        await cacheService.set(cacheKey, [], 1800);
+        return [];
+      }
+      query = query.in("id", accessibleIds);
     } else {
       query = query.eq("user_id", userId);
     }
@@ -3052,13 +3059,24 @@ export class SupabaseService {
   }
 
   async importDeck(importData: any, userId: string): Promise<any> {
-    // Create the deck (removed is_public as it doesn't exist in the schema)
+    // Always create exactly one new deck owned by the authenticated user.
+    // Never honor foreign user_id / deck id / is_shared from the payload.
+    const deckName =
+      typeof importData?.deck?.name === "string" && importData.deck.name.trim()
+        ? importData.deck.name.trim().slice(0, 200)
+        : "Imported Deck";
+    const deckDescription =
+      typeof importData?.deck?.description === "string"
+        ? importData.deck.description.slice(0, 2000)
+        : "";
+
     const { data: newDeck, error: deckError } = await this.supabase
       .from("decks")
       .insert({
-        name: importData.deck.name,
-        description: importData.deck.description || "",
+        name: deckName,
+        description: deckDescription,
         user_id: userId,
+        is_shared: false,
       })
       .select()
       .single();
@@ -3116,6 +3134,7 @@ export class SupabaseService {
     // Invalidate user's deck cache so the new deck shows up
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
 
     // Invalidate flashcard caches so newly imported cards show up
     await cacheService.deletePattern("flashcards:*");
