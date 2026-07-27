@@ -17,12 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import * as FileSystem from 'expo-file-system/legacy';
-
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared';
 import { useNotesStore } from '../../stores/notesStore';
 
-import { copyNote, transcribeAudioForNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
+import { copyNote, summarizeNote, generateNoteQuiz, addImagesToPhotoNote } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
 
@@ -32,6 +30,12 @@ import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
 import { useAuthStore } from '../../stores/authStore';
+import {
+  formatRecordingDuration,
+  getElapsedRecordingSeconds,
+  MIN_MOBILE_LECTURE_RECORD_MS,
+  useLectureRecordingStore,
+} from '../../stores/lectureRecordingStore';
 import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
 
@@ -70,22 +74,25 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const [summary, setSummary] = useState('');
 
-  const [recording, setRecording] = useState<{
-    stopAndUnloadAsync: () => Promise<void>;
-    getURI: () => string | null;
-  } | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-
-  const [transcribing, setTranscribing] = useState(false);
-  const [transcribeStage, setTranscribeStage] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
-  const discardRecordingRef = useRef(false);
-  const transcribeAbortRef = useRef<AbortController | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recordingStartedAtRef = useRef(0);
+  const lectureStatus = useLectureRecordingStore((s) => s.status);
+  const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
+  const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
+  const lectureTick = useLectureRecordingStore((s) => s.tick);
+  const startLectureRecording = useLectureRecordingStore((s) => s.start);
+  const stopLectureRecording = useLectureRecordingStore((s) => s.stopAndTranscribe);
+  const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
+  const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
+  const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const isRecording = lectureNoteId === noteId && lectureStatus === 'recording';
+  const transcribing =
+    lectureNoteId === noteId &&
+    (lectureStatus === 'uploading' || lectureStatus === 'transcribing');
+  const recordingSeconds = isRecording ? getElapsedRecordingSeconds(lectureStartedAt) : 0;
+  void lectureTick;
   const pauseAutosaveUntilRef = useRef(0);
-  const MIN_RECORD_MS = 1500;
   const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
+  const bodyRef = useRef(body);
+  bodyRef.current = body;
 
   const [summarizing, setSummarizing] = useState(false);
 
@@ -268,32 +275,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   }, [selectedNote, noteId]);
 
   useEffect(() => {
-    if (!isRecording) {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+    if (!canEdit) {
+      setCurrentBodyProvider(null);
       return;
     }
-
-    setRecordingSeconds(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingSeconds((seconds) => seconds + 1);
-    }, 1000);
-
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-    };
-  }, [isRecording]);
-
-  const formatRecordingDuration = (totalSeconds: number) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  };
+    setCurrentBodyProvider(() => bodyRef.current);
+    return () => setCurrentBodyProvider(null);
+  }, [canEdit, noteId, setCurrentBodyProvider]);
 
   const scheduleSave = useCallback(
     (updates: { title?: string; body?: string; summary?: string }) => {
@@ -316,6 +304,65 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   }, []);
 
   useEffect(() => {
+    if (!transcribing) return;
+    cancelPendingSave();
+    pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
+  }, [transcribing, cancelPendingSave]);
+
+  const prevTranscribingRef = useRef(false);
+  useEffect(() => {
+    if (prevTranscribingRef.current && !transcribing && lectureStatus === 'idle') {
+      pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
+      const latest = useNotesStore.getState().selectedNote;
+      if (latest?.id === noteId) {
+        lastHydratedNoteIdRef.current = null;
+        setTitle(latest.title);
+        setBody(latest.body || '');
+        lastHydratedNoteIdRef.current = noteId;
+      }
+    }
+    prevTranscribingRef.current = transcribing;
+  }, [transcribing, lectureStatus, noteId]);
+
+  // Leave NoteEditor while recording: continue (keep session) or discard.
+  useEffect(() => {
+    const nav = navigation as NavigationProp & {
+      addListener?: (
+        event: string,
+        cb: (e: { preventDefault: () => void; data: { action: unknown } }) => void
+      ) => () => void;
+      dispatch?: (action: unknown) => void;
+    };
+    const unsubscribe = nav.addListener?.('beforeRemove', (e) => {
+      if (lectureNoteId !== noteId || lectureStatus !== 'recording') return;
+      e.preventDefault();
+      Alert.alert(
+        'Lecture recording in progress',
+        'Leave this note and keep recording in the background, or discard the recording?',
+        [
+          { text: 'Stay', style: 'cancel' },
+          {
+            text: 'Continue recording',
+            onPress: () => {
+              nav.dispatch?.(e.data.action);
+            },
+          },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              void discardLectureRecording().then(() => {
+                nav.dispatch?.(e.data.action);
+              });
+            },
+          },
+        ]
+      );
+    });
+    return unsubscribe;
+  }, [navigation, lectureNoteId, noteId, lectureStatus, discardLectureRecording]);
+
+  useEffect(() => {
     if (!selectedNote || selectedNote.id !== noteId) return;
     if (title === selectedNote.title && body === selectedNote.body) return;
     scheduleSave({ title, body });
@@ -324,175 +371,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     };
   }, [title, body, noteId, selectedNote?.id, selectedNote?.title, selectedNote?.body, scheduleSave]);
 
-
-
-  const startRecording = async () => {
-    try {
-      discardRecordingRef.current = false;
-      const { Audio } = await import('expo-av');
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission needed', 'Microphone access is required to record lectures.');
-        return;
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        playThroughEarpieceAndroid: false,
-      });
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingStartedAtRef.current = Date.now();
-      setRecording(rec as { stopAndUnloadAsync: () => Promise<void>; getURI: () => string | null });
-      setIsRecording(true);
-    } catch {
-      Alert.alert('Error', 'Could not start recording. Check microphone permission and try again.');
-    }
+  const startRecording = () => {
+    if (!canEdit) return;
+    cancelPendingSave();
+    void startLectureRecording(noteId, title || selectedNote?.title || 'Untitled note', {
+      currentBody: bodyRef.current,
+    });
   };
 
-
-
-  const discardRecording = async () => {
-    if (!recording) return;
-    discardRecordingRef.current = true;
-    setIsRecording(false);
-    try {
-      await recording.stopAndUnloadAsync();
-    } catch {
-      // ignore unload errors when discarding
-    }
-    setRecording(null);
+  const discardRecording = () => {
+    void discardLectureRecording();
   };
 
-
-
-  const stopRecording = async () => {
-    if (!recording) return;
-
-    const elapsed = Date.now() - recordingStartedAtRef.current;
-    if (!discardRecordingRef.current && elapsed < MIN_RECORD_MS) {
-      Alert.alert('Keep recording', 'Keep recording for at least 2 seconds so we can capture audio.');
-      return;
-    }
-
-    setIsRecording(false);
-    if (discardRecordingRef.current) {
-      discardRecordingRef.current = false;
-      try {
-        await recording.stopAndUnloadAsync();
-      } catch {
-        // ignore
-      }
-      setRecording(null);
-      return;
-    }
-
-    setTranscribing(true);
-    let stage: 'uploading' | 'transcribing' = 'uploading';
-    setTranscribeStage(stage);
-    const abortController = new AbortController();
-    transcribeAbortRef.current = abortController;
+  const stopRecording = () => {
     cancelPendingSave();
     pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
-
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      if (!uri) throw new Error('No recording file');
-
-      const info = await FileSystem.getInfoAsync(uri);
-      const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
-      });
-      if (!base64 || base64.length < 64 || (byteLength > 0 && byteLength < 256)) {
-        throw new Error(
-          `Recording was empty. Hold a bit longer, then stop again. (${Math.round(elapsed / 1000)}s, ${byteLength || base64.length}B)`
-        );
-      }
-
-      const lowerUri = uri.toLowerCase();
-      const mimeType = lowerUri.endsWith('.webm')
-        ? 'audio/webm'
-        : lowerUri.endsWith('.wav')
-          ? 'audio/wav'
-          : lowerUri.endsWith('.ogg')
-            ? 'audio/ogg'
-            : 'audio/mp4';
-      const ext = lowerUri.endsWith('.webm')
-        ? 'webm'
-        : lowerUri.endsWith('.wav')
-          ? 'wav'
-          : lowerUri.endsWith('.ogg')
-            ? 'ogg'
-            : 'm4a';
-
-      stage = 'transcribing';
-      setTranscribeStage(stage);
-      const result = await transcribeAudioForNote(base64, {
-        mimeType,
-        noteId,
-        fileName: `lecture-${Date.now()}.${ext}`,
-        signal: abortController.signal,
-        currentBody: body,
-        durationMs: elapsed,
-        clientByteLength: byteLength || undefined,
-        localFileUri: uri,
-        useStoragePath: true,
-      });
-
-      if (result.transcript) {
-        setBody((prev) =>
-          prev.includes(result.transcript)
-            ? prev
-            : [prev, result.transcript].filter(Boolean).join('\n\n')
-        );
-        pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
-      }
-      if (result.persistWarning) {
-        Alert.alert('Transcript ready', result.persistWarning);
-      } else if (result.transcript) {
-        Alert.alert('Transcript ready', 'Your lecture was transcribed into this note.');
-      }
-      // Refresh attachments/metadata without re-hydrating the draft (see lastHydratedNoteIdRef).
-      await loadNote(noteId);
-    } catch (e: unknown) {
-      // User tapped cancel — AbortController was cleared in cancelTranscription.
-      if (!transcribeAbortRef.current && e instanceof Error && e.name === 'AbortError') return;
-      const message =
-        e instanceof Error && e.name === 'AbortError'
-          ? 'Transcription timed out. Try a shorter recording.'
-          : e instanceof Error
-            ? e.message
-            : 'Could not transcribe audio';
-      const stageHint =
-        stage === 'uploading'
-          ? ' (failed while uploading)'
-          : ' (failed while transcribing)';
-      Alert.alert('Transcription failed', `${message}${stageHint}`);
-    } finally {
-      transcribeAbortRef.current = null;
-      setTranscribing(false);
-      setTranscribeStage('idle');
-    }
+    void stopLectureRecording({ currentBody: bodyRef.current });
   };
-
-
 
   const cancelTranscription = () => {
-    transcribeAbortRef.current?.abort();
-    transcribeAbortRef.current = null;
-    setTranscribing(false);
-    setTranscribeStage('idle');
+    cancelLectureTranscription();
   };
 
-
-
   const handleRecordPress = () => {
-    if (isRecording) void stopRecording();
-    else void startRecording();
+    if (isRecording) stopRecording();
+    else startRecording();
   };
 
 
@@ -737,13 +640,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               onPress={handleRecordPress}
 
               disabled={
-                transcribing || (isRecording && recordingSeconds < 2)
+                transcribing ||
+                (isRecording && recordingSeconds * 1000 < MIN_MOBILE_LECTURE_RECORD_MS) ||
+                (lectureStatus !== 'idle' && lectureNoteId !== noteId)
               }
 
             >
 
               {transcribing
-                ? transcribeStage === 'uploading'
+                ? lectureStatus === 'uploading'
                   ? 'Uploading...'
                   : 'Transcribing...'
                 : isRecording

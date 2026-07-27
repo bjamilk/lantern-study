@@ -60,6 +60,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: IOS_BUNDLE_ID,
     associatedDomains: ['applinks:lanternstudy.app'],
+    // Background lecture mic requires a new native build (not OTA-only).
+    infoPlist: {
+      UIBackgroundModes: ['audio'],
+      NSMicrophoneUsageDescription:
+        'Lantern Study needs the microphone to record lectures and transcribe them into notes.',
+    },
   },
 
   android: {
@@ -68,6 +74,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: SPLASH_BACKGROUND_COLOR,
     },
     package: ANDROID_PACKAGE,
+    permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS'],
     intentFilters: [
       {
         action: 'VIEW',
@@ -96,6 +103,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-font',
     'expo-secure-store',
     'expo-web-browser',
+    'expo-av',
     ['expo-apple-authentication', { usesAppleSignIn: true }],
     [
       'expo-splash-screen',

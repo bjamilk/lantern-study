@@ -96,7 +96,7 @@
       font-family: ui-monospace, Consolas, monospace;
       font-size: 9pt;
       color: var(--muted);
-      min-width: 2.4em;
+      min-width: 2.6em;
     }
     .good {
       font-size: 9pt;
@@ -152,7 +152,7 @@
 <body>
 
   <h1>Lantern Study — Beta Tester Checklist</h1>
-  <p class="subtitle">Web app · Print or import into Google Docs · Check items as you go · Pair with another tester for Sessions 5–6</p>
+  <p class="subtitle">Web app · Print or import into Google Docs · Check items as you go · Pair with another tester for Sessions 5–6 / 6b · Prefer light mode first, then dark</p>
 
   <div class="howto">
     <strong>Make this a Google Doc:</strong> Upload this file to
@@ -160,6 +160,8 @@
     <em>Open with → Google Docs</em>. Or open this file in Chrome →
     <em>File → Print → Save as PDF</em> / print on paper.
     After import, you can turn lines into Docs checkboxes via Format → Bullets &amp; numbering if needed.
+    <br /><br />
+    <strong>How to report bugs:</strong> steps to reproduce · device/browser · theme (light/dark) · screenshot · expected vs actual.
   </div>
 
   <div class="meta">
@@ -172,7 +174,7 @@
       <div class="line" contenteditable="true">&nbsp;</div>
     </div>
     <div>
-      <label>Role (Student A / B / Seller)</label>
+      <label>Role (Student A / B / Seller / Employer)</label>
       <div class="line" contenteditable="true">&nbsp;</div>
     </div>
     <div>
@@ -189,7 +191,7 @@
     </div>
   </div>
 
-  <h2>Suggested 2-day schedule</h2>
+  <h2>Suggested 2–2.5 day schedule</h2>
   <table class="schedule">
     <thead>
       <tr><th>When</th><th>Who</th><th>Sessions</th></tr>
@@ -199,9 +201,22 @@
       <tr><td>Day 1 afternoon</td><td>Solo</td><td>4 · 7 · 8</td></tr>
       <tr><td>Day 1 evening</td><td>Paired A+B</td><td>5 (groups / chat / questions)</td></tr>
       <tr><td>Day 2 morning</td><td>Paired A+B</td><td>5 (tests / duels / offline) · 6</td></tr>
-      <tr><td>Day 2 afternoon</td><td>Everyone</td><td>Retest bugs · Session 9</td></tr>
+      <tr><td>Day 2 afternoon</td><td>Solo or paired</td><td>6b Jobs · Session 9 retest</td></tr>
     </tbody>
   </table>
+
+  <h3>Short smoke set (if time is limited)</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">S1</span><span>Signup → Dashboard</span></li>
+    <li><input type="checkbox" /><span class="id">S2</span><span>Create note + folder rename/delete + pin/archive</span></li>
+    <li><input type="checkbox" /><span class="id">S3</span><span>PDF import → flashcards</span></li>
+    <li><input type="checkbox" /><span class="id">S4</span><span>Create group → join via invite → leave group</span></li>
+    <li><input type="checkbox" /><span class="id">S5</span><span>Chat questions → take test → duel</span></li>
+    <li><input type="checkbox" /><span class="id">S6</span><span>Marketplace listing + inquiry/offer</span></li>
+    <li><input type="checkbox" /><span class="id">S7</span><span>Jobs apply + employer status move</span></li>
+    <li><input type="checkbox" /><span class="id">S8</span><span>Offline download → sync</span></li>
+    <li><input type="checkbox" /><span class="id">S9</span><span>Theme + phone nav — no horizontal scroll</span></li>
+  </ul>
 
   <!-- ========== SESSION 1 ========== -->
   <h2>Session 1 — First impression &amp; account <span class="good">(30–40 min)</span></h2>
@@ -219,12 +234,13 @@
   <h3>Sign-up &amp; login</h3>
   <ul class="checks">
     <li><input type="checkbox" /><span class="id">1.6</span><span>Sign up with email + username; try a taken username — clear error</span></li>
-    <li><input type="checkbox" /><span class="id">1.7</span><span>Complete email verification / OTP; try Resend once</span></li>
+    <li><input type="checkbox" /><span class="id">1.7</span><span>Complete email verification / OTP; try Resend once (cooldown behaves)</span></li>
     <li><input type="checkbox" /><span class="id">1.8</span><span>Complete onboarding steps (or Skip) — no stuck screen</span></li>
     <li><input type="checkbox" /><span class="id">1.9</span><span>Land on Dashboard Getting Started checklist; items make sense</span></li>
     <li><input type="checkbox" /><span class="id">1.10</span><span>Log out → log in with password</span></li>
-    <li><input type="checkbox" /><span class="id">1.11</span><span>Forgot password → email link → set new password</span></li>
+    <li><input type="checkbox" /><span class="id">1.11</span><span>Forgot password → email link → set new password → log in with new password</span></li>
     <li><input type="checkbox" /><span class="id">1.12</span><span>Optional: Google or Apple sign-in; claim username if prompted</span></li>
+    <li><input type="checkbox" /><span class="id">1.13</span><span>Optional: idle / expired session → clear toast + clean re-login</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
@@ -234,46 +250,70 @@
     <li><input type="checkbox" /><span class="id">2.1</span><span>View XP, streak, badges, activity heatmap</span></li>
     <li><input type="checkbox" /><span class="id">2.2</span><span>Start / complete daily quiz; change study goal mode if available</span></li>
     <li><input type="checkbox" /><span class="id">2.3</span><span>Open daily quests; refresh if available</span></li>
-    <li><input type="checkbox" /><span class="id">2.4</span><span>Use quick links: AI Tools, Notes, Flashcards, Explore</span></li>
+    <li><input type="checkbox" /><span class="id">2.4</span><span>Use quick links: AI Tools, Notes, Flashcards, Explore/Market, Study, Offline, Budget</span></li>
     <li><input type="checkbox" /><span class="id">2.5</span><span>Toggle theme (sidebar + Settings): light ↔ dark ↔ system — UI stays readable</span></li>
     <li><input type="checkbox" /><span class="id">2.6</span><span>Toggle Low-Data Mode; note what changes (AI / animations)</span></li>
     <li><input type="checkbox" /><span class="id">2.7</span><span><strong>Phone:</strong> bottom nav Home / Library / Chat / More; open Settings from More</span></li>
     <li><input type="checkbox" /><span class="id">2.8</span><span><strong>Phone:</strong> cookie banner does not block bottom-nav taps</span></li>
-    <li><input type="checkbox" /><span class="id">2.9</span><span>Change / upload avatar from sidebar</span></li>
+    <li><input type="checkbox" /><span class="id">2.9</span><span>Change / upload avatar from sidebar or profile</span></li>
+    <li><input type="checkbox" /><span class="id">2.10</span><span>Later: resume a paused test or study session from Dashboard if one exists</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
   <!-- ========== SESSION 3 ========== -->
-  <h2 class="page-break">Session 3 — Library, notes &amp; flashcards <span class="good">(45–60 min)</span></h2>
+  <h2 class="page-break">Session 3 — Library, notes &amp; flashcards <span class="good">(60–75 min)</span></h2>
 
-  <h3>Notes</h3>
+  <h3>Notes — create, organize, pin &amp; archive</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">3.1</span><span>Create a note with title + body</span></li>
-    <li><input type="checkbox" /><span class="id">3.2</span><span>Create a folder; filter / organize notes</span></li>
-    <li><input type="checkbox" /><span class="id">3.3</span><span>Upload a PDF; wait for processing; open preview</span></li>
-    <li><input type="checkbox" /><span class="id">3.4</span><span>Upload PowerPoint (PPT/PPTX) if available; preview / retry if slow</span></li>
-    <li><input type="checkbox" /><span class="id">3.5</span><span>Add a YouTube embed if supported</span></li>
-    <li><input type="checkbox" /><span class="id">3.6</span><span>Voice note → transcription (allow mic)</span></li>
-    <li><input type="checkbox" /><span class="id">3.7</span><span>Generate flashcards from note</span></li>
-    <li><input type="checkbox" /><span class="id">3.8</span><span>Generate quiz / daily quiz from note</span></li>
-    <li><input type="checkbox" /><span class="id">3.9</span><span>Share note with a group (after Session 5 group exists)</span></li>
-    <li><input type="checkbox" /><span class="id">3.10</span><span>Delete a disposable test note</span></li>
+    <li><input type="checkbox" /><span class="id">3.1</span><span>Create a typed note (title + body); confirm autosave</span></li>
+    <li><input type="checkbox" /><span class="id">3.2</span><span>Search notes; use Mine vs Shared filter if shown</span></li>
+    <li><input type="checkbox" /><span class="id">3.3</span><span>Create a folder; move / filter notes by folder</span></li>
+    <li><input type="checkbox" /><span class="id">3.4</span><span><strong>Rename folder</strong> via folder ⋯ menu (web and phone)</span></li>
+    <li><input type="checkbox" /><span class="id">3.5</span><span><strong>Delete folder</strong> — notes remain under All notes (not deleted)</span></li>
+    <li><input type="checkbox" /><span class="id">3.6</span><span><strong>Phone:</strong> folder ⋯ opens Rename / Delete (menu not clipped / cut off)</span></li>
+    <li><input type="checkbox" /><span class="id">3.7</span><span><strong>Pin / unpin</strong> a note; pinned notes sort to top of Active</span></li>
+    <li><input type="checkbox" /><span class="id">3.8</span><span><strong>Archive / unarchive</strong> a note; Active vs Archived filter works</span></li>
+  </ul>
+
+  <h3>Notes — imports &amp; AI</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">3.9</span><span>Upload a PDF; wait for processing; open preview</span></li>
+    <li><input type="checkbox" /><span class="id">3.10</span><span>Upload PowerPoint (PPT/PPTX); preview or clear retry / error if slow</span></li>
+    <li><input type="checkbox" /><span class="id">3.11</span><span>YouTube import → linked video opens</span></li>
+    <li><input type="checkbox" /><span class="id">3.12</span><span>Photos import (multi) → gallery works</span></li>
+    <li><input type="checkbox" /><span class="id">3.13</span><span>Voice note → transcription (≥2s, allow mic); transcript appears</span></li>
+    <li><input type="checkbox" /><span class="id">3.14</span><span>Bad / tiny upload shows clear error (not silent fail)</span></li>
+    <li><input type="checkbox" /><span class="id">3.15</span><span>Generate flashcards from note</span></li>
+    <li><input type="checkbox" /><span class="id">3.16</span><span>Generate / regenerate quiz from note</span></li>
+    <li><input type="checkbox" /><span class="id">3.17</span><span>Summarize / Smart Notes with enough content</span></li>
+  </ul>
+
+  <h3>Notes — share &amp; collaborate</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">3.18</span><span>Share note with a group (after Session 5 group exists)</span></li>
+    <li><input type="checkbox" /><span class="id">3.19</span><span>Collaborators: invite viewer/editor; change role; remove</span></li>
+    <li><input type="checkbox" /><span class="id">3.20</span><span>Share link: create → copy → open while logged out then in → revoke</span></li>
+    <li><input type="checkbox" /><span class="id">3.21</span><span>Comments: post + refresh</span></li>
+    <li><input type="checkbox" /><span class="id">3.22</span><span>Non-owner: Make a copy of a shared note</span></li>
+    <li><input type="checkbox" /><span class="id">3.23</span><span>Hard-delete a disposable note</span></li>
   </ul>
 
   <h3>Flashcards</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">3.11</span><span>Create a deck + several manual cards</span></li>
-    <li><input type="checkbox" /><span class="id">3.12</span><span>AI-generate cards (Low-Data OFF)</span></li>
-    <li><input type="checkbox" /><span class="id">3.13</span><span>Try modes: Learn · Spaced repetition · Match · Cram · Timed Cram</span></li>
-    <li><input type="checkbox" /><span class="id">3.14</span><span>Grade cards in review; due badge updates</span></li>
-    <li><input type="checkbox" /><span class="id">3.15</span><span>Toggle deck “offline available”</span></li>
-    <li><input type="checkbox" /><span class="id">3.16</span><span>Export deck JSON/CSV</span></li>
-    <li><input type="checkbox" /><span class="id">3.17</span><span>Edit/delete a card; reset SRS on a throwaway deck</span></li>
+    <li><input type="checkbox" /><span class="id">3.24</span><span>Create a deck + several manual cards</span></li>
+    <li><input type="checkbox" /><span class="id">3.25</span><span>Create cloze card; image occlusion card (if available)</span></li>
+    <li><input type="checkbox" /><span class="id">3.26</span><span>AI-generate cards (Low-Data OFF)</span></li>
+    <li><input type="checkbox" /><span class="id">3.27</span><span>Try modes: Learn · Spaced repetition · Match · Cram · Timed Cram</span></li>
+    <li><input type="checkbox" /><span class="id">3.28</span><span>Grade cards in review; due badge updates</span></li>
+    <li><input type="checkbox" /><span class="id">3.29</span><span>Toggle deck “offline available”</span></li>
+    <li><input type="checkbox" /><span class="id">3.30</span><span>Export deck JSON/CSV</span></li>
+    <li><input type="checkbox" /><span class="id">3.31</span><span>Edit/delete a card; reset SRS on a throwaway deck</span></li>
+    <li><input type="checkbox" /><span class="id">3.32</span><span>Deck collaborators if available</span></li>
   </ul>
 
   <h3>Study hub</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">3.18</span><span>Open Study hub: review due cards, resume paused session, jump to Library / AI Tools</span></li>
+    <li><input type="checkbox" /><span class="id">3.33</span><span>Open Study hub: review due cards, resume paused session, jump to Library / AI Tools</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
@@ -283,7 +323,7 @@
   <ul class="checks">
     <li><input type="checkbox" /><span class="id">4.1</span><span>AI Tools: PDF summarizer → creates note (+ optional flashcards/quiz)</span></li>
     <li><input type="checkbox" /><span class="id">4.2</span><span>PowerPoint import path works</span></li>
-    <li><input type="checkbox" /><span class="id">4.3</span><span>Paste notes → import &amp; study (try toggles on and off)</span></li>
+    <li><input type="checkbox" /><span class="id">4.3</span><span>Paste notes → Import &amp; study (try toggles on and off)</span></li>
     <li><input type="checkbox" /><span class="id">4.4</span><span>Open Lantern AI companion; ask a study question; use a quick prompt</span></li>
     <li><input type="checkbox" /><span class="id">4.5</span><span>Thumbs up/down on a reply</span></li>
     <li><input type="checkbox" /><span class="id">4.6</span><span>Notice usage badge / daily limits</span></li>
@@ -299,43 +339,58 @@
 
   <h3>Setup</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">5.1</span><span>A: Create a group</span></li>
+    <li><input type="checkbox" /><span class="id">5.1</span><span>A: Create a group (name / avatar)</span></li>
     <li><input type="checkbox" /><span class="id">5.2</span><span>B: Open invite link while logged out, then log in — lands back on invite / join</span></li>
-    <li><input type="checkbox" /><span class="id">5.3</span><span>B joins; A opens group info (members, roles)</span></li>
+    <li><input type="checkbox" /><span class="id">5.3</span><span>B joins; A opens Group Info (members, roles)</span></li>
     <li><input type="checkbox" /><span class="id">5.4</span><span>A: invite by email/phone or approve join request if available</span></li>
     <li><input type="checkbox" /><span class="id">5.5</span><span>Create a subgroup if available</span></li>
   </ul>
 
-  <h3>Chat &amp; questions</h3>
+  <h3>Chat &amp; DMs</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">5.6</span><span>Send several group messages</span></li>
+    <li><input type="checkbox" /><span class="id">5.6</span><span>Send, edit, delete group messages; reply; typing indicator</span></li>
     <li><input type="checkbox" /><span class="id">5.7</span><span>Start a DM between A and B</span></li>
-    <li><input type="checkbox" /><span class="id">5.8</span><span>Submit questions: MCQ, T/F, short answer, fill-in-blank, multi-select</span></li>
-    <li><input type="checkbox" /><span class="id">5.9</span><span>Upvote / downvote; try flag similar/duplicate</span></li>
-    <li><input type="checkbox" /><span class="id">5.10</span><span>Check verified / pending / rejected question states if moderation exists</span></li>
-    <li><input type="checkbox" /><span class="id">5.11</span><span>AI summarize group chat</span></li>
-    <li><input type="checkbox" /><span class="id">5.12</span><span>Generate Questions with AI: paste notes <strong>and</strong> upload PDF/PPT; questions appear for voting</span></li>
-    <li><input type="checkbox" /><span class="id">5.13</span><span>Long generate: progress or error shown — not a dead button</span></li>
-    <li><input type="checkbox" /><span class="id">5.14</span><span><strong>Light mode:</strong> vote buttons on your own questions are readable</span></li>
+    <li><input type="checkbox" /><span class="id">5.8</span><span>Mute group notifications (pick a duration) → unmute</span></li>
+    <li><input type="checkbox" /><span class="id">5.9</span><span>Mute / unmute DM; archive / unarchive DM; delete a disposable DM</span></li>
+    <li><input type="checkbox" /><span class="id">5.10</span><span>Group ⋮ overflow menu scrolls; all actions reachable on phone</span></li>
+  </ul>
+
+  <h3>Questions</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">5.11</span><span>Use question visibility filters</span></li>
+    <li><input type="checkbox" /><span class="id">5.12</span><span>Submit questions: MCQ, multi-select, T/F, fill-in-blank, matching, diagram (as available)</span></li>
+    <li><input type="checkbox" /><span class="id">5.13</span><span>Upvote / downvote; try flag similar/duplicate</span></li>
+    <li><input type="checkbox" /><span class="id">5.14</span><span>Check verified / pending / rejected question states if moderation exists</span></li>
+    <li><input type="checkbox" /><span class="id">5.15</span><span>AI summarize group chat</span></li>
+    <li><input type="checkbox" /><span class="id">5.16</span><span>Generate Questions with AI: paste notes <strong>and</strong> upload PDF/PPT; questions appear for voting</span></li>
+    <li><input type="checkbox" /><span class="id">5.17</span><span>Long generate: progress or error shown — not a dead button</span></li>
+    <li><input type="checkbox" /><span class="id">5.18</span><span><strong>Light mode:</strong> vote buttons on your own questions are readable</span></li>
   </ul>
 
   <h3>Tests, study, duels</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">5.15</span><span>Configure a test (types, count, timer); save a preset</span></li>
-    <li><input type="checkbox" /><span class="id">5.16</span><span>Take timed test; pause/resume; flag hard questions</span></li>
-    <li><input type="checkbox" /><span class="id">5.17</span><span>Finish → results → review → analysis from dashboard</span></li>
-    <li><input type="checkbox" /><span class="id">5.18</span><span>Start Study mode / solo practice</span></li>
-    <li><input type="checkbox" /><span class="id">5.19</span><span>A challenges B to a duel; B accepts; both complete; compare results</span></li>
-    <li><input type="checkbox" /><span class="id">5.20</span><span>Decline a challenge; open Challenges inbox</span></li>
-    <li><input type="checkbox" /><span class="id">5.21</span><span>Archive / unarchive group; leave a throwaway group</span></li>
-    <li><input type="checkbox" /><span class="id">5.22</span><span>Admin only: promote/demote or remove member (careful)</span></li>
+    <li><input type="checkbox" /><span class="id">5.19</span><span>Configure a test (types, count, timer); save a preset</span></li>
+    <li><input type="checkbox" /><span class="id">5.20</span><span>Take timed test; pause/resume; flag hard questions</span></li>
+    <li><input type="checkbox" /><span class="id">5.21</span><span>Finish → results → review incorrect → analysis from dashboard</span></li>
+    <li><input type="checkbox" /><span class="id">5.22</span><span>Start Study mode / solo practice</span></li>
+    <li><input type="checkbox" /><span class="id">5.23</span><span>A challenges B to a duel; B accepts; both complete; compare results</span></li>
+    <li><input type="checkbox" /><span class="id">5.24</span><span>Decline a challenge; open Challenges inbox</span></li>
+  </ul>
+
+  <h3>Leave, archive &amp; roles</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">5.25</span><span><strong>Leave group</strong> as a non-sole admin (Danger Zone)</span></li>
+    <li><input type="checkbox" /><span class="id">5.26</span><span>Sole admin cannot leave until promoting another admin</span></li>
+    <li><input type="checkbox" /><span class="id">5.27</span><span>Archive / unarchive group</span></li>
+    <li><input type="checkbox" /><span class="id">5.28</span><span>Admin only: promote / demote or remove member (careful)</span></li>
   </ul>
 
   <h3>Offline from group</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">5.23</span><span>From test config: Download for offline</span></li>
-    <li><input type="checkbox" /><span class="id">5.24</span><span>Offline page: rename bundle; start offline test/study</span></li>
-    <li><input type="checkbox" /><span class="id">5.25</span><span>Go online; sync pending results; badge clears</span></li>
+    <li><input type="checkbox" /><span class="id">5.29</span><span>From test config: Download for offline</span></li>
+    <li><input type="checkbox" /><span class="id">5.30</span><span>Offline page: rename bundle; start offline test/study</span></li>
+    <li><input type="checkbox" /><span class="id">5.31</span><span>Go online; sync pending results; badge clears</span></li>
+    <li><input type="checkbox" /><span class="id">5.32</span><span>Delete a disposable offline bundle</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
@@ -352,75 +407,122 @@
   <h3>Seller (User A)</h3>
   <ul class="checks">
     <li><input type="checkbox" /><span class="id">6.4</span><span>Settings → Marketplace: set country / campus</span></li>
-    <li><input type="checkbox" /><span class="id">6.5</span><span>Create a listing with details (photos if available)</span></li>
-    <li><input type="checkbox" /><span class="id">6.6</span><span>My Listings: edit / deactivate; check stats if shown</span></li>
-    <li><input type="checkbox" /><span class="id">6.7</span><span>Open Inquiries inbox</span></li>
-    <li><input type="checkbox" /><span class="id">6.8</span><span>Open Seller Customers if available</span></li>
+    <li><input type="checkbox" /><span class="id">6.5</span><span>Complete seller onboarding if shown</span></li>
+    <li><input type="checkbox" /><span class="id">6.6</span><span>Create a listing with details (photos if available)</span></li>
+    <li><input type="checkbox" /><span class="id">6.7</span><span>My Listings: edit / deactivate; check stats if shown</span></li>
+    <li><input type="checkbox" /><span class="id">6.8</span><span>Coupons / campaigns / bundles if exposed</span></li>
+    <li><input type="checkbox" /><span class="id">6.9</span><span>Open Inquiries inbox</span></li>
+    <li><input type="checkbox" /><span class="id">6.10</span><span>Open Seller Customers / insights if available</span></li>
   </ul>
 
   <h3>Buyer (User B)</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">6.9</span><span>Favorite a listing; save a search</span></li>
-    <li><input type="checkbox" /><span class="id">6.10</span><span>Contact seller (inquiry)</span></li>
-    <li><input type="checkbox" /><span class="id">6.11</span><span>Make an offer → DM: accept / decline / counter</span></li>
-    <li><input type="checkbox" /><span class="id">6.12</span><span>Buy now / campus pickup as far as beta allows</span></li>
-    <li><input type="checkbox" /><span class="id">6.13</span><span>Orders list + order detail (buyer and seller)</span></li>
-    <li><input type="checkbox" /><span class="id">6.14</span><span>Report a disposable listing</span></li>
+    <li><input type="checkbox" /><span class="id">6.11</span><span>Favorite a listing; save a search</span></li>
+    <li><input type="checkbox" /><span class="id">6.12</span><span>Contact seller (inquiry)</span></li>
+    <li><input type="checkbox" /><span class="id">6.13</span><span>Make an offer → DM: accept / decline / counter</span></li>
+    <li><input type="checkbox" /><span class="id">6.14</span><span>Buy now / campus pickup as far as beta allows</span></li>
+    <li><input type="checkbox" /><span class="id">6.15</span><span>Orders list + order detail (buyer and seller)</span></li>
+    <li><input type="checkbox" /><span class="id">6.16</span><span>Seller marks ready for pickup → complete flow (if available)</span></li>
+    <li><input type="checkbox" /><span class="id">6.17</span><span>Report a disposable listing</span></li>
+  </ul>
+  <div class="note-box" contenteditable="true"></div>
+
+  <!-- ========== SESSION 6b ========== -->
+  <h2>Session 6b — Jobs board <span class="good">(45–60 min · solo or paired)</span></h2>
+  <p class="good">Pair Candidate + Employer accounts when possible. Success = search → apply → employer moves status without dead ends.</p>
+
+  <h3>Candidate</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">6b.1</span><span>Jobs home: search + filters (type, remote, pay, sort)</span></li>
+    <li><input type="checkbox" /><span class="id">6b.2</span><span>Save a search; manage saved searches</span></li>
+    <li><input type="checkbox" /><span class="id">6b.3</span><span>Save / unsave a job; open job detail</span></li>
+    <li><input type="checkbox" /><span class="id">6b.4</span><span>Trust badge / scam soft-flags are readable</span></li>
+    <li><input type="checkbox" /><span class="id">6b.5</span><span>Apply in-app and/or external apply tracking</span></li>
+    <li><input type="checkbox" /><span class="id">6b.6</span><span>Report a job with a structured reason</span></li>
+    <li><input type="checkbox" /><span class="id">6b.7</span><span>Open company profile from a job</span></li>
+    <li><input type="checkbox" /><span class="id">6b.8</span><span>My Applications list updates after apply</span></li>
+    <li><input type="checkbox" /><span class="id">6b.9</span><span>Interview / offer visibility if scheduled</span></li>
+    <li><input type="checkbox" /><span class="id">6b.10</span><span>Deadline / calendar export if shown</span></li>
+  </ul>
+
+  <h3>Employer (paired or second account)</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">6b.11</span><span>Create / edit a job posting</span></li>
+    <li><input type="checkbox" /><span class="id">6b.12</span><span>Company profile: logo, about; invite recruiter if available</span></li>
+    <li><input type="checkbox" /><span class="id">6b.13</span><span>Applicants pipeline: move candidate status</span></li>
+    <li><input type="checkbox" /><span class="id">6b.14</span><span>Bulk status move + CSV export if available</span></li>
+    <li><input type="checkbox" /><span class="id">6b.15</span><span>Message templates</span></li>
+    <li><input type="checkbox" /><span class="id">6b.16</span><span>Schedule an interview</span></li>
+    <li><input type="checkbox" /><span class="id">6b.17</span><span>Offer / hire close-out</span></li>
+    <li><input type="checkbox" /><span class="id">6b.18</span><span>Hiring analytics / posting insights</span></li>
+    <li><input type="checkbox" /><span class="id">6b.19</span><span>Deadline reminders if shown</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
   <!-- ========== SESSION 7 ========== -->
-  <h2>Session 7 — Budget (Campus Pocket) <span class="good">(20–30 min)</span></h2>
+  <h2 class="page-break">Session 7 — Budget (Campus Pocket) <span class="good">(20–30 min)</span></h2>
   <ul class="checks">
     <li><input type="checkbox" /><span class="id">7.1</span><span>Set monthly budget / plan</span></li>
     <li><input type="checkbox" /><span class="id">7.2</span><span>Add expense, income, investment</span></li>
-    <li><input type="checkbox" /><span class="id">7.3</span><span>Create a savings goal</span></li>
+    <li><input type="checkbox" /><span class="id">7.3</span><span>Create a savings goal / wallet</span></li>
     <li><input type="checkbox" /><span class="id">7.4</span><span>Expense split with another user if available</span></li>
     <li><input type="checkbox" /><span class="id">7.5</span><span>Push spending toward warning / over-budget banners</span></li>
     <li><input type="checkbox" /><span class="id">7.6</span><span>Check Insights / tips</span></li>
-    <li><input type="checkbox" /><span class="id">7.7</span><span>Delete a transaction</span></li>
+    <li><input type="checkbox" /><span class="id">7.7</span><span>Delete a disposable transaction</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
   <!-- ========== SESSION 8 ========== -->
-  <h2>Session 8 — Settings, privacy &amp; account <span class="good">(25–35 min)</span></h2>
+  <h2>Session 8 — Settings, privacy &amp; account <span class="good">(20–30 min)</span></h2>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">8.1</span><span>Profile: name, phone, password change</span></li>
-    <li><input type="checkbox" /><span class="id">8.2</span><span>Notification toggles (reminders, marketplace, SRS, digest)</span></li>
-    <li><input type="checkbox" /><span class="id">8.3</span><span>Study defaults: daily goals, shuffle, explanations</span></li>
-    <li><input type="checkbox" /><span class="id">8.4</span><span>Appearance: font size, compact, reduce motion, high contrast</span></li>
-    <li><input type="checkbox" /><span class="id">8.5</span><span>Privacy: visibility, DM policy, online status, study activity</span></li>
-    <li><input type="checkbox" /><span class="id">8.6</span><span>Data &amp; Sync options</span></li>
-    <li><input type="checkbox" /><span class="id">8.7</span><span>Support: FAQ + contact form</span></li>
-    <li><input type="checkbox" /><span class="id">8.8</span><span>Export account JSON (note any rate limit)</span></li>
-    <li><input type="checkbox" /><span class="id">8.9</span><span>Throwaway account only: pause → reactivate (do not delete real accounts unless told)</span></li>
+    <li><input type="checkbox" /><span class="id">8.1</span><span>Profile: name, phone, password change; avatar</span></li>
+    <li><input type="checkbox" /><span class="id">8.2</span><span>Notification toggles (push/email/digest/reminders/group/marketplace/SRS)</span></li>
+    <li><input type="checkbox" /><span class="id">8.3</span><span>Study defaults: daily goals, SRS new cards, shuffle, explanations</span></li>
+    <li><input type="checkbox" /><span class="id">8.4</span><span>Appearance: font size, compact, animations, reduce motion, high contrast</span></li>
+    <li><input type="checkbox" /><span class="id">8.5</span><span>Privacy: profile visibility, DM policy, discoverability</span></li>
+    <li><input type="checkbox" /><span class="id">8.6</span><span>Marketplace campus preference</span></li>
+    <li><input type="checkbox" /><span class="id">8.7</span><span>Data &amp; Sync options</span></li>
+    <li><input type="checkbox" /><span class="id">8.8</span><span>Support: FAQ + contact form</span></li>
+    <li><input type="checkbox" /><span class="id">8.9</span><span>Export account JSON (note any rate limit)</span></li>
+    <li><input type="checkbox" /><span class="id">8.10</span><span>Optional: import into another account</span></li>
+    <li><input type="checkbox" /><span class="id">8.11</span><span>Throwaway account only: pause → sign in → reactivate</span></li>
+    <li><input type="checkbox" /><span class="id">8.12</span><span>Throwaway only: permanent delete after export (do not delete real accounts unless told)</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
   <!-- ========== SESSION 9 ========== -->
-  <h2 class="page-break">Session 9 — Cross-cutting quality <span class="good">(do throughout)</span></h2>
+  <h2 class="page-break">Session 9 — Cross-cutting quality <span class="good">(30–45 min · also do throughout)</span></h2>
 
   <h3>Layout &amp; devices</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">9.1</span><span>Phone (~390px): no horizontal scroll on Dashboard, Library, Marketplace, Budget, Chat, Login</span></li>
-    <li><input type="checkbox" /><span class="id">9.2</span><span>Desktop (≥1280px): same pages look intentional, not stretched/broken</span></li>
+    <li><input type="checkbox" /><span class="id">9.1</span><span>Phone (~390px): no horizontal scroll on Dashboard, Library, Notes, Chat, Market, Jobs, Budget, Login</span></li>
+    <li><input type="checkbox" /><span class="id">9.2</span><span>Desktop (≥1280px): sidebar + content look intentional, not stretched/broken</span></li>
     <li><input type="checkbox" /><span class="id">9.3</span><span>Modals / AI companion do not cover primary buttons permanently</span></li>
     <li><input type="checkbox" /><span class="id">9.4</span><span>Mobile chat: list ↔ conversation + Back works</span></li>
   </ul>
 
-  <h3>Auth / session edge cases</h3>
+  <h3>Empty, error &amp; loading</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">9.5</span><span>Session expiry (idle or old tab) → clear toast + clean logout</span></li>
-    <li><input type="checkbox" /><span class="id">9.6</span><span>Deep link (invite or marketplace) while logged out → after login, correct destination</span></li>
-    <li><input type="checkbox" /><span class="id">9.7</span><span>Two tabs: log out in one; other tab behaves safely</span></li>
+    <li><input type="checkbox" /><span class="id">9.5</span><span>Empty states: no notes / decks / groups / listings / jobs / offline bundles</span></li>
+    <li><input type="checkbox" /><span class="id">9.6</span><span>Error toasts for failed AI / upload / network</span></li>
+    <li><input type="checkbox" /><span class="id">9.7</span><span>Loading states do not freeze forever</span></li>
   </ul>
 
-  <h3>Light mode readability</h3>
+  <h3>Auth / session edge cases</h3>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">9.8</span><span>Vote buttons on own question bubbles readable</span></li>
-    <li><input type="checkbox" /><span class="id">9.9</span><span>Dashboard heatmap / charts readable</span></li>
-    <li><input type="checkbox" /><span class="id">9.10</span><span>Marketplace cards + seller header readable</span></li>
-    <li><input type="checkbox" /><span class="id">9.11</span><span>Login placeholders and buttons readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.8</span><span>Session expiry (idle or old tab) → clear toast + clean logout</span></li>
+    <li><input type="checkbox" /><span class="id">9.9</span><span>Deep link (invite / note share / marketplace / jobs) while logged out → after login, correct destination</span></li>
+    <li><input type="checkbox" /><span class="id">9.10</span><span>Two tabs: log out in one; other tab behaves safely</span></li>
+  </ul>
+
+  <h3>Light + dark readability</h3>
+  <ul class="checks">
+    <li><input type="checkbox" /><span class="id">9.11</span><span>Vote buttons on own question bubbles readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.12</span><span>Dashboard heatmap / charts readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.13</span><span>Marketplace cards + seller header readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.14</span><span>Jobs cards + filters readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.15</span><span>Login placeholders and buttons readable</span></li>
+    <li><input type="checkbox" /><span class="id">9.16</span><span>Retest any earlier bugs in both themes</span></li>
   </ul>
   <div class="note-box" contenteditable="true"></div>
 
@@ -450,14 +552,15 @@
   <h2>Priority signals for the team</h2>
   <p>If these feel good, the core product is validating:</p>
   <ul class="checks">
-    <li><input type="checkbox" /><span class="id">P1</span><span>Session 5 — groups, questions, AI generate, tests, duels</span></li>
-    <li><input type="checkbox" /><span class="id">P2</span><span>Session 3 — notes → flashcards → review</span></li>
+    <li><input type="checkbox" /><span class="id">P1</span><span>Session 5 — groups, chat, leave/mute, questions, AI generate, tests, duels, offline</span></li>
+    <li><input type="checkbox" /><span class="id">P2</span><span>Session 3 — notes (folders, pin/archive) → flashcards → review</span></li>
     <li><input type="checkbox" /><span class="id">P3</span><span>Session 1 — signup, cookies, onboarding</span></li>
     <li><input type="checkbox" /><span class="id">P4</span><span>Session 6 — marketplace buy/sell loop</span></li>
+    <li><input type="checkbox" /><span class="id">P5</span><span>Session 6b — jobs apply + employer pipeline</span></li>
   </ul>
 
   <footer class="print-footer">
-    Lantern Study beta checklist · File: docs/beta/Lantern-Study-Beta-Tester-Checklist.html · Pair testers for Sessions 5–6 · Prefer light mode first, then dark
+    Lantern Study beta checklist · File: docs/beta/Lantern-Study-Beta-Tester-Checklist.html · Pair testers for Sessions 5–6 / 6b · Prefer light mode first, then dark
   </footer>
 
 </body>

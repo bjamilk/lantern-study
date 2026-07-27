@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
+import React, { useEffect, useMemo } from 'react';
+import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon, StopIcon } from '@heroicons/react/24/outline';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -11,6 +11,12 @@ import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNoteUploadStore, getActiveUploadJob, getVisibleUploadJobs } from '../../stores/noteUploadStore';
+import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
+import {
+  formatRecordingDuration,
+  getElapsedRecordingSeconds,
+  MIN_LECTURE_RECORD_MS,
+} from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
 
 interface AppShellProps {
@@ -19,6 +25,8 @@ interface AppShellProps {
     dueCardsCount?: number;
     unreadChatCount?: number;
     onNavigate: (mode: AppMode, params?: AppRouteParams) => void;
+    /** Open the note currently being recorded (Return from sticky banner). */
+    onOpenLectureNote?: (noteId: string) => void;
     /** Hide floating AI badge on mobile (e.g. active chat composer) */
     hideMobileAiUsageBadge?: boolean;
 }
@@ -31,7 +39,15 @@ const IMPORT_PROGRESS_WATCHDOG_MS = 5 * 60 * 1000;
  * - Mobile (<md): bottom navigation bar, sidebar hidden
  * - Paused session banner shown globally when navigating away from active test/study
  */
-const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCount = 0, unreadChatCount = 0, onNavigate, hideMobileAiUsageBadge = false }) => {
+const AppShell: React.FC<AppShellProps> = ({
+    children,
+    sidebarProps,
+    dueCardsCount = 0,
+    unreadChatCount = 0,
+    onNavigate,
+    onOpenLectureNote,
+    hideMobileAiUsageBadge = false,
+}) => {
     const { appMode, isSidebarExpanded, lowDataMode, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
     const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
@@ -41,11 +57,35 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
     const { isOpen: isCompanionOpen, toggle: toggleCompanion } = useCompanionStore();
     const currentUser = useAuthStore(s => s.currentUser);
     const isAuthLoading = useAuthStore(s => s.isAuthLoading);
+    const lectureStatus = useLectureRecordingStore((s) => s.status);
+    const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
+    const lectureNoteTitle = useLectureRecordingStore((s) => s.noteTitle);
+    const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
+    const lectureTick = useLectureRecordingStore((s) => s.tick);
+    const stopLecture = useLectureRecordingStore((s) => s.stopAndTranscribe);
+    const discardLecture = useLectureRecordingStore((s) => s.discard);
+    const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
+    const lectureActive = lectureStatus !== 'idle' && Boolean(lectureNoteId);
+    const lectureSeconds =
+      lectureStatus === 'recording' ? getElapsedRecordingSeconds(lectureStartedAt) : 0;
+    void lectureTick;
+    // Always show when a lecture session is active so in-app navigation stays obvious.
+    const lectureBannerVisible = lectureActive;
 
     useEffect(() => {
         if (!currentUser?.id || isAuthLoading) return;
         void fetchAIUsage(currentUser.id);
     }, [currentUser?.id, isAuthLoading]);
+
+    useEffect(() => {
+        if (!lectureActive) return;
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [lectureActive]);
 
     useEffect(() => {
         if (!importProgress) return;
@@ -93,10 +133,10 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
             </div>
 
             {/* Main content area */}
-            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused ? 'pt-12' : ''}`}>
+            <main id="main-content" tabIndex={-1} className={`flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden transition-all duration-300 ease-in-out ${bottomNavHidden ? 'pb-0' : 'safe-area-pb'} md:pb-0 ${isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'} ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
-                {isSessionPaused && (
+                {isSessionPaused && !lectureBannerVisible && (
                     <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white px-4 py-2 flex items-center justify-between">
                         <span className="text-sm font-medium">
                             {pausedSessionLabel} session paused
@@ -114,6 +154,59 @@ const AppShell: React.FC<AppShellProps> = ({ children, sidebarProps, dueCardsCou
                             >
                                 Cancel
                             </button>
+                        </div>
+                    </div>
+                )}
+                {lectureBannerVisible && lectureNoteId && (
+                    <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-3 py-2 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => onOpenLectureNote?.(lectureNoteId)}
+                        >
+                            <span className="block text-sm font-semibold truncate">
+                                {lectureStatus === 'recording'
+                                  ? `Recording ${formatRecordingDuration(lectureSeconds)}`
+                                  : lectureStatus === 'uploading'
+                                    ? 'Uploading lecture…'
+                                    : 'Transcribing lecture…'}
+                            </span>
+                            <span className="block text-xs opacity-90 truncate">
+                                {lectureNoteTitle || 'Untitled note'} · Tap to return
+                            </span>
+                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            {lectureStatus === 'recording' ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        disabled={lectureSeconds * 1000 < MIN_LECTURE_RECORD_MS}
+                                        onClick={() => stopLecture()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/20 hover:bg-white/30 disabled:opacity-50 rounded-lg text-xs sm:text-sm font-semibold"
+                                    >
+                                        <StopIcon className="w-4 h-4" />
+                                        <span className="hidden sm:inline">
+                                          {lectureSeconds < 2 ? `Wait ${2 - lectureSeconds}s` : 'Stop & transcribe'}
+                                        </span>
+                                        <span className="sm:hidden">{lectureSeconds < 2 ? `${2 - lectureSeconds}s` : 'Stop'}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => discardLecture()}
+                                        className="px-2.5 py-1 bg-black/20 hover:bg-black/30 rounded-lg text-xs sm:text-sm font-semibold"
+                                    >
+                                        Discard
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => cancelLectureTranscription()}
+                                    className="px-2.5 py-1 bg-black/20 hover:bg-black/30 rounded-lg text-xs sm:text-sm font-semibold"
+                                >
+                                    Cancel
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}

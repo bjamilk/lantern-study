@@ -20,6 +20,12 @@ import NotePdfViewer from './NotePdfViewer';
 import NoteImageGallery from './NoteImageGallery';
 import { Button } from './ui';
 import * as notesApi from '../services/notes';
+import {
+  formatRecordingDuration,
+  getElapsedRecordingSeconds,
+  MIN_LECTURE_RECORD_MS,
+} from '../services/lectureRecording';
+import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
@@ -52,107 +58,6 @@ interface NoteEditorScreenProps {
   onTranscriptReady: (transcript: string) => void;
   /** Cancel pending autosave before/after voice transcription. */
   onCancelPendingSave?: () => void;
-}
-
-const MIN_RECORD_MS = 1500;
-const RECORDER_CHUNK_WAIT_MS = 1000;
-const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x2000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function chunksTotalSize(chunks: Blob[]): number {
-  return chunks.reduce((sum, chunk) => sum + (chunk?.size || 0), 0);
-}
-
-/** Wait until MediaRecorder has flushed at least one chunk, or timeout. */
-function waitForRecorderChunks(
-  getChunks: () => Blob[],
-  timeoutMs = RECORDER_CHUNK_WAIT_MS
-): Promise<void> {
-  return new Promise((resolve) => {
-    const started = Date.now();
-    const tick = () => {
-      if (chunksTotalSize(getChunks()) > 0 || Date.now() - started >= timeoutMs) {
-        resolve();
-        return;
-      }
-      window.setTimeout(tick, 40);
-    };
-    // Let stop()'s final dataavailable land before the first poll.
-    window.setTimeout(tick, 0);
-  });
-}
-
-async function encodeBlobAsWav(blob: Blob): Promise<Blob> {
-  const AudioContextCtor =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextCtor) {
-    throw new Error('WAV re-encode is not supported in this browser.');
-  }
-  const ctx = new AudioContextCtor();
-  try {
-    const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
-    const sampleRate = decoded.sampleRate;
-    const length = decoded.length;
-    const mono = new Float32Array(length);
-    const ch0 = decoded.getChannelData(0);
-    if (decoded.numberOfChannels > 1) {
-      const ch1 = decoded.getChannelData(1);
-      for (let i = 0; i < length; i++) mono[i] = (ch0[i] + ch1[i]) / 2;
-    } else {
-      mono.set(ch0);
-    }
-    const dataSize = length * 2;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-    const writeStr = (offset: number, str: string) => {
-      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-    };
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, 'data');
-    view.setUint32(40, dataSize, true);
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-      const sample = Math.max(-1, Math.min(1, mono[i]));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-      offset += 2;
-    }
-    return new Blob([buffer], { type: 'audio/wav' });
-  } finally {
-    await ctx.close().catch(() => undefined);
-  }
-}
-
-function formatTranscribeDiag(meta: {
-  blobSize?: number;
-  mimeType?: string;
-  durationMs?: number;
-}): string {
-  const parts: string[] = [];
-  if (typeof meta.durationMs === 'number') parts.push(`${Math.round(meta.durationMs / 1000)}s`);
-  if (typeof meta.blobSize === 'number') parts.push(`${meta.blobSize}B`);
-  if (meta.mimeType) parts.push(meta.mimeType);
-  return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
 const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
@@ -188,17 +93,23 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   bodyRef.current = body;
   const [commentText, setCommentText] = useState('');
   const [showCollabModal, setShowCollabModal] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [transcribing, setTranscribing] = useState(false);
-  const [transcribeStage, setTranscribeStage] = useState<'idle' | 'uploading' | 'transcribing'>('idle');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const discardRecordingRef = useRef(false);
-  const transcribeAbortRef = useRef<AbortController | null>(null);
-  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recordingStartedAtRef = useRef(0);
+  const lectureStatus = useLectureRecordingStore((s) => s.status);
+  const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
+  const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
+  const lectureTick = useLectureRecordingStore((s) => s.tick);
+  const startLectureRecording = useLectureRecordingStore((s) => s.start);
+  const stopLectureRecording = useLectureRecordingStore((s) => s.stopAndTranscribe);
+  const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
+  const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
+  const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const recordingForThisNote = lectureNoteId === note.id && lectureStatus === 'recording';
+  const transcribingForThisNote =
+    lectureNoteId === note.id &&
+    (lectureStatus === 'uploading' || lectureStatus === 'transcribing');
+  const recordingSeconds = recordingForThisNote
+    ? getElapsedRecordingSeconds(lectureStartedAt)
+    : 0;
+  void lectureTick; // re-render on wall-clock ticks while recording
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
@@ -426,26 +337,40 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   ]);
 
   useEffect(() => {
-    if (!recording) {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+    if (!canEdit) {
+      setCurrentBodyProvider(null);
       return;
     }
-
-    setRecordingSeconds(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingSeconds((seconds) => seconds + 1);
-    }, 1000);
-
+    setCurrentBodyProvider(() => bodyRef.current);
     return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+      setCurrentBodyProvider(null);
     };
-  }, [recording]);
+  }, [canEdit, note.id, setCurrentBodyProvider]);
+
+  useEffect(() => {
+    if (!transcribingForThisNote) return;
+    onCancelPendingSave?.();
+    saveEnabledRef.current = false;
+    return () => {
+      window.setTimeout(() => {
+        saveEnabledRef.current = true;
+      }, 4000);
+    };
+  }, [transcribingForThisNote, onCancelPendingSave]);
+
+  const prevTranscribingRef = useRef(false);
+  useEffect(() => {
+    if (prevTranscribingRef.current && !transcribingForThisNote && lectureStatus === 'idle') {
+      userEditedRef.current = false;
+      const latest = useNotesStore.getState().selectedNote;
+      if (latest?.id === note.id) {
+        setTitle(latest.title);
+        setBody(latest.body || '');
+      }
+      onTranscriptReady('');
+    }
+    prevTranscribingRef.current = transcribingForThisNote;
+  }, [transcribingForThisNote, lectureStatus, onTranscriptReady, note.id]);
 
   const handleDownloadOriginalSlides = async () => {
     if (!presentationAttachment) return;
@@ -494,239 +419,22 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setShareGroupOpen(true);
   };
 
-  const formatRecordingDuration = (totalSeconds: number) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  };
-
-  const stopMediaStream = () => {
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
-  };
-
-  const startRecording = async () => {
+  const startRecording = () => {
     if (!canEdit) return;
-    try {
-      discardRecordingRef.current = false;
-      if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        useToastStore
-          .getState()
-          .showToast('Audio recording is not supported in this browser. Try Chrome or Edge.', 'error');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-        },
-      });
-      mediaStreamRef.current = stream;
-      const mimeCandidates = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4',
-        'audio/ogg;codecs=opus',
-      ];
-      const supportedMime =
-        typeof MediaRecorder.isTypeSupported === 'function'
-          ? mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
-          : '';
-      const recorder = supportedMime
-        ? new MediaRecorder(stream, { mimeType: supportedMime })
-        : new MediaRecorder(stream);
-      const recordingMime = recorder.mimeType || supportedMime || 'audio/webm';
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onerror = () => {
-        useToastStore.getState().showToast('Recording failed. Please try again.', 'error');
-        stopMediaStream();
-        setRecording(false);
-        mediaRecorderRef.current = null;
-        chunksRef.current = [];
-      };
-      recorder.onstop = async () => {
-        if (discardRecordingRef.current) {
-          discardRecordingRef.current = false;
-          chunksRef.current = [];
-          stopMediaStream();
-          return;
-        }
-
-        // Keep tracks alive until the final dataavailable flush lands.
-        await waitForRecorderChunks(() => chunksRef.current);
-        const durationMs = Date.now() - recordingStartedAtRef.current;
-        let blob = new Blob(chunksRef.current, { type: recordingMime });
-        chunksRef.current = [];
-        stopMediaStream();
-
-        if (blob.size < 512) {
-          useToastStore.getState().showToast(
-            `Recording was empty or too short. Hold for at least 2 seconds, then stop.${formatTranscribeDiag({
-              blobSize: blob.size,
-              mimeType: recordingMime,
-              durationMs,
-            })}`,
-            'error'
-          );
-          return;
-        }
-
-        const abortController = new AbortController();
-        transcribeAbortRef.current = abortController;
-        setTranscribing(true);
-        setTranscribeStage('uploading');
-        onCancelPendingSave?.();
-        saveEnabledRef.current = false;
-        try {
-          const runTranscribe = async (audioBlob: Blob, mime: string, fileExt: string) => {
-            const base64 = await blobToBase64(audioBlob);
-            if (!base64 || base64.length < 64) {
-              throw new Error(
-                `Recording was empty or too short. Hold for at least 2 seconds, then stop.${formatTranscribeDiag({
-                  blobSize: audioBlob.size,
-                  mimeType: mime,
-                  durationMs,
-                })}`
-              );
-            }
-            return notesApi.transcribeAudioForNote(base64, {
-              mimeType: mime,
-              noteId: note.id,
-              fileName: `lecture-${Date.now()}.${fileExt}`,
-              signal: abortController.signal,
-              currentBody: bodyRef.current,
-              durationMs,
-              clientByteLength: audioBlob.size,
-              audioBlob,
-              useStoragePath: true,
-              onProgress: (progress) => {
-                if (progress.stage === 'uploading') setTranscribeStage('uploading');
-                if (progress.stage === 'processing') setTranscribeStage('transcribing');
-              },
-            });
-          };
-
-          let mimeType = recordingMime.split(';')[0] || 'audio/webm';
-          let ext = mimeType.includes('mp4')
-            ? 'm4a'
-            : mimeType.includes('ogg')
-              ? 'ogg'
-              : 'webm';
-          let result: Awaited<ReturnType<typeof notesApi.transcribeAudioForNote>>;
-          try {
-            result = await runTranscribe(blob, mimeType, ext);
-          } catch (firstErr: unknown) {
-            const firstMessage = firstErr instanceof Error ? firstErr.message : '';
-            const shouldRetryAsWav =
-              /could not read that recording|unsupported|invalid.*media/i.test(firstMessage) &&
-              !mimeType.includes('wav');
-            if (!shouldRetryAsWav) throw firstErr;
-            blob = await encodeBlobAsWav(blob);
-            mimeType = 'audio/wav';
-            ext = 'wav';
-            result = await runTranscribe(blob, mimeType, ext);
-          }
-
-          if (result.transcript) {
-            setBody((prev) =>
-              prev.includes(result.transcript)
-                ? prev
-                : [prev, result.transcript].filter(Boolean).join('\n\n')
-            );
-            // Keep autosave paused briefly so a racing save cannot wipe the transcript merge.
-            userEditedRef.current = false;
-            useToastStore.getState().showToast('Transcript ready', 'success');
-          }
-          if (result.persistWarning) {
-            useToastStore.getState().showToast(result.persistWarning, 'info');
-          }
-          onTranscriptReady(result.transcript || '');
-        } catch (err: unknown) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          const message = err instanceof Error ? err.message : 'Transcription failed';
-          const diag = formatTranscribeDiag({
-            blobSize: blob.size,
-            mimeType: recordingMime,
-            durationMs,
-          });
-          useToastStore
-            .getState()
-            .showToast(message.includes('(') ? message : `${message}${diag}`, 'error');
-        } finally {
-          transcribeAbortRef.current = null;
-          setTranscribing(false);
-          setTranscribeStage('idle');
-          window.setTimeout(() => {
-            saveEnabledRef.current = true;
-          }, AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS);
-        }
-      };
-      mediaRecorderRef.current = recorder;
-      // Smaller timeslice so short lectures still produce chunks before stop.
-      recorder.start(250);
-      recordingStartedAtRef.current = Date.now();
-      setRecording(true);
-    } catch (err: unknown) {
-      const name = err instanceof DOMException ? err.name : '';
-      const message =
-        name === 'NotAllowedError' || name === 'PermissionDeniedError'
-          ? 'Microphone permission is blocked. Allow mic access for lanternstudy.com, then retry.'
-          : name === 'NotFoundError'
-            ? 'No microphone found. Plug in a mic and try again.'
-            : 'Microphone access is required to record lectures.';
-      useToastStore.getState().showToast(message, 'error');
-    }
+    onCancelPendingSave?.();
+    void startLectureRecording(note.id, title || note.title, { currentBody: bodyRef.current });
   };
 
   const stopRecording = () => {
-    const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
-    const elapsed = Date.now() - recordingStartedAtRef.current;
-    if (elapsed < MIN_RECORD_MS) {
-      useToastStore
-        .getState()
-        .showToast('Keep recording for at least 2 seconds so we can capture audio.', 'info');
-      return;
-    }
-    mediaRecorderRef.current = null;
-    setRecording(false);
-    try {
-      // stop() alone emits the final dataavailable; do not requestData()+stop (race → empty blob).
-      if (recorder.state === 'recording' || recorder.state === 'paused') {
-        recorder.stop();
-      }
-    } catch {
-      // ignore
-    }
+    stopLectureRecording({ currentBody: bodyRef.current });
   };
 
   const discardRecording = () => {
-    discardRecordingRef.current = true;
-    const recorder = mediaRecorderRef.current;
-    mediaRecorderRef.current = null;
-    chunksRef.current = [];
-    setRecording(false);
-    try {
-      if (recorder && (recorder.state === 'recording' || recorder.state === 'paused')) {
-        // Let onstop stop the stream — killing tracks before stop() can abort the flush.
-        recorder.stop();
-      } else {
-        stopMediaStream();
-      }
-    } catch {
-      stopMediaStream();
-    }
+    discardLectureRecording();
   };
 
   const cancelTranscription = () => {
-    transcribeAbortRef.current?.abort();
-    transcribeAbortRef.current = null;
-    setTranscribing(false);
-    setTranscribeStage('idle');
+    cancelLectureTranscription();
   };
 
   const handleMakeCopy = async () => {
@@ -799,20 +507,29 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               isDark ? 'bg-lantern-background' : 'bg-lantern-background'
             }`}
           >
-            {canEdit && !recording ? (
-              <Button size="sm" variant="secondary" onClick={startRecording} disabled={transcribing}>
+            {canEdit && !recordingForThisNote ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={startRecording}
+                disabled={transcribingForThisNote || (lectureStatus !== 'idle' && lectureNoteId !== note.id)}
+              >
                 <MicrophoneIcon className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Record lecture</span>
                 <span className="sm:hidden">Record</span>
               </Button>
-            ) : canEdit ? (
+            ) : canEdit && recordingForThisNote ? (
               <>
                 <Button
                   size="sm"
                   variant="danger"
                   onClick={stopRecording}
-                  disabled={recordingSeconds < 2}
-                  title={recordingSeconds < 2 ? 'Keep recording for at least 2 seconds' : undefined}
+                  disabled={recordingSeconds * 1000 < MIN_LECTURE_RECORD_MS}
+                  title={
+                    recordingSeconds * 1000 < MIN_LECTURE_RECORD_MS
+                      ? 'Keep recording for at least 2 seconds'
+                      : undefined
+                  }
                 >
                   <StopIcon className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">
@@ -834,10 +551,10 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 </div>
               </>
             ) : null}
-            {transcribing && (
+            {transcribingForThisNote && (
               <>
                 <span className="text-xs sm:text-sm text-lantern-text-tertiary self-center">
-                  {transcribeStage === 'uploading' ? 'Uploading…' : 'Transcribing…'}
+                  {lectureStatus === 'uploading' ? 'Uploading…' : 'Transcribing…'}
                 </span>
                 <Button size="sm" variant="ghost" onClick={cancelTranscription}>
                   Cancel
@@ -1072,7 +789,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 setGeneratingQuiz(false);
               }
             }}
-            isBusy={transcribing || generatingCards || generatingQuiz}
+            isBusy={transcribingForThisNote || generatingCards || generatingQuiz}
           />}
           {canEdit && dailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && (
             <DailyQuizWidget

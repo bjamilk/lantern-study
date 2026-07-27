@@ -3,7 +3,8 @@ import { useLocation, Navigate } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
-import { useConfirmStore } from './stores/confirmStore';
+import { confirmDialog, useConfirmStore } from './stores/confirmStore';
+import { useLectureRecordingStore } from './stores/lectureRecordingStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
@@ -1147,8 +1148,26 @@ export const App: React.FC = () => {
                         onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
                         onCancelPendingSave={noteHandlers.cancelAutoSave}
                         onDelete={async () => {
-                            if (!confirm('Delete this note?')) return;
                             const noteId = selectedNote.id;
+                            const lecture = useLectureRecordingStore.getState();
+                            if (lecture.noteId === noteId && lecture.status !== 'idle') {
+                                const ok = await confirmDialog({
+                                    title: 'Recording in progress',
+                                    message:
+                                        'This note has an active lecture recording. Delete the note and discard the recording?',
+                                    confirmLabel: 'Discard & delete',
+                                    danger: true,
+                                });
+                                if (!ok) return;
+                                lecture.discard();
+                            } else if (!(await confirmDialog({
+                                title: 'Delete note',
+                                message: 'Delete this note? This cannot be undone.',
+                                confirmLabel: 'Delete',
+                                danger: true,
+                            }))) {
+                                return;
+                            }
                             noteHandlers.cancelAutoSave();
                             useNotesStore.getState().setSelectedNote(null);
                             navigateTo(AppMode.NOTES);
@@ -1597,6 +1616,7 @@ export const App: React.FC = () => {
                 || appMode === AppMode.TEST_ACTIVE
                 || appMode === AppMode.STUDY_ACTIVE
             }
+            onOpenLectureNote={(noteId) => { void noteHandlers.openNote(noteId); }}
             onNavigate={handleShellNavigate}>
             <Suspense fallback={<AppContentLoadingFallback />}>
             {routeHydrating ? (

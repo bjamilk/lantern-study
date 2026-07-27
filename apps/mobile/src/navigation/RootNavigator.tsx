@@ -17,6 +17,7 @@ import { BottomTabBar, TabKey } from '../components/layout/BottomTabBar';
 
 import { MoreSheet } from '../components/layout/MoreSheet';
 import { ToastHost, ConfirmSheetHost } from '../components/ui';
+import { LectureRecordingBanner } from '../components/LectureRecordingBanner';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 
 import { AICompanionPanel } from '../components/AICompanionPanel';
@@ -711,6 +712,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       <View className="absolute top-12 right-3 z-40">
         <SyncStatusIndicator compact />
       </View>
+      <LectureRecordingBanner />
       <ToastHost />
       <ConfirmSheetHost />
 
