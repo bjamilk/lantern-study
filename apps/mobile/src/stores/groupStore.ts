@@ -1257,6 +1257,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       set({ groups, currentGroup: null });
     } catch (error: any) {
       set({ error: error.message || 'Failed to archive group' });
+      throw error;
     }
   },
 

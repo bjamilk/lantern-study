@@ -462,35 +462,33 @@ export default function GroupInfoModal({
         </TouchableOpacity>
       </View>
 
-      {isOwner ? (
-        <>
-          {/* Archive Section */}
-          <View style={styles.dangerSection}>
-            <View style={styles.dangerHeader}>
-              <Ionicons name="archive" size={24} color="#f59e0b" />
-              <View style={styles.dangerInfo}>
-                <Text style={styles.dangerTitle}>
-                  {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
-                </Text>
-                <Text style={styles.dangerDescription}>
-                  {group.isArchived 
-                    ? 'Restore the group for all members'
-                    : 'Hide group and disable new messages'}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity 
-              style={[styles.dangerButton, styles.archiveButton]}
-              onPress={handleArchive}
-            >
-              <Ionicons name="archive" size={18} color="#ffffff" />
-              <Text style={styles.dangerButtonText}>
-                {group.isArchived ? 'Unarchive' : 'Archive'}
-              </Text>
-            </TouchableOpacity>
+      {/* Archive Section — any member */}
+      <View style={styles.dangerSection}>
+        <View style={styles.dangerHeader}>
+          <Ionicons name="archive" size={24} color="#f59e0b" />
+          <View style={styles.dangerInfo}>
+            <Text style={styles.dangerTitle}>
+              {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
+            </Text>
+            <Text style={styles.dangerDescription}>
+              {group.isArchived
+                ? 'Restore the group for all members'
+                : 'Hide group and disable new messages'}
+            </Text>
           </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.dangerButton, styles.archiveButton]}
+          onPress={handleArchive}
+        >
+          <Ionicons name="archive" size={18} color="#ffffff" />
+          <Text style={styles.dangerButtonText}>
+            {group.isArchived ? 'Unarchive' : 'Archive'}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-          {/* Delete Section */}
+      {isOwner ? (
           <View style={[styles.dangerSection, styles.deleteSection]}>
             <View style={styles.dangerHeader}>
               <Ionicons name="trash" size={24} color="#ef4444" />
@@ -511,7 +509,6 @@ export default function GroupInfoModal({
               <Text style={styles.dangerButtonText}>Delete Permanently</Text>
             </TouchableOpacity>
           </View>
-        </>
       ) : null}
     </View>
   );

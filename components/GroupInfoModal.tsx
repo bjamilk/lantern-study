@@ -344,16 +344,15 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                             Leave Group
                         </button>
                     </div>
+                    <div className="p-4 border border-yellow-500/30 dark:border-yellow-600/50 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
+                        <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Archive Group</h4>
+                        <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 mb-3">Archiving will hide the group from the main list for all members and disable new messages.</p>
+                        <button onClick={() => onToggleArchiveGroup(group.id)} className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 rounded-md">
+                            <ArchiveBoxIcon className="w-4 h-4 mr-2"/>
+                            {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
+                        </button>
+                    </div>
                     {isCurrentUserAdmin ? (
-                      <>
-                         <div className="p-4 border border-yellow-500/30 dark:border-yellow-600/50 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
-                            <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Archive Group</h4>
-                            <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 mb-3">Archiving will hide the group from the main list for all members and disable new messages.</p>
-                            <button onClick={() => onToggleArchiveGroup(group.id)} className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 rounded-md">
-                                <ArchiveBoxIcon className="w-4 h-4 mr-2"/>
-                                {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
-                            </button>
-                         </div>
                          <div className="p-4 border border-red-500/30 dark:border-red-600/50 bg-red-50 dark:bg-red-900/30 rounded-lg">
                             <h4 className="font-semibold text-red-700 dark:text-red-300">Delete Group</h4>
                             <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-3">This action is permanent and will delete the group, all its sub-groups, and all messages for everyone.</p>
@@ -362,7 +361,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                 Delete Group Permanently
                             </button>
                          </div>
-                      </>
                     ) : null}
                 </div>
             );

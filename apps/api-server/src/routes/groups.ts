@@ -300,15 +300,29 @@ router.put(
       });
     }
 
-    // Check if user is admin or owner
-    if (!(group.permissions && group.permissions[userId]?.admin) && !(group.adminIds && group.adminIds.includes(userId))) {
+    const updateKeys = Object.keys(updateData || {}).filter(
+      (key) => updateData[key] !== undefined,
+    );
+    const isArchiveOnly =
+      updateKeys.length === 1 &&
+      updateKeys[0] === 'isArchived' &&
+      typeof updateData.isArchived === 'boolean';
+    const isAdmin =
+      Boolean(group.permissions?.[userId]?.admin) ||
+      Boolean(group.adminIds?.includes(userId));
+
+    // Any member may archive/unarchive; other group edits stay admin-only.
+    if (!isArchiveOnly && !isAdmin) {
       return res.status(403).json({
         success: false,
         error: 'Access denied',
       });
     }
 
-    const updatedGroup = await supabaseService.updateGroup(groupId, updateData);
+    const updatedGroup = await supabaseService.updateGroup(
+      groupId,
+      isArchiveOnly ? { isArchived: updateData.isArchived } : updateData,
+    );
 
     // Invalidate group cache
     await cacheService.delete(`group:${groupId}`);

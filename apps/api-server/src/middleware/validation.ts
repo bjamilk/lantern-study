@@ -78,6 +78,7 @@ export const validateUpdateGroup = [
   body('name').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Group name must be 1-100 characters'),
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be max 500 characters'),
   body('avatarUrl').optional().isURL().withMessage('Invalid avatar URL'),
+  body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
 ];
 
 // Message validation rules

@@ -1426,18 +1426,23 @@ export class SupabaseService {
     groupId: string,
     updates: Partial<Group>,
   ): Promise<Group | null> {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.description !== undefined) dbUpdates.description = updates.description;
+    if (updates.avatarUrl !== undefined) dbUpdates.avatar_url = updates.avatarUrl;
+    if (updates.permissions !== undefined) dbUpdates.permissions = updates.permissions;
+    if (updates.inviteId !== undefined) dbUpdates.invite_id = updates.inviteId;
+    if (updates.parentId !== undefined) dbUpdates.parent_id = updates.parentId;
+    if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
+    if (updates.adminIds !== undefined) dbUpdates.admin_ids = updates.adminIds;
+
+    if (Object.keys(dbUpdates).length === 0) {
+      return this.getGroupById(groupId);
+    }
+
     const { data, error } = await this.supabase
       .from("groups")
-      .update({
-        name: updates.name,
-        description: updates.description,
-        avatar_url: updates.avatarUrl,
-        permissions: updates.permissions,
-        invite_id: updates.inviteId,
-        parent_id: updates.parentId,
-        is_archived: updates.isArchived,
-        admin_ids: updates.adminIds,
-      })
+      .update(dbUpdates)
       .eq("id", groupId)
       .select()
       .single();

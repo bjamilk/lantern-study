@@ -211,6 +211,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     demoteAdmin,
     removeMember,
     leaveGroup,
+    archiveGroup,
     deleteGroup,
     submitQuestion,
     voteOnMessage,
@@ -1258,7 +1259,19 @@ export function GroupChatScreen({ navigation, route }: Props) {
                 );
               });
           }}
-          onArchiveGroup={() => {}}
+          onArchiveGroup={(gid) => {
+            void archiveGroup(gid)
+              .then(() => {
+                setShowGroupInfo(false);
+                navigation.goBack();
+              })
+              .catch((error: unknown) => {
+                Alert.alert(
+                  'Could not update group',
+                  error instanceof Error ? error.message : 'Try again.',
+                );
+              });
+          }}
           onDeleteGroup={gid => void deleteGroup(gid)}
           onAddMembers={() => {
             setShowGroupInfo(false);

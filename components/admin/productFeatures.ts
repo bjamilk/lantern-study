@@ -137,7 +137,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'New API: POST /api/v1/groups/:groupId/leave (uses authenticated user; ignores client-supplied userId).',
       'Sole-admin leave is rejected with a clear error; demote/remove of the last admin is also blocked.',
       'Leaving deletes the membership row and strips the user from groups.admin_ids when applicable.',
-      'Web and mobile Group Information → Danger Zone show Leave Group for all members; Archive/Delete remain admin/owner-only.',
+      'Web and mobile Group Information → Danger Zone show Leave Group and Archive/Unarchive for all members; Delete remains admin/owner-only.',
       'After leave, the group is removed from the member’s list and the open chat closes.',
     ],
     howToUse: [
