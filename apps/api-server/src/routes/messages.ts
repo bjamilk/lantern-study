@@ -436,11 +436,17 @@ router.get(
         return !hiddenBy.includes(userId);
       });
 
-      // Look up participant profiles
-      const otherUserIds = userThreads.map((t: any) => {
-        const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
-        return pids.find((id: string) => id !== userId);
-      }).filter(Boolean);
+      // Look up other participant profiles (current user label is local "You").
+      const otherUserIds = [
+        ...new Set(
+          userThreads
+            .map((t: any) => {
+              const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
+              return pids.find((id: string) => id !== userId);
+            })
+            .filter(Boolean),
+        ),
+      ] as string[];
 
       let profilesMap: Record<string, any> = {};
       if (otherUserIds.length > 0) {
@@ -453,17 +459,13 @@ router.get(
         }
       }
 
-      // Also get current user profile for participants map
-      const { data: currentProfile } = await supabaseService.getClient()
-        .from('profiles')
-        .select('id, name, avatar_url')
-        .eq('id', userId)
-        .maybeSingle();
-
+      // Prefer stored participants JSON when profile lookup misses.
       const result = userThreads.map((t: any) => {
         const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
         const otherUserId = pids.find((id: string) => id !== userId);
         const otherProfile = otherUserId ? profilesMap[otherUserId] : null;
+        const storedParticipants =
+          t.participants && typeof t.participants === 'object' ? t.participants : {};
 
         const status =
           t.status === 'pending' || t.status === 'declined' || t.status === 'open'
@@ -474,15 +476,25 @@ router.get(
           participantIds: pids,
           participants: {
             [userId]: {
-              name: currentProfile?.name || 'You',
-              avatarUrl: currentProfile?.avatar_url,
+              name: storedParticipants[userId]?.name || 'You',
+              avatarUrl:
+                storedParticipants[userId]?.avatarUrl ||
+                storedParticipants[userId]?.avatar_url,
             },
-            ...(otherUserId && otherProfile ? {
-              [otherUserId]: {
-                name: otherProfile.name || 'Unknown',
-                avatarUrl: otherProfile.avatar_url,
-              }
-            } : {}),
+            ...(otherUserId
+              ? {
+                  [otherUserId]: {
+                    name:
+                      otherProfile?.name ||
+                      storedParticipants[otherUserId]?.name ||
+                      'Unknown',
+                    avatarUrl:
+                      otherProfile?.avatar_url ||
+                      storedParticipants[otherUserId]?.avatarUrl ||
+                      storedParticipants[otherUserId]?.avatar_url,
+                  },
+                }
+              : {}),
           },
           lastMessage: t.last_message,
           lastMessageTimestamp: t.last_message_time,

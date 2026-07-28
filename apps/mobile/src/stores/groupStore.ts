@@ -1512,8 +1512,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         },
       }));
       deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
-      // Refresh thread status (e.g. pending message request → still pending / opened by reply).
-      await get().fetchDmThreads(senderId).catch(() => undefined);
+      // Refresh thread status in the background so send stays snappy.
+      void get().fetchDmThreads(senderId).catch(() => undefined);
     } catch (error) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);

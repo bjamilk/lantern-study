@@ -23,7 +23,7 @@ import {
     sendMessage, fetchMessages, fetchUserVotesForGroup, voteQuestion,
     removeVote, updateMessage, updateQuestionStatus, createNotification,
     updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
-    sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads, fetchDMUnreadCounts,
+    sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
     editGroupMessage, removeGroupMessage, editDirectMessage, removeDirectMessage,
@@ -35,6 +35,7 @@ import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
+import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 
 const sendingGroupIds = new Set<string>();
 const sendingThreadIds = new Set<string>();
@@ -93,24 +94,6 @@ function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
         threadRootId: raw.threadRootId || raw.thread_root_id,
         replyCount: typeof raw.replyCount === 'number' ? raw.replyCount : raw.reply_count,
         receiptStatus: raw.receiptStatus || raw.receipt_status,
-    };
-}
-
-function mapDmThreadFromApi(t: any, unreadCounts: Record<string, number> = {}): DMThread {
-    const status =
-        t.status === 'pending' || t.status === 'declined' || t.status === 'open'
-            ? t.status
-            : 'open';
-    return {
-        id: t.id,
-        participantIds: t.participantIds || t.participant_ids || [],
-        participants: t.participants || {},
-        lastMessage: t.lastMessage || t.last_message,
-        lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-        unreadCount: unreadCounts[t.id] || t.unreadCount || 0,
-        isArchived: t.isArchived || t.is_archived || false,
-        status,
-        requestedBy: t.requestedBy ?? t.requested_by ?? null,
     };
 }
 
@@ -392,16 +375,12 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             handleSelectChat({ ...thread, chatType: 'dm' });
         }
 
-        // Sync from server so inquiry / first-message threads show lastMessage without a full page reload.
+        // Sync from server, but keep optimistic local threads (not created until first send).
         try {
-            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
-                fetchDmThreads(currentUser.id),
-                fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
-            ]);
+            const fetchedThreads = await fetchDmThreads(currentUser.id);
             if (Array.isArray(fetchedThreads)) {
-                updateDmThreads(() =>
-                    fetchedThreads.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts))
-                );
+                const mapped = fetchedThreads.map((t: any) => mapDmThreadFromApi(t));
+                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
             }
         } catch (err) {
             console.warn('[DM] Failed to refresh threads after initiate:', err);
@@ -417,16 +396,29 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (sendingThreadIds.has(threadId)) return;
         sendingThreadIds.add(threadId);
 
-        const thread = dmThreads.find(t => t.id === threadId);
+        const selected = useUIStore.getState().selectedChat;
+        const threadFromStore = dmThreads.find(t => t.id === threadId);
+        const threadFromSelection =
+            selected?.chatType === 'dm' && selected.id === threadId
+                ? (selected as DMThread & { chatType: 'dm' })
+                : null;
+        const thread = threadFromStore || threadFromSelection;
         if (!thread) {
             sendingThreadIds.delete(threadId);
-            return;
+            throw new Error('Conversation not found. Open the chat again and retry.');
         }
-        
+
+        // Ensure optimistic thread stays listed if a refresh wiped it.
+        if (!threadFromStore) {
+            updateDmThreads((prev) =>
+                prev.some((t) => t.id === threadId) ? prev : [...prev, thread],
+            );
+        }
+
         const otherUserId = thread.participantIds.find(id => id !== currentUser.id);
         if (!otherUserId) {
             sendingThreadIds.delete(threadId);
-            return;
+            throw new Error('Could not find the other person in this conversation.');
         }
         
         const deliveryScope = `dm:${threadId}`;
@@ -511,22 +503,20 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 ),
             }));
             dmDeliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
-            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
-                fetchDmThreads(currentUser.id),
-                fetchDMUnreadCounts(currentUser.id).catch(() => ({} as Record<string, number>)),
-            ]);
-            if (Array.isArray(fetchedThreads)) {
-                updateDmThreads(() =>
-                    fetchedThreads.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts))
-                );
-                const refreshed = fetchedThreads.find((t: any) => t.id === threadId);
-                if (refreshed && useUIStore.getState().selectedChat?.id === threadId) {
-                    handleSelectChat({
-                        ...mapDmThreadFromApi(refreshed, dmUnreadCounts),
-                        chatType: 'dm',
-                    });
-                }
-            }
+            // Don't block the composer on a full list refresh; merge in background.
+            void fetchDmThreads(currentUser.id)
+                .then((fetchedThreads) => {
+                    if (!Array.isArray(fetchedThreads)) return;
+                    const mapped = fetchedThreads.map((t: any) => mapDmThreadFromApi(t));
+                    updateDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+                    const refreshed = mapped.find((t) => t.id === threadId);
+                    if (refreshed && useUIStore.getState().selectedChat?.id === threadId) {
+                        handleSelectChat({ ...refreshed, chatType: 'dm' });
+                    }
+                })
+                .catch((err) => {
+                    console.warn('[DM] Failed to refresh threads after send:', err);
+                });
         } catch (error) {
             console.error('Failed to send DM:', error);
             if (isUncertainDeliveryError(error)) {

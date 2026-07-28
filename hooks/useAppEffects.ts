@@ -63,29 +63,14 @@ import {
   INITIAL_BOOTSTRAP_LOAD_STATE,
   type BootstrapLoadState,
 } from './useAuthHandlers';
+import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 
 function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
 }
 
 function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
-    return fetched.map((t: any) => {
-        const status =
-            t.status === 'pending' || t.status === 'declined' || t.status === 'open'
-                ? t.status
-                : 'open';
-        return {
-            id: t.id,
-            participantIds: t.participantIds || t.participant_ids || [],
-            participants: t.participants || {},
-            lastMessage: t.lastMessage || t.last_message,
-            lastMessageTimestamp: t.lastMessageTimestamp || t.last_message_time,
-            unreadCount: dmUnreadCounts[t.id] || 0,
-            isArchived: t.isArchived || false,
-            status,
-            requestedBy: t.requestedBy ?? t.requested_by ?? null,
-        };
-    });
+    return fetched.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts));
 }
 
 interface UseAppEffectsParams {
@@ -223,12 +208,17 @@ export function useAppEffects({
     }, []);
 
     const refreshDmThreadsForUser = useCallback(async (userId: string) => {
-        const [fetchedThreads, dmUnreadCounts] = await Promise.all([
-            fetchDmThreads(userId),
-            fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
-        ]);
-        if (Array.isArray(fetchedThreads)) {
-            setDmThreads(mapFetchedDmThreads(fetchedThreads, dmUnreadCounts));
+        try {
+            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
+                fetchDmThreads(userId),
+                fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+            ]);
+            if (Array.isArray(fetchedThreads)) {
+                const mapped = mapFetchedDmThreads(fetchedThreads, dmUnreadCounts);
+                setDmThreads((prev) => mergeDmThreadLists(prev, mapped));
+            }
+        } catch (err) {
+            console.warn('[DM] Failed to refresh threads:', err);
         }
     }, [setDmThreads]);
 

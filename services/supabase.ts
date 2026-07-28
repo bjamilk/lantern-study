@@ -1244,10 +1244,14 @@ export const searchUsers = async (query: string, limit: number = 20) => {
     if (searchQuery.replace(/^@+/, '').length < 2) {
       return [];
     }
-    const response = await fetch(`${getApiRoot()}/api/v1/users/search?q=${encodeURIComponent(searchQuery)}&limit=${limit}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
+    const response = await fetchWithTimeout(
+      `${getApiRoot()}/api/v1/users/search?q=${encodeURIComponent(searchQuery)}&limit=${limit}`,
+      {
+        method: 'GET',
+        headers: await getAuthHeaders(),
+      },
+      8000,
+    );
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || error.message || 'Failed to search users');
@@ -3975,39 +3979,44 @@ export const fetchDirectMessages = async (userId: string, otherUserId: string, o
   }
 };
 
-export const fetchDmThreads = async (userId: string) => {
+export const fetchDmThreads = async (_userId: string) => {
+  const isAuthenticated = await hasValidSession();
+  if (!isAuthenticated) {
+    // Auth can still be initializing during startup; treat as empty until token is ready.
+    return [];
+  }
+
+  const authHeaders = await getAuthHeaders();
+  if (!authHeaders.Authorization) {
+    // Avoid unauthenticated requests during auth bootstrap races.
+    return [];
+  }
+
   try {
-    const isAuthenticated = await hasValidSession();
-    if (!isAuthenticated) {
-      // Auth can still be initializing during startup; treat as empty until token is ready.
-      return [];
-    }
-
-    const authHeaders = await getAuthHeaders();
-    if (!authHeaders.Authorization) {
-      // Avoid unauthenticated requests during auth bootstrap races.
-      return [];
-    }
-
-    const response = await fetch(`${getApiRoot()}/api/v1/messages/dm/threads`, {
-      method: 'GET',
-      headers: authHeaders,
-    });
+    const response = await fetchWithTimeout(
+      `${getApiRoot()}/api/v1/messages/dm/threads`,
+      {
+        method: 'GET',
+        headers: authHeaders,
+      },
+      12000,
+    );
 
     if (response.status === 401 || response.status === 403) {
       return [];
     }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to fetch DM threads');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || error.error || 'Failed to fetch DM threads');
     }
 
     const result = await response.json();
     return result.data || [];
   } catch (error) {
     console.error('Error fetching DM threads:', error);
-    return [];
+    // Do not return [] on network/server failure — callers would wipe local threads.
+    throw error;
   }
 };
 

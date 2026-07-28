@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { XCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
@@ -32,6 +32,7 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const searchRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -39,6 +40,7 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
       setSearchResults([]);
       setSearchError('');
       setIsSearching(false);
+      searchRequestIdRef.current += 1;
     }
   }, [isOpen]);
 
@@ -46,23 +48,29 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
     if (normalizeUserSearchQuery(searchTerm).length < 2) {
       setSearchResults([]);
       setSearchError('');
+      setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
     setSearchError('');
+    const requestId = ++searchRequestIdRef.current;
 
     const timeoutId = setTimeout(async () => {
       try {
         const data = await searchUsers(searchTerm.trim(), 20);
+        if (requestId !== searchRequestIdRef.current) return;
         const filtered = (data || []).filter((user: SearchResult) => user.id !== currentUser.id);
         setSearchResults(filtered);
       } catch (err) {
+        if (requestId !== searchRequestIdRef.current) return;
         console.error('Search failed:', err);
         setSearchError(err instanceof Error ? err.message : 'Failed to search. Please try again.');
         setSearchResults([]);
       } finally {
-        setIsSearching(false);
+        if (requestId === searchRequestIdRef.current) {
+          setIsSearching(false);
+        }
       }
     }, 300);
 
