@@ -17,11 +17,7 @@ import { SupabaseService } from "../../services/supabase";
 import { parseApkgBuffer } from "../../services/apkgImport";
 import { runPresentationPreviewJob } from "../../services/presentationPreview";
 import { runYoutubeTranscriptJob } from "../../services/youtubeNote";
-import {
-  purgeExpiredAIAnalytics,
-  purgeExpiredAIInferenceLogs,
-  purgeExpiredProductEvents,
-} from "../../services/dataRetention";
+import { runDataRetentionPurge } from "../../services/dataRetention";
 import {
   processAbandonedCheckoutReminders,
   processReviewReminders,
@@ -286,10 +282,8 @@ async function processExportJob(job: Job): Promise<unknown> {
 
 async function processCronJob(job: Job): Promise<unknown> {
   if (job.name === "cron.dataRetention") {
-    const logs = await purgeExpiredAIInferenceLogs(supabaseService);
-    const analytics = await purgeExpiredAIAnalytics(supabaseService);
-    const productEvents = await purgeExpiredProductEvents(supabaseService);
-    return { logs, analytics, productEvents };
+    // Shared with in-process retention: AI log purges + overdue paused-account hard deletes.
+    return runDataRetentionPurge(supabaseService);
   }
   if (job.name === "cron.marketplaceAlerts") {
     const saved = await processSavedSearchAlerts(supabaseService);

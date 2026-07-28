@@ -1,19 +1,25 @@
 # Data Retention Schedule
 
-**Last updated:** June 13, 2026
+**Last updated:** July 27, 2026
 
 | Data type | Retention | Purge mechanism |
 |-----------|-----------|-----------------|
-| Account & study data | Until user deletes account | `deleteUserAccountFully` |
+| Account & study data | Until user deletes account (or pause grace ends) | `deleteUserAccountFully` |
+| Paused accounts (grace) | 30 days after deactivate | `purgeScheduledAccountDeletions` via `runDataRetentionPurge` |
 | AI inference logs | 90 days | `purgeExpiredAIInferenceLogs()` |
 | AI analytics (companion) | 90 days | Same job |
+| Product analytics events | 90 days | `purgeExpiredProductEvents()` |
 | Server request logs | 30–90 days | Log rotation (hosting) |
 | Admin audit log | 24 months | Manual / future cron |
-| Deleted account grace | N/A (immediate v1) | — |
 
-Enable automated purge: set `ENABLE_DATA_RETENTION_JOBS=true` on API server.
+## How the daily job runs
 
-SQL alternative (Supabase pg_cron):
+Shared entrypoint: `runDataRetentionPurge()` in `apps/api-server/src/services/dataRetention.ts`.
+
+- **Production (BullMQ):** worker schedules `cron.dataRetention` daily at 03:00 UTC. Set `ENABLE_DATA_RETENTION_JOBS=true` on the worker (deploy script does this).
+- **Without BullMQ:** API process starts an in-process daily timer when `ENABLE_DATA_RETENTION_JOBS=true`.
+
+SQL alternative (Supabase pg_cron) for AI logs only:
 
 ```sql
 SELECT cron.schedule('purge-ai-inference-logs', '0 3 * * *', $$

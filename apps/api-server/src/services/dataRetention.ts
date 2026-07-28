@@ -69,6 +69,28 @@ export async function purgeExpiredProductEvents(supabaseService: SupabaseService
   return count;
 }
 
+export type DataRetentionPurgeResult = {
+  aiInferenceLogs: number;
+  aiAnalytics: number;
+  productEvents: number;
+  scheduledAccounts: number;
+};
+
+/**
+ * Single retention pass used by both the in-process daily timer and BullMQ cron.dataRetention.
+ * Must include scheduled account hard-deletes so pause→grace→purge works when BULLMQ_ENABLED=true.
+ */
+export async function runDataRetentionPurge(
+  supabaseService: SupabaseService
+): Promise<DataRetentionPurgeResult> {
+  const aiInferenceLogs = await purgeExpiredAIInferenceLogs(supabaseService);
+  const aiAnalytics = await purgeExpiredAIAnalytics(supabaseService);
+  const productEvents = await purgeExpiredProductEvents(supabaseService);
+  const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
+  const scheduledAccounts = await purgeScheduledAccountDeletions(supabaseService);
+  return { aiInferenceLogs, aiAnalytics, productEvents, scheduledAccounts };
+}
+
 export function startDataRetentionJobs(supabaseService: SupabaseService): void {
   if (process.env.ENABLE_DATA_RETENTION_JOBS !== 'true') {
     return;
@@ -76,11 +98,7 @@ export function startDataRetentionJobs(supabaseService: SupabaseService): void {
 
   const INTERVAL_MS = 24 * 60 * 60 * 1000;
   const run = async () => {
-    await purgeExpiredAIInferenceLogs(supabaseService);
-    await purgeExpiredAIAnalytics(supabaseService);
-    await purgeExpiredProductEvents(supabaseService);
-    const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
-    await purgeScheduledAccountDeletions(supabaseService);
+    await runDataRetentionPurge(supabaseService);
   };
 
   void run();

@@ -150,6 +150,8 @@ function Build-EnvVars([hashtable]$ApiEnv, [hashtable]$ResendEnv) {
         @{ key = 'AI_POST_BURST_MAX'; value = '15' },
         @{ key = 'UPLOAD_BURST_MAX'; value = '10' },
         @{ key = 'BULLMQ_ENABLED'; value = 'true' },
+        # Retention cron runs on the worker when BullMQ is on; keep flag true for fallback/docs.
+        @{ key = 'ENABLE_DATA_RETENTION_JOBS'; value = 'true' },
         @{ key = 'ADMIN_RATE_LIMIT_MAX'; value = '300' }
     )
     # Optional: YouTube transcript managed fallback (set in apps/api-server/.env or Render dashboard)

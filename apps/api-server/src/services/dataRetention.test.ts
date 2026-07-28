@@ -1,5 +1,36 @@
-import { purgeExpiredProductEvents } from './dataRetention';
+import { purgeExpiredProductEvents, runDataRetentionPurge } from './dataRetention';
 import type { SupabaseService } from './supabase';
+
+jest.mock('./accountLifecycle', () => ({
+  purgeScheduledAccountDeletions: jest.fn(async () => 3),
+}));
+
+import { purgeScheduledAccountDeletions } from './accountLifecycle';
+
+describe('runDataRetentionPurge', () => {
+  it('includes scheduled account hard-deletes alongside log purges', async () => {
+    const emptyChain = {
+      delete: () => emptyChain,
+      lt: () => emptyChain,
+      select: async () => ({ data: [], error: null }),
+    };
+    const supabaseService = {
+      getClient: () => ({
+        from: () => emptyChain,
+      }),
+    } as unknown as SupabaseService;
+
+    const result = await runDataRetentionPurge(supabaseService);
+
+    expect(purgeScheduledAccountDeletions).toHaveBeenCalledWith(supabaseService);
+    expect(result).toEqual({
+      aiInferenceLogs: 0,
+      aiAnalytics: 0,
+      productEvents: 0,
+      scheduledAccounts: 3,
+    });
+  });
+});
 
 describe('purgeExpiredProductEvents', () => {
   it('deletes product_events older than retention cutoff and returns count', async () => {
