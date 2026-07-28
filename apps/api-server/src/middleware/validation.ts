@@ -307,9 +307,37 @@ export const validateDeckUpdate = [
 
 export const validateFlashcardCreate = [
   body('deckId').isUUID().withMessage('deckId must be a valid UUID'),
-  body('front').trim().isLength({ min: 1, max: 10000 }),
-  body('back').optional().isString().isLength({ max: 10000 }),
   body('type').optional().isIn(['BASIC', 'CLOZE', 'IMAGE_OCCLUSION']),
+  // IMAGE_OCCLUSION / CLOZE send null for unused sides; optional() alone does not skip null.
+  body('front').optional({ values: 'null' }).isString().isLength({ max: 10000 }),
+  body('back').optional({ values: 'null' }).isString().isLength({ max: 10000 }),
+  body('clozeText').optional({ values: 'null' }).isString().isLength({ max: 10000 }),
+  body('imageUrl').optional({ values: 'null' }).isString().isLength({ max: 5000 }),
+  body('occlusionData').optional({ values: 'null' }).isObject(),
+  body('tags').optional().isArray(),
+  body().custom((value) => {
+    const type = value?.type || 'BASIC';
+    if (type === 'BASIC') {
+      if (typeof value?.front !== 'string' || !value.front.trim()) {
+        throw new Error('front is required for basic cards');
+      }
+      if (typeof value?.back !== 'string' || !value.back.trim()) {
+        throw new Error('back is required for basic cards');
+      }
+    } else if (type === 'CLOZE') {
+      if (typeof value?.clozeText !== 'string' || !value.clozeText.trim()) {
+        throw new Error('clozeText is required for cloze cards');
+      }
+    } else if (type === 'IMAGE_OCCLUSION') {
+      if (typeof value?.imageUrl !== 'string' || !value.imageUrl.trim()) {
+        throw new Error('imageUrl is required for image occlusion cards');
+      }
+      if (typeof value?.front !== 'string' || !value.front.trim()) {
+        throw new Error('front prompt is required for image occlusion cards');
+      }
+    }
+    return true;
+  }),
 ];
 
 export const validateFlashcardReview = [
