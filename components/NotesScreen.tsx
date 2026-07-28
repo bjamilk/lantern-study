@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   PlusIcon,
   FolderPlusIcon,
@@ -95,12 +95,27 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [accessFilter, setAccessFilter] = useState<'mine' | 'shared'>('mine');
   const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
+  // Mount only one folder surface: CSS-hidden Menus still portal and duplicate.
+  const [isMdUp, setIsMdUp] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
+  );
   const youtubeUrlValid = Boolean(parseYoutubeVideoId(youtubeUrl));
   const importProgress = useUIStore((s) => s.importProgress);
   const uploadJobList = useNoteUploadStore((s) => s.jobs);
   const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
   const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => {
+      setIsMdUp(mq.matches);
+      setFolderMenuId(null);
+    };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const openRenameFolderPrompt = (folder: NoteFolder) => {
     // Close the portaled menu first; opening another dialog in the same click
@@ -345,12 +360,14 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
       )}
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col md:flex-row">
-        <aside className="hidden md:block shrink-0 w-44 border-r border-lantern-border p-2 overflow-y-auto bg-lantern-surface">
-          {renderFolderButton(null, true)}
-          <div className="mt-1 space-y-1">
-            {folders.map(folder => renderFolderButton(folder, true))}
-          </div>
-        </aside>
+        {isMdUp ? (
+          <aside className="shrink-0 w-44 border-r border-lantern-border p-2 overflow-y-auto bg-lantern-surface">
+            {renderFolderButton(null, true)}
+            <div className="mt-1 space-y-1">
+              {folders.map(folder => renderFolderButton(folder, true))}
+            </div>
+          </aside>
+        ) : null}
 
         <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 space-y-3 sm:space-y-4">
           {embedded && (
@@ -366,12 +383,14 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             </div>
           )}
 
-          <div className="md:hidden -mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
-            <div className="flex gap-2 pb-1 w-max max-w-none items-center">
-              {renderFolderButton(null)}
-              {folders.map(folder => renderFolderButton(folder))}
+          {!isMdUp ? (
+            <div className="-mx-1 px-1 overflow-x-auto overflow-y-visible scrollbar-none">
+              <div className="flex gap-2 pb-1 w-max max-w-none items-center">
+                {renderFolderButton(null)}
+                {folders.map(folder => renderFolderButton(folder))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
             <div className="inline-flex w-full sm:w-auto rounded-lg border border-lantern-border bg-lantern-surface p-1">
