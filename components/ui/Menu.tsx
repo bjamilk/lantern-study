@@ -81,6 +81,7 @@ export function MenuTrigger({
   children,
   'aria-label': ariaLabel,
   className = '',
+  onClick,
   ...rest
 }: {
   children: React.ReactNode;
@@ -97,9 +98,15 @@ export function MenuTrigger({
       aria-expanded={ctx.open}
       aria-controls={ctx.menuId}
       aria-label={ariaLabel}
-      onClick={() => ctx.setOpen(!ctx.open)}
       className={className}
       {...rest}
+      onClick={(event) => {
+        // Parent screens often close menus on bubble; keep the toggle local.
+        event.stopPropagation();
+        onClick?.(event);
+        if (event.defaultPrevented) return;
+        ctx.setOpen(!ctx.open);
+      }}
     >
       {children}
     </button>
@@ -221,6 +228,7 @@ export function MenuItem({
   destructive,
   disabled,
   className = '',
+  onClick,
   ...rest
 }: {
   children: React.ReactNode;
@@ -240,17 +248,19 @@ export function MenuItem({
       role="menuitem"
       disabled={disabled}
       aria-disabled={disabled || undefined}
-      onClick={() => {
-        if (disabled) return;
-        onSelect?.();
-        ctx.closeMenu();
-      }}
       className={`w-full text-left px-4 py-2.5 min-h-[44px] text-sm flex items-center gap-2.5 transition-colors ${
         destructive
           ? 'text-lantern-error hover:bg-lantern-error/10'
           : 'text-lantern-text hover:bg-lantern-background-secondary'
       } disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
       {...rest}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(event);
+        if (disabled || event.defaultPrevented) return;
+        onSelect?.();
+        ctx.closeMenu();
+      }}
     >
       {icon}
       {children}

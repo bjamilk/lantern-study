@@ -32,6 +32,7 @@ import {
 } from './ui';
 import { useUIStore } from '../stores/uiStore';
 import { useNoteUploadStore, getVisibleUploadJobs } from '../stores/noteUploadStore';
+import { confirmDialog } from '../stores/confirmStore';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -101,14 +102,26 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
   const isDark = theme === 'dark';
 
+  const openRenameFolderPrompt = (folder: NoteFolder) => {
+    // Close the portaled menu first; opening another dialog in the same click
+    // often gets swallowed after the menu unmounts / dismiss handlers run.
+    setFolderMenuId(null);
+    window.setTimeout(() => setRenameFolder(folder), 50);
+  };
+
   const confirmDeleteFolder = (folder: NoteFolder) => {
     setFolderMenuId(null);
     if (!onDeleteFolder) return;
-    const ok = window.confirm(
-      `Delete folder “${folder.name}”? Notes inside stay in All notes.`,
-    );
-    if (!ok) return;
-    void onDeleteFolder(folder.id);
+    window.setTimeout(() => {
+      void confirmDialog({
+        title: 'Delete folder?',
+        message: `“${folder.name}” will be removed. Notes inside stay in All notes.`,
+        danger: true,
+        confirmLabel: 'Delete',
+      }).then((ok) => {
+        if (ok) void onDeleteFolder(folder.id);
+      });
+    }, 50);
   };
 
   const filteredNotes = useMemo(() => {
@@ -222,12 +235,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 </MenuTrigger>
                 <MenuContent align="end" className="w-44">
                   {onRenameFolder ? (
-                    <MenuItem
-                      onSelect={() => {
-                        setFolderMenuId(null);
-                        setRenameFolder(folder);
-                      }}
-                    >
+                    <MenuItem onSelect={() => openRenameFolderPrompt(folder)}>
                       Rename
                     </MenuItem>
                   ) : null}

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,6 +33,7 @@ import {
 } from '../../services/notes';
 import { trackNoteCreated } from '../../services/productAnalytics';
 import { Button, Card, ScreenHeader } from '../../components/ui';
+import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import * as ImagePicker from 'expo-image-picker';
@@ -328,37 +331,52 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
     }
   };
 
+  const confirmDeleteFolder = async (folder: NoteFolder) => {
+    const ok = await confirmSheet({
+      title: 'Delete folder?',
+      message: `“${folder.name}” will be removed. Notes inside stay in All notes.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await removeFolder(folder.id);
+    } catch (e: unknown) {
+      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
+    }
+  };
+
   const handleFolderOptions = (folder: NoteFolder) => {
-    Alert.alert(folder.name, 'Manage this folder. Notes stay in All notes if you delete it.', [
-      {
-        text: 'Rename',
-        onPress: () => openRenameFolder(folder),
-      },
-      {
-        text: 'Delete folder',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            'Delete folder?',
-            `“${folder.name}” will be removed. Notes inside stay in All notes.`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: () => {
-                  void removeFolder(folder.id).catch((e: unknown) => {
-                    Alert.alert(
-                      'Could not delete',
-                      e instanceof Error ? e.message : 'Try again.',
-                    );
-                  });
-                },
-              },
-            ],
-          );
+    const runRename = () => {
+      // Let the action sheet dismiss before mounting the rename modal.
+      setTimeout(() => openRenameFolder(folder), 50);
+    };
+    const runDelete = () => {
+      setTimeout(() => {
+        void confirmDeleteFolder(folder);
+      }, 50);
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: folder.name,
+          message: 'Manage this folder. Notes stay in All notes if you delete it.',
+          options: ['Rename', 'Delete folder', 'Cancel'],
+          destructiveButtonIndex: 1,
+          cancelButtonIndex: 2,
         },
-      },
+        (buttonIndex) => {
+          if (buttonIndex === 0) runRename();
+          else if (buttonIndex === 1) runDelete();
+        },
+      );
+      return;
+    }
+
+    Alert.alert(folder.name, 'Manage this folder. Notes stay in All notes if you delete it.', [
+      { text: 'Rename', onPress: runRename },
+      { text: 'Delete folder', style: 'destructive', onPress: runDelete },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
