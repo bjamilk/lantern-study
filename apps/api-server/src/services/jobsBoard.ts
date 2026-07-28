@@ -91,6 +91,10 @@ import {
 import { SupabaseService } from "./supabase";
 import { detectImageMime } from "../utils/fileValidation";
 import { logger } from "../utils/logger";
+import {
+  IMMUTABLE_IMAGE_CACHE_CONTROL,
+  processImageForUpload,
+} from "./imageProcessing";
 
 export type CreateJobPostingInput = {
   title: string;
@@ -2813,22 +2817,17 @@ export class JobsBoardService {
         "File content is not a supported image (JPEG, PNG, GIF, or WebP)",
       );
     }
-    const ext =
-      contentType === "image/png"
-        ? "png"
-        : contentType === "image/webp"
-          ? "webp"
-          : contentType === "image/gif"
-            ? "gif"
-            : "jpg";
+    const { normalized } = await processImageForUpload(buffer, "companyLogo", {
+      detectedMime: contentType,
+    });
     const safeCompany = companyId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const filePath = `${safeCompany}/${Date.now()}-logo.${ext}`;
+    const filePath = `${safeCompany}/${Date.now()}-logo.${normalized.ext}`;
 
     const { error: uploadError } = await this.client()
       .storage.from(COMPANY_LOGO_BUCKET)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "86400",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: false,
       });
     if (uploadError) throw uploadError;

@@ -61,3 +61,18 @@ export function parseStorageObjectUrl(
 export function buildStorageObjectPath(bucket: string, path: string): string {
   return `${bucket}/${path}`;
 }
+
+/**
+ * Deterministic grid/list thumbnail path for a stored image object.
+ * Sibling file: `<path>.thumb.webp` (matches marketplace upload convention).
+ */
+export function storageThumbPath(path: string): string {
+  if (!path) return path;
+  if (path.endsWith(".thumb.webp")) return path;
+  return `${path}.thumb.webp`;
+}
+
+/** True when the storage object path is itself a generated thumbnail. */
+export function isStorageThumbPath(path: string): boolean {
+  return Boolean(path && path.endsWith(".thumb.webp"));
+}

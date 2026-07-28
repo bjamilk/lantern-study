@@ -944,10 +944,13 @@ export async function shareNoteWithGroup(noteId: string, groupId: string): Promi
 
 export async function refreshNoteAttachmentUrl(
   noteId: string,
-  attachmentId: string
-): Promise<{ url: string; expiresIn: number }> {
-  return notesRequest<{ url: string; expiresIn: number }>(
-    `/${noteId}/attachments/${attachmentId}/url`
+  attachmentId: string,
+  options?: { variant?: 'thumb' | 'original' }
+): Promise<{ url: string; expiresIn: number; variant?: string }> {
+  const variant = options?.variant || 'original';
+  const qs = variant === 'thumb' ? '?variant=thumb' : '';
+  return notesRequest<{ url: string; expiresIn: number; variant?: string }>(
+    `/${noteId}/attachments/${attachmentId}/url${qs}`
   );
 }
 
@@ -1082,21 +1085,20 @@ async function prepareImageForUpload(file: File): Promise<File> {
     throw new Error('File is not an image.');
   }
   assertAllowedImageUpload({ contentType: file.type, byteLength: file.size });
-  if (file.size > 2 * 1024 * 1024) {
-    try {
-      const compressed = await compressImage(file, {
-        maxWidth: 1920,
-        maxHeight: 1920,
-        quality: 0.85,
-        outputType: 'file',
-      });
-      if (compressed instanceof File) {
-        assertAllowedImageUpload({ contentType: compressed.type, byteLength: compressed.size });
-        return compressed;
-      }
-    } catch {
-      // keep original file
+  // Always compress note photos (OCR-friendly 2000px cap) to cut storage + egress.
+  try {
+    const compressed = await compressImage(file, {
+      maxWidth: 2000,
+      maxHeight: 2000,
+      quality: 0.82,
+      outputType: 'file',
+    });
+    if (compressed instanceof File) {
+      assertAllowedImageUpload({ contentType: compressed.type, byteLength: compressed.size });
+      return compressed;
     }
+  } catch {
+    // keep original file if canvas compression fails
   }
   return file;
 }

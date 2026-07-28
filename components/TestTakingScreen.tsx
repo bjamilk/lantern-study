@@ -7,6 +7,7 @@ import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid,
 import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 
 interface TestTakingScreenProps {
   mode: 'test' | 'study';
@@ -803,9 +804,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
             {currentQuestion.imageUrl && currentQuestion.questionType !== QuestionType.DIAGRAM_LABELING && (
                 <div className="my-3 w-full max-w-xl mx-auto">
-                    <img 
+                    <ResolvedStorageImg
                         src={currentQuestion.imageUrl}
-                        alt="Question visual" 
+                        alt="Question visual"
                         className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-lantern-border shadow"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
@@ -894,7 +895,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && (
               <div className="mt-4">
                   <div className="relative w-full max-w-xl mx-auto border-2 border-lantern-border rounded-lg overflow-hidden">
-                      <img src={currentQuestion.imageUrl} alt="Diagram to label" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      <ResolvedStorageImg src={currentQuestion.imageUrl} alt="Diagram to label" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       {currentQuestion.diagramLabels?.map((label, index) => (
                           <div 
                               key={label.id} 

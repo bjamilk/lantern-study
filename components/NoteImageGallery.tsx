@@ -39,17 +39,20 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
   const isDark = theme === 'dark';
   const [ordered, setOrdered] = useState<NoteAttachment[]>([]);
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [fullImageUrls, setFullImageUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [zoomIndex, setZoomIndex] = useState<number | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
   const zoomContainerRef = useRef<HTMLDivElement>(null);
   const lightboxOpen = zoomIndex !== null;
   const lightboxRef = useModalFocusTrap(lightboxOpen, () => {
     setZoomIndex(null);
     setZoomScale(1);
+    setZoomSrc(null);
   });
 
   useEffect(() => {
@@ -65,12 +68,15 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
     setLoading(true);
     setError(null);
     setImageUrls({});
+    setFullImageUrls({});
 
     (async () => {
       try {
         const entries = await Promise.all(
           ordered.map(async (attachment) => {
-            const result = await refreshNoteAttachmentUrl(noteId, attachment.id);
+            const result = await refreshNoteAttachmentUrl(noteId, attachment.id, {
+              variant: 'thumb',
+            });
             return [attachment.id, result.url] as const;
           })
         );
@@ -123,13 +129,28 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
   };
 
   const openZoom = (index: number) => {
+    const attachment = ordered[index];
+    if (!attachment) return;
     setZoomIndex(index);
     setZoomScale(1);
+    const cachedFull = fullImageUrls[attachment.id];
+    setZoomSrc(cachedFull || imageUrls[attachment.id] || null);
+    if (!cachedFull) {
+      void refreshNoteAttachmentUrl(noteId, attachment.id, { variant: 'original' })
+        .then((result) => {
+          setFullImageUrls((prev) => ({ ...prev, [attachment.id]: result.url }));
+          setZoomSrc(result.url);
+        })
+        .catch(() => {
+          // Keep thumb preview in lightbox if original sign fails.
+        });
+    }
   };
 
   const closeZoom = () => {
     setZoomIndex(null);
     setZoomScale(1);
+    setZoomSrc(null);
   };
 
   useEffect(() => {
@@ -239,7 +260,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
           ))}
       </div>
 
-      {zoomIndex !== null && imageUrls[ordered[zoomIndex]?.id] && (
+      {zoomIndex !== null && zoomSrc && (
         <div
           ref={lightboxRef}
           className="fixed inset-0 z-50 bg-black/90 flex flex-col"
@@ -285,7 +306,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
             onClick={closeZoom}
           >
             <img
-              src={imageUrls[ordered[zoomIndex].id]}
+              src={zoomSrc}
               alt={ordered[zoomIndex]?.fileName || `Photo ${zoomIndex + 1}`}
               style={{ transform: `scale(${zoomScale})` }}
               className="max-w-full max-h-full object-contain transition-transform duration-150"

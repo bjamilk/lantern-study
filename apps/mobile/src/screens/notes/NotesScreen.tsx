@@ -438,6 +438,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         quality: 0.85,
+        exif: false,
       });
       if (result.canceled || !result.assets.length) return;
       const assets = mapImageAssets(result.assets);
@@ -463,7 +464,7 @@ export function NotesScreen({ navigation, embedded = false }: Props) {
         setError('Camera permission is required.');
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.85, exif: false });
       if (result.canceled || !result.assets[0]) return;
       const assets = mapImageAssets(result.assets);
       setPendingImport({ mode: 'photos', assets });

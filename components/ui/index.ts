@@ -4,6 +4,7 @@ export { Input } from './Input';
 export { Select } from './Select';
 export { Textarea } from './Textarea';
 export { Avatar } from './Avatar';
+export { ResolvedStorageImg } from './ResolvedStorageImg';
 export { ConnectionBadge } from './ConnectionBadge';
 export { Skeleton, SkeletonCard, SkeletonStatRow } from './Skeleton';
 export { ScreenHeader } from './ScreenHeader';

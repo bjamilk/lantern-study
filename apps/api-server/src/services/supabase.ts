@@ -36,6 +36,7 @@ import {
 import {
   isPrivateStorageBucket,
   parseStorageObjectUrl,
+  storageThumbPath,
 } from "@lantern/shared/utils/storageUrl";
 import {
   resolveThreadRootId,
@@ -60,6 +61,10 @@ import {
 import { VersionConflictError } from "../utils/versionConflict";
 import { buildNoteStoragePath } from "./noteFiles";
 import { mapNoteCommentRow, NOTE_COMMENT_SELECT } from "./noteCommentMapping";
+import {
+  IMMUTABLE_IMAGE_CACHE_CONTROL,
+  processImageForUpload,
+} from "./imageProcessing";
 
 type UserStats = typeof initialUserStats;
 
@@ -239,9 +244,109 @@ export class SupabaseService {
     return this.normalizeStorageUrl(data.signedUrl);
   }
 
+  /**
+   * Sign a storage object for display. When variant is `thumb`, prefer the
+   * sibling `<path>.thumb.webp` and fall back to the original if missing.
+   * ACL checks must always use the original path.
+   */
+  async createSignedStorageUrlWithVariant(
+    bucket: string,
+    path: string,
+    expiresInSeconds = 60 * 60 * 24,
+    variant: "thumb" | "original" = "original",
+  ): Promise<string> {
+    if (variant !== "thumb") {
+      return this.createSignedStorageUrl(bucket, path, expiresInSeconds);
+    }
+    const ttl = clampSignedUrlTtl(expiresInSeconds);
+    const thumbPath = storageThumbPath(path);
+    try {
+      const { data, error } = await this.supabase.storage
+        .from(bucket)
+        .createSignedUrls([thumbPath, path], ttl);
+      if (!error && data) {
+        const thumbResult = data[0];
+        const originalResult = data[1];
+        const signedUrl =
+          (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
+          (originalResult && !originalResult.error && originalResult.signedUrl) ||
+          null;
+        if (signedUrl) return this.normalizeStorageUrl(signedUrl);
+      }
+    } catch {
+      // Fall through to original-only sign.
+    }
+    return this.createSignedStorageUrl(bucket, path, expiresInSeconds);
+  }
+
+  /**
+   * Batch sign display URLs. When variant is `thumb`, prefers sibling thumbs
+   * with original fallback (same pattern as marketplace compact cards).
+   */
+  async signStorageDisplayUrls(
+    refs: Array<{ bucket: string; path: string; index: number }>,
+    options?: {
+      expiresInSeconds?: number;
+      variant?: "thumb" | "original";
+    },
+  ): Promise<Map<number, string>> {
+    const ttl = clampSignedUrlTtl(options?.expiresInSeconds);
+    const variant = options?.variant || "original";
+    const signedByIndex = new Map<number, string>();
+    const byBucket = new Map<string, Array<{ index: number; path: string }>>();
+    for (const ref of refs) {
+      if (!ref.bucket || !ref.path || !isPrivateStorageBucket(ref.bucket)) continue;
+      const group = byBucket.get(ref.bucket) || [];
+      group.push({ index: ref.index, path: ref.path });
+      byBucket.set(ref.bucket, group);
+    }
+
+    for (const [bucket, items] of byBucket) {
+      try {
+        const paths =
+          variant === "thumb"
+            ? items.flatMap((item) => [storageThumbPath(item.path), item.path])
+            : items.map((item) => item.path);
+        const { data, error } = await this.supabase.storage
+          .from(bucket)
+          .createSignedUrls(paths, ttl);
+        if (error || !data) continue;
+        if (variant === "thumb") {
+          items.forEach((item, i) => {
+            const thumbResult = data[i * 2];
+            const originalResult = data[i * 2 + 1];
+            const signedUrl =
+              (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
+              (originalResult &&
+                !originalResult.error &&
+                originalResult.signedUrl) ||
+              null;
+            if (signedUrl) {
+              signedByIndex.set(item.index, this.normalizeStorageUrl(signedUrl));
+            }
+          });
+        } else {
+          items.forEach((item, i) => {
+            const result = data[i];
+            if (result && !result.error && result.signedUrl) {
+              signedByIndex.set(
+                item.index,
+                this.normalizeStorageUrl(result.signedUrl),
+              );
+            }
+          });
+        }
+      } catch {
+        // Bucket publicly readable or transient error; callers fall back to unsigned URLs.
+      }
+    }
+    return signedByIndex;
+  }
+
   async signStorageDisplayUrl(
     url: string,
     expiresInSeconds = 60 * 60 * 24,
+    variant: "thumb" | "original" = "original",
   ): Promise<string> {
     if (!url || url.startsWith("data:")) return url;
     const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
@@ -249,10 +354,11 @@ export class SupabaseService {
     if (!parsed || !isPrivateStorageBucket(parsed.bucket)) {
       return this.normalizeStorageUrl(url);
     }
-    return this.createSignedStorageUrl(
+    return this.createSignedStorageUrlWithVariant(
       parsed.bucket,
       parsed.path,
       expiresInSeconds,
+      variant,
     );
   }
 
@@ -3227,6 +3333,37 @@ export class SupabaseService {
     return data;
   }
 
+  /** Best-effort sibling thumb upload; failures never fail the parent upload. */
+  private async uploadSiblingThumb(
+    bucket: string,
+    filePath: string,
+    thumb: Buffer | null,
+  ): Promise<void> {
+    if (!thumb) return;
+    try {
+      const { error: thumbError } = await this.supabase.storage
+        .from(bucket)
+        .upload(storageThumbPath(filePath), thumb, {
+          contentType: "image/webp",
+          cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
+          upsert: true,
+        });
+      if (thumbError) {
+        logger.warn("Thumbnail upload failed", {
+          bucket,
+          filePath,
+          error: thumbError.message,
+        });
+      }
+    } catch (thumbErr: any) {
+      logger.warn("Thumbnail generation/upload failed", {
+        bucket,
+        filePath,
+        error: thumbErr?.message,
+      });
+    }
+  }
+
   async uploadFlashcardImage(params: {
     fileName: string;
     base64Data: string;
@@ -3236,20 +3373,28 @@ export class SupabaseService {
   }): Promise<{ url: string; path: string }> {
     const bucket = "flashcard-images";
     const timestamp = Date.now();
-    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
     const folderSegment = params.folder
       ? `${params.folder.replace(/\.\./g, "").replace(/^\/+|\/+$/g, "")}/`
       : "";
-    const filePath = `${ownerPrefix}${folderSegment}${timestamp}-${safeName}`;
 
     const buffer = Buffer.from(params.base64Data, "base64");
     assertImageMagicBytes(buffer, params.contentType);
+    const { normalized, thumb } = await processImageForUpload(
+      buffer,
+      "flashcard",
+      { detectedMime: detectImageMime(buffer) || params.contentType },
+    );
+    const baseName =
+      params.fileName
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "flashcard";
+    const filePath = `${ownerPrefix}${folderSegment}${timestamp}-${baseName}.${normalized.ext}`;
 
     const attemptUpload = async () => {
-      return this.supabase.storage.from(bucket).upload(filePath, buffer, {
-        contentType: params.contentType || "application/octet-stream",
-        cacheControl: "3600",
+      return this.supabase.storage.from(bucket).upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: false,
       });
     };
@@ -3267,12 +3412,13 @@ export class SupabaseService {
       uploadResult = await attemptUpload();
     }
 
-    const { data, error } = uploadResult;
+    const { error } = uploadResult;
     if (error) {
       logger.error("Error uploading flashcard image:", { error, filePath });
       throw new Error(error.message);
     }
 
+    await this.uploadSiblingThumb(bucket, filePath, thumb);
     const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
 
     return {
@@ -3302,20 +3448,16 @@ export class SupabaseService {
         "File content is not a supported image (JPEG, PNG, GIF, or WebP). HEIC/HEIF photos must be converted first.",
       );
     }
-    const contentType = detected;
-    const ext =
-      contentType === "image/png"
-        ? "png"
-        : contentType === "image/webp"
-          ? "webp"
-          : contentType === "image/gif"
-            ? "gif"
-            : "jpg";
+    const { normalized, thumb } = await processImageForUpload(
+      buffer,
+      "marketplace",
+      { detectedMime: detected },
+    );
     const baseName =
       params.fileName
         .replace(/\.[^/.]+$/, "")
         .replace(/[^a-zA-Z0-9_.-]/g, "_") || "photo";
-    const safeName = `${baseName}.${ext}`;
+    const safeName = `${baseName}.${normalized.ext}`;
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
     const listingSegment = params.listingId
       ? `listings/${params.listingId.replace(/[^a-zA-Z0-9_-]/g, "")}/`
@@ -3324,9 +3466,9 @@ export class SupabaseService {
 
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "3600",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: false,
       });
     if (error) {
@@ -3335,39 +3477,7 @@ export class SupabaseService {
     }
 
     // Grid thumbnail at a deterministic sibling path (<path>.thumb.webp).
-    // Compact list responses prefer it and fall back to the original, so
-    // failures here (or older listings without thumbs) degrade gracefully.
-    try {
-      const sharp = (await import("sharp")).default;
-      const thumb = await sharp(buffer)
-        .rotate()
-        .resize({
-          width: 320,
-          height: 320,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 72 })
-        .toBuffer();
-      const { error: thumbError } = await this.supabase.storage
-        .from(bucket)
-        .upload(this.marketplaceThumbPath(filePath), thumb, {
-          contentType: "image/webp",
-          cacheControl: "31536000",
-          upsert: true,
-        });
-      if (thumbError) {
-        logger.warn("Marketplace thumbnail upload failed", {
-          filePath,
-          error: thumbError.message,
-        });
-      }
-    } catch (thumbErr: any) {
-      logger.warn("Marketplace thumbnail generation failed", {
-        filePath,
-        error: thumbErr?.message,
-      });
-    }
+    await this.uploadSiblingThumb(bucket, filePath, thumb);
 
     const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
     const storageUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
@@ -3377,11 +3487,6 @@ export class SupabaseService {
       path: filePath,
       storageUrl,
     };
-  }
-
-  /** Deterministic grid-thumbnail path for a marketplace image object path. */
-  private marketplaceThumbPath(path: string): string {
-    return `${path}.thumb.webp`;
   }
 
   /** SEC-07: chat images stored under note-files/{userId}/chat/{groupId}/... */
@@ -3394,31 +3499,39 @@ export class SupabaseService {
   }): Promise<{ url: string; path: string }> {
     const bucket = "note-files";
     const timestamp = Date.now();
-    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
     const chatId = (params.groupId || "general").replace(/[^a-zA-Z0-9_-]/g, "");
     if (params.groupId) {
       const member = await this.isGroupMember(params.groupId, params.userId);
       if (!member) throw new Error("Not a member of this group");
     }
-    const filePath = `${ownerPrefix}chat/${chatId}/${timestamp}-${safeName}`;
     const buffer = Buffer.from(params.base64Data, "base64");
     if (buffer.length > 10 * 1024 * 1024) {
       throw new Error("Image exceeds 10 MB limit");
     }
     assertImageMagicBytes(buffer, params.contentType);
+    const { normalized, thumb } = await processImageForUpload(buffer, "chat", {
+      detectedMime: detectImageMime(buffer) || params.contentType,
+    });
+    const baseName =
+      params.fileName
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "chat";
+    const filePath = `${ownerPrefix}chat/${chatId}/${timestamp}-${baseName}.${normalized.ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(filePath, buffer, {
-        contentType: params.contentType,
-        cacheControl: "3600",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: false,
       });
     if (error) {
       logger.error("Error uploading chat image:", { error, filePath });
       throw new Error(error.message);
     }
+
+    await this.uploadSiblingThumb(bucket, filePath, thumb);
 
     return {
       url: await this.createSignedStorageUrl(
@@ -3518,26 +3631,36 @@ export class SupabaseService {
   }): Promise<{ url: string; path: string }> {
     const bucket = "question-images";
     const timestamp = Date.now();
-    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const filePath = `${ownerPrefix}questions/${timestamp}-${safeName}`;
     const buffer = Buffer.from(params.base64Data, "base64");
     if (buffer.length > 10 * 1024 * 1024) {
       throw new Error("Image exceeds 10 MB limit");
     }
     assertImageMagicBytes(buffer, params.contentType);
+    const { normalized, thumb } = await processImageForUpload(
+      buffer,
+      "question",
+      { detectedMime: detectImageMime(buffer) || params.contentType },
+    );
+    const baseName =
+      params.fileName
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "question";
+    const filePath = `${ownerPrefix}questions/${timestamp}-${baseName}.${normalized.ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(filePath, buffer, {
-        contentType: params.contentType,
-        cacheControl: "3600",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: false,
       });
     if (error) {
       logger.error("Error uploading question image:", { error, filePath });
       throw new Error(error.message);
     }
+
+    await this.uploadSiblingThumb(bucket, filePath, thumb);
 
     return {
       url: await this.createSignedStorageUrl(bucket, filePath),
@@ -3561,24 +3684,18 @@ export class SupabaseService {
         "File content is not a supported image (JPEG, PNG, GIF, or WebP).",
       );
     }
-    const contentType = detected;
-    const ext =
-      contentType === "image/png"
-        ? "png"
-        : contentType === "image/webp"
-          ? "webp"
-          : contentType === "image/gif"
-            ? "gif"
-            : "jpg";
+    const { normalized } = await processImageForUpload(buffer, "avatar", {
+      detectedMime: detected,
+    });
     // Versioned path so clients and CDNs do not keep serving a stale avatar after replace.
     const version = Date.now();
-    const filePath = `${safeUserId}/avatar-${version}.${ext}`;
+    const filePath = `${safeUserId}/avatar-${version}.${normalized.ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "60",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: true,
       });
 
@@ -3596,7 +3713,8 @@ export class SupabaseService {
         .map((obj) => obj.name)
         .filter(
           (name) =>
-            name.startsWith("avatar") && name !== `avatar-${version}.${ext}`,
+            name.startsWith("avatar") &&
+            name !== `avatar-${version}.${normalized.ext}`,
         )
         .map((name) => `${safeUserId}/${name}`);
       if (stale.length > 0) {
@@ -3631,23 +3749,17 @@ export class SupabaseService {
         "File content is not a supported image (JPEG, PNG, GIF, or WebP).",
       );
     }
-    const contentType = detected;
-    const ext =
-      contentType === "image/png"
-        ? "png"
-        : contentType === "image/webp"
-          ? "webp"
-          : contentType === "image/gif"
-            ? "gif"
-            : "jpg";
+    const { normalized } = await processImageForUpload(buffer, "avatar", {
+      detectedMime: detected,
+    });
     const version = Date.now();
-    const filePath = `${safeGroupId}/avatar-${version}.${ext}`;
+    const filePath = `${safeGroupId}/avatar-${version}.${normalized.ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "60",
+      .upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
         upsert: true,
       });
 
@@ -3664,7 +3776,8 @@ export class SupabaseService {
         .map((obj) => obj.name)
         .filter(
           (name) =>
-            name.startsWith("avatar") && name !== `avatar-${version}.${ext}`,
+            name.startsWith("avatar") &&
+            name !== `avatar-${version}.${normalized.ext}`,
         )
         .map((name) => `${safeGroupId}/${name}`);
       if (stale.length > 0) {
@@ -8093,48 +8206,22 @@ export class SupabaseService {
       return { first, parsed, imageCount: images.length };
     });
 
-    const byBucket = new Map<
-      string,
-      Array<{ index: number; thumbPath: string; path: string }>
-    >();
-    entries.forEach((entry, index) => {
-      if (!entry.parsed) return;
-      const group = byBucket.get(entry.parsed.bucket) || [];
-      group.push({
-        index,
-        thumbPath: this.marketplaceThumbPath(entry.parsed.path),
-        path: entry.parsed.path,
-      });
-      byBucket.set(entry.parsed.bucket, group);
-    });
+    const refs = entries
+      .map((entry, index) =>
+        entry.parsed
+          ? {
+              bucket: entry.parsed.bucket,
+              path: entry.parsed.path,
+              index,
+            }
+          : null,
+      )
+      .filter(Boolean) as Array<{ bucket: string; path: string; index: number }>;
 
-    const signedByIndex = new Map<number, string>();
-    for (const [bucket, items] of byBucket) {
-      try {
-        // One request signs thumb + original candidates; missing objects come
-        // back as per-path errors, which is how old listings fall back.
-        const paths = items.flatMap((item) => [item.thumbPath, item.path]);
-        const { data, error } = await this.supabase.storage
-          .from(bucket)
-          .createSignedUrls(paths, 60 * 60 * 24);
-        if (error || !data) continue;
-        items.forEach((item, i) => {
-          const thumbResult = data[i * 2];
-          const originalResult = data[i * 2 + 1];
-          const signedUrl =
-            (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
-            (originalResult &&
-              !originalResult.error &&
-              originalResult.signedUrl) ||
-            null;
-          if (signedUrl) {
-            signedByIndex.set(item.index, this.normalizeStorageUrl(signedUrl));
-          }
-        });
-      } catch {
-        // Bucket is publicly readable; unsigned URLs still work as a fallback.
-      }
-    }
+    const signedByIndex = await this.signStorageDisplayUrls(refs, {
+      expiresInSeconds: 60 * 60 * 24,
+      variant: "thumb",
+    });
 
     return listings.map((listing, index) => {
       const entry = entries[index];
@@ -9585,15 +9672,18 @@ export class SupabaseService {
       throw error;
     }
 
-    return Promise.all(
-      (data || []).map((listing) =>
-        this.normalizeListingRecordAsync({
-          ...listing,
-          favorites_count: listing.favorites_count?.[0]?.count || 0,
-          inquiries_count: listing.inquiries_count?.[0]?.count || 0,
-        }),
-      ),
-    );
+    const mapped = (data || []).map((listing) => ({
+      ...listing,
+      favorites_count: listing.favorites_count?.[0]?.count || 0,
+      inquiries_count: listing.inquiries_count?.[0]?.count || 0,
+    }));
+    // Grid cards only need the first image; prefer upload-time thumbs.
+    return this.toListingCardRecords(mapped);
+  }
+
+  /** Sign similar-listing rails with thumb-or-original for the first image. */
+  async signSimilarListingCards(listings: any[]): Promise<any[]> {
+    return this.toListingCardRecords(listings || []);
   }
 
   // Update listing status (active, inactive, sold)
@@ -10650,15 +10740,17 @@ export class SupabaseService {
     storagePath: string;
     buffer: Buffer;
     contentType: string;
+    upsert?: boolean;
   }): Promise<{ path: string }> {
     const bucket = "note-files";
+    const isImage = (params.contentType || "").toLowerCase().startsWith("image/");
     const attemptUpload = async () =>
       this.supabase.storage
         .from(bucket)
         .upload(params.storagePath, params.buffer, {
           contentType: params.contentType,
-          cacheControl: "3600",
-          upsert: false,
+          cacheControl: isImage ? IMMUTABLE_IMAGE_CACHE_CONTROL : "3600",
+          upsert: params.upsert === true,
         });
 
     let uploadResult = await attemptUpload();
@@ -10736,11 +10828,13 @@ export class SupabaseService {
   async createSignedNoteFileUrl(
     storagePath: string,
     expiresInSeconds = 60 * 60 * 24,
+    variant: "thumb" | "original" = "original",
   ): Promise<string> {
-    return this.createSignedStorageUrl(
+    return this.createSignedStorageUrlWithVariant(
       "note-files",
       storagePath,
       expiresInSeconds,
+      variant,
     );
   }
 

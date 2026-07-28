@@ -1,6 +1,6 @@
-import * as FileSystem from 'expo-file-system';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import { api } from './api';
+import { prepareImageBase64ForUpload } from '../utils/prepareImage';
 
 function normalizeMime(mimeType?: string | null): string {
   const raw = (mimeType || 'image/jpeg').toLowerCase();
@@ -10,44 +10,29 @@ function normalizeMime(mimeType?: string | null): string {
 
 /**
  * Upload a marketplace listing photo.
- * Server validates magic bytes (so wrong client MIME / HEIC→JPEG mismatches don't fail).
+ * Client shrinks first; server validates magic bytes and re-normalizes.
  */
 export async function uploadMarketplaceImage(
   localUri: string,
   mimeType: string | undefined,
   listingId?: string,
-  base64Override?: string | null
+  _base64Override?: string | null
 ): Promise<{ url: string; path: string; storageUrl?: string }> {
   const contentType = normalizeMime(mimeType);
   if (isHeicImageUpload({ contentType, fileName: localUri })) {
     throw new Error(HEIC_IMAGE_UPLOAD_ERROR);
   }
 
-  let base64Data = base64Override || null;
-  if (!base64Data) {
-    base64Data = await FileSystem.readAsStringAsync(localUri, {
-      encoding: (FileSystem as { EncodingType?: { Base64: string } }).EncodingType?.Base64 ?? 'base64',
-    });
-  }
-  if (!base64Data) {
-    throw new Error('Could not read image data');
-  }
-
-  // Omit vague MIME so the API can sniff magic bytes (Android often sends octet-stream).
-  const declaredType =
-    contentType.includes('octet-stream') || contentType === 'image'
-      ? undefined
-      : contentType;
-  const ext =
-    declaredType?.split('/')[1] ||
-    localUri.split('.').pop()?.split('?')[0] ||
-    'jpg';
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  // Always resize/compress locally (ignore picker base64 override — it may be full-res).
+  const prepared = await prepareImageBase64ForUpload(localUri, 'marketplace', {
+    mimeType: contentType,
+    fileName: `listing-${Date.now()}.jpg`,
+  });
 
   return api.uploadMarketplaceImage({
-    fileName,
-    base64Data,
-    contentType: declaredType,
+    fileName: prepared.fileName,
+    base64Data: prepared.base64Data,
+    contentType: prepared.contentType,
     listingId,
   });
 }

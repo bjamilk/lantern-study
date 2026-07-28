@@ -91,6 +91,7 @@ export function OrderDetailScreen({
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.85,
+      exif: false,
     });
     if (result.canceled || !result.assets[0]) return;
 

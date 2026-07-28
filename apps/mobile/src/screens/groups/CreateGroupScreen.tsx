@@ -13,7 +13,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type GroupPermissions } from '../../stores/groupStore';
@@ -153,22 +152,18 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-        base64: true,
+        base64: false,
+        exif: false,
       });
       if (result.canceled || !result.assets[0]) return;
 
       const asset = result.assets[0];
-      let dataUrl = asset.base64
-        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
-        : null;
-
-      if (!dataUrl && asset.uri) {
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
-        dataUrl = `data:${asset.mimeType || 'image/jpeg'};base64,${base64}`;
-      }
-
-      if (!dataUrl) throw new Error('Could not read image');
-      setAvatarUrl(dataUrl);
+      const { prepareImageBase64ForUpload } = await import('../../utils/prepareImage');
+      const prepared = await prepareImageBase64ForUpload(asset.uri, 'avatar', {
+        fileName: asset.fileName || 'group-avatar.jpg',
+        mimeType: asset.mimeType,
+      });
+      setAvatarUrl(`data:${prepared.contentType};base64,${prepared.base64Data}`);
     } catch (e: unknown) {
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not set avatar');
     } finally {

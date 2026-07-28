@@ -5,6 +5,7 @@ import { SparklesIcon } from '@heroicons/react/24/outline';
 import Confetti from './Confetti';
 import TestAnalysisModal from './TestAnalysisModal';
 import AIUsageInline from './AIUsageInline';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 
 interface TestReviewScreenProps {
   results: TestResult; 
@@ -211,9 +212,9 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
 
               {question.imageUrl && question.questionType !== QuestionType.DIAGRAM_LABELING && (
                 <div className="my-3 w-full max-w-xl mx-auto">
-                    <img 
-                        src={question.imageUrl} 
-                        alt="Question visual" 
+                    <ResolvedStorageImg
+                        src={question.imageUrl}
+                        alt="Question visual"
                         className="w-full h-auto max-h-[50vh] sm:max-h-[60vh] object-contain rounded-md border border-lantern-border shadow"
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
@@ -310,7 +311,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               {question.questionType === QuestionType.DIAGRAM_LABELING && (
                 <div className="space-y-2 mb-3">
                    <div className="relative w-full max-w-md mx-auto border-2 border-lantern-border rounded-lg overflow-hidden">
-                      <img src={question.imageUrl} alt="Diagram" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      <ResolvedStorageImg src={question.imageUrl} alt="Diagram" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       {question.diagramLabels?.map((label, index) => (
                           <div 
                               key={label.id} 

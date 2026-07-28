@@ -5,6 +5,7 @@ import { escapeHtml } from '../utils/helpers';
 import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
 import { useCompanionStore } from '../stores/companionStore';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 
 interface CramSessionScreenProps {
   session: FlashcardSession;
@@ -94,7 +95,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
       return (
         <div className="flex flex-col items-center gap-4">
           {card.imageUrl && !showAnswer && (
-            <img src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
+            <ResolvedStorageImg src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
           <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
         </div>
@@ -122,7 +123,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
           {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
-              <img
+              <ResolvedStorageImg
                 src={card.imageUrl}
                 alt="Flashcard"
                 className="block max-w-full max-h-[400px] h-auto rounded-lg shadow-sm"

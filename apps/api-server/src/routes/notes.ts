@@ -61,6 +61,8 @@ import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
 import { runYoutubeTranscriptJob } from '../services/youtubeNote';
 import { logger } from '../utils/logger';
+import { processImageForUpload } from '../services/imageProcessing';
+import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
 
 const router = Router();
 
@@ -153,7 +155,7 @@ async function uploadBase64NoteImages(
   try {
     for (let i = 0; i < images.length; i++) {
       const item = images[i] || {};
-      const fileName = String(item.fileName || `photo-${i + 1}.jpg`);
+      const rawFileName = String(item.fileName || `photo-${i + 1}.jpg`);
       if (typeof item.base64Data !== 'string' || !item.base64Data) {
         throw new Error('Each image requires fileName and base64Data.');
       }
@@ -162,22 +164,50 @@ async function uploadBase64NoteImages(
       let contentType =
         typeof item.contentType === 'string' && item.contentType
           ? item.contentType
-          : imageContentTypeFromFileName(fileName);
+          : imageContentTypeFromFileName(rawFileName);
       if (contentType === 'application/octet-stream') {
-        contentType = detectImageMime(buffer) || imageContentTypeFromFileName(fileName);
+        contentType = detectImageMime(buffer) || imageContentTypeFromFileName(rawFileName);
       }
       assertNoteImageUpload(buffer, contentType);
 
+      const { normalized, thumb } = await processImageForUpload(buffer, 'notePhoto', {
+        detectedMime: detectImageMime(buffer) || contentType,
+      });
+      const baseName = rawFileName.replace(/\.[^/.]+$/, '') || `photo-${i + 1}`;
+      const fileName = `${baseName}.${normalized.ext}`;
       const storagePath = buildNoteStoragePath(userId, `${i}-${fileName}`);
       await supabaseService.uploadNoteFile({
         storagePath,
-        buffer,
-        contentType,
+        buffer: normalized.buffer,
+        contentType: normalized.contentType,
       });
       uploadedPaths.push(storagePath);
 
+      if (thumb) {
+        const thumbPath = storageThumbPath(storagePath);
+        try {
+          await supabaseService.uploadNoteFile({
+            storagePath: thumbPath,
+            buffer: thumb,
+            contentType: 'image/webp',
+            upsert: true,
+          });
+          uploadedPaths.push(thumbPath);
+        } catch (thumbErr: any) {
+          logger.warn('Note photo thumbnail upload failed', {
+            storagePath,
+            error: thumbErr?.message,
+          });
+        }
+      }
+
       const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
-      validated.push({ storagePath, fileName, fileUrl, contentType });
+      validated.push({
+        storagePath,
+        fileName,
+        fileUrl,
+        contentType: normalized.contentType,
+      });
     }
     return validated;
   } catch (err) {
@@ -1399,8 +1429,13 @@ router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Re
     res.status(400).json({ error: 'No storage path available for this attachment.' });
     return;
   }
-  const url = await supabaseService.createSignedNoteFileUrl(storagePath);
-  res.json({ success: true, data: { url, expiresIn: 60 * 60 * 24 } });
+  const variant = req.query.variant === 'thumb' ? 'thumb' : 'original';
+  const url = await supabaseService.createSignedNoteFileUrl(
+    storagePath,
+    60 * 60 * 24,
+    variant,
+  );
+  res.json({ success: true, data: { url, expiresIn: 60 * 60 * 24, variant } });
 }));
 
 router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req: Request, res: Response) => {

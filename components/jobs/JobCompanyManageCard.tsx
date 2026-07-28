@@ -16,8 +16,24 @@ import {
   uploadJobCompanyLogo,
 } from "../../services/jobsBoard";
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+import { compressImage } from "../../utils/imageCompression";
+
+async function fileToBase64(file: File): Promise<{ base64Data: string; fileName: string }> {
+  let prepared = file;
+  if (file.type.startsWith("image/")) {
+    try {
+      const compressed = await compressImage(file, {
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 0.82,
+        outputType: "file",
+      });
+      if (compressed instanceof File) prepared = compressed;
+    } catch {
+      // Fall back to original if canvas compression fails.
+    }
+  }
+  const base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = String(reader.result || "");
@@ -25,8 +41,12 @@ function fileToBase64(file: File): Promise<string> {
       resolve(base64);
     };
     reader.onerror = () => reject(new Error("Could not read image"));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(prepared);
   });
+  return {
+    base64Data,
+    fileName: prepared.name || file.name || `logo-${Date.now()}.webp`,
+  };
 }
 
 interface Props {
@@ -104,10 +124,10 @@ export function JobCompanyManageCard({
     setError(null);
     setMessage(null);
     try {
-      const base64Data = await fileToBase64(file);
+      const payload = await fileToBase64(file);
       const res = await uploadJobCompanyLogo(company.id, {
-        base64Data,
-        fileName: file.name,
+        base64Data: payload.base64Data,
+        fileName: payload.fileName,
       });
       onUpdated(res.data as JobCompany);
       setMessage("Logo updated.");

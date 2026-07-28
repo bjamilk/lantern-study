@@ -1560,7 +1560,7 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
 
-    const similarCacheKey = `marketplace:similar:${id}`;
+    const similarCacheKey = `marketplace:similar:v2:${id}`;
     const cached = await cacheService.get<any[]>(similarCacheKey);
     if (cached) {
       return res.json({ success: true, data: cached });
@@ -1591,7 +1591,7 @@ router.get(
     const { data, error } = await query;
     if (error) throw error;
 
-    const result = data || [];
+    const result = await supabaseService.signSimilarListingCards(data || []);
     await cacheService.set(similarCacheKey, result, 300); // 5 min cache
     res.json({ success: true, data: result });
   })
@@ -1628,7 +1628,7 @@ router.get(
     }
 
     // --- 2. Similar listings (cached 5 min, shared across all users) ---
-    const similarCacheKey = `marketplace:similar:${id}`;
+    const similarCacheKey = `marketplace:similar:v2:${id}`;
     let similarListings = await cacheService.get<any[]>(similarCacheKey);
     if (!similarListings) {
       let query = supabaseService.getClient()
@@ -1645,7 +1645,7 @@ router.get(
       }
       query = query.order('created_at', { ascending: false }).limit(6);
       const { data } = await query;
-      similarListings = data || [];
+      similarListings = await supabaseService.signSimilarListingCards(data || []);
       await cacheService.set(similarCacheKey, similarListings, 300);
     }
 

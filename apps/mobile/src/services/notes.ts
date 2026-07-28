@@ -423,8 +423,17 @@ export const addNoteAttachment = (
     body: JSON.stringify(payload),
   });
 
-export const refreshNoteAttachmentUrl = (noteId: string, attachmentId: string) =>
-  notesRequest<{ url: string; expiresIn: number }>(`/${noteId}/attachments/${attachmentId}/url`);
+export const refreshNoteAttachmentUrl = (
+  noteId: string,
+  attachmentId: string,
+  options?: { variant?: 'thumb' | 'original' }
+) => {
+  const variant = options?.variant || 'original';
+  const qs = variant === 'thumb' ? '?variant=thumb' : '';
+  return notesRequest<{ url: string; expiresIn: number; variant?: string }>(
+    `/${noteId}/attachments/${attachmentId}/url${qs}`
+  );
+};
 
 export const fetchNoteCollaborators = (noteId: string) =>
   notesRequest<Array<{ noteId: string; userId: string; role: string; user?: { id: string; name?: string } }>>(
@@ -636,6 +645,7 @@ type MobileImageUpload = {
 async function encodeMobileImagesForApi(
   images: MobileImageUpload[]
 ): Promise<Array<{ fileName: string; base64Data: string; contentType: string }>> {
+  const { prepareImageBase64ForUpload } = await import('../utils/prepareImage');
   const encoded: Array<{ fileName: string; base64Data: string; contentType: string }> = [];
 
   for (let i = 0; i < images.length; i++) {
@@ -649,24 +659,27 @@ async function encodeMobileImagesForApi(
         : info.exists && 'size' in info
           ? Number(info.size) || 0
           : 0;
-    assertAllowedImageUpload({ contentType, byteLength: byteLength || undefined });
+    // Pre-check original size so obviously huge picks fail fast before compress.
     if (byteLength > 0) {
       assertNoteUploadSize(byteLength, fileName);
+      assertAllowedImageUpload({ contentType, byteLength });
     }
 
-    const base64Data = await FileSystem.readAsStringAsync(image.uri, { encoding: 'base64' });
-    if (!base64Data) {
-      throw new Error('Could not read the selected image.');
-    }
-    if (byteLength <= 0) {
-      assertNoteUploadSize(Math.ceil((base64Data.length * 3) / 4), fileName);
-      assertAllowedImageUpload({
-        contentType,
-        byteLength: Math.ceil((base64Data.length * 3) / 4),
-      });
-    }
+    const prepared = await prepareImageBase64ForUpload(image.uri, 'notePhoto', {
+      fileName,
+      mimeType: contentType,
+    });
+    const preparedBytes = Math.ceil((prepared.base64Data.length * 3) / 4);
+    assertAllowedImageUpload({
+      contentType: prepared.contentType,
+      byteLength: preparedBytes,
+    });
 
-    encoded.push({ fileName, base64Data, contentType });
+    encoded.push({
+      fileName: prepared.fileName,
+      base64Data: prepared.base64Data,
+      contentType: prepared.contentType,
+    });
   }
 
   return encoded;

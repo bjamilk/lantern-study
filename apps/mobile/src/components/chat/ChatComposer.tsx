@@ -154,6 +154,7 @@ export function ChatComposer({
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
+      exif: false,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];

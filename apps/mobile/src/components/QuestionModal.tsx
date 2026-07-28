@@ -193,10 +193,11 @@ export default function QuestionModal({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
+      exif: false,
     });
 
     if (!result.canceled && result.assets[0]) {
-      handleImageResult(result.assets[0], target, optionId);
+      await handleImageResult(result.assets[0], target, optionId);
     }
   };
 
@@ -215,22 +216,28 @@ export default function QuestionModal({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
+      exif: false,
     });
 
     if (!result.canceled && result.assets[0]) {
-      handleImageResult(result.assets[0], target, optionId);
+      await handleImageResult(result.assets[0], target, optionId);
     }
   };
 
-  const handleImageResult = (
+  const handleImageResult = async (
     asset: ImagePicker.ImagePickerAsset,
     target: 'question' | 'diagram' | 'option' | 'matching-left' | 'matching-right',
     optionId?: string
   ) => {
+    const { prepareImageForUpload } = await import('../utils/prepareImage');
+    const prepared = await prepareImageForUpload(asset.uri, 'question', {
+      mimeType: asset.mimeType,
+      fileName: asset.fileName,
+    });
     const imageData: QuestionImage = {
-      uri: asset.uri,
-      width: asset.width,
-      height: asset.height,
+      uri: prepared.uri,
+      width: prepared.width ?? asset.width,
+      height: prepared.height ?? asset.height,
     };
 
     switch (target) {

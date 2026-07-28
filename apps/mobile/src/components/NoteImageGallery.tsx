@@ -104,7 +104,9 @@ export function NoteImageGallery({
       try {
         const settled = await Promise.allSettled(
           ordered.map(async (attachment) => {
-            const result = await refreshNoteAttachmentUrl(noteId, attachment.id);
+            const result = await refreshNoteAttachmentUrl(noteId, attachment.id, {
+              variant: 'thumb',
+            });
             return [attachment.id, result.url] as const;
           })
         );
@@ -133,6 +135,22 @@ export function NoteImageGallery({
       cancelled = true;
     };
   }, [noteId, ordered]);
+
+  const openZoom = useCallback(
+    async (attachmentId: string) => {
+      const thumbUri = imageUrls[attachmentId];
+      if (thumbUri) setZoomUri(thumbUri);
+      try {
+        const result = await refreshNoteAttachmentUrl(noteId, attachmentId, {
+          variant: 'original',
+        });
+        setZoomUri(result.url);
+      } catch {
+        // Keep thumb preview if original sign fails.
+      }
+    },
+    [imageUrls, noteId],
+  );
 
   const persistOrder = useCallback(
     async (next: NoteAttachment[]) => {
@@ -224,8 +242,7 @@ export function NoteImageGallery({
               <Pressable
                 disabled={editMode}
                 onPress={() => {
-                  const uri = imageUrls[attachment.id];
-                  if (uri) setZoomUri(uri);
+                  void openZoom(attachment.id);
                 }}
               >
                 {imageUrls[attachment.id] ? (

@@ -498,15 +498,26 @@ export async function ensureAuthTokenReady(): Promise<boolean> {
 export async function fetchSignedStorageUrl(
   bucket: string,
   path: string,
-  expiresInSeconds?: number
+  expiresInSeconds?: number,
+  variant: 'thumb' | 'original' = 'original',
 ): Promise<string> {
+  const {
+    getCachedSignedUrl,
+    setCachedSignedUrl,
+    signedUrlCacheKey,
+  } = await import('../utils/signedUrlCache');
+  const ttl = typeof expiresInSeconds === 'number' ? expiresInSeconds : 60 * 60 * 6;
+  const cacheKey = signedUrlCacheKey(bucket, path, variant);
+  const cached = getCachedSignedUrl(cacheKey);
+  if (cached) return cached;
+
   const headers = await getAuthHeaders();
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/storage/signed-url`,
     withApiCredentials({
       method: 'POST',
       headers,
-      body: JSON.stringify({ bucket, path, expiresInSeconds }),
+      body: JSON.stringify({ bucket, path, expiresInSeconds: ttl, variant }),
     }),
     10000
   );
@@ -517,6 +528,7 @@ export async function fetchSignedStorageUrl(
   if (!body.data?.signedUrl) {
     throw new Error('Signed URL missing from response');
   }
+  setCachedSignedUrl(cacheKey, body.data.signedUrl, ttl);
   return body.data.signedUrl;
 }
 
@@ -3844,12 +3856,30 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
   }
 };
 
-async function fileToBase64Payload(file: File): Promise<{
+async function fileToBase64Payload(
+  file: File,
+  options?: { maxWidth?: number; maxHeight?: number; quality?: number },
+): Promise<{
   fileName: string;
   base64Data: string;
   contentType: string;
 }> {
-  const contentType = file.type || 'image/jpeg';
+  let prepared = file;
+  if (file.type.startsWith('image/')) {
+    try {
+      const { compressImage } = await import('../utils/imageCompression');
+      const compressed = await compressImage(file, {
+        maxWidth: options?.maxWidth ?? 1600,
+        maxHeight: options?.maxHeight ?? 1600,
+        quality: options?.quality ?? 0.8,
+        outputType: 'file',
+      });
+      if (compressed instanceof File) prepared = compressed;
+    } catch {
+      // Fall back to the original file if canvas compression fails.
+    }
+  }
+  const contentType = prepared.type || file.type || 'image/jpeg';
   const base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -3858,10 +3888,10 @@ async function fileToBase64Payload(file: File): Promise<{
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
     reader.onerror = () => reject(new Error('Failed to read image file'));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(prepared);
   });
   return {
-    fileName: file.name || `upload-${Date.now()}.jpg`,
+    fileName: prepared.name || file.name || `upload-${Date.now()}.jpg`,
     base64Data,
     contentType: contentType === 'image/jpg' ? 'image/jpeg' : contentType,
   };

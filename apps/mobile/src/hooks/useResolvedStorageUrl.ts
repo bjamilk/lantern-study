@@ -5,8 +5,12 @@ import { resolveStorageDisplayUrl } from '../services/storageUrls';
  * Resolve private storage paths (question-images, flashcard-images, …)
  * to signed URLs safe for React Native <Image>.
  */
-export function useResolvedStorageUrl(src?: string | null): string | undefined {
+export function useResolvedStorageUrl(
+  src?: string | null,
+  options?: { variant?: 'thumb' | 'original' },
+): string | undefined {
   const [resolved, setResolved] = useState<string | undefined>(undefined);
+  const variant = options?.variant || 'original';
 
   useEffect(() => {
     if (!src) {
@@ -17,7 +21,7 @@ export function useResolvedStorageUrl(src?: string | null): string | undefined {
     let cancelled = false;
     setResolved(undefined);
 
-    void resolveStorageDisplayUrl(src)
+    void resolveStorageDisplayUrl(src, { variant })
       .then(url => {
         if (!cancelled) setResolved(url);
       })
@@ -28,7 +32,7 @@ export function useResolvedStorageUrl(src?: string | null): string | undefined {
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, variant]);
 
   return resolved;
 }

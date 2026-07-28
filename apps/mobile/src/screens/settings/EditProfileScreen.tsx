@@ -13,7 +13,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../../stores/authStore';
 import { updateUserProfile, fetchUserProfile, uploadProfileAvatar } from '../../services/api';
 import { supabase } from '../../services/supabase';
@@ -23,15 +22,6 @@ import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 type NavigationProp = {
   goBack: () => void;
 };
-
-function guessContentType(uri: string, mimeType?: string | null): string {
-  if (mimeType && mimeType.startsWith('image/')) return mimeType;
-  const lower = uri.toLowerCase();
-  if (lower.includes('.png')) return 'image/png';
-  if (lower.includes('.webp')) return 'image/webp';
-  if (lower.includes('.gif')) return 'image/gif';
-  return 'image/jpeg';
-}
 
 export default function EditProfileScreen({ navigation }: { navigation: NavigationProp }) {
   const user = useAuthStore(s => s.user);
@@ -83,25 +73,24 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
-      base64: true,
+      base64: false,
+      exif: false,
     });
     if (result.canceled || !result.assets[0]) return;
 
     setUploadingAvatar(true);
     try {
       const asset = result.assets[0];
-      const contentType = guessContentType(asset.uri, asset.mimeType);
-      let base64Data = asset.base64 || null;
-
-      if (!base64Data && asset.uri) {
-        base64Data = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
-      }
-      if (!base64Data) throw new Error('Could not read image');
+      const { prepareImageBase64ForUpload } = await import('../../utils/prepareImage');
+      const prepared = await prepareImageBase64ForUpload(asset.uri, 'avatar', {
+        fileName: asset.fileName || 'avatar.jpg',
+        mimeType: asset.mimeType,
+      });
 
       const uploaded = await uploadProfileAvatar(user.id, {
-        fileName: asset.fileName || `avatar.${contentType === 'image/png' ? 'png' : 'jpg'}`,
-        base64Data,
-        contentType,
+        fileName: prepared.fileName,
+        base64Data: prepared.base64Data,
+        contentType: prepared.contentType,
       });
 
       setAvatarUrl(uploaded.avatarUrl);

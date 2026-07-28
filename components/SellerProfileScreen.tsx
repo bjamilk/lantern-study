@@ -207,7 +207,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 >
                   <div className="aspect-[4/3] bg-lantern-background-secondary dark:bg-lantern-surface-secondary relative">
                     {listing.images && listing.images.length > 0 ? (
-                      <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />

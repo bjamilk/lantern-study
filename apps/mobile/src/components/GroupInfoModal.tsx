@@ -17,7 +17,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
 import { useTheme } from '../theme';
@@ -90,23 +89,23 @@ export default function GroupInfoModal({
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
-      base64: true,
+      base64: false,
+      exif: false,
     });
     if (result.canceled || !result.assets[0]) return;
 
     setUploadingAvatar(true);
     try {
       const asset = result.assets[0];
-      let base64Data = asset.base64 || null;
-      if (!base64Data && asset.uri) {
-        base64Data = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
-      }
-      if (!base64Data) throw new Error('Could not read image');
-      const contentType = asset.mimeType || 'image/jpeg';
-      const uploaded = await uploadGroupAvatar(group.id, {
+      const { prepareImageBase64ForUpload } = await import('../utils/prepareImage');
+      const prepared = await prepareImageBase64ForUpload(asset.uri, 'avatar', {
         fileName: asset.fileName || 'group-avatar.jpg',
-        base64Data,
-        contentType,
+        mimeType: asset.mimeType,
+      });
+      const uploaded = await uploadGroupAvatar(group.id, {
+        fileName: prepared.fileName,
+        base64Data: prepared.base64Data,
+        contentType: prepared.contentType,
       });
       setAvatarPreview(uploaded.url || uploaded.avatarUrl);
       onAvatarUpdated?.(group.id, uploaded.avatarUrl);

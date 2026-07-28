@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Message, MessageType, QuestionType, MatchingItem, User, Group, QuestionStatus } from '../types';
 import { Avatar } from './ui';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
-import { normalizeStorageUrl } from '../utils/storageUrl';
 import { featureAccents } from '@lantern/shared/design';
 import {
   resolveGroupChatAvatarUrl,
@@ -507,9 +507,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             {/* Image */}
             {message.imageUrl && (
               <div className="mt-1">
-                <img
-                  src={normalizeStorageUrl(message.imageUrl)}
+                <ResolvedStorageImg
+                  src={message.imageUrl}
                   alt="Question visual"
+                  variant="thumb"
                   className="max-w-full h-auto rounded-lg border border-lantern-border"
                   style={{ maxHeight: '200px' }}
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}

@@ -188,6 +188,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               mediaTypes: ImagePicker.MediaTypeOptions.Images,
               allowsMultipleSelection: true,
               quality: 0.85,
+              exif: false,
             });
             if (result.canceled || !result.assets.length) return;
             setAddingPhotos(true);
@@ -221,7 +222,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               Alert.alert('Permission required', 'Camera access is needed.');
               return;
             }
-            const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+            const result = await ImagePicker.launchCameraAsync({ quality: 0.85, exif: false });
             if (result.canceled || !result.assets[0]) return;
             const asset = result.assets[0];
             setAddingPhotos(true);

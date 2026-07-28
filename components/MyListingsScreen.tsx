@@ -400,6 +400,8 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                 src={listing.images[0]}
                                 alt=""
                                 className="w-full h-full object-cover"
+                                loading="lazy"
+                                decoding="async"
                                 onError={e => {
                                   e.currentTarget.style.display = 'none';
                                 }}

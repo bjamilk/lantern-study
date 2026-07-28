@@ -4,6 +4,7 @@ import { ChevronRightIcon, UserIcon, SpeakerWaveIcon, SpeakerXMarkIcon, PauseIco
 import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import { gameAudio } from '../utils/audio';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 
 interface GameScreenProps {
   session: GameSession;
@@ -427,7 +428,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             {currentQuestion.questionType === QuestionType.DIAGRAM_LABELING && currentQuestion.imageUrl && (
                 <div className="mt-4">
                     <div className="relative w-full max-w-xl mx-auto border-2 border-lantern-border rounded-xl overflow-hidden shadow-md">
-                      <img src={currentQuestion.imageUrl} alt="Diagram" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      <ResolvedStorageImg src={currentQuestion.imageUrl} alt="Diagram" className="w-full h-auto" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       {currentQuestion.diagramLabels?.map((label, index) => (
                         <div key={label.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${label.x}%`, top: `${label.y}%` }}>
                           <div className="relative flex items-center justify-center w-7 h-7 bg-red-650 text-white font-extrabold text-sm rounded-full shadow-lg ring-2 ring-white">

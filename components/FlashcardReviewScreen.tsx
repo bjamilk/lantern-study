@@ -12,6 +12,7 @@ import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@l
 import { useCompanionStore } from '../stores/companionStore';
 import { trackFlashcardReviewCompleted, trackStudyModeCompleted } from '../services/productAnalytics';
 import { useRegisterFeatureTip } from './featureTips/FeatureTip';
+import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 
 interface FlashcardReviewScreenProps {
   session: FlashcardSession;
@@ -167,7 +168,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       return (
         <div className="flex flex-col items-center gap-4">
           {card.imageUrl && !showAnswer && (
-            <img src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
+            <ResolvedStorageImg src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
           <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
         </div>
@@ -195,7 +196,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
-              <img
+              <ResolvedStorageImg
                 src={card.imageUrl}
                 alt="Flashcard"
                 className="block max-w-full max-h-[400px] h-auto rounded-lg shadow-sm"
