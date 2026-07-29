@@ -287,7 +287,7 @@ export class MarketplaceOrdersService {
     await invalidateSellerAnalyticsCache(listing.user_id);
     try {
       const { invalidateListingCaches } = await import('../utils/marketplaceCache');
-      await invalidateListingCaches(listingId);
+      await invalidateListingCaches(cacheService, listingId);
     } catch {
       // best-effort
     }
@@ -373,7 +373,7 @@ export class MarketplaceOrdersService {
     await invalidateSellerAnalyticsCache(sellerId);
     try {
       const { invalidateListingCaches } = await import('../utils/marketplaceCache');
-      await invalidateListingCaches(offer.listing_id as string);
+      await invalidateListingCaches(cacheService, offer.listing_id as string);
     } catch {
       // best-effort
     }
@@ -667,7 +667,7 @@ export class MarketplaceOrdersService {
 
     try {
       const { invalidateListingCaches } = await import('../utils/marketplaceCache');
-      await invalidateListingCaches(listingId);
+      await invalidateListingCaches(cacheService, listingId);
     } catch {
       // best-effort cache bust
     }
