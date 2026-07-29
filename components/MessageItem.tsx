@@ -4,6 +4,7 @@ import { Avatar } from './ui';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
+import { useResolvedStorageUrl } from '../hooks/useResolvedStorageUrl';
 import { featureAccents } from '@lantern/shared/design';
 import {
   resolveGroupChatAvatarUrl,
@@ -144,10 +145,13 @@ function seekRatioFromClientX(clientX: number, left: number, width: number): num
 }
 
 function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean }) {
+  // Voice notes embed a short-lived signed URL; re-sign from bucket/path like images.
+  const resolvedUrl = useResolvedStorageUrl(url);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [playError, setPlayError] = useState<string | null>(null);
 
   const syncDuration = () => {
     const el = audioRef.current;
@@ -158,7 +162,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
 
   const seekToRatio = (ratio: number) => {
     const el = audioRef.current;
-    if (!el) return;
+    if (!el || !resolvedUrl) return;
     const total = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : duration;
     if (!(total > 0)) return;
     const next = Math.max(0, Math.min(total, ratio * total));
@@ -168,7 +172,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
 
   const togglePlayback = () => {
     const el = audioRef.current;
-    if (!el) return;
+    if (!el || !resolvedUrl) return;
     if (!el.paused) {
       el.pause();
       return;
@@ -179,13 +183,30 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
       el.currentTime = 0;
       setCurrentTime(0);
     }
-    void el.play();
+    setPlayError(null);
+    void el.play().catch(() => {
+      setPlaying(false);
+      setPlayError('Could not play voice note');
+    });
   };
 
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   const trackClass = onPrimary ? 'bg-white/25' : 'bg-lantern-primary/15';
   const fillClass = onPrimary ? 'bg-white' : 'bg-lantern-primary';
   const timeClass = onPrimary ? 'text-white/80' : 'text-lantern-text-secondary';
+  const mutedClass = onPrimary ? 'text-white/70' : 'text-lantern-text-secondary';
+
+  if (resolvedUrl === null || playError) {
+    return (
+      <p className={`text-xs ${mutedClass}`}>
+        {playError || 'Voice note unavailable'}
+      </p>
+    );
+  }
+
+  if (!resolvedUrl) {
+    return <p className={`text-xs ${mutedClass}`}>Loading voice note…</p>;
+  }
 
   return (
     <div className="flex items-center gap-2.5 min-w-0 w-full max-w-[min(260px,100%)]">
@@ -236,13 +257,17 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
       </div>
       <audio
         ref={audioRef}
-        src={url}
+        src={resolvedUrl}
         preload="metadata"
         onLoadedMetadata={syncDuration}
         onDurationChange={syncDuration}
         onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onError={() => {
+          setPlaying(false);
+          setPlayError('Could not play voice note');
+        }}
         onEnded={() => {
           setPlaying(false);
           setCurrentTime(0);

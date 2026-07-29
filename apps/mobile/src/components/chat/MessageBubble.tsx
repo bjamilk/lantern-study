@@ -72,11 +72,14 @@ function MentionText({
 }
 
 function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; colors: any }) {
+  // Re-sign embedded storage URLs — chat messages keep a short-lived signed link.
+  const resolvedUrl = useResolvedStorageUrl(url);
   const soundRef = useRef<Audio.Sound | null>(null);
   const trackWidthRef = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
   const [positionMs, setPositionMs] = useState(0);
+  const [loadError, setLoadError] = useState(false);
 
   const onStatus = useCallback((status: Audio.AVPlaybackStatus) => {
     if (!status.isLoaded) return;
@@ -95,11 +98,24 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(false);
+    setPlaying(false);
+    setDurationMs(0);
+    setPositionMs(0);
+
+    const previous = soundRef.current;
+    soundRef.current = null;
+    if (previous) void previous.unloadAsync();
+
+    if (!resolvedUrl) {
+      if (resolvedUrl === null) setLoadError(true);
+      return;
+    }
 
     const load = async () => {
       try {
         const { sound } = await Audio.Sound.createAsync(
-          { uri: url },
+          { uri: resolvedUrl },
           { shouldPlay: false, progressUpdateIntervalMillis: 100 },
           onStatus
         );
@@ -113,7 +129,7 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
           setDurationMs(status.durationMillis);
         }
       } catch {
-        // Playback will retry on press if preload fails (e.g. expired signed URL race).
+        if (!cancelled) setLoadError(true);
       }
     };
 
@@ -125,14 +141,15 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
       soundRef.current = null;
       if (sound) void sound.unloadAsync();
     };
-  }, [url, onStatus]);
+  }, [resolvedUrl, onStatus]);
 
   const ensureSound = async (): Promise<Audio.Sound | null> => {
+    if (!resolvedUrl) return null;
     let sound = soundRef.current;
     if (sound) return sound;
     try {
       const created = await Audio.Sound.createAsync(
-        { uri: url },
+        { uri: resolvedUrl },
         { shouldPlay: false, progressUpdateIntervalMillis: 100 },
         onStatus
       );
@@ -140,6 +157,7 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
       soundRef.current = sound;
       return sound;
     } catch {
+      setLoadError(true);
       return null;
     }
   };
@@ -192,6 +210,22 @@ function VoiceNotePlayer({ url, isOwn, colors }: { url: string; isOwn: boolean; 
   const trackColor = isOwn ? 'rgba(255,255,255,0.25)' : colors.primaryBackground;
   const fillColor = isOwn ? '#ffffff' : colors.primary;
   const timeColor = isOwn ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
+
+  if (loadError || resolvedUrl === null) {
+    return (
+      <Text className="text-xs py-1" style={{ color: timeColor }}>
+        Voice note unavailable
+      </Text>
+    );
+  }
+
+  if (!resolvedUrl) {
+    return (
+      <Text className="text-xs py-1" style={{ color: timeColor }}>
+        Loading voice note…
+      </Text>
+    );
+  }
 
   return (
     <View className="flex-row items-center gap-2.5 py-1 min-w-0 w-full" style={{ maxWidth: 260 }}>

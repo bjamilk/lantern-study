@@ -37,4 +37,13 @@ describe('normalizeStorageUrl', () => {
       path: 'u1/listings/x.jpg',
     });
   });
+
+  it('parses signed chat voice-note URLs for re-signing', () => {
+    const url =
+      'https://example.supabase.co/storage/v1/object/sign/note-files/owner/chat/group1/voice-1.webm?token=abc.def';
+    expect(parseStorageObjectUrl(url)).toEqual({
+      bucket: 'note-files',
+      path: 'owner/chat/group1/voice-1.webm',
+    });
+  });
 });
