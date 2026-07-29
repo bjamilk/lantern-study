@@ -10,7 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 import {
     updateUserProfile,
     saveUserPreferences,
-    saveUserSettings,
+    saveUserSettingsDetailed,
+    updateAuthPassword,
     supabase,
     apiLogoutSession,
     deactivateUserAccount,
@@ -28,6 +29,9 @@ import {
 } from '@lantern/shared/settings';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { useToastStore } from '../stores/toastStore';
+
+/** Monotonic generation so a stale failed save cannot roll back a newer optimistic update. */
+let settingsMutationGeneration = 0;
 
 export type BootstrapDomain =
     | 'groups'
@@ -69,24 +73,10 @@ export function useAuthHandlers() {
         return normalizeUserSettings(currentUser?.settings);
     }, [currentUser?.settings]);
 
-    const persistUserSettings = useCallback(async (settings: UserSettings) => {
-        if (!currentUser) return false;
-        if (!(await hasValidSession())) {
-            console.warn('Skipping settings update because no valid session is available.');
-            return false;
-        }
-        const saved = await saveUserSettings(currentUser.id, settings);
-        if (saved) {
-            await updateUserProfile(currentUser.id, { settings }).catch(() => undefined);
-        }
-        return saved;
-    }, [currentUser]);
-
     const persistProfileUpdate = useCallback(async (updates: {
         name?: string;
         avatar_url?: string | null;
         phone?: string;
-        settings?: UserSettings;
         test_presets?: any[];
     }) => {
         if (!currentUser) return false;
@@ -108,34 +98,70 @@ export function useAuthHandlers() {
     ) => {
         if (!currentUser) return;
         const previousSettings = getUserSettings();
-        const previousUser = currentUser;
         const next = mergeSettingsCategory(previousSettings, category, updates);
-        // Optimistic UI — roll back if persist fails (REL-01).
+        const mutationId = ++settingsMutationGeneration;
+        // Optimistic UI — roll back only if this mutation is still the latest.
         setCurrentUser({ ...currentUser, settings: next });
         if (category === 'appearance' || category === 'accessibility') {
             applySettingsToUi(next);
         }
         void (async () => {
-            const saved = await persistUserSettings(next);
-            if (!saved) {
-                setCurrentUser(previousUser);
-                if (category === 'appearance' || category === 'accessibility') {
-                    applySettingsToUi(previousSettings);
+            if (!(await hasValidSession())) {
+                if (mutationId === settingsMutationGeneration) {
+                    const latest = useAuthStore.getState().currentUser;
+                    if (latest?.id === currentUser.id) {
+                        setCurrentUser({ ...latest, settings: previousSettings });
+                    }
+                    if (category === 'appearance' || category === 'accessibility') {
+                        applySettingsToUi(previousSettings);
+                    }
+                    useToastStore.getState().showToast('Failed to save settings. Please try again.', 'error');
                 }
-                useToastStore.getState().showToast('Failed to save settings. Please try again.', 'error');
                 return;
             }
+            // Send category patch only — server deep-merges onto latest CAS row.
+            const result = await saveUserSettingsDetailed(currentUser.id, {
+                [category]: updates,
+            });
+            if (!result.ok) {
+                if (mutationId === settingsMutationGeneration) {
+                    const latest = useAuthStore.getState().currentUser;
+                    if (latest?.id === currentUser.id) {
+                        const rollbackSettings = result.settings
+                            ? normalizeUserSettings(result.settings)
+                            : previousSettings;
+                        setCurrentUser({ ...latest, settings: rollbackSettings });
+                        if (category === 'appearance' || category === 'accessibility') {
+                            applySettingsToUi(rollbackSettings);
+                        }
+                    }
+                    useToastStore.getState().showToast('Failed to save settings. Please try again.', 'error');
+                }
+                return;
+            }
+            if (result.settings && mutationId === settingsMutationGeneration) {
+                const latest = useAuthStore.getState().currentUser;
+                if (latest?.id === currentUser.id) {
+                    setCurrentUser({
+                        ...latest,
+                        settings: normalizeUserSettings(result.settings),
+                    });
+                }
+            }
             if (category === 'appearance') {
+                const appearance = result.settings
+                    ? normalizeUserSettings(result.settings).appearance
+                    : next.appearance;
                 const resolvedTheme =
-                    next.appearance.theme === 'system' ? theme : next.appearance.theme;
+                    appearance.theme === 'system' ? theme : appearance.theme;
                 void saveUserPreferences(currentUser.id, {
                     theme: resolvedTheme === 'dark' ? 'dark' : 'light',
-                    lowDataMode: next.appearance.lowDataMode,
-                    themePreference: next.appearance.theme,
-                });
+                    lowDataMode: appearance.lowDataMode,
+                    themePreference: appearance.theme,
+                }).catch(() => undefined);
             }
         })();
-    }, [currentUser, getUserSettings, persistUserSettings, applySettingsToUi, setCurrentUser, theme]);
+    }, [currentUser, getUserSettings, applySettingsToUi, setCurrentUser, theme]);
 
     const handleUpdateNotificationSettings = useCallback((
         updates: Partial<UserSettings['notifications']>
@@ -154,15 +180,36 @@ export function useAuthHandlers() {
         if (!window.confirm('Reset all settings to defaults? Your study data will not be affected.')) {
             return;
         }
+        const previous = currentUser;
         const reset = {
             ...DEFAULT_USER_SETTINGS,
             updatedAt: new Date().toISOString(),
         };
+        const mutationId = ++settingsMutationGeneration;
         setCurrentUser({ ...currentUser, settings: reset });
-        await persistUserSettings(reset);
         applySettingsToUi(reset);
-        alert('Settings have been reset to defaults.');
-    }, [currentUser, persistUserSettings, applySettingsToUi, setCurrentUser]);
+        if (!(await hasValidSession())) {
+            setCurrentUser(previous);
+            applySettingsToUi(normalizeUserSettings(previous.settings));
+            useToastStore.getState().showToast('Failed to reset settings. Please try again.', 'error');
+            return;
+        }
+        const result = await saveUserSettingsDetailed(currentUser.id, reset);
+        if (!result.ok) {
+            if (mutationId === settingsMutationGeneration) {
+                setCurrentUser(previous);
+                applySettingsToUi(normalizeUserSettings(previous.settings));
+            }
+            useToastStore.getState().showToast('Failed to reset settings. Please try again.', 'error');
+            return;
+        }
+        if (result.settings && mutationId === settingsMutationGeneration) {
+            const authoritative = normalizeUserSettings(result.settings);
+            setCurrentUser({ ...currentUser, settings: authoritative });
+            applySettingsToUi(authoritative);
+        }
+        useToastStore.getState().showToast('Settings have been reset to defaults.', 'info');
+    }, [currentUser, applySettingsToUi, setCurrentUser]);
 
     const toggleTheme = useCallback(async () => {
         const current = getUserSettings();
@@ -250,18 +297,32 @@ export function useAuthHandlers() {
         });
     }, [currentUser, setCurrentUser, setUsers, persistProfileUpdate]);
 
-    const handleUpdatePassword = useCallback((current: string, newPass: string): boolean => {
-        if (!currentUser) return false;
-        if (currentUser.password !== current) {
-            alert("Current password does not match.");
+    const handleUpdatePassword = useCallback(async (current: string, newPass: string): Promise<boolean> => {
+        if (!currentUser?.email) {
+            useToastStore.getState().showToast('Unable to change password for this account.', 'error');
             return false;
         }
-        const updatedUser = { ...currentUser, password: newPass };
-        setCurrentUser(updatedUser);
-        setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
-        alert("Password updated successfully!");
-        return true;
-    }, [currentUser, setCurrentUser]);
+        try {
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: currentUser.email,
+                password: current,
+            });
+            if (signInError) {
+                useToastStore.getState().showToast('Current password is incorrect.', 'error');
+                return false;
+            }
+            await updateAuthPassword(newPass);
+            useToastStore.getState().showToast('Password updated successfully.', 'info');
+            return true;
+        } catch (error) {
+            console.error('Failed to update password:', error);
+            useToastStore.getState().showToast(
+                error instanceof Error ? error.message : 'Failed to update password.',
+                'error'
+            );
+            return false;
+        }
+    }, [currentUser]);
 
     const handlePauseAccount = useCallback(async () => {
         if (!currentUser) return;
@@ -326,18 +387,50 @@ export function useAuthHandlers() {
 
     const handleSavePreset = useCallback((name: string, config: Omit<TestConfig, 'questionIds' | 'groupId'>) => {
         if (!currentUser) return;
+        const previousPresets = currentUser.testPresets || [];
         const newPreset: TestPreset = { id: uuidv4(), name, config };
-        const updatedPresets = [...(currentUser.testPresets || []), newPreset];
+        const updatedPresets = [...previousPresets, newPreset];
         setCurrentUser({ ...currentUser, testPresets: updatedPresets });
-        persistProfileUpdate({ test_presets: updatedPresets }).catch(error => console.error('Failed to save test preset:', error));
-        alert(`Preset "${name}" saved!`);
+        void persistProfileUpdate({ test_presets: updatedPresets }).then((ok) => {
+            if (!ok) {
+                const latest = useAuthStore.getState().currentUser;
+                if (latest?.id === currentUser.id) {
+                    setCurrentUser({ ...latest, testPresets: previousPresets });
+                }
+                useToastStore.getState().showToast('Failed to save preset. Please try again.', 'error');
+                return;
+            }
+            useToastStore.getState().showToast(`Preset "${name}" saved.`, 'info');
+        }).catch((error) => {
+            console.error('Failed to save test preset:', error);
+            const latest = useAuthStore.getState().currentUser;
+            if (latest?.id === currentUser.id) {
+                setCurrentUser({ ...latest, testPresets: previousPresets });
+            }
+            useToastStore.getState().showToast('Failed to save preset. Please try again.', 'error');
+        });
     }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     const handleDeletePreset = useCallback((id: string) => {
         if (!currentUser) return;
-        const updatedPresets = (currentUser.testPresets || []).filter(p => p.id !== id);
+        const previousPresets = currentUser.testPresets || [];
+        const updatedPresets = previousPresets.filter(p => p.id !== id);
         setCurrentUser({ ...currentUser, testPresets: updatedPresets });
-        persistProfileUpdate({ test_presets: updatedPresets }).catch(error => console.error('Failed to delete test preset:', error));
+        void persistProfileUpdate({ test_presets: updatedPresets }).then((ok) => {
+            if (ok) return;
+            const latest = useAuthStore.getState().currentUser;
+            if (latest?.id === currentUser.id) {
+                setCurrentUser({ ...latest, testPresets: previousPresets });
+            }
+            useToastStore.getState().showToast('Failed to delete preset. Please try again.', 'error');
+        }).catch((error) => {
+            console.error('Failed to delete test preset:', error);
+            const latest = useAuthStore.getState().currentUser;
+            if (latest?.id === currentUser.id) {
+                setCurrentUser({ ...latest, testPresets: previousPresets });
+            }
+            useToastStore.getState().showToast('Failed to delete preset. Please try again.', 'error');
+        });
     }, [currentUser, setCurrentUser, persistProfileUpdate]);
 
     return {

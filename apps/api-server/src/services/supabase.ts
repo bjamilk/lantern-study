@@ -141,6 +141,8 @@ function mapProfileRowToUser(
       typeof row.settings_version === "number"
         ? row.settings_version
         : Number(row.settings_version) || 1,
+    testPresets: Array.isArray(row.test_presets) ? row.test_presets : [],
+    test_presets: Array.isArray(row.test_presets) ? row.test_presets : [],
     // Aliases for clients that still read snake_case from GET /users/:id
     avatar_url: avatarUrl,
     phone: (row.phone as string | undefined) || undefined,
@@ -1058,12 +1060,29 @@ export class SupabaseService {
     if (updates.points !== undefined) updateData.points = updates.points;
     if (updates.stats !== undefined) updateData.stats = updates.stats;
     if (updates.badges !== undefined) updateData.badges = updates.badges;
-    if (updates.settings !== undefined) updateData.settings = updates.settings;
-    if (updates.test_presets !== undefined)
-      updateData.settings = {
-        ...(updateData.settings || {}),
-        test_presets: updates.test_presets,
-      };
+    if (updates.settings !== undefined) {
+      // Never nest test_presets into the settings JSONB blob.
+      const settingsPayload =
+        updates.settings &&
+        typeof updates.settings === "object" &&
+        !Array.isArray(updates.settings)
+          ? { ...(updates.settings as Record<string, unknown>) }
+          : updates.settings;
+      if (
+        settingsPayload &&
+        typeof settingsPayload === "object" &&
+        !Array.isArray(settingsPayload)
+      ) {
+        delete (settingsPayload as { test_presets?: unknown }).test_presets;
+      }
+      updateData.settings = settingsPayload;
+    }
+    // Dedicated column — do not merge into settings JSONB (would wipe other categories).
+    if (updates.test_presets !== undefined) {
+      updateData.test_presets = Array.isArray(updates.test_presets)
+        ? updates.test_presets
+        : [];
+    }
 
     let expectedSettingsVersion = options.expectedSettingsVersion;
     if (updateData.settings !== undefined && expectedSettingsVersion == null) {

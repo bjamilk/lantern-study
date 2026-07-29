@@ -552,6 +552,7 @@ export function useAppEffects({
             const local = normalizeUserSettings(user.settings);
             const localTime = Date.parse(local.updatedAt || '') || 0;
             const remoteTime = Date.parse(remote.updatedAt || '') || 0;
+            // Prefer remote when timestamps are equal/newer; local only wins if clearly newer.
             const merged = remoteTime >= localTime ? remote : local;
 
             if (JSON.stringify(merged) !== JSON.stringify(local)) {

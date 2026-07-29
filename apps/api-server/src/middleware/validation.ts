@@ -56,6 +56,7 @@ export const validateUpdateUser = [
   body('points').optional().isInt({ min: 0 }).withMessage('Points must be a non-negative integer'),
   body('stats').optional().isObject().withMessage('Stats must be an object'),
   body('badges').optional().isArray().withMessage('Badges must be an array'),
+  // settings updates must use PUT /users/settings (merge + CAS); rejected in route.
   body('settings').optional().isObject().withMessage('Settings must be an object'),
   body('test_presets').optional().isArray().withMessage('Test presets must be an array'),
 ];

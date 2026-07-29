@@ -141,11 +141,56 @@ $prefsRead = Invoke-JsonApi 'GET' "$ApiBaseUrl/api/v1/preferences/$userId" $head
 $wallet = $prefsRead.body.data.preferences.budgetExtras.walletBalance
 $results['budget_extras_read'] = if ($wallet -eq 50) { 200 } else { 404 }
 
-# Settings
+# Settings — category patch, GET read-back, CAS conflict
 $settings = Invoke-JsonApi 'PUT' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers @{
-  settings = @{ appearance = @{ theme = 'dark' }; notifications = @{ pushEnabled = $true } }
+  settings = @{
+    appearance = @{ theme = 'dark'; lowDataMode = $true }
+    study = @{ srsNewCardsPerDay = 25; dailyCardGoal = 40 }
+    notifications = @{ pushEnabled = $true; reminderTime = '07:30' }
+  }
 }
 $results['settings_save'] = $settings.status
+$settingsVersion = $settings.body.data.settingsVersion
+
+$settingsGet = Invoke-JsonApi 'GET' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers $null
+$gotTheme = $settingsGet.body.data.settings.appearance.theme
+$gotCards = $settingsGet.body.data.settings.study.srsNewCardsPerDay
+$gotGoal = $settingsGet.body.data.settings.study.dailyCardGoal
+$gotReminder = $settingsGet.body.data.settings.notifications.reminderTime
+$results['settings_read'] = if (
+  $settingsGet.status -eq 200 -and
+  $gotTheme -eq 'dark' -and
+  $gotCards -eq 25 -and
+  $gotGoal -eq 40 -and
+  $gotReminder -eq '07:30'
+) { 200 } else { 404 }
+
+# Stale version must 409; fresh version succeeds with another category patch
+$stale = Invoke-JsonApi 'PUT' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers @{
+  settings = @{ study = @{ srsNewCardsPerDay = 30 } }
+  expectedSettingsVersion = 0
+}
+$results['settings_cas_conflict'] = if ($stale.status -eq 409) { 200 } else { $stale.status }
+
+$fresh = Invoke-JsonApi 'PUT' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers @{
+  settings = @{ study = @{ srsNewCardsPerDay = 30 } }
+  expectedSettingsVersion = $settingsVersion
+}
+$results['settings_cas_success'] = $fresh.status
+$freshCards = $fresh.body.data.settings.study.srsNewCardsPerDay
+$freshTheme = $fresh.body.data.settings.appearance.theme
+$results['settings_patch_preserves'] = if ($freshCards -eq 30 -and $freshTheme -eq 'dark') { 200 } else { 404 }
+
+# Test presets must not wipe settings (dedicated column)
+$presetSave = Invoke-JsonApi 'PUT' "$ApiBaseUrl/api/v1/users/$userId" $headers @{
+  test_presets = @(@{ id = "preset-$ts"; name = 'Smoke'; config = @{ mode = 'study' } })
+}
+$results['test_presets_save'] = $presetSave.status
+$afterPreset = Invoke-JsonApi 'GET' "$ApiBaseUrl/api/v1/users/$userId/settings" $headers $null
+$results['test_presets_preserve_settings'] = if (
+  $afterPreset.body.data.settings.appearance.theme -eq 'dark' -and
+  $afterPreset.body.data.settings.study.srsNewCardsPerDay -eq 30
+) { 200 } else { 404 }
 
 Write-Host "`n=== Mobile-Web Persistence Smoke Results ==="
 $failed = @()

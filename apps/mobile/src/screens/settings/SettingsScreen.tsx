@@ -324,9 +324,24 @@ export default function SettingsScreen() {
   }, []);
 
   const handleManualSync = useCallback(async () => {
-    if (user?.id) {
-      await syncSettings(user.id);
+    if (!user?.id) return;
+    const result = await syncSettings(user.id, { force: true });
+    if (result === 'synced') {
       Alert.alert('Synced', 'Settings synced successfully!');
+    } else if (result === 'deferred') {
+      Alert.alert('Waiting for Wi‑Fi', 'Sync on Wi‑Fi only is enabled. Connect to Wi‑Fi to sync.');
+    } else if (result === 'conflict') {
+      Alert.alert(
+        'Updated elsewhere',
+        'Settings were changed on another device. Latest values were reloaded; review and sync again if needed.'
+      );
+    } else if (result === 'skipped') {
+      Alert.alert('Sync', 'Nothing to sync right now.');
+    } else {
+      Alert.alert(
+        'Sync failed',
+        'Could not reach the server. Your changes are saved on this device and will retry later.'
+      );
     }
   }, [user?.id, syncSettings]);
 
@@ -341,10 +356,24 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             await resetToDefaults();
-            if (user?.id) {
-              await syncSettings(user.id);
+            if (!user?.id) {
+              Alert.alert('Reset', 'Settings reset on this device.');
+              return;
             }
-            Alert.alert('Reset', 'Settings have been reset to defaults.');
+            const result = await syncSettings(user.id, { force: true });
+            if (result === 'synced') {
+              Alert.alert('Reset', 'Settings have been reset to defaults.');
+            } else if (result === 'deferred') {
+              Alert.alert(
+                'Reset locally',
+                'Defaults applied on this device. Connect to Wi‑Fi to sync.'
+              );
+            } else {
+              Alert.alert(
+                'Reset locally',
+                'Defaults applied on this device, but sync failed. They will retry later.'
+              );
+            }
           },
         },
       ]

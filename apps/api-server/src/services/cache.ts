@@ -269,6 +269,8 @@ export class CacheService {
     // Exact key used by getUserById / GET /users/:id, plus any namespaced keys.
     await this.delete(`user:${userId}`);
     await this.deletePattern(`user:${userId}:*`);
+    // Settings cache uses a different key shape (user:settings:${id}).
+    await this.delete(`user:settings:${userId}`);
   }
 
   async invalidateGroupCache(groupId: string): Promise<void> {

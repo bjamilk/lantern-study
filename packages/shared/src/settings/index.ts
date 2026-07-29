@@ -1,4 +1,5 @@
 export * from './userSettings';
+export * from './settingsPatch';
 export * from './studySession';
 export * from './dailyGoals';
 export * from './dailyReminders';

@@ -24,8 +24,9 @@ import {
   toPersistentFeatureTips,
 } from '../utils/featureTipsStorage';
 import { normalizeUserSettings } from '@lantern/shared/settings';
-import { saveUserSettings } from '../services/supabase';
+import { saveUserSettingsDetailed } from '../services/supabase';
 import { useAuthStore } from './authStore';
+import { useToastStore } from './toastStore';
 
 interface FeatureTipStore {
   tips: FeatureTipsState;
@@ -74,26 +75,40 @@ function schedulePersist(getTips: () => FeatureTipsState) {
     const durable = toPersistentFeatureTips(tips);
     const user = useAuthStore.getState().currentUser;
     if (!user?.id) return;
-    // Always merge onto the latest in-memory profile so concurrent settings writes
-    // (theme, etc.) are less likely to clobber checklist progress.
     const latest = useAuthStore.getState().currentUser || user;
     const current = normalizeUserSettings(latest.settings);
+    const featureTipsPatch = {
+      version: durable.version,
+      dismissed: {},
+      skippedAll: durable.skippedAll,
+      dontShowAgain: durable.dontShowAgain,
+      checklistDismissed: durable.checklistDismissed,
+      checklist: durable.checklist as Record<string, boolean>,
+    };
     const next = {
       ...current,
-      featureTips: {
-        version: durable.version,
-        dismissed: {},
-        skippedAll: durable.skippedAll,
-        dontShowAgain: durable.dontShowAgain,
-        checklistDismissed: durable.checklistDismissed,
-        checklist: durable.checklist as Record<string, boolean>,
-      },
+      featureTips: featureTipsPatch,
       updatedAt: new Date().toISOString(),
     };
     useAuthStore.getState().setCurrentUser({ ...latest, settings: next });
-    void saveUserSettings(latest.id, next).then((ok) => {
-      if (!ok) {
+    // Category patch only — server deep-merges; concurrent theme/study saves stay intact.
+    void saveUserSettingsDetailed(latest.id, { featureTips: featureTipsPatch }).then((result) => {
+      if (!result.ok) {
         console.warn('Failed to sync feature tips settings after retries');
+        useToastStore.getState().showToast(
+          'Failed to sync feature tip progress. Please try again.',
+          'error'
+        );
+        return;
+      }
+      if (result.settings) {
+        const authUser = useAuthStore.getState().currentUser;
+        if (authUser?.id === latest.id) {
+          useAuthStore.getState().setCurrentUser({
+            ...authUser,
+            settings: normalizeUserSettings(result.settings),
+          });
+        }
       }
     });
   }, 400);

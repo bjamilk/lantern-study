@@ -4735,26 +4735,15 @@ let lastKnownSettingsVersion: number | undefined;
 /** Serialize settings PUTs so checklist / tips / theme syncs don't race the same CAS version. */
 let settingsSaveQueue: Promise<unknown> = Promise.resolve();
 
+export type SaveUserSettingsResult = {
+  ok: boolean;
+  settings?: UserSettings;
+  settingsVersion?: number;
+};
+
 function noteSettingsVersion(version: unknown): void {
   if (typeof version === 'number' && Number.isFinite(version)) {
     lastKnownSettingsVersion = version;
-  }
-}
-
-async function refreshSettingsVersion(
-  userId: string,
-  headers: Record<string, string>
-): Promise<void> {
-  try {
-    const refresh = await fetch(
-      `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
-      { headers }
-    );
-    if (!refresh.ok) return;
-    const body = await refresh.json().catch(() => ({}));
-    noteSettingsVersion(body?.data?.settingsVersion);
-  } catch {
-    /* ignore */
   }
 }
 
@@ -4784,39 +4773,74 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   }
 };
 
+/**
+ * Persist a category patch (preferred) or full settings blob.
+ * On 409, reloads server state and retries the same patch so concurrent
+ * category changes from other writers are not overwritten.
+ */
 export const saveUserSettings = async (
   userId: string,
-  settings: UserSettings,
+  settingsOrPatch: UserSettings | Record<string, unknown>,
   expectedSettingsVersion?: number
 ): Promise<boolean> => {
-  const run = async (): Promise<boolean> => {
+  const result = await saveUserSettingsDetailed(userId, settingsOrPatch, expectedSettingsVersion);
+  return result.ok;
+};
+
+export const saveUserSettingsDetailed = async (
+  userId: string,
+  settingsOrPatch: UserSettings | Record<string, unknown>,
+  expectedSettingsVersion?: number
+): Promise<SaveUserSettingsResult> => {
+  const run = async (): Promise<SaveUserSettingsResult> => {
     const maxAttempts = 3;
     try {
       const headers = await getRequiredAuthHeaders();
+      let version = expectedSettingsVersion ?? lastKnownSettingsVersion;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        // Prefer caller override only on first attempt; retries use refreshed CAS token.
-        const version =
-          attempt === 0
-            ? (expectedSettingsVersion ?? lastKnownSettingsVersion)
-            : lastKnownSettingsVersion;
-
         const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
           method: 'PUT',
           headers,
           body: JSON.stringify({
-            settings,
+            settings: settingsOrPatch,
             ...(version != null ? { expectedSettingsVersion: version } : {}),
           }),
         });
 
         if (response.status === 409) {
-          await refreshSettingsVersion(userId, headers);
+          const conflictBody = await response.json().catch(() => ({}));
+          const conflictData = conflictBody?.data;
+          if (typeof conflictData?.settingsVersion === 'number') {
+            noteSettingsVersion(conflictData.settingsVersion);
+            version = conflictData.settingsVersion;
+          } else {
+            // Fallback: refresh from GET
+            const refresh = await fetch(
+              `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
+              { headers }
+            );
+            if (refresh.ok) {
+              const body = await refresh.json().catch(() => ({}));
+              noteSettingsVersion(body?.data?.settingsVersion);
+              version = lastKnownSettingsVersion;
+            }
+          }
+          // Retry the same patch — server deep-merges categories onto latest.
           if (attempt + 1 < maxAttempts) continue;
           console.warn(
             'Settings version conflict after retries; latest version reloaded.'
           );
-          return false;
+          return {
+            ok: false,
+            settings: conflictData?.settings
+              ? normalizeUserSettings(conflictData.settings)
+              : undefined,
+            settingsVersion:
+              typeof conflictData?.settingsVersion === 'number'
+                ? conflictData.settingsVersion
+                : lastKnownSettingsVersion,
+          };
         }
 
         if (!response.ok) {
@@ -4825,19 +4849,28 @@ export const saveUserSettings = async (
         }
 
         const body = await response.json().catch(() => ({}));
-        if (typeof body?.data?.settingsVersion === 'number') {
-          noteSettingsVersion(body.data.settingsVersion);
-        } else if (version != null) {
-          noteSettingsVersion(version + 1);
-        }
+        const nextVersion =
+          typeof body?.data?.settingsVersion === 'number'
+            ? body.data.settingsVersion
+            : version != null
+              ? version + 1
+              : undefined;
+        noteSettingsVersion(nextVersion);
+        const authoritative = body?.data?.settings
+          ? normalizeUserSettings(body.data.settings)
+          : undefined;
 
-        return true;
+        return {
+          ok: true,
+          settings: authoritative,
+          settingsVersion: nextVersion,
+        };
       }
 
-      return false;
+      return { ok: false };
     } catch (error) {
       console.error('Error saving user settings:', error);
-      return false;
+      return { ok: false };
     }
   };
 

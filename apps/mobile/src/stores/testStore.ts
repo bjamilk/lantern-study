@@ -1198,31 +1198,35 @@ export const useTestStore = create<TestState>((set, get) => ({
 
   saveTestPreset: async (userId: string, name: string, config: TestPresetConfig) => {
     if (!userId) return;
+    const previous = get().testPresets;
     const newPreset: TestPreset = {
       id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: name.trim(),
       config,
     };
-    const updated = [...get().testPresets, newPreset].slice(-5);
+    const updated = [...previous, newPreset].slice(-5);
     set({ testPresets: updated });
     if (DEMO_MODE) return;
     try {
       await api.updateUserProfile(userId, { test_presets: updated } as any);
     } catch (error) {
       console.warn('Failed to save test preset:', error);
+      set({ testPresets: previous });
       throw error;
     }
   },
 
   deleteTestPreset: async (userId: string, presetId: string) => {
     if (!userId) return;
-    const updated = get().testPresets.filter(p => p.id !== presetId);
+    const previous = get().testPresets;
+    const updated = previous.filter(p => p.id !== presetId);
     set({ testPresets: updated });
     if (DEMO_MODE) return;
     try {
       await api.updateUserProfile(userId, { test_presets: updated } as any);
     } catch (error) {
       console.warn('Failed to delete test preset:', error);
+      set({ testPresets: previous });
       throw error;
     }
   },
