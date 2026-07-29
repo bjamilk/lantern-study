@@ -116,6 +116,15 @@ export class MarketplaceOrdersService {
   `;
 
   async assertNoOpenOrderForListing(listingId: string): Promise<void> {
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) throw new Error('Listing not found');
+    // Multi-qty: remaining quantity is the stock; unique (null qty) allows one open order.
+    if (listing.quantity != null) {
+      if (listing.status !== 'active' || listing.quantity <= 0) {
+        throw new Error('This listing is out of stock');
+      }
+      return;
+    }
     const { data, error } = await this.db
       .from('marketplace_orders')
       .select('id')
@@ -655,15 +664,29 @@ export class MarketplaceOrdersService {
       .eq('id', order.transaction_id);
   }
 
-  /** When an open order ends without completion, put a reserved listing back on the shelf. */
+  /** Cancel/refund: return a held unit (multi-qty) and/or un-reserve a unique listing. */
   private async restoreListingAfterCancelledOrder(listingId: string): Promise<void> {
     if (!listingId) return;
     const now = new Date().toISOString();
-    await this.db
-      .from('marketplace_listings')
-      .update({ status: 'active', updated_at: now })
-      .eq('id', listingId)
-      .eq('status', 'reserved');
+    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    if (!listing) return;
+
+    if (listing.quantity != null) {
+      await this.db
+        .from('marketplace_listings')
+        .update({
+          quantity: Number(listing.quantity) + 1,
+          status: 'active',
+          updated_at: now,
+        })
+        .eq('id', listingId);
+    } else {
+      await this.db
+        .from('marketplace_listings')
+        .update({ status: 'active', updated_at: now })
+        .eq('id', listingId)
+        .eq('status', 'reserved');
+    }
 
     try {
       const { invalidateListingCaches } = await import('../utils/marketplaceCache');
