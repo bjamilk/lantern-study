@@ -18,6 +18,7 @@ import SellerCouponsPanel from './marketplace/SellerCouponsPanel';
 import SellerOnboardingWizard from './marketplace/SellerOnboardingWizard';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import SellerInsightsDrawer from './marketplace/SellerInsightsDrawer';
+import { shareShopLink } from '../utils/shareShop';
 import {
   PlusIcon,
   PencilIcon,
@@ -35,6 +36,8 @@ import {
   TicketIcon,
   GiftIcon,
   MegaphoneIcon,
+  BuildingStorefrontIcon,
+  ShareIcon,
 } from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
 
@@ -46,6 +49,8 @@ interface MyListingsScreenProps {
 
 const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack, refreshKey = 0 }) => {
   const { currentUser } = useAuthStore();
+  const showToast = useToastStore((s) => s.showToast);
+  const userId = currentUser?.id;
   const [activeTab, setActiveTab] = useState<'active' | 'sold' | 'inactive'>('active');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [stats, setStats] = useState<SellerStats | null>(null);
@@ -188,6 +193,16 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
     onNavigate('CreateMarketplaceListing', { category });
   };
 
+  const handleShareShop = async () => {
+    if (!userId) return;
+    try {
+      const result = await shareShopLink(userId);
+      if (result === 'copied') showToast('Shop link copied', 'success');
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') showToast('Could not share shop link', 'error');
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background">
       <div className="shrink-0 bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-3 space-y-3">
@@ -215,6 +230,28 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
           </div>
 
           <div className="relative flex items-center gap-2 shrink-0">
+            {userId ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('SellerProfile', { userId })}
+                  className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
+                  aria-label="View my shop"
+                >
+                  <BuildingStorefrontIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">My shop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareShop()}
+                  className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
+                  aria-label="Share my shop"
+                >
+                  <ShareIcon className="w-4 h-4" />
+                  <span className="hidden md:inline">Share</span>
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={() => setShowInsights(true)}

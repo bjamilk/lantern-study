@@ -3813,6 +3813,56 @@ export const fetchSellerProfile = async (userId: string) => {
   }
 };
 
+export const updateMyShop = async (data: {
+  shopName?: string;
+  bio?: string | null;
+  coverImageUrl?: string | null;
+}) => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/sellers/me/shop`,
+    {
+      method: 'PATCH',
+      headers: { ...(await getAuthHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+    10000,
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update shop');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceShops = async (params?: {
+  campus?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
+}) => {
+  const search = new URLSearchParams();
+  if (params?.campus) search.set('campus', params.campus);
+  if (params?.q) search.set('q', params.q);
+  if (params?.page) search.set('page', String(params.page));
+  if (params?.limit) search.set('limit', String(params.limit));
+  const qs = search.toString();
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/shops${qs ? `?${qs}` : ''}`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    8000,
+  );
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load shops');
+  }
+  const result = await response.json();
+  return {
+    shops: (result.data || []) as import('../types').MarketplaceShopCard[],
+    meta: result.meta as { total: number; page: number; limit: number } | undefined,
+  };
+};
+
 // --- Recently Viewed (localStorage) ---
 
 const RECENTLY_VIEWED_KEY = 'lantern_recently_viewed';

@@ -2348,16 +2348,40 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     fetchSellerProfile: (sellerId: string) =>
-      apiRequest<{
-        id: string;
-        name: string;
-        avatar_url?: string;
-        total_listings?: number;
-        active_listings?: number;
-        sold_listings?: number;
-        average_rating?: number;
-        review_count?: number;
-      }>(`/marketplace/sellers/${sellerId}/profile`, {}, 5000),
+      apiRequest<import("../types").SellerProfile>(
+        `/marketplace/sellers/${sellerId}/profile`,
+        {},
+        5000,
+      ),
+
+    updateMyShop: (data: {
+      shopName?: string;
+      bio?: string | null;
+      coverImageUrl?: string | null;
+    }) =>
+      apiRequest<import("../types").SellerShop>("/marketplace/sellers/me/shop", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+
+    fetchMarketplaceShops: (params?: {
+      campus?: string;
+      q?: string;
+      page?: number;
+      limit?: number;
+    }) => {
+      const search = new URLSearchParams();
+      if (params?.campus) search.set("campus", params.campus);
+      if (params?.q) search.set("q", params.q);
+      if (params?.page) search.set("page", String(params.page));
+      if (params?.limit) search.set("limit", String(params.limit));
+      const qs = search.toString();
+      return apiRequest<import("../types").MarketplaceShopCard[]>(
+        `/marketplace/shops${qs ? `?${qs}` : ""}`,
+        {},
+        8000,
+      );
+    },
 
     // ========== BUDGET API ==========
 

@@ -183,6 +183,8 @@ export const {
   createSavedSearch,
   deleteSavedSearch,
   fetchSellerProfile,
+  updateMyShop,
+  fetchMarketplaceShops,
   fetchUserBudget,
   saveUserBudget,
   fetchBudgetTransactions,

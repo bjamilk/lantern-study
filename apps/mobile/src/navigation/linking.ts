@@ -49,6 +49,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
             screens: {
               MarketplaceHome: 'marketplace',
               ListingDetail: 'listing/:listingId',
+              SellerProfile: 'marketplace/seller/:sellerId',
               Inquiries: 'marketplace/inquiries',
               Offers: 'marketplace/offers',
               Favorites: 'marketplace/favorites',

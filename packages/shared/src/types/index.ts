@@ -939,7 +939,31 @@ export interface MarketplaceSellerPreferences {
   boost_credits?: number;
   require_payment_confirmation?: boolean;
   favorite_alert_threshold?: number;
+  shop_name?: string | null;
+  shop_bio?: string | null;
+  cover_image_url?: string | null;
+  shop_updated_at?: string | null;
   updated_at: string;
+}
+
+export interface SellerShop {
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+}
+
+export interface MarketplaceShopCard {
+  sellerId: string;
+  shopName: string;
+  bio: string | null;
+  coverImageUrl: string | null;
+  avatarUrl: string | null;
+  activeListingCount: number;
+  avgRating: number;
+  totalReviews: number;
+  campusId: string | null;
+  campusLabel: string | null;
+  lastListingAt: string | null;
 }
 
 export interface SellerOnboardingStatus {
@@ -1038,6 +1062,7 @@ export interface SavedSearch {
 
 export interface SellerProfile {
   user: { id: string; name: string; avatar_url?: string; created_at: string };
+  shop?: SellerShop;
   stats: SellerStats & { avgRating: number; totalReviews: number };
   badges: Badge[];
   recentListings: MarketplaceListing[];

@@ -4,13 +4,15 @@ import {
   fetchMyFavorites, addToFavorites, removeFromFavorites,
   getRecentlyViewed, removeRecentlyViewed, fetchMarketplaceListingsByIds,
   fetchSavedSearches, saveSearch, deleteSavedSearch, checkSavedSearchMatches,
-  fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics, fetchMarketplaceCampuses
+  fetchMarketplaceListingsPage, fetchMarketplaceCategoryAnalytics, fetchMarketplaceCampuses,
+  fetchMarketplaceShops,
 } from '../services/supabase';
 import { RateLimitError } from '@lantern/shared';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import type { MarketplaceCampus } from '@lantern/shared';
 import { useAuthStore } from '../stores/authStore';
-import { MarketplaceListing, SavedSearch } from '../types';
+import { MarketplaceListing, MarketplaceShopCard, SavedSearch } from '../types';
+import { normalizeStorageUrl } from '../utils/storageUrl';
 import { usePageSeo } from '../hooks/usePageSeo';
 import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import { ListingCard } from './marketplace/ListingCard';
@@ -37,6 +39,8 @@ import {
   BookmarkIcon,
   TrashIcon,
   PlusIcon,
+  BuildingStorefrontIcon,
+  StarIcon,
 } from '@heroicons/react/24/outline';
 
 interface MarketplaceScreenProps {
@@ -54,8 +58,10 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   refreshKey = 0,
 }) => {
   const { currentUser } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'academic' | 'student-life'>('academic');
+  const [activeTab, setActiveTab] = useState<'academic' | 'student-life' | 'shops'>('academic');
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [shops, setShops] = useState<MarketplaceShopCard[]>([]);
+  const [shopsLoading, setShopsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -125,6 +131,11 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   }, []);
 
   useEffect(() => {
+    if (activeTab === 'shops') {
+      setLoading(false);
+      setPrimaryListingsLoaded(true);
+      return;
+    }
     const requestId = ++listingsRequestId.current;
     setPage(1);
     setListings([]);
@@ -136,6 +147,30 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       loadFavorites();
     }
   }, [activeTab, searchTerm, selectedCategory, sortBy, sortOrder, minPrice, maxPrice, locationFilter, campusIdFilter, guestMode, refreshKey]);
+
+  useEffect(() => {
+    if (activeTab !== 'shops') return;
+    let cancelled = false;
+    setShopsLoading(true);
+    void fetchMarketplaceShops({
+      campus: campusIdFilter || userCampusId || undefined,
+      q: searchTerm.trim() || undefined,
+      page: 1,
+      limit: 48,
+    })
+      .then((result) => {
+        if (!cancelled) setShops(result.shops);
+      })
+      .catch(() => {
+        if (!cancelled) setShops([]);
+      })
+      .finally(() => {
+        if (!cancelled) setShopsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, searchTerm, campusIdFilter, userCampusId, refreshKey]);
 
   useEffect(() => {
     if (!guestMode) {
@@ -791,7 +826,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
-          setActiveTab(value as 'academic' | 'student-life');
+          setActiveTab(value as 'academic' | 'student-life' | 'shops');
           setSelectedCategory('');
           setShowCategoryPanel(false);
         }}
@@ -817,6 +852,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Student Life
+                </Tab>
+                <Tab
+                  value="shops"
+                  index={2}
+                  icon={<BuildingStorefrontIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !text-xs sm:!text-sm border-b-2 border-transparent"
+                >
+                  Shops
                 </Tab>
               </TabList>
               <button
@@ -853,6 +896,70 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
           >
             {marketplaceListingsBody}
+          </div>
+        </TabPanel>
+
+        <TabPanel value="shops" className="flex-1 flex flex-col min-h-0 min-w-0">
+          <div
+            role="region"
+            aria-label="Marketplace shops"
+            className="flex-1 min-h-0 min-w-0 max-w-full p-2 sm:p-4 md:p-6 pb-20 md:pb-6 overflow-y-auto overflow-x-hidden overscroll-contain box-border"
+          >
+            {shopsLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-lantern-primary" />
+              </div>
+            ) : shops.length === 0 ? (
+              <div className="text-center py-16 px-4">
+                <BuildingStorefrontIcon className="w-10 h-10 text-lantern-text-tertiary mx-auto mb-3" />
+                <p className="text-sm font-semibold text-lantern-text">No shops yet</p>
+                <p className="text-xs text-lantern-text-secondary mt-1">
+                  Sellers with active listings appear here automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {shops.map((shop) => {
+                  const cover = shop.coverImageUrl ? normalizeStorageUrl(shop.coverImageUrl) : null;
+                  const avatar = shop.avatarUrl ? normalizeStorageUrl(shop.avatarUrl) : null;
+                  return (
+                    <button
+                      key={shop.sellerId}
+                      type="button"
+                      onClick={() => onNavigate('SellerProfile', { userId: shop.sellerId })}
+                      className="text-left rounded-2xl border border-lantern-border bg-lantern-surface overflow-hidden hover:border-lantern-primary/40 transition-colors"
+                    >
+                      <div className="h-20 bg-gradient-to-br from-lantern-primary/80 to-emerald-800">
+                        {cover ? <img src={cover} alt="" className="w-full h-full object-cover" /> : null}
+                      </div>
+                      <div className="px-3 pb-3 -mt-5">
+                        <div className="w-12 h-12 rounded-xl bg-lantern-background-secondary ring-2 ring-lantern-surface overflow-hidden flex items-center justify-center text-sm font-bold text-lantern-primary">
+                          {avatar ? (
+                            <img src={avatar} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            shop.shopName.charAt(0).toUpperCase()
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm font-bold text-lantern-text truncate">{shop.shopName}</p>
+                        {shop.bio ? (
+                          <p className="text-xs text-lantern-text-secondary line-clamp-2 mt-0.5">{shop.bio}</p>
+                        ) : null}
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-lantern-text-tertiary">
+                          <span>{shop.activeListingCount} active</span>
+                          {shop.avgRating > 0 ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              <StarIcon className="w-3 h-3 text-amber-400" />
+                              {shop.avgRating.toFixed(1)}
+                            </span>
+                          ) : null}
+                          {shop.campusLabel ? <span className="truncate">{shop.campusLabel}</span> : null}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </TabPanel>
       </Tabs>

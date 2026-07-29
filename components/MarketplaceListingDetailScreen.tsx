@@ -712,6 +712,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   >
                     {listing.seller?.name || listing.profiles?.name || 'Anonymous Seller'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('SellerProfile', { userId: listing.user_id || listing.seller_id })}
+                    className="text-[11px] font-semibold text-lantern-text-secondary hover:text-lantern-primary"
+                  >
+                    View shop
+                  </button>
                   <div className="flex items-center gap-2 text-xs text-lantern-text-secondary">
                     {averageRating > 0 && (
                       <span className="flex items-center gap-0.5">

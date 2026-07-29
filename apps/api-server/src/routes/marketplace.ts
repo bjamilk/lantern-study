@@ -357,6 +357,13 @@ router.post(
           cacheService.deletePattern('marketplace:custom_categories');
         }
 
+        try {
+          const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+          await getMarketplaceSellerToolsService(supabaseService).ensureSellerShop(userId);
+        } catch (e) {
+          logger.warn('Failed to ensure seller shop on listing create', e);
+        }
+
         await cacheService.deletePattern('marketplace:listings:*');
         return { listing: created as Record<string, unknown> };
       });
@@ -1776,6 +1783,11 @@ router.get(
         : []),
     ];
 
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const sellerTools = getMarketplaceSellerToolsService(supabaseService);
+    const prefs = await sellerTools.getPreferences(userId);
+    const shop = sellerTools.toShopPublic(prefs, profile.name || 'Shop');
+
     let stats: Record<string, number | boolean>;
     if (isOwner) {
       let totalFavorites = 0;
@@ -1819,6 +1831,7 @@ router.get(
 
     const responseData = {
       user: profile,
+      shop,
       stats,
       badges,
       recentListings: activeListings.slice(0, 6),
@@ -1831,6 +1844,48 @@ router.get(
       success: true,
       data: responseData,
     });
+  })
+);
+
+// PATCH /api/v1/marketplace/sellers/me/shop - Update own light shop branding
+router.patch(
+  '/sellers/me/shop',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = req.user.id;
+    const { shopName, bio, coverImageUrl } = req.body || {};
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    try {
+      const shop = await getMarketplaceSellerToolsService(supabaseService).updateShop(userId, {
+        shopName,
+        bio,
+        coverImageUrl,
+      });
+      await cacheService.delete(CacheKeys.sellerProfile(userId, 'public'));
+      await cacheService.delete(CacheKeys.sellerProfile(userId, 'owner'));
+      res.json({ success: true, data: shop });
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : 'Failed to update shop';
+      if (/required|characters or fewer/i.test(msg)) {
+        return res.status(400).json({ success: false, error: msg });
+      }
+      throw err;
+    }
+  })
+);
+
+// GET /api/v1/marketplace/shops - Browse active seller shops
+router.get(
+  '/shops',
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const result = await getMarketplaceSellerToolsService(supabaseService).listShops({
+      campusId: typeof req.query.campus === 'string' ? req.query.campus : null,
+      q: typeof req.query.q === 'string' ? req.query.q : null,
+      page: req.query.page ? Number(req.query.page) : 1,
+      limit: req.query.limit ? Number(req.query.limit) : 24,
+    });
+    res.json({ success: true, data: result.shops, meta: { total: result.total, page: result.page, limit: result.limit } });
   })
 );
 
