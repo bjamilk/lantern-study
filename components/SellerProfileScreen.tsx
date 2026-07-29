@@ -298,12 +298,12 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
           </div>
         )}
 
-        {/* Active Listings */}
+        {/* Shop listings (active + reserved for owner) */}
         {profile.recentListings.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-lantern-text mb-3 flex items-center gap-1.5">
               <ShoppingBagIcon className="w-4 h-4 text-emerald-500" />
-              Active Listings ({profile.stats.activeListings})
+              {isOwner ? 'Shop listings' : 'Active Listings'} ({profile.recentListings.length})
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {profile.recentListings.map(listing => (
@@ -320,6 +320,11 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                         <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
                       </div>
                     )}
+                    {listing.status === 'reserved' ? (
+                      <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-900 dark:bg-amber-900/80 dark:text-amber-100">
+                        Sale in progress
+                      </span>
+                    ) : null}
                   </div>
                   <div className="p-2.5">
                     <p className="text-sm font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary transition-colors">{listing.title}</p>
@@ -330,6 +335,15 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 </button>
               ))}
             </div>
+            {isOwner ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('MarketplaceOrders')}
+                className="mt-3 text-sm font-semibold text-lantern-primary hover:underline"
+              >
+                View orders & receipts
+              </button>
+            ) : null}
           </div>
         )}
 

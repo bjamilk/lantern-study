@@ -749,7 +749,7 @@ export interface MarketplaceListing {
     geopolitical_zone?: string | null;
   };
   images?: string[];
-  status: 'active' | 'sold' | 'inactive' | 'suspended_by_admin' | 'removed_by_admin';
+  status: 'active' | 'sold' | 'inactive' | 'reserved' | 'suspended_by_admin' | 'removed_by_admin';
   categorySpecificFields?: Record<string, unknown>;
   category_specific_fields?: Record<string, unknown>;
   views_count?: number;

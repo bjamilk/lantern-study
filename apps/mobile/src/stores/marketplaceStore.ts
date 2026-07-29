@@ -87,7 +87,11 @@ function mapSellerFromRemote(l: RemoteListing): MarketplaceListing['seller'] {
 }
 
 export function mapRemoteListing(l: RemoteListing): MarketplaceListing {
-  const status = (l.status === 'sold' || l.status === 'inactive' ? l.status : 'active') as MarketplaceListing['status'];
+  const status = (
+    l.status === 'sold' || l.status === 'inactive' || l.status === 'reserved'
+      ? l.status
+      : 'active'
+  ) as MarketplaceListing['status'];
   return {
     id: l.id,
     user_id: l.user_id,
@@ -178,7 +182,7 @@ export interface MarketplaceListing {
   currency?: string;
   campus?: MarketplaceListingCampus;
   images?: string[];
-  status: 'active' | 'sold' | 'inactive';
+  status: 'active' | 'sold' | 'inactive' | 'reserved';
   views_count?: number;
   favorites_count?: number;
   created_at: string;

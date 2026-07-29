@@ -285,6 +285,12 @@ export class MarketplaceOrdersService {
     });
 
     await invalidateSellerAnalyticsCache(listing.user_id);
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(listingId);
+    } catch {
+      // best-effort
+    }
     return row;
   }
 
@@ -365,6 +371,12 @@ export class MarketplaceOrdersService {
     });
 
     await invalidateSellerAnalyticsCache(sellerId);
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(offer.listing_id as string);
+    } catch {
+      // best-effort
+    }
     return row;
   }
 
@@ -463,6 +475,7 @@ export class MarketplaceOrdersService {
         }
         nextStatus = 'cancelled';
         await this.refundEscrow(order);
+        await this.restoreListingAfterCancelledOrder(order.listing_id);
         break;
       case 'open_dispute':
         if (!isBuyer && !isSeller) throw new Error('Unauthorized');
@@ -640,6 +653,24 @@ export class MarketplaceOrdersService {
       .from('marketplace_transactions')
       .update({ status: 'refunded' })
       .eq('id', order.transaction_id);
+  }
+
+  /** When an open order ends without completion, put a reserved listing back on the shelf. */
+  private async restoreListingAfterCancelledOrder(listingId: string): Promise<void> {
+    if (!listingId) return;
+    const now = new Date().toISOString();
+    await this.db
+      .from('marketplace_listings')
+      .update({ status: 'active', updated_at: now })
+      .eq('id', listingId)
+      .eq('status', 'reserved');
+
+    try {
+      const { invalidateListingCaches } = await import('../utils/marketplaceCache');
+      await invalidateListingCaches(listingId);
+    } catch {
+      // best-effort cache bust
+    }
   }
 
   async createPaymentLinkOrder(
@@ -1206,10 +1237,7 @@ export class MarketplaceOrdersService {
 
     await this.refundEscrow(order);
 
-    await this.db
-      .from('marketplace_listings')
-      .update({ status: 'active', updated_at: now })
-      .eq('id', order.listing_id);
+    await this.restoreListingAfterCancelledOrder(order.listing_id);
 
     const { data, error } = await this.db
       .from('marketplace_orders')

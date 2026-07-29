@@ -46,6 +46,23 @@ export function SellerProfileScreen({ navigation, route }: Props) {
     if (!sellerId) return;
     setLoadingListings(true);
     try {
+      const profile = await api.fetchSellerProfile(sellerId);
+      const recent = (profile as { recentListings?: MarketplaceListing[] })?.recentListings
+        || (profile as { recent_listings?: MarketplaceListing[] })?.recent_listings
+        || [];
+      if (Array.isArray(recent) && recent.length > 0) {
+        setListings(
+          recent.map((l) => ({
+            ...l,
+            seller_id: l.user_id || sellerId,
+            images: l.images || [],
+            status: (l.status === 'reserved' || l.status === 'sold' || l.status === 'inactive'
+              ? l.status
+              : 'active') as MarketplaceListing['status'],
+          }))
+        );
+        return;
+      }
       const response = await api.fetchMarketplaceListings();
       const raw = Array.isArray(response) ? response : response.data;
       const mapped: MarketplaceListing[] = raw
@@ -59,7 +76,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           price?: number;
           location?: string;
           images?: string[];
-          status: 'active' | 'sold' | 'inactive';
+          status: 'active' | 'sold' | 'inactive' | 'reserved';
           created_at: string;
           updated_at: string;
         }) => ({
@@ -76,13 +93,17 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           created_at: l.created_at,
           updated_at: l.updated_at,
         }));
-      setListings(mapped.filter(l => l.status === 'active'));
+      setListings(
+        mapped.filter(l =>
+          isOwner ? l.status === 'active' || l.status === 'reserved' : l.status === 'active'
+        )
+      );
     } catch {
       setListings([]);
     } finally {
       setLoadingListings(false);
     }
-  }, [sellerId]);
+  }, [sellerId, isOwner]);
 
   const load = useCallback(async () => {
     if (sellerId) {
@@ -248,6 +269,11 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             >
               <View className="aspect-[4/3]">
                 <ListingImage uri={item.images?.[0]} className="w-full h-full" />
+                {item.status === 'reserved' ? (
+                  <View className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-amber-100">
+                    <Text className="text-[10px] font-semibold text-amber-900">Sale in progress</Text>
+                  </View>
+                ) : null}
               </View>
               <View className="p-2.5">
                 <Text className="text-sm font-semibold text-lantern-text" numberOfLines={2}>

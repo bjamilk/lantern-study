@@ -151,6 +151,7 @@ export const App: React.FC = () => {
     const { toast, showToast, dismissToast } = useToastStore();
     const globalConfirm = useConfirmStore();
     const [myListingsRefreshKey, setMyListingsRefreshKey] = useState(0);
+    const [sellerProfileReturnMode, setSellerProfileReturnMode] = useState<AppMode>(AppMode.MARKETPLACE);
     const [startingDailyQuiz, setStartingDailyQuiz] = useState(false);
     const [accountLifecycle, setAccountLifecycle] = useState<{
         status: 'active' | 'deactivated';
@@ -1323,6 +1324,10 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
+                        setSellerProfileReturnMode(AppMode.MARKETPLACE);
+                        setSelectedSellerId(params.userId || params.sellerId);
+                        setAppMode(AppMode.SELLER_PROFILE);
                     } else if (screen === 'MarketplaceJobs') {
                         navigateTo(AppMode.MARKETPLACE_JOBS);
                     } else if (screen === 'Marketplace') {
@@ -1335,8 +1340,9 @@ export const App: React.FC = () => {
                     onBack={() => setAppMode(AppMode.MARKETPLACE)}
                     onNavigate={(screen, params) => {
                         if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                        else if (screen === 'SellerProfile' && params?.userId) {
-                            setSelectedSellerId(params.userId);
+                        else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
+                            setSellerProfileReturnMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                            setSelectedSellerId(params.userId || params.sellerId);
                             setAppMode(AppMode.SELLER_PROFILE);
                         } else if (screen === 'MarketplaceTransaction' || screen === 'MarketplaceOrderDetail') {
                             setSelectedMarketplaceOrderId(params?.orderId);
@@ -1365,6 +1371,13 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                        setSelectedMarketplaceOrderId(params.orderId);
+                        setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                    } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
+                        setSellerProfileReturnMode(AppMode.MY_LISTINGS);
+                        setSelectedSellerId(params.userId || params.sellerId);
+                        setAppMode(AppMode.SELLER_PROFILE);
                     } else if (screen === 'SellerCustomers') {
                         setAppMode(AppMode.SELLER_CUSTOMERS);
                     } else if (screen === 'Marketplace') {
@@ -1412,12 +1425,26 @@ export const App: React.FC = () => {
             case AppMode.SELLER_PROFILE:
                 if (!selectedSellerId) return null;
                 return <SellerProfileScreen userId={selectedSellerId}
-                    onBack={() => { setSelectedSellerId(null); setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL); }}
+                    onBack={() => {
+                        setSelectedSellerId(null);
+                        const backMode = sellerProfileReturnMode;
+                        if (backMode === AppMode.MARKETPLACE_LISTING_DETAIL && !selectedMarketplaceListingId) {
+                            setAppMode(AppMode.MARKETPLACE);
+                            return;
+                        }
+                        setAppMode(backMode);
+                    }}
                     onNavigate={(screen, params) => {
                         if (screen === 'MarketplaceListingDetail') {
                             setSelectedMarketplaceListingId(params.listingId);
                             setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                         } else if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
+                        else if (screen === 'MarketplaceOrders') {
+                            setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                            setSelectedMarketplaceOrderId(params.orderId);
+                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        }
                     }} />;
             case AppMode.CREATE_MARKETPLACE_LISTING:
                 if (!modals.createMarketplaceListing) openModal('createMarketplaceListing');
@@ -1432,6 +1459,11 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MyListings') setAppMode(AppMode.MY_LISTINGS);
                     else if (screen === 'MarketplaceInquiries') setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                    else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
+                        setSellerProfileReturnMode(AppMode.MARKETPLACE);
+                        setSelectedSellerId(params.userId || params.sellerId);
+                        setAppMode(AppMode.SELLER_PROFILE);
+                    }
                     else if (screen === 'MarketplaceJobs') navigateTo(AppMode.MARKETPLACE_JOBS);
                 }} />;
             case AppMode.MARKETPLACE_JOBS:

@@ -1563,7 +1563,7 @@ export function createApiEndpoints(client: ApiClient) {
                 geopolitical_zone?: string | null;
               };
               images?: string[];
-              status: "active" | "sold" | "inactive";
+              status: "active" | "sold" | "inactive" | "reserved";
               created_at: string;
               updated_at: string;
               seller?: { id: string; name: string; avatar_url?: string };
@@ -1595,7 +1595,7 @@ export function createApiEndpoints(client: ApiClient) {
               geopolitical_zone?: string | null;
             };
             images?: string[];
-            status: "active" | "sold" | "inactive";
+            status: "active" | "sold" | "inactive" | "reserved";
             created_at: string;
             updated_at: string;
             seller?: { id: string; name: string; avatar_url?: string };
@@ -1652,7 +1652,7 @@ export function createApiEndpoints(client: ApiClient) {
           geopolitical_zone?: string | null;
         };
         images?: string[];
-        status: "active" | "sold" | "inactive";
+        status: "active" | "sold" | "inactive" | "reserved";
         category_specific_fields?: unknown;
         views_count?: number;
         favorites_count?: number;
@@ -1687,7 +1687,7 @@ export function createApiEndpoints(client: ApiClient) {
             geopolitical_zone?: string | null;
           };
           images?: string[];
-          status: "active" | "sold" | "inactive";
+          status: "active" | "sold" | "inactive" | "reserved";
           created_at: string;
           seller?: { id: string; name: string; avatar_url?: string };
         }>
@@ -1745,7 +1745,7 @@ export function createApiEndpoints(client: ApiClient) {
         location?: string;
         campus_id: string;
         images?: string[];
-        status: "active" | "sold" | "inactive";
+        status: "active" | "sold" | "inactive" | "reserved";
       }>,
     ) =>
       apiRequest<{
@@ -1771,7 +1771,7 @@ export function createApiEndpoints(client: ApiClient) {
 
     updateListingStatus: (
       listingId: string,
-      status: "active" | "inactive" | "sold",
+      status: "active" | "inactive" | "sold" | "reserved",
     ) =>
       apiRequest<{
         id: string;

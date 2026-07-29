@@ -17,7 +17,16 @@ import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
 
-const STEPS = ['paid', 'ready_for_pickup', 'completed'] as const;
+const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
+
+function timelineIndexForStatus(status: string): number {
+  if (status === 'cancelled' || status === 'disputed') return -1;
+  if (status === 'pending_payment') return 0;
+  if (status === 'paid') return 1;
+  if (status === 'ready_for_pickup' || status === 'buyer_confirmed') return 2;
+  if (status === 'completed') return 3;
+  return 0;
+}
 
 type NavigationProp = {
   goBack: () => void;
@@ -74,12 +83,7 @@ export function OrderDetailScreen({
 
   const isSeller = user?.id === order?.seller_id;
   const isBuyer = user?.id === order?.buyer_id;
-  const stepIndex =
-    order?.status === 'completed'
-      ? 3
-      : order
-        ? STEPS.indexOf(order.status as (typeof STEPS)[number])
-        : -1;
+  const stepIndex = order ? timelineIndexForStatus(order.status) : -1;
 
   const uploadPaymentProof = async () => {
     if (!order) return;
@@ -129,7 +133,13 @@ export function OrderDetailScreen({
       <ScrollView className="px-4 pb-8" contentContainerStyle={{ gap: 16 }}>
         <View className="p-4 rounded-xl bg-lantern-surface">
           <Text className="text-2xl font-bold text-lantern-primary">{formatPrice(Number(order.amount))}</Text>
-          <Text className="text-lantern-text-secondary capitalize mt-1">{order.status.replace(/_/g, ' ')}</Text>
+          <Text className="text-lantern-text-secondary capitalize mt-1">
+            {order.status === 'completed'
+              ? 'Completed — receipt available'
+              : order.status === 'cancelled'
+                ? 'Cancelled'
+                : `Sale in progress — ${order.status.replace(/_/g, ' ')}`}
+          </Text>
           {order.discount_amount ? (
             <Text className="text-sm text-emerald-600 mt-1">
               Discount: {formatPrice(Number(order.discount_amount))}
@@ -137,28 +147,41 @@ export function OrderDetailScreen({
           ) : null}
         </View>
 
-        {order.status !== 'cancelled' && order.status !== 'pending_payment' ? (
+        {order.status !== 'cancelled' ? (
           <View className="p-4 rounded-xl bg-lantern-surface">
-            <Text className="text-sm font-semibold text-lantern-text mb-3">Progress</Text>
+            <Text className="text-sm font-semibold text-lantern-text mb-3">Sale progress</Text>
             <View className="flex-row gap-2 mb-3">
-              {STEPS.map((step, i) => (
+              {TIMELINE_STEPS.map((step, i) => (
                 <View
                   key={step}
                   className={`flex-1 h-2 rounded-full ${
-                    stepIndex > i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
+                    stepIndex >= i ? 'bg-lantern-primary' : 'bg-lantern-background-secondary'
                   }`}
                 />
               ))}
             </View>
             <Text className="text-sm text-lantern-text-secondary">
-              Paid {order.created_at ? '✓' : '—'}
+              Accepted {order.created_at ? '✓' : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
-              Ready for pickup or delivery {order.seller_confirmed_at ? '✓' : '—'}
+              Paid {order.status !== 'pending_payment' ? '✓' : '—'}
+            </Text>
+            <Text className="text-sm text-lantern-text-secondary">
+              Ready for pickup{' '}
+              {order.seller_confirmed_at ||
+              order.status === 'ready_for_pickup' ||
+              order.status === 'completed'
+                ? '✓'
+                : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
               Completed {order.completed_at ? '✓' : '—'}
             </Text>
+            {order.status !== 'completed' ? (
+              <Text className="text-xs text-lantern-text-tertiary mt-2">
+                Receipt unlocks when the order is completed.
+              </Text>
+            ) : null}
           </View>
         ) : null}
         {order.status === 'pending_payment' && (

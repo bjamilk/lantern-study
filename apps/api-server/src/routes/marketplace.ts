@@ -1744,8 +1744,12 @@ router.get(
 
     const listings = allListings || [];
     const activeListings = listings.filter((l) => l.status === 'active');
+    const reservedListings = listings.filter((l) => l.status === 'reserved');
     const soldCount = listings.filter((l) => l.status === 'sold').length;
-    // Public: active listings only. Owner: full inventory for private dashboard stats.
+    // Public: buyable active listings only. Owner also sees reserved (sale in progress).
+    const shopShelfListings = isOwner
+      ? [...reservedListings, ...activeListings]
+      : activeListings;
     const visibleListings = isOwner ? listings : activeListings;
 
     // Reviews only on listings the viewer is allowed to know about
@@ -1811,6 +1815,7 @@ router.get(
       stats = {
         totalListings: listings.length,
         activeListings: activeListings.length,
+        reservedListings: reservedListings.length,
         soldListings: soldCount,
         totalViews,
         totalInquiries,
@@ -1834,7 +1839,7 @@ router.get(
       shop,
       stats,
       badges,
-      recentListings: activeListings.slice(0, 6),
+      recentListings: shopShelfListings.slice(0, 8),
       recentReviews: reviewsWithTitle,
     };
 

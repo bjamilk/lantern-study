@@ -9661,7 +9661,10 @@ export class SupabaseService {
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    if (status) {
+    if (status === "active") {
+      // Active shelf includes reserved (sale in progress) for seller inventory.
+      query = query.in("status", ["active", "reserved"]);
+    } else if (status) {
       query = query.eq("status", status);
     }
 
@@ -9798,7 +9801,8 @@ export class SupabaseService {
     return {
       totalListings: listings?.length || 0,
       activeListings:
-        listings?.filter((l) => l.status === "active").length || 0,
+        listings?.filter((l) => l.status === "active" || l.status === "reserved")
+          .length || 0,
       soldListings: listings?.filter((l) => l.status === "sold").length || 0,
       completedOrders: ordersRes.count || 0,
       totalViews:
