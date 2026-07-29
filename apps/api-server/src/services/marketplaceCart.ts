@@ -8,7 +8,7 @@ export type MarketplaceCartItemRow = {
   quantity: number;
   created_at: string;
   updated_at: string;
-  listing?: Record<string, unknown> | null;
+  listing?: any;
 };
 
 const cartSelect = `
@@ -38,7 +38,7 @@ export class MarketplaceCartService {
       .eq('buyer_id', buyerId)
       .order('updated_at', { ascending: false });
     if (error) throw error;
-    return (data || []) as MarketplaceCartItemRow[];
+    return (data || []) as unknown as MarketplaceCartItemRow[];
   }
 
   private assertListingPurchasable(
@@ -98,7 +98,7 @@ export class MarketplaceCartService {
         .select(cartSelect)
         .single();
       if (error) throw error;
-      return data as MarketplaceCartItemRow;
+      return data as unknown as MarketplaceCartItemRow;
     }
 
     const { data, error } = await this.db
@@ -111,7 +111,7 @@ export class MarketplaceCartService {
       .select(cartSelect)
       .single();
     if (error) throw error;
-    return data as MarketplaceCartItemRow;
+    return data as unknown as MarketplaceCartItemRow;
   }
 
   async updateCartItem(
@@ -138,7 +138,7 @@ export class MarketplaceCartService {
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('Cart item not found');
-    return data as MarketplaceCartItemRow;
+    return data as unknown as MarketplaceCartItemRow;
   }
 
   async removeCartItem(buyerId: string, listingId: string): Promise<void> {
