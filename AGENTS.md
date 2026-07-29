@@ -54,3 +54,19 @@ Redis is optional (`REDIS_ENABLED=false`; an in-memory LRU cache is used). AI pr
 - **Tests:** `npm test --workspace=@lantern/api-server` (jest). Two suites fail for pre-existing
   reasons unrelated to setup: `accountExportSign.test.ts` imports `vitest` but is picked up by
   jest, and one `storageAccess.test.ts` case makes a live `fetch`.
+
+### Mobile (Expo) iOS builds
+
+The iOS Simulator cannot run on this Linux VM (needs macOS + Xcode), but EAS iOS builds can be
+triggered from here (they compile on Expo's cloud macOS builders). Notes:
+- Auth via the `EXPO_TOKEN` secret; then e.g. `eas build -p ios --profile ios-simulator --non-interactive`.
+- Always pass `EAS_SKIP_AUTO_FINGERPRINT=1` — the repo's `brace-expansion`/`minimatch`
+  `overrides` break `@expo/fingerprint` (`brace_expansion_1.expand is not a function`).
+- EAS mobile installs use a **slim** trimmed lockfile via `scripts/eas-prepare-mobile-install.js`
+  (full-repo install OOMs). If you change `apps/mobile` deps, regenerate
+  `scripts/package-lock.eas-mobile.json` or the EAS "Install dependencies" phase fails
+  (strict `npm ci`). That script also must keep the markdown/math libs
+  (`remark-math`, `rehype-katex`, `katex`, `react-markdown`, `remark-gfm`, `rehype-sanitize`)
+  that `@lantern/shared` (`MarkdownRenderer.tsx`) imports, or Metro bundling fails to resolve them.
+- The `ios-simulator` profile builds a standalone (non-dev-client) simulator app pointing at the
+  cloud backend; the artifact is a `.tar.gz` containing a `.app` to install on a Mac Simulator.
