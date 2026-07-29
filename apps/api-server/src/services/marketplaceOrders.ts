@@ -43,12 +43,24 @@ export class MarketplaceOrdersService {
     return this.supabaseService.getClient();
   }
 
-  private assertListingInStock(listing: { quantity?: number | null; status: string }): void {
+  private assertListingInStock(
+    listing: { quantity?: number | null; status: string },
+    requestedQty = 1
+  ): void {
     if (listing.status !== 'active') {
       throw new Error('Listing is not available for purchase');
     }
-    if (listing.quantity != null && listing.quantity <= 0) {
+    if (listing.quantity == null) {
+      if (requestedQty !== 1) {
+        throw new Error('This listing can only be purchased as a single item');
+      }
+      return;
+    }
+    if (listing.quantity <= 0) {
       throw new Error('This listing is out of stock');
+    }
+    if (listing.quantity < requestedQty) {
+      throw new Error('Not enough stock for the requested quantity');
     }
   }
 
@@ -212,18 +224,21 @@ export class MarketplaceOrdersService {
   async createOrderFromBuyNow(
     listingId: string,
     buyerId: string,
-    couponCode?: string
+    couponCode?: string,
+    quantityInput?: number
   ): Promise<MarketplaceOrderRow> {
+    const quantity = Math.max(1, Math.floor(Number(quantityInput) || 1));
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
     if (!listing) throw new Error('Listing not found');
     if (listing.user_id === buyerId) throw new Error('Cannot buy your own listing');
-    this.assertListingInStock(listing);
+    this.assertListingInStock(listing, quantity);
 
     await this.assertNoOpenOrderForListing(listingId);
 
-    let amount = resolveEffectivePrice(listing);
+    const unitPrice = resolveEffectivePrice(listing);
+    let unitAmount = unitPrice;
     let couponId: string | null = null;
-    let discountAmount = 0;
+    let unitDiscount = 0;
 
     if (couponCode) {
       const { getMarketplaceCouponsService } = await import('./marketplaceCoupons');
@@ -232,10 +247,13 @@ export class MarketplaceOrdersService {
         listing,
         buyerId
       );
-      amount = validated.finalAmount;
+      unitAmount = validated.finalAmount;
       couponId = validated.coupon.id;
-      discountAmount = validated.discountAmount;
+      unitDiscount = validated.discountAmount;
     }
+
+    const amount = Math.round(unitAmount * quantity * 100) / 100;
+    const discountAmount = Math.round(unitDiscount * quantity * 100) / 100;
 
     const inquiryId = await this.findInquiryForDeal(listingId, buyerId);
     const initialStatus = await this.resolveInitialOrderStatus(listing.user_id);
@@ -248,6 +266,7 @@ export class MarketplaceOrdersService {
       p_initial_status: initialStatus,
       p_coupon_id: couponId,
       p_discount_amount: discountAmount,
+      p_quantity: quantity,
     });
 
     if (rpcError) {
@@ -278,19 +297,19 @@ export class MarketplaceOrdersService {
 
     await this.notifyOrderParty(listing.user_id, {
       type: 'marketplace_purchase',
-      message: `New order on "${listing.title}" for ₦${amount.toLocaleString()}${discountAmount > 0 ? ` (₦${discountAmount.toLocaleString()} coupon applied)` : ''}`,
+      message: `New order on "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''} for ₦${amount.toLocaleString()}${discountAmount > 0 ? ` (₦${discountAmount.toLocaleString()} coupon applied)` : ''}`,
       link: `marketplace:order:${row.id}`,
-      data: { orderId: row.id, listingId },
+      data: { orderId: row.id, listingId, quantity },
     });
 
     await this.notifyOrderParty(buyerId, {
       type: 'marketplace_order_update',
       message:
         initialStatus === 'pending_payment'
-          ? `Order created for "${listing.title}". Upload payment proof after you pay the seller.`
-          : `Order placed for "${listing.title}". Arrange campus pickup with the seller.`,
+          ? `Order created for "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''}. Upload payment proof after you pay the seller.`
+          : `Order placed for "${listing.title}"${quantity > 1 ? ` ×${quantity}` : ''}. Arrange campus pickup with the seller.`,
       link: `marketplace:order:${row.id}`,
-      data: { orderId: row.id, listingId },
+      data: { orderId: row.id, listingId, quantity },
     });
 
     await invalidateSellerAnalyticsCache(listing.user_id);
@@ -484,7 +503,7 @@ export class MarketplaceOrdersService {
         }
         nextStatus = 'cancelled';
         await this.refundEscrow(order);
-        await this.restoreListingAfterCancelledOrder(order.listing_id);
+        await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
         break;
       case 'open_dispute':
         if (!isBuyer && !isSeller) throw new Error('Unauthorized');
@@ -664,9 +683,13 @@ export class MarketplaceOrdersService {
       .eq('id', order.transaction_id);
   }
 
-  /** Cancel/refund: return a held unit (multi-qty) and/or un-reserve a unique listing. */
-  private async restoreListingAfterCancelledOrder(listingId: string): Promise<void> {
+  /** Cancel/refund: return held units (multi-qty) and/or un-reserve a unique listing. */
+  private async restoreListingAfterCancelledOrder(
+    listingId: string,
+    heldQuantity = 1
+  ): Promise<void> {
     if (!listingId) return;
+    const restoreQty = Math.max(1, Math.floor(Number(heldQuantity) || 1));
     const now = new Date().toISOString();
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
     if (!listing) return;
@@ -675,7 +698,7 @@ export class MarketplaceOrdersService {
       await this.db
         .from('marketplace_listings')
         .update({
-          quantity: Number(listing.quantity) + 1,
+          quantity: Number(listing.quantity) + restoreQty,
           status: 'active',
           updated_at: now,
         })
@@ -1260,7 +1283,7 @@ export class MarketplaceOrdersService {
 
     await this.refundEscrow(order);
 
-    await this.restoreListingAfterCancelledOrder(order.listing_id);
+    await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
 
     const { data, error } = await this.db
       .from('marketplace_orders')

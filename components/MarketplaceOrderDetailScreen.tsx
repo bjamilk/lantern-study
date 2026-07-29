@@ -158,6 +158,13 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
           <p className="text-2xl font-bold text-lantern-primary">
             ₦{Number(order.amount).toLocaleString()}
           </p>
+          {(order.quantity || 1) > 1 ? (
+            <p className="text-sm text-lantern-text-secondary mt-1">
+              Qty {order.quantity} · ₦
+              {(Number(order.amount) / Math.max(1, Number(order.quantity) || 1)).toLocaleString()}{' '}
+              each
+            </p>
+          ) : null}
           <p className="text-sm text-lantern-text-secondary mt-1">
             {STATUS_LABELS[order.status] || order.status.replace(/_/g, ' ')}
           </p>

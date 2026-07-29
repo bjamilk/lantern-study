@@ -9,10 +9,15 @@ export function buildOrderReceiptText(order: MarketplaceOrder): string {
     ? new Date(order.completed_at).toLocaleString()
     : new Date(order.created_at).toLocaleString();
 
+  const qty = Math.max(1, Number(order.quantity) || 1);
   const lines = [
     'Lantern Study Marketplace Receipt',
     `Order: ${order.id}`,
     `Item: ${listingTitle}`,
+    `Quantity: ${qty}`,
+    ...(qty > 1
+      ? [`Unit price: ${formatPrice(Number(order.amount) / qty)}`]
+      : []),
     `Amount: ${formatPrice(Number(order.amount))}`,
     `Buyer: ${buyerName}`,
     `Seller: ${sellerName}`,

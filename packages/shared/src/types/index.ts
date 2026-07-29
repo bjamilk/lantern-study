@@ -286,6 +286,7 @@ export enum AppMode {
   MY_LISTINGS = 'MY_LISTINGS',
   MARKETPLACE_INQUIRIES = 'MARKETPLACE_INQUIRIES',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
+  MARKETPLACE_CART = 'MARKETPLACE_CART',
   MARKETPLACE_ORDER_DETAIL = 'MARKETPLACE_ORDER_DETAIL',
   SELLER_CUSTOMERS = 'SELLER_CUSTOMERS',
   SELLER_PROFILE = 'SELLER_PROFILE',
@@ -818,6 +819,8 @@ export interface MarketplaceOrder {
   buyer_id: string;
   seller_id: string;
   amount: number;
+  /** Units purchased; offers stay 1. */
+  quantity?: number;
   offer_id?: string;
   inquiry_id?: string;
   transaction_id?: string;
@@ -839,6 +842,16 @@ export interface MarketplaceOrder {
   buyer?: { id: string; name: string; avatar_url?: string };
   seller?: { id: string; name: string; avatar_url?: string };
   transaction?: MarketplaceTransaction;
+}
+
+export interface MarketplaceCartItem {
+  id: string;
+  buyer_id: string;
+  listing_id: string;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+  listing?: MarketplaceListing | null;
 }
 
 export interface SellerAnalytics {

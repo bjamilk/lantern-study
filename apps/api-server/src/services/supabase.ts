@@ -8842,12 +8842,14 @@ export class SupabaseService {
     listingId: string,
     buyerId: string,
     couponCode?: string,
+    quantity?: number,
   ): Promise<{ order: Record<string, unknown>; budgetLogged?: boolean }> {
     const { getMarketplaceOrdersService } = await import("./marketplaceOrders");
     const order = await getMarketplaceOrdersService(this).createOrderFromBuyNow(
       listingId,
       buyerId,
       couponCode,
+      quantity,
     );
     return { order, budgetLogged: false };
   }

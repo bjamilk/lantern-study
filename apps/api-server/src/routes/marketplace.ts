@@ -9,6 +9,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../services/marketplaceOrders';
+import { getMarketplaceCartService } from '../services/marketplaceCart';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';
@@ -589,9 +590,18 @@ router.post(
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
 
+    const quantityRaw = req.body?.quantity;
+    const quantity =
+      quantityRaw == null || quantityRaw === ''
+        ? 1
+        : Math.max(1, Math.floor(Number(quantityRaw)));
+    if (!Number.isFinite(quantity) || quantity < 1) {
+      return res.status(400).json({ success: false, error: 'Invalid quantity' });
+    }
+
     const idempotencyKey =
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
-      `${buyerId}:buy_now:${id}:${Math.floor(Date.now() / 300_000)}`;
+      `${buyerId}:buy_now:${id}:q${quantity}:${Math.floor(Date.now() / 300_000)}`;
 
     const result = await withIdempotency(
       supabaseService.getClient(),
@@ -599,12 +609,134 @@ router.post(
       'marketplace_buy_now',
       idempotencyKey,
       async () =>
-        supabaseService.buyMarketplaceListingNow(id, buyerId, req.body?.couponCode)
+        supabaseService.buyMarketplaceListingNow(
+          id,
+          buyerId,
+          req.body?.couponCode,
+          quantity
+        )
     );
 
     await invalidateListingCaches(cacheService, id);
     await cacheService.deletePattern('marketplace:listings:*');
     await invalidateSellerAnalyticsCache(String(result.order?.seller_id || ''));
+
+    res.json({ success: true, data: result });
+  })
+);
+
+// GET /api/v1/marketplace/cart - Buyer cart lines
+router.get(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const items = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+    res.json({ success: true, data: items });
+  })
+);
+
+// POST /api/v1/marketplace/cart - Add / merge cart line
+router.post(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const listingId = typeof req.body?.listingId === 'string' ? req.body.listingId.trim() : '';
+    if (!listingId) {
+      return res.status(400).json({ success: false, error: 'listingId is required' });
+    }
+    const item = await getMarketplaceCartService(supabaseService).addToCart(
+      buyerId,
+      listingId,
+      req.body?.quantity
+    );
+    res.json({ success: true, data: item });
+  })
+);
+
+// PATCH /api/v1/marketplace/cart/:listingId - Update line quantity
+router.patch(
+  '/cart/:listingId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const listingId = req.params.listingId;
+    const item = await getMarketplaceCartService(supabaseService).updateCartItem(
+      buyerId,
+      listingId,
+      req.body?.quantity
+    );
+    res.json({ success: true, data: item });
+  })
+);
+
+// DELETE /api/v1/marketplace/cart/:listingId - Remove one line
+router.delete(
+  '/cart/:listingId',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    await getMarketplaceCartService(supabaseService).removeCartItem(buyerId, req.params.listingId);
+    res.json({ success: true, data: { removed: true } });
+  })
+);
+
+// DELETE /api/v1/marketplace/cart - Clear cart
+router.delete(
+  '/cart',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    await getMarketplaceCartService(supabaseService).clearCart(buyerId);
+    res.json({ success: true, data: { cleared: true } });
+  })
+);
+
+// POST /api/v1/marketplace/cart/checkout - One order per cart line
+router.post(
+  '/cart/checkout',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const buyerId = req.user?.id;
+    if (!buyerId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const idempotencyKey =
+      normalizeIdempotencyKey(req.headers['idempotency-key']) ||
+      `${buyerId}:cart_checkout:${Math.floor(Date.now() / 300_000)}`;
+
+    const result = await withIdempotency(
+      supabaseService.getClient(),
+      buyerId,
+      'marketplace_cart_checkout',
+      idempotencyKey,
+      async () => getMarketplaceCartService(supabaseService).checkout(buyerId)
+    );
+
+    for (const order of result.orders || []) {
+      if (order?.listing_id) {
+        await invalidateListingCaches(cacheService, String(order.listing_id));
+        await invalidateSellerAnalyticsCache(String(order.seller_id || ''));
+      }
+    }
+    await cacheService.deletePattern('marketplace:listings:*');
 
     res.json({ success: true, data: result });
   })

@@ -12,6 +12,7 @@ import {
   fetchSellerStats,
   boostMarketplaceListing,
   buyMarketplaceListingNow,
+  addToMarketplaceCart,
   validateMarketplaceCoupon,
   fetchPickupNudge,
 } from '../services/supabase';
@@ -51,6 +52,8 @@ interface MarketplaceListingDetailScreenProps {
   onBack: () => void;
   guestMode?: boolean;
   onSignInRequired?: () => void;
+  /** Prefill from Buy again; capped by stock when listing loads. */
+  initialQuantity?: number;
 }
 
 const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenProps> = ({
@@ -59,6 +62,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   onBack,
   guestMode = false,
   onSignInRequired,
+  initialQuantity,
 }) => {
   const [listing, setListing] = useState<MarketplaceListing | null>(null);
   const [reviews, setReviews] = useState<MarketplaceReview[]>([]);
@@ -77,6 +81,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [sellerStats, setSellerStats] = useState<{ totalListings: number; soldCount: number } | null>(null);
   const [negotiationHistory, setNegotiationHistory] = useState<any[]>([]);
   const [buyingNow, setBuyingNow] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [couponCode, setCouponCode] = useState('');
   const [couponPreview, setCouponPreview] = useState<{
     discountAmount: number;
@@ -192,6 +198,13 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       const data = await fetchMarketplaceListingFull(listingId, currentUser?.id);
       if (loadId !== undefined && loadId !== listingLoadId.current) return;
       setListing(data.listing);
+      if (data.listing?.quantity == null) {
+        setSelectedQuantity(1);
+      } else {
+        const stock = Math.max(1, Number(data.listing.quantity) || 1);
+        const pref = Math.max(1, Math.floor(Number(initialQuantity) || 1));
+        setSelectedQuantity(Math.min(pref, stock));
+      }
       setReviews(data.listing.reviews || []);
       setIsFavorited(data.isFavorited);
       setSimilarListings(data.similarListings);
@@ -297,10 +310,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
     if (!listing || !listing.price || listing.price <= 0) return;
     if (requireAuth()) return;
     const pricing = resolveListingDisplayPrice(listing);
-    const payAmount = couponPreview?.finalAmount ?? pricing.effective;
+    const unitPay = couponPreview?.finalAmount ?? pricing.effective;
+    const qty = listing.quantity == null ? 1 : selectedQuantity;
+    const payAmount = Math.round(unitPay * qty * 100) / 100;
     const confirmed = await confirmDialog({
       title: 'Confirm purchase',
-      message: `Confirm purchase of ${listing.title} for ₦${payAmount.toLocaleString()}?`,
+      message: `Confirm purchase of ${listing.title}${qty > 1 ? ` ×${qty}` : ''} for ₦${payAmount.toLocaleString()}?`,
       confirmLabel: 'Buy now',
     });
     if (!confirmed) return;
@@ -312,7 +327,8 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       });
       const result = await buyMarketplaceListingNow(
         listing.id,
-        couponPreview ? couponCode.trim() : undefined
+        couponPreview ? couponCode.trim() : undefined,
+        qty
       );
       showToast('Order placed. Arrange pickup or delivery with the seller.');
       if (result?.order?.id) {
@@ -324,6 +340,21 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       showToast(error?.message || 'Could not complete purchase.', 'error');
     } finally {
       setBuyingNow(false);
+    }
+  };
+
+  const handleAddToCart = async () => {
+    if (!listing || !listing.price || listing.price <= 0) return;
+    if (requireAuth()) return;
+    const qty = listing.quantity == null ? 1 : selectedQuantity;
+    setAddingToCart(true);
+    try {
+      await addToMarketplaceCart(listing.id, qty);
+      showToast(qty > 1 ? `Added ${qty} to cart` : 'Added to cart');
+    } catch (error: any) {
+      showToast(error?.message || 'Could not add to cart.', 'error');
+    } finally {
+      setAddingToCart(false);
     }
   };
 
@@ -851,6 +882,39 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   Make an Offer
                 </button>
               )}
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 && (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border">
+                  <div>
+                    <p className="text-xs font-semibold text-lantern-text-secondary">Quantity</p>
+                    <p className="text-[11px] text-lantern-text-tertiary mt-0.5">{listing.quantity} available</p>
+                  </div>
+                  <div className="inline-flex items-center rounded-lg border border-lantern-border overflow-hidden bg-lantern-surface">
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-sm hover:bg-lantern-background-secondary disabled:opacity-40"
+                      disabled={selectedQuantity <= 1}
+                      onClick={() => setSelectedQuantity((q) => Math.max(1, q - 1))}
+                      aria-label="Decrease quantity"
+                    >
+                      −
+                    </button>
+                    <span className="px-3 py-2 text-sm font-semibold min-w-[2.5rem] text-center">
+                      {selectedQuantity}
+                    </span>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-sm hover:bg-lantern-background-secondary disabled:opacity-40"
+                      disabled={selectedQuantity >= listing.quantity}
+                      onClick={() =>
+                        setSelectedQuantity((q) => Math.min(Number(listing.quantity), q + 1))
+                      }
+                      aria-label="Increase quantity"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              )}
               {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
@@ -876,11 +940,37 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                   {couponPreview && (
                     <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                      Coupon applied — ₦{couponPreview.discountAmount.toLocaleString()} off.
-                      Pay ₦{couponPreview.finalAmount.toLocaleString()}.
+                      Coupon applied — ₦
+                      {(
+                        couponPreview.discountAmount *
+                        (listing.quantity == null ? 1 : selectedQuantity)
+                      ).toLocaleString()}{' '}
+                      off. Pay ₦
+                      {(
+                        couponPreview.finalAmount *
+                        (listing.quantity == null ? 1 : selectedQuantity)
+                      ).toLocaleString()}
+                      .
                     </p>
                   )}
                 </div>
+              )}
+              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleAddToCart()}
+                  disabled={addingToCart || buyingNow}
+                  className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
+                >
+                  <ShoppingBagIcon className="w-4 h-4" />
+                  {addingToCart
+                    ? 'Adding…'
+                    : `Add to cart${
+                        listing.quantity != null && selectedQuantity > 1
+                          ? ` · ${selectedQuantity}`
+                          : ''
+                      }`}
+                </button>
               )}
               {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && (
                 <button
@@ -891,7 +981,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <CheckBadgeIcon className="w-4 h-4" />
                   {buyingNow
                     ? 'Processing Purchase...'
-                    : `Buy Now${couponPreview ? ` · ₦${couponPreview.finalAmount.toLocaleString()}` : pricing?.onSale ? ` · ₦${pricing.effective.toLocaleString()}` : ''}`}
+                    : (() => {
+                        const qty = listing.quantity == null ? 1 : selectedQuantity;
+                        const unit =
+                          couponPreview?.finalAmount ??
+                          (pricing?.onSale ? pricing.effective : null);
+                        if (unit == null) return 'Buy Now';
+                        return `Buy Now · ₦${(unit * qty).toLocaleString()}${
+                          qty > 1 ? ` (${qty})` : ''
+                        }`;
+                      })()}
                 </button>
               )}
             </div>

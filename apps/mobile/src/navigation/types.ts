@@ -66,7 +66,7 @@ export type ChatStackParamList = {
 
 export type MarketStackParamList = {
   MarketplaceHome: undefined;
-  ListingDetail: { listingId: string };
+  ListingDetail: { listingId: string; quantity?: number };
   MyListings: undefined;
   Inquiries: undefined;
   CreateListing: undefined;
@@ -80,6 +80,7 @@ export type MarketStackParamList = {
   Offers: undefined;
   Favorites: undefined;
   Orders: undefined;
+  Cart: undefined;
   OrderDetail: { orderId: string };
   SellerCustomers: undefined;
   JobsHome: undefined;

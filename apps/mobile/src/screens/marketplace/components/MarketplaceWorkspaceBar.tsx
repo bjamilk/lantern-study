@@ -7,6 +7,7 @@ export type MarketplaceWorkspaceSection =
   | 'browse'
   | 'jobs'
   | 'orders'
+  | 'cart'
   | 'selling'
   | 'inquiries'
   | 'favorites';
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
   { id: 'browse', label: 'Goods', icon: 'search-outline', screen: 'MarketplaceHome' },
   { id: 'jobs', label: 'Jobs', icon: 'briefcase-outline', screen: 'JobsHome' },
   { id: 'orders', label: 'Orders', icon: 'receipt-outline', screen: 'Orders' },
+  { id: 'cart', label: 'Cart', icon: 'cart-outline', screen: 'Cart' },
   { id: 'selling', label: 'Selling', icon: 'storefront-outline', screen: 'MyListings' },
   { id: 'inquiries', label: 'Offers', icon: 'chatbubble-ellipses-outline', screen: 'Inquiries' },
 ];

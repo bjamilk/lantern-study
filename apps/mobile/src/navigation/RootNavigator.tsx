@@ -127,6 +127,8 @@ import {
 
   OrdersScreen,
 
+  CartScreen,
+
   OrderDetailScreen,
 
   SellerCustomersScreen,
@@ -352,6 +354,8 @@ function MarketNavigator() {
       <MarketStack.Screen name="Favorites" component={FavoritesScreen} />
 
       <MarketStack.Screen name="Orders" component={OrdersScreen} />
+
+      <MarketStack.Screen name="Cart" component={CartScreen} />
 
       <MarketStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 

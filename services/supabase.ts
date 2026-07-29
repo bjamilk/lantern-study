@@ -3627,11 +3627,18 @@ export const boostMarketplaceListing = async (listingId: string, durationHours: 
   return result.data;
 };
 
-export const buyMarketplaceListingNow = async (listingId: string, couponCode?: string) => {
+export const buyMarketplaceListingNow = async (
+  listingId: string,
+  couponCode?: string,
+  quantity?: number
+) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/buy-now`, {
     method: 'POST',
     headers: await getAuthHeaders(),
-    body: JSON.stringify(couponCode ? { couponCode } : {}),
+    body: JSON.stringify({
+      ...(couponCode ? { couponCode } : {}),
+      ...(quantity != null && quantity > 0 ? { quantity } : {}),
+    }),
   });
 
   if (!response.ok) {
@@ -3639,6 +3646,90 @@ export const buyMarketplaceListingNow = async (listingId: string, couponCode?: s
     throw new Error(err.error || 'Failed to complete purchase');
   }
 
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to load cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const addToMarketplaceCart = async (listingId: string, quantity?: number) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({
+      listingId,
+      ...(quantity != null && quantity > 0 ? { quantity } : {}),
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to add to cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const updateMarketplaceCartItem = async (listingId: string, quantity: number) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/${listingId}`, {
+    method: 'PATCH',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({ quantity }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const removeMarketplaceCartItem = async (listingId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/${listingId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to remove cart item');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const clearMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to clear cart');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const checkoutMarketplaceCart = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/checkout`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Checkout failed');
+  }
   const result = await response.json();
   return result.data;
 };

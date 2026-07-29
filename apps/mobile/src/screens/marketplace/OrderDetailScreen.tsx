@@ -133,6 +133,12 @@ export function OrderDetailScreen({
       <ScrollView className="px-4 pb-8" contentContainerStyle={{ gap: 16 }}>
         <View className="p-4 rounded-xl bg-lantern-surface">
           <Text className="text-2xl font-bold text-lantern-primary">{formatPrice(Number(order.amount))}</Text>
+          {(order.quantity || 1) > 1 ? (
+            <Text className="text-sm text-lantern-text-secondary mt-1">
+              Qty {order.quantity} · unit{' '}
+              {formatPrice(Number(order.amount) / Math.max(1, Number(order.quantity) || 1))}
+            </Text>
+          ) : null}
           <Text className="text-lantern-text-secondary capitalize mt-1">
             {order.status === 'completed'
               ? 'Completed — receipt available'

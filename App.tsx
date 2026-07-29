@@ -81,6 +81,7 @@ const MarketplaceListingDetailScreen = lazyWithRetry(() => import('./components/
 const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScreen'));
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
+const MarketplaceCartScreen = lazyWithRetry(() => import('./components/MarketplaceCartScreen'));
 const MarketplaceOrderDetailScreen = lazyWithRetry(() => import('./components/MarketplaceOrderDetailScreen'));
 const SellerCustomersScreen = lazyWithRetry(() => import('./components/SellerCustomersScreen'));
 const SellerProfileScreen = lazyWithRetry(() => import('./components/SellerProfileScreen'));
@@ -212,6 +213,7 @@ export const App: React.FC = () => {
         selectedChat, setSelectedChat,
         marketplaceListingCategory, setMarketplaceListingCategory,
         selectedMarketplaceListingId, setSelectedMarketplaceListingId,
+        selectedMarketplaceListingInitialQuantity, setSelectedMarketplaceListingInitialQuantity,
         selectedJobId, setSelectedJobId,
         selectedMarketplaceOrderId, setSelectedMarketplaceOrderId,
         editingMarketplaceListing, setEditingMarketplaceListing,
@@ -1317,6 +1319,9 @@ export const App: React.FC = () => {
                         openModal('createMarketplaceListing');
                     } else if (screen === 'MarketplaceListingDetail') {
                         setSelectedMarketplaceListingId(params.listingId);
+                        setSelectedMarketplaceListingInitialQuantity(
+                          params?.quantity != null ? Number(params.quantity) : null
+                        );
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MyListings') {
                         setAppMode(AppMode.MY_LISTINGS);
@@ -1324,6 +1329,8 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'MarketplaceCart') {
+                        setAppMode(AppMode.MARKETPLACE_CART);
                     } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
                         setSellerProfileReturnMode(AppMode.MARKETPLACE);
                         setSelectedSellerId(params.userId || params.sellerId);
@@ -1337,7 +1344,11 @@ export const App: React.FC = () => {
             case AppMode.MARKETPLACE_LISTING_DETAIL:
                 if (!selectedMarketplaceListingId) return null;
                 return <MarketplaceListingDetailScreen listingId={selectedMarketplaceListingId}
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    initialQuantity={selectedMarketplaceListingInitialQuantity ?? undefined}
+                    onBack={() => {
+                        setSelectedMarketplaceListingInitialQuantity(null);
+                        setAppMode(AppMode.MARKETPLACE);
+                    }}
                     onNavigate={(screen, params) => {
                         if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
                         else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
@@ -1349,6 +1360,8 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
                         } else if (screen === 'MarketplaceOrders') {
                             setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        } else if (screen === 'MarketplaceCart') {
+                            setAppMode(AppMode.MARKETPLACE_CART);
                         } else if (screen === 'MyListings') {
                             setAppMode(AppMode.MY_LISTINGS);
                         } else if (screen === 'EditMarketplaceListing' && params?.listing) {
@@ -1366,11 +1379,16 @@ export const App: React.FC = () => {
                         openModal('editMarketplaceListing');
                     } else if (screen === 'MarketplaceListingDetail') {
                         setSelectedMarketplaceListingId(params.listingId);
+                        setSelectedMarketplaceListingInitialQuantity(
+                          params?.quantity != null ? Number(params.quantity) : null
+                        );
                         setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                     } else if (screen === 'MarketplaceInquiries') {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
                     } else if (screen === 'MarketplaceOrders') {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
+                    } else if (screen === 'MarketplaceCart') {
+                        setAppMode(AppMode.MARKETPLACE_CART);
                     } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
                         setSelectedMarketplaceOrderId(params.orderId);
                         setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
@@ -1391,6 +1409,30 @@ export const App: React.FC = () => {
                         if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
                             setSelectedMarketplaceOrderId(params.orderId);
                             setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(params.listingId);
+                            setSelectedMarketplaceListingInitialQuantity(
+                              params?.quantity != null ? Number(params.quantity) : null
+                            );
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        }
+                    }}
+                />;
+            case AppMode.MARKETPLACE_CART:
+                return <MarketplaceCartScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'Marketplace') {
+                            setAppMode(AppMode.MARKETPLACE);
+                        } else if (screen === 'MarketplaceOrders') {
+                            setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                            setSelectedMarketplaceOrderId(String(params.orderId));
+                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
+                            setSelectedMarketplaceListingId(String(params.listingId));
+                            setSelectedMarketplaceListingInitialQuantity(null);
+                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
                         }
                     }}
                 />;

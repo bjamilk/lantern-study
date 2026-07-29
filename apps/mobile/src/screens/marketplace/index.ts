@@ -19,6 +19,7 @@ export { OffersScreen } from './OffersScreen';
 export { FavoritesScreen } from './FavoritesScreen';
 
 export { OrdersScreen } from './OrdersScreen';
+export { CartScreen } from './CartScreen';
 
 export { OrderDetailScreen } from './OrderDetailScreen';
 

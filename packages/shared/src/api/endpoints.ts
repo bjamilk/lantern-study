@@ -2054,6 +2054,7 @@ export function createApiEndpoints(client: ApiClient) {
       listingId: string,
       couponCode?: string,
       idempotencyKey?: string,
+      quantity?: number,
     ) =>
       apiRequest<{ order: import("../types").MarketplaceOrder }>(
         `/marketplace/listings/${listingId}/buy-now`,
@@ -2063,9 +2064,60 @@ export function createApiEndpoints(client: ApiClient) {
             "Idempotency-Key":
               idempotencyKey || createIdempotencyKey("buy-now"),
           },
-          body: JSON.stringify(couponCode ? { couponCode } : {}),
+          body: JSON.stringify({
+            ...(couponCode ? { couponCode } : {}),
+            ...(quantity != null && quantity > 0 ? { quantity } : {}),
+          }),
         },
       ),
+
+    fetchMarketplaceCart: () =>
+      apiRequest<import("../types").MarketplaceCartItem[]>(
+        "/marketplace/cart",
+        {},
+        5000,
+      ),
+
+    addToMarketplaceCart: (listingId: string, quantity?: number) =>
+      apiRequest<import("../types").MarketplaceCartItem>("/marketplace/cart", {
+        method: "POST",
+        body: JSON.stringify({
+          listingId,
+          ...(quantity != null && quantity > 0 ? { quantity } : {}),
+        }),
+      }),
+
+    updateMarketplaceCartItem: (listingId: string, quantity: number) =>
+      apiRequest<import("../types").MarketplaceCartItem | null>(
+        `/marketplace/cart/${listingId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ quantity }),
+        },
+      ),
+
+    removeMarketplaceCartItem: (listingId: string) =>
+      apiRequest<{ removed: boolean }>(`/marketplace/cart/${listingId}`, {
+        method: "DELETE",
+      }),
+
+    clearMarketplaceCart: () =>
+      apiRequest<{ cleared: boolean }>("/marketplace/cart", {
+        method: "DELETE",
+      }),
+
+    checkoutMarketplaceCart: (idempotencyKey?: string) =>
+      apiRequest<{
+        orders: import("../types").MarketplaceOrder[];
+        failures: Array<{ listingId: string; error: string }>;
+      }>("/marketplace/cart/checkout", {
+        method: "POST",
+        headers: {
+          "Idempotency-Key":
+            idempotencyKey || createIdempotencyKey("cart-checkout"),
+        },
+        body: JSON.stringify({}),
+      }),
 
     fetchMarketplaceOrders: (role: "buyer" | "seller" = "buyer") =>
       apiRequest<import("../types").MarketplaceOrder[]>(

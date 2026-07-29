@@ -538,8 +538,10 @@ interface MarketplaceState {
   buyNowListing: (
     listingId: string,
     userId: string,
-    couponCode?: string
+    couponCode?: string,
+    quantity?: number
   ) => Promise<{ order: import('@lantern/shared/types').MarketplaceOrder } | void>;
+  addToCart: (listingId: string, quantity?: number) => Promise<void>;
   boostListing: (listingId: string, userId: string) => Promise<void>;
   fetchSavedSearches: () => Promise<void>;
   createSavedSearch: (filters: Record<string, unknown>, name?: string) => Promise<SavedSearch>;
@@ -1453,7 +1455,12 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
     }
   },
 
-  buyNowListing: async (listingId: string, userId: string, couponCode?: string) => {
+  buyNowListing: async (
+    listingId: string,
+    userId: string,
+    couponCode?: string,
+    quantity?: number
+  ) => {
     try {
       set({ isLoading: true, error: null });
 
@@ -1467,13 +1474,25 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         return;
       }
 
-      const result = await api.buyNowListing(listingId, couponCode);
+      const result = await api.buyNowListing(listingId, couponCode, undefined, quantity);
       await get().fetchMyListings(userId);
       set({ isLoading: false });
       return result;
     } catch (error: any) {
       console.error('Failed to buy listing:', error);
       set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  addToCart: async (listingId: string, quantity?: number) => {
+    try {
+      set({ error: null });
+      if (DEMO_MODE) return;
+      await api.addToMarketplaceCart(listingId, quantity);
+    } catch (error: any) {
+      console.error('Failed to add to cart:', error);
+      set({ error: error.message });
       throw error;
     }
   },
