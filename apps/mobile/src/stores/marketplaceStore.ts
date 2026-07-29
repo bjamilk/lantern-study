@@ -230,6 +230,8 @@ export interface MarketplaceOffer {
   amount: number;
   message?: string;
   status: 'pending' | 'accepted' | 'declined' | 'countered' | 'withdrawn';
+  proposed_by?: 'buyer' | 'seller';
+  parent_offer_id?: string;
   created_at: string;
   updated_at?: string;
   buyer?: {
@@ -1180,6 +1182,8 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
         amount: o.amount,
         message: o.message,
         status: o.status as MarketplaceOffer['status'],
+        proposed_by: o.proposed_by === 'seller' || o.proposed_by === 'buyer' ? o.proposed_by : undefined,
+        parent_offer_id: o.parent_offer_id ?? undefined,
         created_at: o.created_at,
         updated_at: o.updated_at,
       }));

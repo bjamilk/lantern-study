@@ -12,6 +12,9 @@ import { resolveAvatarSrc } from '../utils/avatar';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
 import {
+  canRespondToOffer,
+  canWithdrawOffer,
+  getOfferProposedBy,
   resolveGroupChatSenderLabel,
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
@@ -487,18 +490,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           o.listing_id === inquiryData.listing_id &&
           (o.buyer_id === inquiryData.buyer_id || o.seller_id === inquiryData.seller_id)
       );
-      // Sort by date created_at ascending
+      // History oldest → newest; active offer is latest pending only
       filtered.sort(
         (a: MarketplaceOffer, b: MarketplaceOffer) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
       setOfferHistory(filtered);
 
-      // Set active offer (the latest pending or countered offer)
-      const active = filtered.find(
-        (o: MarketplaceOffer) => o.status === 'pending' || o.status === 'countered'
-      );
-      setActiveOffer(active || null);
+      const pending = filtered.filter((o: MarketplaceOffer) => o.status === 'pending');
+      const active = pending.length > 0 ? pending[pending.length - 1] : null;
+      setActiveOffer(active);
     } catch (err) {
       console.error('Error loading offer history:', err);
     }
@@ -2031,102 +2032,112 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     </div>
                   </div>
 
-                  {/* Action Controls */}
+                  {/* Action Controls — turn-based on proposed_by */}
                   <div className="pt-2">
                     {offerError && <p className="text-xs text-red-500 mb-3 font-semibold">{offerError}</p>}
-                    
-                    {currentUser.id === activeOffer.buyer_id ? (
-                      // Buyer controls
-                      <div className="flex flex-wrap gap-2">
-                        {activeOffer.status === 'pending' && (
-                          <button
-                            disabled={offerLoading}
-                            onClick={() => handleRespond('withdraw')}
-                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                          >
-                            {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
-                          </button>
-                        )}
-                        {activeOffer.status === 'countered' && (
-                          <>
-                            <button
-                              disabled={offerLoading}
-                              onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                            >
-                              Accept Counter
-                            </button>
-                            <button
-                              disabled={offerLoading}
-                              onClick={() => handleRespond('decline')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                            >
-                              Decline Counter
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      // Seller controls
-                      <div className="flex flex-col gap-3">
-                        {activeOffer.status === 'pending' && !showCounterInput && (
+
+                    {(() => {
+                      const proposedBy = getOfferProposedBy(activeOffer);
+                      const canRespond = canRespondToOffer(activeOffer, currentUser.id);
+                      const canWithdraw = canWithdrawOffer(activeOffer, currentUser.id);
+                      const isBuyerView = currentUser.id === activeOffer.buyer_id;
+                      const acceptLabel = proposedBy === 'seller' ? 'Accept Counter' : 'Accept Offer';
+                      const declineLabel = proposedBy === 'seller' ? 'Decline Counter' : 'Decline Offer';
+
+                      if (canWithdraw && !canRespond) {
+                        return (
                           <div className="flex flex-wrap gap-2">
                             <button
                               disabled={offerLoading}
-                              onClick={() => handleRespond('accept')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                            >
-                              Accept Offer
-                            </button>
-                            <button
-                              disabled={offerLoading}
-                              onClick={() => handleRespond('decline')}
+                              onClick={() => handleRespond('withdraw')}
                               className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                             >
-                              Decline Offer
-                            </button>
-                            <button
-                              disabled={offerLoading}
-                              onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
-                              className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                            >
-                              Counter Offer
+                              {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
                             </button>
                           </div>
-                        )}
-                        
-                        {showCounterInput && (
-                          <div className="flex flex-col gap-2 p-3 bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-xl border border-lantern-border">
-                            <label className="text-xs font-bold text-lantern-text">
-                              Counter Offer Amount (₦)
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="number"
-                                value={counterValue}
-                                onChange={(e) => setCounterValue(e.target.value)}
-                                placeholder="Enter counter amount"
-                                className="flex-1 px-3 py-1.5 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface text-lantern-text text-sm font-semibold"
-                              />
+                        );
+                      }
+
+                      if (!canRespond) {
+                        return (
+                          <p className="text-xs text-lantern-text-secondary font-medium">
+                            {isBuyerView
+                              ? 'Waiting for the seller to respond…'
+                              : 'Waiting for the buyer to respond…'}
+                          </p>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-col gap-3">
+                          {!showCounterInput && (
+                            <div className="flex flex-wrap gap-2">
                               <button
-                                disabled={offerLoading || !counterValue || parseFloat(counterValue) <= 0}
-                                onClick={() => handleRespond('counter', parseFloat(counterValue))}
-                                className="px-4 py-1.5 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-lg transition-colors"
+                                disabled={offerLoading}
+                                onClick={() => handleRespond('accept')}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                               >
-                                Send Counter
+                                {acceptLabel}
                               </button>
                               <button
                                 disabled={offerLoading}
-                                onClick={() => setShowCounterInput(false)}
-                                className="px-3 py-1.5 bg-lantern-surface text-lantern-text border border-lantern-border text-xs font-bold rounded-lg transition-colors hover:bg-lantern-background"
+                                onClick={() => handleRespond('decline')}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
                               >
-                                Cancel
+                                {declineLabel}
                               </button>
+                              <button
+                                disabled={offerLoading}
+                                onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
+                                className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
+                              >
+                                Counter Offer
+                              </button>
+                              {canWithdraw && (
+                                <button
+                                  disabled={offerLoading}
+                                  onClick={() => handleRespond('withdraw')}
+                                  className="px-4 py-2 border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary text-xs font-bold rounded-xl transition-colors"
+                                >
+                                  Withdraw
+                                </button>
+                              )}
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          )}
+
+                          {showCounterInput && (
+                            <div className="flex flex-col gap-2 p-3 bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-xl border border-lantern-border">
+                              <label className="text-xs font-bold text-lantern-text">
+                                Counter Offer Amount (₦)
+                              </label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="number"
+                                  value={counterValue}
+                                  onChange={(e) => setCounterValue(e.target.value)}
+                                  placeholder="Enter counter amount"
+                                  className="flex-1 px-3 py-1.5 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface text-lantern-text text-sm font-semibold"
+                                />
+                                <button
+                                  disabled={offerLoading || !counterValue || parseFloat(counterValue) <= 0}
+                                  onClick={() => handleRespond('counter', parseFloat(counterValue))}
+                                  className="px-4 py-1.5 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  Send Counter
+                                </button>
+                                <button
+                                  disabled={offerLoading}
+                                  onClick={() => setShowCounterInput(false)}
+                                  className="px-3 py-1.5 bg-lantern-surface text-lantern-text border border-lantern-border text-xs font-bold rounded-lg transition-colors hover:bg-lantern-background"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (
@@ -2181,7 +2192,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             </span>
                           </div>
                           <p className="text-xs text-lantern-text-secondary mt-1">
-                            {offer.buyer_id === currentUser.id ? 'You' : 'Buyer'} offered ₦{offer.amount.toLocaleString()} ({offer.status})
+                            {getOfferProposedBy(offer) === 'seller'
+                              ? `${offer.seller_id === currentUser.id ? 'You' : 'Seller'} countered ₦${offer.amount.toLocaleString()} (${offer.status})`
+                              : `${offer.buyer_id === currentUser.id ? 'You' : 'Buyer'} offered ₦${offer.amount.toLocaleString()} (${offer.status})`}
                           </p>
                           {offer.message && (
                             <p className="text-xs italic text-lantern-text-tertiary mt-1">

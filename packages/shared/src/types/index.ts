@@ -1004,6 +1004,8 @@ export interface MarketplaceOffer {
   seller_id: string;
   amount: number;
   status: OfferStatus;
+  /** Whose proposal this row is; the other party may accept/decline/counter. */
+  proposed_by?: 'buyer' | 'seller';
   counter_amount?: number;
   message?: string;
   parent_offer_id?: string;

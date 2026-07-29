@@ -1080,6 +1080,7 @@ router.post(
           amount,
           message: message || null,
           status: 'pending',
+          proposed_by: 'buyer',
           expires_at: expiresAt,
         })
         .select('*')
@@ -1174,12 +1175,34 @@ router.put(
       return res.status(404).json({ success: false, error: 'Offer not found' });
     }
 
-    // Authorization checks
-    if (action === 'withdraw' && offer.buyer_id !== userId) {
-      return res.status(403).json({ success: false, error: 'Only the buyer can withdraw an offer' });
+    const proposedBy: 'buyer' | 'seller' =
+      offer.proposed_by === 'seller' || offer.proposed_by === 'buyer'
+        ? offer.proposed_by
+        : offer.parent_offer_id
+          ? 'seller'
+          : 'buyer';
+    const responderId = proposedBy === 'seller' ? offer.buyer_id : offer.seller_id;
+    const actorIsBuyer = offer.buyer_id === userId;
+    const actorRole: 'buyer' | 'seller' = actorIsBuyer ? 'buyer' : 'seller';
+
+    // Authorization: only the non-proposing party may accept/decline/counter.
+    // Buyer may withdraw only their own pending proposal.
+    if (action === 'withdraw') {
+      if (!actorIsBuyer) {
+        return res.status(403).json({ success: false, error: 'Only the buyer can withdraw an offer' });
+      }
+      if (proposedBy !== 'buyer') {
+        return res.status(403).json({
+          success: false,
+          error: 'Withdraw your own offer, or accept/decline/counter the seller\'s counter-offer',
+        });
+      }
     }
-    if (['accept', 'decline', 'counter'].includes(action) && offer.seller_id !== userId) {
-      return res.status(403).json({ success: false, error: 'Only the seller can accept, decline, or counter an offer' });
+    if (['accept', 'decline', 'counter'].includes(action) && userId !== responderId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the other party can accept, decline, or counter this offer',
+      });
     }
     if (offer.status !== 'pending') {
       return res.status(400).json({ success: false, error: `Cannot ${action} an offer with status "${offer.status}"` });
@@ -1192,12 +1215,12 @@ router.put(
         return res.status(400).json({ success: false, error: 'counterAmount is required for counter offers' });
       }
 
-      // REL-04: atomic parent→countered + child insert (single RPC transaction).
+      // Atomic parent→countered + child insert (single RPC transaction).
       const { data: rpcRows, error: counterRpcErr } = await supabaseService.getClient().rpc(
         'marketplace_counter_offer',
         {
           p_offer_id: id,
-          p_seller_id: userId,
+          p_actor_id: userId,
           p_counter_amount: counterAmount,
         }
       );
@@ -1208,6 +1231,12 @@ router.put(
           return res.status(409).json({
             success: false,
             error: 'Cannot counter an offer that is no longer pending',
+          });
+        }
+        if (/only the other party can counter/i.test(msg)) {
+          return res.status(403).json({
+            success: false,
+            error: 'Only the other party can counter this offer',
           });
         }
         throw counterRpcErr;
@@ -1228,11 +1257,12 @@ router.put(
       if (counterFetchErr || !counterOffer) throw counterFetchErr || new Error('Counter offer not found');
       updatedOffer = counterOffer;
 
-      // Notify buyer of counter
+      const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
+      const counterLabel = actorRole === 'buyer' ? 'Buyer' : 'Seller';
       try {
-        await supabaseService.createNotification(offer.buyer_id, {
+        await supabaseService.createNotification(notifyUserId, {
           type: 'marketplace_order_update',
-          message: `Seller countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
+          message: `${counterLabel} countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
           link: `marketplace:offer:${counterOffer.id}`,
           data: { offerId: counterOffer.id },
         });
@@ -1298,7 +1328,7 @@ router.put(
       }
       updatedOffer = data;
 
-      const notifyUserId = action === 'withdraw' ? offer.seller_id : offer.buyer_id;
+      const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
       const actionText = action === 'decline' ? 'declined' : 'withdrawn';
       try {
         await supabaseService.createNotification(notifyUserId, {

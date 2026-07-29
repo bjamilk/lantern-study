@@ -342,16 +342,22 @@ export class MarketplaceOrdersService {
 
     const amount = Number(row.amount) || Number(offer.counter_amount ?? offer.amount) || 0;
     const title = listingRaw.title || 'listing';
+    const buyerAccepted = actor === offer.buyer_id;
     await this.notifyOrderParty(sellerId, {
       type: 'marketplace_purchase',
-      message: `Offer accepted — order for "${title}" at ₦${amount.toLocaleString()}`,
+      message: buyerAccepted
+        ? `Buyer accepted your counter — order for "${title}" at ₦${amount.toLocaleString()}`
+        : `Offer accepted — order for "${title}" at ₦${amount.toLocaleString()}`,
       link: `marketplace:order:${row.id}`,
       data: { orderId: row.id, offerId },
     });
     await this.notifyOrderParty(offer.buyer_id, {
       type: 'marketplace_order_update',
-      message:
-        initialStatus === 'pending_payment'
+      message: buyerAccepted
+        ? initialStatus === 'pending_payment'
+          ? `You accepted the counter for "${title}". Upload payment proof after paying.`
+          : `You accepted the counter for "${title}". View order to arrange pickup.`
+        : initialStatus === 'pending_payment'
           ? `Your offer was accepted for "${title}". Upload payment proof after paying.`
           : `Your offer was accepted for "${title}". View order to arrange pickup.`,
       link: `marketplace:order:${row.id}`,
