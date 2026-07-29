@@ -74,7 +74,10 @@ function schedulePersist(getTips: () => FeatureTipsState) {
     const durable = toPersistentFeatureTips(tips);
     const user = useAuthStore.getState().currentUser;
     if (!user?.id) return;
-    const current = normalizeUserSettings(user.settings);
+    // Always merge onto the latest in-memory profile so concurrent settings writes
+    // (theme, etc.) are less likely to clobber checklist progress.
+    const latest = useAuthStore.getState().currentUser || user;
+    const current = normalizeUserSettings(latest.settings);
     const next = {
       ...current,
       featureTips: {
@@ -87,9 +90,11 @@ function schedulePersist(getTips: () => FeatureTipsState) {
       },
       updatedAt: new Date().toISOString(),
     };
-    useAuthStore.getState().setCurrentUser({ ...user, settings: next });
-    void saveUserSettings(user.id, next).catch((err) => {
-      console.warn('Failed to sync feature tips settings', err);
+    useAuthStore.getState().setCurrentUser({ ...latest, settings: next });
+    void saveUserSettings(latest.id, next).then((ok) => {
+      if (!ok) {
+        console.warn('Failed to sync feature tips settings after retries');
+      }
     });
   }, 400);
 }

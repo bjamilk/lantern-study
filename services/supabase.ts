@@ -4731,6 +4731,33 @@ export const syncOfflineBundles = async (
 // USER SETTINGS (nested schema — web + mobile)
 // ============================================
 
+let lastKnownSettingsVersion: number | undefined;
+/** Serialize settings PUTs so checklist / tips / theme syncs don't race the same CAS version. */
+let settingsSaveQueue: Promise<unknown> = Promise.resolve();
+
+function noteSettingsVersion(version: unknown): void {
+  if (typeof version === 'number' && Number.isFinite(version)) {
+    lastKnownSettingsVersion = version;
+  }
+}
+
+async function refreshSettingsVersion(
+  userId: string,
+  headers: Record<string, string>
+): Promise<void> {
+  try {
+    const refresh = await fetch(
+      `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
+      { headers }
+    );
+    if (!refresh.ok) return;
+    const body = await refresh.json().catch(() => ({}));
+    noteSettingsVersion(body?.data?.settingsVersion);
+  } catch {
+    /* ignore */
+  }
+}
+
 export const fetchUserSettings = async (userId: string): Promise<UserSettings | null> => {
   try {
     if (!(await hasValidSession())) return null;
@@ -4749,6 +4776,7 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
     }
 
     const result = await response.json();
+    noteSettingsVersion(result.data?.settingsVersion);
     return normalizeUserSettings(result.data?.settings);
   } catch (error) {
     console.error('Error fetching user settings:', error);
@@ -4756,62 +4784,69 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   }
 };
 
-let lastKnownSettingsVersion: number | undefined;
-
 export const saveUserSettings = async (
   userId: string,
   settings: UserSettings,
   expectedSettingsVersion?: number
 ): Promise<boolean> => {
-  try {
-    const headers = await getRequiredAuthHeaders();
-    const version =
-      expectedSettingsVersion ?? lastKnownSettingsVersion;
-    const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({
-        settings,
-        ...(version != null ? { expectedSettingsVersion: version } : {}),
-      }),
-    });
+  const run = async (): Promise<boolean> => {
+    const maxAttempts = 3;
+    try {
+      const headers = await getRequiredAuthHeaders();
 
-    if (response.status === 409) {
-      // Refetch authoritative settings version; do not blind-overwrite.
-      try {
-        const refresh = await fetch(
-          `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
-          { headers }
-        );
-        if (refresh.ok) {
-          const body = await refresh.json();
-          if (typeof body?.data?.settingsVersion === 'number') {
-            lastKnownSettingsVersion = body.data.settingsVersion;
-          }
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Prefer caller override only on first attempt; retries use refreshed CAS token.
+        const version =
+          attempt === 0
+            ? (expectedSettingsVersion ?? lastKnownSettingsVersion)
+            : lastKnownSettingsVersion;
+
+        const response = await fetch(`${getApiRoot()}/api/v1/users/settings`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            settings,
+            ...(version != null ? { expectedSettingsVersion: version } : {}),
+          }),
+        });
+
+        if (response.status === 409) {
+          await refreshSettingsVersion(userId, headers);
+          if (attempt + 1 < maxAttempts) continue;
+          console.warn(
+            'Settings version conflict after retries; latest version reloaded.'
+          );
+          return false;
         }
-      } catch {
-        /* ignore */
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.message || error.error || 'Failed to save user settings');
+        }
+
+        const body = await response.json().catch(() => ({}));
+        if (typeof body?.data?.settingsVersion === 'number') {
+          noteSettingsVersion(body.data.settingsVersion);
+        } else if (version != null) {
+          noteSettingsVersion(version + 1);
+        }
+
+        return true;
       }
-      throw new Error('Settings were updated elsewhere. Refresh and try again.');
-    }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to save user settings');
+      return false;
+    } catch (error) {
+      console.error('Error saving user settings:', error);
+      return false;
     }
+  };
 
-    const body = await response.json().catch(() => ({}));
-    if (typeof body?.data?.settingsVersion === 'number') {
-      lastKnownSettingsVersion = body.data.settingsVersion;
-    } else if (version != null) {
-      lastKnownSettingsVersion = version + 1;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error saving user settings:', error);
-    return false;
-  }
+  const queued = settingsSaveQueue.then(run, run);
+  settingsSaveQueue = queued.then(
+    () => undefined,
+    () => undefined
+  );
+  return queued;
 };
 
 // ============================================
