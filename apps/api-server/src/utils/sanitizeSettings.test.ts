@@ -73,6 +73,31 @@ describe('sanitizeSettings', () => {
     );
   });
 
+  it('deep-merges featureTips.checklist keys across devices', () => {
+    const merged = mergeUserSettings(
+      {
+        featureTips: {
+          version: 2,
+          dismissed: {},
+          skippedAll: false,
+          dontShowAgain: false,
+          checklistDismissed: false,
+          checklist: { explore_groups: true },
+        },
+      },
+      {
+        featureTips: {
+          checklist: { try_srs: true },
+        },
+      }
+    );
+    const tips = merged.featureTips as { checklist?: Record<string, boolean> } | undefined;
+    expect(tips?.checklist).toEqual({
+      explore_groups: true,
+      try_srs: true,
+    });
+  });
+
   it('clamps out-of-range study values', () => {
     const merged = mergeUserSettings(
       {},

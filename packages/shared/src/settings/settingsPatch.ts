@@ -230,10 +230,14 @@ function sanitizeFeatureTips(
   partial: Partial<FeatureTipsSettings>,
   base: FeatureTipsSettings
 ): FeatureTipsSettings {
-  const checklist =
+  // Deep-merge checklist keys so phone + laptop progress does not clobber.
+  const incomingChecklist =
     partial.checklist && typeof partial.checklist === 'object' && !Array.isArray(partial.checklist)
       ? (partial.checklist as Record<string, boolean>)
-      : (base.checklist ?? {});
+      : null;
+  const checklist = incomingChecklist
+    ? { ...(base.checklist ?? {}), ...incomingChecklist }
+    : { ...(base.checklist ?? {}) };
   return {
     version: 2,
     dismissed: {},
@@ -334,7 +338,27 @@ export function mergeSettingsPatches(
       !Array.isArray(lv) &&
       !Array.isArray(rv)
     ) {
-      (out as Record<string, unknown>)[key] = { ...(lv as object), ...(rv as object) };
+      if (key === 'featureTips') {
+        const lTips = lv as Partial<FeatureTipsSettings>;
+        const rTips = rv as Partial<FeatureTipsSettings>;
+        const mergedTips: Partial<FeatureTipsSettings> = { ...lTips, ...rTips };
+        const lChecklist =
+          lTips.checklist && typeof lTips.checklist === 'object' && !Array.isArray(lTips.checklist)
+            ? lTips.checklist
+            : {};
+        const rChecklist =
+          rTips.checklist && typeof rTips.checklist === 'object' && !Array.isArray(rTips.checklist)
+            ? rTips.checklist
+            : undefined;
+        if (rChecklist) {
+          mergedTips.checklist = { ...lChecklist, ...rChecklist };
+        } else if (Object.keys(lChecklist).length > 0) {
+          mergedTips.checklist = { ...lChecklist };
+        }
+        (out as Record<string, unknown>)[key] = mergedTips;
+      } else {
+        (out as Record<string, unknown>)[key] = { ...(lv as object), ...(rv as object) };
+      }
     } else if (rv !== undefined) {
       (out as Record<string, unknown>)[key] = rv;
     } else if (lv !== undefined) {
@@ -342,6 +366,114 @@ export function mergeSettingsPatches(
     }
   }
   return out;
+}
+
+/**
+ * Drop fields from `current` that match `sent` (same category key + value).
+ * Retains edits that accumulated (or changed) after `sent` was snapshotted.
+ */
+export function subtractSettingsPatch(
+  current: UserSettingsPatch | null | undefined,
+  sent: UserSettingsPatch | null | undefined
+): UserSettingsPatch {
+  const cur = current && typeof current === 'object' ? current : {};
+  const gone = sent && typeof sent === 'object' ? sent : {};
+  const out: UserSettingsPatch = {};
+
+  for (const key of Object.keys(cur) as Array<keyof UserSettingsPatch>) {
+    const curVal = cur[key];
+    const sentVal = gone[key];
+    if (curVal === undefined) continue;
+
+    if (
+      curVal &&
+      typeof curVal === 'object' &&
+      !Array.isArray(curVal) &&
+      sentVal &&
+      typeof sentVal === 'object' &&
+      !Array.isArray(sentVal)
+    ) {
+      if (key === 'featureTips') {
+        const curTips = curVal as Partial<FeatureTipsSettings>;
+        const sentTips = sentVal as Partial<FeatureTipsSettings>;
+        const remainingTips: Partial<FeatureTipsSettings> = {};
+        for (const tipKey of Object.keys(curTips) as Array<keyof FeatureTipsSettings>) {
+          if (tipKey === 'checklist') {
+            const curChecklist =
+              curTips.checklist && typeof curTips.checklist === 'object'
+                ? curTips.checklist
+                : {};
+            const sentChecklist =
+              sentTips.checklist && typeof sentTips.checklist === 'object'
+                ? sentTips.checklist
+                : {};
+            const remainingChecklist: Record<string, boolean> = {};
+            for (const [ck, cv] of Object.entries(curChecklist)) {
+              if (sentChecklist[ck] !== cv) remainingChecklist[ck] = cv;
+            }
+            if (Object.keys(remainingChecklist).length > 0) {
+              remainingTips.checklist = remainingChecklist;
+            }
+            continue;
+          }
+          if (sentTips[tipKey] !== curTips[tipKey]) {
+            (remainingTips as Record<string, unknown>)[tipKey] = curTips[tipKey];
+          }
+        }
+        if (Object.keys(remainingTips).length > 0) {
+          (out as Record<string, unknown>)[key] = remainingTips;
+        }
+        continue;
+      }
+
+      const remaining: Record<string, unknown> = {};
+      for (const [field, value] of Object.entries(curVal as Record<string, unknown>)) {
+        if ((sentVal as Record<string, unknown>)[field] !== value) {
+          remaining[field] = value;
+        }
+      }
+      if (Object.keys(remaining).length > 0) {
+        (out as Record<string, unknown>)[key] = remaining;
+      }
+    } else if (sentVal !== curVal) {
+      (out as Record<string, unknown>)[key] = curVal;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * After a successful settings sync: keep only mid-flight edits, re-apply them
+ * onto the authoritative server payload.
+ */
+export function resolveSettingsAfterSync(args: {
+  authoritative: UserSettings;
+  pendingAfterSync: UserSettingsPatch | null | undefined;
+  sentPending: UserSettingsPatch | null | undefined;
+  lastSyncTime?: string;
+}): {
+  settings: UserSettings;
+  pendingPatch: UserSettingsPatch;
+  hasUnsyncedChanges: boolean;
+} {
+  const remaining = subtractSettingsPatch(args.pendingAfterSync, args.sentPending);
+  const syncedAt = args.lastSyncTime ?? new Date().toISOString();
+  const withSyncMeta: UserSettings = {
+    ...args.authoritative,
+    sync: {
+      ...args.authoritative.sync,
+      lastSyncTime: syncedAt,
+    },
+  };
+  const hasUnsyncedChanges = Object.keys(remaining).length > 0;
+  return {
+    settings: hasUnsyncedChanges
+      ? applySettingsPatch(withSyncMeta, remaining)
+      : withSyncMeta,
+    pendingPatch: remaining,
+    hasUnsyncedChanges,
+  };
 }
 
 /** Validate study draft strings used by web SettingsModal. */

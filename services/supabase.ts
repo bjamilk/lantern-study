@@ -195,6 +195,17 @@ export function withApiCredentials(init: RequestInit = {}): RequestInit {
   return { ...next, credentials: 'include' };
 }
 
+/** Module-scoped CAS version for settings PUTs — reset on logout to avoid cross-user leaks. */
+let lastKnownSettingsVersion: number | undefined;
+/** Serialize settings PUTs so checklist / tips / theme syncs don't race the same CAS version. */
+let settingsSaveQueue: Promise<unknown> = Promise.resolve();
+
+/** Reset module-scoped CAS version cache (call on logout to avoid cross-user PC leaks). */
+export function clearLastKnownSettingsVersion(): void {
+  lastKnownSettingsVersion = undefined;
+  settingsSaveQueue = Promise.resolve();
+}
+
 /** Server-side session invalidation + Supabase global sign-out + local cleanup. */
 export async function apiLogoutSession(): Promise<void> {
   try {
@@ -217,6 +228,7 @@ export async function apiLogoutSession(): Promise<void> {
   } catch (e) {
     console.warn('Supabase signOut failed:', e);
   }
+  clearLastKnownSettingsVersion();
   clearAllClientAuthStorage();
 }
 
@@ -4731,14 +4743,12 @@ export const syncOfflineBundles = async (
 // USER SETTINGS (nested schema — web + mobile)
 // ============================================
 
-let lastKnownSettingsVersion: number | undefined;
-/** Serialize settings PUTs so checklist / tips / theme syncs don't race the same CAS version. */
-let settingsSaveQueue: Promise<unknown> = Promise.resolve();
-
 export type SaveUserSettingsResult = {
   ok: boolean;
   settings?: UserSettings;
   settingsVersion?: number;
+  /** True when the failure was a CAS conflict after retries (another device wrote). */
+  conflict?: boolean;
 };
 
 function noteSettingsVersion(version: unknown): void {
@@ -4833,6 +4843,7 @@ export const saveUserSettingsDetailed = async (
           );
           return {
             ok: false,
+            conflict: true,
             settings: conflictData?.settings
               ? normalizeUserSettings(conflictData.settings)
               : undefined,

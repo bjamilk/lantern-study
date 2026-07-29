@@ -619,7 +619,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     {userSettings.sync.lastSyncTime && (
                         <p className="text-sm text-lantern-text-secondary">Last synced: {new Date(userSettings.sync.lastSyncTime).toLocaleString()}</p>
                     )}
-                    <p className="text-sm text-lantern-text-secondary">{syncCopy.savedLocally}</p>
+                    <p className="text-sm text-lantern-text-secondary">{syncCopy.webSettingsPersistHint}</p>
                     <p className="text-sm text-lantern-text-secondary">Use Offline Mode from the Study menu to download bundles for offline tests.</p>
                 </div>
             );

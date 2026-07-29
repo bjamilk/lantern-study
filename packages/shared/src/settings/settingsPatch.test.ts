@@ -2,6 +2,8 @@ import {
   DEFAULT_USER_SETTINGS,
   applySettingsPatch,
   mergeSettingsPatches,
+  subtractSettingsPatch,
+  resolveSettingsAfterSync,
   parseStudyDraftNumber,
   normalizeUserSettings,
   mergeSettingsCategory,
@@ -65,11 +67,106 @@ describe('settingsPatch', () => {
     });
   });
 
+  it('deep-merges featureTips.checklist keys instead of wholesale replace', () => {
+    const base = normalizeUserSettings({
+      ...DEFAULT_USER_SETTINGS,
+      featureTips: {
+        version: 2,
+        dismissed: {},
+        skippedAll: false,
+        dontShowAgain: false,
+        checklistDismissed: false,
+        checklist: { explore_groups: true, try_srs: false },
+      },
+    });
+    const next = applySettingsPatch(base, {
+      featureTips: { checklist: { try_srs: true, take_test: true } },
+    });
+    expect(next.featureTips?.checklist).toEqual({
+      explore_groups: true,
+      try_srs: true,
+      take_test: true,
+    });
+  });
+
+  it('mergeSettingsPatches deep-merges featureTips.checklist', () => {
+    const merged = mergeSettingsPatches(
+      { featureTips: { checklist: { explore_groups: true } } },
+      { featureTips: { checklist: { try_srs: true }, skippedAll: true } }
+    );
+    expect(merged.featureTips?.checklist).toEqual({
+      explore_groups: true,
+      try_srs: true,
+    });
+    expect(merged.featureTips?.skippedAll).toBe(true);
+  });
+
   it('parseStudyDraftNumber rejects empty and clamps', () => {
     expect(parseStudyDraftNumber('', 20, 5, 100)).toBe(20);
     expect(parseStudyDraftNumber('0', 20, 5, 100)).toBe(5);
     expect(parseStudyDraftNumber('40', 20, 5, 100)).toBe(40);
     expect(parseStudyDraftNumber('abc', 20, 5, 100)).toBe(20);
+  });
+});
+
+describe('mid-flight pending patch race', () => {
+  it('subtractSettingsPatch keeps edits made after the sent snapshot', () => {
+    const sent = mergeSettingsPatches(null, {
+      study: { dailyCardGoal: 40 },
+      appearance: { theme: 'dark' },
+    });
+    // While syncing, user also changes srs + flips theme again.
+    const after = mergeSettingsPatches(sent, {
+      study: { srsNewCardsPerDay: 25 },
+      appearance: { theme: 'light' },
+    });
+    const remaining = subtractSettingsPatch(after, sent);
+    expect(remaining).toEqual({
+      study: { srsNewCardsPerDay: 25 },
+      appearance: { theme: 'light' },
+    });
+  });
+
+  it('resolveSettingsAfterSync retains mid-flight edits and flags another sync', () => {
+    const authoritative = normalizeUserSettings({
+      ...DEFAULT_USER_SETTINGS,
+      study: { ...DEFAULT_USER_SETTINGS.study, dailyCardGoal: 40 },
+      appearance: { ...DEFAULT_USER_SETTINGS.appearance, theme: 'dark' },
+    });
+    const sentPending = { study: { dailyCardGoal: 40 }, appearance: { theme: 'dark' as const } };
+    const pendingAfterSync = mergeSettingsPatches(sentPending, {
+      study: { srsNewCardsPerDay: 30 },
+    });
+
+    const resolved = resolveSettingsAfterSync({
+      authoritative,
+      pendingAfterSync,
+      sentPending,
+      lastSyncTime: '2026-07-29T12:00:00.000Z',
+    });
+
+    expect(resolved.hasUnsyncedChanges).toBe(true);
+    expect(resolved.pendingPatch).toEqual({ study: { srsNewCardsPerDay: 30 } });
+    expect(resolved.settings.study.dailyCardGoal).toBe(40);
+    expect(resolved.settings.study.srsNewCardsPerDay).toBe(30);
+    expect(resolved.settings.appearance.theme).toBe('dark');
+    expect(resolved.settings.sync.lastSyncTime).toBe('2026-07-29T12:00:00.000Z');
+  });
+
+  it('resolveSettingsAfterSync clears pending when nothing arrived mid-flight', () => {
+    const authoritative = normalizeUserSettings({
+      ...DEFAULT_USER_SETTINGS,
+      study: { ...DEFAULT_USER_SETTINGS.study, dailyCardGoal: 40 },
+    });
+    const sentPending = { study: { dailyCardGoal: 40 } };
+    const resolved = resolveSettingsAfterSync({
+      authoritative,
+      pendingAfterSync: sentPending,
+      sentPending,
+    });
+    expect(resolved.hasUnsyncedChanges).toBe(false);
+    expect(resolved.pendingPatch).toEqual({});
+    expect(resolved.settings.study.dailyCardGoal).toBe(40);
   });
 });
 

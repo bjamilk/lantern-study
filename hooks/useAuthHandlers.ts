@@ -27,11 +27,22 @@ import {
     normalizeUserSettings,
     mergeSettingsCategory,
 } from '@lantern/shared/settings';
+import { syncCopy } from '@lantern/shared/design';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { useToastStore } from '../stores/toastStore';
 
 /** Monotonic generation so a stale failed save cannot roll back a newer optimistic update. */
 let settingsMutationGeneration = 0;
+/** Debounce quiet "Settings saved" toasts so rapid study numeric edits don't spam. */
+let settingsSavedToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function notifySettingsSavedQuietly() {
+    if (settingsSavedToastTimer) clearTimeout(settingsSavedToastTimer);
+    settingsSavedToastTimer = setTimeout(() => {
+        settingsSavedToastTimer = null;
+        useToastStore.getState().showToast(syncCopy.settingsSaved, 'success');
+    }, 600);
+}
 
 export type BootstrapDomain =
     | 'groups'
@@ -135,7 +146,10 @@ export function useAuthHandlers() {
                             applySettingsToUi(rollbackSettings);
                         }
                     }
-                    useToastStore.getState().showToast('Failed to save settings. Please try again.', 'error');
+                    const message = result.conflict
+                        ? syncCopy.updatedOnAnotherDevice
+                        : 'Failed to save settings. Please try again.';
+                    useToastStore.getState().showToast(message, 'error');
                 }
                 return;
             }
@@ -147,6 +161,10 @@ export function useAuthHandlers() {
                         settings: normalizeUserSettings(result.settings),
                     });
                 }
+            }
+            // Quiet confirmation for study numeric saves (debounced); skip toggle spam.
+            if (category === 'study' && mutationId === settingsMutationGeneration) {
+                notifySettingsSavedQuietly();
             }
             if (category === 'appearance') {
                 const appearance = result.settings
@@ -221,7 +239,7 @@ export function useAuthHandlers() {
     }, [getUserSettings, theme, handleUpdateSettingsCategory]);
 
     const handleLogout = useCallback(async () => {
-        await apiLogoutSession();
+        await apiLogoutSession(); // also clears lastKnownSettingsVersion
 
         setCurrentUser(null);
         setGroups([]);
